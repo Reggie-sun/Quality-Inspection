@@ -1319,7 +1319,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": null,
       "implementation_only": true,
       "implementation_reason": "API/Worker 共享同一本地目录是当前 FileStorage 部署选择；长期契约只固定受控 resource_ref、完整性与可见性。",
@@ -1336,7 +1336,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "SYS-002",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1350,7 +1350,7 @@
     },
     {
       "blocking_level": "fatal",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "SYS-002",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1364,7 +1364,7 @@
     },
     {
       "blocking_level": "fatal",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "SYS-002",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1378,7 +1378,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "SYS-002",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1420,7 +1420,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "REV-004",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1622,5 +1622,5 @@
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "p0-contracts/1",
   "source": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md",
-  "status_projection_hash": "5283d53213cd1ee9939c1812f46ac3cfe42b978186e9a023395799e764ecd451"
+  "status_projection_hash": "e3985fc4e038e13206bc2e4d3b9a0ae0b29801faf45ef0656e52a32028620c88"
 }
