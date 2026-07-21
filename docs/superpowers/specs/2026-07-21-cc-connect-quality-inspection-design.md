@@ -24,11 +24,11 @@
 
 ## Failure Handling And Rollback
 
-在扫码前，先在临时文件中执行 TOML format/parse 检查；原始 `config.toml` 不会被 formatter 改写。若静态检查或 daemon restart 失败，立即从配置中删除刚追加的完整项目块，再重启服务并确认旧服务恢复运行。若 QR onboarding 超时或用户取消，保留无平台凭据的项目块仅在用户明确要求重试时继续；本次不触碰旧项目或其凭据。
+在扫码前，通过首次 daemon restart 让 `cc-connect` 解析新增的无凭据项目块；原始 `config.toml` 不会被 formatter 改写，也不会创建含认证字段的临时副本。若解析或 daemon restart 失败，立即从配置中删除刚追加的完整无凭据项目块，再重启服务并确认旧服务恢复运行。若 QR onboarding 超时或用户取消，保留无平台凭据的项目块仅在用户明确要求重试时继续；本次不触碰旧项目或其凭据。
 
 ## Verification
 
-验证分三层：配置静态校验、`cc-connect daemon status` 的 active runtime 校验，以及用户扫码后通过 `/current` 或 `/new` 在新飞书机器人中确认会话归属 `quality-inspection`。不向任意既有会话发送测试消息，避免误投；没有完成扫码前不宣称飞书端到端已通过。
+验证分三层：`cc-connect` 对无凭据新增块的启动解析、`cc-connect daemon status` 的 active runtime 校验，以及用户扫码后通过 `/current` 或 `/new` 在新飞书机器人中确认会话归属 `quality-inspection`。不向任意既有会话发送测试消息，避免误投；没有完成扫码前不宣称飞书端到端已通过。
 
 ## Out Of Scope
 

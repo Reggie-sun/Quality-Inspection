@@ -42,13 +42,14 @@ reasoning_effort = "high"
 agent_profiles_dir = "/home/reggie/.codex/agents"
 ```
 
-- [ ] **Step 3: Validate TOML without rewriting the live configuration**
 
-Run: `cfg_tmp=$(mktemp); cp /home/reggie/.cc-connect/config.toml "$cfg_tmp"; cc-connect config format --config "$cfg_tmp"; rm -f "$cfg_tmp"`
+- [ ] **Step 3: Validate the credential-free block through daemon startup**
 
-Expected: `cc-connect config format` exits zero; only the disposable temporary file is formatted.
+Run: `cc-connect daemon restart && cc-connect daemon status`
 
-- [ ] **Step 4: Restart and check the active service**
+Expected: the daemon parses the new block and reports `Running`; no formatter or temporary copy of credential-bearing configuration is created.
+
+- [ ] **Step 4: Check the active service and existing configuration boundary**
 
 Run: `cc-connect daemon restart && cc-connect daemon status`
 
