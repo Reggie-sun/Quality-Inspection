@@ -754,7 +754,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "CAND-001",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -768,7 +768,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "CAND-001",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -782,7 +782,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "ITEM-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -796,7 +796,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "CAND-001",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -810,7 +810,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "CAND-001",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -824,7 +824,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "CAND-001",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -838,7 +838,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "CAND-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -852,7 +852,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "CAND-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -866,7 +866,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "CAND-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -880,7 +880,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "CAND-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -896,7 +896,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "ITEM-006",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -910,7 +910,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "ITEM-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -924,7 +924,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "ITEM-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -938,7 +938,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "ITEM-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1622,5 +1622,5 @@
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "p0-contracts/1",
   "source": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md",
-  "status_projection_hash": "4d879599849edbab3560870d6f927341eb9816237e548afd05150ba8d81895fe"
+  "status_projection_hash": "d8306b1d027eb3317b73e2dc677319af1a1ae2fb97fd2e249a1cfb072f2fc026"
 }

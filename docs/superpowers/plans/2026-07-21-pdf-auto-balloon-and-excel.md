@@ -54,6 +54,19 @@
 
 三个 task 都必须执行全局 `Per-task Harness closure`：focused tests → pre-run mirror/bindings/check → task run → 记录 literal run ID → 只依据该 sealed run 投影该 task 的 Markdown `current_status` → regenerate mirror/bindings/check → `generate-receipt.py --check-run <literal-run-id>`。D2-T1 首次 closure 的唯一 task phase 是 focused tests 后执行的 live current-four registration run；Day 2 最终 refresh 则必须通过 `--current-four-run <literal-registration-run-id>` 复用其中已 seal、schema-valid 的 manifest，不能使用无 current-four identity 的裸 runner。因为 executable identity 是全仓 allowlist，后续 task 会使先前 task receipt stale；D2-T3 最终代码稳定并完成 review 后，必须在同一最终 executable state 重新运行 D2-T1、D2-T2、D2-T3 task phases，并逐一用 literal run ID 校验，最终交付只报告这组三个 fresh/passed receipts。
 
+### Day 3 continuation selection — 2026-07-21
+
+- Selected lane: `Heavy`。
+- Selected plan: 本文件，仍是唯一 current implementation plan；本次只执行 `D3-T1`，在 `D3-T2` 前停止。
+- Selection evidence: branch `feature/d1-t1-contract-harness` 在 `5573597` clean；D2-T1～D2-T3 已分别由 fresh/passed task receipts `20260721T130805437356Z-e52457ee`、`20260721T130819985433Z-dae6310e`、`20260721T130836658610Z-27e7b074` 收口；D3-T1 的 14 个 P0 rows 仍为 `not_run`。
+- Validation action: `continue`；先执行四个 table-driven candidate test 文件的 RED，再做最小实现，最后完成全局 `Per-task Harness closure`。
+- Writer ownership and order: 父 agent 是唯一 writer；explorer/reviewer 只读，不得修改 workspace 或扩大到 `D3-T2`。
+- Problem boundary and Owner: candidate semantics 是唯一业务 Owner；deterministic parser、ordered grouping、technical-requirement disposition 和 four-field complex fallback 只在该 Owner 内提交 D3-T1 语义。
+- Old path: 当前没有 candidate 业务旧路径；本 task 新建 canonical modules，不引入 bridge、shadow、dual-write、duplicate resolver 或第二 final Owner。
+- Unchanged contracts: Provider 不是正式语义 Owner；`Φ` 保持 `unknown + requires_confirmation`；GD&T、roughness、weld 只保留 `raw_text / coordinates / coarse_type / requires_confirmation`；identical text 不构成跨 view 自动合并；coverage、automatic-result freeze 和 migration 保持未实现。
+- Rollback and failure boundary: 只 revert 本 task commit；rollback 后第一项验证为 backend 全量测试，确认 Day 2 baseline 未受影响。unsupported deterministic annotation 必须显式失败，复杂类型和非可执行技术文本不得被提升为完整正式语义。
+- Next verification: `micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_parser.py backend/tests/unit/candidates/test_grouping.py backend/tests/unit/candidates/test_disposition.py backend/tests/unit/candidates/test_complex_fallback.py -q`，预期因 `app.candidates` 实现缺失而 collection FAIL。
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：
