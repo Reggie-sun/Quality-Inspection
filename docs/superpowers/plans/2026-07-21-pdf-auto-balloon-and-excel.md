@@ -31,6 +31,29 @@
 - Unchanged contract: Provider 不是正式语义 Owner；frontend 不产生 formal result；三产物不允许部分发布；P1/P2 全部保持未实现。
 - Focused verification: 每个 task 的最后一个 test command；Day 7 使用 current-four live receipt 收口。
 
+### Day 2 continuation amendment — 2026-07-21
+
+本节是对同一 current plan 的原地修订，不创建第二套 plan。修订依据是 D1-T1～D1-T3 的实际接口、当前 `a859fb8` 后继 worktree、fresh D1 task receipts，以及 `0715095` 已带入的 approved design spec。
+
+- Selected lane: `Heavy`。
+- Selected plan: 本文件，仍是唯一 current implementation plan。
+- Selection evidence: `run-p0.py` 当前只支持 task scope 并在 selector 结束后立即 seal；`generate-receipt.py` 的 input identity 尚未绑定 Provider fixture bytes；`LogicalJob` 尚无 successful result ref；Alembic metadata 与 schema test 仍只登记 D1 models/tables。
+- Validation action: `amend` 后 `continue`；Owner、stable contracts 和 Day 2 顺序不变，只修订实际接口、allowed paths 和验证闭环。
+- Writer ownership and order: 父 agent 是唯一 writer，严格按 `D2-T1 → D2-T2 → D2-T3`；explorer/reviewer 只读，同一 file group 不并发写。
+- Problem boundary: 只完成 current-four identity/page inventory、fixture-only Provider adapters、processing preflight/state/error/idempotent inventory；不实现 candidate、review、balloon、export 或其他 D3+ 能力。
+- Old path: 新仓库仍无业务旧路径；不得引入 bridge、shadow、dual-write 或 legacy fallback。D1 Harness/FileStorage/idempotency 只做向后兼容的最小接口补齐。
+- Unchanged contracts: Provider 仍只是 OCR Signal / Vision Advisor；fixture 不产生 network/付费调用；PDF bytes、完整 base64、credential、Authorization 和宿主机路径不进入仓库、日志、manifest 或 receipt；`scanned` 只进入 unsupported routing；fatal/blocking 不得形成 formal success。
+- Rollback: 每个 task 只 revert 本 task commit；D2-T3 migration rollback 到 `0001` 后第一项验证为 `micromamba run -n qi-p0 pytest backend/tests/integration/test_schema.py -q`。
+- First next verification: `micromamba run -n qi-p0 pytest backend/tests/unit/pdf/test_coordinates.py backend/tests/unit/pdf/test_classification.py backend/tests/unit/pdf/test_inventory.py backend/tests/integration/test_pdf_inventory.py -q`，预期因 `app.pdf` 实现缺失而 collection FAIL。
+
+| Task | Single integration Owner | Actual-interface delta | Allowed paths | Next task gate |
+| --- | --- | --- | --- | --- |
+| `D2-T1` | Page inventory Owner；coordinate/classification 是其受约束子 Owner | 给 `run-p0.py` 增加 seal 前的受控 input-artifact hook；current-four manifest bytes 进入 run input identity；补齐 span/line、routing、coordinate 与 staging privacy tests | `backend/app/pdf/**`; `backend/tests/unit/pdf/**`; `backend/tests/integration/test_pdf_inventory.py`; `backend/tests/contract/harness/test_contract_architecture.py`; `.agent/harness/scripts/{run-p0.py,generate-receipt.py,stage-current-four.py}`; status projection 与 generated mirror/bindings | focused PDF tests + live current-four registration + D2-T1 task receipt closure |
+| `D2-T2` | Provider-port Owner；concrete adapters 只能产生 Signal/Advisor 结果 | fixture envelope 增加 sanitized payload；D2-T2 fixture bytes 进入 receipt input identity；call record 只持久化脱敏 metadata/resource refs | `backend/app/providers/**`; `backend/tests/contract/{conftest.py,test_tencent_ocr_provider.py,test_qwen_vl_provider.py,test_provider_call_records.py}`; `.agent/harness/fixtures/providers/**`; `.agent/harness/schemas/provider-fixture.schema.json`; `.agent/harness/scripts/{generate-receipt.py,run-provider-contracts.py}`; Harness identity regression test；status projection 与 generated mirror/bindings | fixture schema/secret scan + provider-contract tests + zero-call D2-T2 task receipt closure |
+| `D2-T3` | Processing pipeline Owner；Capability Veto、Project state、Error repository 和 Job idempotency 保持各自 final boundary | `LogicalJob` 增加 successful `result_ref`；FileStorage 增加受控 resolve/read/delete/probe 接口；Alembic metadata/schema assertion 登记 D2 models/tables；补齐 task Harness closure | `backend/app/{capabilities,processing,errors}/**`; `backend/app/projects/state.py`; `backend/app/jobs/idempotency.py`; `backend/app/storage/local.py`; `backend/app/celery_app.py`; `backend/alembic/env.py`; `backend/alembic/versions/0002_processing.py`; D2-T3 focused tests及必要 D1 storage/schema regression；status projection 与 generated mirror/bindings | migration + active/failure path integration tests + D2-T3 task receipt closure |
+
+三个 task 都必须执行全局 `Per-task Harness closure`：focused tests → pre-run mirror/bindings/check → task run → 记录 literal run ID → 只依据该 sealed run 投影该 task 的 Markdown `current_status` → regenerate mirror/bindings/check → `generate-receipt.py --check-run <literal-run-id>`。D2-T1 首次 closure 的唯一 task phase 是 focused tests 后执行的 live current-four registration run；Day 2 最终 refresh 则必须通过 `--current-four-run <literal-registration-run-id>` 复用其中已 seal、schema-valid 的 manifest，不能使用无 current-four identity 的裸 runner。因为 executable identity 是全仓 allowlist，后续 task 会使先前 task receipt stale；D2-T3 最终代码稳定并完成 review 后，必须在同一最终 executable state 重新运行 D2-T1、D2-T2、D2-T3 task phases，并逐一用 literal run ID 校验，最终交付只报告这组三个 fresh/passed receipts。
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：
@@ -211,7 +234,7 @@ P0 Markdown Traceability Matrix
 | --- | --- |
 | `D1-T2` | `python .agent/harness/scripts/run-p0.py fixture --scope task --task D1-T2` |
 | `D1-T3` | `python .agent/harness/scripts/run-p0.py fixture --scope task --task D1-T3` |
-| `D2-T1` | `python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T1` |
+| `D2-T1` | `python .agent/harness/scripts/stage-current-four.py --mode live --source-root "$QI_CURRENT_FOUR_SOURCE_ROOT"` |
 | `D2-T2` | `python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T2` |
 | `D2-T3` | `python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T3` |
 | `D3-T1` | `python .agent/harness/scripts/run-p0.py fixture --scope task --task D3-T1` |
@@ -1202,18 +1225,24 @@ git commit -m "feat: add atomic storage and core persistence"
 
 **Files:**
 
+- Modify: `.agent/harness/scripts/run-p0.py`
+- Modify: `.agent/harness/scripts/generate-receipt.py`
 - Create: `.agent/harness/scripts/stage-current-four.py`
-- Create: `.agent/harness/scripts/verify-coordinates.py`
+- Create: `backend/app/pdf/__init__.py`
 - Create: `backend/app/pdf/schemas.py`
 - Create: `backend/app/pdf/coordinates.py`
 - Create: `backend/app/pdf/classification.py`
 - Create: `backend/app/pdf/inventory.py`
+- Modify after sealed run: `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md` (`D2-T1` status cells only)
+- Generate: `.agent/harness/contracts/p0-contracts.json`
+- Generate/check: `.agent/harness/contracts/global-contract-bindings.json`
+- Test: `backend/tests/contract/harness/test_contract_architecture.py`
 - Test: `backend/tests/unit/pdf/test_coordinates.py`
 - Test: `backend/tests/unit/pdf/test_classification.py`
 - Test: `backend/tests/unit/pdf/test_inventory.py`
 - Test: `backend/tests/integration/test_pdf_inventory.py`
 
-- [ ] **Step 1: Write failing coordinate and current-four classification tests**
+- [ ] **Step 1: Write failing coordinate, routing, inventory and Harness input-artifact tests**
 
 ```python
 # backend/tests/unit/pdf/test_coordinates.py
@@ -1248,7 +1277,7 @@ def test_vector_hybrid_and_scanned_routing() -> None:
 micromamba run -n qi-p0 pytest backend/tests/unit/pdf/test_coordinates.py backend/tests/unit/pdf/test_classification.py -q
 ```
 
-Expected: collection FAIL for missing `app.pdf.coordinates` and `app.pdf.classification`.
+Expand this red command to include `backend/tests/unit/pdf/test_inventory.py`, `backend/tests/integration/test_pdf_inventory.py` and the focused new Harness artifact/input-identity cases in `test_contract_architecture.py`. The tests must cover clipped CropBox coordinates、PDF/render round trip、`vector/hybrid/scanned/ambiguous` routing、scanned unsupported status、serializable evidence、span/line raw+normalized text、0-based page order、rotated direction and native/OCR non-overwrite. Expected: collection FAIL for missing `app.pdf.coordinates` / `classification` / `inventory`, while pre-existing Harness tests remain green.
 
 - [ ] **Step 3: Implement stable schemas, transforms, classification and native inventory**
 
@@ -1470,38 +1499,38 @@ def build_inventory(pdf_path: Path, render_scale: float = 2.0) -> tuple[PageInve
     return tuple(pages)
 ```
 
-- [ ] **Step 4: Add and run the private current-four staging command**
+The implementation must normalize non-zero CropBox offsets before clipping, preserve `bbox_normalized`, keep both line- and span-level native records, serialize direction vector plus angle, and keep `source_type=native` records immutable when later OCR observations are appended. `scanned` is represented as unsupported routing and `ambiguous` follows hybrid processing with `review_required`; neither may masquerade as a supported vector result.
+
+- [ ] **Step 4: Implement the private current-four staging command and pre-seal hook**
 
 `.agent/harness/scripts/stage-current-four.py` is a live-only identity registrar. It accepts four repeated `--source` arguments or one `--source-root`, resolves exactly the frozen basenames from the P0 traceability matrix, reads the sources in place, validates SHA-256/size/page metadata, and writes only basename、opaque `external-input://sha256/...` ref、identity、page facts and ordered first-checkpoint metadata to `artifacts/current-four-manifest.json` in a new run. It never records the host source path, copies PDF bytes into `.agent/harness/runs/`, writes a reusable manifest, or overwrites a mutable receipt pointer. Actual upload later passes the original bytes through application FileStorage outside the repository checkout.
 
-`.agent/harness/scripts/verify-coordinates.py` only selects the coordinate tests registered in `p0-contracts.json` and writes their results into the current run; coordinate math remains in backend tests/code.
+The actual D1 runner seals immediately, so this task adds one narrow `run_task(..., input_artifacts=...)` hook. The hook accepts only validated relative artifact names, writes the supplied bytes before selector execution, includes `artifacts/current-four-manifest.json` in `input_identity`, and seals it with the normal task run. The CLI adds only `--current-four-run <literal-registration-run-id>` for later D2-T1 refreshes: it rejects `latest` aliases, loads the schema-valid manifest from that sealed registration run, copies those bytes into the new run before selectors, and never reopens host PDF paths. `generate-receipt.py --check-run <literal-run-id>` must recompute that identity from the new run's sealed artifact. No generic artifact DAG, mutable pointer or alternate run layout is introduced. Do not execute registration until Step 5 focused tests and contract sync have passed.
 
-Run with the verified local sources:
-
-```bash
-micromamba run -n qi-p0 python .agent/harness/scripts/stage-current-four.py \
-  --mode live \
-  --source '/home/reggie/文档/xwechat_files/wxid_ut5o9e1igztd22_f3a1/msg/attach/93a055933fee8f63da748e2314c2e233/2026-07/Rec/17d107a16f0cf6e9/F/0/JS26032501-1-03-036#上下座B#A1.pdf' \
-  --source '/home/reggie/文档/xwechat_files/wxid_ut5o9e1igztd22_f3a1/msg/attach/93a055933fee8f63da748e2314c2e233/2026-07/Rec/17d107a16f0cf6e9/F/1/JS20102801-02-018#手指头#A1.pdf' \
-  --source '/home/reggie/文档/xwechat_files/wxid_ut5o9e1igztd22_f3a1/msg/attach/93a055933fee8f63da748e2314c2e233/2026-07/Rec/17d107a16f0cf6e9/F/2/JS20123103-10-033#手臂拖链支架上改#A2.pdf' \
-  --source '/home/reggie/文档/xwechat_files/wxid_ut5o9e1igztd22_f3a1/msg/attach/93a055933fee8f63da748e2314c2e233/2026-07/Rec/17d107a16f0cf6e9/F/3/JS24030402-30-013#上插臂#A0.pdf'
-```
-
-Expected: output reports `registered=4 pages=6 hashes=verified first_checkpoint=58b9cf08...` plus a non-empty schema-valid generated run ID, and creates an immutable run containing the manifest but no PDF bytes or host paths; Git has no source-PDF copy to stage.
-
-- [ ] **Step 5: Run all inventory tests and commit**
+- [ ] **Step 5: Run focused tests, close the task Harness, review and commit**
 
 ```bash
 micromamba run -n qi-p0 pytest backend/tests/unit/pdf backend/tests/integration/test_pdf_inventory.py -q
-python .agent/harness/scripts/check-contracts.py
-python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T1
+micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_contract_architecture.py -q
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-contract-mirror.py
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-global-bindings.py
+micromamba run -n qi-p0 python .agent/harness/scripts/check-contracts.py
+micromamba run -n qi-p0 python .agent/harness/scripts/stage-current-four.py --mode live --source-root "$QI_CURRENT_FOUR_SOURCE_ROOT"
 git status --short .agent/harness/runs
 ```
 
-Expected: focused tests and task receipt PASS; Git shows no run artifact other than the tracked `.gitkeep` convention.
+`QI_CURRENT_FOUR_SOURCE_ROOT` is injected only into the execution shell from the already verified external source location. Its value is not written to the repository, selector log, run metadata, manifest or receipt.
+
+Expected: focused tests pass first; registration then reports `registered=4 pages=6 hashes=verified first_checkpoint=58b9cf08...` plus one non-empty generated run ID and a passed D2-T1 live task receipt. The immutable run contains the manifest but no PDF bytes or host paths, and no second initial D2-T1 task phase is created. Copy this exact registration/task run ID. Change only the nine `D2-T1` `current_status` cells from `not_run` to the sealed results, regenerate mirror/bindings, rerun `check-contracts.py`, then run:
 
 ```bash
-git add .agent/harness/scripts/stage-current-four.py .agent/harness/scripts/verify-coordinates.py backend/app/pdf/schemas.py backend/app/pdf/coordinates.py backend/app/pdf/classification.py backend/app/pdf/inventory.py backend/tests/unit/pdf backend/tests/integration/test_pdf_inventory.py
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-receipt.py --check-run <literal-registration-run-id>
+```
+
+Expected: `receipt_valid=1 scope=task overall_verdict=passed`; Git shows no run artifact other than the tracked `.gitkeep` convention. Complete focused read-only review before staging; any executable/test fix invalidates the run and requires repeating this closure.
+
+```bash
+git add .agent/harness/scripts/run-p0.py .agent/harness/scripts/generate-receipt.py .agent/harness/scripts/stage-current-four.py .agent/harness/contracts/p0-contracts.json .agent/harness/contracts/global-contract-bindings.json docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md backend/app/pdf backend/tests/contract/harness/test_contract_architecture.py backend/tests/unit/pdf backend/tests/integration/test_pdf_inventory.py
 git commit -m "feat: add coordinate-safe PDF inventory"
 ```
 
@@ -1514,9 +1543,15 @@ git commit -m "feat: add coordinate-safe PDF inventory"
 - Create: `backend/app/providers/qwen_vl.py`
 - Create: `backend/app/providers/call_records.py`
 - Create: `backend/app/providers/candidate_review.schema.json`
+- Modify: `.agent/harness/schemas/provider-fixture.schema.json`
+- Modify: `.agent/harness/scripts/generate-receipt.py`
 - Create: `.agent/harness/fixtures/providers/tencent-ocr/general-accurate-v1.json`
 - Create: `.agent/harness/fixtures/providers/qwen-vl/candidate-review-v1.json`
 - Create: `.agent/harness/scripts/run-provider-contracts.py`
+- Modify after sealed run: `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md` (`D2-T2` status cells only)
+- Generate: `.agent/harness/contracts/p0-contracts.json`
+- Generate/check: `.agent/harness/contracts/global-contract-bindings.json`
+- Test: `backend/tests/contract/harness/test_contract_architecture.py`
 - Create: `backend/tests/contract/conftest.py`
 - Test: `backend/tests/contract/test_tencent_ocr_provider.py`
 - Test: `backend/tests/contract/test_qwen_vl_provider.py`
@@ -1555,7 +1590,7 @@ def test_rejects_json_that_does_not_match_frozen_schema() -> None:
 micromamba run -n qi-p0 pytest backend/tests/contract/test_tencent_ocr_provider.py backend/tests/contract/test_qwen_vl_provider.py -q
 ```
 
-Expected: collection FAIL for missing provider modules.
+Include `backend/tests/contract/test_provider_call_records.py` in the red run. Add a valid Qwen schema case、exact Tencent/Qwen request-shape assertions、a fixture-mode network tripwire and a redacted FileStorage round trip. Expected: collection FAIL for missing provider modules/call-record implementation; no test may attempt network access.
 
 - [ ] **Step 3: Define provider ports and implement official request shapes**
 
@@ -1636,21 +1671,32 @@ completion = client.chat.completions.create(
 
 `ProviderCallRecord` must persist only `provider/request_id/model/prompt_version/schema_version/duration_ms/retry_count/input_image_count/estimated_cost/logical_task_reused/request_ref/response_ref`; its serializer must reject keys matching `authorization|api[_-]?key|secret|base64` case-insensitively. `logical_task_reused` only records idempotent reuse of the same job key; it does not create a cross-run Provider cache.
 
+The D1 `provider-fixture.schema.json` is metadata-only. Extend that single schema with one required sanitized `payload` object while preserving `additionalProperties=false`; `run-provider-contracts.py` must recursively reject secret-bearing keys and full base64-like payloads before tests consume `fixture["payload"]`. It owns only fixture schema/network-call gating and must not create a second receipt or selector runner. Add the two Provider fixture files to D2-T2 fixture-mode `input_identity`, so changing their bytes makes an old D2-T2 receipt stale. The call-record persistence helper writes only the redacted JSON record through `LocalFileStorage`; raw SDK bodies remain fixture/diagnostic input and are not copied into the record.
+
 Run:
 
 ```bash
 micromamba run -n qi-p0 pytest backend/tests/contract/test_tencent_ocr_provider.py backend/tests/contract/test_qwen_vl_provider.py backend/tests/contract/test_provider_call_records.py -q
-python .agent/harness/scripts/check-contracts.py
-python .agent/harness/scripts/run-provider-contracts.py fixture --task D2-T2
-python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T2
+micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_contract_architecture.py -q
+micromamba run -n qi-p0 python .agent/harness/scripts/run-provider-contracts.py fixture --task D2-T2
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-contract-mirror.py
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-global-bindings.py
+micromamba run -n qi-p0 python .agent/harness/scripts/check-contracts.py
+micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T2
 ```
 
-Expected: all fixture tests and the D2-T2 receipt PASS; Provider call count is zero; fixture JSON passes `provider-fixture.schema.json` and contains no secret-bearing keys.
+Expected: all fixture tests and the D2-T2 receipt PASS; Provider call count is zero; fixture JSON passes `provider-fixture.schema.json` and contains no secret-bearing keys. Copy the exact printed run ID, change only the four `D2-T2` `current_status` cells from `not_run` to the sealed results, regenerate mirror/bindings, rerun `check-contracts.py`, and validate:
+
+```bash
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-receipt.py --check-run <literal-D2-T2-run-id>
+```
+
+Expected: `receipt_valid=1 scope=task overall_verdict=passed`. Complete focused read-only review; repeat the closure after any executable/test/fixture/schema fix.
 
 - [ ] **Step 5: Commit Provider boundaries and fixtures**
 
 ```bash
-git add backend/app/providers .agent/harness/fixtures/providers .agent/harness/scripts/run-provider-contracts.py backend/tests/contract/conftest.py backend/tests/contract/test_tencent_ocr_provider.py backend/tests/contract/test_qwen_vl_provider.py backend/tests/contract/test_provider_call_records.py
+git add backend/app/providers .agent/harness/schemas/provider-fixture.schema.json .agent/harness/fixtures/providers .agent/harness/scripts/generate-receipt.py .agent/harness/scripts/run-provider-contracts.py .agent/harness/contracts/p0-contracts.json .agent/harness/contracts/global-contract-bindings.json docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md backend/tests/contract/harness/test_contract_architecture.py backend/tests/contract/conftest.py backend/tests/contract/test_tencent_ocr_provider.py backend/tests/contract/test_qwen_vl_provider.py backend/tests/contract/test_provider_call_records.py
 git commit -m "feat: add OCR and vision provider contracts"
 ```
 
@@ -1663,12 +1709,20 @@ git commit -m "feat: add OCR and vision provider contracts"
 - Create: `backend/app/processing/tasks.py`
 - Create: `backend/app/errors/models.py`
 - Modify: `backend/app/projects/state.py`
+- Modify: `backend/app/jobs/idempotency.py`
+- Modify: `backend/app/storage/local.py`
 - Modify: `backend/app/celery_app.py`
+- Modify: `backend/alembic/env.py`
 - Generate: `backend/alembic/versions/0002_processing.py`
+- Modify after sealed run: `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md` (`D2-T3` status cells only)
+- Generate: `.agent/harness/contracts/p0-contracts.json`
+- Generate/check: `.agent/harness/contracts/global-contract-bindings.json`
 - Test: `backend/tests/integration/test_processing_preflight.py`
 - Test: `backend/tests/integration/test_processing_state.py`
 - Test: `backend/tests/integration/test_task_idempotency.py`
 - Test: `backend/tests/integration/test_error_records.py`
+- Test: `backend/tests/integration/test_schema.py`
+- Test: `backend/tests/unit/storage/test_local.py`
 
 - [ ] **Step 1: Write failing preflight and state-transition tests**
 
@@ -1704,7 +1758,7 @@ def test_blocking_error_cannot_transition_to_ready_or_success() -> None:
 micromamba run -n qi-p0 pytest backend/tests/integration/test_processing_preflight.py backend/tests/integration/test_processing_state.py -q
 ```
 
-Expected: collection FAIL for missing `app.capabilities.service`.
+Include `test_task_idempotency.py`, `test_error_records.py`, the new D2 schema assertion and focused `LocalFileStorage` read/delete/probe tests in the red run. Expected: collection FAIL for missing `app.capabilities.service` / processing/error models and failing assertions for the absent successful result ref / D2 schema.
 
 - [ ] **Step 3: Implement fail-closed preflight and explicit state graph**
 
@@ -1758,6 +1812,8 @@ def transition(current: ProjectState, target: ProjectState) -> ProjectState:
 5. keep project state `processing` until Day 3 candidate/coverage closes the automatic result;
 6. mark unsupported scanned input as `unsupported_input`, not `processing_failed`.
 
+The actual D1 `LogicalJob` has only `id/project_id/logical_task_key/status`; add a nullable `result_ref` and a compare-safe success update so duplicate completed delivery returns that exact ref without rebuilding inventory. The actual D1 `LocalFileStorage` only writes; add minimal root-confined `resolve_resource_ref`、`read_bytes`、`delete` and non-persistent `probe` methods, and use those methods rather than rebuilding storage path rules in processing. `ErrorRecord` stores the stable `project_id/code/message/severity/stage/location_ref/cause_category` envelope. `0002_processing.py` adds structured error persistence plus `logical_jobs.result_ref`; `backend/alembic/env.py` must register the D2 model and `test_schema.py` must assert the exact post-0002 table/column set. `celery_app` must explicitly include `app.processing.tasks`; merely creating the module is insufficient. No general artifact lifecycle or retry-attempt model is added.
+
 Run:
 
 ```bash
@@ -1765,12 +1821,34 @@ micromamba run -n qi-p0 alembic -c backend/alembic.ini upgrade head
 micromamba run -n qi-p0 pytest backend/tests/integration/test_processing_preflight.py backend/tests/integration/test_processing_state.py backend/tests/integration/test_task_idempotency.py backend/tests/integration/test_error_records.py -q
 ```
 
-Expected: all tests PASS; duplicate delivery count remains one; no live Provider calls occur.
+Expected: all tests PASS; duplicate delivery count remains one and returns the same successful inventory ref; preflight probe leaves no file; unsupported and failure states remain distinct; no live Provider calls occur.
 
-- [ ] **Step 5: Commit processing foundation**
+- [ ] **Step 5: Close D2-T3 Harness, refresh final Day 2 receipts, review and commit**
 
 ```bash
-git add backend/app/capabilities/service.py backend/app/processing/pipeline.py backend/app/processing/tasks.py backend/app/errors/models.py backend/app/projects/state.py backend/app/celery_app.py backend/alembic/versions/0002_processing.py backend/tests/integration/test_processing_preflight.py backend/tests/integration/test_processing_state.py backend/tests/integration/test_task_idempotency.py backend/tests/integration/test_error_records.py
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-contract-mirror.py
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-global-bindings.py
+micromamba run -n qi-p0 python .agent/harness/scripts/check-contracts.py
+micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T3
+```
+
+Expected: D2-T3 task receipt PASS. Copy the exact printed run ID, change only the four `D2-T3` `current_status` cells from `not_run` to the sealed results, regenerate mirror/bindings, rerun `check-contracts.py`, then validate `generate-receipt.py --check-run <literal-D2-T3-run-id>`. Complete independent focused review; any fix requires rerunning the affected tests and D2-T3 closure.
+
+When executable/test content is stable after review, refresh all three task receipts on the same final content identity:
+
+```bash
+micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T1 --current-four-run <literal-registration-run-id>
+micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T2
+micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py fixture --scope task --task D2-T3
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-receipt.py --check-run <literal-final-D2-T1-run-id>
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-receipt.py --check-run <literal-final-D2-T2-run-id>
+micromamba run -n qi-p0 python .agent/harness/scripts/generate-receipt.py --check-run <literal-final-D2-T3-run-id>
+```
+
+Expected: all three final receipts are `fresh`, `receipt_valid=1`, task-scoped and `overall_verdict=passed`; final D2-T1 input identity includes the copied current-four manifest; Provider fixture mode reports no external calls. These literal IDs, not earlier stale closure runs or a mutable pointer, are the three Day 2 IDs reported at handoff.
+
+```bash
+git add backend/app/capabilities backend/app/processing backend/app/errors backend/app/projects/state.py backend/app/jobs/idempotency.py backend/app/storage/local.py backend/app/celery_app.py backend/alembic/env.py backend/alembic/versions/0002_processing.py backend/tests/integration/test_processing_preflight.py backend/tests/integration/test_processing_state.py backend/tests/integration/test_task_idempotency.py backend/tests/integration/test_error_records.py backend/tests/integration/test_schema.py backend/tests/unit/storage/test_local.py .agent/harness/contracts/p0-contracts.json .agent/harness/contracts/global-contract-bindings.json docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md
 git commit -m "feat: add idempotent processing preflight"
 ```
 
@@ -3829,7 +3907,7 @@ Do not declare P0 complete when the reviewer rejects, an external gate is unreso
 - 新增 69 条长期 global contracts，并将 111 条 Section 10.1 P0 atoms 重构为独立 traceability matrix；二者不再混写。
 - Day 1 提前建立最小 `.agent/harness/` 骨架：policy、schema、单向生成的 mirror/bindings、contract checker、run/receipt 约定和 ignored immutable runs。
 - Bindings 明确拆成 primary、related-business、related-implementation；receipt 绑定排除 `current_status` 的 definition hash，避免 status projection 更新让当前 run 自失效。
-- current-four staging/coordinate verification 在 `D2-T1`，Provider contract fixtures 在 `D2-T2`，export consistency 在 `D6-T3`；业务 pytest/frontend tests 始终留在原测试目录。
+- current-four staging 与 coordinate tests 在 `D2-T1`，Provider contract fixtures 在 `D2-T2`，export consistency 在 `D6-T3`；业务 pytest/frontend tests 始终留在原测试目录。
 - `D1-T2` 至 `D6-T3` 的每个业务任务都在本任务结束时完成 contract 引用、测试 selector、mirror regeneration、`check-contracts.py` 和 focused Harness phase，不把接线集中拖到 Day 7。
 - Day 7 只通过显式 live/full-p0 mode 创建独立 run ID；同一 runner 执行全部普通 selectors、内部 dispatch Harness phases、先闭合 first PDF，再聚合 111 条 result 并按 policy 生成 receipt。可变 latest pointer、nested run 和旧 receipt 都不能充当本次证据。
 - 仍是 20 个 implementation tasks，保留第一份 PDF 的纵向链路和 Day 1～Day 7 依赖；没有把任何 P1/P2 contract 加入七天 P0。
