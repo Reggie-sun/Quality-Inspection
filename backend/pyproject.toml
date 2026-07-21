@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quality-inspection"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "alembic>=1.14,<2",
+  "celery[redis]>=5.4,<6",
+  "fastapi>=0.115,<1",
+  "httpx>=0.28,<1",
+  "jsonschema>=4.23,<5",
+  "openai>=1.60,<3",
+  "openpyxl>=3.1,<4",
+  "pillow>=11,<13",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic-settings>=2.7,<3",
+  "pymupdf>=1.25,<2",
+  "python-multipart>=0.0.20,<1",
+  "redis>=5,<7",
+  "sqlalchemy>=2.0,<3",
+  "tencentcloud-sdk-python>=3,<4",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "pytest-asyncio>=0.25,<1",
+  "pytest-cov>=6,<8",
+  "respx>=0.22,<1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
