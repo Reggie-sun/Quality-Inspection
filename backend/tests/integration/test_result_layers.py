@@ -16,6 +16,7 @@ from app.processing.automatic_result import build_automatic_result
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.review.service import ReviewService
+from app.review.locks import acquire_lock
 from app.storage.models import StoredFile
 
 
@@ -113,6 +114,7 @@ def test_working_copy_is_versioned(
     """P0-RES-002: review is a separate, saveable, versioned result layer."""
     service = ReviewService(db_session)
     working = service.create_from_raw(raw_result.id)
+    acquire_lock(db_session, working.project_id, "quality-1")
     before_version = working.version
     saved = service.apply(
         working.id,
@@ -124,3 +126,31 @@ def test_working_copy_is_versioned(
     assert saved.id == working.id
     assert saved.raw_result_id == raw_result.id
     assert saved.version == before_version + 1
+
+
+def test_item_set_freeze_does_not_create_reviewed_result(
+    raw_result: AutomaticResult,
+    db_session: Session,
+) -> None:
+    service = ReviewService(db_session)
+    working = service.create_from_raw(raw_result.id)
+    acquire_lock(db_session, working.project_id, "quality-1")
+    working = service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_balloon_required",
+            "item_id": working.items[0]["item_id"],
+            "balloon_required": True,
+        },
+    )
+
+    service.freeze_items(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+    )
+
+    assert service.reviewed_result_for(working.project_id) is None
+    assert service.get_working_copy(working.id).items_frozen_at is not None

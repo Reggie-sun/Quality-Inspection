@@ -15,6 +15,7 @@ from app.db import engine
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
 from app.projects.state import ProjectState
+from app.review.locks import acquire_lock
 from app.review.models import ReviewWorkingCopy
 from app.review.service import ReviewService
 from app.storage.models import StoredFile
@@ -177,7 +178,9 @@ def working_copy(
     review_service: ReviewService,
     raw_result: AutomaticResult,
 ) -> ReviewWorkingCopy:
-    return review_service.create_from_raw(raw_result.id)
+    working = review_service.create_from_raw(raw_result.id)
+    acquire_lock(review_service.session, working.project_id, "quality-1")
+    return working
 
 
 def _item(working: ReviewWorkingCopy, item_id: str) -> dict[str, object]:

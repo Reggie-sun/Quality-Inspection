@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 from pydantic import TypeAdapter
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.audit.operations import OperationRecord
@@ -14,6 +14,7 @@ from app.candidates.models import AutomaticResult
 from app.candidates.schemas import Candidate
 from app.projects.models import Project
 from app.projects.state import ProjectState, transition
+from app.review.locks import require_active_lock
 from app.review.models import ReviewWorkingCopy
 from app.review.schemas import (
     Add,
@@ -35,6 +36,17 @@ class ReviewNotFound(LookupError):
 
 
 class ReviewVersionConflict(RuntimeError):
+    pass
+
+
+class FreezeBlocked(RuntimeError):
+    def __init__(self, blockers: list[str]) -> None:
+        self.blockers = tuple(blockers)
+        self.code = blockers[0]
+        super().__init__(f"review item set cannot be frozen: {', '.join(blockers)}")
+
+
+class ItemsFrozen(RuntimeError):
     pass
 
 
@@ -95,17 +107,18 @@ class ReviewService:
     ) -> ReviewWorkingCopy:
         operator_id = self._operator_id(operator_id)
         parsed = parse_review_command(command)
-        working = self.session.scalar(
-            select(ReviewWorkingCopy)
-            .where(ReviewWorkingCopy.id == working_copy_id)
-            .with_for_update()
-        )
+        working = self.session.get(ReviewWorkingCopy, working_copy_id)
         if working is None:
             raise ReviewNotFound(f"working copy {working_copy_id} was not found")
+        require_active_lock(self.session, working.project_id, operator_id)
         if working.version != expected_version:
+            self.session.rollback()
             raise ReviewVersionConflict(
                 f"expected review version {expected_version}, found {working.version}"
             )
+        if working.items_frozen_at is not None:
+            self.session.rollback()
+            raise ItemsFrozen("review item set is frozen")
 
         items = copy.deepcopy(working.items)
         coverage = copy.deepcopy(working.coverage)
@@ -116,10 +129,26 @@ class ReviewService:
             numbering_stale=working.numbering_stale,
         )
         before_version = working.version
-        working.items = items
-        working.coverage = coverage
-        working.numbering_stale = numbering_stale
-        working.version = before_version + 1
+        after_version = before_version + 1
+        updated_id = self.session.execute(
+            update(ReviewWorkingCopy)
+            .where(
+                ReviewWorkingCopy.id == working_copy_id,
+                ReviewWorkingCopy.version == expected_version,
+                ReviewWorkingCopy.items_frozen_at.is_(None),
+            )
+            .values(
+                items=items,
+                coverage=coverage,
+                numbering_stale=numbering_stale,
+                version=after_version,
+            )
+            .returning(ReviewWorkingCopy.id)
+            .execution_options(synchronize_session=False)
+        ).scalar_one_or_none()
+        if updated_id is None:
+            self.session.rollback()
+            raise ReviewVersionConflict("review working copy changed concurrently")
         self.session.add(
             OperationRecord(
                 project_id=working.project_id,
@@ -127,12 +156,114 @@ class ReviewService:
                 command=parsed.type,
                 target_ids=target_ids,
                 before_version=before_version,
-                after_version=working.version,
+                after_version=after_version,
             )
         )
         self.session.commit()
-        self.session.refresh(working)
+        self.session.expire_all()
+        saved = self.session.get(ReviewWorkingCopy, updated_id)
+        if saved is None:
+            raise ReviewNotFound(f"working copy {updated_id} was not found after save")
+        return saved
+
+    def get_working_copy(self, working_copy_id: uuid.UUID) -> ReviewWorkingCopy:
+        working = self.session.get(ReviewWorkingCopy, working_copy_id)
+        if working is None:
+            raise ReviewNotFound(f"working copy {working_copy_id} was not found")
         return working
+
+    def get_for_project(self, project_id: uuid.UUID) -> ReviewWorkingCopy:
+        working = self.session.scalar(
+            select(ReviewWorkingCopy).where(
+                ReviewWorkingCopy.project_id == project_id
+            )
+        )
+        if working is None:
+            raise ReviewNotFound(f"working copy for project {project_id} was not found")
+        return working
+
+    def freeze_items(
+        self,
+        working_copy_id: uuid.UUID,
+        *,
+        expected_version: int,
+        operator_id: str,
+    ) -> ReviewWorkingCopy:
+        operator_id = self._operator_id(operator_id)
+        working = self.session.get(ReviewWorkingCopy, working_copy_id)
+        if working is None:
+            raise ReviewNotFound(f"working copy {working_copy_id} was not found")
+        require_active_lock(self.session, working.project_id, operator_id)
+        if working.version != expected_version:
+            self.session.rollback()
+            raise ReviewVersionConflict(
+                f"expected review version {expected_version}, found {working.version}"
+            )
+        if working.items_frozen_at is not None:
+            self.session.rollback()
+            raise ItemsFrozen("review item set is already frozen")
+
+        blockers = self.freeze_blockers(working.items, working.coverage)
+        if blockers:
+            self.session.rollback()
+            raise FreezeBlocked(blockers)
+        frozen_at = self.session.scalar(select(func.now()))
+        if frozen_at is None:
+            self.session.rollback()
+            raise RuntimeError("PostgreSQL database clock was unavailable")
+        updated_id = self.session.execute(
+            update(ReviewWorkingCopy)
+            .where(
+                ReviewWorkingCopy.id == working_copy_id,
+                ReviewWorkingCopy.version == expected_version,
+                ReviewWorkingCopy.items_frozen_at.is_(None),
+            )
+            .values(
+                items_frozen_at=frozen_at,
+                items_frozen_by=operator_id,
+                items_frozen_version=expected_version,
+            )
+            .returning(ReviewWorkingCopy.id)
+            .execution_options(synchronize_session=False)
+        ).scalar_one_or_none()
+        if updated_id is None:
+            self.session.rollback()
+            raise ReviewVersionConflict("review working copy changed concurrently")
+        self.session.commit()
+        self.session.expire_all()
+        frozen = self.session.get(ReviewWorkingCopy, updated_id)
+        if frozen is None:
+            raise ReviewNotFound(f"working copy {updated_id} was not found after freeze")
+        return frozen
+
+    @staticmethod
+    def freeze_blockers(
+        items: list[dict[str, Any]],
+        coverage: dict[str, Any],
+    ) -> list[str]:
+        blockers: list[str] = []
+        if coverage.get("blocking_count", 0):
+            blockers.append("coverage_blocking")
+        unresolved_item = any(
+            item.get("active", True) and item.get("requires_confirmation")
+            for item in items
+        )
+        unresolved_coverage = any(
+            entry.get("requires_confirmation")
+            for entry in coverage.get("entries", [])
+        )
+        if unresolved_item or unresolved_coverage:
+            blockers.append("unresolved_confirmation")
+        if any(
+            item.get("active", True) and item.get("balloon_required") is None
+            for item in items
+        ):
+            blockers.append("balloon_required_unconfirmed")
+        return blockers
+
+    @staticmethod
+    def reviewed_result_for(_: uuid.UUID) -> None:
+        return None
 
     @staticmethod
     def _current_item(candidate: dict[str, Any]) -> dict[str, Any]:

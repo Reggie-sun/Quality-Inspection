@@ -80,6 +80,19 @@ ReviewCommand = Annotated[
     Field(discriminator="type"),
 ]
 
+
+class LockRequest(CommandBase):
+    ttl_seconds: int = Field(default=300, ge=1, le=3600)
+
+
+class ReviewCommandRequest(CommandBase):
+    expected_version: int = Field(ge=1)
+    command: ReviewCommand
+
+
+class FreezeItemsRequest(CommandBase):
+    expected_version: int = Field(ge=1)
+
 _REVIEW_COMMAND_ADAPTER = TypeAdapter(ReviewCommand)
 COMPLEX_EDITABLE_FIELDS = {
     "raw_text",

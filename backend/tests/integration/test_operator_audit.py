@@ -12,6 +12,7 @@ from app.db import engine
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
 from app.projects.state import ProjectState
+from app.review.locks import acquire_lock
 from app.review.service import ReviewService
 from app.storage.models import StoredFile
 
@@ -158,6 +159,7 @@ def test_review_operation_summary(db_session: Session) -> None:
 
     service = ReviewService(db_session)
     working = service.create_from_raw(result_id)
+    acquire_lock(db_session, working.project_id, "quality-1")
     before_version = working.version
     service.apply(
         working.id,

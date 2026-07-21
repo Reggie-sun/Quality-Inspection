@@ -12,6 +12,7 @@ from app.db import engine
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
 from app.projects.state import ProjectState
+from app.review.locks import acquire_lock
 from app.review.service import ReviewService
 from app.storage.models import StoredFile
 
@@ -105,6 +106,7 @@ def test_original_is_immutable_and_current_is_separate(
     original = copy.deepcopy(raw_result.candidates)
     service = ReviewService(db_session)
     working = service.create_from_raw(raw_result.id)
+    acquire_lock(db_session, working.project_id, "quality-1")
     service.apply(
         working.id,
         expected_version=working.version,
