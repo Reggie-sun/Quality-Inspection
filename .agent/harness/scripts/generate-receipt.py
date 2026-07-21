@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -46,6 +48,22 @@ EXCLUDED_PARTS = {
     "dist",
     "node_modules",
 }
+PROVIDER_NETWORK_ENABLED_KEYS = (
+    "QI_PROVIDER_NETWORK_ENABLED",
+    "PROVIDER_NETWORK_ENABLED",
+    "OCR_PROVIDER_NETWORK_ENABLED",
+    "VISION_PROVIDER_NETWORK_ENABLED",
+)
+PROVIDER_MODE_KEYS = (
+    "QI_PROVIDER_MODE",
+    "PROVIDER_MODE",
+    "OCR_PROVIDER_MODE",
+    "VISION_PROVIDER_MODE",
+    "VISION_LLM_PROVIDER_MODE",
+)
+PROVIDER_CONTROL_ENV_KEYS = PROVIDER_NETWORK_ENABLED_KEYS + PROVIDER_MODE_KEYS
+TRUTHY_PROVIDER_CONTROLS = {"1", "true", "yes", "on", "enabled", "live"}
+OFFLINE_PROVIDER_MODES = {"", "disabled", "fixture", "mock", "none", "offline"}
 
 
 def _iso(value: datetime) -> str:
@@ -138,6 +156,34 @@ def policy_versions(policies: dict[str, dict[str, Any]]) -> dict[str, str]:
     return {key: policies[key]["schema_version"] for key in POLICY_FILES}
 
 
+def _provider_control_values(
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    source = os.environ if environment is None else environment
+    values = {
+        key: (
+            "enabled"
+            if source.get(key, "").strip().lower() in TRUTHY_PROVIDER_CONTROLS
+            else "disabled"
+        )
+        for key in PROVIDER_NETWORK_ENABLED_KEYS
+    }
+    values.update(
+        {
+            key: source.get(key, "").strip().lower()
+            for key in PROVIDER_MODE_KEYS
+        }
+    )
+    return values
+
+
+def provider_network_enabled(environment: Mapping[str, str] | None = None) -> bool:
+    values = _provider_control_values(environment)
+    return any(
+        values[key] == "enabled" for key in PROVIDER_NETWORK_ENABLED_KEYS
+    ) or any(values[key] not in OFFLINE_PROVIDER_MODES for key in PROVIDER_MODE_KEYS)
+
+
 def config_identity(
     mode: str,
     scope: str,
@@ -153,6 +199,10 @@ def config_identity(
             "run-config",
             _canonical_bytes({"mode": mode, "scope": scope, "task_id": task_id}),
         )
+    )
+    pairs.extend(
+        (f"provider-control:{key}", value.encode("utf-8"))
+        for key, value in _provider_control_values().items()
     )
     return _identity_from_pairs(pairs)
 
@@ -271,8 +321,42 @@ def build_receipt(
     selected_ids = list(run["selected_contract_ids"])
     if selected_ids != sorted(set(selected_ids)):
         raise ValueError("selected_contract_ids must be sorted and unique")
+
+    contracts_by_id = {
+        row["p0_contract_id"]: row for row in mirror["contracts"]
+    }
+    if run["scope"] == "task":
+        expected_ids = sorted(
+            row["p0_contract_id"]
+            for row in mirror["contracts"]
+            if row["task_id"] == run["task_id"]
+        )
+        if not expected_ids or selected_ids != expected_ids:
+            raise ValueError(
+                "task scope selected_contract_ids must exactly match mirror contracts "
+                "for run.task_id"
+            )
+    elif run["scope"] == "full-p0":
+        expected_ids = sorted(contracts_by_id)
+        required_count = int(
+            policies["p0_acceptance_policy"]["required_contract_count"]
+        )
+        if len(expected_ids) != required_count:
+            raise ValueError(
+                "full-p0 mirror contract count must equal "
+                "p0_acceptance_policy.required_contract_count"
+            )
+        if selected_ids != expected_ids:
+            raise ValueError(
+                "full-p0 selected_contract_ids must exactly match all mirror contracts"
+            )
+    else:
+        raise ValueError(f"unsupported receipt scope: {run['scope']}")
+
     result_by_id: dict[str, dict[str, Any]] = {}
     for result in results:
+        if result.get("run_id") != run["run_id"]:
+            raise ValueError("contract result run_id must equal run.run_id")
         p0_id = result["p0_contract_id"]
         if p0_id in result_by_id:
             raise ValueError(f"duplicate contract result: {p0_id}")
@@ -280,9 +364,6 @@ def build_receipt(
     if set(result_by_id) != set(selected_ids):
         raise ValueError("contract results do not exactly cover selected_contract_ids")
 
-    contracts_by_id = {
-        row["p0_contract_id"]: row for row in mirror["contracts"]
-    }
     if not set(selected_ids) <= set(contracts_by_id):
         raise ValueError("run selects an unknown P0 contract ID")
 

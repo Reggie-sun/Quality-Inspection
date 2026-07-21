@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
-import os
 import re
 import secrets
 import shlex
@@ -26,21 +25,6 @@ RUNS = HARNESS / "runs"
 MIRROR_PATH = HARNESS / "contracts/p0-contracts.json"
 BINDINGS_PATH = HARNESS / "contracts/global-contract-bindings.json"
 TASK_RE = re.compile(r"^D[0-9]+-T[0-9]+$")
-NETWORK_ENABLED_KEYS = (
-    "QI_PROVIDER_NETWORK_ENABLED",
-    "PROVIDER_NETWORK_ENABLED",
-    "OCR_PROVIDER_NETWORK_ENABLED",
-    "VISION_PROVIDER_NETWORK_ENABLED",
-)
-NETWORK_MODE_KEYS = (
-    "QI_PROVIDER_MODE",
-    "PROVIDER_MODE",
-    "OCR_PROVIDER_MODE",
-    "VISION_PROVIDER_MODE",
-    "VISION_LLM_PROVIDER_MODE",
-)
-TRUTHY = {"1", "true", "yes", "on", "enabled", "live"}
-OFFLINE_PROVIDER_MODES = {"", "disabled", "fixture", "mock", "none", "offline"}
 SHELL_OPERATORS = {"&&", "||", ";", "|", ">", ">>", "<"}
 
 
@@ -84,18 +68,6 @@ def _git_revision() -> str:
     )
     revision = result.stdout.strip()
     return revision if result.returncode == 0 and revision else "unavailable"
-
-
-def _fixture_network_enabled() -> bool:
-    explicit_switch = any(
-        os.environ.get(key, "").strip().lower() in TRUTHY
-        for key in NETWORK_ENABLED_KEYS
-    )
-    configured_network_mode = any(
-        os.environ.get(key, "").strip().lower() not in OFFLINE_PROVIDER_MODES
-        for key in NETWORK_MODE_KEYS
-    )
-    return explicit_switch or configured_network_mode
 
 
 def _phase_outcome(selector: str, mode: str) -> tuple[int | None, str, str]:
@@ -189,10 +161,11 @@ def run_task(mode: str, scope: str, task_id: str) -> tuple[str, str]:
         raise ValueError("D1-T1 implements task scope only; full-p0 orchestration is not available")
     if not TASK_RE.fullmatch(task_id):
         raise ValueError("--task must be a literal Dn-Tn identifier")
-    if mode == "fixture" and _fixture_network_enabled():
-        raise ValueError("fixture mode rejects network-enabled Provider configuration")
 
     receipt_module = _receipt_module()
+    if mode == "fixture" and receipt_module.provider_network_enabled():
+        raise ValueError("fixture mode rejects network-enabled Provider configuration")
+
     mirror = _load_json(MIRROR_PATH)
     bindings = _load_json(BINDINGS_PATH)
     policies = receipt_module.load_policies(ROOT)
