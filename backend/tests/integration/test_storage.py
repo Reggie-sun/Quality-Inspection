@@ -2,6 +2,9 @@ import json
 import subprocess
 from pathlib import Path
 
+from sqlalchemy import inspect
+
+from app.db import engine
 from app.storage.models import StoredFile
 
 
@@ -43,7 +46,10 @@ def test_api_and_worker_share_storage_root() -> None:
 
 def test_database_persists_only_file_metadata() -> None:
     """P0-RUN-002E keeps file bytes out of PostgreSQL metadata rows."""
-    columns = {column.name for column in StoredFile.__table__.columns}
+    columns = {
+        column["name"]
+        for column in inspect(engine).get_columns(StoredFile.__tablename__)
+    }
 
     assert columns == {
         "id",

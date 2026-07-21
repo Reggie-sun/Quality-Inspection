@@ -12,7 +12,7 @@ class OperationRecord(Base):
     __tablename__ = "operation_records"
     __table_args__ = (
         CheckConstraint(
-            "length(btrim(operator_id)) > 0",
+            "operator_id ~ '[^[:space:]]'",
             name="ck_operation_records_operator_id_nonblank",
         ),
     )

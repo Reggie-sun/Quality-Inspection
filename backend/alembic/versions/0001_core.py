@@ -43,7 +43,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "length(btrim(operator_id)) > 0",
+            "operator_id ~ '[^[:space:]]'",
             name="ck_operation_records_operator_id_nonblank",
         ),
         sa.PrimaryKeyConstraint("id"),

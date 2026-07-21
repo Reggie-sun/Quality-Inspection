@@ -48,7 +48,7 @@ def test_operation_record_persists_nonempty_operator_id(db_session: Session) -> 
         db_session.commit()
 
 
-@pytest.mark.parametrize("operator_id", ["", "   "])
+@pytest.mark.parametrize("operator_id", ["", "   ", "\t", "\n"])
 def test_operation_record_rejects_blank_operator_id(
     db_session: Session,
     operator_id: str,
