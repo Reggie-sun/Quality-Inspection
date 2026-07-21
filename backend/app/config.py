@@ -12,7 +12,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    database_url: str = "postgres+psycopg://qi:qi@postgres:5432/qi"
+    database_url: str = "postgresql+psycopg://qi:qi@postgres:5432/qi"
     redis_url: str = "redis://redis:6379/0"
     storage_root: Path = Path("/data")
     operator_header: str = "X-QI-Operator"

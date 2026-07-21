@@ -39,9 +39,11 @@ def _data_volume_source(service: dict) -> str:
 
 
 def test_compose_has_exact_p0_services() -> None:
+    """P0-RUN-001 verifies the exact P0 Compose topology."""
     config = _rendered_compose_config()
     services = config["services"]
 
+    assert config["name"] == "quality-inspection"
     assert set(services) == {"postgres", "redis", "api", "worker", "frontend"}
 
     worker_command = services["worker"]["command"]
