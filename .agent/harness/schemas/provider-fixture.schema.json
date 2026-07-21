@@ -13,7 +13,8 @@
     "request_ref",
     "response_ref",
     "sanitized",
-    "contains_secret"
+    "contains_secret",
+    "payload"
   ],
   "properties": {
     "schema_version": {
@@ -48,6 +49,10 @@
     },
     "contains_secret": {
       "const": false
+    },
+    "payload": {
+      "type": "object",
+      "minProperties": 1
     }
   }
 }

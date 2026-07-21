@@ -1,0 +1,27 @@
+{
+  "schema_version": "provider-fixture/1",
+  "provider": "tencent-ocr",
+  "provider_version": "GeneralAccurateOCR/2018-11-19",
+  "adapter_version": "tencent-ocr-adapter/1",
+  "provider_schema_version": "general-accurate-response/1",
+  "request_ref": "fixture://sanitized/tencent-ocr/request-v1",
+  "response_ref": "fixture://sanitized/tencent-ocr/response-v1",
+  "sanitized": true,
+  "contains_secret": false,
+  "payload": {
+    "RequestId": "fixture-request-id",
+    "Angle": 0.0,
+    "TextDetections": [
+      {
+        "DetectedText": "M6深10",
+        "Confidence": 97.5,
+        "Polygon": [
+          {"X": 12, "Y": 14},
+          {"X": 72, "Y": 14},
+          {"X": 72, "Y": 34},
+          {"X": 12, "Y": 34}
+        ]
+      }
+    ]
+  }
+}

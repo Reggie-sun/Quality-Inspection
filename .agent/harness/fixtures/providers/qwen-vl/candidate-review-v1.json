@@ -1,0 +1,20 @@
+{
+  "schema_version": "provider-fixture/1",
+  "provider": "qwen-vl",
+  "provider_version": "qwen3-vl-plus",
+  "adapter_version": "qwen-vl-adapter/1",
+  "provider_schema_version": "candidate-review/1",
+  "request_ref": "fixture://sanitized/qwen-vl/request-v1",
+  "response_ref": "fixture://sanitized/qwen-vl/response-v1",
+  "sanitized": true,
+  "contains_secret": false,
+  "payload": {
+    "request_id": "fixture-qwen-request-id",
+    "content": "{\"schema_version\":\"candidate-review/1\",\"raw_text\":\"M6深10\",\"item_type\":\"thread\",\"normalized_text\":\"M6 depth 10\",\"requires_confirmation\":true}",
+    "usage": {
+      "prompt_tokens": 24,
+      "completion_tokens": 18,
+      "total_tokens": 42
+    }
+  }
+}

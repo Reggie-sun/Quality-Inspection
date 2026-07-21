@@ -27,6 +27,11 @@ BINDINGS_PATH = HARNESS / "contracts/global-contract-bindings.json"
 RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$")
 CURRENT_FOUR_ARTIFACT = "artifacts/current-four-manifest.json"
 INPUT_ARTIFACT_PREFIX = "input-artifact:"
+PROVIDER_FIXTURE_PREFIX = "provider-fixture:"
+PROVIDER_FIXTURE_PATHS = (
+    ".agent/harness/fixtures/providers/tencent-ocr/general-accurate-v1.json",
+    ".agent/harness/fixtures/providers/qwen-vl/candidate-review-v1.json",
+)
 
 POLICY_FILES = {
     "harness_policy": "harness-policy.yaml",
@@ -277,6 +282,8 @@ def input_identity(
     scope: str,
     task_id: str | None,
     input_artifacts: Mapping[str, bytes] | None = None,
+    *,
+    root: Path = ROOT,
 ) -> dict[str, Any]:
     content = _canonical_bytes(
         {
@@ -287,11 +294,43 @@ def input_identity(
         }
     )
     pairs = [("task-selector-set", content)]
+    if (mode, scope, task_id) == ("fixture", "task", "D2-T2"):
+        for relative_path in PROVIDER_FIXTURE_PATHS:
+            pairs.append(
+                (
+                    f"{PROVIDER_FIXTURE_PREFIX}{relative_path}",
+                    _read_repository_fixture(root, relative_path),
+                )
+            )
     for name, artifact in (input_artifacts or {}).items():
         if name != CURRENT_FOUR_ARTIFACT or not isinstance(artifact, bytes):
             raise ValueError("unsupported current-four-manifest input artifact")
         pairs.append((f"{INPUT_ARTIFACT_PREFIX}{name}", artifact))
     return _identity_from_pairs(pairs)
+
+
+def _read_repository_fixture(root: Path, relative_path: str) -> bytes:
+    repository = root.absolute()
+    relative = Path(relative_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("sanitized Provider fixture path is not repository-relative")
+    candidate = repository / relative
+    current = repository
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(
+                f"sanitized Provider fixture path contains a symlink: {relative_path}"
+            )
+    if not candidate.is_file():
+        raise ValueError(f"missing sanitized Provider fixture: {relative_path}")
+    try:
+        candidate.resolve(strict=True).relative_to(repository.resolve(strict=True))
+    except (OSError, ValueError) as exc:
+        raise ValueError(
+            f"sanitized Provider fixture escapes repository root: {relative_path}"
+        ) from exc
+    return candidate.read_bytes()
 
 
 def input_artifacts_from_run(
@@ -414,6 +453,7 @@ def _freshness_reasons(
         run["scope"],
         run["task_id"],
         input_artifacts,
+        root=root,
     ):
         reasons.append("input_identity_changed")
     if now > valid_until:

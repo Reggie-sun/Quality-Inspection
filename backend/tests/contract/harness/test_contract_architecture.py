@@ -44,6 +44,15 @@ def _load_stage_module() -> ModuleType:
     return module
 
 
+def _load_provider_contract_module() -> ModuleType:
+    path = HARNESS / "scripts/run-provider-contracts.py"
+    spec = importlib.util.spec_from_file_location("test_run_provider_contracts", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 RECEIPT = _load_receipt_module()
 RUNNER = _load_runner_module()
 
@@ -711,3 +720,98 @@ def test_current_four_manifest_excludes_host_paths_and_pdf_bytes() -> None:
     assert "%PDF" not in encoded
     assert "source_path" not in encoded
     assert "source_root" not in encoded
+
+
+def test_d2_t2_input_identity_binds_only_sanitized_provider_fixtures(
+    tmp_path: Path,
+) -> None:
+    """P0-RES-005: D2-T2 fixture bytes are bound without becoming run artifacts."""
+    relative_paths = (
+        ".agent/harness/fixtures/providers/tencent-ocr/general-accurate-v1.json",
+        ".agent/harness/fixtures/providers/qwen-vl/candidate-review-v1.json",
+    )
+    for index, relative_path in enumerate(relative_paths):
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(f"fixture-{index}".encode())
+
+    baseline = RECEIPT.input_identity(
+        "fixture",
+        "task",
+        "D2-T2",
+        root=tmp_path,
+    )
+    assert baseline["components"] == sorted(
+        [f"provider-fixture:{relative_path}" for relative_path in relative_paths]
+        + ["task-selector-set"]
+    )
+
+    (tmp_path / relative_paths[0]).write_bytes(b"changed-fixture")
+    assert RECEIPT.input_identity(
+        "fixture",
+        "task",
+        "D2-T2",
+        root=tmp_path,
+    )["digest"] != baseline["digest"]
+    assert RECEIPT.input_identity(
+        "fixture",
+        "task",
+        "D2-T3",
+        root=tmp_path / "missing-fixtures",
+    )["components"] == ["task-selector-set"]
+
+
+def test_d2_t2_input_identity_rejects_symlinked_fixture_parent(
+    tmp_path: Path,
+) -> None:
+    """P0-RES-005: fixture identity cannot follow a parent symlink outside root."""
+    outside = tmp_path / "outside/providers"
+    for relative_path in RECEIPT.PROVIDER_FIXTURE_PATHS:
+        provider_relative = Path(relative_path).relative_to(
+            ".agent/harness/fixtures/providers"
+        )
+        path = outside / provider_relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"external-fixture")
+    fixture_parent = tmp_path / ".agent/harness/fixtures/providers"
+    fixture_parent.parent.mkdir(parents=True)
+    fixture_parent.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlink"):
+        RECEIPT.input_identity(
+            "fixture",
+            "task",
+            "D2-T2",
+            root=tmp_path,
+        )
+
+
+def test_provider_fixture_guard_rejects_secrets_and_full_base64(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P0-RES-005: sanitized fixtures reject recursive secrets and image bodies."""
+    provider_contracts = _load_provider_contract_module()
+
+    with pytest.raises(ValueError, match="forbidden fixture key"):
+        provider_contracts.validate_sanitized_payload(
+            {"nested": {"api_key": "redacted"}}
+        )
+    with pytest.raises(ValueError, match="base64-like"):
+        provider_contracts.validate_sanitized_payload(
+            {"image": "A" * 128}
+        )
+
+    relative_path = Path(provider_contracts.FIXTURE_RELATIVE_PATHS[0])
+    external_fixture = tmp_path / "outside" / relative_path.name
+    external_fixture.parent.mkdir(parents=True)
+    external_fixture.write_bytes(
+        (ROOT / relative_path).read_bytes()
+    )
+    linked_parent = tmp_path / relative_path.parent
+    linked_parent.parent.mkdir(parents=True, exist_ok=True)
+    linked_parent.symlink_to(external_fixture.parent, target_is_directory=True)
+    monkeypatch.setattr(provider_contracts, "ROOT", tmp_path)
+
+    with pytest.raises(ValueError, match="symlink"):
+        provider_contracts.load_fixture(tmp_path / relative_path)
