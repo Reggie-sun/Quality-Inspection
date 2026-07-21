@@ -251,6 +251,9 @@ def test_code_identity_reads_only_safe_executable_allowlist(
     frontend_e2e = tmp_path / "frontend/e2e/app.spec.ts"
     frontend_e2e.parent.mkdir(parents=True)
     frontend_e2e.write_text("export const scenario = 1;\n", encoding="utf-8")
+    runtime_schema = tmp_path / "backend/app/providers/candidate_review.schema.json"
+    runtime_schema.parent.mkdir(parents=True)
+    runtime_schema.write_text('{"type": "object"}\n', encoding="utf-8")
     planned_configs = (
         tmp_path / "backend/alembic.ini",
         tmp_path / "frontend/index.html",
@@ -290,6 +293,7 @@ def test_code_identity_reads_only_safe_executable_allowlist(
     monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
     baseline = RECEIPT.code_identity(tmp_path)
     assert allowed_source in reads
+    assert runtime_schema in reads
     assert frontend_source in reads
     assert frontend_e2e in reads
     assert set(planned_configs) <= set(reads)

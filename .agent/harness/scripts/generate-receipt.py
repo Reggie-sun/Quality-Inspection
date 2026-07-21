@@ -64,7 +64,7 @@ SCHEMA_FILES = (
 CODE_IDENTITY_SOURCE_GLOBS = (
     (".agent/harness/scripts", ("*.py",)),
     ("backend/alembic", ("**/*.py",)),
-    ("backend/app", ("**/*.py",)),
+    ("backend/app", ("**/*.py", "**/*.schema.json")),
     ("backend/tests", ("**/*.py",)),
     (
         "frontend/src",
