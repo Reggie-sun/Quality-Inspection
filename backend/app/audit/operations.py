@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,6 +10,12 @@ from app.db import Base
 
 class OperationRecord(Base):
     __tablename__ = "operation_records"
+    __table_args__ = (
+        CheckConstraint(
+            "length(btrim(operator_id)) > 0",
+            name="ck_operation_records_operator_id_nonblank",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

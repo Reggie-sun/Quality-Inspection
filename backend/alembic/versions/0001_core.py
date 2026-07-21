@@ -42,6 +42,10 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.CheckConstraint(
+            "length(btrim(operator_id)) > 0",
+            name="ck_operation_records_operator_id_nonblank",
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
