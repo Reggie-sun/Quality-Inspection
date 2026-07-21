@@ -25,6 +25,8 @@ RUNS = HARNESS / "runs"
 MIRROR_PATH = HARNESS / "contracts/p0-contracts.json"
 BINDINGS_PATH = HARNESS / "contracts/global-contract-bindings.json"
 RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$")
+CURRENT_FOUR_ARTIFACT = "artifacts/current-four-manifest.json"
+INPUT_ARTIFACT_PREFIX = "input-artifact:"
 
 POLICY_FILES = {
     "harness_policy": "harness-policy.yaml",
@@ -270,7 +272,12 @@ def config_identity(
     return _identity_from_pairs(pairs)
 
 
-def input_identity(mode: str, scope: str, task_id: str | None) -> dict[str, Any]:
+def input_identity(
+    mode: str,
+    scope: str,
+    task_id: str | None,
+    input_artifacts: Mapping[str, bytes] | None = None,
+) -> dict[str, Any]:
     content = _canonical_bytes(
         {
             "identity_kind": "task-selector-set",
@@ -279,7 +286,33 @@ def input_identity(mode: str, scope: str, task_id: str | None) -> dict[str, Any]
             "task_id": task_id,
         }
     )
-    return _identity_from_pairs([("task-selector-set", content)])
+    pairs = [("task-selector-set", content)]
+    for name, artifact in (input_artifacts or {}).items():
+        if name != CURRENT_FOUR_ARTIFACT or not isinstance(artifact, bytes):
+            raise ValueError("unsupported current-four-manifest input artifact")
+        pairs.append((f"{INPUT_ARTIFACT_PREFIX}{name}", artifact))
+    return _identity_from_pairs(pairs)
+
+
+def input_artifacts_from_run(
+    run: Mapping[str, Any],
+    run_dir: Path,
+) -> dict[str, bytes]:
+    components = run.get("input_identity", {}).get("components", [])
+    names = [
+        component.removeprefix(INPUT_ARTIFACT_PREFIX)
+        for component in components
+        if isinstance(component, str) and component.startswith(INPUT_ARTIFACT_PREFIX)
+    ]
+    if any(name != CURRENT_FOUR_ARTIFACT for name in names):
+        raise ValueError("unsupported current-four-manifest input artifact")
+    artifacts: dict[str, bytes] = {}
+    for name in names:
+        artifact_path = run_dir / name
+        if artifact_path.is_symlink() or not artifact_path.is_file():
+            raise ValueError(f"missing sealed input artifact: {name}")
+        artifacts[name] = artifact_path.read_bytes()
+    return artifacts
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -372,8 +405,15 @@ def _freshness_reasons(
         run["mode"], run["scope"], run["task_id"], root
     ):
         reasons.append("config_identity_changed")
+    input_artifacts = input_artifacts_from_run(
+        run,
+        root / ".agent/harness/runs" / run["run_id"],
+    )
     if run["input_identity"] != input_identity(
-        run["mode"], run["scope"], run["task_id"]
+        run["mode"],
+        run["scope"],
+        run["task_id"],
+        input_artifacts,
     ):
         reasons.append("input_identity_changed")
     if now > valid_until:

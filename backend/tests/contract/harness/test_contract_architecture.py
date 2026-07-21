@@ -3,6 +3,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -29,6 +30,16 @@ def _load_runner_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location("test_run_p0", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_stage_module() -> ModuleType:
+    path = HARNESS / "scripts/stage-current-four.py"
+    spec = importlib.util.spec_from_file_location("test_stage_current_four", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -362,3 +373,341 @@ def test_contract_authority_preflight_fails_before_evidence_access(
     with pytest.raises(ValueError, match="controlled authority drift"):
         RUNNER.run_task("fixture", "task", "D1-T2")
     assert not RUNNER.RUNS.exists()
+
+
+def _current_four_manifest_bytes(*, pretty: bool = False) -> bytes:
+    schema = json.loads(
+        (HARNESS / "schemas/current-four-manifest.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    entries = []
+    for item in schema["properties"]["entries"]["prefixItems"]:
+        properties = item["allOf"][1]["properties"]
+        entries.append(
+            {
+                "order": properties["order"]["const"],
+                "basename": properties["basename"]["const"],
+                "sha256": properties["sha256"]["const"],
+                "opaque_ref": properties["opaque_ref"]["const"],
+                "page_metadata": properties["page_metadata"]["const"],
+            }
+        )
+    manifest = {
+        "schema_version": "current-four-manifest/1",
+        "input_set": "current-four",
+        "first_checkpoint": {
+            key: entries[0][key]
+            for key in ("order", "basename", "sha256", "opaque_ref")
+        },
+        "entries": entries,
+    }
+    RECEIPT.validate_schema(manifest, "current-four-manifest.schema.json", ROOT)
+    if pretty:
+        return (json.dumps(manifest, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode()
+    return json.dumps(
+        manifest,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+
+
+def test_input_identity_binds_current_four_manifest_bytes(tmp_path: Path) -> None:
+    """P0-REC-002: current-four artifact bytes participate in input identity."""
+    artifact_name = "artifacts/current-four-manifest.json"
+    original = _current_four_manifest_bytes()
+    changed = _current_four_manifest_bytes(pretty=True)
+    assert changed != original
+    baseline = RECEIPT.input_identity("live", "task", "D2-T1")
+    bound = RECEIPT.input_identity(
+        "live",
+        "task",
+        "D2-T1",
+        {artifact_name: original},
+    )
+
+    assert bound["digest"] != baseline["digest"]
+    assert bound["components"] == [
+        f"input-artifact:{artifact_name}",
+        "task-selector-set",
+    ]
+    assert RECEIPT.input_identity(
+        "live",
+        "task",
+        "D2-T1",
+        {artifact_name: changed},
+    )["digest"] != bound["digest"]
+
+    run_dir = tmp_path / "sealed-run"
+    artifact_path = run_dir / artifact_name
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_bytes(original)
+    run = {"input_identity": bound}
+    loaded = RECEIPT.input_artifacts_from_run(run, run_dir)
+    assert loaded == {artifact_name: original}
+
+    artifact_path.write_bytes(changed)
+    recomputed = RECEIPT.input_identity("live", "task", "D2-T1", RECEIPT.input_artifacts_from_run(run, run_dir))
+    assert recomputed != bound
+
+
+def test_receipt_freshness_recomputes_current_four_artifact_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P0-REC-002: receipt freshness rejects changed sealed manifest bytes."""
+    run_id = "20260721T000000000000Z-00000000"
+    run_dir = tmp_path / ".agent/harness/runs" / run_id
+    artifact_path = run_dir / RECEIPT.CURRENT_FOUR_ARTIFACT
+    artifact_path.parent.mkdir(parents=True)
+    original = _current_four_manifest_bytes()
+    artifact_path.write_bytes(original)
+    run = {
+        "run_id": run_id,
+        "mode": "live",
+        "scope": "task",
+        "task_id": "D2-T1",
+        "contract_definition_hash": "0" * 64,
+        "policy_versions": {},
+        "code_identity": {"digest": "code"},
+        "config_identity": {"digest": "config"},
+        "input_identity": RECEIPT.input_identity(
+            "live",
+            "task",
+            "D2-T1",
+            {RECEIPT.CURRENT_FOUR_ARTIFACT: original},
+        ),
+    }
+    monkeypatch.setattr(RECEIPT, "policy_versions", lambda _policies: {})
+    monkeypatch.setattr(RECEIPT, "code_identity", lambda _root: run["code_identity"])
+    monkeypatch.setattr(
+        RECEIPT,
+        "config_identity",
+        lambda *_args: run["config_identity"],
+    )
+    now = datetime(2026, 7, 21, tzinfo=timezone.utc)
+
+    assert RECEIPT._freshness_reasons(
+        tmp_path,
+        run,
+        {"contract_definition_hash": "0" * 64},
+        {},
+        now,
+        now + timedelta(hours=1),
+    ) == []
+
+    artifact_path.write_bytes(_current_four_manifest_bytes(pretty=True))
+    assert RECEIPT._freshness_reasons(
+        tmp_path,
+        run,
+        {"contract_definition_hash": "0" * 64},
+        {},
+        now,
+        now + timedelta(hours=1),
+    ) == ["input_identity_changed"]
+
+
+@pytest.mark.parametrize(
+    "artifact_name",
+    (
+        "../current-four-manifest.json",
+        "/tmp/current-four-manifest.json",
+        "artifacts/../current-four-manifest.json",
+        "artifacts/current-four.pdf",
+        "artifacts/other.json",
+    ),
+)
+def test_runner_rejects_uncontrolled_input_artifact_names(artifact_name: str) -> None:
+    """P0-REC-002: D2-T1 accepts only its controlled manifest artifact."""
+    with pytest.raises(ValueError, match="current-four-manifest"):
+        RUNNER._validate_input_artifacts({artifact_name: b"controlled"})
+
+
+@pytest.mark.parametrize("mode", ("live", "fixture"))
+def test_runner_writes_input_artifact_before_selectors(
+    mode: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P0-REC-002: live registration and fixture reuse stage bytes first."""
+    runs = tmp_path / "runs"
+    mirror = {
+        "contract_definition_hash": "0" * 64,
+        "status_projection_hash": "1" * 64,
+        "contracts": [
+            {
+                "p0_contract_id": "P0-REC-001",
+                "task_id": "D2-T1",
+                "verification_selector": "controlled-selector",
+            }
+        ],
+    }
+    identity = {"algorithm": "sha256", "digest": "2" * 64, "components": ["test"]}
+    receipt_stub = SimpleNamespace(
+        provider_network_enabled=lambda: False,
+        check_contract_authority=lambda _root: None,
+        load_policies=lambda _root: {},
+        validate_schema=lambda *_args: None,
+        code_identity=lambda _root: identity,
+        config_identity=lambda *_args: identity,
+        input_identity=RECEIPT.input_identity,
+        policy_versions=lambda _policies: {},
+        build_receipt=lambda *_args: {"overall_verdict": "passed"},
+    )
+    artifact_name = "artifacts/current-four-manifest.json"
+    artifact_bytes = _current_four_manifest_bytes()
+
+    monkeypatch.setattr(RUNNER, "ROOT", tmp_path)
+    monkeypatch.setattr(RUNNER, "RUNS", runs)
+    monkeypatch.setattr(RUNNER, "MIRROR_PATH", tmp_path / "mirror.json")
+    monkeypatch.setattr(RUNNER, "BINDINGS_PATH", tmp_path / "bindings.json")
+    monkeypatch.setattr(RUNNER, "_receipt_module", lambda: receipt_stub)
+    monkeypatch.setattr(
+        RUNNER,
+        "_load_json",
+        lambda path: mirror if path == RUNNER.MIRROR_PATH else {"bindings": []},
+    )
+    monkeypatch.setattr(RUNNER, "_git_revision", lambda: "test-revision")
+
+    def assert_artifact_precedes_selector(_selector: str, _mode: str) -> dict:
+        run_dir = next(runs.iterdir())
+        assert (run_dir / artifact_name).read_bytes() == artifact_bytes
+        return {
+            "exit_code": 0,
+            "result_state": "passed",
+            "started_at": "2026-07-21T00:00:00Z",
+            "completed_at": "2026-07-21T00:00:01Z",
+            "output": "controlled",
+        }
+
+    monkeypatch.setattr(RUNNER, "_execute_selector", assert_artifact_precedes_selector)
+
+    run_id, verdict = RUNNER.run_task(
+        mode,
+        "task",
+        "D2-T1",
+        input_artifacts={artifact_name: artifact_bytes},
+    )
+
+    assert verdict == "passed"
+    assert (runs / run_id / artifact_name).read_bytes() == artifact_bytes
+
+
+@pytest.mark.parametrize(
+    ("mode", "task_id"),
+    (("failure", "D2-T1"), ("live", "D2-T2"), ("fixture", "D2-T2")),
+)
+def test_current_four_artifact_rejects_failure_mode_and_other_tasks(
+    mode: str,
+    task_id: str,
+) -> None:
+    """P0-REC-002: manifest reuse cannot widen beyond fixture/live D2-T1."""
+    with pytest.raises(ValueError, match="fixture/live D2-T1"):
+        RUNNER.run_task(
+            mode,
+            "task",
+            task_id,
+            input_artifacts={
+                RUNNER.CURRENT_FOUR_ARTIFACT: _current_four_manifest_bytes()
+            },
+        )
+
+
+@pytest.mark.parametrize("writable_mode", (0o464, 0o446))
+def test_current_four_seal_rejects_group_or_world_write_bits(
+    tmp_path: Path,
+    writable_mode: int,
+) -> None:
+    """P0-REC-002: a sealed artifact has no owner, group, or world write bit."""
+    artifact = tmp_path / "manifest.json"
+    artifact.write_bytes(b"controlled")
+    artifact.chmod(writable_mode)
+
+    assert RUNNER._is_sealed(artifact) is False
+
+    artifact.chmod(0o444)
+    assert RUNNER._is_sealed(artifact) is True
+
+
+def test_current_four_loader_requires_literal_sealed_registration_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P0-REC-002: reuse requires a literal sealed byte-identical registration."""
+    run_id = "20260721T000000000000Z-00000000"
+    run_dir = tmp_path / run_id
+    artifact_path = run_dir / "artifacts/current-four-manifest.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact = _current_four_manifest_bytes()
+    artifact_path.write_bytes(artifact)
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "mode": "live",
+                "scope": "task",
+                "task_id": "D2-T1",
+                "completed_at": "2026-07-21T00:00:01Z",
+                "input_identity": RECEIPT.input_identity(
+                    "live",
+                    "task",
+                    "D2-T1",
+                    {RUNNER.CURRENT_FOUR_ARTIFACT: artifact},
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "receipt.json").write_text(
+        json.dumps({"run_id": run_id, "overall_verdict": "passed"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(RUNNER, "RUNS", tmp_path)
+
+    with pytest.raises(ValueError, match="literal registration run ID"):
+        RUNNER._load_current_four_artifact("latest")
+
+    for path in (artifact_path, run_dir / "run.json", run_dir / "receipt.json"):
+        path.chmod(0o444)
+    artifact_path.parent.chmod(0o555)
+    run_dir.chmod(0o555)
+    try:
+        loaded = RUNNER._load_current_four_artifact(run_id)
+        assert loaded == {RUNNER.CURRENT_FOUR_ARTIFACT: artifact}
+
+        artifact_path.chmod(0o644)
+        artifact_path.write_bytes(_current_four_manifest_bytes(pretty=True))
+        artifact_path.chmod(0o444)
+        with pytest.raises(ValueError, match="input identity"):
+            RUNNER._load_current_four_artifact(run_id)
+    finally:
+        run_dir.chmod(0o755)
+        artifact_path.parent.chmod(0o755)
+        for path in (artifact_path, run_dir / "run.json", run_dir / "receipt.json"):
+            path.chmod(0o644)
+
+
+def test_current_four_manifest_excludes_host_paths_and_pdf_bytes() -> None:
+    """P0-REC-002: current-four evidence stores identity facts, not source bytes."""
+    stage = _load_stage_module()
+    manifest = stage.manifest_from_documents(stage.FROZEN_DOCUMENTS)
+    RECEIPT.validate_schema(
+        manifest,
+        "current-four-manifest.schema.json",
+        ROOT,
+    )
+    encoded = json.dumps(manifest, ensure_ascii=False, sort_keys=True)
+
+    assert len(manifest["entries"]) == 4
+    assert manifest["first_checkpoint"] == {
+        key: manifest["entries"][0][key]
+        for key in ("order", "basename", "sha256", "opaque_ref")
+    }
+    assert all(
+        set(entry) == {"order", "basename", "sha256", "opaque_ref", "page_metadata"}
+        for entry in manifest["entries"]
+    )
+    assert "%PDF" not in encoded
+    assert "source_path" not in encoded
+    assert "source_root" not in encoded

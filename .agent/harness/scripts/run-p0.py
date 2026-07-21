@@ -15,7 +15,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlsplit
 
 
@@ -25,7 +25,9 @@ RUNS = HARNESS / "runs"
 MIRROR_PATH = HARNESS / "contracts/p0-contracts.json"
 BINDINGS_PATH = HARNESS / "contracts/global-contract-bindings.json"
 TASK_RE = re.compile(r"^D[0-9]+-T[0-9]+$")
+RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$")
 SHELL_OPERATORS = {"&&", "||", ";", "|", ">", ">>", "<"}
+CURRENT_FOUR_ARTIFACT = "artifacts/current-four-manifest.json"
 
 
 def _iso_now() -> str:
@@ -156,11 +158,86 @@ def _seal_run(run_dir: Path) -> None:
     )
 
 
-def run_task(mode: str, scope: str, task_id: str) -> tuple[str, str]:
+def _validate_input_artifacts(
+    input_artifacts: Mapping[str, bytes] | None,
+) -> dict[str, bytes]:
+    artifacts = dict(input_artifacts or {})
+    if set(artifacts) - {CURRENT_FOUR_ARTIFACT}:
+        raise ValueError("only artifacts/current-four-manifest.json is accepted")
+    if any(not isinstance(content, bytes) for content in artifacts.values()):
+        raise TypeError("current-four-manifest input artifact must be bytes")
+    return artifacts
+
+
+def _is_sealed(path: Path) -> bool:
+    write_bits = stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
+    return not bool(path.stat().st_mode & write_bits)
+
+
+def _load_current_four_artifact(run_id: str) -> dict[str, bytes]:
+    if not RUN_ID_RE.fullmatch(run_id) or run_id in {"latest", "latest-successful"}:
+        raise ValueError("--current-four-run requires one literal registration run ID")
+    run_dir = RUNS / run_id
+    artifact_path = run_dir / CURRENT_FOUR_ARTIFACT
+    run_path = run_dir / "run.json"
+    receipt_path = run_dir / "receipt.json"
+    controlled_paths = (run_dir, artifact_path.parent, artifact_path, run_path, receipt_path)
+    if any(path.is_symlink() or not path.exists() for path in controlled_paths):
+        raise ValueError("registration run is missing sealed current-four evidence")
+    if any(not _is_sealed(path) for path in controlled_paths):
+        raise ValueError("registration run must be sealed before reuse")
+
+    run = _load_json(run_path)
+    receipt = _load_json(receipt_path)
+    if (
+        run.get("run_id") != run_id
+        or run.get("mode") != "live"
+        or run.get("scope") != "task"
+        or run.get("task_id") != "D2-T1"
+        or not run.get("completed_at")
+        or receipt.get("run_id") != run_id
+        or receipt.get("overall_verdict") != "passed"
+    ):
+        raise ValueError("current-four source is not a passed D2-T1 registration run")
+
+    artifact = artifact_path.read_bytes()
+    manifest = json.loads(artifact)
+    receipt_module = _receipt_module()
+    receipt_module.validate_schema(
+        manifest,
+        "current-four-manifest.schema.json",
+        ROOT,
+    )
+    expected_identity = receipt_module.input_identity(
+        "live",
+        "task",
+        "D2-T1",
+        {CURRENT_FOUR_ARTIFACT: artifact},
+    )
+    if run.get("input_identity") != expected_identity:
+        raise ValueError(
+            "current-four input identity does not match sealed manifest bytes"
+        )
+    return {CURRENT_FOUR_ARTIFACT: artifact}
+
+
+def run_task(
+    mode: str,
+    scope: str,
+    task_id: str,
+    *,
+    input_artifacts: Mapping[str, bytes] | None = None,
+) -> tuple[str, str]:
     if scope != "task":
         raise ValueError("D1-T1 implements task scope only; full-p0 orchestration is not available")
     if not TASK_RE.fullmatch(task_id):
         raise ValueError("--task must be a literal Dn-Tn identifier")
+
+    artifacts = _validate_input_artifacts(input_artifacts)
+    if artifacts and (mode not in {"fixture", "live"} or task_id != "D2-T1"):
+        raise ValueError(
+            "current-four-manifest input is limited to fixture/live D2-T1 task runs"
+        )
 
     receipt_module = _receipt_module()
     if mode == "fixture" and receipt_module.provider_network_enabled():
@@ -172,6 +249,12 @@ def run_task(mode: str, scope: str, task_id: str) -> tuple[str, str]:
     policies = receipt_module.load_policies(ROOT)
     receipt_module.validate_schema(mirror, "p0-contracts.schema.json", ROOT)
     receipt_module.validate_schema(bindings, "global-contract-bindings.schema.json", ROOT)
+    if artifacts:
+        receipt_module.validate_schema(
+            json.loads(artifacts[CURRENT_FOUR_ARTIFACT]),
+            "current-four-manifest.schema.json",
+            ROOT,
+        )
 
     selected = sorted(
         (row for row in mirror["contracts"] if row["task_id"] == task_id),
@@ -194,7 +277,12 @@ def run_task(mode: str, scope: str, task_id: str) -> tuple[str, str]:
         "code_identity": receipt_module.code_identity(ROOT),
         "git_revision_at_start": _git_revision(),
         "config_identity": receipt_module.config_identity(mode, scope, task_id, ROOT),
-        "input_identity": receipt_module.input_identity(mode, scope, task_id),
+        "input_identity": receipt_module.input_identity(
+            mode,
+            scope,
+            task_id,
+            artifacts,
+        ),
         "contract_definition_hash": mirror["contract_definition_hash"],
         "status_projection_hash_at_start": mirror["status_projection_hash"],
         "policy_versions": receipt_module.policy_versions(policies),
@@ -202,10 +290,12 @@ def run_task(mode: str, scope: str, task_id: str) -> tuple[str, str]:
         "started_at": started_at,
         "completed_at": None,
     }
-    receipt_module.validate_schema(run, "run.schema.json", ROOT)
-    _write_json(run_dir / "run.json", run)
     for name in ("logs", "reports", "artifacts"):
         (run_dir / name).mkdir()
+    for name, content in artifacts.items():
+        (run_dir / name).write_bytes(content)
+    receipt_module.validate_schema(run, "run.schema.json", ROOT)
+    _write_json(run_dir / "run.json", run)
 
     # Identical selectors execute once; every selected P0 ID still gets a result.
     outcomes: dict[str, dict[str, Any]] = {}
@@ -264,9 +354,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("mode", choices=("fixture", "failure", "live"))
     parser.add_argument("--scope", required=True, choices=("task", "full-p0"))
     parser.add_argument("--task", required=True)
+    parser.add_argument("--current-four-run", metavar="RUN_ID")
     args = parser.parse_args(argv)
     try:
-        run_id, verdict = run_task(args.mode, args.scope, args.task)
+        artifacts = (
+            _load_current_four_artifact(args.current_four_run)
+            if args.current_four_run
+            else None
+        )
+        run_id, verdict = run_task(
+            args.mode,
+            args.scope,
+            args.task,
+            input_artifacts=artifacts,
+        )
     except (OSError, RuntimeError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         print(f"run-p0: {exc}", file=sys.stderr)
         return 2
