@@ -67,6 +67,20 @@
 - Rollback and failure boundary: 只 revert 本 task commit；rollback 后第一项验证为 backend 全量测试，确认 Day 2 baseline 未受影响。unsupported deterministic annotation 必须显式失败，复杂类型和非可执行技术文本不得被提升为完整正式语义。
 - Next verification: `micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_parser.py backend/tests/unit/candidates/test_grouping.py backend/tests/unit/candidates/test_disposition.py backend/tests/unit/candidates/test_complex_fallback.py -q`，预期因 `app.candidates` 实现缺失而 collection FAIL。
 
+### Day 3 completion continuation — 2026-07-21
+
+- Selected lane: `Heavy`。
+- Selected plan: 本文件，仍是唯一 current implementation plan；只执行剩余 `D3-T2` 并形成 `D4-T1` readiness，不执行任何 D4 task。
+- Selection evidence: branch `feature/d1-t1-contract-harness` 在 `778f7d8` clean；fresh backend baseline 为 181 passed；`D3-T1` 的 14 行已 passed，literal receipt `20260721T143049061302Z-2a55d6f2` 当前有效；`D3-T2` 的 4 行仍为 `not_run`。
+- Validation action: `amend` 后 `continue`。Owner、stable contract 和 task 顺序不变；实际接口要求把 D2 临时的 inventory-only success 替换为 coverage-checked automatic-result success，并同步 metadata/schema/idempotency assertions。
+- Writer ownership and order: 父 agent 是唯一 writer；explorer/reviewer 严格只读。先 RED tests，再最小实现和 migration，最后在同一最终 executable state 刷新 `D3-T1` 与 `D3-T2` 两条 task receipts。
+- Problem boundary and Owners: Coverage Owner/Veto Gate 唯一提交 coverage verdict；Duplicate Advisor 只产生 `possible_duplicate + requires_confirmation` relation；Automatic-result Owner 只在 coverage blocking 为零时持久化 immutable raw result。Provider、inventory、frontend 和 reviewer 都不是该 final Owner。
+- Old path action: `InventoryPipeline.run()` 当前 `_store_inventory() -> complete_logical_job(inventory_ref)` 是 D2 临时 finalization，本 task 选择 `replace`；inventory asset 继续作为 immutable input evidence，但 logical task 的 formal result 改为 automatic-result identity，不保留 dual final Owner。
+- Actual-interface delta and allowed paths: 除 D3-T2 原列文件外，允许最小修改 `backend/alembic/env.py`、`backend/tests/integration/test_schema.py` 与 `backend/tests/integration/test_task_idempotency.py`，分别登记新 metadata、证明 0003 exact schema/trigger、把 D2 inventory-only 临时成功断言收敛到 D3 automatic-result success；不得触碰 review、balloon、export 或 D4 files。
+- Unchanged contracts: identical text 不自动合并；ambiguous 可审核但 incomplete/duplicate disposition 为 blocking；blocking failure 不插入 automatic result、不进入 `ready_for_edit`；raw automatic result 的 UPDATE/DELETE 均由数据库 trigger 阻断；D4 working copy 只能引用 raw result，不能原地修改它。
+- Rollback and failure boundary: 只 revert 本 task commit；migration rollback 为 `0003 -> 0002`，实际发生 rollback 后第一项验证是 `micromamba run -n qi-p0 pytest backend/tests/integration/test_schema.py -q`。coverage blocking 必须形成 structured error，且 logical job 不得成功。
+- Next verification: `micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_coverage.py backend/tests/integration/test_result_layers.py -q`，预期因 D3-T2 modules 缺失而 collection FAIL。
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：

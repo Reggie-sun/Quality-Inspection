@@ -2,6 +2,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.audit.operations import OperationRecord
+from app.candidates.models import AutomaticResult
 from app.config import get_settings
 from app.db import Base
 from app.errors.models import ErrorRecord
@@ -15,7 +16,14 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 target_metadata = Base.metadata
 
 # Imports above register all current models on the shared metadata.
-assert {Project, StoredFile, OperationRecord, LogicalJob, ErrorRecord}
+assert {
+    Project,
+    StoredFile,
+    OperationRecord,
+    LogicalJob,
+    ErrorRecord,
+    AutomaticResult,
+}
 
 
 def run_migrations_offline() -> None:

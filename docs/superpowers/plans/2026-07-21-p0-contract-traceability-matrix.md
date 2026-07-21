@@ -133,9 +133,9 @@ Each table uses the same columns:
 | `P0-REC-008A` | `ITEM-003` | `false` | `[]` | 复杂 GD&T 只输出 `raw_text/coordinates/coarse_type/requires_confirmation` | Complex fallback | `D3-T1` | unit | `pytest backend/tests/unit/candidates/test_complex_fallback.py::test_gdt_field_allowlist -q` | `blocking` | `passed` | — |
 | `P0-REC-008B` | `ITEM-003` | `false` | `[]` | 复杂 roughness 只输出四字段粗分类 | Complex fallback | `D3-T1` | unit | `pytest backend/tests/unit/candidates/test_complex_fallback.py::test_roughness_field_allowlist -q` | `blocking` | `passed` | — |
 | `P0-REC-008C` | `ITEM-003` | `false` | `[]` | 复杂 weld 只输出四字段粗分类 | Complex fallback | `D3-T1` | unit | `pytest backend/tests/unit/candidates/test_complex_fallback.py::test_weld_field_allowlist -q` | `blocking` | `passed` | — |
-| `P0-REC-008D` | `CAND-007` | `false` | `[]` | 跨视图相同文本只标记疑似重复并要求人工确认，不自动合并 | Duplicate Advisor | `D3-T2` | unit | `pytest backend/tests/unit/candidates/test_duplicates.py::test_cross_view_match_is_suggestion_only -q` | `blocking` | `not_run` | — |
-| `P0-REC-009` | `CAND-005` | `false` | `[PDF-007, CAND-002]` | Coverage Ledger 中每个疑似工程 observation 恰有一个 primary disposition、source 与 coordinates | Coverage Owner | `D3-T2` | unit | `pytest backend/tests/unit/candidates/test_coverage.py::test_every_suspicious_observation_has_complete_disposition -q` | `blocking` | `not_run` | — |
-| `P0-REC-010` | `CAND-005` | `false` | `[CAND-006]` | `ambiguous` 可进入审核；缺 disposition/source/coordinates 或冲突归属为 blocking | Coverage Veto Gate | `D3-T2` | unit | `pytest backend/tests/unit/candidates/test_coverage.py::test_ambiguous_is_reviewable_but_incomplete_is_blocking -q` | `blocking` | `not_run` | — |
+| `P0-REC-008D` | `CAND-007` | `false` | `[]` | 跨视图相同文本只标记疑似重复并要求人工确认，不自动合并 | Duplicate Advisor | `D3-T2` | unit | `pytest backend/tests/unit/candidates/test_duplicates.py::test_cross_view_match_is_suggestion_only -q` | `blocking` | `passed` | — |
+| `P0-REC-009` | `CAND-005` | `false` | `[PDF-007, CAND-002]` | Coverage Ledger 中每个疑似工程 observation 恰有一个 primary disposition、source 与 coordinates | Coverage Owner | `D3-T2` | unit | `pytest backend/tests/unit/candidates/test_coverage.py::test_every_suspicious_observation_has_complete_disposition -q` | `blocking` | `passed` | — |
+| `P0-REC-010` | `CAND-005` | `false` | `[CAND-006]` | `ambiguous` 可进入审核；缺 disposition/source/coordinates 或冲突归属为 blocking | Coverage Veto Gate | `D3-T2` | unit | `pytest backend/tests/unit/candidates/test_coverage.py::test_ambiguous_is_reviewable_but_incomplete_is_blocking -q` | `blocking` | `passed` | — |
 
 ### REV — Candidate Review
 
@@ -215,7 +215,7 @@ Each table uses the same columns:
 
 | P0 Contract ID | Global Contract ID | Implementation Only | Related Global Contract IDs | Stable P0 Requirement | Owner | Task ID | Tier | Verification Selector | Blocking Level | Current Status | Implementation Reason |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `P0-RES-001` | `REV-002` | `false` | `[]` | processing 完成后冻结 immutable `raw_automatic_result`；working edits 不得原地修改 | Automatic-result repository | `D3-T2` | integration | `pytest backend/tests/integration/test_result_layers.py::test_raw_result_is_immutable -q` | `blocking` | `not_run` | — |
+| `P0-RES-001` | `REV-002` | `false` | `[]` | processing 完成后冻结 immutable `raw_automatic_result`；working edits 不得原地修改 | Automatic-result repository | `D3-T2` | integration | `pytest backend/tests/integration/test_result_layers.py::test_raw_result_is_immutable -q` | `blocking` | `passed` | — |
 | `P0-RES-002` | `REV-003` | `false` | `[]` | `review_working_copy` 是独立、versioned、可保存的编辑层 | Review aggregate | `D4-T1` | integration | `pytest backend/tests/integration/test_result_layers.py::test_working_copy_is_versioned -q` | `blocking` | `not_run` | — |
 | `P0-RES-003` | `REV-006` | `false` | `[]` | Confirm 后创建 immutable `reviewed_result`；后续 mutation 被拒绝 | Review freeze Owner | `D5-T2` | integration | `pytest backend/tests/integration/test_result_layers.py::test_reviewed_result_is_immutable -q` | `blocking` | `not_run` | — |
 | `P0-RES-004` | `EXP-005` | `false` | `[]` | 正式 PDF、Excel 和 manifest 均引用同一 `reviewed_result_id` | Export orchestrator Owner | `D6-T3` | integration | `pytest backend/tests/integration/test_export_consistency.py::test_artifacts_share_reviewed_result_id -q` | `blocking` | `not_run` | — |

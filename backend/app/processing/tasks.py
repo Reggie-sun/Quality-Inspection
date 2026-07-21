@@ -22,6 +22,7 @@ def inventory_project(
     source_ref: str,
     logical_task_key: str,
 ) -> str:
+    """Run inventory through coverage closure and return the raw-result ref."""
     settings = get_settings()
     session = SessionLocal()
     try:
