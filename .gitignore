@@ -1,2 +1,4 @@
 .env
 .worktrees/
+.agent/harness/runs/*
+!.agent/harness/runs/.gitkeep

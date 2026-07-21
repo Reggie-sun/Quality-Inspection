@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/receipt.schema.json",
+  "title": "P0 Harness receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "receipt_scope",
+    "task_id",
+    "policy_versions",
+    "contract_definition_hash",
+    "status_projection_hash",
+    "freshness",
+    "selected_contract_ids",
+    "result_counts",
+    "per_severity_counts",
+    "binding_evidence",
+    "overall_verdict",
+    "formal_p0_verdict_allowed",
+    "formal_p0_verdict",
+    "generated_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "receipt/1"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
+    },
+    "receipt_scope": {
+      "enum": [
+        "task",
+        "full-p0"
+      ]
+    },
+    "task_id": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^D[0-9]+-T[0-9]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policy_versions": {
+      "$ref": "#/$defs/policy_versions"
+    },
+    "contract_definition_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "status_projection_hash": {
+      "$ref": "#/$defs/sha256",
+      "description": "Informational start-time projection; policy excludes it from receipt freshness."
+    },
+    "freshness": {
+      "$ref": "#/$defs/freshness"
+    },
+    "selected_contract_ids": {
+      "$ref": "#/$defs/p0_ids"
+    },
+    "result_counts": {
+      "$ref": "#/$defs/result_counts"
+    },
+    "per_severity_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fatal",
+        "blocking",
+        "review_required",
+        "warning",
+        "informational"
+      ],
+      "properties": {
+        "fatal": {
+          "$ref": "#/$defs/result_counts"
+        },
+        "blocking": {
+          "$ref": "#/$defs/result_counts"
+        },
+        "review_required": {
+          "$ref": "#/$defs/result_counts"
+        },
+        "warning": {
+          "$ref": "#/$defs/result_counts"
+        },
+        "informational": {
+          "$ref": "#/$defs/result_counts"
+        }
+      }
+    },
+    "binding_evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/binding_evidence"
+      }
+    },
+    "overall_verdict": {
+      "enum": [
+        "passed",
+        "failed",
+        "blocked"
+      ],
+      "description": "Verdict for receipt_scope only; a task verdict is never a formal P0 verdict."
+    },
+    "formal_p0_verdict_allowed": {
+      "type": "boolean"
+    },
+    "formal_p0_verdict": {
+      "oneOf": [
+        {
+          "enum": [
+            "passed",
+            "failed",
+            "blocked"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "receipt_scope": {
+            "const": "task"
+          }
+        },
+        "required": [
+          "receipt_scope"
+        ]
+      },
+      "then": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "pattern": "^D[0-9]+-T[0-9]+$"
+          },
+          "formal_p0_verdict_allowed": {
+            "const": false
+          },
+          "formal_p0_verdict": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "task_id": {
+            "type": "null"
+          },
+          "formal_p0_verdict_allowed": {
+            "const": true
+          },
+          "formal_p0_verdict": {
+            "enum": [
+              "passed",
+              "failed",
+              "blocked"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "p0_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^P0-[A-Z]+-[0-9]{3}[A-Z]?$"
+      },
+      "uniqueItems": true
+    },
+    "policy_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "harness_policy",
+        "p0_acceptance_policy",
+        "provider_call_policy",
+        "failure_severity_policy"
+      ],
+      "properties": {
+        "harness_policy": {
+          "type": "string",
+          "pattern": "^harness-policy/[0-9]+$"
+        },
+        "p0_acceptance_policy": {
+          "type": "string",
+          "pattern": "^p0-acceptance-policy/[0-9]+$"
+        },
+        "provider_call_policy": {
+          "type": "string",
+          "pattern": "^provider-call-policy/[0-9]+$"
+        },
+        "failure_severity_policy": {
+          "type": "string",
+          "pattern": "^failure-severity-policy/[0-9]+$"
+        }
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fresh",
+        "valid_until",
+        "receipt_freshness_hours",
+        "reasons"
+      ],
+      "properties": {
+        "fresh": {
+          "type": "boolean"
+        },
+        "valid_until": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "receipt_freshness_hours": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "result_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "failed",
+        "blocked",
+        "not_run"
+      ],
+      "properties": {
+        "passed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "blocked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "not_run": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "binding_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "global_contract_id",
+        "direct_enforcement",
+        "primary_p0_contract_ids",
+        "related_business_p0_contract_ids",
+        "related_implementation_p0_contract_ids"
+      ],
+      "properties": {
+        "global_contract_id": {
+          "type": "string",
+          "pattern": "^[A-Z]+-[0-9]{3}$"
+        },
+        "direct_enforcement": {
+          "type": "boolean",
+          "description": "True only when this receipt contains a primary binding; related-only evidence never becomes direct enforcement."
+        },
+        "primary_p0_contract_ids": {
+          "$ref": "#/$defs/p0_ids"
+        },
+        "related_business_p0_contract_ids": {
+          "$ref": "#/$defs/p0_ids"
+        },
+        "related_implementation_p0_contract_ids": {
+          "$ref": "#/$defs/p0_ids"
+        }
+      }
+    }
+  }
+}

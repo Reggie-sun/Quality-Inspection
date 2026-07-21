@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/current-four-manifest.schema.json",
+  "title": "Frozen current-four input identity manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "input_set",
+    "first_checkpoint",
+    "entries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "current-four-manifest/1"
+    },
+    "input_set": {
+      "const": "current-four"
+    },
+    "first_checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "basename",
+        "sha256",
+        "opaque_ref"
+      ],
+      "properties": {
+        "order": {
+          "const": 1
+        },
+        "basename": {
+          "const": "JS26032501-1-03-036#上下座B#A1.pdf"
+        },
+        "sha256": {
+          "const": "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
+        },
+        "opaque_ref": {
+          "const": "external-input://sha256/58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "prefixItems": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/entry"
+            },
+            {
+              "properties": {
+                "order": {
+                  "const": 1
+                },
+                "basename": {
+                  "const": "JS26032501-1-03-036#上下座B#A1.pdf"
+                },
+                "sha256": {
+                  "const": "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
+                },
+                "opaque_ref": {
+                  "const": "external-input://sha256/58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
+                },
+                "page_metadata": {
+                  "const": {
+                    "page_count": 2,
+                    "physical_page": "A3 landscape"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/entry"
+            },
+            {
+              "properties": {
+                "order": {
+                  "const": 2
+                },
+                "basename": {
+                  "const": "JS20102801-02-018#手指头#A1.pdf"
+                },
+                "sha256": {
+                  "const": "ffee22f2e392f309d3d0acfc2edadc4a8d5330a9bc28009263af5d8597074a86"
+                },
+                "opaque_ref": {
+                  "const": "external-input://sha256/ffee22f2e392f309d3d0acfc2edadc4a8d5330a9bc28009263af5d8597074a86"
+                },
+                "page_metadata": {
+                  "const": {
+                    "page_count": 1,
+                    "physical_page": "A4 portrait"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/entry"
+            },
+            {
+              "properties": {
+                "order": {
+                  "const": 3
+                },
+                "basename": {
+                  "const": "JS20123103-10-033#手臂拖链支架上改#A2.pdf"
+                },
+                "sha256": {
+                  "const": "322d56b00456f495830386b8dc50a32e34086a5bc66d4735e2c3c735d5fbc57d"
+                },
+                "opaque_ref": {
+                  "const": "external-input://sha256/322d56b00456f495830386b8dc50a32e34086a5bc66d4735e2c3c735d5fbc57d"
+                },
+                "page_metadata": {
+                  "const": {
+                    "page_count": 1,
+                    "physical_page": "A4 portrait"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/entry"
+            },
+            {
+              "properties": {
+                "order": {
+                  "const": 4
+                },
+                "basename": {
+                  "const": "JS24030402-30-013#上插臂#A0.pdf"
+                },
+                "sha256": {
+                  "const": "8fffd93fa7f055f9fe1a7da25bc85630910bdfc2ea86b2ace6ec54979f0a515e"
+                },
+                "opaque_ref": {
+                  "const": "external-input://sha256/8fffd93fa7f055f9fe1a7da25bc85630910bdfc2ea86b2ace6ec54979f0a515e"
+                },
+                "page_metadata": {
+                  "const": {
+                    "page_count": 2,
+                    "physical_page": "A3 landscape"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "basename",
+        "sha256",
+        "opaque_ref",
+        "page_metadata"
+      ],
+      "properties": {
+        "order": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "basename": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+\\.pdf$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "opaque_ref": {
+          "type": "string",
+          "pattern": "^external-input://sha256/[0-9a-f]{64}$",
+          "description": "Opaque identity only; host source paths are forbidden."
+        },
+        "page_metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "page_count",
+            "physical_page"
+          ],
+          "properties": {
+            "page_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "physical_page": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

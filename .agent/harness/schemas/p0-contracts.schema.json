@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/p0-contracts.schema.json",
+  "title": "Generated P0 contract mirror",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source",
+    "global_source",
+    "contract_definition_hash",
+    "status_projection_hash",
+    "contracts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "p0-contracts/1"
+    },
+    "source": {
+      "const": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md"
+    },
+    "global_source": {
+      "const": "docs/contracts/MAIN_CONTRACT_MATRIX.md"
+    },
+    "contract_definition_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "status_projection_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "contracts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/contract"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "global_contract_id": {
+      "type": "string",
+      "pattern": "^[A-Z]+-[0-9]{3}$"
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p0_contract_id",
+        "global_contract_id",
+        "implementation_only",
+        "related_global_contract_ids",
+        "stable_p0_requirement",
+        "owner",
+        "task_id",
+        "tier",
+        "verification_selector",
+        "blocking_level",
+        "current_status",
+        "implementation_reason"
+      ],
+      "properties": {
+        "p0_contract_id": {
+          "type": "string",
+          "pattern": "^P0-[A-Z]+-[0-9]{3}[A-Z]?$"
+        },
+        "global_contract_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/global_contract_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "implementation_only": {
+          "type": "boolean"
+        },
+        "related_global_contract_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/global_contract_id"
+          },
+          "uniqueItems": true
+        },
+        "stable_p0_requirement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^D[0-9]+-T[0-9]+$"
+        },
+        "tier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verification_selector": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blocking_level": {
+          "enum": [
+            "fatal",
+            "blocking",
+            "review_required",
+            "warning",
+            "informational"
+          ]
+        },
+        "current_status": {
+          "enum": [
+            "passed",
+            "failed",
+            "blocked",
+            "not_run"
+          ]
+        },
+        "implementation_reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "implementation_only": {
+                "const": true
+              }
+            },
+            "required": [
+              "implementation_only"
+            ]
+          },
+          "then": {
+            "properties": {
+              "global_contract_id": {
+                "type": "null"
+              },
+              "related_global_contract_ids": {
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "global_contract_id": {
+                "$ref": "#/$defs/global_contract_id"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

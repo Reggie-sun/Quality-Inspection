@@ -1,0 +1,18 @@
+schema_version: p0-acceptance-policy/1
+required_input_set: current-four
+required_sample_count: 4
+required_contract_count: 111
+allowed_overall_verdicts: [passed, failed, blocked]
+task_scope:
+  formal_p0_verdict_allowed: false
+full_p0_scope:
+  formal_p0_verdict_allowed: true
+  blocked_allowed_contract_ids: []
+  not_run_allowed_contract_ids: []
+passed_requires:
+  fatal: passed
+  blocking: passed
+  not_run_count: 0
+  stale_receipt_count: 0
+  human_trial_verdict: passed
+fixture_can_satisfy_live_contracts: false
