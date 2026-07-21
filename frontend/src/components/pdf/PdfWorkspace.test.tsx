@@ -1,0 +1,204 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+import type { PdfDocumentLike } from "../../api/types";
+import { PdfWorkspace } from "./PdfWorkspace";
+
+
+function documentFixture(): PdfDocumentLike {
+  return {
+    numPages: 2,
+    getPage: vi.fn(async (pageNumber: number) => ({
+      getViewport: ({ scale }: { scale: number }) => ({
+        width: (pageNumber === 1 ? 100 : 120) * scale,
+        height: 200 * scale,
+      }),
+      render: vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() })),
+    })),
+  };
+}
+
+function rotatedDocumentFixture(): PdfDocumentLike {
+  return {
+    numPages: 1,
+    getPage: vi.fn(async () => ({
+      getViewport: ({ scale }: { scale: number }) => ({
+        width: 200 * scale,
+        height: 100 * scale,
+      }),
+      render: vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() })),
+    })),
+  };
+}
+
+
+describe("PdfWorkspace", () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      {} as CanvasRenderingContext2D,
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  test("P0-UI-001 switches pages and preserves the current selection", async () => {
+    const pdfDocument = documentFixture();
+    render(
+      <PdfWorkspace
+        pdfDocument={pdfDocument}
+        candidates={[{ id: "c1", pageIndex: 0, bbox: [10, 20, 30, 40] }]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId("candidate-c1"));
+    expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id")).toBe(
+      "c1",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+
+    await waitFor(() => {
+      expect(pdfDocument.getPage).toHaveBeenCalledWith(2);
+    });
+    expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id")).toBe(
+      "c1",
+    );
+    expect(screen.getByTestId("page-indicator").textContent).toBe("2 / 2");
+  });
+
+  test("P0-UI-002 zooms overlays with the PDF viewport", async () => {
+    const bbox: [number, number, number, number] = [10, 20, 30, 40];
+    render(
+      <PdfWorkspace
+        pdfDocument={rotatedDocumentFixture()}
+        pageTransforms={[
+          {
+            pageIndex: 0,
+            pdfToRenderMatrix: [0, 2, -2, 0, 400, 0],
+          },
+        ]}
+        candidates={[{ id: "c1", pageIndex: 0, bbox }]}
+        sources={[]}
+        balloons={[{ id: "b1", pageIndex: 0, center: [80, 90], number: 1 }]}
+      />,
+    );
+    const overlay = await screen.findByLabelText("engineering overlays");
+    expect(overlay.getAttribute("data-scale")).toBe("1");
+    expect(screen.getByTestId("candidate-c1").getAttribute("x")).toBe("160");
+    expect(screen.getByTestId("candidate-c1").getAttribute("y")).toBe("10");
+    expect(screen.getByTestId("candidate-c1").getAttribute("width")).toBe("20");
+    expect(screen.getByTestId("candidate-c1").getAttribute("height")).toBe("20");
+    const balloon = screen.getByTestId("balloon-b1").querySelector("circle");
+    expect(balloon?.getAttribute("cx")).toBe("110");
+    expect(balloon?.getAttribute("cy")).toBe("80");
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+
+    await waitFor(() => {
+      expect(overlay.getAttribute("data-scale")).toBe("1.25");
+      expect(overlay.getAttribute("width")).toBe("250");
+    });
+    expect(screen.getByTestId("pdf-canvas").getAttribute("width")).toBe("250");
+    expect(bbox).toEqual([10, 20, 30, 40]);
+  });
+
+  test("P0-UI-001 switches pages without leaking PDF.js cancellation rejection", async () => {
+    const tasks: Array<{ cancel: ReturnType<typeof vi.fn> }> = [];
+    const pdfDocument: PdfDocumentLike = {
+      numPages: 2,
+      getPage: vi.fn(async () => ({
+        getViewport: ({ scale }: { scale: number }) => ({
+          width: 100 * scale,
+          height: 200 * scale,
+        }),
+        render: vi.fn(() => {
+          let rejectRender!: (reason: unknown) => void;
+          const promise = new Promise<unknown>((_resolve, reject) => {
+            rejectRender = reject;
+          });
+          const cancel = vi.fn(() => {
+            const error = new Error("render cancelled");
+            error.name = "RenderingCancelledException";
+            rejectRender(error);
+          });
+          tasks.push({ cancel });
+          return { promise, cancel };
+        }),
+      })),
+    };
+    render(
+      <PdfWorkspace
+        pdfDocument={pdfDocument}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+    await waitFor(() => expect(tasks).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+
+    await waitFor(() => expect(tasks[0].cancel).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  test("P0-UI-001 switches pages after surfacing a PDF render failure", async () => {
+    const pdfDocument: PdfDocumentLike = {
+      numPages: 2,
+      getPage: vi.fn(async (pageNumber: number) => ({
+        getViewport: ({ scale }: { scale: number }) => ({
+          width: 100 * scale,
+          height: 200 * scale,
+        }),
+        render: vi.fn(() => ({
+          promise:
+            pageNumber === 1
+              ? Promise.reject(new Error("render failed"))
+              : Promise.resolve(),
+          cancel: vi.fn(),
+        })),
+      })),
+    };
+    render(
+      <PdfWorkspace
+        pdfDocument={pdfDocument}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+    expect(await screen.findByRole("alert")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.getByTestId("page-indicator").textContent).toBe("2 / 2");
+  });
+
+  test("P0-UI-003 pans without mutating pdf coordinates", async () => {
+    const bbox: [number, number, number, number] = [10, 20, 30, 40];
+    const original = [...bbox];
+    render(
+      <PdfWorkspace
+        pdfDocument={documentFixture()}
+        candidates={[{ id: "c1", pageIndex: 0, bbox }]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+    await screen.findByTestId("candidate-c1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Pan right" }));
+
+    expect(screen.getByTestId("pdf-page-layer").getAttribute("style")).toContain(
+      "translate(24px, 0px)",
+    );
+    expect(bbox).toEqual(original);
+    expect(screen.getByTestId("candidate-c1").getAttribute("x")).toBe("10");
+  });
+});

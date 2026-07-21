@@ -1,5 +1,5 @@
 {
-  "contract_definition_hash": "26f587561f67c0ca71f66cf259ee1162b00efa50334c93cbe8fb3d52d50e2983",
+  "contract_definition_hash": "196946582780eba8d74ea4e87a709039dfa89319e86a9a0b6efab60edb40cfa0",
   "contracts": [
     {
       "blocking_level": "blocking",
@@ -1508,7 +1508,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "PDF-001",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1522,7 +1522,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "PDF-002",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1536,7 +1536,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "PDF-002",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1550,7 +1550,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "REV-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1578,7 +1578,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "REV-004",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1592,7 +1592,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "REV-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1602,7 +1602,7 @@
       "stable_p0_requirement": "明确 Save 动作只保存 working copy，并携带 `expected_version/operator_id`；P0 不新增 autosave contract",
       "task_id": "D4-T3",
       "tier": "frontend",
-      "verification_selector": "npm --prefix frontend test -- --run src/features/review/saveWorkingCopy.test.ts"
+      "verification_selector": "npm --prefix frontend test -- --run src/features/review/saveWorkingCopy.test.ts src/components/workbench/InspectionWorkbench.test.tsx"
     },
     {
       "blocking_level": "blocking",
@@ -1622,5 +1622,5 @@
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "p0-contracts/1",
   "source": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md",
-  "status_projection_hash": "f038ef89e5d01c1479db19e49dd8fe34e83006a9298277d3be7986180690c771"
+  "status_projection_hash": "eac2899479e1cff13055e0e89d80cca6a4c772de955af3b39f6a8d1fc9590ab8"
 }
