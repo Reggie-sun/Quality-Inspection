@@ -15,6 +15,7 @@ from app.jobs.idempotency import LogicalJob
 from app.processing.automatic_result import build_automatic_result
 from app.projects.models import Project
 from app.projects.state import ProjectState
+from app.review.service import ReviewService
 from app.storage.models import StoredFile
 
 
@@ -103,3 +104,23 @@ def test_raw_result_is_immutable(
     assert db_session.scalar(
         select(AutomaticResult).where(AutomaticResult.id == raw_result.id)
     ) is not None
+
+
+def test_working_copy_is_versioned(
+    raw_result: AutomaticResult,
+    db_session: Session,
+) -> None:
+    """P0-RES-002: review is a separate, saveable, versioned result layer."""
+    service = ReviewService(db_session)
+    working = service.create_from_raw(raw_result.id)
+    before_version = working.version
+    saved = service.apply(
+        working.id,
+        expected_version=before_version,
+        operator_id="quality-1",
+        command={"type": "keep", "item_id": working.items[0]["item_id"]},
+    )
+
+    assert saved.id == working.id
+    assert saved.raw_result_id == raw_result.id
+    assert saved.version == before_version + 1

@@ -81,6 +81,21 @@
 - Rollback and failure boundary: 只 revert 本 task commit；migration rollback 为 `0003 -> 0002`，实际发生 rollback 后第一项验证是 `micromamba run -n qi-p0 pytest backend/tests/integration/test_schema.py -q`。coverage blocking 必须形成 structured error，且 logical job 不得成功。
 - Next verification: `micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_coverage.py backend/tests/integration/test_result_layers.py -q`，预期因 D3-T2 modules 缺失而 collection FAIL。
 
+### Day 4 continuation selection — 2026-07-21
+
+- Selected lane: `Heavy`。
+- Selected plan: 本文件，仍是唯一 current implementation plan；严格按 `D4-T1 → D4-T2 → D4-T3` 完成 Day 4，并在 `D5-T1` 前停止。
+- Selection evidence: branch `feature/d1-t1-contract-harness` 在 `4ef0998` clean；fresh backend baseline 为同一 201 selectors（Compose-network DB 中 199 passed，宿主机 Docker CLI 上 2 passed）；Alembic current/head 均为 `0003`，`alembic check` 无待生成 migration；全部 Day 4 rows 仍为 `not_run`。
+- Validation action: `amend` 后 `continue`。Owner、stable contracts、task IDs、selectors 和顺序不变；只补充当前 exact metadata/schema、同一未发布 Day 4 migration 的增量执行，以及 localhost workbench smoke 所需的实际入口文件。
+- Writer ownership and order: 父 agent 是唯一 writer；explorer/reviewer 严格只读。每个 task 都先 RED、再最小实现、focused gate、task Harness closure、独立 review 和独立 commit；D4 最终 executable state 再刷新 D4-T1～D4-T3 receipts。
+- Problem boundary and Owners: `D4-T1` 由 Review aggregate 唯一提交 working-copy command 语义，Operation audit repository 只持久化同事务摘要；`D4-T2` 由 Review aggregate 提交 version/freeze，Review lock service 只拥有 active-editor lease，Review freeze Veto Gate 只阻断，router 只执行已提交 contract；`D4-T3` 的 PDF workspace、overlay、review panel 和 mutation client 都是 frontend executor，不产生 formal review 语义或 `ReviewedResult`。
+- Old path action: 当前没有 review/workbench 业务旧路径；新建 canonical modules，不引入 bridge、shadow、dual-write、autosave、frontend formal result 或第二 final Owner。`AutomaticResult` 保持 immutable input Owner，working copy 只引用其 identity。
+- Actual-interface delta and allowed paths: `D4-T1` 除原列文件外，允许最小修改 `backend/alembic/env.py`、`backend/tests/integration/test_schema.py` 和 `backend/app/audit/operations.py`，只用于登记 Review metadata、证明 `0004` exact schema 和复用同事务 operation summary；其中 `backend/app/audit/operations.py` 只有 RED 证明现有字段不足时才修改。`D4-T3` 允许最小修改 `frontend/src/main.tsx`，只用于挂载已计划的 `InspectionWorkbench` 以执行 localhost browser smoke。其余 allowed paths 仍以三个 task 原列文件为准。
+- Migration execution: `D4-T1` 的 schema RED 一次性锁定尚未发布的最终 Day 4 persistence shape：`review_working_copies`（含 item-set freeze 持久字段）与 `review_locks`；同一个 `0004_review.py` 在 D4-T1 生成并应用。该 persistence-only reservation 不实现 D4-T2 lock/freeze service/router 语义，D4-T2 仍必须先看到行为 RED。禁止原地改写已应用 `0004`、创建 `0005` 或把 D5 `ReviewedResult` 提前进入 schema；最终必须证明 upgrade/head/check 与 exact-schema assertions。
+- Unchanged contracts: 每条 command 同事务只递增一次 working-copy version 并写一条 operation record；stale write 不覆盖；freeze blockers 仅为 `coverage_blocking / unresolved_confirmation / balloon_required_unconfirmed`；item-set freeze 后 project 仍为 `editing` 且不创建 `ReviewedResult`；Save 不 freeze；PDF/render/viewport state 不写回 PDF coordinates；Provider 不调用，credential 不读取或输出；`.agent/EXECUTION_STATUS.md` 保持缺失，不在 Day 4 发明。
+- Rollback and failure boundary: 每个 task 只 revert 本 task commit；D4 schema rollback 为 `0004 -> 0003`，实际发生 rollback 后第一项验证是 `micromamba run -n qi-p0 pytest backend/tests/integration/test_schema.py -q`。transaction/version/lock/freeze 任一冲突都必须显式失败，不得转为 warning 或 formal success。
+- First next verification: `micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_result_layers.py -q`，预期因 `app.review` modules 缺失而 collection FAIL。
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：

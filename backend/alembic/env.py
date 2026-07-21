@@ -8,6 +8,7 @@ from app.db import Base
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
+from app.review.models import ReviewLock, ReviewWorkingCopy
 from app.storage.models import StoredFile
 
 
@@ -23,6 +24,8 @@ assert {
     LogicalJob,
     ErrorRecord,
     AutomaticResult,
+    ReviewWorkingCopy,
+    ReviewLock,
 }
 
 
