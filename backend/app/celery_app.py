@@ -8,6 +8,7 @@ celery_app = Celery(
     "quality_inspection",
     broker=settings.redis_url,
     backend=settings.redis_url,
+    include=["app.processing.tasks"],
 )
 celery_app.conf.update(
     task_track_started=True,

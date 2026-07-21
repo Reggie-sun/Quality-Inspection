@@ -120,3 +120,69 @@ def test_atomic_replace_is_the_only_publish_step(
     assert replace_calls[0][1] == target
     assert not target.exists()
     assert not list(tmp_path.rglob("*.tmp"))
+
+
+def test_resource_ref_read_and_delete_round_trip(tmp_path: Path) -> None:
+    """P0-RUN-003 centralizes root-confined FileStorage reference access."""
+    storage = LocalFileStorage(tmp_path)
+    payload = b"shared-storage-round-trip"
+    stored = storage.write_verified(
+        "projects/p1/inventory.json",
+        payload,
+        sha256(payload).hexdigest(),
+    )
+
+    assert storage.resolve_resource_ref(stored.resource_ref) == stored.path
+    assert storage.read_bytes(stored.resource_ref) == payload
+    storage.delete(stored.resource_ref)
+    assert not stored.path.exists()
+
+
+@pytest.mark.parametrize(
+    "resource_ref",
+    (
+        "/absolute/path",
+        "asset:///absolute/path",
+        "asset://../escape",
+        "asset://projects\\escape",
+        "external://source",
+        "asset://",
+    ),
+)
+def test_resource_ref_rejects_escape_and_other_schemes(
+    tmp_path: Path,
+    resource_ref: str,
+) -> None:
+    """P0-RUN-003 rejects references outside the configured storage root."""
+    storage = LocalFileStorage(tmp_path)
+
+    with pytest.raises(ValueError):
+        storage.resolve_resource_ref(resource_ref)
+
+
+def test_probe_leaves_no_persistent_file(tmp_path: Path) -> None:
+    """P0-RUN-003 storage probe verifies bytes and deletes its object."""
+    storage = LocalFileStorage(tmp_path)
+
+    storage.probe()
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_storage_rejects_symlinked_parent(tmp_path: Path) -> None:
+    """P0-RUN-003 storage references cannot follow a parent symlink."""
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(outside, target_is_directory=True)
+    storage = LocalFileStorage(tmp_path)
+    try:
+        with pytest.raises(ValueError, match="symlink"):
+            storage.write_verified(
+                "linked/probe.bin",
+                b"blocked",
+                sha256(b"blocked").hexdigest(),
+            )
+    finally:
+        linked.unlink(missing_ok=True)
+        outside.rmdir()

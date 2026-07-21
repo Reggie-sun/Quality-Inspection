@@ -4,6 +4,7 @@ from sqlalchemy import engine_from_config, pool
 from app.audit.operations import OperationRecord
 from app.config import get_settings
 from app.db import Base
+from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
 from app.storage.models import StoredFile
@@ -13,8 +14,8 @@ config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 target_metadata = Base.metadata
 
-# Imports above register all D1-T3 models on the shared metadata.
-assert {Project, StoredFile, OperationRecord, LogicalJob}
+# Imports above register all current models on the shared metadata.
+assert {Project, StoredFile, OperationRecord, LogicalJob, ErrorRecord}
 
 
 def run_migrations_offline() -> None:

@@ -1074,7 +1074,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "SYS-004",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1392,7 +1392,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "PRJ-006",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1478,7 +1478,7 @@
     },
     {
       "blocking_level": "fatal",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "PRJ-005",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1494,7 +1494,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "PRJ-004",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1622,5 +1622,5 @@
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "p0-contracts/1",
   "source": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md",
-  "status_projection_hash": "11b3c79bac81e6707f057e128649d90d89d72980d7fb2538352c738d224c6793"
+  "status_projection_hash": "4d879599849edbab3560870d6f927341eb9816237e548afd05150ba8d81895fe"
 }
