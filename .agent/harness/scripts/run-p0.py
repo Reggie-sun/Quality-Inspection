@@ -165,6 +165,7 @@ def run_task(mode: str, scope: str, task_id: str) -> tuple[str, str]:
     receipt_module = _receipt_module()
     if mode == "fixture" and receipt_module.provider_network_enabled():
         raise ValueError("fixture mode rejects network-enabled Provider configuration")
+    receipt_module.check_contract_authority(ROOT)
 
     mirror = _load_json(MIRROR_PATH)
     bindings = _load_json(BINDINGS_PATH)

@@ -4,7 +4,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -24,7 +24,17 @@ def _load_receipt_module() -> ModuleType:
     return module
 
 
+def _load_runner_module() -> ModuleType:
+    path = HARNESS / "scripts/run-p0.py"
+    spec = importlib.util.spec_from_file_location("test_run_p0", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 RECEIPT = _load_receipt_module()
+RUNNER = _load_runner_module()
 
 
 def _receipt_sources() -> tuple[dict, dict, dict]:
@@ -226,3 +236,125 @@ def test_config_identity_tracks_only_normalized_provider_controls(monkeypatch: p
     monkeypatch.setenv("PROVIDER_API_TOKEN", "must-not-be-read-or-recorded")
     assert RECEIPT.config_identity("fixture", "task", "D1-T2", ROOT) == with_provider_mode
     assert all("TOKEN" not in component for component in with_provider_mode["components"])
+
+
+def test_code_identity_reads_only_safe_executable_allowlist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    allowed_source = tmp_path / "backend/app/service.py"
+    allowed_source.parent.mkdir(parents=True)
+    allowed_source.write_text("VALUE = 1\n", encoding="utf-8")
+    frontend_source = tmp_path / "frontend/src/app.ts"
+    frontend_source.parent.mkdir(parents=True)
+    frontend_source.write_text("export const value = 1;\n", encoding="utf-8")
+    frontend_e2e = tmp_path / "frontend/e2e/app.spec.ts"
+    frontend_e2e.parent.mkdir(parents=True)
+    frontend_e2e.write_text("export const scenario = 1;\n", encoding="utf-8")
+    planned_configs = (
+        tmp_path / "backend/alembic.ini",
+        tmp_path / "frontend/index.html",
+        tmp_path / "frontend/vitest.config.ts",
+    )
+    for path in planned_configs:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("safe-planned-config\n", encoding="utf-8")
+
+    secret_env = tmp_path / "backend/.env"
+    forbidden_paths = (
+        tmp_path / "backend/unlisted.py",
+        secret_env,
+        tmp_path / "backend/app/.secret.py",
+        tmp_path / "backend/private/credential.py",
+        tmp_path / "backend/uploads/input.py",
+        tmp_path / "backend/app/state.db",
+        tmp_path / "backend/app/document.pdf",
+        tmp_path / "backend/app/data.json",
+        tmp_path / "frontend/src/unlisted.vue",
+    )
+    for path in forbidden_paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("never-read-secret-sentinel\n", encoding="utf-8")
+    symlink = tmp_path / "backend/app/symlink.py"
+    symlink.symlink_to(secret_env)
+
+    original_read_bytes = Path.read_bytes
+    reads: list[Path] = []
+
+    def guarded_read_bytes(path: Path) -> bytes:
+        reads.append(path)
+        if path in {*forbidden_paths, symlink}:
+            raise AssertionError(f"unsafe identity read: {path}")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
+    baseline = RECEIPT.code_identity(tmp_path)
+    assert allowed_source in reads
+    assert frontend_source in reads
+    assert frontend_e2e in reads
+    assert set(planned_configs) <= set(reads)
+
+    allowed_source.write_text("VALUE = 2\n", encoding="utf-8")
+    changed_source = RECEIPT.code_identity(tmp_path)
+    assert changed_source["digest"] != baseline["digest"]
+
+    secret_env.write_text("changed-secret-sentinel\n", encoding="utf-8")
+    assert RECEIPT.code_identity(tmp_path) == changed_source
+    assert not ({*forbidden_paths, symlink} & set(reads))
+
+
+def test_contract_authority_preflight_fails_before_evidence_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker_calls: list[tuple[list[str], Path]] = []
+
+    def reject_checker(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        checker_calls.append((command, kwargs["cwd"]))
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="mirror drift")
+
+    monkeypatch.setattr(
+        RECEIPT,
+        "subprocess",
+        SimpleNamespace(run=reject_checker),
+        raising=False,
+    )
+    with pytest.raises(ValueError, match="contract authority preflight failed"):
+        RECEIPT.check_contract_authority(tmp_path)
+    assert checker_calls == [
+        (
+            [
+                sys.executable,
+                str(tmp_path / ".agent/harness/scripts/check-contracts.py"),
+            ],
+            tmp_path,
+        )
+    ]
+
+    def reject_authority(_root: Path) -> None:
+        raise ValueError("controlled authority drift")
+
+    monkeypatch.setattr(RECEIPT, "check_contract_authority", reject_authority, raising=False)
+    monkeypatch.setattr(
+        RECEIPT,
+        "_load_json",
+        lambda _path: pytest.fail("check_run read evidence before authority preflight"),
+    )
+    with pytest.raises(ValueError, match="controlled authority drift"):
+        RECEIPT.check_run("20260721T000000000000Z-00000000", tmp_path)
+
+    receipt_stub = SimpleNamespace(
+        provider_network_enabled=lambda: False,
+        check_contract_authority=reject_authority,
+    )
+    monkeypatch.setattr(RUNNER, "_receipt_module", lambda: receipt_stub)
+    monkeypatch.setattr(RUNNER, "ROOT", tmp_path)
+    monkeypatch.setattr(RUNNER, "RUNS", tmp_path / ".agent/harness/runs")
+    monkeypatch.setattr(
+        RUNNER,
+        "_load_json",
+        lambda _path: pytest.fail("run_task read mirror before authority preflight"),
+    )
+    with pytest.raises(ValueError, match="controlled authority drift"):
+        RUNNER.run_task("fixture", "task", "D1-T2")
+    assert not RUNNER.RUNS.exists()

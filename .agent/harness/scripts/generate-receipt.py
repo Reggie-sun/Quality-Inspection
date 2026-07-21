@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
@@ -43,11 +44,70 @@ EXCLUDED_PARTS = {
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
+    ".tox",
+    ".venv",
     "__pycache__",
     "build",
     "dist",
     "node_modules",
+    "venv",
 }
+SCHEMA_FILES = (
+    "contract-result.schema.json",
+    "current-four-manifest.schema.json",
+    "global-contract-bindings.schema.json",
+    "p0-contracts.schema.json",
+    "provider-fixture.schema.json",
+    "receipt.schema.json",
+    "run.schema.json",
+)
+CODE_IDENTITY_SOURCE_GLOBS = (
+    (".agent/harness/scripts", ("*.py",)),
+    ("backend/alembic", ("**/*.py",)),
+    ("backend/app", ("**/*.py",)),
+    ("backend/tests", ("**/*.py",)),
+    (
+        "frontend/src",
+        (
+            "**/*.css",
+            "**/*.js",
+            "**/*.jsx",
+            "**/*.ts",
+            "**/*.tsx",
+        ),
+    ),
+    (
+        "frontend/e2e",
+        ("**/*.css", "**/*.js", "**/*.jsx", "**/*.ts", "**/*.tsx"),
+    ),
+)
+CODE_IDENTITY_EXPLICIT_FILES = (
+    ".env.example",
+    "Dockerfile",
+    "Makefile",
+    "compose.yaml",
+    "environment.yml",
+    "package-lock.json",
+    "package.json",
+    "pyproject.toml",
+    "requirements.txt",
+    "uv.lock",
+    "backend/Dockerfile",
+    "backend/alembic.ini",
+    "backend/pyproject.toml",
+    "backend/requirements.txt",
+    "frontend/Dockerfile",
+    "frontend/eslint.config.js",
+    "frontend/index.html",
+    "frontend/package-lock.json",
+    "frontend/package.json",
+    "frontend/playwright.config.ts",
+    "frontend/tsconfig.json",
+    "frontend/vite.config.ts",
+    "frontend/vitest.config.ts",
+    *(f".agent/harness/policy/{filename}" for filename in POLICY_FILES.values()),
+    *(f".agent/harness/schemas/{filename}" for filename in SCHEMA_FILES),
+)
 PROVIDER_NETWORK_ENABLED_KEYS = (
     "QI_PROVIDER_NETWORK_ENABLED",
     "PROVIDER_NETWORK_ENABLED",
@@ -61,7 +121,6 @@ PROVIDER_MODE_KEYS = (
     "VISION_PROVIDER_MODE",
     "VISION_LLM_PROVIDER_MODE",
 )
-PROVIDER_CONTROL_ENV_KEYS = PROVIDER_NETWORK_ENABLED_KEYS + PROVIDER_MODE_KEYS
 TRUTHY_PROVIDER_CONTROLS = {"1", "true", "yes", "on", "enabled", "live"}
 OFFLINE_PROVIDER_MODES = {"", "disabled", "fixture", "mock", "none", "offline"}
 
@@ -101,42 +160,46 @@ def _identity_from_pairs(pairs: Iterable[tuple[str, bytes]]) -> dict[str, Any]:
     }
 
 
-def _is_excluded(path: Path) -> bool:
-    return path.is_symlink() or any(part in EXCLUDED_PARTS for part in path.parts)
+def _is_excluded(path: Path, root: Path) -> bool:
+    absolute_root = root.absolute()
+    absolute_path = path.absolute()
+    relative = absolute_path.relative_to(absolute_root)
+    current = absolute_root
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            return True
+    if relative == Path(".env.example"):
+        return False
+    if any(part in EXCLUDED_PARTS for part in relative.parts):
+        return True
+    return any(
+        part.startswith(".") and not (index == 0 and part == ".agent")
+        for index, part in enumerate(relative.parts)
+    )
 
 
 def code_identity(root: Path = ROOT) -> dict[str, Any]:
     """Hash executable/test/Harness/policy/schema/dependency content, not Git state."""
+    root = root.absolute()
     candidates: set[Path] = set()
-    for relative in (
-        Path(".agent/harness/scripts"),
-        Path(".agent/harness/policy"),
-        Path(".agent/harness/schemas"),
-        Path("backend"),
-        Path("frontend"),
-    ):
-        directory = root / relative
-        if directory.is_dir():
-            candidates.update(path for path in directory.rglob("*") if path.is_file())
-    for relative in (
-        ".env.example",
-        "compose.yaml",
-        "environment.yml",
-        "Makefile",
-        "package.json",
-        "package-lock.json",
-        "pyproject.toml",
-        "requirements.txt",
-        "uv.lock",
-    ):
-        path = root / relative
-        if path.is_file():
-            candidates.add(path)
+    for relative, patterns in CODE_IDENTITY_SOURCE_GLOBS:
+        directory = (root / relative).absolute()
+        if not directory.is_dir() or _is_excluded(directory, root):
+            continue
+        for pattern in patterns:
+            for path in directory.glob(pattern):
+                candidate = path.absolute()
+                if not _is_excluded(candidate, root) and candidate.is_file():
+                    candidates.add(candidate)
+    for relative in CODE_IDENTITY_EXPLICIT_FILES:
+        candidate = (root / relative).absolute()
+        if not _is_excluded(candidate, root) and candidate.is_file():
+            candidates.add(candidate)
 
     pairs = [
         (str(path.relative_to(root)), path.read_bytes())
         for path in candidates
-        if not _is_excluded(path.relative_to(root))
     ]
     return _identity_from_pairs(pairs)
 
@@ -221,6 +284,22 @@ def input_identity(mode: str, scope: str, task_id: str | None) -> dict[str, Any]
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def check_contract_authority(root: Path = ROOT) -> None:
+    checker = root / ".agent/harness/scripts/check-contracts.py"
+    result = subprocess.run(
+        [sys.executable, str(checker)],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        raise ValueError(
+            f"contract authority preflight failed: {detail or 'checker failed'}"
+        )
 
 
 def validate_schema(instance: Any, schema_name: str, root: Path = ROOT) -> None:
@@ -421,6 +500,7 @@ def build_receipt(
 def check_run(run_id: str, root: Path = ROOT) -> dict[str, Any]:
     if not RUN_ID_RE.fullmatch(run_id) or run_id in {"latest", "latest-successful"}:
         raise ValueError("--check-run requires one literal generated run ID")
+    check_contract_authority(root)
     run_dir = root / ".agent/harness/runs" / run_id
     if not run_dir.is_dir() or run_dir.is_symlink():
         raise ValueError(f"run directory does not exist: {run_id}")
