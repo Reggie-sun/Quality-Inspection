@@ -4,7 +4,7 @@ from app.db import engine
 
 
 def test_core_migration_creates_only_planned_tables() -> None:
-    """P0-RES-001/002 limit schema to the planned Day 4 persistence."""
+    """P0-RES-001/002/003 limit schema to planned persistence Owners."""
     tables = set(inspect(engine).get_table_names())
 
     assert tables == {
@@ -17,6 +17,8 @@ def test_core_migration_creates_only_planned_tables() -> None:
         "automatic_results",
         "review_working_copies",
         "review_locks",
+        "balloons",
+        "reviewed_results",
     }
 
 
@@ -107,4 +109,62 @@ def test_review_schema_has_exact_day4_persistence_shape() -> None:
         "operator_id",
         "expires_at",
     }
-    assert "reviewed_results" not in set(inspector.get_table_names())
+
+
+def test_balloon_and_reviewed_result_schema_is_exact() -> None:
+    """P0-RES-003/BAL-005 persist only final balloon review facts."""
+    inspector = inspect(engine)
+
+    assert {column["name"] for column in inspector.get_columns("balloons")} == {
+        "id",
+        "project_id",
+        "inspection_item_id",
+        "source_location_id",
+        "page_index",
+        "suggested_number",
+        "formal_number",
+        "sort_order",
+        "anchor_bbox_pdf",
+        "leader_target_pdf",
+        "center_pdf",
+        "placement_status",
+        "collision_flags",
+        "status",
+        "version",
+    }
+    indexes = {
+        index["name"]: index for index in inspector.get_indexes("balloons")
+    }
+    assert set(indexes) == {
+        "uq_balloons_active_item",
+        "uq_balloons_active_formal_number",
+    }
+    assert all(index["unique"] for index in indexes.values())
+
+    assert {
+        column["name"] for column in inspector.get_columns("reviewed_results")
+    } == {
+        "id",
+        "project_id",
+        "working_copy_id",
+        "working_version",
+        "items",
+        "balloons",
+        "schema_version",
+        "created_at",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("reviewed_results")
+    } == {"uq_reviewed_results_working_version"}
+    with engine.connect() as connection:
+        triggers = set(
+            connection.scalars(
+                text(
+                    "SELECT tgname FROM pg_trigger "
+                    "WHERE tgrelid = 'reviewed_results'::regclass "
+                    "AND NOT tgisinternal"
+                )
+            )
+        )
+    assert triggers == {"prevent_reviewed_result_update_delete"}

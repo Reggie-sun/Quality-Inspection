@@ -137,7 +137,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-002",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -221,7 +221,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-005",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -235,7 +235,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-006",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -249,7 +249,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-006",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -263,7 +263,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-002",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -277,7 +277,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -305,7 +305,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-004",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1027,7 +1027,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "REV-006",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1622,5 +1622,5 @@
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "p0-contracts/1",
   "source": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md",
-  "status_projection_hash": "2879147f32e2299aea1c76271071aa4fd570d82aa37280d9341c4e89099d7ed1"
+  "status_projection_hash": "7d142debdba2b522121ab6b9436994a2900f0063e92cb4ea309ececf213b80a2"
 }

@@ -34,6 +34,7 @@ class Add(CommandBase):
     coordinates: tuple[float, float, float, float]
     scope: Literal["local_feature", "global_requirement"]
     balloon_required: bool
+    page_index: int | None = Field(default=None, ge=0)
 
 
 class Merge(CommandBase):
@@ -91,6 +92,10 @@ class ReviewCommandRequest(CommandBase):
 
 
 class FreezeItemsRequest(CommandBase):
+    expected_version: int = Field(ge=1)
+
+
+class ConfirmReviewRequest(CommandBase):
     expected_version: int = Field(ge=1)
 
 _REVIEW_COMMAND_ADAPTER = TypeAdapter(ReviewCommand)

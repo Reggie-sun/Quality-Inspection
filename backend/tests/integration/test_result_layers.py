@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -15,9 +16,14 @@ from app.jobs.idempotency import LogicalJob
 from app.processing.automatic_result import build_automatic_result
 from app.projects.models import Project
 from app.projects.state import ProjectState
-from app.review.service import ReviewService
+from app.review.models import ReviewedResult
+from app.review.service import ReviewConfirmationBlocked, ReviewService
 from app.review.locks import acquire_lock
 from app.storage.models import StoredFile
+from tests.integration.test_balloon_service import (
+    BalloonContext,
+    make_balloon_context,
+)
 
 
 @pytest.fixture
@@ -154,3 +160,119 @@ def test_item_set_freeze_does_not_create_reviewed_result(
 
     assert service.reviewed_result_for(working.project_id) is None
     assert service.get_working_copy(working.id).items_frozen_at is not None
+
+
+@pytest.fixture
+def completed_balloon_review(
+    db_session: Session,
+    tmp_path: Path,
+) -> BalloonContext:
+    context = make_balloon_context(db_session, tmp_path, frozen=True)
+    context.balloon_service.generate_formal(
+        context.working_copy.project_id,
+        expected_version=context.working_copy.version,
+        operator_id="quality-1",
+    )
+    return context
+
+
+def test_reviewed_result_is_immutable(
+    completed_balloon_review: BalloonContext,
+) -> None:
+    """P0-RES-003: confirm creates one immutable reviewed result."""
+    context = completed_balloon_review
+    balloons = [
+        balloon
+        for balloon in context.balloon_service.list_for_project(
+            context.working_copy.project_id
+        )
+        if balloon.status == "active"
+    ]
+    reordered = context.balloon_service.reorder(
+        balloons[0].id,
+        sort_order=50,
+        expected_version=balloons[0].version,
+        operator_id="quality-1",
+    )
+    with pytest.raises(ReviewConfirmationBlocked) as stale_error:
+        context.review_service.confirm(
+            context.working_copy.id,
+            expected_version=context.working_copy.version,
+            operator_id="quality-1",
+        )
+    assert stale_error.value.code == "numbering_stale"
+
+    renumbered = context.balloon_service.renumber(
+        context.working_copy.project_id,
+        ordered_balloon_ids=[balloons[1].id, reordered.id],
+        expected_versions={
+            balloons[1].id: balloons[1].version,
+            reordered.id: reordered.version,
+        },
+        operator_id="quality-1",
+    )
+    reviewed = context.review_service.confirm(
+        context.working_copy.id,
+        expected_version=context.working_copy.version,
+        operator_id="quality-1",
+    )
+    duplicate = context.review_service.confirm(
+        context.working_copy.id,
+        expected_version=context.working_copy.version,
+        operator_id="quality-1",
+    )
+
+    assert duplicate.id == reviewed.id
+    assert context.session.get(Project, context.working_copy.project_id).state == (
+        ProjectState.REVIEWED
+    )
+    with pytest.raises(RuntimeError, match="immutable reviewed result"):
+        context.review_service.replace_items(reviewed.id, [])
+
+    mutation_calls = [
+        lambda: context.balloon_service.generate_formal(
+            context.working_copy.project_id,
+            expected_version=context.working_copy.version,
+            operator_id="quality-1",
+        ),
+        lambda: context.balloon_service.move(
+            renumbered[0].id,
+            center_pdf=(70, 80),
+            expected_version=renumbered[0].version,
+            operator_id="quality-1",
+        ),
+        lambda: context.balloon_service.delete(
+            renumbered[0].id,
+            expected_version=renumbered[0].version,
+            operator_id="quality-1",
+        ),
+        lambda: context.balloon_service.rebuild(
+            renumbered[0].id,
+            expected_version=renumbered[0].version,
+            operator_id="quality-1",
+        ),
+        lambda: context.balloon_service.reorder(
+            renumbered[0].id,
+            sort_order=99,
+            expected_version=renumbered[0].version,
+            operator_id="quality-1",
+        ),
+        lambda: context.balloon_service.renumber(
+            context.working_copy.project_id,
+            ordered_balloon_ids=[value.id for value in renumbered],
+            expected_versions={value.id: value.version for value in renumbered},
+            operator_id="quality-1",
+        ),
+    ]
+    for mutate in mutation_calls:
+        with pytest.raises(RuntimeError, match="finalized"):
+            mutate()
+
+    reviewed.items = []
+    with pytest.raises(IntegrityError, match="immutable"):
+        context.session.commit()
+    context.session.rollback()
+
+    persisted = context.session.get(ReviewedResult, reviewed.id)
+    assert persisted is not None
+    assert persisted.items

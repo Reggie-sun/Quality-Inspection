@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import inspect
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.candidates.models import AutomaticResult
@@ -15,6 +15,7 @@ from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.review.locks import acquire_lock
 from app.review.models import ReviewWorkingCopy
+from app.review.models import ReviewedResult
 from app.review.service import FreezeBlocked, ItemsFrozen, ReviewService
 from app.storage.models import StoredFile
 
@@ -200,7 +201,7 @@ def test_item_set_freeze_preserves_editing_without_reviewed_result(
     assert project is not None
     assert project.state == ProjectState.EDITING
     assert service.reviewed_result_for(working_copy.project_id) is None
-    assert "reviewed_results" not in set(inspect(engine).get_table_names())
+    assert db_session.scalar(select(func.count()).select_from(ReviewedResult)) == 0
 
 
 def test_item_set_freeze_rejects_later_semantic_commands(

@@ -15,7 +15,7 @@ from app.candidates.schemas import Candidate
 from app.projects.models import Project
 from app.projects.state import ProjectState, transition
 from app.review.locks import require_active_lock
-from app.review.models import ReviewWorkingCopy
+from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.schemas import (
     Add,
     Edit,
@@ -29,6 +29,7 @@ from app.review.schemas import (
     parse_review_command,
     validate_edit_fields,
 )
+from app.storage.local import LocalFileStorage
 
 
 class ReviewNotFound(LookupError):
@@ -50,13 +51,30 @@ class ItemsFrozen(RuntimeError):
     pass
 
 
+class ReviewConfirmationBlocked(RuntimeError):
+    def __init__(self, blockers: list[str]) -> None:
+        self.blockers = tuple(blockers)
+        self.code = blockers[0]
+        super().__init__(f"review confirmation blocked: {', '.join(blockers)}")
+
+
+class ReviewedResultImmutable(RuntimeError):
+    pass
+
+
 _COORDINATES = TypeAdapter(tuple[float, float, float, float])
 _COARSE_TYPE = TypeAdapter(CoarseType)
 
 
 class ReviewService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        storage: LocalFileStorage | None = None,
+    ) -> None:
         self.session = session
+        self.storage = storage
 
     def create_from_raw(self, raw_result_id: uuid.UUID) -> ReviewWorkingCopy:
         existing = self.session.scalar(
@@ -261,9 +279,120 @@ class ReviewService:
             blockers.append("balloon_required_unconfirmed")
         return blockers
 
-    @staticmethod
-    def reviewed_result_for(_: uuid.UUID) -> None:
-        return None
+    def reviewed_result_for(self, project_id: uuid.UUID) -> ReviewedResult | None:
+        return self.session.scalar(
+            select(ReviewedResult).where(ReviewedResult.project_id == project_id)
+        )
+
+    def confirm(
+        self,
+        working_copy_id: uuid.UUID,
+        *,
+        expected_version: int,
+        operator_id: str,
+    ) -> ReviewedResult:
+        from app.balloons.models import Balloon
+        from app.balloons.service import BalloonService
+
+        operator_id = self._operator_id(operator_id)
+        preview = self.session.get(ReviewWorkingCopy, working_copy_id)
+        if preview is None:
+            raise ReviewNotFound(f"working copy {working_copy_id} was not found")
+        require_active_lock(self.session, preview.project_id, operator_id)
+        working = self.session.scalar(
+            select(ReviewWorkingCopy)
+            .where(ReviewWorkingCopy.id == working_copy_id)
+            .with_for_update()
+        )
+        if working is None:
+            raise ReviewNotFound(f"working copy {working_copy_id} was not found")
+        if working.version != expected_version:
+            self.session.rollback()
+            raise ReviewVersionConflict(
+                f"expected review version {expected_version}, found {working.version}"
+            )
+        if working.items_frozen_at is None:
+            self.session.rollback()
+            raise FreezeBlocked(["item_set_not_frozen"])
+
+        existing = self.session.scalar(
+            select(ReviewedResult).where(
+                ReviewedResult.working_copy_id == working.id,
+                ReviewedResult.working_version == working.version,
+            )
+        )
+        if existing is not None:
+            return existing
+        if working.numbering_stale:
+            self.session.rollback()
+            raise ReviewConfirmationBlocked(["numbering_stale"])
+
+        balloons = list(
+            self.session.scalars(
+                select(Balloon)
+                .where(
+                    Balloon.project_id == working.project_id,
+                    Balloon.status == "active",
+                )
+                .order_by(Balloon.sort_order, Balloon.id)
+                .with_for_update()
+            )
+        )
+        balloon_service = BalloonService(
+            self.session,
+            storage=self.storage,
+        )
+        blockers = balloon_service.validation_blockers(working.project_id)
+        if blockers:
+            self.session.rollback()
+            raise ReviewConfirmationBlocked(blockers)
+
+        project = self.session.scalar(
+            select(Project).where(Project.id == working.project_id).with_for_update()
+        )
+        if project is None:
+            self.session.rollback()
+            raise ReviewNotFound(f"project {working.project_id} was not found")
+        project.state = transition(ProjectState(project.state), ProjectState.REVIEWED)
+        reviewed = ReviewedResult(
+            project_id=working.project_id,
+            working_copy_id=working.id,
+            working_version=working.version,
+            items=[
+                copy.deepcopy(item)
+                for item in working.items
+                if item.get("active", True)
+            ],
+            balloons=[balloon.snapshot() for balloon in balloons],
+            schema_version="reviewed-result/1",
+        )
+        self.session.add(reviewed)
+        self.session.flush()
+        self.session.add(
+            OperationRecord(
+                project_id=working.project_id,
+                operator_id=operator_id,
+                command="confirm_reviewed_result",
+                target_ids=[str(reviewed.id)],
+                before_version=working.version,
+                after_version=working.version,
+            )
+        )
+        self.session.commit()
+        self.session.refresh(reviewed)
+        return reviewed
+
+    def replace_items(
+        self,
+        reviewed_result_id: uuid.UUID,
+        _: list[dict[str, Any]],
+    ) -> None:
+        reviewed = self.session.get(ReviewedResult, reviewed_result_id)
+        if reviewed is None:
+            raise ReviewNotFound(
+                f"reviewed result {reviewed_result_id} was not found"
+            )
+        raise ReviewedResultImmutable("immutable reviewed result cannot be replaced")
 
     @staticmethod
     def _current_item(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -295,13 +424,16 @@ class ReviewService:
             item = self._active_item(items, command.item_id)
             item["status"] = "excluded"
             item["active"] = False
-            return [command.item_id], numbering_stale
+            return [command.item_id], True
         if isinstance(command, Edit):
             item = self._active_item(items, command.item_id)
             self._edit_item(item, command.fields)
-            return [command.item_id], numbering_stale
+            return [command.item_id], numbering_stale or "coordinates" in command.fields
         if isinstance(command, Add):
             item_id = str(uuid.uuid4())
+            source_location_ids = (
+                [f"manual:{item_id}"] if command.page_index is not None else []
+            )
             items.append(
                 {
                     "item_id": item_id,
@@ -312,13 +444,14 @@ class ReviewService:
                     "scope": command.scope,
                     "balloon_required": command.balloon_required,
                     "requires_confirmation": False,
-                    "source_location_ids": [],
+                    "source_location_ids": source_location_ids,
+                    "page_index": command.page_index,
                     "source_type": "manual",
                     "status": "pending",
                     "active": True,
                 }
             )
-            return [item_id], numbering_stale
+            return [item_id], True
         if isinstance(command, Merge):
             if len(set(command.item_ids)) != len(command.item_ids):
                 raise ValueError("merge item IDs must be distinct")
@@ -347,7 +480,7 @@ class ReviewService:
                 source["status"] = "superseded"
                 source["active"] = False
             items.append(merged)
-            return [*command.item_ids, merged_id], numbering_stale
+            return [*command.item_ids, merged_id], True
         if isinstance(command, Split):
             source = self._active_item(items, command.item_id)
             if "item_type" not in source:
@@ -372,7 +505,7 @@ class ReviewService:
                     }
                 )
                 items.append(split_item)
-            return [command.item_id, *split_ids], numbering_stale
+            return [command.item_id, *split_ids], True
         if isinstance(command, ResolveConfirmation):
             self._resolve_confirmation(
                 items,
