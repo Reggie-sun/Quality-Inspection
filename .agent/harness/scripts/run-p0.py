@@ -17,6 +17,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping
 from urllib.parse import urlsplit
+from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -28,6 +29,33 @@ TASK_RE = re.compile(r"^D[0-9]+-T[0-9]+$")
 RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$")
 SHELL_OPERATORS = {"&&", "||", ";", "|", ">", ">>", "<"}
 CURRENT_FOUR_ARTIFACT = "artifacts/current-four-manifest.json"
+NO_SILENT_SUCCESS_SELECTOR = "phase://failure/no-silent-success"
+NO_SILENT_SUCCESS_TEST = "backend/tests/e2e/test_no_silent_success.py"
+NO_SILENT_SUCCESS_REPORT = "reports/no-silent-success.json"
+NO_SILENT_SUCCESS_JUNIT = "reports/no-silent-success.junit.xml"
+NO_SILENT_SUCCESS_POINTS = (
+    "provider",
+    "storage",
+    "template",
+    "font",
+    "ballooned_pdf",
+    "sip_excel",
+    "manifest",
+)
+NO_SILENT_SUCCESS_ZERO_PROPERTIES = (
+    "successful_exports",
+    "formal_downloads",
+    "published_refs",
+)
+NO_SILENT_SUCCESS_EVIDENCE_PROPERTIES = (
+    "evidence_source",
+    "status_owner",
+    "error_code",
+    "recorded_stage",
+    "error_severity",
+    "severity_source",
+)
+_ACTIVE_RUN_DIR: Path | None = None
 
 
 def _iso_now() -> str:
@@ -72,7 +100,155 @@ def _git_revision() -> str:
     return revision if result.returncode == 0 and revision else "unavailable"
 
 
-def _phase_outcome(selector: str, mode: str) -> tuple[int | None, str, str]:
+def _junit_failure_evidence(
+    path: Path,
+) -> tuple[dict[str, int], list[dict[str, str]]]:
+    root = ElementTree.parse(path).getroot()
+    suites = [root] if root.tag == "testsuite" else root.findall(".//testsuite")
+    summary = {
+        name: sum(int(suite.attrib.get(name, "0")) for suite in suites)
+        for name in ("tests", "failures", "errors", "skipped")
+    }
+    cases: list[dict[str, str]] = []
+    for test_case in root.findall(".//testcase"):
+        properties = {
+            str(item.attrib.get("name")): str(item.attrib.get("value"))
+            for item in test_case.findall("./properties/property")
+        }
+        if "failure_point" not in properties:
+            continue
+        cases.append(
+            {
+                "test_name": str(test_case.attrib.get("name", "")),
+                **properties,
+            }
+        )
+    order = {name: index for index, name in enumerate(NO_SILENT_SUCCESS_POINTS)}
+    cases.sort(key=lambda item: order.get(item["failure_point"], len(order)))
+    return summary, cases
+
+
+def _failure_phase_outcome(
+    selector: str,
+    run_dir: Path,
+) -> tuple[int | None, str, str, list[str]]:
+    junit_path = run_dir / NO_SILENT_SUCCESS_JUNIT
+    report_path = run_dir / NO_SILENT_SUCCESS_REPORT
+    argv = [
+        sys.executable,
+        "-m",
+        "pytest",
+        NO_SILENT_SUCCESS_TEST,
+        "-q",
+        "-o",
+        "junit_family=legacy",
+        f"--junitxml={junit_path}",
+    ]
+    started_at = _iso_now()
+    try:
+        result = subprocess.run(
+            argv,
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, PermissionError, OSError) as exc:
+        completed_at = _iso_now()
+        report = {
+            "schema_version": "failure-proof/1",
+            "run_id": run_dir.name,
+            "selector": selector,
+            "command": argv,
+            "exit_code": None,
+            "result_state": "blocked",
+            "started_at": started_at,
+            "completed_at": completed_at,
+            "junit_ref": None,
+            "pytest_summary": None,
+            "failure_points": [],
+            "cases": [],
+            "validation_errors": [f"pytest could not start: {exc}"],
+        }
+        _write_json(report_path, report)
+        return None, "blocked", report["validation_errors"][0], [NO_SILENT_SUCCESS_REPORT]
+
+    completed_at = _iso_now()
+    validation_errors: list[str] = []
+    summary: dict[str, int] | None = None
+    cases: list[dict[str, str]] = []
+    if junit_path.is_file():
+        try:
+            summary, cases = _junit_failure_evidence(junit_path)
+        except (ElementTree.ParseError, OSError, TypeError, ValueError) as exc:
+            validation_errors.append(f"invalid JUnit evidence: {exc}")
+    else:
+        validation_errors.append("pytest did not create JUnit evidence")
+
+    if result.returncode != 0:
+        validation_errors.append(f"pytest exited with code {result.returncode}")
+
+    if summary != {"tests": 7, "failures": 0, "errors": 0, "skipped": 0}:
+        validation_errors.append("JUnit summary is not seven passing failure cases")
+    if [item.get("failure_point") for item in cases] != list(
+        NO_SILENT_SUCCESS_POINTS
+    ):
+        validation_errors.append("JUnit failure points do not match the registered set")
+    for item in cases:
+        point = item.get("failure_point", "unknown")
+        if item.get("export_status") != "failed":
+            validation_errors.append(f"{point} did not record failed export status")
+        if any(item.get(name) != "0" for name in NO_SILENT_SUCCESS_ZERO_PROPERTIES):
+            validation_errors.append(f"{point} exposed formal success evidence")
+        if any(not item.get(name) for name in NO_SILENT_SUCCESS_EVIDENCE_PROPERTIES):
+            validation_errors.append(f"{point} did not record direct failure evidence")
+        if item.get("error_severity") not in {"fatal", "blocking"}:
+            validation_errors.append(f"{point} did not record fatal/blocking severity")
+
+    state = (
+        "passed"
+        if result.returncode == 0 and not validation_errors
+        else "failed"
+    )
+    report = {
+        "schema_version": "failure-proof/1",
+        "run_id": run_dir.name,
+        "selector": selector,
+        "command": argv,
+        "exit_code": result.returncode,
+        "result_state": state,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "junit_ref": NO_SILENT_SUCCESS_JUNIT if junit_path.is_file() else None,
+        "pytest_summary": summary,
+        "failure_points": [item["failure_point"] for item in cases],
+        "cases": cases,
+        "validation_errors": validation_errors,
+    }
+    _write_json(report_path, report)
+    output = "\n".join(
+        (
+            f"command={shlex.join(argv)}",
+            f"exit_code={result.returncode}",
+            f"structured_report={NO_SILENT_SUCCESS_REPORT}",
+            f"validation_errors={json.dumps(validation_errors, ensure_ascii=False)}",
+            "stdout:",
+            result.stdout,
+            "stderr:",
+            result.stderr,
+        )
+    )
+    artifact_refs = [NO_SILENT_SUCCESS_REPORT]
+    if junit_path.is_file():
+        artifact_refs.append(NO_SILENT_SUCCESS_JUNIT)
+    return result.returncode, state, output, artifact_refs
+
+
+def _phase_outcome(
+    selector: str,
+    mode: str,
+    run_dir: Path,
+) -> tuple[int | None, str, str, list[str]]:
     parsed = urlsplit(selector)
     requested_mode = parsed.netloc
     phase = parsed.path.lstrip("/")
@@ -81,11 +257,15 @@ def _phase_outcome(selector: str, mode: str) -> tuple[int | None, str, str]:
             None,
             "blocked",
             f"phase mode mismatch: runner={mode} selector={requested_mode}",
+            [],
         )
+    if selector == NO_SILENT_SUCCESS_SELECTOR:
+        return _failure_phase_outcome(selector, run_dir)
     return (
         None,
         "blocked",
         f"phase://{requested_mode}/{phase} has no D1-T1 handler; no child run was created",
+        [],
     )
 
 
@@ -123,16 +303,45 @@ def _command_outcome(selector: str) -> tuple[int | None, str, str]:
 def _execute_selector(selector: str, mode: str) -> dict[str, Any]:
     started_at = _iso_now()
     if selector.startswith("phase://"):
-        exit_code, state, output = _phase_outcome(selector, mode)
+        if _ACTIVE_RUN_DIR is None:
+            exit_code, state, output, artifact_refs = (
+                None,
+                "blocked",
+                "phase selector has no active open run",
+                [],
+            )
+        else:
+            exit_code, state, output, artifact_refs = _phase_outcome(
+                selector,
+                mode,
+                _ACTIVE_RUN_DIR,
+            )
     else:
         exit_code, state, output = _command_outcome(selector)
+        artifact_refs = []
     return {
         "exit_code": exit_code,
         "result_state": state,
         "started_at": started_at,
         "completed_at": _iso_now(),
         "output": output,
+        "artifact_refs": artifact_refs,
     }
+
+
+def _execute_selector_in_run(
+    selector: str,
+    mode: str,
+    run_dir: Path,
+) -> dict[str, Any]:
+    global _ACTIVE_RUN_DIR
+    if _ACTIVE_RUN_DIR is not None:
+        raise RuntimeError("selector execution already owns one open run")
+    _ACTIVE_RUN_DIR = run_dir
+    try:
+        return _execute_selector(selector, mode)
+    finally:
+        _ACTIVE_RUN_DIR = None
 
 
 def _seal_run(run_dir: Path) -> None:
@@ -301,7 +510,7 @@ def run_task(
     outcomes: dict[str, dict[str, Any]] = {}
     log_refs: dict[str, str] = {}
     for index, selector in enumerate(dict.fromkeys(row["verification_selector"] for row in selected), start=1):
-        outcome = _execute_selector(selector, mode)
+        outcome = _execute_selector_in_run(selector, mode, run_dir)
         log_ref = f"logs/selector-{index:03d}.log"
         (run_dir / log_ref).write_text(outcome.pop("output") + "\n", encoding="utf-8")
         outcomes[selector] = outcome
@@ -320,7 +529,10 @@ def run_task(
             "result_state": outcome["result_state"],
             "started_at": outcome["started_at"],
             "completed_at": outcome["completed_at"],
-            "artifact_refs": [log_refs[selector]],
+            "artifact_refs": [
+                log_refs[selector],
+                *outcome.get("artifact_refs", []),
+            ],
         }
         receipt_module.validate_schema(result, "contract-result.schema.json", ROOT)
         results.append(result)

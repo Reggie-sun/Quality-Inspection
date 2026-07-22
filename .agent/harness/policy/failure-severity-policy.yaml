@@ -1,6 +1,78 @@
-schema_version: failure-severity-policy/1
+schema_version: failure-severity-policy/2
 levels: [fatal, blocking, review_required, warning, informational]
 formal_success_forbidden_when: [fatal, blocking]
 review_required_must_be_resolved_before: reviewed_result
 warning_requires_record: true
 informational_affects_verdict: false
+failure_proof:
+  mode: failure
+  scope: task
+  task_id: D7-T1
+  contract_id: P0-ACC-007
+  selector: phase://failure/no-silent-success
+  test_path: backend/tests/e2e/test_no_silent_success.py
+  report_ref: reports/no-silent-success.json
+  junit_ref: reports/no-silent-success.junit.xml
+  failure_points:
+    - provider
+    - storage
+    - template
+    - font
+    - ballooned_pdf
+    - sip_excel
+    - manifest
+  zero_count_properties:
+    - successful_exports
+    - formal_downloads
+    - published_refs
+  allowed_error_severities: [fatal, blocking]
+  evidence_requirements:
+    provider:
+      evidence_source: error_record
+      status_owner: logical_job
+      error_code: vision_provider_unavailable
+      recorded_stage: preflight
+      error_severity: blocking
+      severity_source: error_record
+    storage:
+      evidence_source: error_record
+      status_owner: logical_job
+      error_code: storage_unavailable
+      recorded_stage: preflight
+      error_severity: blocking
+      severity_source: error_record
+    template:
+      evidence_source: capability_exception
+      status_owner: capability_exception
+      error_code: export_template_unavailable
+      recorded_stage: export_preflight
+      error_severity: fatal
+      severity_source: failure_policy
+    font:
+      evidence_source: capability_exception
+      status_owner: capability_exception
+      error_code: export_font_unavailable
+      recorded_stage: export_preflight
+      error_severity: fatal
+      severity_source: failure_policy
+    ballooned_pdf:
+      evidence_source: error_record
+      status_owner: export_job
+      error_code: export_artifact_failed
+      recorded_stage: export_pdf
+      error_severity: fatal
+      severity_source: error_record
+    sip_excel:
+      evidence_source: error_record
+      status_owner: export_job
+      error_code: export_artifact_failed
+      recorded_stage: export_excel
+      error_severity: fatal
+      severity_source: error_record
+    manifest:
+      evidence_source: error_record
+      status_owner: export_job
+      error_code: export_artifact_failed
+      recorded_stage: export_manifest
+      error_severity: fatal
+      severity_source: error_record

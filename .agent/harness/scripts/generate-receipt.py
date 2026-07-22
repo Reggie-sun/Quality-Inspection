@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
+from xml.etree import ElementTree
 
 import yaml
 from jsonschema import Draft202012Validator, FormatChecker
@@ -461,6 +462,176 @@ def _freshness_reasons(
     return sorted(reasons)
 
 
+def _run_artifact_path(root: Path, run: Mapping[str, Any], artifact_ref: str) -> Path:
+    relative = Path(artifact_ref)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError("contract result artifact_ref must stay inside its run")
+    run_dir = root / ".agent/harness/runs" / str(run["run_id"])
+    artifact_path = run_dir / relative
+    current = run_dir
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(f"run evidence artifact must not be a symlink: {artifact_ref}")
+    if not artifact_path.is_file():
+        raise ValueError(f"run evidence artifact is missing: {artifact_ref}")
+    return artifact_path
+
+
+def _junit_failure_evidence(
+    path: Path,
+) -> tuple[dict[str, int], list[dict[str, str]]]:
+    try:
+        root = ElementTree.parse(path).getroot()
+        suites = [root] if root.tag == "testsuite" else root.findall(".//testsuite")
+        summary = {
+            name: sum(int(suite.attrib.get(name, "0")) for suite in suites)
+            for name in ("tests", "failures", "errors", "skipped")
+        }
+        cases: list[dict[str, str]] = []
+        for test_case in root.findall(".//testcase"):
+            properties = {
+                str(item.attrib.get("name")): str(item.attrib.get("value"))
+                for item in test_case.findall("./properties/property")
+            }
+            if "failure_point" in properties:
+                cases.append(
+                    {
+                        "test_name": str(test_case.attrib.get("name", "")),
+                        **properties,
+                    }
+                )
+        return summary, cases
+    except (ElementTree.ParseError, OSError, TypeError, ValueError) as exc:
+        raise ValueError("failure proof JUnit evidence is invalid") from exc
+
+
+def _validate_failure_proof(
+    root: Path,
+    run: dict[str, Any],
+    result_by_id: dict[str, dict[str, Any]],
+    contracts_by_id: dict[str, dict[str, Any]],
+    policy: dict[str, Any],
+) -> None:
+    proof = policy.get("failure_proof")
+    if not isinstance(proof, dict):
+        raise ValueError("failure severity policy is missing failure_proof")
+    target = (proof.get("mode"), proof.get("scope"), proof.get("task_id"))
+    current = (run["mode"], run["scope"], run["task_id"])
+    if current != target:
+        return
+
+    contract_id = proof.get("contract_id")
+    if run["selected_contract_ids"] != [contract_id]:
+        raise ValueError("failure proof must select its one registered contract")
+    result = result_by_id.get(str(contract_id))
+    if result is None:
+        raise ValueError("failure proof result is missing")
+    selector = proof.get("selector")
+    if result.get("command") != selector:
+        raise ValueError("failure proof result does not use its registered selector")
+    severity = contracts_by_id[str(contract_id)]["blocking_level"]
+    if severity not in policy.get("formal_success_forbidden_when", []):
+        raise ValueError("failure proof contract severity does not veto formal success")
+
+    report_ref = proof.get("report_ref")
+    junit_ref = proof.get("junit_ref")
+    if not isinstance(report_ref, str) or not isinstance(junit_ref, str):
+        raise ValueError("failure proof evidence refs must be strings")
+    artifact_refs = set(result.get("artifact_refs", []))
+    if report_ref not in artifact_refs:
+        raise ValueError("failure proof result is missing its structured report")
+    report = _load_json(_run_artifact_path(root, run, report_ref))
+
+    if (
+        report.get("schema_version") != "failure-proof/1"
+        or report.get("run_id") != run["run_id"]
+        or report.get("selector") != selector
+        or report.get("result_state") != result["result_state"]
+        or report.get("exit_code") != result["exit_code"]
+    ):
+        raise ValueError("failure proof report identity does not match its result")
+
+    command = report.get("command")
+    test_path = proof.get("test_path")
+    if (
+        not isinstance(command, list)
+        or len(command) < 4
+        or command[1:3] != ["-m", "pytest"]
+        or test_path not in command
+        or any(Path(str(token)).name == "run-p0.py" for token in command)
+    ):
+        raise ValueError("failure proof did not run the registered pytest command")
+
+    if result["result_state"] != "passed":
+        validation_errors = report.get("validation_errors")
+        if not isinstance(validation_errors, list) or not validation_errors:
+            raise ValueError("non-passing failure proof lacks structured error evidence")
+        report_junit_ref = report.get("junit_ref")
+        if report_junit_ref is not None:
+            if report_junit_ref != junit_ref or junit_ref not in artifact_refs:
+                raise ValueError("non-passing failure proof JUnit ref is inconsistent")
+            _run_artifact_path(root, run, junit_ref)
+        return
+
+    if (
+        result["exit_code"] != 0
+        or report.get("junit_ref") != junit_ref
+        or report.get("validation_errors") != []
+        or junit_ref not in artifact_refs
+    ):
+        raise ValueError("passing failure proof lacks complete structured evidence")
+    junit_summary, junit_cases = _junit_failure_evidence(
+        _run_artifact_path(root, run, junit_ref)
+    )
+    if (
+        junit_summary != report.get("pytest_summary")
+        or junit_cases != report.get("cases")
+    ):
+        raise ValueError("failure proof JUnit evidence does not match its report")
+
+    expected_points = proof.get("failure_points")
+    if (
+        not isinstance(expected_points, list)
+        or report.get("failure_points") != expected_points
+        or report.get("pytest_summary")
+        != {
+            "tests": len(expected_points),
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+        }
+    ):
+        raise ValueError("failure proof did not cover every registered failure point")
+    cases = report.get("cases")
+    if not isinstance(cases, list) or len(cases) != len(expected_points):
+        raise ValueError("failure proof structured cases are incomplete")
+    zero_properties = proof.get("zero_count_properties")
+    allowed_severities = proof.get("allowed_error_severities")
+    evidence_requirements = proof.get("evidence_requirements")
+    if not isinstance(zero_properties, list) or not isinstance(
+        allowed_severities, list
+    ) or not isinstance(evidence_requirements, dict):
+        raise ValueError("failure proof property policy is invalid")
+    for point, case in zip(expected_points, cases, strict=True):
+        expected_evidence = evidence_requirements.get(point)
+        if not isinstance(case, dict) or not isinstance(expected_evidence, dict):
+            raise ValueError("failure proof case must be one structured object")
+        if (
+            case.get("failure_point") != point
+            or case.get("test_name")
+            != f"test_p0_acc_007_no_silent_success[{point}]"
+            or case.get("export_status") != "failed"
+            or case.get("error_severity") not in allowed_severities
+            or any(case.get(name) != "0" for name in zero_properties)
+            or any(
+                case.get(name) != str(value)
+                for name, value in expected_evidence.items()
+            )
+        ):
+            raise ValueError(f"failure proof case does not veto formal success: {point}")
+
+
 def build_receipt(
     root: Path,
     run: dict[str, Any],
@@ -525,6 +696,20 @@ def build_receipt(
 
     if not set(selected_ids) <= set(contracts_by_id):
         raise ValueError("run selects an unknown P0 contract ID")
+
+    for p0_id in selected_ids:
+        expected_selector = contracts_by_id[p0_id]["verification_selector"]
+        if result_by_id[p0_id].get("command") != expected_selector:
+            raise ValueError(
+                f"contract result command does not match mirror selector: {p0_id}"
+            )
+    _validate_failure_proof(
+        root,
+        run,
+        result_by_id,
+        contracts_by_id,
+        policies["failure_severity_policy"],
+    )
 
     result_counts = _empty_counts()
     per_severity_counts = {severity: _empty_counts() for severity in SEVERITIES}

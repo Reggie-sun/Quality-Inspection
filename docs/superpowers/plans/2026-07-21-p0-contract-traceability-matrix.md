@@ -234,7 +234,7 @@ Each table uses the same columns:
 | `P0-ACC-004` | `null` | `true` | `[BAL-006, BAL-007]` | 四份的每个active balloon-required item均有一个可见可读正式气泡；完成drag、delete/rebuild、explicit renumber后hard collision和unresolved manual-required均为0 | P0 harness | `D7-T2` | browser-live-e2e | `phase://live/balloons?input_set=current-four` | `blocking` | `not_run` | current-four browser balloon操作、可见性和零hard-collision是当前试用验收编排。 |
 | `P0-ACC-005` | `null` | `true` | `[EXP-004, EXP-005, EXP-006]` | operator从同一Product Design工作台触发正式export；仅原子成功后每份样例显示恰好ballooned PDF、fixed SIP Excel和manifest三个下载 | P0 harness | `D7-T2` | live-e2e | `phase://live/export?input_set=current-four` | `blocking` | `not_run` | current-four同页export和三产物下载phase是当前P0数据与验收编排。 |
 | `P0-ACC-006` | `null` | `true` | `[EXP-005, EXP-007]` | 四份的工作台检验项表、reviewed items、balloons、PDF、Excel和manifest使用一致item identity、count与正式编号 | P0 harness | `D7-T2` | live-e2e | `phase://live/consistency?input_set=current-four` | `blocking` | `not_run` | current-four UI与cross-artifact consistency phase是当前P0验收编排。 |
-| `P0-ACC-007` | `PRJ-005` | `false` | `[EXP-006]` | Provider、storage、template、font 或任一子产物故障都不会产生 formal success/download | Processing / Export formal-success Veto Gate | `D7-T1` | failure-e2e | `phase://failure/no-silent-success` | `fatal` | `not_run` | — |
+| `P0-ACC-007` | `PRJ-005` | `false` | `[EXP-006]` | Provider、storage、template、font 或任一子产物故障都不会产生 formal success/download | Processing / Export formal-success Veto Gate | `D7-T1` | failure-e2e | `phase://failure/no-silent-success` | `fatal` | `passed` | — |
 
 ## P0 Input Set And External Gates
 
