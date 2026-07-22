@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/run.schema.json",
+  "title": "Immutable P0 Harness run identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "mode",
+    "scope",
+    "task_id",
+    "code_identity",
+    "git_revision_at_start",
+    "config_identity",
+    "input_identity",
+    "contract_definition_hash",
+    "status_projection_hash_at_start",
+    "policy_versions",
+    "selected_contract_ids",
+    "started_at",
+    "completed_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "run/1"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
+    },
+    "mode": {
+      "enum": [
+        "fixture",
+        "failure",
+        "live"
+      ]
+    },
+    "scope": {
+      "enum": [
+        "task",
+        "full-p0"
+      ]
+    },
+    "task_id": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^D[0-9]+-T[0-9]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "code_identity": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/content_identity"
+        }
+      ],
+      "description": "SHA-256 over executable, test, Harness policy/schema/script, and dependency content; it excludes commit-object identity, run evidence, generated status projection bytes, and docs-only status projection content."
+    },
+    "git_revision_at_start": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Diagnostic Git revision only; never the executable-content identity."
+    },
+    "config_identity": {
+      "$ref": "#/$defs/content_identity"
+    },
+    "input_identity": {
+      "$ref": "#/$defs/content_identity"
+    },
+    "contract_definition_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "status_projection_hash_at_start": {
+      "$ref": "#/$defs/sha256"
+    },
+    "policy_versions": {
+      "$ref": "#/$defs/policy_versions"
+    },
+    "selected_contract_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^P0-[A-Z]+-[0-9]{3}[A-Z]?$"
+      },
+      "uniqueItems": true
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "scope": {
+            "const": "task"
+          }
+        },
+        "required": [
+          "scope"
+        ]
+      },
+      "then": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "pattern": "^D[0-9]+-T[0-9]+$"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "task_id": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "content_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest",
+        "components"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "policy_versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "harness_policy",
+        "p0_acceptance_policy",
+        "provider_call_policy",
+        "failure_severity_policy"
+      ],
+      "properties": {
+        "harness_policy": {
+          "type": "string",
+          "pattern": "^harness-policy/[0-9]+$"
+        },
+        "p0_acceptance_policy": {
+          "type": "string",
+          "pattern": "^p0-acceptance-policy/[0-9]+$"
+        },
+        "provider_call_policy": {
+          "type": "string",
+          "pattern": "^provider-call-policy/[0-9]+$"
+        },
+        "failure_severity_policy": {
+          "type": "string",
+          "pattern": "^failure-severity-policy/[0-9]+$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/global-contract-bindings.schema.json",
+  "title": "Generated global-to-P0 typed bindings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source",
+    "global_source",
+    "contract_definition_hash",
+    "bindings"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "global-contract-bindings/1"
+    },
+    "source": {
+      "const": ".agent/harness/contracts/p0-contracts.json"
+    },
+    "global_source": {
+      "const": "docs/contracts/MAIN_CONTRACT_MATRIX.md"
+    },
+    "contract_definition_hash": {
+      "$ref": "#/$defs/sha256"
+    },
+    "bindings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/binding"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "p0_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^P0-[A-Z]+-[0-9]{3}[A-Z]?$"
+      },
+      "uniqueItems": true
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "global_contract_id",
+        "primary_p0_contract_ids",
+        "related_business_p0_contract_ids",
+        "related_implementation_p0_contract_ids"
+      ],
+      "properties": {
+        "global_contract_id": {
+          "type": "string",
+          "pattern": "^[A-Z]+-[0-9]{3}$"
+        },
+        "primary_p0_contract_ids": {
+          "$ref": "#/$defs/p0_ids"
+        },
+        "related_business_p0_contract_ids": {
+          "$ref": "#/$defs/p0_ids"
+        },
+        "related_implementation_p0_contract_ids": {
+          "$ref": "#/$defs/p0_ids"
+        }
+      }
+    }
+  }
+}

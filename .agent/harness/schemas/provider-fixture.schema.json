@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/provider-fixture.schema.json",
+  "title": "Sanitized Provider fixture envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "provider",
+    "provider_version",
+    "adapter_version",
+    "provider_schema_version",
+    "request_ref",
+    "response_ref",
+    "sanitized",
+    "contains_secret",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "provider-fixture/1"
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "adapter_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "request_ref": {
+      "type": "string",
+      "pattern": "^fixture://sanitized/[A-Za-z0-9._/-]+$"
+    },
+    "response_ref": {
+      "type": "string",
+      "pattern": "^fixture://sanitized/[A-Za-z0-9._/-]+$"
+    },
+    "sanitized": {
+      "const": true
+    },
+    "contains_secret": {
+      "const": false
+    },
+    "payload": {
+      "type": "object",
+      "minProperties": 1
+    }
+  }
+}

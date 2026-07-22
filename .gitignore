@@ -1,2 +1,6 @@
 .env
 .worktrees/
+.agent/harness/runs/*
+!.agent/harness/runs/.gitkeep
+frontend/node_modules/
+frontend/dist/

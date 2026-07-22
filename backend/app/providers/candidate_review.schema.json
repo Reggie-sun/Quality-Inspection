@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/candidate_review.schema.json",
+  "title": "Local candidate review Advisor response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "raw_text",
+    "item_type",
+    "normalized_text",
+    "requires_confirmation"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "candidate-review/1"
+    },
+    "raw_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "item_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "normalized_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requires_confirmation": {
+      "type": "boolean"
+    }
+  }
+}

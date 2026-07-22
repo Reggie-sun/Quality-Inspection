@@ -1,0 +1,12 @@
+schema_version: harness-policy/1
+default_mode: fixture
+allowed_modes: [fixture, failure, live]
+receipt_scopes: [task, full-p0]
+formal_p0_scope: full-p0
+result_states: [passed, failed, blocked, not_run]
+contract_definition_excludes: [current_status]
+status_projection_affects_freshness: false
+run_directory: .agent/harness/runs
+immutable_after_completion: true
+receipt_freshness_hours: 24
+latest_pointer_is_evidence: false

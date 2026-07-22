@@ -1,0 +1,6 @@
+schema_version: failure-severity-policy/1
+levels: [fatal, blocking, review_required, warning, informational]
+formal_success_forbidden_when: [fatal, blocking]
+review_required_must_be_resolved_before: reviewed_result
+warning_requires_record: true
+informational_affects_verdict: false

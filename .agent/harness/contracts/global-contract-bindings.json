@@ -1,0 +1,594 @@
+{
+  "bindings": [
+    {
+      "global_contract_id": "BAL-001",
+      "primary_p0_contract_ids": [
+        "P0-BAL-013",
+        "P0-UI-005"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "BAL-002",
+      "primary_p0_contract_ids": [
+        "P0-BAL-001",
+        "P0-BAL-002",
+        "P0-BAL-011",
+        "P0-REV-010"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "BAL-003",
+      "primary_p0_contract_ids": [
+        "P0-BAL-003",
+        "P0-BAL-004",
+        "P0-BAL-005",
+        "P0-BAL-012"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "BAL-004",
+      "primary_p0_contract_ids": [
+        "P0-BAL-006",
+        "P0-BAL-007",
+        "P0-BAL-014"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "BAL-005",
+      "primary_p0_contract_ids": [
+        "P0-BAL-008"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "BAL-006",
+      "primary_p0_contract_ids": [
+        "P0-BAL-009",
+        "P0-BAL-010"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-004"
+      ]
+    },
+    {
+      "global_contract_id": "BAL-007",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-004"
+      ]
+    },
+    {
+      "global_contract_id": "CAND-001",
+      "primary_p0_contract_ids": [
+        "P0-REC-007A",
+        "P0-REC-007B",
+        "P0-REC-007D",
+        "P0-REC-007E",
+        "P0-REC-007F"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "CAND-002",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-REC-009"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "CAND-003",
+      "primary_p0_contract_ids": [
+        "P0-REC-007G",
+        "P0-REC-007H",
+        "P0-REC-007I",
+        "P0-REC-007J"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "CAND-004",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-REC-005"
+      ]
+    },
+    {
+      "global_contract_id": "CAND-005",
+      "primary_p0_contract_ids": [
+        "P0-REC-009",
+        "P0-REC-010"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-002"
+      ]
+    },
+    {
+      "global_contract_id": "CAND-006",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-REC-010"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "CAND-007",
+      "primary_p0_contract_ids": [
+        "P0-REC-008D",
+        "P0-REV-011",
+        "P0-REV-012"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "DIAG-001",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-RES-005"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "DIAG-003",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-RES-008"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "EXP-001",
+      "primary_p0_contract_ids": [
+        "P0-EXP-001",
+        "P0-EXP-003",
+        "P0-EXP-007F"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "EXP-002",
+      "primary_p0_contract_ids": [
+        "P0-EXP-002",
+        "P0-EXP-007D"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "EXP-003",
+      "primary_p0_contract_ids": [
+        "P0-EXP-007J",
+        "P0-EXP-007K"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "EXP-004",
+      "primary_p0_contract_ids": [
+        "P0-EXP-004",
+        "P0-EXP-005"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-005"
+      ]
+    },
+    {
+      "global_contract_id": "EXP-005",
+      "primary_p0_contract_ids": [
+        "P0-RES-004"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-005",
+        "P0-ACC-006"
+      ]
+    },
+    {
+      "global_contract_id": "EXP-006",
+      "primary_p0_contract_ids": [
+        "P0-EXP-009"
+      ],
+      "related_business_p0_contract_ids": [
+        "P0-ACC-007"
+      ],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-005"
+      ]
+    },
+    {
+      "global_contract_id": "EXP-007",
+      "primary_p0_contract_ids": [
+        "P0-EXP-006",
+        "P0-EXP-007A",
+        "P0-EXP-007B",
+        "P0-EXP-007C",
+        "P0-EXP-007E",
+        "P0-EXP-007G",
+        "P0-EXP-007H",
+        "P0-EXP-007I"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-006"
+      ]
+    },
+    {
+      "global_contract_id": "EXP-008",
+      "primary_p0_contract_ids": [
+        "P0-EXP-008"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "ITEM-001",
+      "primary_p0_contract_ids": [
+        "P0-REV-003"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "ITEM-002",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-REV-007"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "ITEM-003",
+      "primary_p0_contract_ids": [
+        "P0-REC-007C",
+        "P0-REC-008A",
+        "P0-REC-008B",
+        "P0-REC-008C",
+        "P0-REV-008"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "ITEM-004",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-REC-007J"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "ITEM-005",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-EXP-007E"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "ITEM-006",
+      "primary_p0_contract_ids": [
+        "P0-REC-007K"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PDF-001",
+      "primary_p0_contract_ids": [
+        "P0-REC-002",
+        "P0-REC-006B",
+        "P0-UI-001"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-001"
+      ]
+    },
+    {
+      "global_contract_id": "PDF-002",
+      "primary_p0_contract_ids": [
+        "P0-REC-006C",
+        "P0-REC-006F",
+        "P0-UI-002",
+        "P0-UI-003"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PDF-003",
+      "primary_p0_contract_ids": [
+        "P0-REC-006E"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-001"
+      ]
+    },
+    {
+      "global_contract_id": "PDF-004",
+      "primary_p0_contract_ids": [
+        "P0-REC-006A",
+        "P0-REC-006D"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PDF-005",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-REC-004"
+      ]
+    },
+    {
+      "global_contract_id": "PDF-006",
+      "primary_p0_contract_ids": [
+        "P0-REC-003"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-REC-004"
+      ]
+    },
+    {
+      "global_contract_id": "PDF-007",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-REC-009"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PDF-008",
+      "primary_p0_contract_ids": [
+        "P0-REC-001"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PRJ-001",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-001"
+      ]
+    },
+    {
+      "global_contract_id": "PRJ-002",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-RUN-009"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PRJ-003",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-RUN-001",
+        "P0-RUN-002A"
+      ]
+    },
+    {
+      "global_contract_id": "PRJ-004",
+      "primary_p0_contract_ids": [
+        "P0-RUN-010"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PRJ-005",
+      "primary_p0_contract_ids": [
+        "P0-ACC-007",
+        "P0-RUN-009"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PRJ-006",
+      "primary_p0_contract_ids": [
+        "P0-RUN-003",
+        "P0-RUN-004"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PRJ-007",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-RUN-001"
+      ]
+    },
+    {
+      "global_contract_id": "PROV-001",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-REC-004",
+        "P0-REC-005"
+      ]
+    },
+    {
+      "global_contract_id": "PROV-002",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-REC-005"
+      ]
+    },
+    {
+      "global_contract_id": "PROV-003",
+      "primary_p0_contract_ids": [
+        "P0-RES-005"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-REC-004",
+        "P0-REC-005"
+      ]
+    },
+    {
+      "global_contract_id": "PROV-004",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-RES-005"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "PROV-005",
+      "primary_p0_contract_ids": [
+        "P0-RES-008"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "REV-001",
+      "primary_p0_contract_ids": [
+        "P0-REV-001"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "REV-002",
+      "primary_p0_contract_ids": [
+        "P0-RES-001"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-002"
+      ]
+    },
+    {
+      "global_contract_id": "REV-003",
+      "primary_p0_contract_ids": [
+        "P0-RES-002",
+        "P0-RUN-006",
+        "P0-RUN-007",
+        "P0-RUN-008",
+        "P0-UI-004",
+        "P0-UI-007"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "REV-004",
+      "primary_p0_contract_ids": [
+        "P0-RES-007",
+        "P0-REV-002",
+        "P0-REV-004",
+        "P0-REV-005",
+        "P0-REV-006",
+        "P0-REV-007",
+        "P0-REV-009",
+        "P0-RUN-005",
+        "P0-UI-006"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-003"
+      ]
+    },
+    {
+      "global_contract_id": "REV-006",
+      "primary_p0_contract_ids": [
+        "P0-RES-003",
+        "P0-REV-013",
+        "P0-UI-008"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-003"
+      ]
+    },
+    {
+      "global_contract_id": "SYS-001",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-RUN-007"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "SYS-002",
+      "primary_p0_contract_ids": [
+        "P0-RUN-002B",
+        "P0-RUN-002C",
+        "P0-RUN-002D",
+        "P0-RUN-002E"
+      ],
+      "related_business_p0_contract_ids": [
+        "P0-RES-005"
+      ],
+      "related_implementation_p0_contract_ids": [
+        "P0-RUN-002A"
+      ]
+    },
+    {
+      "global_contract_id": "SYS-003",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": [
+        "P0-REC-005"
+      ]
+    },
+    {
+      "global_contract_id": "SYS-004",
+      "primary_p0_contract_ids": [
+        "P0-RES-006"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "SYS-005",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-RES-005"
+      ],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "global_contract_id": "SYS-006",
+      "primary_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-EXP-008"
+      ],
+      "related_implementation_p0_contract_ids": []
+    }
+  ],
+  "contract_definition_hash": "196946582780eba8d74ea4e87a709039dfa89319e86a9a0b6efab60edb40cfa0",
+  "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
+  "schema_version": "global-contract-bindings/1",
+  "source": ".agent/harness/contracts/p0-contracts.json"
+}
