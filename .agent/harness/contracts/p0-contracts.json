@@ -1,5 +1,5 @@
 {
-  "contract_definition_hash": "196946582780eba8d74ea4e87a709039dfa89319e86a9a0b6efab60edb40cfa0",
+  "contract_definition_hash": "42b4b24623173e6cf862c4f2626042810f5662a137c871d9150847b652007560",
   "contracts": [
     {
       "blocking_level": "blocking",
@@ -24,14 +24,14 @@
       "current_status": "not_run",
       "global_contract_id": null,
       "implementation_only": true,
-      "implementation_reason": "current-four candidate/coverage live evidence 是当前 P0 验收编排。",
+      "implementation_reason": "current-four candidate/coverage和operator-confirmed item-set completeness是当前P0验收编排。",
       "owner": "P0 harness",
       "p0_contract_id": "P0-ACC-002",
       "related_global_contract_ids": [
         "CAND-005",
         "REV-002"
       ],
-      "stable_p0_requirement": "四份均产生带 source/coordinates/disposition 的可审核 candidates；空结果或 coverage blocking 不得冒充 ready",
+      "stable_p0_requirement": "四份均产生带source/coordinates/disposition的可审核candidates；质量人员逐页确认应检验项均keep/add且excluded有明确disposition evidence，空结果、coverage blocking或mass exclusion不得冒充ready",
       "task_id": "D7-T2",
       "tier": "live-e2e",
       "verification_selector": "phase://live/candidates?input_set=current-four"
@@ -58,14 +58,14 @@
       "current_status": "not_run",
       "global_contract_id": null,
       "implementation_only": true,
-      "implementation_reason": "current-four browser balloon 操作序列是当前试用验收编排。",
+      "implementation_reason": "current-four browser balloon操作、可见性和零hard-collision是当前试用验收编排。",
       "owner": "P0 harness",
       "p0_contract_id": "P0-ACC-004",
       "related_global_contract_ids": [
         "BAL-006",
         "BAL-007"
       ],
-      "stable_p0_requirement": "四份均可生成气泡，并完成 drag、delete/rebuild 和 explicit renumber",
+      "stable_p0_requirement": "四份的每个active balloon-required item均有一个可见可读正式气泡；完成drag、delete/rebuild、explicit renumber后hard collision和unresolved manual-required均为0",
       "task_id": "D7-T2",
       "tier": "browser-live-e2e",
       "verification_selector": "phase://live/balloons?input_set=current-four"
@@ -75,7 +75,7 @@
       "current_status": "not_run",
       "global_contract_id": null,
       "implementation_only": true,
-      "implementation_reason": "current-four 三产物生成 phase 是当前 P0 数据与验收编排。",
+      "implementation_reason": "current-four同页export和三产物下载phase是当前P0数据与验收编排。",
       "owner": "P0 harness",
       "p0_contract_id": "P0-ACC-005",
       "related_global_contract_ids": [
@@ -83,7 +83,7 @@
         "EXP-005",
         "EXP-006"
       ],
-      "stable_p0_requirement": "四份均生成 fixed SIP Excel、ballooned PDF 和 manifest",
+      "stable_p0_requirement": "operator从同一Product Design工作台触发正式export；仅原子成功后每份样例显示恰好ballooned PDF、fixed SIP Excel和manifest三个下载",
       "task_id": "D7-T2",
       "tier": "live-e2e",
       "verification_selector": "phase://live/export?input_set=current-four"
@@ -93,14 +93,14 @@
       "current_status": "not_run",
       "global_contract_id": null,
       "implementation_only": true,
-      "implementation_reason": "current-four cross-artifact phase 是当前 P0 验收编排。",
+      "implementation_reason": "current-four UI与cross-artifact consistency phase是当前P0验收编排。",
       "owner": "P0 harness",
       "p0_contract_id": "P0-ACC-006",
       "related_global_contract_ids": [
         "EXP-005",
         "EXP-007"
       ],
-      "stable_p0_requirement": "四份的 reviewed items、balloons、PDF、Excel 和 manifest 均通过 cross-artifact consistency",
+      "stable_p0_requirement": "四份的工作台检验项表、reviewed items、balloons、PDF、Excel和manifest使用一致item identity、count与正式编号",
       "task_id": "D7-T2",
       "tier": "live-e2e",
       "verification_selector": "phase://live/consistency?input_set=current-four"
@@ -193,31 +193,31 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "BAL-004",
       "implementation_only": false,
       "implementation_reason": "—",
       "owner": "Placement Owner",
       "p0_contract_id": "P0-BAL-006",
       "related_global_contract_ids": [],
-      "stable_p0_requirement": "placement 使用固定八方向候选和确定性评分，同输入得到同结果",
-      "task_id": "D5-T1",
+      "stable_p0_requirement": "placement按稳定正式编号顺序搜索有限八方向与多距离候选；同输入确定性一致，不同气泡无circle/circle、glyph/glyph或glyph/other-circle hard overlap，自身编号完整位于所属圆内",
+      "task_id": "D7-T2",
       "tier": "unit",
-      "verification_selector": "pytest backend/tests/unit/balloons/test_layout.py::test_layout_is_deterministic -q"
+      "verification_selector": "pytest backend/tests/unit/balloons/test_collision_layout.py::test_batch_layout_has_no_balloon_or_number_overlap -q"
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "BAL-004",
       "implementation_only": false,
       "implementation_reason": "—",
       "owner": "Placement Owner",
       "p0_contract_id": "P0-BAL-007",
       "related_global_contract_ids": [],
-      "stable_p0_requirement": "无合法位置时返回 `manual_required`、best attempt、collision flags 和 reason",
-      "task_id": "D5-T1",
+      "stable_p0_requirement": "所有合法候选耗尽时返回 `manual_required`、best attempt、完整hard collision flags和reason，不伪装为placed",
+      "task_id": "D7-T2",
       "tier": "unit",
-      "verification_selector": "pytest backend/tests/unit/balloons/test_layout.py::test_forced_collision_returns_manual_required -q"
+      "verification_selector": "pytest backend/tests/unit/balloons/test_collision_layout.py::test_exhausted_legal_positions_require_manual_resolution -q"
     },
     {
       "blocking_level": "blocking",
@@ -305,17 +305,17 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "BAL-004",
       "implementation_only": false,
       "implementation_reason": "—",
       "owner": "Balloon validator Veto Gate",
       "p0_contract_id": "P0-BAL-014",
       "related_global_contract_ids": [],
-      "stable_p0_requirement": "layout 差只进入人工修正；超页、编号不可读、图表失联或无有效 leader 的正式 balloon 仍阻止 freeze/export",
-      "task_id": "D5-T2",
+      "stable_p0_requirement": "跨气泡circle/glyph hard overlap、自身编号未完整落在所属圆内、超页、保护区/来源文字遮挡、编号不可读、图表失联、无有效leader或未解决manual_required均阻止Confirm/export",
+      "task_id": "D7-T2",
       "tier": "integration",
-      "verification_selector": "pytest backend/tests/integration/test_balloon_validation.py::test_manual_required_and_formal_invalidity_are_distinct -q"
+      "verification_selector": "pytest backend/tests/integration/test_balloon_validation.py::test_unresolved_hard_collision_blocks_confirm_and_export -q"
     },
     {
       "blocking_level": "blocking",
@@ -1550,17 +1550,17 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "REV-003",
       "implementation_only": false,
       "implementation_reason": "—",
-      "owner": "Overlay layer",
+      "owner": "Workbench presentation executor",
       "p0_contract_id": "P0-UI-004",
       "related_global_contract_ids": [],
-      "stable_p0_requirement": "同一页面可区分显示 candidate boxes、source boxes 和 balloons",
-      "task_id": "D4-T3",
+      "stable_p0_requirement": "Product Design工作台同页区分candidate/source、全部active required balloons与leader，并显示真实active/excluded/manual-required统计、筛选和collision state",
+      "task_id": "D7-T2",
       "tier": "frontend",
-      "verification_selector": "npm --prefix frontend test -- --run src/components/pdf/OverlayLayer.test.tsx"
+      "verification_selector": "npm --prefix frontend test -- --run src/components/workbench/RecognitionSummary.test.tsx src/components/workbench/InspectionItemTable.test.tsx src/components/balloons/BalloonOverlay.test.tsx"
     },
     {
       "blocking_level": "blocking",
@@ -1622,5 +1622,5 @@
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "p0-contracts/1",
   "source": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md",
-  "status_projection_hash": "30779753d5be6e160c3af6d1a508d96c5c5c78a6bfee5716344cd9bfafc3c3ca"
+  "status_projection_hash": "9765bef463a39109da439c6f9995e9823b18695c1045469eeec10bce92429ffb"
 }

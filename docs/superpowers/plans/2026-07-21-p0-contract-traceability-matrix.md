@@ -1,8 +1,8 @@
 # P0 Contract Traceability Matrix
 
-**Status:** Planning baseline; implementation not started
+**Status:** Execution in progress; D6-T2 complete, D6-T3 next
 
-**Date:** 2026-07-21
+**Date:** 2026-07-22
 
 **Owner:** 当前七天 P0 实施选择、任务与验证映射
 
@@ -30,7 +30,7 @@ Global Main Contract Matrix
 - `global-contract-bindings.json` 只能从镜像生成，是反向索引，不是第二事实来源。
 - policy 只裁决结果；scripts 只选择、执行和收集既有 backend/frontend tests。
 - run 目录保存某次不可变证据；receipt 只说明该 run 是否满足当前 P0。
-- 当前处于 writing-plans，所有 `current_status` 均为 `not_run`。
+- `passed` 只投影已有sealed task receipt；本次visual acceptance replan改变定义的BAL/UI/ACC行重置为 `not_run`，必须由更新后的D7-T2/full-p0 live evidence重新证明。
 - `current_status` 是 run evidence 的人类可读 projection，不属于 contract definition；receipt freshness 使用排除该列的 `contract_definition_hash`，同时记录但不以 `status_projection_hash` 判 stale。
 
 ## Reclassification Rules
@@ -164,15 +164,15 @@ Each table uses the same columns:
 | `P0-BAL-003` | `BAL-003` | `false` | `[]` | 默认正式编号从 1 开始 | Numbering Owner | `D5-T1` | unit | `pytest backend/tests/unit/balloons/test_numbering.py::test_default_start_is_one -q` | `blocking` | `passed` | — |
 | `P0-BAL-004` | `BAL-003` | `false` | `[]` | 正式编号唯一、连续、不留缺号 | Numbering Owner | `D5-T1` | unit | `pytest backend/tests/unit/balloons/test_numbering.py::test_formal_sequence_has_no_gap_or_duplicate -q` | `blocking` | `passed` | — |
 | `P0-BAL-005` | `BAL-003` | `false` | `[]` | `balloon_required=false` 的通用要求不占编号 | Numbering Owner | `D5-T1` | unit | `pytest backend/tests/unit/balloons/test_numbering.py::test_general_requirements_do_not_consume_numbers -q` | `blocking` | `passed` | — |
-| `P0-BAL-006` | `BAL-004` | `false` | `[]` | placement 使用固定八方向候选和确定性评分，同输入得到同结果 | Placement Owner | `D5-T1` | unit | `pytest backend/tests/unit/balloons/test_layout.py::test_layout_is_deterministic -q` | `blocking` | `passed` | — |
-| `P0-BAL-007` | `BAL-004` | `false` | `[]` | 无合法位置时返回 `manual_required`、best attempt、collision flags 和 reason | Placement Owner | `D5-T1` | unit | `pytest backend/tests/unit/balloons/test_layout.py::test_forced_collision_returns_manual_required -q` | `blocking` | `passed` | — |
+| `P0-BAL-006` | `BAL-004` | `false` | `[]` | placement按稳定正式编号顺序搜索有限八方向与多距离候选；同输入确定性一致，不同气泡无circle/circle、glyph/glyph或glyph/other-circle hard overlap，自身编号完整位于所属圆内 | Placement Owner | `D7-T2` | unit | `pytest backend/tests/unit/balloons/test_collision_layout.py::test_batch_layout_has_no_balloon_or_number_overlap -q` | `blocking` | `not_run` | — |
+| `P0-BAL-007` | `BAL-004` | `false` | `[]` | 所有合法候选耗尽时返回 `manual_required`、best attempt、完整hard collision flags和reason，不伪装为placed | Placement Owner | `D7-T2` | unit | `pytest backend/tests/unit/balloons/test_collision_layout.py::test_exhausted_legal_positions_require_manual_resolution -q` | `blocking` | `not_run` | — |
 | `P0-BAL-008` | `BAL-005` | `false` | `[]` | operator 可拖动并以 PDF 坐标保存 balloon center；frontend viewport 坐标不落库 | Balloon command service | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_operations.py::test_move_persists_pdf_coordinates -q` | `blocking` | `passed` | — |
 | `P0-BAL-009` | `BAL-006` | `false` | `[]` | 删除 balloon 不删除 inspection item，也不静默改变 `balloon_required` | Balloon command service | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_operations.py::test_delete_balloon_preserves_item_and_requirement -q` | `blocking` | `passed` | — |
 | `P0-BAL-010` | `BAL-006` | `false` | `[]` | operator 可从 reviewed item 重建 balloon | Balloon command service | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_operations.py::test_rebuild_balloon -q` | `blocking` | `passed` | — |
 | `P0-BAL-011` | `BAL-002` | `false` | `[]` | operator 可调整 stable ordering key；未显式 renumber 前 existing formal numbers 不变 | Numbering Owner | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_operations.py::test_reorder_does_not_silently_renumber -q` | `blocking` | `passed` | — |
 | `P0-BAL-012` | `BAL-003` | `false` | `[]` | operator 可显式重新编号，结果仍满足唯一连续无缺号 | Numbering Owner | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_operations.py::test_explicit_renumber_is_contiguous -q` | `blocking` | `passed` | — |
 | `P0-BAL-013` | `BAL-001` | `false` | `[]` | table item/source selection 与 drawing overlay selection 使用同一 IDs 双向定位 | Workbench selection model | `D5-T3` | frontend | `npm --prefix frontend test -- --run src/components/workbench/selection.test.tsx` | `blocking` | `passed` | — |
-| `P0-BAL-014` | `BAL-004` | `false` | `[]` | layout 差只进入人工修正；超页、编号不可读、图表失联或无有效 leader 的正式 balloon 仍阻止 freeze/export | Balloon validator Veto Gate | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_validation.py::test_manual_required_and_formal_invalidity_are_distinct -q` | `blocking` | `passed` | — |
+| `P0-BAL-014` | `BAL-004` | `false` | `[]` | 跨气泡circle/glyph hard overlap、自身编号未完整落在所属圆内、超页、保护区/来源文字遮挡、编号不可读、图表失联、无有效leader或未解决manual_required均阻止Confirm/export | Balloon validator Veto Gate | `D7-T2` | integration | `pytest backend/tests/integration/test_balloon_validation.py::test_unresolved_hard_collision_blocks_confirm_and_export -q` | `blocking` | `not_run` | — |
 
 ### UI — Review UI
 
@@ -181,7 +181,7 @@ Each table uses the same columns:
 | `P0-UI-001` | `PDF-001` | `false` | `[]` | workbench 支持多页 PDF 切换并保持当前 selection | PDF workspace | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/components/pdf/PdfWorkspace.test.tsx -t 'switches pages'` | `blocking` | `passed` | — |
 | `P0-UI-002` | `PDF-002` | `false` | `[]` | workbench 支持 zoom，overlay 与 PDF viewport 同步缩放 | PDF workspace | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/components/pdf/PdfWorkspace.test.tsx -t 'zooms overlays'` | `blocking` | `passed` | — |
 | `P0-UI-003` | `PDF-002` | `false` | `[]` | workbench 支持 pan，不改变持久化 PDF 坐标 | PDF workspace | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/components/pdf/PdfWorkspace.test.tsx -t 'pans without mutating pdf coordinates'` | `blocking` | `passed` | — |
-| `P0-UI-004` | `REV-003` | `false` | `[]` | 同一页面可区分显示 candidate boxes、source boxes 和 balloons | Overlay layer | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/components/pdf/OverlayLayer.test.tsx` | `blocking` | `passed` | — |
+| `P0-UI-004` | `REV-003` | `false` | `[]` | Product Design工作台同页区分candidate/source、全部active required balloons与leader，并显示真实active/excluded/manual-required统计、筛选和collision state | Workbench presentation executor | `D7-T2` | frontend | `npm --prefix frontend test -- --run src/components/workbench/RecognitionSummary.test.tsx src/components/workbench/InspectionItemTable.test.tsx src/components/balloons/BalloonOverlay.test.tsx` | `blocking` | `not_run` | — |
 | `P0-UI-005` | `BAL-001` | `false` | `[]` | 左图与右表点击任一侧会定位并高亮另一侧 | Workbench selection model | `D5-T3` | frontend | `npm --prefix frontend test -- --run src/components/workbench/selection.test.tsx` | `blocking` | `passed` | — |
 | `P0-UI-006` | `REV-004` | `false` | `[]` | 核心审核表单支持 keep/exclude/edit/add/merge/split/confirmation/balloon-required | Review panel | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/components/review/ReviewPanel.test.tsx` | `blocking` | `passed` | — |
 | `P0-UI-007` | `REV-003` | `false` | `[]` | 明确 Save 动作只保存 working copy，并携带 `expected_version/operator_id`；P0 不新增 autosave contract | Review mutation client | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/features/review/saveWorkingCopy.test.ts src/components/workbench/InspectionWorkbench.test.tsx` | `blocking` | `passed` | — |
@@ -229,11 +229,11 @@ Each table uses the same columns:
 | P0 Contract ID | Global Contract ID | Implementation Only | Related Global Contract IDs | Stable P0 Requirement | Owner | Task ID | Tier | Verification Selector | Blocking Level | Current Status | Implementation Reason |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `P0-ACC-001` | `null` | `true` | `[PRJ-001, PDF-001, PDF-003]` | 四份 PDF 均可上传并完成 processing；A3/A4 与 1/2 页事实匹配 frozen manifest | P0 harness | `D7-T2` | live-e2e | `phase://live/process?input_set=current-four` | `blocking` | `not_run` | current-four 文件、hash、图幅和 process phase 是当前 P0 数据与验收编排。 |
-| `P0-ACC-002` | `null` | `true` | `[CAND-005, REV-002]` | 四份均产生带 source/coordinates/disposition 的可审核 candidates；空结果或 coverage blocking 不得冒充 ready | P0 harness | `D7-T2` | live-e2e | `phase://live/candidates?input_set=current-four` | `blocking` | `not_run` | current-four candidate/coverage live evidence 是当前 P0 验收编排。 |
+| `P0-ACC-002` | `null` | `true` | `[CAND-005, REV-002]` | 四份均产生带source/coordinates/disposition的可审核candidates；质量人员逐页确认应检验项均keep/add且excluded有明确disposition evidence，空结果、coverage blocking或mass exclusion不得冒充ready | P0 harness | `D7-T2` | live-e2e | `phase://live/candidates?input_set=current-four` | `blocking` | `not_run` | current-four candidate/coverage和operator-confirmed item-set completeness是当前P0验收编排。 |
 | `P0-ACC-003` | `null` | `true` | `[REV-004, REV-006]` | 四份均可完成至少一次 keep/exclude/edit/add/confirmation，并在适用样例执行 merge 或 split | P0 harness | `D7-T2` | live-e2e | `phase://live/review?input_set=current-four` | `blocking` | `not_run` | current-four 必做的具体 review command 组合是当前试用验收编排。 |
-| `P0-ACC-004` | `null` | `true` | `[BAL-006, BAL-007]` | 四份均可生成气泡，并完成 drag、delete/rebuild 和 explicit renumber | P0 harness | `D7-T2` | browser-live-e2e | `phase://live/balloons?input_set=current-four` | `blocking` | `not_run` | current-four browser balloon 操作序列是当前试用验收编排。 |
-| `P0-ACC-005` | `null` | `true` | `[EXP-004, EXP-005, EXP-006]` | 四份均生成 fixed SIP Excel、ballooned PDF 和 manifest | P0 harness | `D7-T2` | live-e2e | `phase://live/export?input_set=current-four` | `blocking` | `not_run` | current-four 三产物生成 phase 是当前 P0 数据与验收编排。 |
-| `P0-ACC-006` | `null` | `true` | `[EXP-005, EXP-007]` | 四份的 reviewed items、balloons、PDF、Excel 和 manifest 均通过 cross-artifact consistency | P0 harness | `D7-T2` | live-e2e | `phase://live/consistency?input_set=current-four` | `blocking` | `not_run` | current-four cross-artifact phase 是当前 P0 验收编排。 |
+| `P0-ACC-004` | `null` | `true` | `[BAL-006, BAL-007]` | 四份的每个active balloon-required item均有一个可见可读正式气泡；完成drag、delete/rebuild、explicit renumber后hard collision和unresolved manual-required均为0 | P0 harness | `D7-T2` | browser-live-e2e | `phase://live/balloons?input_set=current-four` | `blocking` | `not_run` | current-four browser balloon操作、可见性和零hard-collision是当前试用验收编排。 |
+| `P0-ACC-005` | `null` | `true` | `[EXP-004, EXP-005, EXP-006]` | operator从同一Product Design工作台触发正式export；仅原子成功后每份样例显示恰好ballooned PDF、fixed SIP Excel和manifest三个下载 | P0 harness | `D7-T2` | live-e2e | `phase://live/export?input_set=current-four` | `blocking` | `not_run` | current-four同页export和三产物下载phase是当前P0数据与验收编排。 |
+| `P0-ACC-006` | `null` | `true` | `[EXP-005, EXP-007]` | 四份的工作台检验项表、reviewed items、balloons、PDF、Excel和manifest使用一致item identity、count与正式编号 | P0 harness | `D7-T2` | live-e2e | `phase://live/consistency?input_set=current-four` | `blocking` | `not_run` | current-four UI与cross-artifact consistency phase是当前P0验收编排。 |
 | `P0-ACC-007` | `PRJ-005` | `false` | `[EXP-006]` | Provider、storage、template、font 或任一子产物故障都不会产生 formal success/download | Processing / Export formal-success Veto Gate | `D7-T1` | failure-e2e | `phase://failure/no-silent-success` | `fatal` | `not_run` | — |
 
 ## P0 Input Set And External Gates
@@ -258,7 +258,7 @@ Each table uses the same columns:
 1. **Template Gate:** 质量 Owner 确认唯一 SIP template、sheet、cell mapping、capacity 和批准 hash；当前发现文件只是候选，不自动升级为 truth。
 2. **Font Gate:** 质量/法务 Owner 确认 font bytes、license 和 hash。
 3. **Provider Gate:** live credentials 只由服务端环境显式注入；fixture 是默认模式，不能伪装 live。
-4. **Human Trial Gate:** current-four receipt 必须包含质量人员对“候选可编辑、非空结果不是假成功”的实际 verdict。
+4. **Human Trial Gate:** current-four receipt必须包含质量人员对“自动候选可用、候选可编辑、`operator_confirmed_item_set_is_complete`、非空结果不是假成功、全部required气泡可见可读、hard collision已解决、工作台/PDF/Excel编号一致”的逐样例实际verdict；item-set completeness要求逐页确认所有应检验项已keep/add且excluded有明确operator disposition，不能以mass exclusion或active count非零冒充完成；任一否定答案都阻止freeze/export和receipt通过。
 5. **Run Evidence Gate:** `not_run`、stale receipt、latest pointer、旧 run 或 docs claim 不能替代当前 immutable run evidence。
 
 ## Harness Mirror Contract
@@ -286,7 +286,7 @@ Bindings 对每个 global ID 分开保存 `primary_p0_contract_ids`、`related_b
 
 ## P1/P2 Exclusion
 
-Global matrix 中的 P1/P2 行只保存长期方向。七天 task/selector 不包括完整 submission/退回治理、完整 lineage/artifact lifecycle、通用 Provider cache、回归阈值与盲测平台、RBAC/SSO、四眼审核、多模板、scanned 正式支持、全局布局优化、生产监控备份灾备或发布/回滚平台。
+Global matrix中的P1/P2行只保存长期方向。七天task/selector不包括完整submission/退回治理、完整lineage/artifact lifecycle、通用Provider cache、回归阈值与盲测平台、RBAC/SSO、四眼审核、多模板、scanned正式支持、跨页全局布局最优、生产监控备份灾备或发布/回滚平台；D7-T2的current-four有限多距离collision-safe布局属于已选择的P0 `BAL-004`细化，不提升为P2全局优化。
 
 ## Traceability Self-Check
 
@@ -294,4 +294,6 @@ Global matrix 中的 P1/P2 行只保存长期方向。七天 task/selector 不�
 - `P0-BAL-002` 的 selector 从循环依赖的 `requires_reviewed_result` 修正为 `requires_frozen_item_set`；最终 `reviewed_result` 仍由 `P0-RES-003` 在 balloon 校验后创建。
 - 10 个纯实现选择不冒充 global contract；其余 101 行都有一个有效 global contract。
 - 普通 selector 指向 backend/frontend test 或 `.agent/harness/scripts/`；7 个 ACC selector 使用 writing plan 定义、由同一 `run-p0.py` 进程内部 dispatch 的 `phase://`，不递归创建 child run。不存在 repository-root Harness path。
-- 所有状态为 `not_run`，因为当前仍是 writing-plans。
+- 已完成行的 `passed` 只来自既有sealed task receipts；D6-T3、D7和本次重新定义的 `P0-BAL-006/007/014`、`P0-UI-004`、`P0-ACC-002/004/005/006` 保持 `not_run`。
+- Product Design只拥有视觉翻译/QA，frontend仍是executor；Placement、Review/ReviewedResult和Export Owners未迁移，也没有新增第二route、第二plan或独立prototype。
+- requirement/task/selector变化会改变 `contract_definition_hash`，因此旧full-p0 receipt不能证明本次visual acceptance；D7-T2必须重新生成current-four live evidence并在D7-T3刷新最终投影。

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在七天内交付一个内部可真实试用的纵向闭环：处理当前四份工程 PDF，生成可追溯候选，完成人工审核和气泡调整，并从同一 `reviewed_result` 原子地产出带气泡 PDF、固定 SIP Excel 和 manifest。
+**Goal:** 在七天P0内交付一个内部可真实试用的纵向闭环：处理当前四份工程 PDF，生成可追溯候选，在Product Design工作台完成人工审核和零hard-collision气泡收口，并从同一 `reviewed_result` 原子地产出带气泡 PDF、固定 SIP Excel 和 manifest。
 
-**Architecture:** 采用模块化单体；FastAPI 和 concurrency=1 的 Celery Worker 共享 PostgreSQL、Redis 与同一受控 FileStorage，React/PDF.js/SVG 只编辑 working copy，正式编号、PDF 绘制和三产物导出由后端确定性 Owner 完成。长期语义只由 `docs/contracts/MAIN_CONTRACT_MATRIX.md` 拥有；P0 选择只由 `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md` 拥有；`.agent/harness/contracts/*.json` 只能由 P0 Markdown 生成，run/receipt 只保存执行证据和当前版本结论。
+**Architecture:** 采用模块化单体；FastAPI 和 concurrency=1 的 Celery Worker 共享 PostgreSQL、Redis 与同一受控 FileStorage，React/PDF.js/SVG 只编辑 working copy并执行后端Owner提交的candidate/balloon/export contract。Placement Owner以稳定编号顺序执行有限多距离批量布局，hard collision或未解决 `manual_required` 由后端Veto Gate阻止Confirm/export；正式编号、PDF绘制和三产物导出仍由后端确定性Owner完成。长期语义只由 `docs/contracts/MAIN_CONTRACT_MATRIX.md` 拥有；P0选择只由 `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md` 拥有；`.agent/harness/contracts/*.json` 只能由P0 Markdown生成，run/receipt只保存执行证据和当前版本结论。
 
 **Tech Stack:** Python 3.11、FastAPI、SQLAlchemy 2、Alembic、PostgreSQL、Redis、Celery、PyMuPDF、openpyxl、httpx、React、TypeScript、Vite、PDF.js、SVG、pytest、Vitest、Playwright、Docker Compose、Micromamba。
 
@@ -111,6 +111,23 @@
 - Rollback and failure boundary: 每个 task 只 revert 本 task commit；0005 实际 rollback 为 `0005 → 0004`，若发生 rollback，第一项验证是 `micromamba run -n qi-p0 alembic -c backend/alembic.ini current` 后运行 `backend/tests/integration/test_schema.py`。version/lock/item-freeze/balloon-validation/project/PDF identity 任一失败必须显式返回 structured failure，不得回退 demo fixture、冻结失败内容或形成 formal success。
 - Next verification: `micromamba run -n qi-p0 pytest backend/tests/unit/balloons/test_numbering.py backend/tests/unit/balloons/test_layout.py -q`，预期因 `app.balloons` modules 缺失而 collection FAIL。
 
+### Visual acceptance and Product Design replan — 2026-07-22
+
+本节是对同一current plan的原地replan，不创建第二份spec/plan、`D6-T0`、独立export支线或独立frontend prototype。已完成的D1～D6-T2提交保持不变；当前代码顺序从D6-T3继续，本次docs-only变更不得回写或扩大已经提交的D6-T2实现。
+
+- Selected lane: `Heavy`。
+- Selected plan: 本文件仍是唯一current implementation plan；执行顺序保持 `D6-T3 → D7-T1 → D7-T2 → D7-T3`，不得回写已完成D5/D6-T1/D6-T2 commit，也不得在D6-T3完成前提前修改frontend/placement production files。
+- Selection evidence: 2026-07-22对 `project_id=0d92a5a2-1dcb-4f0a-b147-7235d0c18e4d` 的只读浏览器/API核验显示服务无console/network错误，但该已冻结 `d5-final-smoke` 项目有272条automatic items、271条excluded、1条active和1个balloon；当前UI只展示已锁定review workbench，没有正式export入口。现有 `place_balloon()` 只尝试单一距离的八方向点，无法证明密集图纸中的气泡圆、编号字形和来源文字可读性。用户随后以一张 `1565 × 796` 桌面参考截图明确要求“大图纸区 + 右侧检验项表 + 批量编号气泡”，并要求比参考图更少重叠后再导出Excel。
+- Validation action: `replan` in place后 `continue`。目标仍是同一个current-four纵向闭环，但P0新增了可见operator acceptance和collision-safe正式导出门槛，因此不能只做silent amendment；Owner、result-layer和all-or-nothing export contract保持不变。
+- Problem boundary: P0只实现当前A3/A4、1/2页current-four范围内的有限多距离候选、确定性批量布局、hard-collision Veto、人工拖动收口、右侧检验项表和同页export/download体验；不实现跨页全局最优、最短总引线、自动美学评分、通用project dashboard、RBAC或任意图幅承诺。
+- Single Owners: Placement Owner唯一提交建议位置、collision class和 `manual_required`；Balloon validator Veto Gate唯一阻止不可读正式几何；Review aggregate/Reviewed-result Owner仍提交items和最终balloons；Export orchestrator仍是三产物唯一success Owner。`product-design:index → product-design:image-to-code` 及其内置design-QA workflow只拥有视觉翻译与可见QA，React frontend仍是Executor，不生成或修复formal business result。
+- Old path action: D5单气泡 `place_balloon()` 在D7-T2选择 `replace` 为batch collision scene；不保留shadow scorer、双布局或fallback旧算法。现有真实 `project_id/operator_id` deep link选择 `preserve`，因为D7 runner和人工review仍是已验证consumer；它扩展为同一workbench内的summary/list/export surface，不新增第二project入口。D6-T3 backend export API是唯一export路径，frontend不得生成本地Excel或前端截图PDF。
+- Product Design source contract: 选定视觉源是用户在2026-07-22提供的 `1565 × 796` 参考截图，本窗口临时路径为 `/tmp/codex-clipboard-NXT7qI.png`。它拥有信息架构、密度、左右分栏、筛选统计、编号气泡和右侧列表的视觉方向；其中数字/气泡重叠是明确缺陷，不是像素级复刻目标。不得复制第三方logo、品牌或专有图标；使用现有产品身份、真实PDF和真实backend数据。如果执行窗口无法重新取得该截图，`product-design:image-to-code` 必须停止并请求用户重新附图，不得凭文字猜测。
+- Product Design execution contract: D7-T2 frontend写入前必须调用 `product-design:index` 路由到 `product-design:image-to-code`，在现有 `frontend/` 中实现，不bootstrap独立prototype。完成后必须以同一viewport和状态捕获source/implementation，执行 `image-to-code` 内置design-QA workflow并保存project-root `design-qa.md`；只有 `final result: passed` 且无P0/P1/P2视觉问题才可进入D7-T2 live receipt。无法打开source或browser implementation时必须写 `final result: blocked` 并停止，不得用build或HTTP 200替代可见QA。
+- Writer ownership and order: 主线程是唯一writer。D6-T3先独立收口；D7-T2开始后placement/backend、frontend和Harness仍按同一主线程顺序写。explorer/reviewer严格只读、不得nested delegation。Product Design产生的source capture、implementation capture和human note不得包含credential或宿主机私有source path。
+- Rollback and failure boundary: D7-T2只revert其单独commit；rollback后第一项验证为 `micromamba run -n qi-p0 pytest backend/tests/unit/balloons/test_numbering.py backend/tests/unit/balloons/test_layout.py backend/tests/integration/test_balloon_validation.py -q`，随后运行D6 export focused gate，证明旧D5/D6 baseline恢复。hard collision、不可读编号、未解决 `manual_required`、Product Design QA blocked或任一export子产物失败都必须阻止formal success/download。
+- Next verification: 保持D6顺序，先运行 `micromamba run -n qi-p0 pytest backend/tests/unit/exports/test_manifest.py backend/tests/integration/test_export_consistency.py backend/tests/integration/test_export_atomicity.py -q`；本次docs-only replan不运行该代码测试。
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：
@@ -150,7 +167,7 @@
 
 ## Scope And Rollback
 
-P0 明确排除 Provider 通用 cache、preview pipeline、autosave contract、完整 trace/error UI、通用 lineage/stage/artifact 治理、RBAC/SSO、通用 Excel 模板引擎、LibreOffice 自动 smoke、纯扫描正式支持、准确率 threshold、回归集和盲测平台。
+P0 明确排除 Provider 通用 cache、preview pipeline、autosave contract、完整 trace/error UI、通用 lineage/stage/artifact 治理、RBAC/SSO、通用 Excel 模板引擎、LibreOffice 自动 smoke、纯扫描正式支持、准确率 threshold、回归集、盲测平台和跨页全局布局优化。D7-T2明确包含current-four范围内的有限多距离collision-safe批量布局、Product Design工作台和人工收口门；这不是P2全局最优布局的提前实现。
 
 每个 task 单独 commit。若 task 失败，优先 `git revert <task-commit>`；数据库 schema task 的 rollback 是：
 
@@ -3695,140 +3712,212 @@ git commit -m "test: prove P0 failures cannot publish"
 
 Expected: ignored run outputs are absent from the staged set.
 
-### Task D7-T2: Execute One Current-Four Live Run With Browser And Human Evidence
+### Task D7-T2: Close The Collision-Safe Product Design Workbench And Execute One Current-Four Live Run
 
 **Files:**
 
+- Modify: `backend/app/balloons/placement.py`
+- Modify: `backend/app/balloons/schemas.py`
+- Modify: `backend/app/balloons/service.py`
+- Modify: `backend/app/balloons/validator.py`
+- Create: `backend/tests/unit/balloons/test_collision_layout.py`
+- Modify: `backend/tests/integration/test_balloon_validation.py`
 - Modify: `.agent/harness/scripts/run-p0.py`
 - Modify: `.agent/harness/scripts/stage-current-four.py`
 - Create: `.agent/harness/scripts/record-human-verdict.py`
+- Modify: `.agent/harness/schemas/run.schema.json`
+- Create: `.agent/harness/schemas/live-run-evidence.schema.json`
+- Create: `.agent/harness/schemas/human-verdict.schema.json`
 - Create: `backend/tests/contract/harness/test_live_run_contract.py`
+- Modify: `frontend/package.json`
+- Modify: `frontend/package-lock.json`
+- Modify: `frontend/src/api/client.ts`
+- Modify: `frontend/src/api/types.ts`
+- Create: `frontend/src/features/exports/api.ts`
+- Modify: `frontend/src/components/balloons/BalloonOverlay.tsx`
+- Modify: `frontend/src/components/balloons/BalloonOverlay.test.tsx`
+- Modify: `frontend/src/components/balloons/BalloonToolbar.tsx`
+- Modify: `frontend/src/components/workbench/ProjectWorkbenchApp.tsx`
+- Modify: `frontend/src/components/workbench/InspectionWorkbench.tsx`
+- Create: `frontend/src/components/workbench/RecognitionSummary.tsx`
+- Create: `frontend/src/components/workbench/InspectionItemTable.tsx`
+- Create: `frontend/src/components/workbench/ExportPanel.tsx`
+- Create: `frontend/src/components/workbench/RecognitionSummary.test.tsx`
+- Create: `frontend/src/components/workbench/InspectionItemTable.test.tsx`
+- Create: `frontend/src/components/workbench/ExportPanel.test.tsx`
+- Create: `frontend/src/styles/workbench.css`
 - Create: `frontend/playwright.config.ts`
 - Create: `frontend/e2e/p0-workbench.spec.ts`
+- Create from Product Design QA: `design-qa.md`
 - Runtime only: `.agent/harness/runs/$QI_P0_RUN_ID/`
 
-- [ ] **Step 1: Write failing live-run identity and browser-flow tests**
+- [ ] **Step 1: Run the Product Design source gate before writing frontend code**
+
+Invoke `product-design:index`, route to `product-design:image-to-code`, and use the user-selected `1565 × 796` screenshot from 2026-07-22 as the visual source. If that source is not available in the execution window, stop and request the user to attach it again; do not reconstruct it from prose. Inspect the existing `frontend/` components, styles and real API contracts first. Record the user's chosen browser before browser automation; Playwright/browser QA must use that choice and must stop for direction if no browser has been selected. This task modifies the production workbench directly and must not initialize a Product Design template, Sites starter, second route or standalone prototype.
+
+The source owns only the visible information architecture: a large drawing area, compact summary/filter strip, dense right-side inspection list, synchronized numbered balloons and a same-page export action. The target must use the repository's existing product identity and real backend data. Third-party logos/branding are not copied, and the source's overlapping numbers are an explicit defect to remove. If an icon is needed, use the closest maintained icon-library asset; do not draw replacement icons with text symbols, CSS art or handcrafted SVG.
+
+- [ ] **Step 2: Write RED tests for bounded batch placement and the operator-facing workbench**
+
+Backend tests must first prove the current single-distance placement is insufficient:
 
 ```python
-# backend/tests/contract/harness/test_live_run_contract.py
-import json
+# backend/tests/unit/balloons/test_collision_layout.py
+def test_batch_layout_has_no_balloon_or_number_overlap() -> None:
+    placed = place_balloons(close_anchor_items(), dense_scene())
+    assert placed == place_balloons(close_anchor_items(), dense_scene())
+    assert all(not item.hard_collision_flags for item in placed)
+    assert no_cross_balloon_circle_or_number_overlap(placed)
 
 
-def test_live_run_contains_exact_current_four_and_no_missing_phase(live_run_dir) -> None:
-    run = json.loads((live_run_dir / "run.json").read_text())
-    manifest = json.loads((live_run_dir / "artifacts/current-four-manifest.json").read_text())
-    results = json.loads((live_run_dir / "contract-results.json").read_text())
-    assert run["mode"] == "live"
-    assert run["scope"] == "full-p0"
-    assert len(manifest["files"]) == 4
-    assert len({row["sha256"] for row in manifest["files"]}) == 4
-    assert manifest["files"][0]["sha256"].startswith("58b9cf08")
-    assert all("source_path" not in row for row in manifest["files"])
-    assert run["phases"] == ["process", "candidates", "review", "balloons", "export", "consistency"]
-    assert len(results["contracts"]) == 111
-    assert len({row["p0_contract_id"] for row in results["contracts"]}) == 111
-    assert run.get("child_run_ids", []) == []
+def test_exhausted_legal_positions_require_manual_resolution() -> None:
+    placed = place_balloons(close_anchor_items(), impossible_scene())
+    assert any(item.status == "manual_required" for item in placed)
+    assert all(item.reason for item in placed if item.status == "manual_required")
 ```
 
-```ts
-// frontend/e2e/p0-workbench.spec.ts
-import { expect, test } from "@playwright/test";
+`backend/tests/integration/test_balloon_validation.py::test_unresolved_hard_collision_blocks_confirm_and_export` must assert that cross-balloon circle/glyph overlap、owner glyph未完整落在自身circle内、CropBox overflow、protected title/sign-off/source-text overlap、unreadable number、missing/disconnected leader or unresolved `manual_required` prevents Confirm and formal export. A low soft score may request human refinement, but no hard collision may be converted to success by choosing the least-bad candidate.
 
-test("P0-ACC-003 P0-ACC-004 performs explicit review and balloon operations", async ({ page }) => {
-  const projectUrl = process.env.QI_P0_PROJECT_URL;
-  if (!projectUrl) throw new Error("QI_P0_PROJECT_URL is required");
-  await page.goto(projectUrl);
-  await page.getByRole("button", { name: "Keep" }).first().click();
-  await page.getByRole("button", { name: "Edit" }).first().click();
-  await page.getByLabel("Inspection standard").fill("human-reviewed trial value");
-  await page.getByRole("button", { name: "Add Inspection Item" }).click();
-  await page.getByLabel("New inspection item").fill("manual current-four trial item");
-  await page.getByLabel("Requires confirmation").check();
-  await page.getByRole("button", { name: "Add Item" }).click();
-  await page.getByRole("button", { name: "Resolve Confirmation" }).last().click();
-  await page.getByRole("button", { name: "Exclude" }).last().click();
-  await page.getByRole("button", { name: "Save" }).click();
-  await page.getByRole("button", { name: "Freeze Items" }).click();
-  await page.getByRole("button", { name: "Generate Balloons" }).click();
-  await page.getByTestId("balloon-overlay").first().dragTo(page.getByTestId("balloon-drop-target"));
-  await page.getByRole("button", { name: "Delete Balloon" }).first().click();
-  await page.getByRole("button", { name: "Rebuild Balloon" }).first().click();
-  await page.getByRole("button", { name: "Renumber" }).click();
-  await expect(page.getByText("Numbering valid")).toBeVisible();
-});
-```
+Frontend tests must cover the actual dense flow rather than a decorative shell:
 
-- [ ] **Step 2: Run contract discovery and observe live orchestration is incomplete**
+- `RecognitionSummary.test.tsx` proves active/excluded/manual-required counts and filters are derived from the loaded project data.
+- `InspectionItemTable.test.tsx` proves the scrollable list exposes stable formal number、type、reviewed value/tolerance、page and collision state, and that list/drawing selection remains bidirectional.
+- `BalloonOverlay.test.tsx` proves every active required item and leader is rendered with its backend collision state; for different balloons only, circle/circle、glyph/glyph and glyph/other-circle intersections are rejected, while each number remains readable inside its own circle.
+- `ExportPanel.test.tsx` proves export is disabled before immutable `reviewed_result` plus valid balloons, calls the canonical backend export endpoint after the gate, and exposes exactly PDF、Excel、manifest download links only after atomic success.
+- `frontend/e2e/p0-workbench.spec.ts` iterates every source page and proves that different formal balloons have no circle/circle、glyph/glyph or glyph/other-circle intersection; each glyph is allowed and required to fit legibly inside its owner circle. It also proves active required item numbers equal the overlay numbers, drag/delete/rebuild/renumber still work, and the same workbench completes export with exactly three downloads.
+
+Run the focused RED commands:
 
 ```bash
+micromamba run -n qi-p0 pytest backend/tests/unit/balloons/test_collision_layout.py backend/tests/integration/test_balloon_validation.py::test_unresolved_hard_collision_blocks_confirm_and_export -q
 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -q
-micromamba run -n qi-p0 npm --prefix frontend run e2e -- --list
+npm --prefix frontend test -- --run src/components/workbench/RecognitionSummary.test.tsx src/components/workbench/InspectionItemTable.test.tsx src/components/balloons/BalloonOverlay.test.tsx
+npm --prefix frontend test -- --run src/components/workbench/ExportPanel.test.tsx
 ```
 
-Expected: backend test FAIL because no live run fixture/orchestration exists; Playwright discovery succeeds only after its config exists.
+Expected: balloon tests fail against the single-distance layout or missing hard-collision gate; live-run contract tests fail because pause/resume/abort lifecycle and the three schemas do not exist; frontend tests fail because the summary/table/export surfaces do not exist. Record the expected failures before implementation.
 
-- [ ] **Step 3: Extend the minimal runner with bounded current-four phases**
+- [ ] **Step 3: Replace the old single-balloon path with one deterministic collision scene**
 
-`run-p0.py live --scope full-p0 --input-set current-four` is the only formal live entry. It must fail before creating a paid task unless all conditions hold:
+`place_balloons(items, scene)` is the only Placement Owner entry used by generation/rebuild. It processes stable formal-number order and searches a finite ordered set of eight directions across fixed distance rings inside the current page CropBox. `PlacementScene` includes source/technical-text boxes, protected title/sign-off ranges, already occupied balloon circles, measured number-glyph boxes and leader endpoints. Candidate evaluation is split into:
 
-- explicit `live` mode and `current-four` input set;
-- `QI_CURRENT_FOUR_SOURCE_ROOT` points to the known source directory;
-- server-side credentials/config pass preflight without being printed;
-- template/font gates are approved;
-- Provider call policy and total budget are loaded;
-- executable-content identity、diagnostic Git revision、config hashes、`contract_definition_hash` and start-time `status_projection_hash` are captured.
+1. hard vetoes: 对不同气泡的circle/circle、glyph/glyph或glyph/other-circle overlap，owner glyph未完整落在自身circle可读内区，page overflow，circle/glyph与protected title/sign-off或source/technical-text bbox相交，missing target或disconnected leader；
+2. soft penalties: leader length/crossing、leader穿过非目标文字、distance from source和local density。
 
-The runner creates one run ID and keeps it open until all evidence is complete. `stage-current-four.py` attaches the identity manifest to that run without copying PDFs or creating a child run. The runner then:
+The first best deterministic candidate with no hard veto is placed. If every candidate has a hard veto, the Owner returns one best attempt with `status=manual_required`、complete `hard_collision_flags` and reason; it never reports `placed`. Manual drag/rebuild is validated through the same `PlacementScene`, and unresolved hard collisions or `manual_required` rows block Confirm/export. D5 `place_balloon()` is removed from the production call path in this task; no shadow scorer, dual algorithm or legacy fallback remains. P0 promises bounded collision-safe placement for current-four, not cross-page/global optimality.
 
-1. loads all 111 mirror rows and groups identical ordinary command selectors so each command runs once while producing one result per mapped P0 ID;
-2. executes all registered unit/provider-contract/integration/frontend/export/failure selectors inside the same run identity and captures their logs/exit codes;
-3. resolves `phase://failure/no-silent-success` and all `phase://live/*` selectors by internal dispatch, never by invoking another runner;
-4. executes the live sample chain below, first completing the fixed first-PDF checkpoint and stopping on failure, then processing the remaining three in manifest order;
-5. writes exactly 111 unique results before receipt evaluation.
+- [ ] **Step 4: Implement the Product Design workbench in the existing React application**
 
-The live sample chain is:
+Use `product-design:image-to-code` against the selected screenshot and preserve the existing deep link, PDF.js coordinate model, Review/ReviewedResult Owners and canonical backend APIs. At the target `1565 × 796` state:
+
+- allocate approximately 65–70% width to the PDF/balloon canvas and 30–35% to the right panel without hiding page controls;
+- show compact recognition summary chips and filters above a virtualized or scrollable inspection table;
+- render every active `balloon_required` item with one readable formal number, leader and synchronized table row; selected row/balloon highlight each other;
+- expose active/excluded/manual-required and hard-collision state visibly instead of silently dropping items;
+- keep review actions available where appropriate, then expose one clear export panel that uses `frontend/src/features/exports/api.ts` and displays the three backend-owned downloads only after success;
+- use real current project data and useful loading/empty/blocked/error states; do not generate Excel、manifest or a screenshot-based PDF in the browser.
+
+The screenshot is a density and interaction benchmark, not a brand or pixel-copy license. The result must be clearer than the source where its numbers overlap. Build/HTTP success alone is not visual acceptance.
+
+- [ ] **Step 5: Extend the single live runner and human verdict without creating another run**
+
+`run-p0.py live --scope full-p0 --input-set current-four` remains the only formal live entry. It must fail before creating a paid task unless explicit live/current-four mode、source identity、server-only Provider config、template/font approval、Provider budget and executable/config/contract identities all pass. `stage-current-four.py` attaches the exact four-file identity manifest to the same open run without copying PDFs or creating a child run.
+
+The runner groups identical ordinary selectors, internally dispatches all `phase://` selectors, executes the fixed first PDF through the entire chain before the remaining three, and writes exactly 111 unique results:
 
 ```text
 process
-→ candidates
-→ browser review and balloons
-→ human verdict
-→ final reviewed_result
-→ export
+→ candidates and coverage
+→ Product Design browser review
+→ operator-confirmed item-set completeness and item freeze
+→ collision-safe balloons and manual resolution
+→ remaining human verdict
+→ immutable reviewed_result
+→ atomic PDF/Excel/manifest export
 → independent consistency verification
-→ contract result aggregation
-→ receipt generation
+→ receipt
 ```
 
-For each sample it records source hash/page facts, project/result/export IDs, phase state, P0 contract IDs, command/HTTP/browser evidence, artifact refs and verdict. The first sample must complete every arrow before any phase starts for sample two. `record-human-verdict.py` requires a non-empty operator ID/note and explicit answers for `candidates_are_editable` and `not_false_success` for all four samples; it cannot prefill affirmative values.
+Before item-set freeze, the runner must require `operator_confirmed_item_set_is_complete=true`: the quality operator reviewed every page, kept every visible expected inspection requirement or added the missing item, and every excluded candidate has explicit operator disposition evidence. The runner must not infer completeness from `active_count > 0`; the observed `272 automatic / 271 excluded / 1 active` shape cannot pass without this explicit review.
 
-Playwright is invoked once per project with runner-supplied `QI_P0_PROJECT_URL`. Merge or split is exercised only where the data exposes an applicable operation; inapplicability is recorded, not fabricated.
+`record-human-verdict.py` uses two explicit writes inside the same open run. `--stage item-set` requires non-empty operator ID/note plus non-prefilled `automatic_candidates_are_actionable`、`candidates_are_editable`、`operator_confirmed_item_set_is_complete` and `not_false_success`; all four must be affirmative before item freeze. `--stage balloons` later requires `all_required_balloons_visible`、`hard_collisions_resolved` and `list_pdf_excel_numbers_match`. The final schema-valid verdict is the immutable merge of both stages; neither stage may prefill or overwrite the other. Merge/split is exercised only where applicable; inapplicability is recorded rather than fabricated. Any negative answer blocks freeze/export and the live receipt.
 
-- [ ] **Step 4: Start the stack and execute the explicit live run**
+For each live project, the runner supplies run-bound `QI_P0_PROJECT_URL`、`QI_P0_OPERATOR_ID` and `QI_P0_RUN_ID` to `npm --prefix frontend run e2e -- e2e/p0-workbench.spec.ts`. It stores the Playwright report/screenshots under the same open run, binds the relevant assertions to `phase://live/balloons` and `phase://live/export`, and cannot mark either phase passed when the browser command fails. This browser invocation is an internal phase of the one runner, not a child Harness run.
+
+Schema ownership remains explicit. `run.schema.json` gains only the full-p0 live lifecycle needed for `running → visual_qa_pending → completed/failed`; existing task runs remain schema-valid. `live-run-evidence.schema.json` owns phase order、sample/project refs、browser evidence、design-QA hash/result、download names and `child_run_ids=[]`. `human-verdict.schema.json` owns the two staged operator writes and their immutable merged verdict. All three keep `additionalProperties=false`; paused、resumed、aborted and completed states must validate before the runner writes or seals them.
+
+The live-run contract retains the exact current-four/no-child-run assertions and adds Product Design/balloon evidence:
+
+```python
+def test_live_run_contains_exact_current_four_and_no_missing_phase(live_run_dir) -> None:
+    run, manifest, results, live = load_live_run(live_run_dir)
+    assert run["mode"] == "live" and run["scope"] == "full-p0"
+    assert len(manifest["files"]) == 4
+    assert live["phases"] == ["process", "candidates", "review", "balloons", "export", "consistency"]
+    assert len(results["contracts"]) == 111
+    assert live["child_run_ids"] == []
+    assert live["design_qa"]["final_result"] == "passed"
+    assert all(sample["human_verdict"]["operator_confirmed_item_set_is_complete"] for sample in live["samples"])
+    assert all(sample["hard_collision_count"] == 0 for sample in live["samples"])
+    assert all(sample["browser_e2e"]["passed"] for sample in live["samples"])
+    assert all(sample["downloads"] == ["pdf", "xlsx", "manifest"] for sample in live["samples"])
+
+
+def test_visual_qa_code_change_seals_paused_attempt_failed(paused_live_run) -> None:
+    paused_live_run.abort(reason="visual_qa_code_changed")
+    assert paused_live_run.run["execution_state"] == "failed"
+    assert paused_live_run.run["completed_at"] is not None
+    assert paused_live_run.can_resume is False
+```
+
+- [ ] **Step 6: Run Product Design visual QA before the formal current-four receipt**
+
+Run the focused/static prechecks, start the final stack, then open the one formal full-p0 runner with an explicit `first-pdf-balloons` pause barrier:
 
 ```bash
+python .agent/harness/scripts/check-contracts.py
+micromamba run -n qi-p0 pytest backend/tests/unit/balloons/test_collision_layout.py backend/tests/integration/test_balloon_validation.py -q
+micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -q
+npm --prefix frontend test -- --run
+npm --prefix frontend run build
+npm --prefix frontend run e2e -- --list
 export QI_CURRENT_FOUR_SOURCE_ROOT='/home/reggie/文档/xwechat_files/wxid_ut5o9e1igztd22_f3a1/msg/attach/93a055933fee8f63da748e2314c2e233/2026-07/Rec/17d107a16f0cf6e9/F'
 docker compose up -d --build postgres redis api worker frontend
 micromamba run -n qi-p0 alembic -c backend/alembic.ini upgrade head
 curl --fail --silent http://localhost:8000/api/v1/health
-QI_P0_RUN_ID="$(python .agent/harness/scripts/run-p0.py live --scope full-p0 --input-set current-four --print-run-id-only)"
+QI_P0_RUN_ID="$(python .agent/harness/scripts/run-p0.py live --scope full-p0 --input-set current-four --pause-after first-pdf-balloons --print-run-id-only)"
 test -n "$QI_P0_RUN_ID"
-test -f ".agent/harness/runs/$QI_P0_RUN_ID/run.json"
-test -f ".agent/harness/runs/$QI_P0_RUN_ID/contract-results.json"
-test -f ".agent/harness/runs/$QI_P0_RUN_ID/receipt.json"
+test "$(jq -r '.execution_state' ".agent/harness/runs/$QI_P0_RUN_ID/run.json")" = "visual_qa_pending"
 ```
 
-Expected: the command remains within Provider policy, first closes the fixed first PDF then processes exactly the remaining three frozen identities/six total pages, records actual browser operations and human answers, produces three validated artifacts per sample, writes exactly 111 unique contract results, creates no nested run, and seals one immutable run. A negative human answer, budget exhaustion, missing selector/phase, stale input or any blocking result makes the receipt failed/blocked.
+Before pausing, the focused live-run contract file must pass, including run/live/verdict schema validation and failed sealing of an aborted synthetic pause. The runner then processes and reviews every first-PDF page, requires `operator_confirmed_item_set_is_complete=true`, freezes that item set, generates a representative dense set of real balloons and resolves all hard collisions. It writes the run-bound first-project URL/state into the still-open run, but it does not create a receipt、process sample two、Confirm the final reviewed result or export. This is a pause inside the single current-four run, not a second prototype、preview pipeline、child run or reusable fixture.
 
-- [ ] **Step 5: Commit live orchestration code and keep evidence ignored**
+Use the same user-selected browser, `1565 × 796` viewport, project state and page for the reference and implementation captures. Follow the design-QA workflow required by `product-design:image-to-code`: compare source and implementation together, record issues as P0/P1/P2, fix all visible issues, recapture and repeat. Test summary filters、row/balloon selection、zoom/pan、drag、review controls、export state and browser console/network errors. Write project-root `design-qa.md` with the source identity, implementation route/state, comparison evidence and `final result: passed`.
+
+If design QA requires any code/config/contract change, run `python .agent/harness/scripts/run-p0.py live --abort-run "$QI_P0_RUN_ID" --reason visual_qa_code_changed` to seal the paused attempt as failed; never resume it or reuse its project/results. Rebuild and rerun Step 6 from source to obtain a new literal run ID, then repeat the same-state comparison. Multiple failed attempts may exist as immutable evidence, but only the final unchanged-code paused run may resume. Writing `design-qa.md` and attaching its hash/evidence is allowed while paused because it is QA output, not executable/contract input.
+
+If the reference cannot be reopened, the implementation cannot be captured in the user's chosen browser, or any P0/P1/P2 visual issue remains, write `final result: blocked` and stop before the live receipt. A screenshot by itself, production build, HTTP 200 or automated selector pass cannot substitute for this comparison.
+
+- [ ] **Step 7: Execute the full live gate, verify and commit one bounded task**
+
+```bash
+test "$(jq -r '.execution_state' ".agent/harness/runs/$QI_P0_RUN_ID/run.json")" = "visual_qa_pending"
+test "$(rg -n '^final result: passed$' design-qa.md | wc -l)" -eq 1
+python .agent/harness/scripts/run-p0.py live --resume-run "$QI_P0_RUN_ID" --design-qa design-qa.md
+python .agent/harness/scripts/generate-receipt.py --check-run "$QI_P0_RUN_ID"
+```
+
+Resume must recheck executable/config/input/contract identities against the pause point, bind the passed `design-qa.md` hash, complete first-PDF Confirm/export before starting sample two, then process the remaining three. Expected: Product Design QA is passed; all six pages finish within Provider policy; the quality operator confirms a complete item set instead of a mass-exclusion false pass; every active required item has one readable formal balloon; cross-balloon hard-collision and unresolved-manual counts are zero; the run contains passed Playwright evidence bound to balloons/export phases; table、reviewed result、PDF、Excel and manifest use the same item identities/counts/numbers; exactly three validated downloads exist per sample; all 111 results are present in one immutable run with no child run. Any identity drift、negative human answer、visual-QA blocker、browser phase failure、budget exhaustion、missing selector/phase、stale input or blocking result makes the receipt failed/blocked.
+
+After an independent read-only review, stage only this task's listed implementation/test/doc-QA files and generated contract projections:
 
 ```bash
 git status --short .agent/harness/runs
-git add .agent/harness/scripts/run-p0.py .agent/harness/scripts/stage-current-four.py .agent/harness/scripts/record-human-verdict.py backend/tests/contract/harness/test_live_run_contract.py frontend/playwright.config.ts frontend/e2e/p0-workbench.spec.ts
-git commit -m "test: add current-four live acceptance run"
+git add backend/app/balloons/placement.py backend/app/balloons/schemas.py backend/app/balloons/service.py backend/app/balloons/validator.py backend/tests/unit/balloons/test_collision_layout.py backend/tests/integration/test_balloon_validation.py .agent/harness/scripts/run-p0.py .agent/harness/scripts/stage-current-four.py .agent/harness/scripts/record-human-verdict.py .agent/harness/schemas/run.schema.json .agent/harness/schemas/live-run-evidence.schema.json .agent/harness/schemas/human-verdict.schema.json backend/tests/contract/harness/test_live_run_contract.py frontend/package.json frontend/package-lock.json frontend/src/api/client.ts frontend/src/api/types.ts frontend/src/features/exports/api.ts frontend/src/components/balloons/BalloonOverlay.tsx frontend/src/components/balloons/BalloonOverlay.test.tsx frontend/src/components/balloons/BalloonToolbar.tsx frontend/src/components/workbench/ProjectWorkbenchApp.tsx frontend/src/components/workbench/InspectionWorkbench.tsx frontend/src/components/workbench/RecognitionSummary.tsx frontend/src/components/workbench/InspectionItemTable.tsx frontend/src/components/workbench/ExportPanel.tsx frontend/src/components/workbench/RecognitionSummary.test.tsx frontend/src/components/workbench/InspectionItemTable.test.tsx frontend/src/components/workbench/ExportPanel.test.tsx frontend/src/styles/workbench.css frontend/playwright.config.ts frontend/e2e/p0-workbench.spec.ts design-qa.md docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md .agent/harness/contracts/p0-contracts.json .agent/harness/contracts/global-contract-bindings.json
+git commit -m "feat: close collision-safe operator flow"
 ```
 
-Do not stage source PDFs, credentials, human notes, generated exports, run directories or receipts. A sanitized summary enters `baselines/` only after an explicit later approval.
+Do not stage the reference screenshot、source PDFs、credentials、human notes、generated exports、run directories or receipts. A sanitized summary enters `baselines/` only after explicit later approval.
 
 ### Task D7-T3: Enforce Final Receipt, Rollback Proof And Independent Review
 
@@ -3966,8 +4055,10 @@ Do not declare P0 complete when the reviewer rejects, an external gate is unreso
 - Bindings 明确拆成 primary、related-business、related-implementation；receipt 绑定排除 `current_status` 的 definition hash，避免 status projection 更新让当前 run 自失效。
 - current-four staging 与 coordinate tests 在 `D2-T1`，Provider contract fixtures 在 `D2-T2`，export consistency 在 `D6-T3`；业务 pytest/frontend tests 始终留在原测试目录。
 - `D1-T2` 至 `D6-T3` 的每个业务任务都在本任务结束时完成 contract 引用、测试 selector、mirror regeneration、`check-contracts.py` 和 focused Harness phase，不把接线集中拖到 Day 7。
-- Day 7 只通过显式 live/full-p0 mode 创建独立 run ID；同一 runner 执行全部普通 selectors、内部 dispatch Harness phases、先闭合 first PDF，再聚合 111 条 result 并按 policy 生成 receipt。可变 latest pointer、nested run 和旧 receipt 都不能充当本次证据。
-- 仍是 20 个 implementation tasks，保留第一份 PDF 的纵向链路和 Day 1～Day 7 依赖；没有把任何 P1/P2 contract 加入七天 P0。
+- D7-T2在同一既有task内先用 `product-design:index → product-design:image-to-code` 改造真实React workbench，并用同viewport/source-state的design QA证明视觉结果；它不建立第二份plan、独立prototype、第二route或frontend业务Owner。
+- D7-T2用有限多距离batch placement替换D5单距离路径，hard collision和未解决 `manual_required` 进入backend Veto Gate；跨页全局最优仍保持P2/excluded。
+- Day 7只通过显式 live/full-p0 mode创建独立run ID；同一runner执行全部普通selectors、内部dispatch Harness phases、先闭合first PDF，再聚合111条result并按policy生成receipt。可变latest pointer、nested run、旧receipt、HTTP 200或单张implementation screenshot都不能充当本次证据。
+- 仍是20个implementation tasks，保留第一份PDF的纵向链路和Day 1～Day 7依赖；只是加强既有P0 `BAL-004`、`REV-003`和hard acceptance映射，没有把任何P1/P2 contract加入七天P0。
 
 Before execution handoff, run these docs-only checks:
 

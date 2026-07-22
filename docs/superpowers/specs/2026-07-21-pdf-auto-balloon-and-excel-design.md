@@ -615,16 +615,27 @@ Section 10只选择简化来源和人工确认；完整字段级治理UI不属�
 
 ### 5.2 Minimum Layout Contract
 
-Section 10选择的基础布局使用有限方向候选点和确定性贪心评分：上、右上、右、右下、下、左下、左、左上，必要时增加视图外围位置。
+Section 10选择的P0布局使用有限、可复现的多距离候选点和确定性批量评分：上、右上、右、右下、下、左下、左、左上按固定距离带展开，必要时增加页边轨道位置。Placement Owner按正式稳定编号顺序逐个提交位置；每放置一个气泡就把其圆、编号字形框和引线加入后续场景，不允许各气泡彼此独立计算后再把重叠结果拼在一起。
+
+P0 hard collision定义为：
+
+- 对任意两个不同正式气泡 `i != j`，发生 `circle_i/circle_j`、`glyph_i/glyph_j` 或 `glyph_i/circle_j` 相交；自身编号 `glyph_i` 允许位于所属 `circle_i` 内，但必须满足受控字体的内边距和完整可读性；
+- 气泡圆或编号字形框超出CropBox；
+- 覆盖登记的标题栏、签核区或其他protected region；
+- 编号字形无法在受控字体和字号下完整辨认；
+- leader target缺失、引线无法建立或气泡与正式item/source失联；
+- 气泡圆或编号字形框与来源尺寸/技术要求文字bbox相交；引线穿过非目标文字另计soft penalty。
+
+hard collision不参与“取最低分后照常成功”；含任一hard collision的候选只能作为best attempt。尺寸文字轻微邻近、覆盖主要轮廓、引线穿过非目标标注、引线过长或穿过密集区域属于soft penalty，用于在合法候选间排序。
 
 禁止：
 
 - 超出CropBox；
 - 覆盖标题栏固定区域；
-- 覆盖其他正式气泡中心；
+- 与其他正式气泡的圆或编号字形框重叠；自身编号在所属气泡圆内是预期结构；
 - 无法建立有效引线。
 
-高惩罚：覆盖尺寸文字、技术要求或引线穿过其他气泡。中惩罚：覆盖主要轮廓、引线过长或穿过密集区域。低惩罚：偏离首选方向或靠近页面边缘。
+circle/glyph覆盖来源文字已由hard veto独占，不再进入soft评分。高惩罚：引线穿过非目标文字、其他气泡或密集区域。中惩罚：覆盖主要轮廓或引线过长。低惩罚：偏离首选方向或靠近页面边缘。
 
 所有候选位置均失败时返回：
 
@@ -633,7 +644,7 @@ Section 10选择的基础布局使用有限方向候选点和确定性贪心评�
 - collision flags
 - failure reason
 
-自动布局不理想不能阻塞审核闭环，用户可以拖动修正。
+自动布局不理想不能阻塞人工审核入口，用户可以拖动修正；但未解决的 `manual_required`、hard collision或不可读编号必须阻止Confirm和正式导出。P0不承诺计算全局最优解，Section 10.3的高质量全局优化仍不进入七天范围。
 
 ### 5.3 Geometry Semantics
 
@@ -705,11 +716,15 @@ processing
 - 多页PDF切换；
 - 缩放和平移；
 - 候选框、来源和气泡；
+- 同页全部active且 `balloon_required=true` 的正式气泡、编号和引线；
 - 点击定位；
 - 拖动气泡。
 
 右侧：
 
+- 当前页/全部候选数、active/excluded/confirmation/manual-required数量；
+- 可按类型、状态和页码筛选的检验项表；
+- 每行稳定显示气泡序号、类型、原文/标称值、公差、来源页和审核状态；
 - 原始检验标准；
 - 核心结构化字段；
 - quantity和子要求；
@@ -729,8 +744,13 @@ processing
 - 修改balloon_required；
 - 处理ambiguous；
 - 调整气泡和编号；
-- 生成预览；
-- 确认审核并正式导出。
+- 查看hard/soft collision状态；
+- 确认审核；
+- 从同一reviewed result发起正式导出，并只在三产物原子成功后显示PDF、Excel和manifest下载。
+
+冻结item set前，质量人员必须逐页确认 `operator_confirmed_item_set_is_complete`：所有可见且经人工认定应检验的要求均已keep，或通过add补齐；excluded候选具有明确operator disposition evidence。不能仅因active count非零就把大批量自动排除视为完整结果。
+
+Section 10选择的桌面工作台以用户在2026-07-22提供的 `1565 × 796` 参考截图为信息架构和交互基准：大幅图纸区、右侧可滚动检验项列表、显著编号气泡、筛选/统计和明确完成动作。参考图中的气泡或数字重叠是待消除缺陷，不是需要复刻的视觉真值；不得复制第三方品牌、logo或专有资产。
 
 复杂字段来源可视化、通用上下文编辑器、图形化血缘编辑器和高级批量规则进入P1。
 
@@ -847,6 +867,8 @@ Section 10选择的正式导出执行以下最小校验：
 - Excel逻辑明细数等于正式检验项数；
 - 气泡数等于balloon_required=true项数；
 - PDF气泡编号和Excel序号一致；
+- 正式气泡hard collision为0，未解决 `manual_required` 为0；
+- 每个active且 `balloon_required=true` 的item恰有一个可读正式气泡；
 - 通用要求序号为空；
 - 必填字段使用审核确认值；
 - 工作表、固定区和签核区未被覆盖；
@@ -995,6 +1017,7 @@ Section 10只授权当前4份样例闭环所需的focused单测、Provider fixtu
 - 所有正式项目完整；
 - 需要气泡的项目关联正确；
 - 编号唯一连续；
+- 不同正式气泡之间的circle/glyph hard overlap为0，自身编号完整位于所属圆内且可读，未解决 `manual_required` 为0；
 - PDF、Excel和reviewed result一致；
 - Excel可打开和编辑；
 - blocking为0；
@@ -1092,20 +1115,24 @@ P1流程：
 - 自动连续建议编号。
 - 审核后正式连续编号。
 - 默认从1开始且不留缺号；无气泡通用要求不占编号。
-- 基础确定性位置建议。
-- manual_required。
+- 按稳定编号顺序执行有限、多距离候选的确定性批量布局。
+- 不同正式气泡之间不得发生circle/circle、glyph/glyph或glyph/other-circle相交；自身编号必须完整位于所属圆内且可读；circle/glyph不得超出CropBox或覆盖标题栏/签核保护区。
+- 无合法位置时返回带best attempt、collision flags和reason的 `manual_required`，不得伪造placed。
 - 拖动、删除、重建、调整顺序和重新编号。
 - 图纸与表格双向定位。
-- 自动布局不理想不得阻塞人工闭环。
+- 自动布局不理想不得阻塞人工修正入口；未解决hard collision、不可读编号或 `manual_required` 必须阻止Confirm和正式导出。
 
 #### Review UI
 
 - 页面切换、缩放和平移。
-- 候选、来源和气泡显示。
+- 同页全部active候选、来源、正式气泡、编号和引线显示。
 - 左图右表联动。
-- 核心表单审核。
+- 右侧显示全量/当前页统计、类型/状态筛选、可滚动检验项表和核心表单审核。
+- 显示自动布局、hard collision和manual-required状态，并支持拖动修正。
 - 保存review working copy。
 - 确认并冻结reviewed result。
+- 从reviewed result发起正式导出，成功后显示ballooned PDF、SIP Excel和manifest三个下载入口。
+- 前端实施必须调用 `product-design:index → product-design:image-to-code`，随后执行 `image-to-code` 内置的design-QA workflow；以用户确认的参考截图为选定视觉源，在现有React前端内实现，不新建独立prototype或第二条frontend业务路径。
 
 #### Export
 
@@ -1116,6 +1143,7 @@ P1流程：
 - 全部页面嵌入Excel。
 - openpyxl重新打开校验。
 - PDF、Excel和编号一致性校验。
+- 正式气泡hard collision和未解决manual-required校验。
 - 简化manifest。
 - PDF、Excel和manifest三个产物均生成并通过校验后才标记成功。
 
@@ -1134,9 +1162,11 @@ P1流程：
 - 可以上传并处理；
 - 可以生成候选检验项；
 - 可以人工修正；
-- 可以生成和调整气泡；
-- 可以导出固定SIP Excel和带气泡PDF；
-- 最终气泡、表格和Excel保持一致；
+- 质量人员逐页确认正式item set完整；所有人工认定应检验项均已keep/add，mass exclusion不能因剩余active count非零而冒充完成；
+- 可以为所有active且 `balloon_required=true` 的正式检验项生成、筛选、定位和调整气泡；
+- 不同正式气泡之间的circle/glyph hard overlap为0，自身编号完整位于所属圆内且可读，未解决 `manual_required` 为0；
+- 可以在同一工作台发起导出并取得固定SIP Excel、带气泡PDF和manifest；
+- 最终气泡、右侧检验项表、PDF和Excel的item identity、数量与编号保持一致；
 - 失败不静默产生正式成功状态。
 
 新增批次、带标准答案回归集、准确率门槛和正式盲测均不阻塞第7天。
@@ -1164,7 +1194,7 @@ P1流程：
 - 纯扫描PDF正式支持。
 - 标准公差规则库。
 - 完整GD&T、焊接和粗糙度语义。
-- 高质量全局气泡布局。
+- 跨全页/跨视图联合优化、最短总引线或全局最优评分等高质量全局气泡布局；P0只实现有限候选、零hard-collision和人工收口。
 - 正式盲测治理平台。
 - 生产级资源隔离、监控、告警、备份和灾备。
 - 独立服务器迁移。
@@ -1178,7 +1208,7 @@ P1流程：
 | OCR与原生文本冲突 | 原文或分组错误 | 原生与OCR独立保存、冲突进入人工确认 |
 | LLM JSON或工程语义不稳定 | 字段错误、复合项错误 | 局部截图、严格Schema、确定性校验、人工确认 |
 | 密集图纸候选噪声 | 审核成本上升 | 区域规则、数字弱候选、可复查自动排除 |
-| 自动气泡布局不理想 | 遮挡或重叠 | manual_required和人工拖动，不追求P0全局最优 |
+| 自动气泡布局不理想 | 遮挡、数字重叠或无法正式导出 | 有限多距离候选、hard-collision Veto、manual_required和人工拖动；不追求P0全局最优 |
 | Excel模板容量或嵌图问题 | 导出失败 | 固定模板、受控容量、当前4份实际A3/A4 PDF页面资格验证 |
 | PDF、Excel或manifest部分成功 | 错误发布 | 同一reviewed result、staging、三个产物都通过后才标记成功 |
 | API限流或暂不可用 | 自动处理失败 | 缓存、有限重试、保留已有结果、明确错误 |
@@ -1192,24 +1222,19 @@ P1流程：
 2. 目标明确为从原始工程PDF识别检验要求并新生成气泡，没有误写成OCR已有气泡编号。
 3. 检验项选择规则明确为长期可配置、P0默认全部明确标注优先召回、正式结果人工确认。
 4. 明确区分PyMuPDF原生解析主链路、腾讯OCR局部补充和qwen3-vl-plus局部语义复核。
-5. 已定义建议/正式编号、基础布局、`manual_required`、人工拖动、重建、重排和后端正式绘制。
+5. 已定义建议/正式编号、有限多距离批量布局、零hard-collision、`manual_required`、人工拖动、重建、重排和后端正式绘制。
 6. 已定义固定SIP模板、当前样例容量、带气泡PDF、全部页面嵌图和跨产物一致性验收。
 7. 未承诺任意图纸、100%自动准确、无人审核、完整复杂工程语义或生产认证。
 8. 新增回归PDF、数字准确率门槛和正式盲测明确不阻塞第7天。
 9. 复杂GD&T、粗糙度、焊接、跨视图重复在P0只要求原文、坐标、类型大类和人工确认。
 10. candidate血缘、完整artifact治理、生产身份、正式发布平台和规则管理后台均留在P1/P2。
 11. Section 10是七天实施范围的唯一Owner；Section 1～9中的长期实体不能被writing-plans自动展开成P0功能。
-12. P0每项均直接服务于“识别—审核—气泡—Excel/PDF”纵向闭环，能够独立形成后续实施计划。
+12. P0每项均直接服务于“识别—审核—可读气泡—Excel/PDF”纵向闭环，能够独立形成后续实施计划。
+13. 2026-07-22用户明确将参考截图中的大图纸区、右侧检验项表和批量编号气泡提升为P0交互基准，同时要求消除参考图已有的数字重叠并在同一工作台导出Excel。
+14. frontend只执行后端Owner提交的candidate/review/balloon/export contract；Product Design负责视觉实现和可见QA，不成为正式业务语义Owner。
 
 ## Design Approval and Next Gate
 
-本设计已通过逐节brainstorming确认。写入后必须先由用户审核本spec。
+原始设计已通过逐节brainstorming确认并进入唯一implementation plan执行。2026-07-22用户再次明确批准“参考图式批量气泡工作台、比参考图更少重叠、随后导出Excel”的设计纠偏，并要求原地更新doc与契约矩阵。
 
-在用户明确批准书面spec之前：
-
-- 不调用 `writing-plans`；
-- 不写实现计划；
-- 不创建业务代码；
-- 不搭建运行环境。
-
-用户批准书面spec后，下一步唯一允许的skill是 `superpowers:writing-plans`。该计划必须以Section 10的P0为唯一七天范围，不得将P1/P2治理能力重新加入P0。
+本次amendment不创建第二份spec/plan；`docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md` 仍是唯一current plan。计划必须把P0有限候选的collision-safe布局与Product Design前端闭环写入既有D7-T2，同时保留P2全局最优布局、生产治理和准确率阈值的排除边界。
