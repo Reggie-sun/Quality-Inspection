@@ -4,19 +4,27 @@ export type PdfMatrix = [number, number, number, number, number, number];
 export type PdfPageTransform = {
   pageIndex: number;
   pdfToRenderMatrix: PdfMatrix;
+  renderToPdfMatrix?: PdfMatrix;
 };
 
 export type OverlayBox = {
   id: string;
+  itemId?: string;
+  itemIds?: string[];
   pageIndex?: number;
   bbox: PdfCoordinates;
 };
 
 export type BalloonOverlay = {
   id: string;
+  itemId?: string;
+  sourceId?: string;
   pageIndex?: number;
   center: [number, number];
   number: number;
+  version?: number;
+  status?: "active" | "deleted";
+  sortOrder?: number;
 };
 
 export type PdfViewportLike = {
@@ -71,6 +79,9 @@ export type ReviewItem = {
   thread_depth?: string | null;
   radius_value?: string | null;
   angle_value?: string | null;
+  source_location_ids?: string[];
+  page_index?: number | null;
+  status?: string;
   active: boolean;
 };
 
@@ -85,6 +96,7 @@ export type ReviewCommand =
       coordinates: PdfCoordinates;
       scope: "local_feature" | "global_requirement";
       balloon_required: boolean;
+      page_index?: number;
     }
   | { type: "merge"; item_ids: string[]; raw_text: string }
   | { type: "split"; item_id: string; parts: Array<{ raw_text: string }> }
@@ -104,8 +116,61 @@ export type ReviewWorkingCopy = {
   items_frozen_version: number | null;
 };
 
-export type PostJson = (
+export type ProjectWorkbenchPage = {
+  page_index: number;
+  width: number;
+  height: number;
+  pdf_to_render_matrix: PdfMatrix;
+  render_to_pdf_matrix: PdfMatrix;
+};
+
+export type ProjectWorkbenchCandidate = {
+  id: string;
+  item_id: string;
+  page_index: number;
+  bbox_pdf: PdfCoordinates;
+};
+
+export type ProjectWorkbenchSource = {
+  id: string;
+  item_ids: string[];
+  page_index: number;
+  bbox_pdf: PdfCoordinates;
+};
+
+export type BalloonRecord = {
+  id: string;
+  project_id: string;
+  inspection_item_id: string;
+  source_location_id: string;
+  page_index: number;
+  suggested_number: number;
+  formal_number: number | null;
+  sort_order: number;
+  anchor_bbox_pdf: PdfCoordinates;
+  leader_target_pdf: [number, number];
+  center_pdf: [number, number];
+  placement_status: "placed" | "manual_required";
+  collision_flags: string[];
+  status: "active" | "deleted";
+  version: number;
+};
+
+export type ProjectWorkbenchResponse = {
+  project: { id: string; state: string; version: number };
+  working_copy: ReviewWorkingCopy;
+  pages: ProjectWorkbenchPage[];
+  candidates: ProjectWorkbenchCandidate[];
+  sources: ProjectWorkbenchSource[];
+  balloons: BalloonRecord[];
+  balloon_blockers: string[];
+  source_pdf_url: string;
+};
+
+export type GetJson = <Result>(path: string) => Promise<Result>;
+
+export type PostJson = <Result = unknown>(
   path: string,
-  body: Record<string, unknown>,
+  body: unknown,
   headers: Record<string, string>,
-) => Promise<unknown>;
+) => Promise<Result>;

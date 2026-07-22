@@ -12,6 +12,9 @@ type ReviewPanelProps = {
   items: ReviewItem[];
   onCommand: (command: ReviewCommand) => void;
   disabled?: boolean;
+  selectedItemId?: string;
+  onSelectItem?: (itemId: string) => void;
+  pageIndex?: number;
 };
 
 type CoreFieldKey =
@@ -124,6 +127,9 @@ export function ReviewPanel({
   items,
   onCommand,
   disabled = false,
+  selectedItemId,
+  onSelectItem,
+  pageIndex = 0,
 }: ReviewPanelProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [rawTexts, setRawTexts] = useState<Record<string, string>>(() =>
@@ -225,6 +231,7 @@ export function ReviewPanel({
       coordinates,
       scope: manualScope,
       balloon_required: manualBalloonRequired,
+      page_index: pageIndex,
     });
   };
 
@@ -240,11 +247,23 @@ export function ReviewPanel({
 
   return (
     <section aria-label="Review commands">
-      <h2>Inspection items</h2>
+      <h2 style={{ margin: "18px 0 10px", fontSize: 20 }}>Inspection items</h2>
       {activeItems.map((item) => (
         <article
           key={item.item_id}
-          style={{ borderBottom: "1px solid #e5e7eb", padding: 8 }}
+          role="row"
+          aria-label={`${item.raw_text} ${item.item_id}`}
+          data-selected={selectedItemId === item.item_id}
+          onClick={() => onSelectItem?.(item.item_id)}
+          style={{
+            border: selectedItemId === item.item_id
+              ? "2px solid #7c3aed"
+              : "1px solid #e5e7eb",
+            borderRadius: 8,
+            padding: 10,
+            marginBottom: 8,
+            background: selectedItemId === item.item_id ? "#f5f3ff" : "white",
+          }}
         >
           <label>
             <input

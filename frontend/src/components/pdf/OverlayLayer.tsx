@@ -4,6 +4,11 @@ import type {
   PdfCoordinates,
   PdfMatrix,
 } from "../../api/types";
+import {
+  BalloonOverlay as BalloonMarker,
+  displayToPdfMatrix,
+} from "../balloons/BalloonOverlay";
+import { selectRelationItem, selectedRelation } from "../workbench/selection";
 
 
 const IDENTITY_MATRIX: PdfMatrix = [1, 0, 0, 1, 0, 0];
@@ -44,6 +49,16 @@ type OverlayLayerProps = {
   sources: OverlayBox[];
   balloons: BalloonOverlay[];
   pdfToRenderMatrix?: PdfMatrix;
+  renderToPdfMatrix?: PdfMatrix;
+  selectedItemId?: string;
+  selectedBalloonId?: string;
+  onSelectItem?: (itemId: string) => void;
+  onSelectBalloon?: (itemId: string, balloonId: string) => void;
+  onMoveBalloon?: (
+    balloonId: string,
+    expectedVersion: number,
+    centerPdf: [number, number],
+  ) => void;
   selectedId?: string;
   onSelect?: (id: string) => void;
 };
@@ -57,10 +72,22 @@ export function OverlayLayer({
   sources,
   balloons,
   pdfToRenderMatrix = IDENTITY_MATRIX,
+  renderToPdfMatrix = IDENTITY_MATRIX,
+  selectedItemId,
+  selectedBalloonId,
+  onSelectItem,
+  onSelectBalloon,
+  onMoveBalloon,
   selectedId,
   onSelect,
 }: OverlayLayerProps) {
   const matrix = normalizeMatrix(pdfToRenderMatrix);
+  const effectiveRenderToPdfMatrix = displayToPdfMatrix(
+    pdfToRenderMatrix,
+    renderToPdfMatrix,
+  );
+  const selected = selectedItemId ?? selectedId;
+  const selectItem = onSelectItem ?? onSelect;
 
   return (
     <svg
@@ -73,67 +100,78 @@ export function OverlayLayer({
     >
       {candidates.map((item) => {
         const [x0, y0, x1, y1] = transformBox(matrix, item.bbox);
+        const isSelected = selectedRelation(
+          { itemId: item.itemId ?? item.id, itemIds: item.itemIds },
+          selected,
+        );
         return (
           <rect
             key={item.id}
             data-testid={`candidate-${item.id}`}
-            data-selected={selectedId === item.id}
+            data-selected={isSelected}
             x={x0}
             y={y0}
             width={x1 - x0}
             height={y1 - y0}
             fill="transparent"
-            stroke={selectedId === item.id ? "#dc2626" : "#f59e0b"}
-            strokeWidth={selectedId === item.id ? 3 : 1.5}
-            onClick={() => onSelect?.(item.id)}
-            style={{ cursor: onSelect ? "pointer" : "default" }}
+            stroke={isSelected ? "#dc2626" : "#f59e0b"}
+            strokeWidth={isSelected ? 3 : 1.5}
+            onClick={() => {
+              const itemId = selectRelationItem(
+                { itemId: item.itemId ?? item.id, itemIds: item.itemIds },
+                selected,
+              );
+              if (itemId !== undefined) selectItem?.(itemId);
+            }}
+            style={{ cursor: selectItem ? "pointer" : "default" }}
           />
         );
       })}
       {sources.map((item) => {
         const [x0, y0, x1, y1] = transformBox(matrix, item.bbox);
+        const isSelected = selectedRelation(
+          { itemId: item.itemId, itemIds: item.itemIds },
+          selected,
+        );
         return (
           <rect
             key={item.id}
             data-testid={`source-${item.id}`}
+            data-selected={isSelected}
             x={x0}
             y={y0}
             width={x1 - x0}
             height={y1 - y0}
             fill="transparent"
-            stroke="#2563eb"
+            stroke={isSelected ? "#7c3aed" : "#2563eb"}
             strokeDasharray="4 3"
             strokeWidth={1.5}
-            style={{ pointerEvents: "none" }}
+            onClick={() => {
+              const itemId = selectRelationItem(item, selected);
+              if (itemId !== undefined) selectItem?.(itemId);
+            }}
+            style={{ cursor: selectItem ? "pointer" : "default" }}
           />
         );
       })}
       {balloons.map((item) => {
         const [x, y] = transformPoint(matrix, item.center);
         return (
-          <g
+          <BalloonMarker
             key={item.id}
-            data-testid={`balloon-${item.id}`}
-            style={{ pointerEvents: "none" }}
-          >
-            <circle
-              cx={x}
-              cy={y}
-              r={10}
-              fill="white"
-              stroke="#dc2626"
-              strokeWidth={1.5}
-            />
-            <text
-              x={x}
-              y={y}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize={10}
-            >
-              {item.number}
-            </text>
-          </g>
+            balloon={item}
+            displayCenter={[x, y]}
+            renderToPdfMatrix={effectiveRenderToPdfMatrix}
+            selected={
+              selectedBalloonId === item.id ||
+              selectedRelation({ itemId: item.itemId ?? item.id }, selected)
+            }
+            onSelect={(itemId, balloonId) => {
+              selectItem?.(itemId);
+              onSelectBalloon?.(itemId, balloonId);
+            }}
+            onMove={onMoveBalloon ?? (() => undefined)}
+          />
         );
       })}
     </svg>

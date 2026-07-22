@@ -171,7 +171,7 @@ Each table uses the same columns:
 | `P0-BAL-010` | `BAL-006` | `false` | `[]` | operator 可从 reviewed item 重建 balloon | Balloon command service | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_operations.py::test_rebuild_balloon -q` | `blocking` | `passed` | — |
 | `P0-BAL-011` | `BAL-002` | `false` | `[]` | operator 可调整 stable ordering key；未显式 renumber 前 existing formal numbers 不变 | Numbering Owner | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_operations.py::test_reorder_does_not_silently_renumber -q` | `blocking` | `passed` | — |
 | `P0-BAL-012` | `BAL-003` | `false` | `[]` | operator 可显式重新编号，结果仍满足唯一连续无缺号 | Numbering Owner | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_operations.py::test_explicit_renumber_is_contiguous -q` | `blocking` | `passed` | — |
-| `P0-BAL-013` | `BAL-001` | `false` | `[]` | table item/source selection 与 drawing overlay selection 使用同一 IDs 双向定位 | Workbench selection model | `D5-T3` | frontend | `npm --prefix frontend test -- --run src/components/workbench/selection.test.tsx` | `blocking` | `not_run` | — |
+| `P0-BAL-013` | `BAL-001` | `false` | `[]` | table item/source selection 与 drawing overlay selection 使用同一 IDs 双向定位 | Workbench selection model | `D5-T3` | frontend | `npm --prefix frontend test -- --run src/components/workbench/selection.test.tsx` | `blocking` | `passed` | — |
 | `P0-BAL-014` | `BAL-004` | `false` | `[]` | layout 差只进入人工修正；超页、编号不可读、图表失联或无有效 leader 的正式 balloon 仍阻止 freeze/export | Balloon validator Veto Gate | `D5-T2` | integration | `pytest backend/tests/integration/test_balloon_validation.py::test_manual_required_and_formal_invalidity_are_distinct -q` | `blocking` | `passed` | — |
 
 ### UI — Review UI
@@ -182,10 +182,10 @@ Each table uses the same columns:
 | `P0-UI-002` | `PDF-002` | `false` | `[]` | workbench 支持 zoom，overlay 与 PDF viewport 同步缩放 | PDF workspace | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/components/pdf/PdfWorkspace.test.tsx -t 'zooms overlays'` | `blocking` | `passed` | — |
 | `P0-UI-003` | `PDF-002` | `false` | `[]` | workbench 支持 pan，不改变持久化 PDF 坐标 | PDF workspace | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/components/pdf/PdfWorkspace.test.tsx -t 'pans without mutating pdf coordinates'` | `blocking` | `passed` | — |
 | `P0-UI-004` | `REV-003` | `false` | `[]` | 同一页面可区分显示 candidate boxes、source boxes 和 balloons | Overlay layer | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/components/pdf/OverlayLayer.test.tsx` | `blocking` | `passed` | — |
-| `P0-UI-005` | `BAL-001` | `false` | `[]` | 左图与右表点击任一侧会定位并高亮另一侧 | Workbench selection model | `D5-T3` | frontend | `npm --prefix frontend test -- --run src/components/workbench/selection.test.tsx` | `blocking` | `not_run` | — |
+| `P0-UI-005` | `BAL-001` | `false` | `[]` | 左图与右表点击任一侧会定位并高亮另一侧 | Workbench selection model | `D5-T3` | frontend | `npm --prefix frontend test -- --run src/components/workbench/selection.test.tsx` | `blocking` | `passed` | — |
 | `P0-UI-006` | `REV-004` | `false` | `[]` | 核心审核表单支持 keep/exclude/edit/add/merge/split/confirmation/balloon-required | Review panel | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/components/review/ReviewPanel.test.tsx` | `blocking` | `passed` | — |
 | `P0-UI-007` | `REV-003` | `false` | `[]` | 明确 Save 动作只保存 working copy，并携带 `expected_version/operator_id`；P0 不新增 autosave contract | Review mutation client | `D4-T3` | frontend | `npm --prefix frontend test -- --run src/features/review/saveWorkingCopy.test.ts src/components/workbench/InspectionWorkbench.test.tsx` | `blocking` | `passed` | — |
-| `P0-UI-008` | `REV-006` | `false` | `[]` | 明确 Confirm 动作冻结 reviewed result；普通 Save 不会 freeze | Review freeze UI | `D5-T3` | frontend | `npm --prefix frontend test -- --run src/components/workbench/FreezeReviewButton.test.tsx` | `blocking` | `not_run` | — |
+| `P0-UI-008` | `REV-006` | `false` | `[]` | 明确 Confirm 动作冻结 reviewed result；普通 Save 不会 freeze | Review freeze UI | `D5-T3` | frontend | `npm --prefix frontend test -- --run src/components/workbench/FreezeReviewButton.test.tsx` | `blocking` | `passed` | — |
 
 ### EXP — Export
 
