@@ -123,7 +123,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-002",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -151,7 +151,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -165,7 +165,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -179,7 +179,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-003",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -193,7 +193,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-004",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -207,7 +207,7 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "not_run",
+      "current_status": "passed",
       "global_contract_id": "BAL-004",
       "implementation_only": false,
       "implementation_reason": "—",
@@ -1622,5 +1622,5 @@
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "p0-contracts/1",
   "source": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md",
-  "status_projection_hash": "eac2899479e1cff13055e0e89d80cca6a4c772de955af3b39f6a8d1fc9590ab8"
+  "status_projection_hash": "2879147f32e2299aea1c76271071aa4fd570d82aa37280d9341c4e89099d7ed1"
 }
