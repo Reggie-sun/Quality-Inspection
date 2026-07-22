@@ -99,8 +99,37 @@ def working_copy(db_session: Session) -> ReviewWorkingCopy:
         )
     )
     db_session.commit()
-    working = ReviewService(db_session).create_from_raw(result_id)
+    service = ReviewService(db_session)
+    working = service.create_from_raw(result_id)
     acquire_lock(db_session, project_id, "quality-1")
+    working = service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_detail_fields",
+            "item_id": "i1",
+            "inspection_item": "M6",
+            "inspection_standard": "6H",
+            "inspection_method": "thread gauge",
+            "key_dimension": "yes",
+            "inspection_role": "IPQC",
+            "source_page": 1,
+        },
+    )
+    working = service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_metadata",
+            "material_code": "MAT-001",
+            "material_name": "fixture",
+            "drawing_number": "FREEZE-001",
+            "material": "steel",
+            "revision": "A",
+        },
+    )
     return working
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -17,7 +18,7 @@ from app.processing.automatic_result import build_automatic_result
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.review.models import ReviewedResult
-from app.review.service import ReviewConfirmationBlocked, ReviewService
+from app.review.service import FreezeBlocked, ReviewConfirmationBlocked, ReviewService
 from app.review.locks import acquire_lock
 from app.storage.models import StoredFile
 from tests.integration.test_balloon_service import (
@@ -151,6 +152,34 @@ def test_item_set_freeze_does_not_create_reviewed_result(
             "balloon_required": True,
         },
     )
+    working = service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_detail_fields",
+            "item_id": working.items[0]["item_id"],
+            "inspection_item": "M6",
+            "inspection_standard": "6H",
+            "inspection_method": "thread gauge",
+            "key_dimension": "yes",
+            "inspection_role": "IPQC",
+            "source_page": 1,
+        },
+    )
+    working = service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_metadata",
+            "material_code": "MAT-001",
+            "material_name": "fixture",
+            "drawing_number": "LAYERS-001",
+            "material": "steel",
+            "revision": "A",
+        },
+    )
 
     service.freeze_items(
         working.id,
@@ -174,6 +203,70 @@ def completed_balloon_review(
         operator_id="quality-1",
     )
     return context
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["metadata", "details"],
+)
+def test_freeze_rejects_incomplete_sip_snapshot_and_remains_recoverable(
+    db_session: Session,
+    tmp_path: Path,
+    missing: str,
+) -> None:
+    """P0-EXP-007E keeps an incomplete SIP draft editable before freeze."""
+    context = make_balloon_context(db_session, tmp_path, frozen=False)
+    if missing == "metadata":
+        context.working_copy.sip_metadata = {}
+    else:
+        items = copy.deepcopy(context.working_copy.items)
+        items[0].pop("sip_detail_fields_confirmed")
+        context.working_copy.items = items
+    db_session.commit()
+
+    with pytest.raises(FreezeBlocked) as error:
+        context.review_service.freeze_items(
+            context.working_copy.id,
+            expected_version=context.working_copy.version,
+            operator_id="quality-1",
+        )
+
+    assert error.value.code == "unresolved_confirmation"
+    current = context.review_service.get_working_copy(context.working_copy.id)
+    assert current.items_frozen_at is None
+    if missing == "metadata":
+        command = {
+            "type": "set_sip_metadata",
+            "material_code": "MAT-001",
+            "material_name": "fixture",
+            "drawing_number": "D5-FIXTURE",
+            "material": "steel",
+            "revision": "A",
+        }
+    else:
+        command = {
+            "type": "set_sip_detail_fields",
+            "item_id": "i1",
+            "inspection_item": "M6",
+            "inspection_standard": "confirmed M6",
+            "inspection_method": "thread gauge",
+            "key_dimension": "yes",
+            "inspection_role": "IPQC",
+            "source_page": 1,
+        }
+    recovered = context.review_service.apply(
+        current.id,
+        expected_version=current.version,
+        operator_id="quality-1",
+        command=command,
+    )
+    frozen = context.review_service.freeze_items(
+        recovered.id,
+        expected_version=recovered.version,
+        operator_id="quality-1",
+    )
+
+    assert frozen.items_frozen_at is not None
 
 
 def test_reviewed_result_is_immutable(
@@ -223,6 +316,18 @@ def test_reviewed_result_is_immutable(
     )
 
     assert duplicate.id == reviewed.id
+    assert reviewed.schema_version == "reviewed-result/2"
+    assert reviewed.sip_metadata == {
+        "material_code": "MAT-001",
+        "material_name": "fixture",
+        "drawing_number": "D5-FIXTURE",
+        "material": "steel",
+        "revision": "A",
+    }
+    assert all(
+        item["sip_detail_fields_confirmed"] is True
+        for item in reviewed.items
+    )
     assert context.session.get(Project, context.working_copy.project_id).state == (
         ProjectState.REVIEWED
     )

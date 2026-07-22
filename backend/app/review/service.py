@@ -25,6 +25,10 @@ from app.review.schemas import (
     ResolveConfirmation,
     ReviewCommand,
     SetBalloonRequired,
+    SetSipDetailFields,
+    SetSipMetadata,
+    SIP_DETAIL_FIELDS,
+    SIP_METADATA_FIELDS,
     Split,
     parse_review_command,
     validate_edit_fields,
@@ -64,6 +68,7 @@ class ReviewedResultImmutable(RuntimeError):
 
 _COORDINATES = TypeAdapter(tuple[float, float, float, float])
 _COARSE_TYPE = TypeAdapter(CoarseType)
+_SIP_DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
 
 
 class ReviewService:
@@ -108,6 +113,7 @@ class ReviewService:
             version=1,
             items=[self._current_item(candidate) for candidate in raw_result.candidates],
             coverage=copy.deepcopy(raw_result.coverage),
+            sip_metadata={},
             numbering_stale=False,
         )
         self.session.add(working)
@@ -140,9 +146,11 @@ class ReviewService:
 
         items = copy.deepcopy(working.items)
         coverage = copy.deepcopy(working.coverage)
+        sip_metadata = copy.deepcopy(working.sip_metadata)
         target_ids, numbering_stale = self._apply_command(
             items,
             coverage,
+            sip_metadata,
             parsed,
             numbering_stale=working.numbering_stale,
         )
@@ -158,6 +166,7 @@ class ReviewService:
             .values(
                 items=items,
                 coverage=coverage,
+                sip_metadata=sip_metadata,
                 numbering_stale=numbering_stale,
                 version=after_version,
             )
@@ -221,7 +230,11 @@ class ReviewService:
             self.session.rollback()
             raise ItemsFrozen("review item set is already frozen")
 
-        blockers = self.freeze_blockers(working.items, working.coverage)
+        blockers = self.freeze_blockers(
+            working.items,
+            working.coverage,
+            working.sip_metadata,
+        )
         if blockers:
             self.session.rollback()
             raise FreezeBlocked(blockers)
@@ -258,6 +271,7 @@ class ReviewService:
     def freeze_blockers(
         items: list[dict[str, Any]],
         coverage: dict[str, Any],
+        sip_metadata: dict[str, Any],
     ) -> list[str]:
         blockers: list[str] = []
         if coverage.get("blocking_count", 0):
@@ -270,7 +284,10 @@ class ReviewService:
             entry.get("requires_confirmation")
             for entry in coverage.get("entries", [])
         )
-        if unresolved_item or unresolved_coverage:
+        sip_unconfirmed = bool(
+            ReviewService._sip_confirmation_blockers(items, sip_metadata)
+        )
+        if unresolved_item or unresolved_coverage or sip_unconfirmed:
             blockers.append("unresolved_confirmation")
         if any(
             item.get("active", True) and item.get("balloon_required") is None
@@ -326,6 +343,13 @@ class ReviewService:
         if working.numbering_stale:
             self.session.rollback()
             raise ReviewConfirmationBlocked(["numbering_stale"])
+        sip_blockers = self._sip_confirmation_blockers(
+            working.items,
+            working.sip_metadata,
+        )
+        if sip_blockers:
+            self.session.rollback()
+            raise ReviewConfirmationBlocked(sip_blockers)
 
         balloons = list(
             self.session.scalars(
@@ -364,7 +388,8 @@ class ReviewService:
                 if item.get("active", True)
             ],
             balloons=[balloon.snapshot() for balloon in balloons],
-            schema_version="reviewed-result/1",
+            sip_metadata=copy.deepcopy(working.sip_metadata),
+            schema_version="reviewed-result/2",
         )
         self.session.add(reviewed)
         self.session.flush()
@@ -412,6 +437,7 @@ class ReviewService:
         self,
         items: list[dict[str, Any]],
         coverage: dict[str, Any],
+        sip_metadata: dict[str, Any],
         command: ReviewCommand,
         *,
         numbering_stale: bool,
@@ -428,6 +454,7 @@ class ReviewService:
         if isinstance(command, Edit):
             item = self._active_item(items, command.item_id)
             self._edit_item(item, command.fields)
+            self._clear_sip_detail_fields(item)
             return [command.item_id], numbering_stale or "coordinates" in command.fields
         if isinstance(command, Add):
             item_id = str(uuid.uuid4())
@@ -463,6 +490,7 @@ class ReviewService:
                 raise ValueError("merge requires the same simple item type")
             merged_id = str(uuid.uuid4())
             merged = copy.deepcopy(source_items[0])
+            self._clear_sip_detail_fields(merged)
             merged.update(
                 {
                     "item_id": merged_id,
@@ -492,6 +520,7 @@ class ReviewService:
                 split_id = str(uuid.uuid4())
                 split_ids.append(split_id)
                 split_item = copy.deepcopy(source)
+                self._clear_sip_detail_fields(split_item)
                 split_item.update(
                     {
                         "item_id": split_id,
@@ -518,6 +547,20 @@ class ReviewService:
             item = self._active_item(items, command.item_id)
             item["balloon_required"] = command.balloon_required
             return [command.item_id], True
+        if isinstance(command, SetSipDetailFields):
+            item = self._active_item(items, command.item_id)
+            values = command.model_dump(mode="json")
+            for field in SIP_DETAIL_FIELDS:
+                item[field] = values[field]
+            item[_SIP_DETAIL_CONFIRMED] = True
+            return [command.item_id], numbering_stale
+        if isinstance(command, SetSipMetadata):
+            values = command.model_dump(mode="json")
+            sip_metadata.clear()
+            sip_metadata.update(
+                {field: values[field] for field in SIP_METADATA_FIELDS}
+            )
+            return ["sip_metadata"], numbering_stale
         raise AssertionError(f"unsupported review command: {command.type}")
 
     @staticmethod
@@ -571,6 +614,44 @@ class ReviewService:
                 if source_id not in result:
                     result.append(source_id)
         return result
+
+    @staticmethod
+    def _clear_sip_detail_fields(item: dict[str, Any]) -> None:
+        for field in (*SIP_DETAIL_FIELDS, _SIP_DETAIL_CONFIRMED):
+            item.pop(field, None)
+
+    @staticmethod
+    def _sip_confirmation_blockers(
+        items: list[dict[str, Any]],
+        sip_metadata: dict[str, Any],
+    ) -> list[str]:
+        blockers: list[str] = []
+        if set(sip_metadata) != set(SIP_METADATA_FIELDS) or any(
+            not isinstance(sip_metadata.get(field), str)
+            or not sip_metadata[field].strip()
+            for field in SIP_METADATA_FIELDS
+        ):
+            blockers.append("sip_metadata_unconfirmed")
+        active_items = [item for item in items if item.get("active", True)]
+        if any(
+            item.get(_SIP_DETAIL_CONFIRMED) is not True
+            or any(
+                (
+                    not isinstance(item.get(field), int)
+                    or isinstance(item.get(field), bool)
+                    or item[field] < 1
+                )
+                if field == "source_page"
+                else (
+                    not isinstance(item.get(field), str)
+                    or not item[field].strip()
+                )
+                for field in SIP_DETAIL_FIELDS
+            )
+            for item in active_items
+        ):
+            blockers.append("sip_detail_fields_unconfirmed")
+        return blockers
 
     @staticmethod
     def _resolve_confirmation(

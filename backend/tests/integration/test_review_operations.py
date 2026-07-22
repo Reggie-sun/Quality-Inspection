@@ -323,6 +323,74 @@ def test_set_balloon_required_marks_numbering_stale(
     assert all("balloon_number" not in item for item in saved.items)
 
 
+def test_set_sip_detail_fields_are_fixed_confirmed_values(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+) -> None:
+    """P0-EXP-007E stores explicit reviewed values and retires stale ones."""
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_detail_fields",
+            "item_id": "i1",
+            "inspection_item": " M6 thread ",
+            "inspection_standard": "6H",
+            "inspection_method": "thread gauge",
+            "key_dimension": "yes",
+            "inspection_role": "IPQC",
+            "source_page": 1,
+        },
+    )
+
+    item = _item(saved, "i1")
+    assert item["inspection_item"] == "M6 thread"
+    assert item["inspection_standard"] == "6H"
+    assert item["inspection_method"] == "thread gauge"
+    assert item["key_dimension"] == "yes"
+    assert item["inspection_role"] == "IPQC"
+    assert item["source_page"] == 1
+    assert item["sip_detail_fields_confirmed"] is True
+
+    edited = review_service.apply(
+        saved.id,
+        expected_version=saved.version,
+        operator_id="quality-1",
+        command={"type": "edit", "item_id": "i1", "fields": {"raw_text": "M8"}},
+    )
+    assert "sip_detail_fields_confirmed" not in _item(edited, "i1")
+    assert "inspection_item" not in _item(edited, "i1")
+
+
+def test_set_sip_metadata_replaces_the_fixed_review_snapshot(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+) -> None:
+    """P0-EXP-002 freezes all fixed SIP metadata through the Review Owner."""
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_metadata",
+            "material_code": " MAT-001 ",
+            "material_name": "上座",
+            "drawing_number": "JS26032501",
+            "material": "SUS304",
+            "revision": "A1",
+        },
+    )
+
+    assert saved.sip_metadata == {
+        "material_code": "MAT-001",
+        "material_name": "上座",
+        "drawing_number": "JS26032501",
+        "material": "SUS304",
+        "revision": "A1",
+    }
+
+
 def test_simple_merge_preserves_sources_without_quantity_sum(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,
@@ -483,6 +551,24 @@ def test_modification_log_records_command_sequence(
             "type": "set_balloon_required",
             "item_id": "i1",
             "balloon_required": False,
+        },
+        {
+            "type": "set_sip_detail_fields",
+            "item_id": "i1",
+            "inspection_item": "M6",
+            "inspection_standard": "6H",
+            "inspection_method": "thread gauge",
+            "key_dimension": "yes",
+            "inspection_role": "IPQC",
+            "source_page": 1,
+        },
+        {
+            "type": "set_sip_metadata",
+            "material_code": "MAT-001",
+            "material_name": "fixture",
+            "drawing_number": "DRAWING-001",
+            "material": "steel",
+            "revision": "A",
         },
     ],
 )

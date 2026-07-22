@@ -174,6 +174,35 @@ def make_balloon_context(
     review_service = ReviewService(db_session, storage=storage)
     working = review_service.create_from_raw(result_id)
     acquire_lock(db_session, project_id, "quality-1")
+    for item_id, item_text in (("i1", "M6"), ("i2", "M8")):
+        working = review_service.apply(
+            working.id,
+            expected_version=working.version,
+            operator_id="quality-1",
+            command={
+                "type": "set_sip_detail_fields",
+                "item_id": item_id,
+                "inspection_item": item_text,
+                "inspection_standard": f"confirmed {item_text}",
+                "inspection_method": "thread gauge",
+                "key_dimension": "yes",
+                "inspection_role": "IPQC",
+                "source_page": 1,
+            },
+        )
+    working = review_service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_metadata",
+            "material_code": "MAT-001",
+            "material_name": "fixture",
+            "drawing_number": "D5-FIXTURE",
+            "material": "steel",
+            "revision": "A",
+        },
+    )
     if frozen:
         working = review_service.freeze_items(
             working.id,

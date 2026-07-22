@@ -193,6 +193,7 @@ def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
         "version": working.version,
         "items": working.items,
         "coverage": working.coverage,
+        "sip_metadata": working.sip_metadata,
         "numbering_stale": working.numbering_stale,
         "items_frozen_at": working.items_frozen_at,
         "items_frozen_by": working.items_frozen_by,
@@ -210,6 +211,7 @@ def _reviewed_result(reviewed: ReviewedResult) -> dict[str, object]:
         "working_version": reviewed.working_version,
         "items": reviewed.items,
         "balloons": reviewed.balloons,
+        "sip_metadata": reviewed.sip_metadata,
         "schema_version": reviewed.schema_version,
         "created_at": reviewed.created_at,
     }

@@ -39,6 +39,11 @@ class ReviewWorkingCopy(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     coverage: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    sip_metadata: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        nullable=False,
+    )
     numbering_stale: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -112,6 +117,7 @@ class ReviewedResult(Base):
     working_version: Mapped[int] = mapped_column(Integer, nullable=False)
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     balloons: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    sip_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

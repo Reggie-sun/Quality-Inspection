@@ -7,6 +7,7 @@ from app.candidates.models import AutomaticResult
 from app.config import get_settings
 from app.db import Base
 from app.errors.models import ErrorRecord
+from app.exports.models import ExportArtifact, ExportJob
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
 from app.review.models import ReviewedResult, ReviewLock, ReviewWorkingCopy
@@ -24,6 +25,8 @@ assert {
     OperationRecord,
     LogicalJob,
     ErrorRecord,
+    ExportJob,
+    ExportArtifact,
     AutomaticResult,
     ReviewWorkingCopy,
     ReviewLock,

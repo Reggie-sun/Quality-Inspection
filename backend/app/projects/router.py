@@ -265,6 +265,7 @@ def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
         "version": working.version,
         "items": working.items,
         "coverage": working.coverage,
+        "sip_metadata": working.sip_metadata,
         "numbering_stale": working.numbering_stale,
         "items_frozen_at": working.items_frozen_at,
         "items_frozen_by": working.items_frozen_by,
