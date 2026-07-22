@@ -1,0 +1,46 @@
+{
+  "template_id": "sip-v1",
+  "template_version": "1",
+  "template_sha256": "8c117838e906939b76cd8158849e85b86e147d343d66e906df09794ef29e54bb",
+  "mapping_version": "1",
+  "sheet": "SIP检验记录",
+  "capacity": {
+    "first_row": 6,
+    "last_row": 69
+  },
+  "metadata_cells": {
+    "material_code": "B2",
+    "material_name": "D2",
+    "drawing_number": "F2",
+    "material": "B3",
+    "revision": "D3"
+  },
+  "detail_columns": {
+    "balloon_number": "A",
+    "inspection_item": "B",
+    "inspection_standard": "C",
+    "inspection_method": "D",
+    "key_dimension": "E",
+    "inspection_role": "F",
+    "source_page": "G"
+  },
+  "image_sheet": "气泡图",
+  "image_anchor": "B2",
+  "protected_ranges": [
+    "A1:H1",
+    "A2",
+    "C2",
+    "E2",
+    "A3",
+    "C3",
+    "A4:H4",
+    "A5:H5",
+    "A70:H70"
+  ],
+  "signoff_ranges": [
+    "A71:B74",
+    "C71:D74",
+    "E71:F74",
+    "G71:H74"
+  ]
+}
