@@ -3957,10 +3957,13 @@ Do not stage the reference screenshot、source PDFs、credentials、human notes�
 
 **Files:**
 
+- Create: `.agent/harness/scripts/live_evidence_policy.py`
+- Modify: `.agent/harness/scripts/run-p0.py` only to consume the shared read-only evidence evaluator
 - Modify: `.agent/harness/scripts/generate-receipt.py`
 - Create: `.agent/harness/scripts/summarize-run.py`
 - Create: `backend/tests/contract/harness/harness_test_support.py`
 - Create: `backend/tests/contract/harness/test_receipt_policy.py`
+- Modify after the fresh first-PDF pause: `design-qa.md`
 - Modify after fresh evidence only: `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md`
 
 - [ ] **Step 1: Write failing stale/not-run/code-mismatch receipt tests**
@@ -4002,6 +4005,8 @@ Expected before implementation: FAIL because strict receipt evaluation support i
 9. failure proof `P0-ACC-007` is passed;
 10. the mirror and typed bindings still match the two Markdown Owners, with no primary/related relation collapse and no unbound P0-stage global.
 
+`live_evidence_policy.py` is the single pure evaluator for candidate/review/browser/export live-evidence semantics. `run-p0.py` uses it while collecting evidence and `generate-receipt.py` uses the same evaluator for the final gate; neither script may keep a second copy of those rules. This shared module remains read-only policy evaluation and does not become a backend/frontend business Owner.
+
 `summarize-run.py --run-id` prints counts and artifact refs only; it never edits policy, contracts, run evidence or receipt.
 
 - [ ] **Step 3: Run a migration rollback drill against one dedicated disposable database**
@@ -4025,12 +4030,15 @@ python .agent/harness/scripts/check-contracts.py
 micromamba run -n qi-p0 pytest backend/tests -q
 micromamba run -n qi-p0 npm --prefix frontend test -- --run
 micromamba run -n qi-p0 npm --prefix frontend run build
-QI_FINAL_RUN_ID="$(python .agent/harness/scripts/run-p0.py live --scope full-p0 --input-set current-four --print-run-id-only)"
+QI_FINAL_RUN_ID="$(python .agent/harness/scripts/run-p0.py live --scope full-p0 --input-set current-four --pause-after first-pdf-balloons --print-run-id-only)"
 test -n "$QI_FINAL_RUN_ID"
+python .agent/harness/scripts/run-p0.py live --resume-run "$QI_FINAL_RUN_ID" --design-qa design-qa.md
 python .agent/harness/scripts/generate-receipt.py --check-run "$QI_FINAL_RUN_ID"
 python .agent/harness/scripts/summarize-run.py --run-id "$QI_FINAL_RUN_ID"
 git diff --check
 ```
+
+The start command must pause in the same run after the first PDF item set is frozen and balloons are available. Refresh the project-root `design-qa.md` at that pause with the new run/project route and fresh Chrome captures at the selected viewport, then resume that literal run. This is one start/pause/QA/resume lifecycle with no child run; it refreshes evidence only and does not change Product Design, frontend behavior or P0 contract semantics.
 
 Expected summary:
 
@@ -4066,7 +4074,7 @@ Use `superpowers:requesting-code-review` with a read-only reviewer. Require a ve
 Verify every blocking claim directly. If code or policy changes, discard the previous verdict for release purposes and create a new full live run before updating status.
 
 ```bash
-git add .agent/harness/scripts/generate-receipt.py .agent/harness/scripts/summarize-run.py backend/tests/contract/harness/harness_test_support.py backend/tests/contract/harness/test_receipt_policy.py docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md .agent/harness/contracts/p0-contracts.json .agent/harness/contracts/global-contract-bindings.json
+git add .agent/harness/scripts/live_evidence_policy.py .agent/harness/scripts/run-p0.py .agent/harness/scripts/generate-receipt.py .agent/harness/scripts/summarize-run.py backend/tests/contract/harness/harness_test_support.py backend/tests/contract/harness/test_receipt_policy.py design-qa.md docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md .agent/harness/contracts/p0-contracts.json .agent/harness/contracts/global-contract-bindings.json
 git commit -m "test: enforce immutable P0 release evidence"
 ```
 

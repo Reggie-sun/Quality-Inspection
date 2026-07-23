@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -13,6 +14,7 @@ import sys
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Iterable
 from xml.etree import ElementTree
 
@@ -133,6 +135,21 @@ PROVIDER_MODE_KEYS = (
 )
 TRUTHY_PROVIDER_CONTROLS = {"1", "true", "yes", "on", "enabled", "live"}
 OFFLINE_PROVIDER_MODES = {"", "disabled", "fixture", "mock", "none", "offline"}
+
+
+def _live_evidence_policy() -> ModuleType:
+    name = "qi_live_evidence_policy"
+    existing = sys.modules.get(name)
+    if existing is not None:
+        return existing
+    path = HARNESS / "scripts/live_evidence_policy.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load shared live evidence policy")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _iso(value: datetime) -> str:
@@ -464,20 +481,72 @@ def _freshness_reasons(
     return sorted(reasons)
 
 
-def _run_artifact_path(root: Path, run: Mapping[str, Any], artifact_ref: str) -> Path:
-    relative = Path(artifact_ref)
-    if relative.is_absolute() or ".." in relative.parts:
-        raise ValueError("contract result artifact_ref must stay inside its run")
-    run_dir = root / ".agent/harness/runs" / str(run["run_id"])
-    artifact_path = run_dir / relative
-    current = run_dir
-    for part in relative.parts:
-        current /= part
-        if current.is_symlink():
-            raise ValueError(f"run evidence artifact must not be a symlink: {artifact_ref}")
-    if not artifact_path.is_file():
-        raise ValueError(f"run evidence artifact is missing: {artifact_ref}")
-    return artifact_path
+def _validate_binding_projection(
+    mirror: Mapping[str, Any],
+    bindings: Mapping[str, Any],
+) -> None:
+    if (
+        bindings.get("contract_definition_hash")
+        != mirror.get("contract_definition_hash")
+    ):
+        raise ValueError("typed bindings do not match the P0 contract definition")
+    mirror_ids = {
+        row["p0_contract_id"]
+        for row in mirror.get("contracts", [])
+        if isinstance(row, Mapping) and isinstance(row.get("p0_contract_id"), str)
+    }
+    bound_ids: set[str] = set()
+    for binding in bindings.get("bindings", []):
+        if not isinstance(binding, Mapping):
+            raise ValueError("typed binding must be one object")
+        buckets = [set(binding.get(name, [])) for name in BUCKETS]
+        if any(
+            left & right
+            for index, left in enumerate(buckets)
+            for right in buckets[index + 1 :]
+        ):
+            raise ValueError("typed binding collapses primary and related relations")
+        for bucket in buckets:
+            if not bucket <= mirror_ids:
+                raise ValueError("typed binding references an unknown P0 contract")
+            bound_ids.update(bucket)
+    required_bound_ids = {
+        row["p0_contract_id"]
+        for row in mirror.get("contracts", [])
+        if isinstance(row, Mapping)
+        and (
+            row.get("global_contract_id") is not None
+            or bool(row.get("related_global_contract_ids"))
+        )
+    }
+    if not required_bound_ids <= bound_ids:
+        raise ValueError("typed bindings leave a P0 contract relation unbound")
+
+
+def _run_artifact_path(
+    root: Path,
+    run: Mapping[str, Any],
+    artifact_ref: str,
+) -> Path:
+    return _live_evidence_policy().run_artifact_path(root, run, artifact_ref)
+
+
+def validate_final_p0_release(
+    root: Path,
+    run: Mapping[str, Any],
+    result_by_id: Mapping[str, Mapping[str, Any]],
+    mirror: Mapping[str, Any],
+    bindings: Mapping[str, Any],
+    policies: Mapping[str, Mapping[str, Any]],
+) -> None:
+    _validate_binding_projection(mirror, bindings)
+    _live_evidence_policy().validate_final_p0_release(
+        root,
+        run,
+        result_by_id,
+        policies,
+        schema_validator=validate_schema,
+    )
 
 
 def _junit_failure_evidence(
@@ -520,12 +589,16 @@ def _validate_failure_proof(
         raise ValueError("failure severity policy is missing failure_proof")
     target = (proof.get("mode"), proof.get("scope"), proof.get("task_id"))
     current = (run["mode"], run["scope"], run["task_id"])
-    if current != target:
+    task_failure_proof = current == target
+    full_p0_failure_proof = current == ("live", "full-p0", None)
+    if not task_failure_proof and not full_p0_failure_proof:
         return
 
     contract_id = proof.get("contract_id")
-    if run["selected_contract_ids"] != [contract_id]:
+    if task_failure_proof and run["selected_contract_ids"] != [contract_id]:
         raise ValueError("failure proof must select its one registered contract")
+    if full_p0_failure_proof and contract_id not in run["selected_contract_ids"]:
+        raise ValueError("full-P0 run must include the registered failure proof")
     result = result_by_id.get(str(contract_id))
     if result is None:
         raise ValueError("failure proof result is missing")
@@ -650,6 +723,12 @@ def build_receipt(
     freshness_hours = int(policies["harness_policy"]["receipt_freshness_hours"])
     valid_until = generated + timedelta(hours=freshness_hours)
 
+    validate_schema(run, "run.schema.json", root)
+    validate_schema(mirror, "p0-contracts.schema.json", root)
+    validate_schema(bindings, "global-contract-bindings.schema.json", root)
+    for result in results:
+        validate_schema(result, "contract-result.schema.json", root)
+
     selected_ids = list(run["selected_contract_ids"])
     if selected_ids != sorted(set(selected_ids)):
         raise ValueError("selected_contract_ids must be sorted and unique")
@@ -722,12 +801,6 @@ def build_receipt(
         result_counts[state] += 1
         per_severity_counts[severity][state] += 1
 
-    overall = _overall_verdict(result_counts)
-    formal_allowed = run["scope"] == policies["harness_policy"]["formal_p0_scope"]
-    if formal_allowed and overall == "passed":
-        # D1-T1 does not implement current-four/human-trial formal acceptance.
-        overall = "blocked"
-    formal_verdict = overall if formal_allowed else None
     reasons = _freshness_reasons(
         root,
         run,
@@ -736,6 +809,28 @@ def build_receipt(
         current_time,
         valid_until,
     )
+    completed_at = _parse_iso(run["completed_at"])
+    if generated < completed_at:
+        reasons.append("receipt_precedes_run_completion")
+    if generated > current_time:
+        reasons.append("receipt_generated_in_future")
+    reasons = sorted(set(reasons))
+
+    overall = _overall_verdict(result_counts)
+    formal_allowed = run["scope"] == policies["harness_policy"]["formal_p0_scope"]
+    if formal_allowed and overall == "passed":
+        if reasons:
+            overall = "blocked"
+        else:
+            validate_final_p0_release(
+                root,
+                run,
+                result_by_id,
+                mirror,
+                bindings,
+                policies,
+            )
+    formal_verdict = overall if formal_allowed else None
 
     receipt = {
         "schema_version": "receipt/1",
@@ -772,9 +867,14 @@ def check_run(run_id: str, root: Path = ROOT) -> dict[str, Any]:
     if not run_dir.is_dir() or run_dir.is_symlink():
         raise ValueError(f"run directory does not exist: {run_id}")
 
-    run = _load_json(run_dir / "run.json")
-    results_document = _load_json(run_dir / "contract-results.json")
-    receipt = _load_json(run_dir / "receipt.json")
+    bootstrap_run = {"run_id": run_id}
+    run = _load_json(_run_artifact_path(root, bootstrap_run, "run.json"))
+    results_document = _load_json(
+        _run_artifact_path(root, bootstrap_run, "contract-results.json")
+    )
+    receipt = _load_json(
+        _run_artifact_path(root, bootstrap_run, "receipt.json")
+    )
     mirror = _load_json(root / MIRROR_PATH.relative_to(ROOT))
     bindings = _load_json(root / BINDINGS_PATH.relative_to(ROOT))
     policies = load_policies(root)

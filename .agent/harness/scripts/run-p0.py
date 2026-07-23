@@ -7,7 +7,6 @@ import argparse
 import hashlib
 import importlib.util
 import json
-import math
 import os
 import re
 import secrets
@@ -156,60 +155,6 @@ def _write_json(path: Path, document: Any) -> None:
     )
 
 
-def _parse_utc_timestamp(value: Any) -> datetime | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return None
-    return parsed.astimezone(timezone.utc)
-
-
-def _verified_run_artifact(
-    run_dir: Path,
-    ref: Any,
-    digest: Any,
-    *,
-    expect_json: bool = False,
-    expect_png: bool = False,
-) -> tuple[Path, Any]:
-    if not isinstance(ref, str) or not ref:
-        raise ValueError("evidence ref must be a non-empty relative path")
-    relative = Path(ref)
-    if relative.is_absolute() or ".." in relative.parts or relative.as_posix() != ref:
-        raise ValueError(f"evidence ref escapes the run: {ref}")
-    path = run_dir / relative
-    current = run_dir
-    for part in relative.parts:
-        current = current / part
-        if current.is_symlink():
-            raise ValueError(f"evidence ref uses a symlink: {ref}")
-    if not path.is_file():
-        raise ValueError(f"evidence ref is missing: {ref}")
-    resolved_run = run_dir.resolve()
-    resolved = path.resolve()
-    if resolved_run not in resolved.parents:
-        raise ValueError(f"evidence ref escapes the run: {ref}")
-    content = path.read_bytes()
-    actual = hashlib.sha256(content).hexdigest()
-    if not isinstance(digest, str) or digest != actual:
-        raise ValueError(f"evidence identity changed: {ref}")
-    if expect_png and not content.startswith(PNG_SIGNATURE):
-        raise ValueError(f"evidence is not a PNG: {ref}")
-    if not expect_json:
-        return path, content
-    try:
-        document = json.loads(content)
-    except (UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError(f"evidence is not valid JSON: {ref}") from exc
-    if not isinstance(document, dict):
-        raise ValueError(f"evidence JSON must be an object: {ref}")
-    return path, document
-
-
 def _receipt_module() -> ModuleType:
     path = HARNESS / "scripts/generate-receipt.py"
     spec = importlib.util.spec_from_file_location("qi_generate_receipt", path)
@@ -229,6 +174,14 @@ def _script_module(name: str, filename: str) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _live_evidence_policy_module() -> ModuleType:
+    name = "qi_live_evidence_policy"
+    existing = sys.modules.get(name)
+    if existing is not None:
+        return existing
+    return _script_module(name, "live_evidence_policy.py")
 
 
 def _git_revision() -> str:
@@ -1602,62 +1555,13 @@ def _review_item_set_ready(
     *,
     operator_id: str,
 ) -> bool:
-    commands = set(review.get("operation_commands", []))
-    candidate_ids = set(candidates.get("candidate_ids", []))
-    operation_targets = set(review.get("operation_target_ids", []))
-    decisions = review.get("candidate_decisions")
-    if not isinstance(decisions, list):
-        return False
-    decision_ids: list[str] = []
-    decisions_ok = True
-    for decision in decisions:
-        if not isinstance(decision, Mapping):
-            return False
-        candidate_id = decision.get("candidate_id")
-        final_state = decision.get("final_state")
-        decision_commands = set(decision.get("commands", []))
-        if not isinstance(candidate_id, str):
-            return False
-        decision_ids.append(candidate_id)
-        decisions_ok = decisions_ok and bool(
-            (final_state == "active" and "keep" in decision_commands)
-            or (final_state == "excluded" and "exclude" in decision_commands)
-            or (
-                final_state == "superseded"
-                and bool({"merge", "split"} & decision_commands)
-            )
-        )
-    disposition = item_write.get("merge_split_disposition")
-    merge_split_ok = bool(
-        (
-            disposition == "not_applicable"
-            and not ({"merge", "split"} & commands)
-        )
-        or (disposition == "merge" and "merge" in commands)
-        or (disposition == "split" and "split" in commands)
-    )
-    required_commands = {
-        "keep",
-        "exclude",
-        "edit",
-        "add",
-        "resolve_confirmation",
-    }
     return bool(
-        required_commands.issubset(commands)
-        and candidate_ids
-        and candidate_ids.issubset(operation_targets)
-        and len(decision_ids) == len(set(decision_ids))
-        and set(decision_ids) == candidate_ids
-        and decisions_ok
-        and review.get("operation_operator_ids") == [operator_id]
-        and review.get("active_item_ids")
-        and review.get("excluded_item_ids")
-        and merge_split_ok
-        and review.get("merge_split_disposition", disposition) == disposition
-        and review.get("merge_split_note", item_write.get("merge_split_note"))
-        == item_write.get("merge_split_note")
-        and bool(item_write.get("merge_split_note"))
+        _live_evidence_policy_module().review_item_set_ready(
+            review,
+            candidates,
+            item_write,
+            operator_id=operator_id,
+        )
     )
 
 
@@ -1815,69 +1719,22 @@ def _collect_post_export_evidence(
         raise RuntimeError(f"sample {order} post-export evidence is incomplete")
 
     export = document["export"]
-    artifacts = browser_result.get("artifacts")
-    if not isinstance(artifacts, list) or len(artifacts) != 3:
-        raise RuntimeError(f"sample {order} browser artifact evidence is incomplete")
-    browser_by_kind = {
-        artifact.get("kind"): artifact
-        for artifact in artifacts
-        if isinstance(artifact, Mapping)
-    }
-    for index, kind in enumerate(export["artifact_kinds"]):
-        artifact = browser_by_kind.get(kind)
-        if (
-            not isinstance(artifact, Mapping)
-            or artifact.get("sha256") != export["artifact_sha256"][index]
-            or artifact.get("reviewed_result_id")
-            != export["artifact_reviewed_result_ids"][index]
-            or artifact.get("download_sha256") != artifact.get("sha256")
-            or artifact.get("download_size_bytes") != artifact.get("size_bytes")
-        ):
-            raise RuntimeError(
-                f"sample {order} downloaded {kind} differs from formal artifact identity"
-            )
     consistency = document["consistency"]
-    workbench_item_numbers = _browser_item_numbers(
-        browser_result.get("table_item_numbers")
-    )
-    workbench_overlay_item_numbers = _browser_item_numbers(
-        browser_result.get("overlay_item_numbers")
-    )
-    workbench_backend_item_numbers = _browser_item_numbers(
-        browser_result.get("backend_item_numbers")
-    )
-    reviewed_item_numbers = _browser_item_numbers(
-        consistency.get("reviewed_item_numbers")
-    )
-    workbench_active_item_ids = _browser_item_ids(
-        browser_result.get("table_active_item_ids")
-    )
-    reviewed_active_item_ids = _browser_item_ids(
-        consistency.get("reviewed_active_item_ids")
-    )
-    if (
-        workbench_item_numbers is None
-        or workbench_overlay_item_numbers is None
-        or workbench_backend_item_numbers is None
-        or reviewed_item_numbers is None
-        or workbench_item_numbers != reviewed_item_numbers
-        or workbench_overlay_item_numbers != reviewed_item_numbers
-        or workbench_backend_item_numbers != reviewed_item_numbers
-        or workbench_active_item_ids is None
-        or reviewed_active_item_ids is None
-        or workbench_active_item_ids != reviewed_active_item_ids
-    ):
-        raise RuntimeError(
-            f"sample {order} workbench items/numbers differ from reviewed result"
+    if not isinstance(export, Mapping) or not isinstance(consistency, Mapping):
+        raise RuntimeError(f"sample {order} post-export evidence is incomplete")
+    try:
+        consistency = _live_evidence_policy_module().bind_post_export_evidence(
+            run_dir.name,
+            order,
+            project_id,
+            browser_result,
+            export,
+            consistency,
         )
-    consistency["workbench_item_numbers"] = workbench_item_numbers
-    consistency["workbench_overlay_item_numbers"] = (
-        workbench_overlay_item_numbers
-    )
-    consistency["workbench_active_item_ids"] = workbench_active_item_ids
-    consistency["workbench_numbers"] = sorted(
-        entry["formal_number"] for entry in workbench_item_numbers
-    )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"sample {order} post-export evidence failed consistency gates"
+        ) from exc
     ref = f"reports/consistency-{order}.json"
     report = {
         "run_id": run_dir.name,
@@ -2099,20 +1956,18 @@ def _initial_sample_evidence(
     ):
         raise RuntimeError(f"sample {order} process facts differ from frozen manifest")
     candidates = dict(project["candidates"])
-    if (
-        candidates.get("candidate_count") != len(candidates.get("candidate_ids", []))
-        or not candidates.get("source_location_ids")
-        or candidates.get("coverage_checked") is not True
-        or candidates.get("coverage_blocking_count") != 0
-    ):
-        raise RuntimeError(f"sample {order} candidate/coverage evidence is incomplete")
+    policy = _live_evidence_policy_module()
+    try:
+        policy.validate_candidate_evidence(order, candidates)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"sample {order} candidate/coverage evidence is incomplete"
+        ) from exc
     return {
         "order": order,
         "opaque_ref": str(entry["opaque_ref"]),
         "project_id": project_id,
-        "project_url": (
-            f"/?project_id={quote(project_id)}&operator_id={quote(operator_id)}"
-        ),
+        "project_url": policy.canonical_project_url(project_id, operator_id),
         "process": process,
         "candidates": candidates,
         "review": None,
@@ -2379,111 +2234,24 @@ def _design_qa_evidence(path: Path, run_dir: Path) -> dict[str, Any]:
     expected = _design_qa_document_path().resolve(strict=False)
     if path.is_symlink() or not path.is_file() or path.resolve() != expected:
         raise ValueError("--design-qa must be the project-root design-qa.md")
-    content = path.read_bytes()
-    try:
-        text = content.decode("utf-8")
-    except UnicodeError as exc:
-        raise ValueError("design-qa.md must be UTF-8") from exc
-    if "/home/" in text:
-        raise ValueError("design-qa.md must not expose a host source path")
-
-    def field(label: str) -> str:
-        values = re.findall(
-            rf"^{re.escape(label)}: (.+)$",
-            text,
-            flags=re.MULTILINE,
-        )
-        if len(values) != 1 or not values[0].strip():
-            raise ValueError(
-                f"design-qa.md required structured field is missing: {label}"
-            )
-        return values[0].strip()
-
-    if len(re.findall(r"^final result: passed$", text, flags=re.MULTILINE)) != 1:
-        raise ValueError("design-qa.md requires exactly one final result: passed")
-    if re.search(r"^final result: blocked$", text, flags=re.MULTILINE):
-        raise ValueError("blocked design QA cannot resume the formal run")
-    source_sha256 = field("source sha256")
-    if not re.fullmatch(r"[0-9a-f]{64}", source_sha256):
-        raise ValueError("design-qa.md source identity must be SHA-256")
-    implementation_route = field("implementation route")
-    implementation_state = field("implementation state")
-    if implementation_state != "visual_qa_pending:first-pdf-balloons":
-        raise ValueError("design-qa.md implementation state is not the pause barrier")
     live = _load_json(run_dir / LIVE_EVIDENCE_ARTIFACT)
     samples = live.get("samples")
     if (
         not isinstance(samples, list)
         or not samples
         or samples[0].get("order") != 1
-        or samples[0].get("project_url") != implementation_route
+        or not isinstance(samples[0].get("project_url"), str)
     ):
         raise ValueError("design-qa.md implementation route is not run-bound")
-    if field("browser") != LIVE_BROWSER or field("viewport") != "1565x796":
-        raise ValueError("design-qa.md browser/viewport differs from the selected target")
-
-    captures: dict[str, str] = {}
-    capture_refs: list[str] = []
-    capture_digests: list[str] = []
-    for kind in ("implementation", "comparison"):
-        ref = field(f"{kind} capture")
-        digest = field(f"{kind} capture sha256")
-        if not re.fullmatch(r"reports/[A-Za-z0-9][A-Za-z0-9._-]*\.png", ref):
-            raise ValueError(f"design-qa.md {kind} capture ref is invalid")
-        capture = run_dir / ref
-        reports_root = (run_dir / "reports").resolve(strict=False)
-        if (
-            capture.is_symlink()
-            or not capture.is_file()
-            or capture.resolve() == reports_root
-            or reports_root not in capture.resolve().parents
-        ):
-            raise ValueError(f"design-qa.md {kind} capture is unavailable")
-        capture_content = capture.read_bytes()
-        if not capture_content.startswith(PNG_SIGNATURE):
-            raise ValueError(f"design-qa.md {kind} capture must be a PNG")
-        content_digest = hashlib.sha256(capture_content).hexdigest()
-        if digest != content_digest:
-            raise ValueError(f"design-qa.md {kind} capture identity changed")
-        captures[f"{kind}_capture_ref"] = ref
-        captures[f"{kind}_capture_sha256"] = digest
-        capture_refs.append(ref)
-        capture_digests.append(digest)
-    if len(set(capture_refs)) != 2 or len(set(capture_digests)) != 2:
-        raise ValueError("design-qa.md comparison captures must be distinct")
-
-    count_labels = {
-        "console_error_count": "console errors",
-        "network_error_count": "network errors",
-        "p0": "P0 issues",
-        "p1": "P1 issues",
-        "p2": "P2 issues",
-    }
-    counts: dict[str, int] = {}
-    for key, label in count_labels.items():
-        value = field(label)
-        if value != "0":
-            raise ValueError(f"design-qa.md {label} must be zero")
-        counts[key] = 0
-
-    return {
-        "ref": "design-qa.md",
-        "sha256": hashlib.sha256(content).hexdigest(),
-        "final_result": "passed",
-        "browser": LIVE_BROWSER,
-        "viewport": dict(LIVE_VIEWPORT),
-        "source_sha256": source_sha256,
-        "implementation_route": implementation_route,
-        "implementation_state": implementation_state,
-        **captures,
-        "console_error_count": counts["console_error_count"],
-        "network_error_count": counts["network_error_count"],
-        "issue_counts": {
-            "p0": counts["p0"],
-            "p1": counts["p1"],
-            "p2": counts["p2"],
-        },
-    }
+    return dict(
+        _live_evidence_policy_module().design_qa_evidence(
+            path,
+            run_dir,
+            expected_route=samples[0]["project_url"],
+            browser_name=LIVE_BROWSER,
+            viewport=LIVE_VIEWPORT,
+        )
+    )
 
 
 def _resume_identity_preflight(run_dir: Path) -> LivePreflight:
@@ -2539,47 +2307,6 @@ def _browser_environment(
         }
     )
     return environment
-
-
-def _browser_item_numbers(value: Any) -> list[dict[str, Any]] | None:
-    if not isinstance(value, list) or not value:
-        return None
-    normalized: list[dict[str, Any]] = []
-    for entry in value:
-        if not isinstance(entry, Mapping) or set(entry) != {
-            "item_id",
-            "formal_number",
-        }:
-            return None
-        item_id = entry.get("item_id")
-        formal_number = entry.get("formal_number")
-        if (
-            not isinstance(item_id, str)
-            or not item_id
-            or not isinstance(formal_number, int)
-            or isinstance(formal_number, bool)
-            or formal_number < 1
-        ):
-            return None
-        normalized.append(
-            {"item_id": item_id, "formal_number": formal_number}
-        )
-    if len({entry["item_id"] for entry in normalized}) != len(normalized):
-        return None
-    if len({entry["formal_number"] for entry in normalized}) != len(normalized):
-        return None
-    return sorted(normalized, key=lambda entry: entry["item_id"])
-
-
-def _browser_item_ids(value: Any) -> list[str] | None:
-    if (
-        not isinstance(value, list)
-        or not value
-        or any(not isinstance(item_id, str) or not item_id for item_id in value)
-        or len(set(value)) != len(value)
-    ):
-        return None
-    return sorted(value)
 
 
 def _run_browser_e2e(
@@ -2639,94 +2366,18 @@ def _run_browser_e2e(
     if result.returncode != 0:
         raise RuntimeError(f"sample {order} Chrome E2E failed; see {log_ref}")
     browser_result = _load_json(run_dir / result_ref)
-    table_item_numbers = _browser_item_numbers(
-        browser_result.get("table_item_numbers")
-    )
-    backend_item_numbers = _browser_item_numbers(
-        browser_result.get("backend_item_numbers")
-    )
-    overlay_item_numbers = _browser_item_numbers(
-        browser_result.get("overlay_item_numbers")
-    )
-    common_invalid = (
-        browser_result.get("run_id") != run_dir.name
-        or browser_result.get("order") != order
-        or browser_result.get("project_id") != sample.get("project_id")
-        or browser_result.get("phase") != phase
-        or not isinstance(browser_result.get("captured_at"), str)
-        or browser_result.get("glyph_metrics_verified") is not True
-        or table_item_numbers is None
-        or backend_item_numbers is None
-        or overlay_item_numbers is None
-        or table_item_numbers != backend_item_numbers
-        or table_item_numbers != overlay_item_numbers
-        or _browser_item_ids(browser_result.get("table_active_item_ids")) is None
-    )
-    if phase == "pre-export":
-        actions = browser_result.get("actions")
-        active_ids = browser_result.get("active_item_ids")
-        active_numbers = browser_result.get("active_item_numbers")
-        phase_invalid = (
-            browser_result.get("formal_publish_attempted") is not False
-            or browser_result.get("hard_collision_count") != 0
-            or browser_result.get("unresolved_manual_required_count") != 0
-            or not isinstance(active_ids, list)
-            or not isinstance(active_numbers, list)
-            or sorted(str(value) for value in active_numbers)
-            != sorted(str(value) for value in browser_result.get("overlay_numbers", []))
-            or sorted(str(value) for value in active_ids)
-            != sorted(entry["item_id"] for entry in backend_item_numbers or [])
-            or sorted(int(value) for value in active_numbers)
-            != sorted(
-                entry["formal_number"] for entry in backend_item_numbers or []
-            )
-            or not isinstance(actions, Mapping)
-            or set(actions) != {"drag", "delete", "rebuild", "renumber"}
-            or not all(value is True for value in actions.values())
+    try:
+        _live_evidence_policy_module().validate_browser_result(
+            run_dir.name,
+            order,
+            str(sample.get("project_id")),
+            phase,
+            browser_result,
         )
-    else:
-        artifacts = browser_result.get("artifacts")
-        reviewed_item_ids = browser_result.get("reviewed_item_ids")
-        reviewed_numbers = browser_result.get("reviewed_numbers")
-        content_types = {
-            "ballooned_pdf": "application/pdf",
-            "sip_excel": (
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
-            ),
-            "manifest": "application/json",
-        }
-        phase_invalid = (
-            browser_result.get("formal_publish_attempted") is not True
-            or browser_result.get("status") != "success"
-            or not browser_result.get("reviewed_result_id")
-            or not browser_result.get("export_id")
-            or not isinstance(reviewed_item_ids, list)
-            or not isinstance(reviewed_numbers, list)
-            or sorted(str(value) for value in reviewed_item_ids)
-            != sorted(entry["item_id"] for entry in backend_item_numbers or [])
-            or sorted(int(value) for value in reviewed_numbers)
-            != sorted(
-                entry["formal_number"] for entry in backend_item_numbers or []
-            )
-            or browser_result.get("download_kinds")
-            != ["ballooned_pdf", "sip_excel", "manifest"]
-            or not isinstance(artifacts, list)
-            or len(artifacts) != 3
-            or any(
-                not isinstance(artifact, Mapping)
-                or artifact.get("downloadable") is not True
-                or not re.fullmatch(r"[0-9a-f]{64}", str(artifact.get("sha256", "")))
-                or not isinstance(artifact.get("size_bytes"), int)
-                or artifact.get("size_bytes", 0) < 1
-                or not str(artifact.get("content_type", "")).startswith(
-                    content_types.get(str(artifact.get("kind", "")), "missing/")
-                )
-                for artifact in artifacts
-            )
-        )
-    if common_invalid or phase_invalid:
-        raise RuntimeError(f"sample {order} browser evidence failed consistency gates")
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            f"sample {order} browser evidence failed consistency gates"
+        ) from exc
     report_path = run_dir / report_ref
     screenshot_path = run_dir / screenshot_ref
     result_path = run_dir / result_ref
@@ -2825,15 +2476,6 @@ def _live_phase_outcome(
         manifest = _load_json(run_dir / CURRENT_FOUR_ARTIFACT)
         run = _load_json(run_dir / "run.json")
         human = _load_json(run_dir / HUMAN_VERDICT_ARTIFACT)
-        receipt_module = _receipt_module()
-        for document, schema_name in (
-            (run, "run.schema.json"),
-            (live, "live-run-evidence.schema.json"),
-            (manifest, "current-four-manifest.schema.json"),
-            (human, "human-verdict.schema.json"),
-        ):
-            receipt_module.validate_schema(document, schema_name, ROOT)
-
         expected_pause_identity = {
             "code_identity": run["code_identity"],
             "config_identity": run["config_identity"],
@@ -2843,649 +2485,51 @@ def _live_phase_outcome(
         }
         if (
             run_dir.name != run.get("run_id")
-            or run_dir.name != live.get("run_id")
-            or run_dir.name != human.get("run_id")
             or run.get("mode") != "live"
             or run.get("scope") != "full-p0"
             or run.get("task_id") is not None
             or run.get("execution_state") != "running"
             or run.get("failure_reason") is not None
             or run.get("pause_identity") != expected_pause_identity
-            or live.get("input_set") != "current-four"
-            or live.get("phases") != list(LIVE_PHASES)
-            or live.get("child_run_ids") != []
-            or manifest.get("input_set") != "current-four"
         ):
-            raise ValueError("full-p0 live run identity or lifecycle is inconsistent")
-
-        samples = live.get("samples")
-        entries = manifest.get("entries")
-        verdict_samples = human.get("samples")
-        if (
-            not isinstance(samples, list)
-            or len(samples) != 4
-            or not isinstance(entries, list)
-            or len(entries) != 4
-            or not isinstance(verdict_samples, list)
-            or len(verdict_samples) != 4
-        ):
-            raise ValueError("current-four evidence is incomplete")
-        by_order = {
-            int(sample["order"]): sample
-            for sample in samples
-            if isinstance(sample, Mapping)
-        }
-        manifest_by_order = {
-            int(entry["order"]): entry
-            for entry in entries
-            if isinstance(entry, Mapping)
-        }
-        verdict_by_order = {
-            int(sample["order"]): sample
-            for sample in verdict_samples
-            if isinstance(sample, Mapping)
-        }
-        expected_orders = {1, 2, 3, 4}
-        if (
-            set(by_order) != expected_orders
-            or set(manifest_by_order) != expected_orders
-            or set(verdict_by_order) != expected_orders
-            or len({sample["project_id"] for sample in samples}) != 4
-        ):
-            raise ValueError("current-four sample identity is incomplete")
-
-        design = live.get("design_qa")
-        if not isinstance(design, Mapping) or dict(design) != _design_qa_evidence(
-            _design_qa_document_path(),
-            run_dir,
-        ):
-            raise ValueError("design QA evidence is not bound to this run")
-
-        live_identity = run.get("live_identity")
-        if not isinstance(live_identity, Mapping):
-            raise ValueError("live operator identity is unavailable")
-        operator_id = live_identity.get("operator_id")
-        if (
-            not isinstance(operator_id, str)
-            or live_identity.get("browser", {}).get("name") != LIVE_BROWSER
-            or live_identity.get("viewport") != LIVE_VIEWPORT
-        ):
-            raise ValueError("live operator/browser identity is invalid")
-
-        bound: dict[int, dict[str, Any]] = {}
-        for order in sorted(expected_orders):
-            sample = by_order[order]
-            entry = manifest_by_order[order]
-            verdict_sample = verdict_by_order[order]
-            project_id = sample.get("project_id")
-            item_write = verdict_sample.get("item_set")
-            balloon_write = verdict_sample.get("balloons")
-            item_answers = (
-                item_write.get("answers")
-                if isinstance(item_write, Mapping)
-                else None
+            raise ValueError(
+                "full-p0 live run identity or lifecycle is inconsistent"
             )
-            balloon_answers = (
-                balloon_write.get("answers")
-                if isinstance(balloon_write, Mapping)
-                else None
-            )
-            merged_verdict = (
-                {**item_answers, **balloon_answers}
-                if isinstance(item_answers, Mapping)
-                and isinstance(balloon_answers, Mapping)
-                else None
-            )
-            if (
-                verdict_sample.get("project_id") != project_id
-                or not isinstance(item_write, Mapping)
-                or not isinstance(balloon_write, Mapping)
-                or not isinstance(item_answers, Mapping)
-                or not isinstance(balloon_answers, Mapping)
-                or not all(value is True for value in item_answers.values())
-                or not all(value is True for value in balloon_answers.values())
-                or item_write.get("operator_id") != operator_id
-                or balloon_write.get("operator_id") != operator_id
-                or verdict_sample.get("merged_verdict")
-                != merged_verdict
-                or merged_verdict
-                != sample.get("human_verdict")
-                or sample.get("opaque_ref") != entry.get("opaque_ref")
-            ):
-                raise ValueError(f"sample {order} human/input identity is spliced")
-
-            process = sample.get("process")
-            review = sample.get("review")
-            balloons = sample.get("balloons")
-            export = sample.get("export")
-            consistency = sample.get("consistency")
-            if not all(
-                isinstance(value, Mapping)
-                for value in (process, review, balloons, export, consistency)
-            ):
-                raise ValueError(f"sample {order} phase evidence is incomplete")
-            if (
-                review.get("merge_split_disposition")
-                != item_write.get("merge_split_disposition")
-                or review.get("merge_split_note")
-                != item_write.get("merge_split_note")
-            ):
-                raise ValueError(
-                    f"sample {order} merge/split disposition is not human-bound"
-                )
-            item_verdict_time = _parse_utc_timestamp(
-                item_write.get("recorded_at")
-            )
-            items_frozen_time = _parse_utc_timestamp(
-                review.get("items_frozen_at")
-            )
-            if (
-                item_verdict_time is None
-                or items_frozen_time is None
-                or not item_verdict_time < items_frozen_time
-            ):
-                raise ValueError(
-                    f"sample {order} item-set verdict did not precede item freeze"
-                )
-
-            _verified_run_artifact(
-                run_dir,
-                process.get("prepare_log_ref"),
-                process.get("prepare_log_sha256"),
-            )
-            _, review_report = _verified_run_artifact(
-                run_dir,
-                review.get("evidence_ref"),
-                review.get("evidence_sha256"),
-                expect_json=True,
-            )
-            expected_review_report = {
-                key: value
-                for key, value in review.items()
-                if key
-                not in {
-                    "merge_split_disposition",
-                    "merge_split_note",
-                    "evidence_ref",
-                    "evidence_sha256",
-                }
-            }
-            if (
-                review_report.get("run_id") != run_dir.name
-                or review_report.get("order") != order
-                or review_report.get("project_id") != project_id
-                or review_report.get("review") != expected_review_report
-                or review_report.get("balloons")
-                != {key: value for key, value in balloons.items() if key != "browser"}
-            ):
-                raise ValueError(f"sample {order} review report is not cross-bound")
-
-            browser_results: dict[str, dict[str, Any]] = {}
-            for browser_phase, section in (
-                ("pre-export", balloons),
-                ("export", export),
-            ):
-                browser = section.get("browser")
-                if not isinstance(browser, Mapping):
-                    raise ValueError(
-                        f"sample {order} {browser_phase} browser evidence is missing"
-                    )
-                screenshots = browser.get("screenshot_refs")
-                if not isinstance(screenshots, list) or len(screenshots) != 1:
-                    raise ValueError(
-                        f"sample {order} {browser_phase} screenshot set is invalid"
-                    )
-                _verified_run_artifact(
-                    run_dir,
-                    browser.get("report_ref"),
-                    browser.get("report_sha256"),
-                )
-                _verified_run_artifact(
-                    run_dir,
-                    screenshots[0],
-                    browser.get("screenshot_sha256"),
-                    expect_png=True,
-                )
-                _, browser_result = _verified_run_artifact(
-                    run_dir,
-                    browser.get("result_ref"),
-                    browser.get("result_sha256"),
-                    expect_json=True,
-                )
-                table_item_numbers = _browser_item_numbers(
-                    browser_result.get("table_item_numbers")
-                )
-                backend_item_numbers = _browser_item_numbers(
-                    browser_result.get("backend_item_numbers")
-                )
-                overlay_item_numbers = _browser_item_numbers(
-                    browser_result.get("overlay_item_numbers")
-                )
-                if (
-                    browser_result.get("run_id") != run_dir.name
-                    or browser_result.get("order") != order
-                    or browser_result.get("project_id") != project_id
-                    or browser_result.get("phase") != browser_phase
-                    or browser_result.get("captured_at")
-                    != browser.get("captured_at")
-                    or browser_result.get("glyph_metrics_verified") is not True
-                    or table_item_numbers is None
-                    or backend_item_numbers is None
-                    or overlay_item_numbers is None
-                    or table_item_numbers != backend_item_numbers
-                    or table_item_numbers != overlay_item_numbers
-                    or _browser_item_ids(
-                        browser_result.get("table_active_item_ids")
-                    )
-                    is None
-                ):
-                    raise ValueError(
-                        f"sample {order} {browser_phase} result is not cross-bound"
-                    )
-                browser_results[browser_phase] = browser_result
-
-            pre_time = _parse_utc_timestamp(
-                browser_results["pre-export"].get("captured_at")
-            )
-            verdict_time = _parse_utc_timestamp(balloon_write.get("recorded_at"))
-            export_time = _parse_utc_timestamp(
-                browser_results["export"].get("captured_at")
-            )
-            if (
-                pre_time is None
-                or verdict_time is None
-                or export_time is None
-                or not pre_time < verdict_time < export_time
-            ):
-                raise ValueError(
-                    f"sample {order} balloon verdict is not between browser phases"
-                )
-
-            _, consistency_report = _verified_run_artifact(
-                run_dir,
-                consistency.get("evidence_ref"),
-                consistency.get("evidence_sha256"),
-                expect_json=True,
-            )
-            expected_consistency_report = {
-                key: value
-                for key, value in consistency.items()
-                if key not in {"evidence_ref", "evidence_sha256"}
-            }
-            if (
-                consistency_report.get("run_id") != run_dir.name
-                or consistency_report.get("order") != order
-                or consistency_report.get("project_id") != project_id
-                or consistency_report.get("export")
-                != {key: value for key, value in export.items() if key != "browser"}
-                or consistency_report.get("consistency")
-                != expected_consistency_report
-            ):
-                raise ValueError(
-                    f"sample {order} consistency report is not cross-bound"
-                )
-            bound[order] = {
-                "verdict": verdict_sample,
-                "browsers": browser_results,
-            }
-    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
-        return None, "blocked", f"live evidence validation failed: {exc}", []
-
-    def process_ok(sample: Mapping[str, Any]) -> bool:
-        entry = manifest_by_order[int(sample["order"])]
-        evidence = sample.get("process")
-        metadata = entry.get("page_metadata")
-        return bool(
-            isinstance(evidence, Mapping)
-            and isinstance(metadata, Mapping)
-            and sample.get("opaque_ref") == entry.get("opaque_ref")
-            and evidence.get("source_sha256") == entry.get("sha256")
-            and str(sample.get("opaque_ref", "")).endswith(
-                str(evidence.get("source_sha256", ""))
-            )
-            and evidence.get("expected_page_count") == metadata.get("page_count")
-            and evidence.get("actual_page_count") == metadata.get("page_count")
-            and evidence.get("expected_physical_page")
-            == metadata.get("physical_page")
-            and evidence.get("actual_physical_pages")
-            == [metadata.get("physical_page")]
-            and evidence.get("automatic_result_id")
+        _live_evidence_policy_module().validate_live_evidence(
+            ROOT,
+            run,
+            manifest,
+            human,
+            live,
+            schema_validator=_receipt_module().validate_schema,
+            run_dir=run_dir,
+            design_path=_design_qa_document_path(),
         )
-
-    def candidates_ok(sample: Mapping[str, Any]) -> bool:
-        evidence = sample.get("candidates")
-        if not isinstance(evidence, Mapping):
-            return False
-        candidate_ids = evidence.get("candidate_ids")
-        sources = evidence.get("source_location_ids")
-        records = evidence.get("candidate_records")
-        count = evidence.get("candidate_count")
-        if not isinstance(records, list):
-            return False
-
-        def valid_box(value: Any) -> bool:
-            return bool(
-                isinstance(value, list)
-                and len(value) == 4
-                and all(
-                    isinstance(number, (int, float))
-                    and not isinstance(number, bool)
-                    and math.isfinite(number)
-                    for number in value
-                )
-                and value[0] < value[2]
-                and value[1] < value[3]
-            )
-
-        record_ids: list[str] = []
-        source_ids: list[str] = []
-        for record in records:
-            if not isinstance(record, Mapping) or not valid_box(
-                record.get("coordinates")
-            ):
-                return False
-            candidate_id = record.get("candidate_id")
-            source_evidence = record.get("source_evidence")
-            expected_source_ids = record.get("source_location_ids")
-            if (
-                not isinstance(candidate_id, str)
-                or not isinstance(source_evidence, list)
-                or not source_evidence
-                or not isinstance(expected_source_ids, list)
-                or not expected_source_ids
-            ):
-                return False
-            record_ids.append(candidate_id)
-            for source in source_evidence:
-                if (
-                    not isinstance(source, Mapping)
-                    or source.get("disposition") != "candidate"
-                    or not isinstance(source.get("source_location_id"), str)
-                    or not valid_box(source.get("coordinates"))
-                ):
-                    return False
-                source_ids.append(source["source_location_id"])
-            if set(expected_source_ids) != {
-                source["source_location_id"] for source in source_evidence
-            }:
-                return False
-        return bool(
-            isinstance(count, int)
-            and count > 0
-            and isinstance(candidate_ids, list)
-            and len(candidate_ids) == count
-            and len(set(candidate_ids)) == count
-            and isinstance(sources, list)
-            and set(record_ids) == set(candidate_ids)
-            and len(record_ids) == count
-            and set(source_ids) == set(sources)
-            and len(source_ids) >= count
-            and evidence.get("coverage_checked") is True
-            and evidence.get("coverage_blocking_count") == 0
-            and isinstance(evidence.get("coverage_disposition_count"), int)
-            and evidence["coverage_disposition_count"] >= count
-        )
-
-    def review_ok(sample: Mapping[str, Any]) -> bool:
-        evidence = sample.get("review")
-        verdict = sample.get("human_verdict")
-        candidates = sample.get("candidates")
-        if not all(
-            isinstance(value, Mapping)
-            for value in (evidence, verdict, candidates)
-        ):
-            return False
-        item_write = bound[int(sample["order"])]["verdict"].get("item_set")
-        if not isinstance(item_write, Mapping):
-            return False
-        return bool(
-            all(value is True for value in verdict.values())
-            and verdict.get("operator_confirmed_item_set_is_complete") is True
-            and evidence.get("frozen_version")
-            and evidence.get("frozen_by") == operator_id
-            and _review_item_set_ready(
-                evidence,
-                candidates,
-                item_write,
-                operator_id=operator_id,
-            )
-        )
-
-    def balloons_ok(sample: Mapping[str, Any]) -> bool:
-        evidence = sample.get("balloons")
-        review = sample.get("review")
-        verdict = sample.get("human_verdict")
-        if (
-            not isinstance(evidence, Mapping)
-            or not isinstance(review, Mapping)
-            or not isinstance(verdict, Mapping)
-        ):
-            return False
-        browser = evidence.get("browser")
-        browser_result = bound[int(sample["order"])]["browsers"]["pre-export"]
-        table_pairs = _browser_item_numbers(
-            browser_result.get("table_item_numbers")
-        )
-        backend_pairs = _browser_item_numbers(
-            browser_result.get("backend_item_numbers")
-        )
-        overlay_pairs = _browser_item_numbers(
-            browser_result.get("overlay_item_numbers")
-        )
-        table_ids = sorted(entry["item_id"] for entry in table_pairs or [])
-        table_numbers = sorted(
-            entry["formal_number"] for entry in table_pairs or []
-        )
-        return bool(
-            evidence.get("hard_collision_count") == 0
-            and evidence.get("unresolved_manual_required_count") == 0
-            and evidence.get("active_item_ids")
-            == review.get("balloon_required_item_ids")
-            and len(evidence.get("formal_numbers", []))
-            == len(evidence.get("active_item_ids", []))
-            and isinstance(browser, Mapping)
-            and browser.get("passed") is True
-            and browser_result.get("formal_publish_attempted") is False
-            and browser_result.get("hard_collision_count") == 0
-            and browser_result.get("unresolved_manual_required_count") == 0
-            and table_pairs == backend_pairs == overlay_pairs
-            and sorted(browser_result.get("active_item_ids", [])) == table_ids
-            and sorted(
-                int(value) for value in browser_result.get("active_item_numbers", [])
-            )
-            == table_numbers
-            and sorted(
-                int(value) for value in browser_result.get("overlay_numbers", [])
-            )
-            == table_numbers
-            and sorted(evidence.get("active_item_ids", [])) == table_ids
-            and sorted(evidence.get("formal_numbers", [])) == table_numbers
-            and browser_result.get("actions")
-            == {"drag": True, "delete": True, "rebuild": True, "renumber": True}
-            and verdict.get("all_required_balloons_visible") is True
-            and verdict.get("hard_collisions_resolved") is True
-        )
-
-    def export_ok(sample: Mapping[str, Any]) -> bool:
-        evidence = sample.get("export")
-        if not isinstance(evidence, Mapping):
-            return False
-        reviewed_id = evidence.get("reviewed_result_id")
-        browser = evidence.get("browser")
-        browser_result = bound[int(sample["order"])]["browsers"]["export"]
-        artifacts = browser_result.get("artifacts")
-        browser_by_kind = {
-            artifact.get("kind"): artifact
-            for artifact in artifacts
-            if isinstance(artifact, Mapping)
-        } if isinstance(artifacts, list) else {}
-        artifact_kinds = evidence.get("artifact_kinds", [])
-        return bool(
-            reviewed_id
-            and evidence.get("status") == "success"
-            and evidence.get("artifact_kinds")
-            == ["ballooned_pdf", "sip_excel", "manifest"]
-            and evidence.get("download_kinds")
-            == ["ballooned_pdf", "sip_excel", "manifest"]
-            and len(evidence.get("artifact_sha256", [])) == 3
-            and evidence.get("artifact_reviewed_result_ids") == [reviewed_id] * 3
-            and isinstance(browser, Mapping)
-            and browser.get("passed") is True
-            and browser_result.get("formal_publish_attempted") is True
-            and browser_result.get("status") == "success"
-            and browser_result.get("reviewed_result_id") == reviewed_id
-            and browser_result.get("export_id") == evidence.get("export_id")
-            and browser_result.get("download_kinds") == artifact_kinds
-            and set(browser_by_kind) == set(artifact_kinds)
-            and all(
-                browser_by_kind[kind].get("sha256")
-                == evidence["artifact_sha256"][index]
-                and browser_by_kind[kind].get("reviewed_result_id") == reviewed_id
-                and browser_by_kind[kind].get("download_sha256")
-                == browser_by_kind[kind].get("sha256")
-                and browser_by_kind[kind].get("download_size_bytes")
-                == browser_by_kind[kind].get("size_bytes")
-                for index, kind in enumerate(artifact_kinds)
-            )
-        )
-
-    def consistency_ok(sample: Mapping[str, Any]) -> bool:
-        evidence = sample.get("consistency")
-        export = sample.get("export")
-        review = sample.get("review")
-        process = sample.get("process")
-        if not all(
-            isinstance(value, Mapping)
-            for value in (evidence, export, review, process)
-        ):
-            return False
-        number_sets = [
-            evidence.get(name)
-            for name in (
-                "workbench_numbers",
-                "reviewed_numbers",
-                "pdf_numbers",
-                "excel_numbers",
-            )
+        samples = live["samples"]
+        refs = [
+            LIVE_EVIDENCE_ARTIFACT,
+            HUMAN_VERDICT_ARTIFACT,
+            CURRENT_FOUR_ARTIFACT,
         ]
-        normalized_numbers = [
-            sorted(values) if isinstance(values, list) else None
-            for values in number_sets
-        ]
-        workbench_pairs = _browser_item_numbers(
-            evidence.get("workbench_item_numbers")
-        )
-        workbench_overlay_pairs = _browser_item_numbers(
-            evidence.get("workbench_overlay_item_numbers")
-        )
-        reviewed_pairs = _browser_item_numbers(
-            evidence.get("reviewed_item_numbers")
-        )
-        export_browser = bound[int(sample["order"])]["browsers"]["export"]
-        browser_pairs = _browser_item_numbers(
-            export_browser.get("table_item_numbers")
-        )
-        browser_backend_pairs = _browser_item_numbers(
-            export_browser.get("backend_item_numbers")
-        )
-        browser_overlay_pairs = _browser_item_numbers(
-            export_browser.get("overlay_item_numbers")
-        )
-        workbench_active_ids = _browser_item_ids(
-            evidence.get("workbench_active_item_ids")
-        )
-        reviewed_active_ids = _browser_item_ids(
-            evidence.get("reviewed_active_item_ids")
-        )
-        browser_active_ids = _browser_item_ids(
-            export_browser.get("table_active_item_ids")
-        )
-        return bool(
-            evidence.get("verified") is True
-            and evidence.get("reviewed_result_id")
-            == export.get("reviewed_result_id")
-            and evidence.get("reviewed_item_ids")
-            == evidence.get("balloon_item_ids")
-            == review.get("balloon_required_item_ids")
-            and workbench_pairs
-            == workbench_overlay_pairs
-            == reviewed_pairs
-            == browser_pairs
-            == browser_backend_pairs
-            == browser_overlay_pairs
-            and workbench_active_ids
-            == reviewed_active_ids
-            == browser_active_ids
-            and evidence.get("reviewed_item_count")
-            == len(reviewed_active_ids or [])
-            and [entry["item_id"] for entry in reviewed_pairs or []]
-            == evidence.get("reviewed_item_ids")
-            and sorted(entry["formal_number"] for entry in reviewed_pairs or [])
-            == normalized_numbers[0]
-            and normalized_numbers[0]
-            == normalized_numbers[1]
-            == normalized_numbers[2]
-            == normalized_numbers[3]
-            and evidence.get("balloon_required_count")
-            == evidence.get("balloon_count")
-            == len(evidence.get("reviewed_item_ids", []))
-            == len(number_sets[0] or [])
-            and evidence.get("reviewed_item_count")
-            == evidence.get("manifest_reviewed_item_count")
-            and evidence.get("balloon_required_count")
-            == evidence.get("manifest_balloon_required_count")
-            == evidence.get("manifest_balloon_count")
-            and evidence.get("source_page_count")
-            == evidence.get("manifest_source_page_count")
-            == process.get("actual_page_count")
-        )
-
-    design = live.get("design_qa")
-    design_ok = isinstance(design, Mapping) and (
-        design.get("final_result") == "passed"
-        and design.get("issue_counts") == {"p0": 0, "p1": 0, "p2": 0}
-        and design.get("console_error_count") == 0
-        and design.get("network_error_count") == 0
-    )
-    checks: dict[str, bool] = {
-        "process": design_ok and all(process_ok(sample) for sample in samples),
-        "candidates": design_ok and all(candidates_ok(sample) for sample in samples),
-        "review": design_ok and all(review_ok(sample) for sample in samples),
-        "balloons": design_ok and all(balloons_ok(sample) for sample in samples),
-        "export": design_ok and all(export_ok(sample) for sample in samples),
-        "consistency": design_ok
-        and all(consistency_ok(sample) for sample in samples),
-    }
-    state = "passed" if checks[phase] else "blocked"
-    refs = [
-        LIVE_EVIDENCE_ARTIFACT,
-        HUMAN_VERDICT_ARTIFACT,
-        CURRENT_FOUR_ARTIFACT,
-    ]
-    for sample in samples:
-        process = sample.get("process")
-        review = sample.get("review")
-        if isinstance(process, Mapping):
+        for sample in samples:
+            process = sample["process"]
+            review = sample["review"]
             refs.append(str(process["prepare_log_ref"]))
-        if isinstance(review, Mapping):
             refs.append(str(review["evidence_ref"]))
-        for section in (sample.get("balloons"), sample.get("export")):
-            if not isinstance(section, Mapping):
-                continue
-            browser = section.get("browser")
-            if isinstance(browser, Mapping):
+            for section in (sample["balloons"], sample["export"]):
+                browser = section["browser"]
                 refs.extend(
                     [str(browser["report_ref"]), str(browser["result_ref"])]
                 )
                 refs.extend(str(ref) for ref in browser["screenshot_refs"])
-        consistency = sample.get("consistency")
-        if isinstance(consistency, Mapping):
-            refs.append(str(consistency["evidence_ref"]))
+            refs.append(str(sample["consistency"]["evidence_ref"]))
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        return None, "blocked", f"live evidence validation failed: {exc}", []
     return (
-        0 if state == "passed" else None,
-        state,
+        0,
+        "passed",
         json.dumps(
-            {"selector": selector, "phase": phase, "passed": checks[phase]},
+            {"selector": selector, "phase": phase, "passed": True},
             sort_keys=True,
         ),
         list(dict.fromkeys(refs)),
