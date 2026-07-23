@@ -5,18 +5,27 @@ import uuid
 from collections.abc import Iterator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.balloons.models import Balloon
 from app.balloons.service import BalloonService
 from app.candidates.models import AutomaticResult
 from app.config import get_settings
 from app.db import SessionLocal
+from app.processing.tasks import inventory_project
 from app.projects.models import Project
+from app.projects.service import (
+    InvalidPdf,
+    ProjectDispatchFailed,
+    ProjectDispatcher,
+    ProjectIntakeService,
+    ProjectNotFound,
+)
 from app.review.models import ReviewWorkingCopy
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
@@ -45,8 +54,76 @@ def get_storage() -> LocalFileStorage:
     return LocalFileStorage(get_settings().storage_root)
 
 
+def get_dispatcher() -> ProjectDispatcher:
+    return inventory_project.delay
+
+
 SessionDependency = Annotated[Session, Depends(get_session)]
 StorageDependency = Annotated[LocalFileStorage, Depends(get_storage)]
+DispatcherDependency = Annotated[ProjectDispatcher, Depends(get_dispatcher)]
+
+
+def get_project_service(
+    session: SessionDependency,
+    storage: StorageDependency,
+    dispatch: DispatcherDependency,
+) -> ProjectIntakeService:
+    return ProjectIntakeService(session, storage, dispatch)
+
+
+ProjectServiceDependency = Annotated[
+    ProjectIntakeService,
+    Depends(get_project_service),
+]
+
+
+@router.post("", status_code=202)
+async def create_project(
+    request: Request,
+    file: Annotated[UploadFile, File()],
+    service: ProjectServiceDependency,
+) -> JSONResponse:
+    form_parts = list((await request.form()).multi_items())
+    if (
+        len(form_parts) != 1
+        or form_parts[0][0] != "file"
+        or not isinstance(form_parts[0][1], StarletteUploadFile)
+    ):
+        return _error(422, "invalid_pdf", "uploaded file is not a valid PDF")
+    try:
+        result = service.create_pdf(
+            content=await file.read(),
+            content_type=file.content_type or "",
+        )
+    except InvalidPdf:
+        return _error(422, "invalid_pdf", "uploaded file is not a valid PDF")
+    except ProjectDispatchFailed as error:
+        return JSONResponse(
+            status_code=503,
+            content=jsonable_encoder(error.status),
+        )
+    except Exception:
+        return _error(500, "project_intake_failed", "project intake failed")
+    return JSONResponse(
+        status_code=202,
+        content=jsonable_encoder(result),
+    )
+
+
+@router.get("/{project_id}/status")
+def get_project_status(
+    project_id: uuid.UUID,
+    service: ProjectServiceDependency,
+) -> JSONResponse:
+    try:
+        result = service.status(project_id)
+    except ProjectNotFound:
+        return _error(404, "project_not_found", "project was not found")
+    except Exception:
+        return _error(500, "project_status_failed", "project status unavailable")
+    return JSONResponse(
+        content=jsonable_encoder(result, exclude_none=True),
+    )
 
 
 @router.get("/{project_id}/workbench")
