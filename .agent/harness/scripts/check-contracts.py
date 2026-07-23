@@ -22,6 +22,17 @@ GLOBAL = ROOT / "docs/contracts/MAIN_CONTRACT_MATRIX.md"
 MIRROR_PATH = HARNESS / "contracts/p0-contracts.json"
 BINDINGS_PATH = HARNESS / "contracts/global-contract-bindings.json"
 SCHEMAS = HARNESS / "schemas"
+EXPECTED_SCHEMA_FILES = (
+    "contract-result.schema.json",
+    "current-four-manifest.schema.json",
+    "global-contract-bindings.schema.json",
+    "human-verdict.schema.json",
+    "live-run-evidence.schema.json",
+    "p0-contracts.schema.json",
+    "provider-fixture.schema.json",
+    "receipt.schema.json",
+    "run.schema.json",
+)
 
 GLOBAL_ID_RE = re.compile(r"^[A-Z]+-[0-9]{3}$")
 DEFINITION_COLUMNS = (
@@ -73,8 +84,12 @@ def _schema_errors(schema: dict[str, Any], instance: Any) -> list[str]:
 
 def _validate_schemas_and_instances() -> tuple[dict[str, Any], dict[str, Any]]:
     schema_paths = sorted(SCHEMAS.glob("*.schema.json"))
-    if len(schema_paths) != 7:
-        raise ContractCheckError(f"expected 7 JSON Schemas, found {len(schema_paths)}")
+    actual_schema_files = tuple(path.name for path in schema_paths)
+    if actual_schema_files != EXPECTED_SCHEMA_FILES:
+        raise ContractCheckError(
+            "JSON Schema inventory mismatch: "
+            f"expected {list(EXPECTED_SCHEMA_FILES)}, found {list(actual_schema_files)}"
+        )
     schemas: dict[str, dict[str, Any]] = {}
     for path in schema_paths:
         schema = _load_json(path)

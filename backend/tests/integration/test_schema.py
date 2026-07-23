@@ -4,7 +4,7 @@ from app.db import engine
 
 
 def test_core_migration_creates_only_planned_tables() -> None:
-    """P0-RES-001/002 limit schema to the planned Day 4 persistence."""
+    """P0-RES-001/002/003 limit schema to planned persistence Owners."""
     tables = set(inspect(engine).get_table_names())
 
     assert tables == {
@@ -17,6 +17,10 @@ def test_core_migration_creates_only_planned_tables() -> None:
         "automatic_results",
         "review_working_copies",
         "review_locks",
+        "balloons",
+        "reviewed_results",
+        "export_jobs",
+        "export_artifacts",
     }
 
 
@@ -79,8 +83,8 @@ def test_automatic_result_schema_and_immutability_trigger() -> None:
     assert triggers == {"prevent_automatic_result_update_delete"}
 
 
-def test_review_schema_has_exact_day4_persistence_shape() -> None:
-    """P0-RES-002 reserves only working-copy, freeze, and lock persistence."""
+def test_review_schema_has_exact_current_persistence_shape() -> None:
+    """P0-RES-002/EXP-002 persist review state plus fixed SIP metadata."""
     inspector = inspect(engine)
 
     assert {
@@ -93,6 +97,7 @@ def test_review_schema_has_exact_day4_persistence_shape() -> None:
         "version",
         "items",
         "coverage",
+        "sip_metadata",
         "numbering_stale",
         "items_frozen_at",
         "items_frozen_by",
@@ -107,4 +112,116 @@ def test_review_schema_has_exact_day4_persistence_shape() -> None:
         "operator_id",
         "expires_at",
     }
-    assert "reviewed_results" not in set(inspector.get_table_names())
+
+
+def test_balloon_and_reviewed_result_schema_is_exact() -> None:
+    """P0-RES-003/BAL-005/EXP-002 persist final reviewed export facts."""
+    inspector = inspect(engine)
+
+    assert {column["name"] for column in inspector.get_columns("balloons")} == {
+        "id",
+        "project_id",
+        "inspection_item_id",
+        "source_location_id",
+        "page_index",
+        "suggested_number",
+        "formal_number",
+        "sort_order",
+        "anchor_bbox_pdf",
+        "leader_target_pdf",
+        "center_pdf",
+        "placement_status",
+        "collision_flags",
+        "status",
+        "version",
+    }
+    indexes = {
+        index["name"]: index for index in inspector.get_indexes("balloons")
+    }
+    assert set(indexes) == {
+        "uq_balloons_active_item",
+        "uq_balloons_active_formal_number",
+    }
+    assert all(index["unique"] for index in indexes.values())
+
+    assert {
+        column["name"] for column in inspector.get_columns("reviewed_results")
+    } == {
+        "id",
+        "project_id",
+        "working_copy_id",
+        "working_version",
+        "items",
+        "balloons",
+        "sip_metadata",
+        "schema_version",
+        "created_at",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("reviewed_results")
+    } == {"uq_reviewed_results_working_version"}
+    with engine.connect() as connection:
+        triggers = set(
+            connection.scalars(
+                text(
+                    "SELECT tgname FROM pg_trigger "
+                    "WHERE tgrelid = 'reviewed_results'::regclass "
+                    "AND NOT tgisinternal"
+                )
+            )
+        )
+    assert triggers == {"prevent_reviewed_result_update_delete"}
+
+
+def test_export_schema_has_atomic_publication_shape() -> None:
+    """P0-EXP-009 persists one success gate for all three artifacts."""
+    inspector = inspect(engine)
+
+    assert {column["name"] for column in inspector.get_columns("export_jobs")} == {
+        "id",
+        "project_id",
+        "reviewed_result_id",
+        "status",
+        "template_version",
+        "mapping_version",
+        "renderer_version",
+        "error_id",
+        "created_at",
+        "completed_at",
+    }
+    job_indexes = {
+        index["name"]: index for index in inspector.get_indexes("export_jobs")
+    }
+    assert set(job_indexes) == {"uq_export_jobs_success_identity"}
+    assert job_indexes["uq_export_jobs_success_identity"]["unique"] is True
+    assert job_indexes["uq_export_jobs_success_identity"]["column_names"] == [
+        "reviewed_result_id",
+        "template_version",
+        "mapping_version",
+        "renderer_version",
+    ]
+    success_predicate = str(
+        job_indexes["uq_export_jobs_success_identity"]["dialect_options"][
+            "postgresql_where"
+        ]
+    )
+    assert "status" in success_predicate
+    assert "'success'" in success_predicate
+
+    assert {
+        column["name"] for column in inspector.get_columns("export_artifacts")
+    } == {
+        "id",
+        "export_id",
+        "kind",
+        "staging_ref",
+        "published_ref",
+        "sha256",
+        "size_bytes",
+        "reviewed_result_id",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("export_artifacts")
+    } == {"uq_export_artifacts_export_kind"}

@@ -89,6 +89,38 @@
       },
       "uniqueItems": true
     },
+    "live_identity": {
+      "$ref": "#/$defs/live_identity"
+    },
+    "execution_state": {
+      "enum": [
+        "running",
+        "visual_qa_pending",
+        "completed",
+        "failed"
+      ]
+    },
+    "pause_identity": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/pause_identity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "failure_reason": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "started_at": {
       "type": "string",
       "format": "date-time"
@@ -132,6 +164,101 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "live"
+          },
+          "scope": {
+            "const": "full-p0"
+          }
+        },
+        "required": [
+          "mode",
+          "scope"
+        ]
+      },
+      "then": {
+        "required": [
+          "execution_state",
+          "pause_identity",
+          "failure_reason",
+          "live_identity"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "execution_state": {
+                  "enum": [
+                    "running",
+                    "visual_qa_pending"
+                  ]
+                }
+              },
+              "required": [
+                "execution_state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "completed_at": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "completed_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "execution_state": {
+                  "const": "visual_qa_pending"
+                }
+              },
+              "required": [
+                "execution_state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "pause_identity": {
+                  "$ref": "#/$defs/pause_identity"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "execution_state": {
+                  "const": "failed"
+                }
+              },
+              "required": [
+                "execution_state"
+              ]
+            },
+            "then": {
+              "properties": {
+                "failure_reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        ]
+      }
     }
   ],
   "$defs": {
@@ -161,6 +288,75 @@
             "minLength": 1
           },
           "uniqueItems": true
+        }
+      }
+    },
+    "pause_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code_identity",
+        "config_identity",
+        "contract_definition_hash",
+        "input_identity",
+        "live_identity"
+      ],
+      "properties": {
+        "code_identity": {
+          "$ref": "#/$defs/content_identity"
+        },
+        "config_identity": {
+          "$ref": "#/$defs/content_identity"
+        },
+        "contract_definition_hash": {
+          "$ref": "#/$defs/sha256"
+        },
+        "input_identity": {
+          "$ref": "#/$defs/content_identity"
+        },
+        "live_identity": {
+          "$ref": "#/$defs/live_identity"
+        }
+      }
+    },
+    "live_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operator_id",
+        "api_base",
+        "frontend_base",
+        "browser",
+        "viewport"
+      ],
+      "properties": {
+        "operator_id": { "type": "string", "minLength": 1 },
+        "api_base": { "const": "http://localhost:8000" },
+        "frontend_base": { "const": "http://localhost:3000" },
+        "browser": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "executable", "version", "sha256"],
+          "properties": {
+            "name": { "const": "chrome" },
+            "executable": {
+              "enum": ["google-chrome", "google-chrome-stable"]
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^Google Chrome [0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "viewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": { "const": 1565 },
+            "height": { "const": 796 }
+          }
         }
       }
     },

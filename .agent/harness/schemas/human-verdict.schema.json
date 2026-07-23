@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/human-verdict.schema.json",
+  "title": "Per-sample two-stage immutable quality-operator verdict",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "samples"],
+  "properties": {
+    "schema_version": { "const": "human-verdict/1" },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
+    },
+    "samples": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/sample_verdict" }
+    }
+  },
+  "$defs": {
+    "item_set_answers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "automatic_candidates_are_actionable",
+        "candidates_are_editable",
+        "operator_confirmed_item_set_is_complete",
+        "not_false_success"
+      ],
+      "properties": {
+        "automatic_candidates_are_actionable": { "type": "boolean" },
+        "candidates_are_editable": { "type": "boolean" },
+        "operator_confirmed_item_set_is_complete": { "type": "boolean" },
+        "not_false_success": { "type": "boolean" }
+      }
+    },
+    "balloon_answers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "all_required_balloons_visible",
+        "hard_collisions_resolved"
+      ],
+      "properties": {
+        "all_required_balloons_visible": { "type": "boolean" },
+        "hard_collisions_resolved": { "type": "boolean" }
+      }
+    },
+    "item_set_write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operator_id",
+        "note",
+        "recorded_at",
+        "merge_split_disposition",
+        "merge_split_note",
+        "answers"
+      ],
+      "properties": {
+        "operator_id": { "type": "string", "minLength": 1 },
+        "note": { "type": "string", "minLength": 1 },
+        "recorded_at": { "type": "string", "format": "date-time" },
+        "merge_split_disposition": {
+          "enum": ["merge", "split", "not_applicable"]
+        },
+        "merge_split_note": { "type": "string", "minLength": 1 },
+        "answers": { "$ref": "#/$defs/item_set_answers" }
+      }
+    },
+    "balloon_write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operator_id", "note", "recorded_at", "answers"],
+      "properties": {
+        "operator_id": { "type": "string", "minLength": 1 },
+        "note": { "type": "string", "minLength": 1 },
+        "recorded_at": { "type": "string", "format": "date-time" },
+        "answers": { "$ref": "#/$defs/balloon_answers" }
+      }
+    },
+    "merged_verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "automatic_candidates_are_actionable",
+        "candidates_are_editable",
+        "operator_confirmed_item_set_is_complete",
+        "not_false_success",
+        "all_required_balloons_visible",
+        "hard_collisions_resolved"
+      ],
+      "properties": {
+        "automatic_candidates_are_actionable": { "type": "boolean" },
+        "candidates_are_editable": { "type": "boolean" },
+        "operator_confirmed_item_set_is_complete": { "type": "boolean" },
+        "not_false_success": { "type": "boolean" },
+        "all_required_balloons_visible": { "type": "boolean" },
+        "hard_collisions_resolved": { "type": "boolean" }
+      }
+    },
+    "sample_verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "project_id",
+        "item_set",
+        "balloons",
+        "merged_verdict"
+      ],
+      "properties": {
+        "order": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "project_id": { "type": "string", "minLength": 1 },
+        "item_set": {
+          "oneOf": [
+            { "$ref": "#/$defs/item_set_write" },
+            { "type": "null" }
+          ]
+        },
+        "balloons": {
+          "oneOf": [
+            { "$ref": "#/$defs/balloon_write" },
+            { "type": "null" }
+          ]
+        },
+        "merged_verdict": {
+          "oneOf": [
+            { "$ref": "#/$defs/merged_verdict" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "item_set": { "$ref": "#/$defs/item_set_write" },
+              "balloons": { "$ref": "#/$defs/balloon_write" }
+            },
+            "required": ["item_set", "balloons"]
+          },
+          "then": {
+            "properties": {
+              "merged_verdict": { "$ref": "#/$defs/merged_verdict" }
+            }
+          },
+          "else": {
+            "properties": { "merged_verdict": { "type": "null" } }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "merged_verdict": { "$ref": "#/$defs/merged_verdict" }
+            },
+            "required": ["merged_verdict"]
+          },
+          "then": {
+            "properties": {
+              "item_set": { "$ref": "#/$defs/item_set_write" },
+              "balloons": { "$ref": "#/$defs/balloon_write" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

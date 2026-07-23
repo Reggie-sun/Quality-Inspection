@@ -1,4 +1,8 @@
-import type { PostJson, ReviewCommand } from "../../api/types";
+import type {
+  PostJson,
+  ReviewCommand,
+  ReviewWorkingCopy,
+} from "../../api/types";
 
 
 export function saveWorkingCopy(
@@ -7,8 +11,8 @@ export function saveWorkingCopy(
   operatorId: string,
   expectedVersion: number,
   command: ReviewCommand,
-): Promise<unknown> {
-  return post(
+): Promise<ReviewWorkingCopy> {
+  return post<ReviewWorkingCopy>(
     `/api/v1/projects/${projectId}/review/commands`,
     { expected_version: expectedVersion, command },
     { "X-QI-Operator": operatorId },

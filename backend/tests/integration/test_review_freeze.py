@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import inspect
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.candidates.models import AutomaticResult
@@ -15,6 +15,7 @@ from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.review.locks import acquire_lock
 from app.review.models import ReviewWorkingCopy
+from app.review.models import ReviewedResult
 from app.review.service import FreezeBlocked, ItemsFrozen, ReviewService
 from app.storage.models import StoredFile
 
@@ -98,8 +99,37 @@ def working_copy(db_session: Session) -> ReviewWorkingCopy:
         )
     )
     db_session.commit()
-    working = ReviewService(db_session).create_from_raw(result_id)
+    service = ReviewService(db_session)
+    working = service.create_from_raw(result_id)
     acquire_lock(db_session, project_id, "quality-1")
+    working = service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_detail_fields",
+            "item_id": "i1",
+            "inspection_item": "M6",
+            "inspection_standard": "6H",
+            "inspection_method": "thread gauge",
+            "key_dimension": "yes",
+            "inspection_role": "IPQC",
+            "source_page": 1,
+        },
+    )
+    working = service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_metadata",
+            "material_code": "MAT-001",
+            "material_name": "fixture",
+            "drawing_number": "FREEZE-001",
+            "material": "steel",
+            "revision": "A",
+        },
+    )
     return working
 
 
@@ -200,7 +230,7 @@ def test_item_set_freeze_preserves_editing_without_reviewed_result(
     assert project is not None
     assert project.state == ProjectState.EDITING
     assert service.reviewed_result_for(working_copy.project_id) is None
-    assert "reviewed_results" not in set(inspect(engine).get_table_names())
+    assert db_session.scalar(select(func.count()).select_from(ReviewedResult)) == 0
 
 
 def test_item_set_freeze_rejects_later_semantic_commands(

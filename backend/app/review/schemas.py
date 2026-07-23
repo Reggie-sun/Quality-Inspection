@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter
 
 from app.candidates.schemas import CandidateType
 
@@ -34,6 +34,7 @@ class Add(CommandBase):
     coordinates: tuple[float, float, float, float]
     scope: Literal["local_feature", "global_requirement"]
     balloon_required: bool
+    page_index: int | None = Field(default=None, ge=0)
 
 
 class Merge(CommandBase):
@@ -66,6 +67,47 @@ class SetBalloonRequired(CommandBase):
     balloon_required: bool
 
 
+NonBlankText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1),
+]
+SIP_DETAIL_FIELDS = (
+    "inspection_item",
+    "inspection_standard",
+    "inspection_method",
+    "key_dimension",
+    "inspection_role",
+    "source_page",
+)
+SIP_METADATA_FIELDS = (
+    "material_code",
+    "material_name",
+    "drawing_number",
+    "material",
+    "revision",
+)
+
+
+class SetSipDetailFields(CommandBase):
+    type: Literal["set_sip_detail_fields"]
+    item_id: str = Field(min_length=1)
+    inspection_item: NonBlankText
+    inspection_standard: NonBlankText
+    inspection_method: NonBlankText
+    key_dimension: NonBlankText
+    inspection_role: NonBlankText
+    source_page: int = Field(ge=1, strict=True)
+
+
+class SetSipMetadata(CommandBase):
+    type: Literal["set_sip_metadata"]
+    material_code: NonBlankText
+    material_name: NonBlankText
+    drawing_number: NonBlankText
+    material: NonBlankText
+    revision: NonBlankText
+
+
 ReviewCommand = Annotated[
     Union[
         Keep,
@@ -76,6 +118,8 @@ ReviewCommand = Annotated[
         Split,
         ResolveConfirmation,
         SetBalloonRequired,
+        SetSipDetailFields,
+        SetSipMetadata,
     ],
     Field(discriminator="type"),
 ]
@@ -91,6 +135,10 @@ class ReviewCommandRequest(CommandBase):
 
 
 class FreezeItemsRequest(CommandBase):
+    expected_version: int = Field(ge=1)
+
+
+class ConfirmReviewRequest(CommandBase):
     expected_version: int = Field(ge=1)
 
 _REVIEW_COMMAND_ADAPTER = TypeAdapter(ReviewCommand)

@@ -10,6 +10,7 @@ import type {
   PdfRenderTaskLike,
 } from "../../api/types";
 import { OverlayLayer } from "./OverlayLayer";
+import { relatedItemIds } from "../workbench/selection";
 
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -25,6 +26,16 @@ type PdfWorkspaceProps = {
   pageTransforms?: PdfPageTransform[];
   pageCount?: number;
   fallbackPageSize?: [number, number];
+  selectedItemId?: string;
+  selectedBalloonId?: string;
+  onSelectItem?: (itemId: string) => void;
+  onSelectBalloon?: (itemId: string, balloonId: string) => void;
+  onMoveBalloon?: (
+    balloonId: string,
+    expectedVersion: number,
+    centerPdf: [number, number],
+  ) => void;
+  onPageChange?: (pageIndex: number) => void;
 };
 
 
@@ -36,22 +47,60 @@ export function PdfWorkspace({
   pageTransforms = DEFAULT_PAGE_TRANSFORMS,
   pageCount = 1,
   fallbackPageSize = DEFAULT_PAGE_SIZE,
+  selectedItemId,
+  selectedBalloonId,
+  onSelectItem,
+  onSelectBalloon,
+  onMoveBalloon,
+  onPageChange,
 }: PdfWorkspaceProps) {
+  const workspaceRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const locatedSelectionRef = useRef<string | undefined>(undefined);
   const [pageIndex, setPageIndex] = useState(0);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [selectedId, setSelectedId] = useState<string>();
+  const [localSelectedItemId, setLocalSelectedItemId] = useState<string>();
   const [renderError, setRenderError] = useState<string>();
   const [pageSize, setPageSize] = useState({
     width: fallbackPageSize[0],
     height: fallbackPageSize[1],
   });
   const totalPages = pdfDocument?.numPages ?? pageCount;
+  const selection = selectedItemId ?? localSelectedItemId;
   const currentPageTransform = useMemo(
     () => pageTransforms.find((transform) => transform.pageIndex === pageIndex),
     [pageIndex, pageTransforms],
   );
+
+  useEffect(() => {
+    onPageChange?.(pageIndex);
+  }, [onPageChange, pageIndex]);
+
+  useEffect(() => {
+    if (selection === undefined) {
+      locatedSelectionRef.current = undefined;
+      return;
+    }
+    const related = [
+      ...candidates.filter((item) => relatedItemIds({
+        itemId: item.itemId ?? item.id,
+        itemIds: item.itemIds,
+      }).includes(selection)),
+      ...sources.filter((item) => relatedItemIds(item).includes(selection)),
+      ...balloons.filter((item) => (item.itemId ?? item.id) === selection),
+    ];
+    const targetPage = related.find((item) => item.pageIndex !== undefined)?.pageIndex;
+    const isNewSelection = locatedSelectionRef.current !== selection;
+    locatedSelectionRef.current = selection;
+    if (isNewSelection && targetPage !== undefined && targetPage !== pageIndex) {
+      setPageIndex(targetPage);
+      return;
+    }
+    const selectedOverlay = workspaceRef.current
+      ?.querySelector<SVGElement>("[data-selected='true']");
+    selectedOverlay?.scrollIntoView?.({ block: "center", inline: "center" });
+  }, [balloons, candidates, pageIndex, selection, sources]);
 
   useEffect(() => {
     setRenderError(undefined);
@@ -110,17 +159,32 @@ export function PdfWorkspace({
     [pageIndex, sources],
   );
   const pageBalloons = useMemo(
-    () => balloons.filter((item) => (item.pageIndex ?? pageIndex) === pageIndex),
+    () => balloons.filter(
+      (item) =>
+        item.status !== "deleted" &&
+        (item.pageIndex ?? pageIndex) === pageIndex,
+    ),
     [balloons, pageIndex],
   );
 
   return (
     <section
+      ref={workspaceRef}
       aria-label="PDF review workspace"
       data-testid="pdf-workspace"
-      data-selected-id={selectedId ?? ""}
+      data-selected-id={selection ?? ""}
+      style={{
+        padding: 14,
+        background: "white",
+        border: "1px solid #e2e8f0",
+        borderRadius: 12,
+        overflow: "hidden",
+      }}
     >
-      <div aria-label="PDF controls" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div
+        aria-label="PDF controls"
+        style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}
+      >
         <button
           type="button"
           aria-label="Previous page"
@@ -145,7 +209,7 @@ export function PdfWorkspace({
           aria-label="Zoom out"
           onClick={() => setScale((current) => Math.max(0.5, current - 0.25))}
         >
-          −
+          Zoom out
         </button>
         <output aria-label="Zoom level">{Math.round(scale * 100)}%</output>
         <button
@@ -153,23 +217,32 @@ export function PdfWorkspace({
           aria-label="Zoom in"
           onClick={() => setScale((current) => Math.min(4, current + 0.25))}
         >
-          +
+          Zoom in
         </button>
         <button type="button" aria-label="Pan left" onClick={() => setPan((p) => ({ ...p, x: p.x - 24 }))}>
-          ←
+          Pan left
         </button>
         <button type="button" aria-label="Pan right" onClick={() => setPan((p) => ({ ...p, x: p.x + 24 }))}>
-          →
+          Pan right
         </button>
         <button type="button" aria-label="Pan up" onClick={() => setPan((p) => ({ ...p, y: p.y - 24 }))}>
-          ↑
+          Pan up
         </button>
         <button type="button" aria-label="Pan down" onClick={() => setPan((p) => ({ ...p, y: p.y + 24 }))}>
-          ↓
+          Pan down
         </button>
       </div>
       {renderError === undefined ? null : <p role="alert">{renderError}</p>}
-      <div style={{ overflow: "auto", minHeight: 320, border: "1px solid #d1d5db" }}>
+      <div
+        style={{
+          overflow: "auto",
+          minHeight: 520,
+          maxHeight: "calc(100vh - 285px)",
+          border: "1px solid #cbd5e1",
+          borderRadius: 8,
+          background: "#e9edf3",
+        }}
+      >
         <div
           data-testid="pdf-page-layer"
           style={{
@@ -195,8 +268,15 @@ export function PdfWorkspace({
             sources={pageSources}
             balloons={pageBalloons}
             pdfToRenderMatrix={currentPageTransform?.pdfToRenderMatrix}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
+            renderToPdfMatrix={currentPageTransform?.renderToPdfMatrix}
+            selectedItemId={selection}
+            selectedBalloonId={selectedBalloonId}
+            onSelectItem={(itemId) => {
+              setLocalSelectedItemId(itemId);
+              onSelectItem?.(itemId);
+            }}
+            onSelectBalloon={onSelectBalloon}
+            onMoveBalloon={onMoveBalloon}
           />
         </div>
       </div>

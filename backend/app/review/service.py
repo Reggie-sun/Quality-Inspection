@@ -15,7 +15,7 @@ from app.candidates.schemas import Candidate
 from app.projects.models import Project
 from app.projects.state import ProjectState, transition
 from app.review.locks import require_active_lock
-from app.review.models import ReviewWorkingCopy
+from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.schemas import (
     Add,
     Edit,
@@ -25,10 +25,15 @@ from app.review.schemas import (
     ResolveConfirmation,
     ReviewCommand,
     SetBalloonRequired,
+    SetSipDetailFields,
+    SetSipMetadata,
+    SIP_DETAIL_FIELDS,
+    SIP_METADATA_FIELDS,
     Split,
     parse_review_command,
     validate_edit_fields,
 )
+from app.storage.local import LocalFileStorage
 
 
 class ReviewNotFound(LookupError):
@@ -50,13 +55,31 @@ class ItemsFrozen(RuntimeError):
     pass
 
 
+class ReviewConfirmationBlocked(RuntimeError):
+    def __init__(self, blockers: list[str]) -> None:
+        self.blockers = tuple(blockers)
+        self.code = blockers[0]
+        super().__init__(f"review confirmation blocked: {', '.join(blockers)}")
+
+
+class ReviewedResultImmutable(RuntimeError):
+    pass
+
+
 _COORDINATES = TypeAdapter(tuple[float, float, float, float])
 _COARSE_TYPE = TypeAdapter(CoarseType)
+_SIP_DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
 
 
 class ReviewService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        storage: LocalFileStorage | None = None,
+    ) -> None:
         self.session = session
+        self.storage = storage
 
     def create_from_raw(self, raw_result_id: uuid.UUID) -> ReviewWorkingCopy:
         existing = self.session.scalar(
@@ -90,6 +113,7 @@ class ReviewService:
             version=1,
             items=[self._current_item(candidate) for candidate in raw_result.candidates],
             coverage=copy.deepcopy(raw_result.coverage),
+            sip_metadata={},
             numbering_stale=False,
         )
         self.session.add(working)
@@ -122,9 +146,11 @@ class ReviewService:
 
         items = copy.deepcopy(working.items)
         coverage = copy.deepcopy(working.coverage)
+        sip_metadata = copy.deepcopy(working.sip_metadata)
         target_ids, numbering_stale = self._apply_command(
             items,
             coverage,
+            sip_metadata,
             parsed,
             numbering_stale=working.numbering_stale,
         )
@@ -140,6 +166,7 @@ class ReviewService:
             .values(
                 items=items,
                 coverage=coverage,
+                sip_metadata=sip_metadata,
                 numbering_stale=numbering_stale,
                 version=after_version,
             )
@@ -203,7 +230,11 @@ class ReviewService:
             self.session.rollback()
             raise ItemsFrozen("review item set is already frozen")
 
-        blockers = self.freeze_blockers(working.items, working.coverage)
+        blockers = self.freeze_blockers(
+            working.items,
+            working.coverage,
+            working.sip_metadata,
+        )
         if blockers:
             self.session.rollback()
             raise FreezeBlocked(blockers)
@@ -240,6 +271,7 @@ class ReviewService:
     def freeze_blockers(
         items: list[dict[str, Any]],
         coverage: dict[str, Any],
+        sip_metadata: dict[str, Any],
     ) -> list[str]:
         blockers: list[str] = []
         if coverage.get("blocking_count", 0):
@@ -252,7 +284,10 @@ class ReviewService:
             entry.get("requires_confirmation")
             for entry in coverage.get("entries", [])
         )
-        if unresolved_item or unresolved_coverage:
+        sip_unconfirmed = bool(
+            ReviewService._sip_confirmation_blockers(items, sip_metadata)
+        )
+        if unresolved_item or unresolved_coverage or sip_unconfirmed:
             blockers.append("unresolved_confirmation")
         if any(
             item.get("active", True) and item.get("balloon_required") is None
@@ -261,9 +296,128 @@ class ReviewService:
             blockers.append("balloon_required_unconfirmed")
         return blockers
 
-    @staticmethod
-    def reviewed_result_for(_: uuid.UUID) -> None:
-        return None
+    def reviewed_result_for(self, project_id: uuid.UUID) -> ReviewedResult | None:
+        return self.session.scalar(
+            select(ReviewedResult).where(ReviewedResult.project_id == project_id)
+        )
+
+    def confirm(
+        self,
+        working_copy_id: uuid.UUID,
+        *,
+        expected_version: int,
+        operator_id: str,
+    ) -> ReviewedResult:
+        from app.balloons.models import Balloon
+        from app.balloons.service import BalloonService
+
+        operator_id = self._operator_id(operator_id)
+        preview = self.session.get(ReviewWorkingCopy, working_copy_id)
+        if preview is None:
+            raise ReviewNotFound(f"working copy {working_copy_id} was not found")
+        require_active_lock(self.session, preview.project_id, operator_id)
+        working = self.session.scalar(
+            select(ReviewWorkingCopy)
+            .where(ReviewWorkingCopy.id == working_copy_id)
+            .with_for_update()
+        )
+        if working is None:
+            raise ReviewNotFound(f"working copy {working_copy_id} was not found")
+        if working.version != expected_version:
+            self.session.rollback()
+            raise ReviewVersionConflict(
+                f"expected review version {expected_version}, found {working.version}"
+            )
+        if working.items_frozen_at is None:
+            self.session.rollback()
+            raise FreezeBlocked(["item_set_not_frozen"])
+
+        existing = self.session.scalar(
+            select(ReviewedResult).where(
+                ReviewedResult.working_copy_id == working.id,
+                ReviewedResult.working_version == working.version,
+            )
+        )
+        if existing is not None:
+            return existing
+        if working.numbering_stale:
+            self.session.rollback()
+            raise ReviewConfirmationBlocked(["numbering_stale"])
+        sip_blockers = self._sip_confirmation_blockers(
+            working.items,
+            working.sip_metadata,
+        )
+        if sip_blockers:
+            self.session.rollback()
+            raise ReviewConfirmationBlocked(sip_blockers)
+
+        balloons = list(
+            self.session.scalars(
+                select(Balloon)
+                .where(
+                    Balloon.project_id == working.project_id,
+                    Balloon.status == "active",
+                )
+                .order_by(Balloon.sort_order, Balloon.id)
+                .with_for_update()
+            )
+        )
+        balloon_service = BalloonService(
+            self.session,
+            storage=self.storage,
+        )
+        blockers = balloon_service.validation_blockers(working.project_id)
+        if blockers:
+            self.session.rollback()
+            raise ReviewConfirmationBlocked(blockers)
+
+        project = self.session.scalar(
+            select(Project).where(Project.id == working.project_id).with_for_update()
+        )
+        if project is None:
+            self.session.rollback()
+            raise ReviewNotFound(f"project {working.project_id} was not found")
+        project.state = transition(ProjectState(project.state), ProjectState.REVIEWED)
+        reviewed = ReviewedResult(
+            project_id=working.project_id,
+            working_copy_id=working.id,
+            working_version=working.version,
+            items=[
+                copy.deepcopy(item)
+                for item in working.items
+                if item.get("active", True)
+            ],
+            balloons=[balloon.snapshot() for balloon in balloons],
+            sip_metadata=copy.deepcopy(working.sip_metadata),
+            schema_version="reviewed-result/2",
+        )
+        self.session.add(reviewed)
+        self.session.flush()
+        self.session.add(
+            OperationRecord(
+                project_id=working.project_id,
+                operator_id=operator_id,
+                command="confirm_reviewed_result",
+                target_ids=[str(reviewed.id)],
+                before_version=working.version,
+                after_version=working.version,
+            )
+        )
+        self.session.commit()
+        self.session.refresh(reviewed)
+        return reviewed
+
+    def replace_items(
+        self,
+        reviewed_result_id: uuid.UUID,
+        _: list[dict[str, Any]],
+    ) -> None:
+        reviewed = self.session.get(ReviewedResult, reviewed_result_id)
+        if reviewed is None:
+            raise ReviewNotFound(
+                f"reviewed result {reviewed_result_id} was not found"
+            )
+        raise ReviewedResultImmutable("immutable reviewed result cannot be replaced")
 
     @staticmethod
     def _current_item(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -283,6 +437,7 @@ class ReviewService:
         self,
         items: list[dict[str, Any]],
         coverage: dict[str, Any],
+        sip_metadata: dict[str, Any],
         command: ReviewCommand,
         *,
         numbering_stale: bool,
@@ -295,13 +450,17 @@ class ReviewService:
             item = self._active_item(items, command.item_id)
             item["status"] = "excluded"
             item["active"] = False
-            return [command.item_id], numbering_stale
+            return [command.item_id], True
         if isinstance(command, Edit):
             item = self._active_item(items, command.item_id)
             self._edit_item(item, command.fields)
-            return [command.item_id], numbering_stale
+            self._clear_sip_detail_fields(item)
+            return [command.item_id], numbering_stale or "coordinates" in command.fields
         if isinstance(command, Add):
             item_id = str(uuid.uuid4())
+            source_location_ids = (
+                [f"manual:{item_id}"] if command.page_index is not None else []
+            )
             items.append(
                 {
                     "item_id": item_id,
@@ -312,13 +471,14 @@ class ReviewService:
                     "scope": command.scope,
                     "balloon_required": command.balloon_required,
                     "requires_confirmation": False,
-                    "source_location_ids": [],
+                    "source_location_ids": source_location_ids,
+                    "page_index": command.page_index,
                     "source_type": "manual",
                     "status": "pending",
                     "active": True,
                 }
             )
-            return [item_id], numbering_stale
+            return [item_id], True
         if isinstance(command, Merge):
             if len(set(command.item_ids)) != len(command.item_ids):
                 raise ValueError("merge item IDs must be distinct")
@@ -330,6 +490,7 @@ class ReviewService:
                 raise ValueError("merge requires the same simple item type")
             merged_id = str(uuid.uuid4())
             merged = copy.deepcopy(source_items[0])
+            self._clear_sip_detail_fields(merged)
             merged.update(
                 {
                     "item_id": merged_id,
@@ -347,7 +508,7 @@ class ReviewService:
                 source["status"] = "superseded"
                 source["active"] = False
             items.append(merged)
-            return [*command.item_ids, merged_id], numbering_stale
+            return [*command.item_ids, merged_id], True
         if isinstance(command, Split):
             source = self._active_item(items, command.item_id)
             if "item_type" not in source:
@@ -359,6 +520,7 @@ class ReviewService:
                 split_id = str(uuid.uuid4())
                 split_ids.append(split_id)
                 split_item = copy.deepcopy(source)
+                self._clear_sip_detail_fields(split_item)
                 split_item.update(
                     {
                         "item_id": split_id,
@@ -372,7 +534,7 @@ class ReviewService:
                     }
                 )
                 items.append(split_item)
-            return [command.item_id, *split_ids], numbering_stale
+            return [command.item_id, *split_ids], True
         if isinstance(command, ResolveConfirmation):
             self._resolve_confirmation(
                 items,
@@ -385,6 +547,20 @@ class ReviewService:
             item = self._active_item(items, command.item_id)
             item["balloon_required"] = command.balloon_required
             return [command.item_id], True
+        if isinstance(command, SetSipDetailFields):
+            item = self._active_item(items, command.item_id)
+            values = command.model_dump(mode="json")
+            for field in SIP_DETAIL_FIELDS:
+                item[field] = values[field]
+            item[_SIP_DETAIL_CONFIRMED] = True
+            return [command.item_id], numbering_stale
+        if isinstance(command, SetSipMetadata):
+            values = command.model_dump(mode="json")
+            sip_metadata.clear()
+            sip_metadata.update(
+                {field: values[field] for field in SIP_METADATA_FIELDS}
+            )
+            return ["sip_metadata"], numbering_stale
         raise AssertionError(f"unsupported review command: {command.type}")
 
     @staticmethod
@@ -438,6 +614,44 @@ class ReviewService:
                 if source_id not in result:
                     result.append(source_id)
         return result
+
+    @staticmethod
+    def _clear_sip_detail_fields(item: dict[str, Any]) -> None:
+        for field in (*SIP_DETAIL_FIELDS, _SIP_DETAIL_CONFIRMED):
+            item.pop(field, None)
+
+    @staticmethod
+    def _sip_confirmation_blockers(
+        items: list[dict[str, Any]],
+        sip_metadata: dict[str, Any],
+    ) -> list[str]:
+        blockers: list[str] = []
+        if set(sip_metadata) != set(SIP_METADATA_FIELDS) or any(
+            not isinstance(sip_metadata.get(field), str)
+            or not sip_metadata[field].strip()
+            for field in SIP_METADATA_FIELDS
+        ):
+            blockers.append("sip_metadata_unconfirmed")
+        active_items = [item for item in items if item.get("active", True)]
+        if any(
+            item.get(_SIP_DETAIL_CONFIRMED) is not True
+            or any(
+                (
+                    not isinstance(item.get(field), int)
+                    or isinstance(item.get(field), bool)
+                    or item[field] < 1
+                )
+                if field == "source_page"
+                else (
+                    not isinstance(item.get(field), str)
+                    or not item[field].strip()
+                )
+                for field in SIP_DETAIL_FIELDS
+            )
+            for item in active_items
+        ):
+            blockers.append("sip_detail_fields_unconfirmed")
+        return blockers
 
     @staticmethod
     def _resolve_confirmation(

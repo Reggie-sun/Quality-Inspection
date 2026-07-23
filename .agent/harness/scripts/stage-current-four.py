@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Register the frozen current-four PDF identity without copying source bytes."""
+"""Verify current-four identity and attach it to one controlled run."""
 
 from __future__ import annotations
 
@@ -7,6 +7,9 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
+import re
+import secrets
 import stat
 import sys
 from dataclasses import dataclass
@@ -214,9 +217,46 @@ def _manifest_bytes(documents: Iterable[FrozenDocument]) -> bytes:
     ).encode("utf-8")
 
 
+def attach_manifest(run_dir: Path, artifact: bytes) -> Path:
+    if not isinstance(artifact, bytes):
+        raise TypeError("current-four manifest artifact must be bytes")
+    run_path = run_dir / "run.json"
+    if run_path.is_symlink() or not run_path.is_file():
+        raise ValueError("full-p0 run identity is unavailable")
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    if (
+        run.get("run_id") != run_dir.name
+        or run.get("mode") != "live"
+        or run.get("scope") != "full-p0"
+        or run.get("task_id") is not None
+        or run.get("execution_state") != "running"
+        or run.get("completed_at") is not None
+    ):
+        raise ValueError("manifest attachment requires one open full-p0 live run")
+    manifest = json.loads(artifact)
+    receipt_module = _load_module(
+        "qi_generate_receipt_for_live_attachment",
+        HARNESS / "scripts/generate-receipt.py",
+    )
+    receipt_module.validate_schema(
+        manifest,
+        "current-four-manifest.schema.json",
+        ROOT,
+    )
+    target = run_dir / CURRENT_FOUR_ARTIFACT
+    if target.exists():
+        raise ValueError("current-four manifest is already attached")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{secrets.token_hex(6)}.tmp")
+    temporary.write_bytes(artifact)
+    os.replace(temporary, target)
+    return target
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", required=True, choices=("live",))
+    parser.add_argument("--run-id")
     source_group = parser.add_mutually_exclusive_group(required=True)
     source_group.add_argument("--source", action="append")
     source_group.add_argument("--source-root")
@@ -225,16 +265,23 @@ def main(argv: list[str] | None = None) -> int:
         sources = _resolve_sources(args.source, args.source_root)
         _verify_sources(sources)
         artifact = _manifest_bytes(FROZEN_DOCUMENTS)
-        runner = _load_module(
-            "qi_run_p0_for_staging",
-            HARNESS / "scripts/run-p0.py",
-        )
-        run_id, verdict = runner.run_task(
-            "live",
-            "task",
-            "D2-T1",
-            input_artifacts={CURRENT_FOUR_ARTIFACT: artifact},
-        )
+        if args.run_id:
+            if not re.fullmatch(r"^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$", args.run_id):
+                raise ValueError("--run-id must be one literal run ID")
+            run_id = args.run_id
+            attach_manifest(HARNESS / "runs" / run_id, artifact)
+            verdict = "attached"
+        else:
+            runner = _load_module(
+                "qi_run_p0_for_staging",
+                HARNESS / "scripts/run-p0.py",
+            )
+            run_id, verdict = runner.run_task(
+                "live",
+                "task",
+                "D2-T1",
+                input_artifacts={CURRENT_FOUR_ARTIFACT: artifact},
+            )
     except (OSError, RuntimeError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         print(f"stage-current-four: {exc}", file=sys.stderr)
         return 2
@@ -245,7 +292,7 @@ def main(argv: list[str] | None = None) -> int:
         f"first_checkpoint={FROZEN_DOCUMENTS[0].sha256[:10]}... "
         f"run_id={run_id} overall_verdict={verdict}"
     )
-    return 0 if verdict == "passed" else 1
+    return 0 if verdict in {"passed", "attached"} else 1
 
 
 if __name__ == "__main__":

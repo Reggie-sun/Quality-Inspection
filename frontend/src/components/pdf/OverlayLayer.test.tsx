@@ -26,8 +26,8 @@ describe("OverlayLayer", () => {
     expect(candidate).not.toBeNull();
     expect(source).not.toBeNull();
     expect(balloon).not.toBeNull();
-    expect(source.style.pointerEvents).toBe("none");
-    expect(balloon.style.pointerEvents).toBe("none");
+    expect(source.style.cursor).toBe("pointer");
+    expect(balloon.getAttribute("role")).toBe("button");
     expect(screen.getByLabelText("engineering overlays").getAttribute("viewBox")).toBe(
       "0 0 100 200",
     );
