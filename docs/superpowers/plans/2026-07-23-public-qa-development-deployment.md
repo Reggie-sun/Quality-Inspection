@@ -32,6 +32,13 @@
 | `docs/operations/qa-dev-public-deployment.md` | 不含 credential 的 host-side route、Access、verification 和 rollback SOP。 |
 | `/home/reggie/.cloudflared/enterprise-rag-dev.yml` | Host-owned shared tunnel config；仅在批准后的 Task 4 新增 `qa.srj666.com` route，不进入 Git。 |
 
+### Task 1 Verification Amendment — 2026-07-23
+
+- Delta: `docker compose config` 将 short-syntax ports 规范化为 `host_ip`、`target` 与 `published` 三个字段；原先的 `127.0.0.1:port:target` 文本匹配无法独立证明两条 loopback binding。
+- Evidence: 在 Docker Compose v5.1.3 的当前 config 输出中，QA API/Frontend 分别显示 `host_ip: 127.0.0.1`、`target: 8000/4173` 和 `published: "18000"/"14173"`。
+- Writer ownership: 父 agent 仅修改本计划的 static gate；`compose.qa-dev.yaml` 与 `Makefile` 仍由同一 writer 顺序实现。
+- Next verification: 使用 normalized-field triple match 重新运行 `make qa-dev-config` gate，然后才允许启动 QA runtime。
+
 ## Task 1: Define and statically verify the isolated source-mounted QA runtime
 
 **Files:**
@@ -120,8 +127,10 @@ Run:
 
 ```bash
 make qa-dev-config > /tmp/quality-inspection-qa-compose.yaml
-rg -n '127.0.0.1:18000:8000|127.0.0.1:14173:4173|quality_inspection_(postgres|storage)_qa_dev' /tmp/quality-inspection-qa-compose.yaml
-! rg -n '0.0.0.0:(18000|14173)|8000:8000|3000:3000' /tmp/quality-inspection-qa-compose.yaml
+rg -n -U 'host_ip: 127\.0\.0\.1\n\s+target: 8000\n\s+published: "18000"' /tmp/quality-inspection-qa-compose.yaml
+rg -n -U 'host_ip: 127\.0\.0\.1\n\s+target: 4173\n\s+published: "14173"' /tmp/quality-inspection-qa-compose.yaml
+rg -n 'quality_inspection_(postgres|storage)_qa_dev' /tmp/quality-inspection-qa-compose.yaml
+! rg -n 'host_ip: 0\.0\.0\.0|published: "(8000|3000)"' /tmp/quality-inspection-qa-compose.yaml
 ```
 
 Expected: both loopback mappings and both isolated volume names are present; no broad API/frontend binding appears.
