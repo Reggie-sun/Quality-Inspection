@@ -1,0 +1,31 @@
+services:
+  api:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports: !override
+      - "127.0.0.1:18000:8000"
+    volumes:
+      - qi_storage:/data
+      - ./backend/app:/app/app
+      - ./backend/assets:/app/assets:ro
+
+  worker:
+    volumes:
+      - qi_storage:/data
+      - ./backend/app:/app/app
+      - ./backend/assets:/app/assets:ro
+
+  frontend:
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "4173", "--strictPort"]
+    ports: !override
+      - "127.0.0.1:14173:4173"
+    volumes:
+      - ./frontend:/app
+      - qi_frontend_node_modules:/app/node_modules
+
+volumes:
+  qi_postgres:
+    name: quality_inspection_postgres_qa_dev
+  qi_storage:
+    name: quality_inspection_storage_qa_dev
+  qi_frontend_node_modules:
+    name: quality_inspection_frontend_node_modules_qa_dev

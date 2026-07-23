@@ -1,4 +1,23 @@
-.PHONY: check-contracts test-backend test-frontend verify-p0-offline verify-p0-live
+QA_DEV_COMPOSE = docker compose -p quality-inspection-qa -f compose.yaml -f compose.qa-dev.yaml
+
+.PHONY: check-contracts test-backend test-frontend verify-p0-offline verify-p0-live qa-dev-config qa-dev-up qa-dev-down qa-dev-status qa-dev-restart-worker
+
+qa-dev-config:
+	$(QA_DEV_COMPOSE) config
+
+qa-dev-up:
+	$(QA_DEV_COMPOSE) up -d --build
+
+qa-dev-down:
+	$(QA_DEV_COMPOSE) down
+
+qa-dev-status:
+	@curl --noproxy 127.0.0.1 -fsS http://127.0.0.1:18000/api/v1/health
+	@curl --noproxy 127.0.0.1 -fsS -o /dev/null -w 'frontend HTTP %{http_code}\n' http://127.0.0.1:14173/
+	@curl --noproxy 127.0.0.1 -fsS http://127.0.0.1:14173/api/v1/health
+
+qa-dev-restart-worker:
+	$(QA_DEV_COMPOSE) restart worker
 
 check-contracts:
 	python .agent/harness/scripts/check-contracts.py
