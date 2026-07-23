@@ -490,18 +490,6 @@ legend {
   padding-left: 18px;
 }
 
-.ready-shell__notice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 9px clamp(20px, 3vw, 48px);
-  border-bottom: 1px solid #b9ddcd;
-  background: #f0faf5;
-  color: #0b6945;
-  font-size: 13px;
-}
-
 @keyframes qi-spin {
   to {
     transform: rotate(360deg);

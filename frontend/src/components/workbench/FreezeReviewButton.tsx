@@ -1,4 +1,5 @@
 import type { BalloonOverlay, ReviewWorkingCopy } from "../../api/types";
+import { zhCN } from "../../copy/zhCN";
 
 
 type FreezeReviewButtonProps = {
@@ -60,15 +61,15 @@ export function FreezeReviewButton({
     hasContinuousFormalNumbers(balloons);
 
   return (
-    <section aria-label="Review finalization" style={{ display: "flex", gap: 8 }}>
+    <section aria-label={zhCN.balloon.finalization} className="review-finalization">
       <button type="button" disabled={!canFreeze} onClick={onFreeze}>
-        Freeze Items
+        {zhCN.balloon.freeze}
       </button>
       <button type="button" disabled={!canGenerate} onClick={onGenerate}>
-        Generate balloons
+        {zhCN.balloon.generate}
       </button>
       <button type="button" disabled={!canConfirm} onClick={onConfirm}>
-        Confirm Reviewed Result
+        {zhCN.balloon.confirm}
       </button>
     </section>
   );

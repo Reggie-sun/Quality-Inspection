@@ -1,6 +1,7 @@
 import { useRef } from "react";
 
 import type { BalloonOverlay as BalloonView, PdfMatrix } from "../../api/types";
+import { zhCN } from "../../copy/zhCN";
 
 
 type MatrixLike = Pick<DOMMatrix, "a" | "b" | "c" | "d" | "e" | "f">;
@@ -138,7 +139,7 @@ export function BalloonOverlay({
       data-circle={`${displayCenter[0]},${displayCenter[1]},${radius}`}
       data-glyph-bbox={glyphBox.join(",")}
       role="button"
-      aria-label={`Balloon ${balloon.number}${blocked ? ", manual resolution required" : ""}`}
+      aria-label={zhCN.balloon.marker(balloon.number, blocked)}
       tabIndex={0}
       onClick={select}
       onKeyDown={(event) => {
@@ -190,7 +191,7 @@ export function BalloonOverlay({
         cy={displayCenter[1]}
         r={radius}
         fill={blocked ? "#fff1f2" : "white"}
-        stroke={selected ? "#6d28d9" : blocked ? "#b91c1c" : "#dc2626"}
+        stroke={selected ? "#2563eb" : blocked ? "#b91c1c" : "#dc2626"}
         strokeWidth={selected ? 3 : 1.5}
       />
       <text

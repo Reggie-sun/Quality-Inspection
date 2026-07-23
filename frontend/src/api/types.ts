@@ -202,6 +202,8 @@ export type ProjectWorkbenchResponse = {
   balloons: BalloonRecord[];
   balloon_blockers: string[];
   source_pdf_url: string;
+  reviewed_result_id: string | null;
+  latest_export: ExportJob | null;
 };
 
 export type ExportArtifactKind = "ballooned_pdf" | "sip_excel" | "manifest";

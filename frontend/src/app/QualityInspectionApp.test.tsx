@@ -114,8 +114,9 @@ test("上传后显示处理进度并自动进入现有工作台", async () => {
   fireEvent.click(screen.getByRole("button", { name: "上传并开始识别" }));
 
   expect(await screen.findByText("正在解析图纸并识别检验项")).not.toBeNull();
-  expect(await screen.findByText("识别完成，已进入审核")).not.toBeNull();
   expect(await screen.findByRole("heading", { name: "检验项目审核" })).not.toBeNull();
+  expect(screen.queryByText("识别完成，已进入审核")).toBeNull();
+  expect(screen.getByRole("button", { name: "处理另一份图纸" })).not.toBeNull();
   expect(createProject).toHaveBeenCalledTimes(1);
   expect(getProjectStatus).toHaveBeenCalledTimes(2);
   expect(window.sessionStorage.getItem("qi.current-project-id")).toBe(PROJECT_ID);
@@ -196,6 +197,32 @@ test("fatal failure 显示中文错误并可重新处理", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "重新处理" }));
   await waitFor(() => expect(createProject).toHaveBeenCalledTimes(2));
+});
+
+
+test("识别服务不可用时显示安全中文错误并保留重试入口", async () => {
+  const createProject = vi.fn()
+    .mockResolvedValue(status("queued", { project_id: PROJECT_ID }));
+  const getProjectStatus = vi.fn().mockResolvedValue(status("failed", {
+    error: { code: "ocr_provider_unavailable", stage: "preflight" },
+  }));
+  render(
+    <QualityInspectionApp
+      api={fakeApi(createProject, getProjectStatus)}
+      pollIntervalMs={1}
+    />,
+  );
+
+  choosePdf();
+  fireEvent.click(screen.getByRole("button", { name: "上传并开始识别" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("文字识别服务暂不可用，请稍后重试");
+  expect(alert.textContent).not.toContain("处理失败，请重新选择 PDF");
+  expect(document.body.textContent).not.toContain("ocr_provider_unavailable");
+  expect(document.body.textContent).not.toContain("OCR provider is unavailable");
+  expect(screen.getByRole("button", { name: "重新处理" })
+    .hasAttribute("disabled")).toBe(false);
 });
 
 

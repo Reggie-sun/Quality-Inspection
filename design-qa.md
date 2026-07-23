@@ -79,3 +79,71 @@ Chrome 检查确认所有上传态 URL 均保持 `/`，`scrollWidth == clientWid
 - horizontal overflow: none at 1565x796
 - Task 3 result: passed
 - successor boundary: Task 4 must localize and visually restore the inherited Review Workbench before final product acceptance
+
+## Successor Task 4 — Chinese Review Workbench
+
+### Grounding
+
+Task 4 继续以同一用户参考图作为唯一主要视觉基线，并通过 `product-design:image-to-code` 的 Browser Design QA 工作流复核真实 Review、冻结、气泡调整和导出完成状态。实现保留既有 Review、Balloon、collision validation、Confirm Reviewed Result 与 Export Owner，只调整中文可见文案、刷新恢复投影和工作台视觉组织。
+
+source identity: user-attached reference image
+source sha256: e9693f9d27083271af68754c7260ad813316c6cdd39807f6a4e90e74ace33de4
+implementation route: /
+browser: Google Chrome 149.0.7827.53
+locale: zh-CN
+timezone: Asia/Hong_Kong
+viewport: 1565x796
+runtime evidence directory: frontend/test-results/design-qa-task4/ (untracked runtime evidence)
+
+### Visual And Product Decisions
+
+- 顶部只显示文字品牌“智检通 / 工程图纸智能检验”和“处理另一份图纸”，没有 Logo；工作台加载后不保留过期的“识别完成”提示，五阶段流程条是稳定流程状态展示。
+- 页面使用 `46 / 32 / 22` 三栏比例；PDF 区域面积大于检验项区与右侧辅助栏，保持最大视觉权重。
+- 检验项列表一次真实渲染 50 行，支持搜索、状态筛选、紧凑分页和跨页选择；第 61 项选择会自动跳到第 2 页。
+- 所选项摘要保持 sticky，显示真实气泡号、原始标注、页码和中文状态，不显示 item UUID。
+- 右侧 `SIP基本信息` 默认显示紧凑的 8 字段真实摘要，缺失值为“—”；既有 `set_sip_metadata` 编辑命令收进默认折叠的“编辑 SIP 信息”，并额外提供 command-required 的“物料编码”以恢复旧空值，没有复制数据 Owner。
+- 正式导出仍只展示带气泡 PDF、SIP Excel 和 manifest 三项真实产物；导出完成时三个下载行在 `796px` 首屏内完整可见，最下方行底部为 `789.6px`。
+- “公司处理记录”没有正式事件 projection 时只显示“暂无处理记录”，没有静态假日志。
+
+### State And Interaction Evidence
+
+formal captures:
+
+- `01-review-workbench.png`
+- `02-selected-item.png`
+- `03-frozen.png`
+- `04-balloon-adjustment.png`
+- `05-export-completed-initial.png`
+- `05-export-completed.png`
+- `06-reference-vs-implementation.png`
+
+真实 Browser QA 覆盖 124 项 Review 项目和 285 项冻结/导出项目。Review、frozen、export 三种状态分别由阶段 3、4、5 表达；选中项、冻结态、气泡选择和三个正式下载均由真实 projection 驱动。页面 path 始终为 `/`，query string 为空，未发现 Logo、UUID、内部 ID、伪进度百分比、静态假日志或页面级横向溢出。
+
+### Console And Network
+
+- command: `node test-results/design-qa-task4/run-design-qa.mjs`
+- exit code: 0
+- console errors: 0
+- console warnings: 0
+- HTTP responses >= 400: 0
+- unexpected request failures: 0
+- real Workbench/source PDF GET: all 200
+- non-GET requests: 3 个本地 fulfill 的 Review lock，不执行 Review、Balloon 或 Export mutation
+- explained request aborts: 3 个已返回 200 并完成 canvas 渲染的 source PDF 流在状态切换时被 Chrome 取消
+
+### QA Result
+
+- P0 issues: 0
+- P1 issues: 0
+- P2 issues: 0
+- no Logo or internal ID: passed
+- all user-visible product chrome in Chinese: passed
+- no fake data, percentage or company log: passed
+- PDF remains the largest region: passed
+- hundreds-item browsing and selected-item context: passed
+- compact truthful SIP card and preserved edit command: passed
+- all three completed downloads visible at 1565x796: passed
+- focus-visible and reduced motion: passed
+- console and network gate: passed
+- Task 4 result: passed
+- successor boundary: Task 5 bare-root upload-to-two-download browser closure remains intentionally not started in this session

@@ -8,6 +8,7 @@ import {
   BalloonOverlay as BalloonMarker,
   displayToPdfMatrix,
 } from "../balloons/BalloonOverlay";
+import { zhCN } from "../../copy/zhCN";
 import { selectRelationItem, selectedRelation } from "../workbench/selection";
 
 
@@ -91,7 +92,7 @@ export function OverlayLayer({
 
   return (
     <svg
-      aria-label="engineering overlays"
+      aria-label={zhCN.pdf.overlay}
       data-scale={scale}
       width={pageWidth * scale}
       height={pageHeight * scale}
@@ -114,7 +115,7 @@ export function OverlayLayer({
             width={x1 - x0}
             height={y1 - y0}
             fill="transparent"
-            stroke={isSelected ? "#dc2626" : "#f59e0b"}
+            stroke={isSelected ? "#1d4ed8" : "#2563eb"}
             strokeWidth={isSelected ? 3 : 1.5}
             onClick={() => {
               const itemId = selectRelationItem(
@@ -143,7 +144,7 @@ export function OverlayLayer({
             width={x1 - x0}
             height={y1 - y0}
             fill="transparent"
-            stroke={isSelected ? "#7c3aed" : "#2563eb"}
+            stroke={isSelected ? "#0e7490" : "#0891b2"}
             strokeDasharray="4 3"
             strokeWidth={1.5}
             onClick={() => {

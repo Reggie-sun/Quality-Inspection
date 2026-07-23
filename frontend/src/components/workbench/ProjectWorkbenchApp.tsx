@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getDocument } from "pdfjs-dist";
 
-import { getJson, postJson } from "../../api/client";
+import { ApiError, getJson, postJson } from "../../api/client";
 import type {
   BalloonOverlay,
   PdfDocumentLike,
@@ -16,6 +16,7 @@ import {
   freezeReviewItems,
 } from "../../features/review/api";
 import { saveWorkingCopy } from "../../features/review/saveWorkingCopy";
+import { apiErrorCopy, zhCN } from "../../copy/zhCN";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 
 
@@ -45,9 +46,13 @@ export function ProjectWorkbenchApp({
   const [snapshot, setSnapshot] = useState<ProjectWorkbenchResponse>();
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentLike | null>(null);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("Loading project workbench…");
+  const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const [reviewedResultId, setReviewedResultId] = useState<string>();
+
+  const safeError = (caught: unknown) => (
+    caught instanceof ApiError ? apiErrorCopy(caught.code) : zhCN.errors.fallback
+  );
 
   const refresh = useCallback(async () => {
     const loaded = await getJson<ProjectWorkbenchResponse>(
@@ -62,6 +67,7 @@ export function ProjectWorkbenchApp({
       throw new Error("project workbench identity mismatch");
     }
     setSnapshot(loaded);
+    setReviewedResultId(loaded.reviewed_result_id ?? undefined);
     return loaded;
   }, [projectId]);
 
@@ -79,21 +85,20 @@ export function ProjectWorkbenchApp({
         const document = await loadPdf(loaded.source_pdf_url);
         if (cancelled) return;
         setPdfDocument(document);
-        setStatus("Project loaded; review lock active");
         renewal = window.setInterval(() => {
           void renew().catch(() => {
-            setError("Review lock renewal failed; mutations are paused");
+            setError(zhCN.errors.lockRenewal);
           });
         }, LOCK_RENEWAL_MS);
       } catch (caught) {
         if (!cancelled) {
-          setError(caught instanceof Error ? caught.message : "Project load failed");
+          setError(safeError(caught));
         }
       }
     };
     const onFocus = () => {
       void renew().catch(() => {
-        setError("Review lock renewal failed; mutations are paused");
+        setError(zhCN.errors.lockRenewal);
       });
     };
     window.addEventListener("focus", onFocus);
@@ -128,7 +133,7 @@ export function ProjectWorkbenchApp({
   const run = async (
     nextStatus: string,
     action: () => Promise<unknown>,
-    completedStatus = `${nextStatus} complete`,
+    completedStatus = zhCN.workbench.completed(nextStatus),
   ): Promise<boolean> => {
     if (busy || snapshot === undefined) return false;
     setBusy(true);
@@ -140,7 +145,7 @@ export function ProjectWorkbenchApp({
       setStatus(completedStatus);
       return true;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `${nextStatus} failed`);
+      setError(safeError(caught));
       return false;
     } finally {
       setBusy(false);
@@ -148,16 +153,20 @@ export function ProjectWorkbenchApp({
   };
 
   const save = async (command: ReviewCommand) => {
-    const saved = await run("Saving working copy", async () => {
-      if (snapshot === undefined) throw new Error("project workbench is not loaded");
-      await saveWorkingCopy(
-        postJson,
-        projectId,
-        operatorId,
-        snapshot.working_copy.version,
-        command,
-      );
-    });
+    const saved = await run(
+      zhCN.workbench.saving,
+      async () => {
+        if (snapshot === undefined) throw new Error("project workbench is not loaded");
+        await saveWorkingCopy(
+          postJson,
+          projectId,
+          operatorId,
+          snapshot.working_copy.version,
+          command,
+        );
+      },
+      zhCN.workbench.actionSubmitted,
+    );
     if (!saved) throw new Error("working copy save failed");
   };
 
@@ -172,10 +181,10 @@ export function ProjectWorkbenchApp({
   ));
 
   if (error !== undefined && snapshot === undefined) {
-    return <main role="alert">Project workbench unavailable: {error}</main>;
+    return <main role="alert">{error}</main>;
   }
   if (snapshot === undefined) {
-    return <main aria-busy="true">Loading project workbench…</main>;
+    return <main aria-busy="true">{zhCN.workbench.loading}</main>;
   }
 
   return (
@@ -208,25 +217,34 @@ export function ProjectWorkbenchApp({
         projectState={snapshot.project.state}
         projectId={projectId}
         reviewedResultId={reviewedResultId}
+        initialExport={snapshot.latest_export}
         exportPost={postJson}
         operatorId={operatorId}
         actionState={status}
         busy={busy || error !== undefined}
         onSave={save}
-        onFreeze={() => void run("Freezing reviewed items", () => freezeReviewItems(
-          postJson,
-          projectId,
-          operatorId,
-          snapshot.working_copy.version,
-        ))}
-        onGenerate={() => void run("Generating balloons", () => generateBalloons(
-          postJson,
-          projectId,
-          operatorId,
-          snapshot.working_copy.version,
-        ))}
+        onFreeze={() => void run(
+          zhCN.balloon.freeze,
+          () => freezeReviewItems(
+            postJson,
+            projectId,
+            operatorId,
+            snapshot.working_copy.version,
+          ),
+          zhCN.workbench.itemsFrozen,
+        )}
+        onGenerate={() => void run(
+          zhCN.balloon.generate,
+          () => generateBalloons(
+            postJson,
+            projectId,
+            operatorId,
+            snapshot.working_copy.version,
+          ),
+          zhCN.workbench.balloonsGenerated,
+        )}
         onConfirm={() => void run(
-          "Confirming reviewed result",
+          zhCN.balloon.confirm,
           async () => {
             const reviewed = await confirmReviewedResult(
               postJson,
@@ -236,10 +254,10 @@ export function ProjectWorkbenchApp({
             );
             setReviewedResultId(reviewed.id);
           },
-          "Reviewed result confirmed",
+          zhCN.workbench.reviewedConfirmed,
         )}
         onMoveBalloon={(balloonId, expectedVersion, centerPdf) => void balloonCommand(
-          "Moving balloon",
+          zhCN.workbench.movingBalloon,
           {
             type: "move",
             balloon_id: balloonId,
@@ -248,15 +266,15 @@ export function ProjectWorkbenchApp({
           },
         )}
         onDeleteBalloon={(balloonId, expectedVersion) => void balloonCommand(
-          "Deleting balloon",
+          zhCN.workbench.deletingBalloon,
           { type: "delete", balloon_id: balloonId, expected_version: expectedVersion },
         )}
         onRebuildBalloon={(balloonId, expectedVersion) => void balloonCommand(
-          "Rebuilding balloon",
+          zhCN.workbench.rebuildingBalloon,
           { type: "rebuild", balloon_id: balloonId, expected_version: expectedVersion },
         )}
         onReorderBalloon={(balloonId, expectedVersion, sortOrder) => void balloonCommand(
-          "Reordering balloon",
+          zhCN.workbench.reorderingBalloon,
           {
             type: "reorder",
             balloon_id: balloonId,
@@ -265,7 +283,7 @@ export function ProjectWorkbenchApp({
           },
         )}
         onRenumberBalloons={(orderedIds, expectedVersions) => void balloonCommand(
-          "Renumbering balloons",
+          zhCN.workbench.renumberingBalloons,
           {
             type: "renumber",
             ordered_balloon_ids: orderedIds,

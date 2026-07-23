@@ -242,10 +242,10 @@ test("P0-BAL-009/010/011/012 toolbar exposes balloon commands explicitly", () =>
   );
 
   expect(onDelete).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Delete balloon" }));
-  fireEvent.click(screen.getByRole("button", { name: "Rebuild balloon" }));
-  fireEvent.click(screen.getByRole("button", { name: "Move balloon later" }));
-  fireEvent.click(screen.getByRole("button", { name: "Renumber balloons" }));
+  fireEvent.click(screen.getByRole("button", { name: "删除气泡" }));
+  fireEvent.click(screen.getByRole("button", { name: "重建气泡" }));
+  fireEvent.click(screen.getByRole("button", { name: "气泡后移" }));
+  fireEvent.click(screen.getByRole("button", { name: "重新编号" }));
 
   expect(onDelete).toHaveBeenCalledWith("b1", 4);
   expect(onRebuild).toHaveBeenCalledWith("b1", 4);

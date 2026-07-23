@@ -1,4 +1,5 @@
 import type { BalloonOverlay, ReviewItem } from "../../api/types";
+import { zhCN } from "../../copy/zhCN";
 
 
 export type InspectionFilter =
@@ -38,37 +39,46 @@ export function RecognitionSummary({
     testId: string;
     count: number;
   }> = [
-    { value: "active", label: "Active", testId: "summary-active-count", count: active },
+    {
+      value: "active",
+      label: zhCN.summary.active,
+      testId: "summary-active-count",
+      count: active,
+    },
     {
       value: "excluded",
-      label: "Excluded",
+      label: zhCN.summary.excluded,
       testId: "summary-excluded-count",
       count: excluded,
     },
     {
       value: "manual_required",
-      label: "Manual required",
+      label: zhCN.summary.manualRequired,
       testId: "summary-manual-count",
       count: manual,
     },
     {
       value: "hard_collision",
-      label: "Hard collision",
+      label: zhCN.summary.hardCollision,
       testId: "summary-collision-count",
       count: hardCollision,
     },
   ];
 
   return (
-    <section className="recognition-summary" aria-label="Recognition summary">
+    <section
+      className="recognition-summary"
+      aria-label={zhCN.summary.region}
+      role="region"
+    >
       <button
         type="button"
         className="summary-chip summary-chip--all"
         data-active={filter === "all"}
-        aria-label="Filter all inspection items"
+        aria-label={zhCN.summary.filter(zhCN.summary.all)}
         onClick={() => onFilterChange("all")}
       >
-        <span>Detected</span>
+        <span>{zhCN.summary.all}</span>
         <strong>{items.length}</strong>
       </button>
       {chips.map((chip) => (
@@ -77,7 +87,7 @@ export function RecognitionSummary({
           type="button"
           className={`summary-chip summary-chip--${chip.value}`}
           data-active={filter === chip.value}
-          aria-label={`Filter ${chip.label.toLowerCase()}`}
+          aria-label={zhCN.summary.filter(chip.label)}
           onClick={() => onFilterChange(chip.value)}
         >
           <span>{chip.label}</span>

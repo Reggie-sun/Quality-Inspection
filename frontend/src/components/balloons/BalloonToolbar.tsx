@@ -1,4 +1,5 @@
 import type { BalloonOverlay } from "../../api/types";
+import { zhCN } from "../../copy/zhCN";
 
 
 type BalloonToolbarProps = {
@@ -28,10 +29,10 @@ export function BalloonToolbar({
     .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
 
   return (
-    <section aria-label="Balloon commands" className="balloon-toolbar">
+    <section aria-label={zhCN.balloon.commands} className="balloon-toolbar">
       <div className="balloon-toolbar__heading">
-        <h2>Balloon commands</h2>
-        <span>{active.length} active</span>
+        <h2>{zhCN.balloon.commands}</h2>
+        <span>{active.length} {zhCN.balloon.active}</span>
       </div>
       <div className="balloon-toolbar__actions">
         <button
@@ -41,7 +42,7 @@ export function BalloonToolbar({
             if (selected?.version !== undefined) onDelete(selected.id, selected.version);
           }}
         >
-          Delete balloon
+          {zhCN.balloon.delete}
         </button>
         <button
           type="button"
@@ -50,7 +51,7 @@ export function BalloonToolbar({
             if (selected?.version !== undefined) onRebuild(selected.id, selected.version);
           }}
         >
-          Rebuild balloon
+          {zhCN.balloon.rebuild}
         </button>
         <button
           type="button"
@@ -61,7 +62,7 @@ export function BalloonToolbar({
             }
           }}
         >
-          Move balloon earlier
+          {zhCN.balloon.earlier}
         </button>
         <button
           type="button"
@@ -72,7 +73,7 @@ export function BalloonToolbar({
             }
           }}
         >
-          Move balloon later
+          {zhCN.balloon.later}
         </button>
         <button
           type="button"
@@ -84,7 +85,7 @@ export function BalloonToolbar({
             ),
           )}
         >
-          Renumber balloons
+          {zhCN.balloon.renumber}
         </button>
       </div>
     </section>

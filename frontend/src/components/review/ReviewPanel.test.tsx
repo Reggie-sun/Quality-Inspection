@@ -1,117 +1,135 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
+import type { CandidateType, ReviewItem } from "../../api/types";
 import { ReviewPanel } from "./ReviewPanel";
 
+
+afterEach(cleanup);
 
 describe("ReviewPanel", () => {
   test("P0-UI-006 exposes all eight review commands only on explicit actions", () => {
     const onCommand = vi.fn();
-    render(
+    const items: ReviewItem[] = [
+      {
+        item_id: "i1",
+        item_type: "thread",
+        raw_text: "M6",
+        coordinates: [1, 2, 3, 4],
+        scope: "local_feature",
+        balloon_required: true,
+        requires_confirmation: false,
+        active: true,
+      },
+      {
+        item_id: "i2",
+        item_type: "thread",
+        raw_text: "M6 通",
+        coordinates: [5, 6, 7, 8],
+        scope: "local_feature",
+        balloon_required: false,
+        requires_confirmation: false,
+        active: true,
+      },
+      {
+        item_id: "typed-1",
+        item_type: "linear_dimension",
+        raw_text: "10 ±0.02",
+        nominal: "10",
+        upper_tolerance: "0.02",
+        coordinates: [5, 6, 7, 8],
+        scope: "local_feature",
+        balloon_required: true,
+        requires_confirmation: false,
+        active: true,
+      },
+      {
+        item_id: "complex-1",
+        raw_text: "Ra 3.2",
+        coordinates: [9, 10, 11, 12],
+        coarse_type: "roughness",
+        requires_confirmation: true,
+        active: true,
+      },
+    ];
+    const { rerender } = render(
       <ReviewPanel
-        items={[
-          {
-            item_id: "i1",
-            item_type: "thread",
-            raw_text: "M6",
-            coordinates: [1, 2, 3, 4],
-            scope: "local_feature",
-            balloon_required: true,
-            requires_confirmation: false,
-            active: true,
-          },
-          {
-            item_id: "i2",
-            item_type: "thread",
-            raw_text: "M6 通",
-            coordinates: [5, 6, 7, 8],
-            scope: "local_feature",
-            balloon_required: false,
-            requires_confirmation: false,
-            active: true,
-          },
-          {
-            item_id: "typed-1",
-            item_type: "linear_dimension",
-            raw_text: "10 ±0.02",
-            nominal: "10",
-            upper_tolerance: "0.02",
-            coordinates: [5, 6, 7, 8],
-            scope: "local_feature",
-            balloon_required: true,
-            requires_confirmation: false,
-            active: true,
-          },
-          {
-            item_id: "complex-1",
-            raw_text: "Ra 3.2",
-            coordinates: [9, 10, 11, 12],
-            coarse_type: "roughness",
-            requires_confirmation: true,
-            active: true,
-          },
-        ]}
+        items={items}
         onCommand={onCommand}
+        selectedItemId="i1"
       />,
     );
 
     expect(onCommand).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Keep i1" }));
-    fireEvent.click(screen.getByRole("button", { name: "Exclude i1" }));
-    fireEvent.change(screen.getByLabelText("Raw text typed-1"), {
-      target: { value: "12.50 +0.03" },
-    });
-    fireEvent.change(screen.getByLabelText("Nominal typed-1"), {
-      target: { value: "12.50" },
-    });
-    fireEvent.change(screen.getByLabelText("Upper tolerance typed-1"), {
-      target: { value: "0.03" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Edit typed-1" }));
-
-    fireEvent.change(screen.getByLabelText("Raw text complex-1"), {
-      target: { value: "Ra 1.6" },
-    });
-    fireEvent.change(screen.getByLabelText("Coordinates complex-1"), {
-      target: { value: "11,12,13,14" },
-    });
-    fireEvent.change(screen.getByLabelText("Coarse type complex-1"), {
-      target: { value: "weld" },
-    });
-    fireEvent.click(screen.getByLabelText("Requires confirmation field complex-1"));
-    fireEvent.click(screen.getByRole("button", { name: "Edit complex-1" }));
-
-    fireEvent.change(screen.getByLabelText("Manual raw text"), {
-      target: { value: "M8" },
-    });
-    fireEvent.change(screen.getByLabelText("Manual coordinates"), {
-      target: { value: "10,20,30,40" },
-    });
-    fireEvent.change(screen.getByLabelText("Manual item type"), {
-      target: { value: "diameter_dimension" },
-    });
-    fireEvent.click(screen.getByLabelText("Manual balloon required"));
-    fireEvent.click(screen.getByRole("button", { name: "Add item" }));
-
-    fireEvent.click(screen.getByLabelText("Select i1"));
-    fireEvent.click(screen.getByLabelText("Select i2"));
-    fireEvent.click(screen.getByRole("button", { name: "Merge selected" }));
-    fireEvent.change(screen.getByLabelText("Split parts i1"), {
+    fireEvent.click(screen.getByText("选择需要合并的检验项"));
+    fireEvent.click(screen.getByLabelText("选择检验项 1：M6"));
+    fireEvent.click(screen.getByLabelText("选择检验项 2：M6 通"));
+    fireEvent.click(screen.getByRole("button", { name: "合并所选检验项" }));
+    fireEvent.click(screen.getByRole("button", { name: "保留检验项：M6" }));
+    fireEvent.click(screen.getByRole("button", { name: "排除检验项：M6" }));
+    fireEvent.change(screen.getByLabelText("拆分内容：M6"), {
       target: { value: "M6|深10" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Split i1" }));
+    fireEvent.click(screen.getByRole("button", { name: "拆分检验项：M6" }));
     fireEvent.click(
-      screen.getByRole("button", { name: "Accept confirmation complex-1" }),
+      screen.getByRole("button", { name: "设为无需气泡：M6" }),
+    );
+
+    rerender(
+      <ReviewPanel items={items} onCommand={onCommand} selectedItemId="i2" />,
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Reject confirmation complex-1" }),
+      screen.getByRole("button", { name: "设为需要气泡：M6 通" }),
+    );
+
+    rerender(
+      <ReviewPanel items={items} onCommand={onCommand} selectedItemId="typed-1" />,
+    );
+    fireEvent.change(screen.getByLabelText("原始标注：10 ±0.02"), {
+      target: { value: "12.50 +0.03" },
+    });
+    fireEvent.change(screen.getByLabelText("基本尺寸：10 ±0.02"), {
+      target: { value: "12.50" },
+    });
+    fireEvent.change(screen.getByLabelText("上公差：10 ±0.02"), {
+      target: { value: "0.03" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：10 ±0.02" }));
+
+    rerender(
+      <ReviewPanel items={items} onCommand={onCommand} selectedItemId="complex-1" />,
+    );
+    fireEvent.change(screen.getByLabelText("原始标注：Ra 3.2"), {
+      target: { value: "Ra 1.6" },
+    });
+    fireEvent.change(screen.getByLabelText("坐标：Ra 3.2"), {
+      target: { value: "11,12,13,14" },
+    });
+    fireEvent.change(screen.getByLabelText("粗分类：Ra 3.2"), {
+      target: { value: "weld" },
+    });
+    fireEvent.click(screen.getByLabelText("需要人工确认：Ra 3.2"));
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：Ra 3.2" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "确认候选项：Ra 3.2" }),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Set balloon not required i1" }),
+      screen.getByRole("button", { name: "拒绝候选项：Ra 3.2" }),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Require balloon i2" }),
-    );
+
+    fireEvent.change(screen.getByLabelText("新增检验项原始标注"), {
+      target: { value: "M8" },
+    });
+    fireEvent.change(screen.getByLabelText("新增检验项坐标"), {
+      target: { value: "10,20,30,40" },
+    });
+    fireEvent.change(screen.getByLabelText("新增检验项类型"), {
+      target: { value: "diameter_dimension" },
+    });
+    fireEvent.click(screen.getByLabelText("新增检验项需要气泡"));
+    fireEvent.click(screen.getByRole("button", { name: "新增检验项" }));
+    expect(screen.getByLabelText("新增检验项坐标").getAttribute("placeholder"))
+      .toBe("例如：10, 20, 30, 40");
 
     const commands = onCommand.mock.calls.map(([command]) => command);
     expect(new Set(commands.map((command) => command.type))).toEqual(
@@ -173,5 +191,64 @@ describe("ReviewPanel", () => {
         .filter((command) => command.type === "set_balloon_required")
         .map((command) => command.balloon_required),
     ).toEqual([false, true]);
+  });
+
+  test("大量检验项只渲染所选 active item 的完整详情表单", () => {
+    const items: ReviewItem[] = Array.from({ length: 200 }, (_, index) => ({
+      item_id: `item-${index + 1}`,
+      item_type: "linear_dimension",
+      raw_text: `尺寸 ${index + 1}`,
+      active: true,
+    }));
+    const { rerender } = render(
+      <ReviewPanel
+        items={items}
+        onCommand={vi.fn()}
+        selectedItemId="item-157"
+      />,
+    );
+
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.getByRole("article").textContent).toContain("尺寸 157");
+    expect(screen.getAllByLabelText(/^原始标注：/)).toHaveLength(1);
+
+    rerender(<ReviewPanel items={items} onCommand={vi.fn()} />);
+    expect(screen.queryAllByRole("article")).toHaveLength(0);
+    expect(screen.getByText("请先从检验项列表选择一项。")).not.toBeNull();
+  });
+
+  test("未来 item_type 安全降级且审核命令仍可用", () => {
+    const onCommand = vi.fn();
+    const item: ReviewItem = {
+      item_id: "future-item",
+      item_type: "future_network_type" as unknown as CandidateType,
+      raw_text: "新型标注",
+      balloon_required: true,
+      active: true,
+    };
+
+    expect(() => render(
+      <ReviewPanel
+        items={[item]}
+        onCommand={onCommand}
+        selectedItemId="future-item"
+      />,
+    )).not.toThrow();
+
+    expect(screen.getByRole("article").textContent).toContain("新型标注");
+    expect(document.body.textContent).not.toContain("future_network_type");
+    expect(screen.getByRole("button", { name: "保留检验项：新型标注" }))
+      .not.toBeNull();
+    expect(screen.getByRole("button", { name: "排除检验项：新型标注" }))
+      .not.toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "修改检验项：新型标注" }),
+    );
+
+    expect(onCommand).toHaveBeenCalledWith({
+      type: "edit",
+      item_id: "future-item",
+      fields: { raw_text: "新型标注" },
+    });
   });
 });

@@ -28,10 +28,10 @@ describe("OverlayLayer", () => {
     expect(balloon).not.toBeNull();
     expect(source.style.cursor).toBe("pointer");
     expect(balloon.getAttribute("role")).toBe("button");
-    expect(screen.getByLabelText("engineering overlays").getAttribute("viewBox")).toBe(
+    expect(screen.getByLabelText("工程图纸标注层").getAttribute("viewBox")).toBe(
       "0 0 100 200",
     );
-    expect(screen.getByLabelText("engineering overlays").getAttribute("width")).toBe(
+    expect(screen.getByLabelText("工程图纸标注层").getAttribute("width")).toBe(
       "200",
     );
     expect(candidate.getAttribute("data-selected")).toBe("true");

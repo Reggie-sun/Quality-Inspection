@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { ProjectWorkbenchResponse } from "../../api/types";
 import { ProjectWorkbenchApp } from "./ProjectWorkbenchApp";
@@ -10,6 +10,25 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+beforeEach(() => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+    {} as CanvasRenderingContext2D,
+  );
+});
+
+function pdfFixture() {
+  return {
+    numPages: 1,
+    getPage: vi.fn(async () => ({
+      getViewport: ({ scale }: { scale: number }) => ({
+        width: 200 * scale,
+        height: 200 * scale,
+      }),
+      render: vi.fn(() => ({ promise: Promise.resolve(), cancel: vi.fn() })),
+    })),
+  };
+}
 
 function response(version = 3): ProjectWorkbenchResponse {
   return {
@@ -53,6 +72,8 @@ function response(version = 3): ProjectWorkbenchResponse {
     balloons: [],
     balloon_blockers: ["missing_balloon:i1"],
     source_pdf_url: "/api/v1/projects/project-real/source-pdf",
+    reviewed_result_id: null,
+    latest_export: null,
   };
 }
 
@@ -81,7 +102,7 @@ test("P0-UI-008 Save does not freeze and project identity drives real APIs", asy
     });
   });
   vi.stubGlobal("fetch", fetchMock);
-  const loadPdf = vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() });
+  const loadPdf = vi.fn().mockResolvedValue(pdfFixture());
 
   render(
     <ProjectWorkbenchApp
@@ -91,17 +112,17 @@ test("P0-UI-008 Save does not freeze and project identity drives real APIs", asy
     />,
   );
 
-  expect(await screen.findByText("Quality Inspection Review")).not.toBeNull();
+  expect(await screen.findByText("检验项目审核")).not.toBeNull();
   expect(loadPdf).toHaveBeenCalledWith(
     "/api/v1/projects/project-real/source-pdf",
   );
-  fireEvent.click(screen.getByRole("button", { name: "Keep i1" }));
-  expect(screen.getByRole("button", { name: "Freeze Items" }).hasAttribute("disabled"))
+  fireEvent.click(screen.getByRole("button", { name: "保留检验项：M6" }));
+  expect(screen.getByRole("button", { name: "冻结检验项" }).hasAttribute("disabled"))
     .toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Save working copy" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
 
   await waitFor(() => {
-    expect(screen.getByText("Working copy saved")).not.toBeNull();
+    expect(screen.getByText("已保存")).not.toBeNull();
   });
   const save = calls.find((call) => call.path.endsWith("/review/commands"));
   expect(save).toBeDefined();
@@ -143,16 +164,19 @@ test("P0-UI-008 failed API Save stays failed and preserves the pending command",
     <ProjectWorkbenchApp
       projectId="project-real"
       operatorId="operator-real"
-      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+      loadPdf={vi.fn().mockResolvedValue(pdfFixture())}
     />,
   );
 
-  fireEvent.click(await screen.findByRole("button", { name: "Keep i1" }));
-  fireEvent.click(screen.getByRole("button", { name: "Save working copy" }));
+  fireEvent.click(await screen.findByRole("button", { name: "保留检验项：M6" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
 
-  expect(await screen.findByText("Save failed; working copy was not frozen")).not.toBeNull();
-  expect(screen.queryByText("Working copy saved")).toBeNull();
-  expect(screen.getByText("working copy version is stale").getAttribute("role")).toBe("alert");
+  expect(await screen.findByText("保存失败")).not.toBeNull();
+  expect(screen.queryByText("已保存")).toBeNull();
+  expect(screen.getByRole("alert").textContent)
+    .toContain("审核内容已更新，请刷新后重试。");
+  expect(screen.getByRole("alert").textContent)
+    .not.toContain("working copy version is stale");
   expect(fetchMock.mock.calls.filter(([path]) => String(path).endsWith("/review/commands")))
     .toHaveLength(1);
 });
@@ -236,27 +260,27 @@ test("P0-UI-008 Freeze, generate and Confirm remain explicit ordered actions", a
     <ProjectWorkbenchApp
       projectId="project-real"
       operatorId="operator-real"
-      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+      loadPdf={vi.fn().mockResolvedValue(pdfFixture())}
     />,
   );
-  fireEvent.click(await screen.findByRole("button", { name: "Freeze Items" }));
+  fireEvent.click(await screen.findByRole("button", { name: "冻结检验项" }));
   await waitFor(() => {
-    expect(screen.getByRole("button", { name: "Generate balloons" }).hasAttribute("disabled"))
+    expect(screen.getByRole("button", { name: "生成气泡" }).hasAttribute("disabled"))
       .toBe(false);
   });
-  expect(screen.getByRole("button", { name: "Keep i1" }).hasAttribute("disabled"))
+  expect(screen.getByRole("button", { name: "保留检验项：M6" }).hasAttribute("disabled"))
     .toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Generate balloons" }));
+  fireEvent.click(screen.getByRole("button", { name: "生成气泡" }));
   await waitFor(() => {
     expect(
-      screen.getByRole("button", { name: "Confirm Reviewed Result" }).hasAttribute("disabled"),
+      screen.getByRole("button", { name: "确认审核结果" }).hasAttribute("disabled"),
     ).toBe(false);
   });
-  fireEvent.click(screen.getByRole("button", { name: "Confirm Reviewed Result" }));
+  fireEvent.click(screen.getByRole("button", { name: "确认审核结果" }));
 
-  await screen.findByText("Reviewed result confirmed");
-  await screen.findByText(/Project reviewed/);
-  expect(screen.getByRole("button", { name: "Renumber balloons" }).hasAttribute("disabled"))
+  await screen.findByText("审核结果已确认");
+  await screen.findByText("已审核");
+  expect(screen.getByRole("button", { name: "重新编号" }).hasAttribute("disabled"))
     .toBe(true);
   expect(paths.filter((path) => path.includes("/review/freeze-items"))).toHaveLength(1);
   expect(paths.filter((path) => path.includes("/balloons/generate"))).toHaveLength(1);

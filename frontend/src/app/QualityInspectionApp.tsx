@@ -1,6 +1,7 @@
 import {
   type ChangeEvent,
   type DragEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -107,13 +108,14 @@ function ProcessRail({ screen }: { screen: ProductScreen }) {
 }
 
 
-function ProductHeader() {
+function ProductHeader({ action }: { action?: ReactNode }) {
   return (
     <header className="product-header">
       <div className="product-brand" aria-label={`${zhCN.brand} ${zhCN.product}`}>
         <strong>{zhCN.brand}</strong>
         <span>{zhCN.product}</span>
       </div>
+      {action}
     </header>
   );
 }
@@ -299,11 +301,9 @@ export function QualityInspectionApp({
   if (screen.kind === "ready") {
     return (
       <div className="ready-shell">
-        <ProductHeader />
-        <div className="ready-shell__notice" role="status" aria-live="polite">
-          <strong>{zhCN.status.ready}</strong>
+        <ProductHeader action={(
           <button type="button" onClick={reset}>{zhCN.upload.another}</button>
-        </div>
+        )} />
         <ProjectWorkbenchApp projectId={screen.projectId} operatorId={operatorId} />
       </div>
     );

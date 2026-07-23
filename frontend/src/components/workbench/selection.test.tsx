@@ -80,7 +80,7 @@ test("P0-BAL-013 table, source and balloon selection share item identity", () =>
   expect(scrollIntoView).toHaveBeenCalled();
 
   fireEvent.click(screen.getByTestId("balloon-b1"));
-  expect(screen.getByRole("button", { name: "Delete balloon" }).hasAttribute("disabled"))
+  expect(screen.getByRole("button", { name: "删除气泡" }).hasAttribute("disabled"))
     .toBe(false);
 
   fireEvent.click(screen.getByRole("row", { name: /M8/ }));
@@ -89,7 +89,7 @@ test("P0-BAL-013 table, source and balloon selection share item identity", () =>
   expect(screen.getByTestId("source-s2").getAttribute("data-selected")).toBe("true");
   expect(screen.getByTestId("balloon-b1").getAttribute("data-selected")).toBe("false");
   expect(screen.getByTestId("balloon-b2").getAttribute("data-selected")).toBe("true");
-  expect(screen.getByRole("button", { name: "Delete balloon" }).hasAttribute("disabled"))
+  expect(screen.getByRole("button", { name: "删除气泡" }).hasAttribute("disabled"))
     .toBe(true);
 
   fireEvent.click(screen.getByTestId("source-s1"));
@@ -97,7 +97,7 @@ test("P0-BAL-013 table, source and balloon selection share item identity", () =>
     "true",
   );
   expect(screen.getByTestId("balloon-b2").getAttribute("data-selected")).toBe("false");
-  expect(screen.getByRole("button", { name: "Delete balloon" }).hasAttribute("disabled"))
+  expect(screen.getByRole("button", { name: "删除气泡" }).hasAttribute("disabled"))
     .toBe(true);
 
   fireEvent.click(screen.getByTestId("candidate-candidate-i2"));

@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import type { ExportJob, PostJson } from "../../api/types";
+import { ApiError } from "../../api/client";
+import type { ExportArtifactKind, ExportJob, PostJson } from "../../api/types";
+import { apiErrorCopy, zhCN } from "../../copy/zhCN";
 import { createExport, exportDownloadPath } from "../../features/exports/api";
 
 
@@ -9,12 +11,22 @@ type ExportPanelProps = {
   reviewedResultId?: string;
   balloonBlockers: string[];
   post: PostJson;
+  initialExport?: ExportJob | null;
 };
 
-const DOWNLOADS = [
-  { kind: "ballooned_pdf" as const, label: "Download ballooned PDF" },
-  { kind: "sip_excel" as const, label: "Download SIP Excel" },
-  { kind: "manifest" as const, label: "Download manifest" },
+const DOWNLOADS: Array<{ kind: ExportArtifactKind; label: string }> = [
+  {
+    kind: "ballooned_pdf",
+    label: zhCN.export.downloads.ballooned_pdf,
+  },
+  {
+    kind: "sip_excel",
+    label: zhCN.export.downloads.sip_excel,
+  },
+  {
+    kind: "manifest",
+    label: zhCN.export.downloads.manifest,
+  },
 ];
 
 
@@ -23,11 +35,23 @@ export function ExportPanel({
   reviewedResultId,
   balloonBlockers,
   post,
+  initialExport,
 }: ExportPanelProps) {
-  const [exportJob, setExportJob] = useState<ExportJob>();
+  const [exportJob, setExportJob] = useState<ExportJob | undefined>(
+    initialExport ?? undefined,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    setExportJob(initialExport ?? undefined);
+    setError(undefined);
+  }, [initialExport]);
+
   const canExport = reviewedResultId !== undefined && balloonBlockers.length === 0;
+  const exportInFlight = busy
+    || exportJob?.status === "pending"
+    || exportJob?.status === "running";
   const downloadableKinds = new Set(
     exportJob?.artifacts
       .filter((artifact) => artifact.downloadable)
@@ -36,52 +60,73 @@ export function ExportPanel({
   const atomicSuccess = exportJob?.status === "success"
     && DOWNLOADS.every(({ kind }) => downloadableKinds.has(kind))
     && downloadableKinds.size === DOWNLOADS.length;
+  const status = reviewedResultId === undefined
+    ? zhCN.export.notReviewed
+    : balloonBlockers.length > 0
+      ? zhCN.export.blocked
+      : exportInFlight
+        ? zhCN.export.running
+        : exportJob?.status === "failed" || error !== undefined
+          ? zhCN.export.failed
+          : atomicSuccess
+            ? zhCN.export.available
+            : zhCN.export.ready;
 
   return (
-    <section className="export-panel" aria-label="Formal export">
-      <div>
-        <strong>Formal package</strong>
-        <small>
-          {reviewedResultId === undefined
-            ? "Confirm the immutable reviewed result first."
-            : balloonBlockers.length > 0
-              ? `${balloonBlockers.length} balloon blocker(s) remain.`
-              : "PDF, SIP Excel and manifest publish atomically."}
-        </small>
+    <section className="export-panel" aria-label={zhCN.export.region}>
+      <div className="panel-heading">
+        <div>
+          <h2>{zhCN.export.title}</h2>
+          <p>{zhCN.export.atomicHint}</p>
+        </div>
+        <span className="status-badge" data-status={status}>{status}</span>
       </div>
       <button
         type="button"
         className="primary-action"
-        disabled={!canExport || busy}
+        disabled={!canExport || exportInFlight}
         onClick={() => {
-          if (reviewedResultId === undefined) return;
+          if (reviewedResultId === undefined || exportInFlight) return;
           setBusy(true);
           setError(undefined);
           setExportJob(undefined);
           void createExport(post, projectId, reviewedResultId)
-            .then((created) => {
-              if (created.status !== "success") {
-                throw new Error("formal export did not complete atomically");
-              }
-              setExportJob(created);
-            })
+            .then(setExportJob)
             .catch((caught) => {
-              setError(caught instanceof Error ? caught.message : "formal export failed");
+              setError(
+                caught instanceof ApiError
+                  ? apiErrorCopy(caught.code)
+                  : zhCN.errors.fallback,
+              );
             })
             .finally(() => setBusy(false));
         }}
       >
-        {busy ? "Creating package…" : "Create formal export"}
+        {zhCN.export.action}
       </button>
       {error === undefined ? null : <p role="alert">{error}</p>}
-      {!atomicSuccess || exportJob === undefined ? null : (
-        <nav className="export-downloads" aria-label="Formal downloads">
-          {DOWNLOADS.map(({ kind, label }) => (
-            <a key={kind} href={exportDownloadPath(exportJob.id, kind)} download>
-              {label}
-            </a>
-          ))}
+      {atomicSuccess && exportJob !== undefined ? (
+        <nav aria-label={zhCN.export.downloadRegion}>
+          <ul className="export-artifacts">
+            {DOWNLOADS.map(({ kind, label }) => (
+              <li key={kind}>
+                <a href={exportDownloadPath(exportJob.id, kind)} download>
+                  {label}
+                </a>
+                <small>{zhCN.export.published}</small>
+              </li>
+            ))}
+          </ul>
         </nav>
+      ) : (
+        <ul className="export-artifacts">
+          {DOWNLOADS.map(({ kind }) => (
+            <li key={kind}>
+              <span>{zhCN.export.artifacts[kind]}</span>
+              <small>{zhCN.workbench.unknown}</small>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

@@ -17,6 +17,8 @@ from app.balloons.service import BalloonService
 from app.candidates.models import AutomaticResult
 from app.config import get_settings
 from app.db import SessionLocal
+from app.exports.router import _export_payload
+from app.exports.service import ExportService
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
 from app.projects.service import (
@@ -26,7 +28,7 @@ from app.projects.service import (
     ProjectIntakeService,
     ProjectNotFound,
 )
-from app.review.models import ReviewWorkingCopy
+from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -210,6 +212,14 @@ def _workbench_payload(
         ).validation_blockers(project_id)
     except (KeyError, TypeError, ValueError, OSError, RuntimeError) as error:
         raise ProjectWorkbenchUnavailable("balloon projection is unavailable") from error
+    reviewed = session.scalar(
+        select(ReviewedResult)
+        .where(ReviewedResult.project_id == project_id)
+        .order_by(ReviewedResult.created_at.desc(), ReviewedResult.id.desc())
+        .limit(1)
+    )
+    export_service = ExportService(session, storage=storage)
+    latest_export = export_service.latest_for_project(project_id)
 
     return {
         "project": {
@@ -224,6 +234,12 @@ def _workbench_payload(
         "balloons": [balloon.snapshot() for balloon in balloons],
         "balloon_blockers": blockers,
         "source_pdf_url": f"/api/v1/projects/{project.id}/source-pdf",
+        "reviewed_result_id": reviewed.id if reviewed is not None else None,
+        "latest_export": (
+            _export_payload(export_service, latest_export)
+            if latest_export is not None
+            else None
+        ),
     }
 
 

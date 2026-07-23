@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type {
   BalloonOverlay,
+  ExportJob,
   OverlayBox,
   PdfDocumentLike,
   PdfPageTransform,
@@ -10,12 +11,16 @@ import type {
   ReviewItem,
   ReviewWorkingCopy,
 } from "../../api/types";
+import { projectStateCopy, zhCN } from "../../copy/zhCN";
 import { BalloonToolbar } from "../balloons/BalloonToolbar";
 import { PdfWorkspace } from "../pdf/PdfWorkspace";
 import { ReviewPanel } from "../review/ReviewPanel";
 import { ExportPanel } from "./ExportPanel";
 import { FreezeReviewButton } from "./FreezeReviewButton";
-import { InspectionItemTable } from "./InspectionItemTable";
+import {
+  InspectionItemTable,
+  SelectedInspectionItemSummary,
+} from "./InspectionItemTable";
 import {
   RecognitionSummary,
   type InspectionFilter,
@@ -57,6 +62,7 @@ type InspectionWorkbenchProps = {
   projectState?: string;
   projectId?: string;
   reviewedResultId?: string;
+  initialExport?: ExportJob | null;
   exportPost?: PostJson;
   operatorId?: string;
   actionState?: string;
@@ -105,23 +111,46 @@ export function InspectionWorkbench({
   projectState,
   projectId,
   reviewedResultId,
+  initialExport,
   exportPost,
-  operatorId,
   actionState,
 }: InspectionWorkbenchProps) {
   const [pendingCommand, setPendingCommand] = useState<ReviewCommand>();
-  const [saveState, setSaveState] = useState("No pending changes");
+  const [saveState, setSaveState] = useState<string>(zhCN.workbench.saved);
   const [saving, setSaving] = useState(false);
-  const [selectedItemId, setSelectedItemId] = useState<string>();
+  const [selectedItemId, setSelectedItemId] = useState<string | undefined>(
+    () => items.find((item) => item.active)?.item_id,
+  );
   const [selectedBalloonId, setSelectedBalloonId] = useState<string>();
   const [pageIndex, setPageIndex] = useState(0);
   const [filter, setFilter] = useState<InspectionFilter>("all");
-  const [metadata, setMetadata] = useState<MetadataDraft>(() => metadataDraft(workingCopy));
+  const [metadata, setMetadata] = useState<MetadataDraft>(
+    () => metadataDraft(workingCopy),
+  );
   useEffect(() => setMetadata(metadataDraft(workingCopy)), [workingCopy?.version]);
 
   const finalized = projectState === "reviewed";
   const reviewImmutable =
     finalized || (workingCopy !== undefined && workingCopy.items_frozen_at !== null);
+  const reviewedCount = items.filter(
+    (item) => item.active && item.status === "kept",
+  ).length;
+  const confirmedCount = items.filter(
+    (item) => item.active && item.sip_detail_fields_confirmed === true,
+  ).length;
+  const selectedReviewItem = items.find(
+    (item) => item.active && item.item_id === selectedItemId,
+  );
+  const selectedReviewBalloon = balloons.find(
+    (balloon) =>
+      balloon.status !== "deleted" && balloon.itemId === selectedReviewItem?.item_id,
+  );
+  const activeStage = initialExport?.status === "success" || reviewedResultId !== undefined
+    ? 4
+    : balloons.some((balloon) => balloon.status !== "deleted")
+      || workingCopy?.items_frozen_at != null
+      ? 3
+      : 2;
   const selectItem = (itemId: string) => {
     setSelectedItemId(itemId);
     setSelectedBalloonId(undefined);
@@ -131,51 +160,72 @@ export function InspectionWorkbench({
   };
   const queueCommand = (command: ReviewCommand) => {
     setPendingCommand(command);
-    setSaveState(`Pending command: ${command.type}`);
+    setSaveState(zhCN.workbench.pending);
   };
-
   const save = async () => {
     if (pendingCommand === undefined || saving) return;
     setSaving(true);
-    setSaveState("Saving working copy…");
+    setSaveState(zhCN.workbench.saving);
     try {
       await onSave(pendingCommand);
       setPendingCommand(undefined);
-      setSaveState("Working copy saved");
+      setSaveState(zhCN.workbench.saved);
     } catch {
-      setSaveState("Save failed; working copy was not frozen");
+      setSaveState(zhCN.workbench.saveFailed);
     } finally {
       setSaving(false);
     }
   };
+  const exportPanel = projectId === undefined || exportPost === undefined
+    ? null
+    : (
+      <ExportPanel
+        projectId={projectId}
+        reviewedResultId={reviewedResultId}
+        balloonBlockers={balloonBlockers}
+        post={exportPost}
+        initialExport={initialExport}
+      />
+    );
+  const metadataValues: Array<readonly [string, string | undefined]> = [
+    [zhCN.workbench.metadataFields.materialName, metadata.material_name],
+    [zhCN.workbench.metadataFields.drawingNumber, metadata.drawing_number],
+    [zhCN.workbench.metadataFields.revision, metadata.revision],
+    [zhCN.workbench.metadataFields.material, metadata.material],
+    [zhCN.workbench.metadataFields.unit, undefined],
+    [
+      zhCN.workbench.metadataFields.inspectionStandard,
+      selectedReviewItem?.inspection_standard,
+    ],
+    [
+      zhCN.workbench.metadataFields.inspectionRole,
+      selectedReviewItem?.inspection_role,
+    ],
+    [zhCN.workbench.metadataFields.reviewerRole, undefined],
+  ];
 
   return (
     <main className="workbench-shell">
       <header className="workbench-header">
         <div>
-          <p className="workbench-eyebrow">PDF BALLOON REVIEW</p>
-          <h1>Quality Inspection Review</h1>
-          <p className="workbench-context">
-            {projectState === undefined ? "Local review" : `Project ${projectState}`}
-            {operatorId === undefined ? "" : ` · Operator ${operatorId}`}
-          </p>
+          <p className="workbench-eyebrow">{zhCN.workbench.eyebrow}</p>
+          <h1>{zhCN.workbench.title}</h1>
         </div>
         <div className="workbench-save-state">
           {actionState === undefined ? null : <p role="status">{actionState}</p>}
-          <p>{saveState}</p>
           <button
             type="button"
             className="primary-action"
             disabled={pendingCommand === undefined || saving || busy}
             onClick={() => void save()}
           >
-            Save working copy
+            {zhCN.workbench.save}
           </button>
         </div>
-      </header>
-
-      <div className="workbench-finalization">
-        {workingCopy === undefined || onFreeze === undefined || onGenerate === undefined || onConfirm === undefined
+        {workingCopy === undefined
+          || onFreeze === undefined
+          || onGenerate === undefined
+          || onConfirm === undefined
           ? null
           : (
             <FreezeReviewButton
@@ -188,18 +238,74 @@ export function InspectionWorkbench({
               onConfirm={onConfirm}
             />
           )}
-        {projectId === undefined || exportPost === undefined ? null : (
-          <ExportPanel
-            projectId={projectId}
-            reviewedResultId={reviewedResultId}
-            balloonBlockers={balloonBlockers}
-            post={exportPost}
-          />
-        )}
-      </div>
+      </header>
+
+      <nav className="stage-rail" aria-label={zhCN.workbench.stageNavigation}>
+        <ol>
+          {zhCN.stages.map((stage, index) => (
+            <li
+              key={stage}
+              data-state={index < activeStage ? "complete" : index === activeStage ? "active" : "pending"}
+              aria-current={index === activeStage ? "step" : undefined}
+            >
+              <span aria-hidden="true" data-number={index + 1} />
+              <strong>{stage}</strong>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      <section
+        className="project-summary"
+        role="region"
+        aria-label={zhCN.workbench.projectSummary}
+      >
+        <dl>
+          <div>
+            <dt>{zhCN.workbench.productName}</dt>
+            <dd>{metadata.material_name || zhCN.workbench.unknown}</dd>
+          </div>
+          <div>
+            <dt>{zhCN.workbench.drawingNumber}</dt>
+            <dd>{metadata.drawing_number || zhCN.workbench.unknown}</dd>
+          </div>
+          <div>
+            <dt>{zhCN.workbench.revision}</dt>
+            <dd>{metadata.revision || zhCN.workbench.unknown}</dd>
+          </div>
+          <div>
+            <dt>{zhCN.workbench.drawingType}</dt>
+            <dd>{zhCN.workbench.unknown}</dd>
+          </div>
+          <div>
+            <dt>{zhCN.workbench.totalItems}</dt>
+            <dd>{items.length}</dd>
+          </div>
+          <div>
+            <dt>{zhCN.workbench.reviewedItems}</dt>
+            <dd>{reviewedCount}</dd>
+          </div>
+          <div>
+            <dt>{zhCN.workbench.confirmedItems}</dt>
+            <dd>{confirmedCount}</dd>
+          </div>
+          <div>
+            <dt>{zhCN.workbench.currentState}</dt>
+            <dd>{projectStateCopy(projectState)}</dd>
+          </div>
+          <div>
+            <dt>{zhCN.workbench.saveStatus}</dt>
+            <dd>{saveState}</dd>
+          </div>
+        </dl>
+      </section>
 
       <div className="workbench-layout">
-        <section className="drawing-pane" aria-label="Engineering drawing">
+        <section
+          className="drawing-pane"
+          aria-label={zhCN.workbench.drawingRegion}
+          role="region"
+        >
           <PdfWorkspace
             pdfDocument={pdfDocument}
             pageCount={pageCount}
@@ -221,27 +327,34 @@ export function InspectionWorkbench({
           />
         </section>
 
-        <aside className="inspection-pane">
+        <section
+          className="inspection-pane"
+          aria-label={zhCN.workbench.reviewRegion}
+          role="region"
+        >
           <RecognitionSummary
             items={items}
             balloons={balloons}
             filter={filter}
             onFilterChange={setFilter}
           />
-          {projectId === undefined ? null : (
-            <InspectionItemTable
-              items={items}
-              balloons={balloons}
-              filter={filter}
-              selectedItemId={selectedItemId}
-              disabled={pendingCommand !== undefined || busy || reviewImmutable}
-              onSelectItem={selectItem}
-              onCommand={queueCommand}
+          {selectedReviewItem === undefined ? null : (
+            <SelectedInspectionItemSummary
+              item={selectedReviewItem}
+              balloon={selectedReviewBalloon}
             />
           )}
-
-          {onDeleteBalloon === undefined || onRebuildBalloon === undefined ||
-          onReorderBalloon === undefined || onRenumberBalloons === undefined
+          <InspectionItemTable
+            items={items}
+            balloons={balloons}
+            filter={filter}
+            selectedItemId={selectedItemId}
+            disabled={pendingCommand !== undefined || busy || reviewImmutable}
+            onSelectItem={selectItem}
+            onCommand={queueCommand}
+          />
+          {onDeleteBalloon === undefined || onRebuildBalloon === undefined
+          || onReorderBalloon === undefined || onRenumberBalloons === undefined
             ? null
             : (
               <BalloonToolbar
@@ -254,40 +367,8 @@ export function InspectionWorkbench({
                 onRenumber={onRenumberBalloons}
               />
             )}
-
-          {workingCopy === undefined ? null : (
-            <fieldset className="sip-metadata" disabled={busy || reviewImmutable || pendingCommand !== undefined}>
-              <legend>Drawing and SIP metadata</legend>
-              {(
-                [
-                  ["material_code", "Material code"],
-                  ["material_name", "Material name"],
-                  ["drawing_number", "Drawing number"],
-                  ["material", "Material"],
-                  ["revision", "Revision"],
-                ] as const
-              ).map(([key, label]) => (
-                <label key={key}>
-                  {label}
-                  <input
-                    aria-label={label}
-                    value={metadata[key]}
-                    onChange={(event) => setMetadata({ ...metadata, [key]: event.target.value })}
-                  />
-                </label>
-              ))}
-              <button
-                type="button"
-                disabled={Object.values(metadata).some((value) => value.trim() === "")}
-                onClick={() => queueCommand({ type: "set_sip_metadata", ...metadata })}
-              >
-                Confirm SIP metadata
-              </button>
-            </fieldset>
-          )}
-
           <details className="candidate-editor" open>
-            <summary>Candidate editing and review commands</summary>
+            <summary>{zhCN.workbench.reviewCommands}</summary>
             <ReviewPanel
               items={items}
               disabled={pendingCommand !== undefined || busy || reviewImmutable}
@@ -297,6 +378,77 @@ export function InspectionWorkbench({
               onCommand={queueCommand}
             />
           </details>
+        </section>
+
+        <aside
+          className="workbench-aside"
+          aria-label={zhCN.workbench.asideRegion}
+        >
+          {workingCopy === undefined ? null : (
+            <section
+              className="sip-metadata-card"
+              aria-label={zhCN.workbench.metadata}
+              role="region"
+            >
+              <h2>{zhCN.workbench.metadata}</h2>
+              <dl className="sip-metadata-summary">
+                {metadataValues.map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd title={value}>{value || zhCN.workbench.unknown}</dd>
+                  </div>
+                ))}
+              </dl>
+              <details className="sip-metadata-editor">
+                <summary>{zhCN.workbench.editMetadata}</summary>
+                <fieldset
+                  disabled={busy || reviewImmutable || pendingCommand !== undefined}
+                >
+                  <legend className="visually-hidden">
+                    {zhCN.workbench.editMetadata}
+                  </legend>
+                  {(
+                    [
+                      ["material_code", zhCN.workbench.metadataFields.materialCode],
+                      ["material_name", zhCN.workbench.metadataFields.materialName],
+                      ["drawing_number", zhCN.workbench.metadataFields.drawingNumber],
+                      ["revision", zhCN.workbench.metadataFields.revision],
+                      ["material", zhCN.workbench.metadataFields.material],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label key={key}>
+                      {label}
+                      <input
+                        aria-label={label}
+                        value={metadata[key]}
+                        placeholder={zhCN.workbench.unknown}
+                        onChange={(event) => {
+                          setMetadata({ ...metadata, [key]: event.target.value });
+                        }}
+                      />
+                    </label>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={Object.values(metadata).some(
+                      (value) => value.trim() === "",
+                    )}
+                    onClick={() => queueCommand({
+                      type: "set_sip_metadata",
+                      ...metadata,
+                    })}
+                  >
+                    {zhCN.workbench.confirmMetadata}
+                  </button>
+                </fieldset>
+              </details>
+            </section>
+          )}
+          {exportPanel}
+          <section className="company-log" aria-label={zhCN.workbench.companyLog}>
+            <h2>{zhCN.workbench.companyLog}</h2>
+            <p>{zhCN.workbench.emptyCompanyLog}</p>
+          </section>
         </aside>
       </div>
     </main>
