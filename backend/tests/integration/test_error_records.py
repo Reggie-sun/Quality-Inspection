@@ -4,15 +4,18 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
+import pymupdf
 import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.capabilities.service import CapabilityUnavailable
+from app.config import Settings
 from app.db import SessionLocal
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
 from app.processing.pipeline import InventoryPipeline, UnsupportedInput
+from app.processing.runtime_recognition import RuntimeRecognition
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.storage.local import LocalFileStorage
@@ -173,6 +176,79 @@ def test_unsupported_inventory_is_not_recorded_as_processing_failure(
         assert job is not None
         assert job.status == "failed"
         assert job.result_ref is None
+    finally:
+        db_session.rollback()
+        db_session.execute(delete(ErrorRecord).where(ErrorRecord.project_id == project.id))
+        db_session.execute(delete(LogicalJob).where(LogicalJob.project_id == project_id))
+        db_session.execute(delete(Project).where(Project.id == project.id))
+        db_session.commit()
+
+
+def test_runtime_pure_scan_retains_unsupported_input_veto(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    project_id = str(project.id)
+    storage = LocalFileStorage(tmp_path / "storage")
+    pdf_path = tmp_path / "pure-scan.pdf"
+    pixmap = pymupdf.Pixmap(
+        pymupdf.csRGB,
+        pymupdf.IRect(0, 0, 100, 100),
+        False,
+    )
+    pixmap.clear_with(255)
+    document = pymupdf.open()
+    page = document.new_page(width=200.0, height=200.0)
+    page.insert_image(
+        page.rect,
+        stream=pixmap.tobytes("png"),
+        keep_proportion=False,
+    )
+    document.save(pdf_path)
+    document.close()
+    payload = pdf_path.read_bytes()
+    source = storage.write_verified(
+        f"projects/{project.id}/source.pdf",
+        payload,
+        sha256(payload).hexdigest(),
+    )
+    provider_calls: list[str] = []
+
+    def forbidden_provider_factory(_settings: Settings):
+        provider_calls.append("provider")
+        raise AssertionError("pure scanned input must not invoke OCR")
+
+    recognition = RuntimeRecognition(
+        Settings(storage_root=storage.root),
+        provider_factory=forbidden_provider_factory,
+    )
+    try:
+        db_session.add(project)
+        db_session.commit()
+
+        with pytest.raises(UnsupportedInput):
+            InventoryPipeline(
+                db_session,
+                storage,
+                PassingPreflight(),
+                inventory_builder=recognition.build_inventory,
+            ).run(
+                project_id,
+                source.resource_ref,
+                f"product-process:{project.id}",
+            )
+
+        error = db_session.scalar(
+            select(ErrorRecord).where(ErrorRecord.project_id == project.id)
+        )
+        assert (
+            db_session.get(Project, project.id).state
+            == ProjectState.UNSUPPORTED_INPUT
+        )
+        assert error is not None
+        assert error.code == "unsupported_input"
+        assert provider_calls == []
     finally:
         db_session.rollback()
         db_session.execute(delete(ErrorRecord).where(ErrorRecord.project_id == project.id))

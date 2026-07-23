@@ -193,3 +193,42 @@ def append_ocr_observations(
         if observation.page_index != page.page_index:
             raise ValueError("OCR observation page_index must match the inventory page")
     return replace(page, observations=(*page.observations, *observations))
+
+
+def build_ocr_observation(
+    *,
+    page_index: int,
+    raw_text: str,
+    bbox_pdf: BBox,
+    confidence: float,
+    angle_degrees: float,
+    request_id: str,
+    observation_index: int,
+    transform: PageTransform,
+) -> TextObservation:
+    """Build one independent, coordinate-safe OCR observation."""
+    if not raw_text.strip():
+        raise ValueError("OCR observation text must be non-blank")
+    if not request_id.strip():
+        raise ValueError("OCR request_id must be non-blank")
+    clipped_bbox = transform.clip_bbox(bbox_pdf)
+    if clipped_bbox[0] >= clipped_bbox[2] or clipped_bbox[1] >= clipped_bbox[3]:
+        raise ValueError("OCR observation bbox must have positive area")
+    angle_radians = math.radians(angle_degrees)
+    seed = (
+        f"{page_index}:ocr:{request_id}:{observation_index}:"
+        f"{raw_text}:{clipped_bbox}"
+    ).encode("utf-8")
+    return TextObservation(
+        observation_id=hashlib.sha256(seed).hexdigest()[:24],
+        source_type="ocr",
+        observation_level="region",
+        raw_text=raw_text,
+        normalized_text=_normalize(raw_text),
+        page_index=page_index,
+        bbox_pdf=clipped_bbox,
+        bbox_normalized=transform.normalize_bbox(clipped_bbox),
+        direction=(math.cos(angle_radians), math.sin(angle_radians)),
+        direction_angle_degrees=angle_degrees,
+        confidence=confidence,
+    )
