@@ -4,6 +4,11 @@ import type { BalloonOverlay as BalloonView, PdfMatrix } from "../../api/types";
 
 
 type MatrixLike = Pick<DOMMatrix, "a" | "b" | "c" | "d" | "e" | "f">;
+export const BALLOON_RADIUS_PDF = 12;
+const GLYPH_FONT_SIZE_PDF = 9;
+const DEJAVU_SANS_DIGIT_ADVANCE_EM = 0.63623046875;
+const DEJAVU_SANS_ASCENDER_EM = 0.92822265625;
+const DEJAVU_SANS_DESCENDER_EM = -0.23583984375;
 
 
 function applyMatrix(matrix: MatrixLike | PdfMatrix, point: [number, number]): [number, number] {
@@ -14,6 +19,23 @@ function applyMatrix(matrix: MatrixLike | PdfMatrix, point: [number, number]): [
   return [
     a * point[0] + c * point[1] + e,
     b * point[0] + d * point[1] + f,
+  ];
+}
+
+
+function invertMatrix(matrix: PdfMatrix): PdfMatrix {
+  const [a, b, c, d, e, f] = matrix;
+  const determinant = a * d - b * c;
+  if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-9) {
+    throw new Error("balloon coordinate matrix is not invertible");
+  }
+  return [
+    d / determinant,
+    -b / determinant,
+    -c / determinant,
+    a / determinant,
+    (c * f - d * e) / determinant,
+    (b * e - a * f) / determinant,
   ];
 }
 
@@ -50,6 +72,27 @@ export function clientToPdf(
 }
 
 
+export function balloonGlyphBBox(
+  formalNumber: number,
+  center: [number, number],
+): [number, number, number, number] {
+  const text = String(formalNumber);
+  const width = Math.max(
+    5,
+    text.length * DEJAVU_SANS_DIGIT_ADVANCE_EM * GLYPH_FONT_SIZE_PDF,
+  );
+  const height = (
+    DEJAVU_SANS_ASCENDER_EM - DEJAVU_SANS_DESCENDER_EM
+  ) * GLYPH_FONT_SIZE_PDF;
+  return [
+    center[0] - width / 2,
+    center[1] - height / 2,
+    center[0] + width / 2,
+    center[1] + height / 2,
+  ];
+}
+
+
 type BalloonOverlayProps = {
   balloon: BalloonView;
   renderToPdfMatrix: PdfMatrix;
@@ -76,13 +119,26 @@ export function BalloonOverlay({
     { pointerId: number; clientX: number; clientY: number } | undefined
   >(undefined);
   const select = () => onSelect(balloon.itemId ?? balloon.id, balloon.id);
+  const radius = balloon.radius ?? BALLOON_RADIUS_PDF;
+  const numberText = String(balloon.number);
+  const glyphBox = balloonGlyphBBox(balloon.number, displayCenter);
+  const displayLeaderTarget = balloon.leaderTarget === undefined
+    ? undefined
+    : applyMatrix(invertMatrix(renderToPdfMatrix), balloon.leaderTarget);
+  const collisionFlags = balloon.collisionFlags ?? [];
+  const blocked = balloon.placementStatus === "manual_required" || collisionFlags.length > 0;
 
   return (
     <g
       data-testid={`balloon-${balloon.id}`}
+      data-item-id={balloon.itemId}
       data-selected={selected}
+      data-placement-status={balloon.placementStatus ?? "placed"}
+      data-collision-flags={collisionFlags.join(",")}
+      data-circle={`${displayCenter[0]},${displayCenter[1]},${radius}`}
+      data-glyph-bbox={glyphBox.join(",")}
       role="button"
-      aria-label={`Balloon ${balloon.number}`}
+      aria-label={`Balloon ${balloon.number}${blocked ? ", manual resolution required" : ""}`}
       tabIndex={0}
       onClick={select}
       onKeyDown={(event) => {
@@ -117,12 +173,24 @@ export function BalloonOverlay({
       }}
       style={{ cursor: "grab" }}
     >
+      {displayLeaderTarget === undefined ? null : (
+        <line
+          data-testid={`leader-${balloon.id}`}
+          x1={displayCenter[0]}
+          y1={displayCenter[1]}
+          x2={displayLeaderTarget[0]}
+          y2={displayLeaderTarget[1]}
+          stroke={blocked ? "#b91c1c" : "#334155"}
+          strokeWidth={1.1}
+          style={{ pointerEvents: "none" }}
+        />
+      )}
       <circle
         cx={displayCenter[0]}
         cy={displayCenter[1]}
-        r={10}
-        fill="white"
-        stroke={selected ? "#7c3aed" : "#dc2626"}
+        r={radius}
+        fill={blocked ? "#fff1f2" : "white"}
+        stroke={selected ? "#6d28d9" : blocked ? "#b91c1c" : "#dc2626"}
         strokeWidth={selected ? 3 : 1.5}
       />
       <text
@@ -130,10 +198,13 @@ export function BalloonOverlay({
         y={displayCenter[1]}
         textAnchor="middle"
         dominantBaseline="middle"
-        fontSize={10}
+        fontFamily="DejaVu Sans"
+        fontSize={GLYPH_FONT_SIZE_PDF}
+        fontWeight={400}
+        fill={blocked ? "#991b1b" : "#0f172a"}
         style={{ pointerEvents: "none" }}
       >
-        {balloon.number}
+        {numberText}
       </text>
     </g>
   );

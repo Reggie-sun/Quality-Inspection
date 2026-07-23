@@ -107,7 +107,7 @@ def assert_export_counts(
         for row in excel_rows
         if row["balloon_number"] != ""
     ]
-    if pdf_numbers != excel_numbers:
+    if sorted(pdf_numbers) != sorted(excel_numbers):
         raise ValueError("PDF and Excel balloon numbers differ")
 
 

@@ -128,6 +128,30 @@
 - Rollback and failure boundary: D7-T2只revert其单独commit；rollback后第一项验证为 `micromamba run -n qi-p0 pytest backend/tests/unit/balloons/test_numbering.py backend/tests/unit/balloons/test_layout.py backend/tests/integration/test_balloon_validation.py -q`，随后运行D6 export focused gate，证明旧D5/D6 baseline恢复。hard collision、不可读编号、未解决 `manual_required`、Product Design QA blocked或任一export子产物失败都必须阻止formal success/download。
 - Next verification: 保持D6顺序，先运行 `micromamba run -n qi-p0 pytest backend/tests/unit/exports/test_manifest.py backend/tests/integration/test_export_consistency.py backend/tests/integration/test_export_atomicity.py -q`；本次docs-only replan不运行该代码测试。
 
+### D7-T2 first-PDF export consistency amendment — 2026-07-23
+
+本节是对同一 current plan 的最小原地修订，不创建第二份 plan、独立 export 支线或新 task。fresh D7-T2 first-PDF Chrome pre-export 已证明 242 个 balloon 的 item/number projection、数量和 hard-collision gate 全部通过，但真实 export preflight 暴露出 D6 `assert_export_counts()` 把 PDF 的 formal-number 顺序误当成 reviewed-item/Excel row 顺序；两侧 item→number identity 与编号集合一致时仍被错误阻断。
+
+- Validation action: `amend` 后 `continue`；三产物同一 `reviewed_result`、formal-number identity、all-or-nothing publication 与 first-PDF-first 顺序均不变。
+- Actual-interface delta and allowed paths: D7-T2 最小增加 `backend/app/exports/service.py` 与 `backend/tests/integration/test_export_consistency.py`，只把 PDF/Excel number gate 收敛为同一完整编号 multiset，不改变 Excel row 顺序、编号 Owner、export API、failure policy 或 publication transaction；并允许本文件随 D7-T2 commit 一并 stage。
+
+### D7-T2 fixed SIP capacity amendment — 2026-07-23
+
+本节是同一 current plan、同一 D7-T2 的第二个最小原地修订。fresh first-PDF export 已证明 `CapacityExceeded` 正确 fail-closed：已登记 `sip-v1` 仅有 64 个 detail rows，而独立只读复核在允许全部可辩护 merge 后，仅第一页完整 item-set 的保守下界仍为 67；继续压缩只能静默丢失不同物理特征、GD&T frame、局部粗糙度或技术要求。用户以 Quality Owner 身份明确批准替换更大容量的 fixed SIP，同时保持单一 Excel、三产物、同一 reviewed result、超容量阻断和 current-four 不变；不得用 mass exclusion 取得通过 verdict。
+
+- Owner and unchanged contract: `TemplateRegistration`、受控 `.xlsx` 和 complete mapping 仍是唯一 SIP Owner；template/mapping version 原子升级到 `2` 并固定 hash。仍只登记一个 `sip-v1`、生成一个 Excel，超过新静态 capacity 仍由 `P0-EXP-003` blocking；不引入动态模板引擎、第二 template、分表 contract 或额外 artifact。
+- Fixed bound: 新 capacity 为 512 rows（`6..517`）。current-four 原生 line inventory 上界为 439，另外三份分别为 83、123、305；512 为当前冻结 input set 提供有限人工补项余量，不承诺任意 PDF。SIP 明细每 32 行一个固定打印分页，标题行重复，sign-off/footer 后移但保持受保护。
+- TDD and allowed paths: 先让 approved registration/version/capacity/print topology tests 对旧 64-row asset RED，再最小修改 `backend/assets/templates/sip-v1.xlsx`、`backend/assets/templates/sip-v1.mapping.json`、`backend/app/exports/template_registry.py`、`backend/tests/unit/exports/test_template_registry.py` 和 `backend/tests/unit/exports/test_excel_mapping.py`；本文件随 D7-T2 commit stage。旧 64-row template 是被替换路径，不保留 fallback。
+- Verification and rollback: focused registry/mapping/export tests必须证明 512 rows 可写、513 blocking、footer/sign-off/hash/print breaks 固定且 workbook 可 reopen/resave。若 full current-four 仍超过 512，D7-T2 必须继续 blocked 并请求新 Owner 决策；不得再次扩 capacity 或删项。rollback 恢复同一组 asset/mapping/registry bytes 后，先重跑 D6 export focused gate。
+- Focused RED/GREEN: 先新增 reviewed-item 顺序不同但 item→formal-number mapping 相同的 regression，证明旧顺序比较失败；再运行 `micromamba run -n qi-p0 pytest backend/tests/integration/test_export_consistency.py backend/tests/integration/test_export_atomicity.py -q`，随后必须从 source 启动新的 full-P0 live run，任何已失败 run/project/export 均不得恢复或复用。
+
+### D7-T2 verdict timing and schema-inventory closure amendment — 2026-07-23
+
+本节修正同一 D7-T2 plan 内的人审时序表述并收口实际 schema inventory paths，不改变 design spec Section 10.1、P0 contract rows、Owner、formal publication gate 或 task 顺序。独立只读 review 证明 balloon verdict 在 pre-export browser evidence 之后、Confirm/export 之前记录；此时 PDF/Excel 尚不存在，因此不得要求质量人员预先声明 `list_pdf_excel_numbers_match`。最终 list/reviewed/PDF/Excel/manifest 一致性仍由 post-export automatic consistency gate 证明，且任一不一致仍阻止 receipt success。
+
+- Human/automatic boundary: `--stage balloons` 只记录当时可直接观察的 `all_required_balloons_visible` 与 `hard_collisions_resolved`。pre-export browser gate 自动证明 table/backend/overlay 的 item→number mapping 一致；post-export consistency gate 自动证明 workbench、reviewed result、PDF、Excel 与 manifest 的 item identity、count 和 formal number 一致。不得用人工预承诺替代尚未生成产物的验证。
+- Actual-interface delta and allowed paths: D7-T2 允许最小修改 `.agent/harness/scripts/check-contracts.py` 与 `.agent/harness/scripts/generate-receipt.py`，仅登记 `human-verdict.schema.json` 和 `live-run-evidence.schema.json` 的精确 schema inventory/identity；不得在此提前改变 D7-T3 formal verdict policy。用户已明确批准 `frontend/index.html` 的空 favicon data URL，以消除浏览器无关 favicon network error；该文件随 D7-T2 commit stage，不引入新资产、route 或外部请求。
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：
@@ -3720,10 +3744,19 @@ Expected: ignored run outputs are absent from the staged set.
 - Modify: `backend/app/balloons/schemas.py`
 - Modify: `backend/app/balloons/service.py`
 - Modify: `backend/app/balloons/validator.py`
+- Modify: `backend/app/exports/service.py`
+- Modify: `backend/app/exports/template_registry.py`
+- Modify: `backend/assets/templates/sip-v1.xlsx`
+- Modify: `backend/assets/templates/sip-v1.mapping.json`
 - Create: `backend/tests/unit/balloons/test_collision_layout.py`
+- Modify: `backend/tests/unit/exports/test_template_registry.py`
+- Modify: `backend/tests/unit/exports/test_excel_mapping.py`
 - Modify: `backend/tests/integration/test_balloon_validation.py`
+- Modify: `backend/tests/integration/test_export_consistency.py`
 - Modify: `.agent/harness/scripts/run-p0.py`
 - Modify: `.agent/harness/scripts/stage-current-four.py`
+- Modify: `.agent/harness/scripts/check-contracts.py`
+- Modify: `.agent/harness/scripts/generate-receipt.py`
 - Create: `.agent/harness/scripts/record-human-verdict.py`
 - Modify: `.agent/harness/schemas/run.schema.json`
 - Create: `.agent/harness/schemas/live-run-evidence.schema.json`
@@ -3731,6 +3764,7 @@ Expected: ignored run outputs are absent from the staged set.
 - Create: `backend/tests/contract/harness/test_live_run_contract.py`
 - Modify: `frontend/package.json`
 - Modify: `frontend/package-lock.json`
+- Modify: `frontend/index.html`
 - Modify: `frontend/src/api/client.ts`
 - Modify: `frontend/src/api/types.ts`
 - Create: `frontend/src/features/exports/api.ts`
@@ -3840,7 +3874,7 @@ process
 
 Before item-set freeze, the runner must require `operator_confirmed_item_set_is_complete=true`: the quality operator reviewed every page, kept every visible expected inspection requirement or added the missing item, and every excluded candidate has explicit operator disposition evidence. The runner must not infer completeness from `active_count > 0`; the observed `272 automatic / 271 excluded / 1 active` shape cannot pass without this explicit review.
 
-`record-human-verdict.py` uses two explicit writes inside the same open run. `--stage item-set` requires non-empty operator ID/note plus non-prefilled `automatic_candidates_are_actionable`、`candidates_are_editable`、`operator_confirmed_item_set_is_complete` and `not_false_success`; all four must be affirmative before item freeze. `--stage balloons` later requires `all_required_balloons_visible`、`hard_collisions_resolved` and `list_pdf_excel_numbers_match`. The final schema-valid verdict is the immutable merge of both stages; neither stage may prefill or overwrite the other. Merge/split is exercised only where applicable; inapplicability is recorded rather than fabricated. Any negative answer blocks freeze/export and the live receipt.
+`record-human-verdict.py` uses two explicit writes inside the same open run. `--stage item-set` requires non-empty operator ID/note plus non-prefilled `automatic_candidates_are_actionable`、`candidates_are_editable`、`operator_confirmed_item_set_is_complete` and `not_false_success`; all four must be affirmative before item freeze. `--stage balloons` later requires the then-observable `all_required_balloons_visible` and `hard_collisions_resolved`; pre-export table/backend/overlay mapping is an automatic browser gate, while actual list/PDF/Excel/manifest equality remains the automatic post-export consistency gate. The final schema-valid verdict is the immutable merge of both human stages; neither stage may prefill or overwrite the other. Merge/split is exercised only where applicable; inapplicability is recorded rather than fabricated. Any negative human answer or automatic mapping/consistency failure blocks formal success, and a negative human answer blocks export before publication.
 
 For each live project, the runner supplies run-bound `QI_P0_PROJECT_URL`、`QI_P0_OPERATOR_ID` and `QI_P0_RUN_ID` to `npm --prefix frontend run e2e -- e2e/p0-workbench.spec.ts`. It stores the Playwright report/screenshots under the same open run, binds the relevant assertions to `phase://live/balloons` and `phase://live/export`, and cannot mark either phase passed when the browser command fails. This browser invocation is an internal phase of the one runner, not a child Harness run.
 
@@ -3913,7 +3947,7 @@ After an independent read-only review, stage only this task's listed implementat
 
 ```bash
 git status --short .agent/harness/runs
-git add backend/app/balloons/placement.py backend/app/balloons/schemas.py backend/app/balloons/service.py backend/app/balloons/validator.py backend/tests/unit/balloons/test_collision_layout.py backend/tests/integration/test_balloon_validation.py .agent/harness/scripts/run-p0.py .agent/harness/scripts/stage-current-four.py .agent/harness/scripts/record-human-verdict.py .agent/harness/schemas/run.schema.json .agent/harness/schemas/live-run-evidence.schema.json .agent/harness/schemas/human-verdict.schema.json backend/tests/contract/harness/test_live_run_contract.py frontend/package.json frontend/package-lock.json frontend/src/api/client.ts frontend/src/api/types.ts frontend/src/features/exports/api.ts frontend/src/components/balloons/BalloonOverlay.tsx frontend/src/components/balloons/BalloonOverlay.test.tsx frontend/src/components/balloons/BalloonToolbar.tsx frontend/src/components/workbench/ProjectWorkbenchApp.tsx frontend/src/components/workbench/InspectionWorkbench.tsx frontend/src/components/workbench/RecognitionSummary.tsx frontend/src/components/workbench/InspectionItemTable.tsx frontend/src/components/workbench/ExportPanel.tsx frontend/src/components/workbench/RecognitionSummary.test.tsx frontend/src/components/workbench/InspectionItemTable.test.tsx frontend/src/components/workbench/ExportPanel.test.tsx frontend/src/styles/workbench.css frontend/playwright.config.ts frontend/e2e/p0-workbench.spec.ts design-qa.md docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md .agent/harness/contracts/p0-contracts.json .agent/harness/contracts/global-contract-bindings.json
+git add backend/app/balloons/placement.py backend/app/balloons/schemas.py backend/app/balloons/service.py backend/app/balloons/validator.py backend/app/exports/service.py backend/app/exports/template_registry.py backend/assets/templates/sip-v1.xlsx backend/assets/templates/sip-v1.mapping.json backend/tests/unit/balloons/test_collision_layout.py backend/tests/unit/exports/test_template_registry.py backend/tests/unit/exports/test_excel_mapping.py backend/tests/integration/test_balloon_validation.py backend/tests/integration/test_export_consistency.py .agent/harness/scripts/run-p0.py .agent/harness/scripts/stage-current-four.py .agent/harness/scripts/check-contracts.py .agent/harness/scripts/generate-receipt.py .agent/harness/scripts/record-human-verdict.py .agent/harness/schemas/run.schema.json .agent/harness/schemas/live-run-evidence.schema.json .agent/harness/schemas/human-verdict.schema.json backend/tests/contract/harness/test_live_run_contract.py frontend/index.html frontend/package.json frontend/package-lock.json frontend/src/api/client.ts frontend/src/api/types.ts frontend/src/features/exports/api.ts frontend/src/components/balloons/BalloonOverlay.tsx frontend/src/components/balloons/BalloonOverlay.test.tsx frontend/src/components/balloons/BalloonToolbar.tsx frontend/src/components/workbench/ProjectWorkbenchApp.tsx frontend/src/components/workbench/InspectionWorkbench.tsx frontend/src/components/workbench/RecognitionSummary.tsx frontend/src/components/workbench/InspectionItemTable.tsx frontend/src/components/workbench/ExportPanel.tsx frontend/src/components/workbench/RecognitionSummary.test.tsx frontend/src/components/workbench/InspectionItemTable.test.tsx frontend/src/components/workbench/ExportPanel.test.tsx frontend/src/styles/workbench.css frontend/playwright.config.ts frontend/e2e/p0-workbench.spec.ts design-qa.md docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md .agent/harness/contracts/p0-contracts.json .agent/harness/contracts/global-contract-bindings.json
 git commit -m "feat: close collision-safe operator flow"
 ```
 

@@ -28,9 +28,12 @@ export function BalloonToolbar({
     .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
 
   return (
-    <section aria-label="Balloon commands">
-      <h2 style={{ margin: "0 0 10px", fontSize: 20 }}>Balloon commands</h2>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <section aria-label="Balloon commands" className="balloon-toolbar">
+      <div className="balloon-toolbar__heading">
+        <h2>Balloon commands</h2>
+        <span>{active.length} active</span>
+      </div>
+      <div className="balloon-toolbar__actions">
         <button
           type="button"
           disabled={unavailable}

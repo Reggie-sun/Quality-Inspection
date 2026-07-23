@@ -9,6 +9,17 @@ from pydantic import BaseModel, ConfigDict, Field
 BBox: TypeAlias = tuple[float, float, float, float]
 PdfPoint: TypeAlias = tuple[float, float]
 PlacementStatus: TypeAlias = Literal["placed", "manual_required"]
+HardCollisionFlag: TypeAlias = Literal[
+    "circle_overlap",
+    "glyph_overlap",
+    "glyph_circle_overlap",
+    "owner_glyph_outside_circle",
+    "outside_cropbox",
+    "protected_overlap",
+    "source_text_overlap",
+    "unreadable_number",
+    "invalid_leader",
+]
 
 
 class BalloonCommandBase(BaseModel):

@@ -64,6 +64,8 @@ SCHEMA_FILES = (
     "contract-result.schema.json",
     "current-four-manifest.schema.json",
     "global-contract-bindings.schema.json",
+    "human-verdict.schema.json",
+    "live-run-evidence.schema.json",
     "p0-contracts.schema.json",
     "provider-fixture.schema.json",
     "receipt.schema.json",

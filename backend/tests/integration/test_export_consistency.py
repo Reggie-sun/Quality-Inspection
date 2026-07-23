@@ -63,6 +63,21 @@ def test_pdf_and_excel_numbers_match() -> None:
         assert_export_counts(_reviewed_items(), _balloons(), mismatched_rows)
 
 
+def test_pdf_and_excel_number_identity_does_not_depend_on_row_order() -> None:
+    """P0-EXP-007C compares formal identity, not reviewed-item row order."""
+    reviewed_items = [
+        {"item_id": "i2", "active": True, "balloon_required": True},
+        {"item_id": "i1", "active": True, "balloon_required": True},
+    ]
+    balloons = [
+        {"inspection_item_id": "i1", "formal_number": 1},
+        {"inspection_item_id": "i2", "formal_number": 2},
+    ]
+    excel_rows = [{"balloon_number": 2}, {"balloon_number": 1}]
+
+    assert_export_counts(reviewed_items, balloons, excel_rows)
+
+
 def test_artifacts_share_reviewed_result_id() -> None:
     """P0-RES-004 binds all three formal artifacts to one reviewed result."""
     reviewed_result_id = uuid.uuid4()

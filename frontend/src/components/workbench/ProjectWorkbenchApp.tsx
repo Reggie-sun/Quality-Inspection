@@ -9,6 +9,7 @@ import type {
   ReviewCommand,
 } from "../../api/types";
 import { applyBalloonCommand, generateBalloons } from "../../features/balloons/api";
+import { BALLOON_RADIUS_PDF } from "../balloons/BalloonOverlay";
 import {
   acquireReviewLock,
   confirmReviewedResult,
@@ -46,6 +47,7 @@ export function ProjectWorkbenchApp({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Loading project workbench…");
   const [error, setError] = useState<string>();
+  const [reviewedResultId, setReviewedResultId] = useState<string>();
 
   const refresh = useCallback(async () => {
     const loaded = await getJson<ProjectWorkbenchResponse>(
@@ -114,6 +116,11 @@ export function ProjectWorkbenchApp({
       version: balloon.version,
       status: balloon.status,
       sortOrder: balloon.sort_order,
+      anchor: balloon.anchor_bbox_pdf,
+      leaderTarget: balloon.leader_target_pdf,
+      placementStatus: balloon.placement_status,
+      collisionFlags: balloon.collision_flags,
+      radius: BALLOON_RADIUS_PDF,
     })) ?? [],
     [snapshot],
   );
@@ -199,6 +206,9 @@ export function ProjectWorkbenchApp({
         workingCopy={snapshot.working_copy}
         balloonBlockers={snapshot.balloon_blockers}
         projectState={snapshot.project.state}
+        projectId={projectId}
+        reviewedResultId={reviewedResultId}
+        exportPost={postJson}
         operatorId={operatorId}
         actionState={status}
         busy={busy || error !== undefined}
@@ -217,12 +227,15 @@ export function ProjectWorkbenchApp({
         ))}
         onConfirm={() => void run(
           "Confirming reviewed result",
-          () => confirmReviewedResult(
-            postJson,
-            projectId,
-            operatorId,
-            snapshot.working_copy.version,
-          ),
+          async () => {
+            const reviewed = await confirmReviewedResult(
+              postJson,
+              projectId,
+              operatorId,
+              snapshot.working_copy.version,
+            );
+            setReviewedResultId(reviewed.id);
+          },
           "Reviewed result confirmed",
         )}
         onMoveBalloon={(balloonId, expectedVersion, centerPdf) => void balloonCommand(

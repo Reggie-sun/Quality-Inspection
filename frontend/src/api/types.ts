@@ -25,6 +25,11 @@ export type BalloonOverlay = {
   version?: number;
   status?: "active" | "deleted";
   sortOrder?: number;
+  anchor?: PdfCoordinates;
+  leaderTarget?: [number, number];
+  placementStatus?: "placed" | "manual_required";
+  collisionFlags?: string[];
+  radius?: number;
 };
 
 export type PdfViewportLike = {
@@ -82,6 +87,13 @@ export type ReviewItem = {
   source_location_ids?: string[];
   page_index?: number | null;
   status?: string;
+  inspection_item?: string;
+  inspection_standard?: string;
+  inspection_method?: string;
+  key_dimension?: string;
+  inspection_role?: string;
+  source_page?: number;
+  sip_detail_fields_confirmed?: boolean;
   active: boolean;
 };
 
@@ -101,7 +113,25 @@ export type ReviewCommand =
   | { type: "merge"; item_ids: string[]; raw_text: string }
   | { type: "split"; item_id: string; parts: Array<{ raw_text: string }> }
   | { type: "resolve_confirmation"; item_id: string; accepted: boolean }
-  | { type: "set_balloon_required"; item_id: string; balloon_required: boolean };
+  | { type: "set_balloon_required"; item_id: string; balloon_required: boolean }
+  | {
+      type: "set_sip_detail_fields";
+      item_id: string;
+      inspection_item: string;
+      inspection_standard: string;
+      inspection_method: string;
+      key_dimension: string;
+      inspection_role: string;
+      source_page: number;
+    }
+  | {
+      type: "set_sip_metadata";
+      material_code: string;
+      material_name: string;
+      drawing_number: string;
+      material: string;
+      revision: string;
+    };
 
 export type ReviewWorkingCopy = {
   id: string;
@@ -114,6 +144,13 @@ export type ReviewWorkingCopy = {
   items_frozen_at: string | null;
   items_frozen_by: string | null;
   items_frozen_version: number | null;
+  sip_metadata?: {
+    material_code?: string;
+    material_name?: string;
+    drawing_number?: string;
+    material?: string;
+    revision?: string;
+  };
 };
 
 export type ProjectWorkbenchPage = {
@@ -165,6 +202,25 @@ export type ProjectWorkbenchResponse = {
   balloons: BalloonRecord[];
   balloon_blockers: string[];
   source_pdf_url: string;
+};
+
+export type ExportArtifactKind = "ballooned_pdf" | "sip_excel" | "manifest";
+
+export type ExportArtifact = {
+  kind: ExportArtifactKind;
+  sha256?: string;
+  size_bytes?: number;
+  reviewed_result_id?: string;
+  downloadable: boolean;
+};
+
+export type ExportJob = {
+  id: string;
+  project_id: string;
+  reviewed_result_id: string;
+  status: "pending" | "running" | "success" | "failed";
+  error_id?: string | null;
+  artifacts: ExportArtifact[];
 };
 
 export type GetJson = <Result>(path: string) => Promise<Result>;

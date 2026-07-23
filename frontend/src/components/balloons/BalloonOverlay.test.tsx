@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   BalloonOverlay,
+  balloonGlyphBBox,
   clientToPdf,
   displayToPdfMatrix,
 } from "./BalloonOverlay";
@@ -12,6 +13,13 @@ import { BalloonToolbar } from "./BalloonToolbar";
 afterEach(cleanup);
 
 describe("BalloonOverlay", () => {
+  test("P0-BAL-006 uses the approved DejaVu Sans digit metrics", () => {
+    const [x0, y0, x1, y1] = balloonGlyphBBox(272, [100, 100]);
+
+    expect(x1 - x0).toBeCloseTo(3 * 0.63623046875 * 9);
+    expect(y1 - y0).toBeCloseTo((0.92822265625 + 0.23583984375) * 9);
+  });
+
   test("P0-BAL-006 persists rotated-page PDF coordinates rather than CSS pixels", () => {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     Object.defineProperty(svg, "getScreenCTM", {
@@ -53,6 +61,7 @@ describe("BalloonOverlay", () => {
       </svg>,
     );
     const overlay = screen.getByTestId("balloon-b1") as unknown as SVGGElement;
+    expect(overlay.getAttribute("data-item-id")).toBe("i1");
     const owner = overlay.ownerSVGElement;
     if (owner === null) throw new Error("missing owner SVG");
     Object.defineProperty(owner, "getScreenCTM", {
@@ -130,6 +139,77 @@ describe("BalloonOverlay", () => {
 
     expect(onSelect).toHaveBeenCalledWith("i1", "b1");
     expect(onMove).not.toHaveBeenCalled();
+  });
+
+  test("P0-UI-004 renders leaders and backend collision state without cross-balloon overlap", () => {
+    const balloons = [
+      {
+        id: "b1",
+        itemId: "i1",
+        sourceId: "s1",
+        pageIndex: 0,
+        center: [30, 30] as [number, number],
+        number: 1,
+        version: 1,
+        status: "active" as const,
+        sortOrder: 0,
+        placementStatus: "placed" as const,
+        collisionFlags: [] as string[],
+        leaderTarget: [15, 15] as [number, number],
+      },
+      {
+        id: "b2",
+        itemId: "i2",
+        sourceId: "s2",
+        pageIndex: 0,
+        center: [70, 30] as [number, number],
+        number: 2,
+        version: 1,
+        status: "active" as const,
+        sortOrder: 1,
+        placementStatus: "manual_required" as const,
+        collisionFlags: ["protected_overlap"],
+        leaderTarget: [85, 15] as [number, number],
+      },
+    ];
+    render(
+      <svg aria-label="dense balloon overlay">
+        {balloons.map((balloon) => (
+          <BalloonOverlay
+            key={balloon.id}
+            balloon={balloon}
+            renderToPdfMatrix={[1, 0, 0, 1, 0, 0]}
+            selected={false}
+            onSelect={vi.fn()}
+            onMove={vi.fn()}
+          />
+        ))}
+      </svg>,
+    );
+
+    const first = screen.getByTestId("balloon-b1");
+    const second = screen.getByTestId("balloon-b2");
+    expect(screen.getByTestId("leader-b1")).not.toBeNull();
+    expect(screen.getByTestId("leader-b2")).not.toBeNull();
+    expect(first.getAttribute("data-placement-status")).toBe("placed");
+    expect(second.getAttribute("data-placement-status")).toBe("manual_required");
+    expect(second.getAttribute("data-collision-flags")).toBe("protected_overlap");
+
+    const circle = (element: HTMLElement) =>
+      (element.getAttribute("data-circle") ?? "").split(",").map(Number);
+    const glyph = (element: HTMLElement) =>
+      (element.getAttribute("data-glyph-bbox") ?? "").split(",").map(Number);
+    const [x1, y1, r1] = circle(first);
+    const [x2, y2, r2] = circle(second);
+    const [gx0, gy0, gx1, gy1] = glyph(first);
+    const [hx0, hy0, hx1, hy1] = glyph(second);
+
+    expect(Math.hypot(x1 - x2, y1 - y2)).toBeGreaterThanOrEqual(r1 + r2);
+    expect(gx1 <= hx0 || hx1 <= gx0 || gy1 <= hy0 || hy1 <= gy0).toBe(true);
+    expect(Math.hypot(gx0 - x1, gy0 - y1)).toBeLessThan(r1);
+    expect(Math.hypot(gx1 - x1, gy1 - y1)).toBeLessThan(r1);
+    expect(Math.hypot(hx0 - x2, hy0 - y2)).toBeLessThan(r2);
+    expect(Math.hypot(hx1 - x2, hy1 - y2)).toBeLessThan(r2);
   });
 });
 

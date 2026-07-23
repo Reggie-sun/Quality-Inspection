@@ -1,0 +1,630 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/live-run-evidence.schema.json",
+  "title": "Current-four full-P0 live evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "input_set",
+    "phases",
+    "child_run_ids",
+    "design_qa",
+    "samples"
+  ],
+  "properties": {
+    "schema_version": { "const": "live-run-evidence/1" },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
+    },
+    "input_set": { "const": "current-four" },
+    "phases": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "process" },
+        { "const": "candidates" },
+        { "const": "review" },
+        { "const": "balloons" },
+        { "const": "export" },
+        { "const": "consistency" }
+      ],
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "child_run_ids": { "type": "array", "maxItems": 0 },
+    "design_qa": {
+      "oneOf": [
+        { "$ref": "#/$defs/design_qa" },
+        { "type": "null" }
+      ]
+    },
+    "samples": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/sample" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "string_id_array": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "positive_number_array": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 1 },
+      "uniqueItems": true
+    },
+    "issue_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p0", "p1", "p2"],
+      "properties": {
+        "p0": { "const": 0 },
+        "p1": { "const": 0 },
+        "p2": { "const": 0 }
+      }
+    },
+    "design_qa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "sha256",
+        "final_result",
+        "browser",
+        "viewport",
+        "source_sha256",
+        "implementation_route",
+        "implementation_state",
+        "implementation_capture_ref",
+        "implementation_capture_sha256",
+        "comparison_capture_ref",
+        "comparison_capture_sha256",
+        "console_error_count",
+        "network_error_count",
+        "issue_counts"
+      ],
+      "properties": {
+        "ref": { "const": "design-qa.md" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "final_result": { "const": "passed" },
+        "browser": { "const": "chrome" },
+        "viewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": { "const": 1565 },
+            "height": { "const": 796 }
+          }
+        },
+        "source_sha256": { "$ref": "#/$defs/sha256" },
+        "implementation_route": {
+          "type": "string",
+          "pattern": "^/\\?project_id=.+&operator_id=.+$"
+        },
+        "implementation_state": {
+          "const": "visual_qa_pending:first-pdf-balloons"
+        },
+        "implementation_capture_ref": {
+          "type": "string",
+          "pattern": "^reports/[A-Za-z0-9][A-Za-z0-9._-]*\\.png$"
+        },
+        "implementation_capture_sha256": { "$ref": "#/$defs/sha256" },
+        "comparison_capture_ref": {
+          "type": "string",
+          "pattern": "^reports/[A-Za-z0-9][A-Za-z0-9._-]*\\.png$"
+        },
+        "comparison_capture_sha256": { "$ref": "#/$defs/sha256" },
+        "console_error_count": { "const": 0 },
+        "network_error_count": { "const": 0 },
+        "issue_counts": { "$ref": "#/$defs/issue_counts" }
+      }
+    },
+    "human_verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "automatic_candidates_are_actionable",
+        "candidates_are_editable",
+        "operator_confirmed_item_set_is_complete",
+        "not_false_success",
+        "all_required_balloons_visible",
+        "hard_collisions_resolved"
+      ],
+      "properties": {
+        "automatic_candidates_are_actionable": { "const": true },
+        "candidates_are_editable": { "const": true },
+        "operator_confirmed_item_set_is_complete": { "const": true },
+        "not_false_success": { "const": true },
+        "all_required_balloons_visible": { "const": true },
+        "hard_collisions_resolved": { "const": true }
+      }
+    },
+    "browser_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "captured_at",
+        "report_ref",
+        "screenshot_refs",
+        "result_ref",
+        "report_sha256",
+        "screenshot_sha256",
+        "result_sha256"
+      ],
+      "properties": {
+        "passed": { "const": true },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "report_ref": {
+          "type": "string",
+          "pattern": "^reports/[A-Za-z0-9][A-Za-z0-9._-]*\\.json$"
+        },
+        "screenshot_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^reports/[A-Za-z0-9][A-Za-z0-9._-]*\\.png$"
+          },
+          "uniqueItems": true
+        },
+        "result_ref": {
+          "type": "string",
+          "pattern": "^reports/[A-Za-z0-9][A-Za-z0-9._-]*\\.json$"
+        },
+        "report_sha256": { "$ref": "#/$defs/sha256" },
+        "screenshot_sha256": { "$ref": "#/$defs/sha256" },
+        "result_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "process_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_sha256",
+        "expected_page_count",
+        "actual_page_count",
+        "expected_physical_page",
+        "actual_physical_pages",
+        "automatic_result_id",
+        "prepare_log_ref",
+        "prepare_log_sha256"
+      ],
+      "properties": {
+        "source_sha256": { "$ref": "#/$defs/sha256" },
+        "expected_page_count": { "type": "integer", "minimum": 1 },
+        "actual_page_count": { "type": "integer", "minimum": 1 },
+        "expected_physical_page": { "type": "string", "minLength": 1 },
+        "actual_physical_pages": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "automatic_result_id": { "type": "string", "minLength": 1 },
+        "prepare_log_ref": {
+          "type": "string",
+          "pattern": "^logs/sample-[1-4]-prepare\\.log$"
+        },
+        "prepare_log_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "candidate_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_count",
+        "candidate_ids",
+        "source_location_ids",
+        "coverage_checked",
+        "coverage_blocking_count",
+        "coverage_disposition_count",
+        "candidate_records"
+      ],
+      "properties": {
+        "candidate_count": { "type": "integer", "minimum": 1 },
+        "candidate_ids": { "$ref": "#/$defs/string_id_array" },
+        "source_location_ids": { "$ref": "#/$defs/string_id_array" },
+        "coverage_checked": { "type": "boolean" },
+        "coverage_blocking_count": { "type": "integer", "minimum": 0 },
+        "coverage_disposition_count": { "type": "integer", "minimum": 0 },
+        "candidate_records": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "candidate_id",
+              "coordinates",
+              "source_location_ids",
+              "source_evidence"
+            ],
+            "properties": {
+              "candidate_id": { "type": "string", "minLength": 1 },
+              "coordinates": {
+                "type": "array",
+                "prefixItems": [
+                  { "type": "number" },
+                  { "type": "number" },
+                  { "type": "number" },
+                  { "type": "number" }
+                ],
+                "minItems": 4,
+                "maxItems": 4
+              },
+              "source_location_ids": { "$ref": "#/$defs/string_id_array" },
+              "source_evidence": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "source_location_id",
+                    "coordinates",
+                    "disposition"
+                  ],
+                  "properties": {
+                    "source_location_id": { "type": "string", "minLength": 1 },
+                    "coordinates": {
+                      "type": "array",
+                      "prefixItems": [
+                        { "type": "number" },
+                        { "type": "number" },
+                        { "type": "number" },
+                        { "type": "number" }
+                      ],
+                      "minItems": 4,
+                      "maxItems": 4
+                    },
+                    "disposition": { "const": "candidate" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "review_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "working_copy_id",
+        "frozen_version",
+        "frozen_by",
+        "items_frozen_at",
+        "active_item_ids",
+        "balloon_required_item_ids",
+        "excluded_item_ids",
+        "operation_commands",
+        "operation_operator_ids",
+        "operation_target_ids",
+        "candidate_decisions",
+        "merge_split_disposition",
+        "merge_split_note",
+        "evidence_ref",
+        "evidence_sha256"
+      ],
+      "properties": {
+        "working_copy_id": { "type": "string", "minLength": 1 },
+        "frozen_version": { "type": "integer", "minimum": 1 },
+        "frozen_by": { "type": "string", "minLength": 1 },
+        "items_frozen_at": { "type": "string", "format": "date-time" },
+        "active_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "balloon_required_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "excluded_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "operation_commands": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "keep",
+              "exclude",
+              "edit",
+              "add",
+              "merge",
+              "split",
+              "resolve_confirmation",
+              "set_balloon_required",
+              "set_sip_detail_fields",
+              "set_sip_metadata"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "operation_operator_ids": { "$ref": "#/$defs/string_id_array" },
+        "operation_target_ids": { "$ref": "#/$defs/string_id_array" },
+        "candidate_decisions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["candidate_id", "final_state", "commands"],
+            "properties": {
+              "candidate_id": { "type": "string", "minLength": 1 },
+              "final_state": { "enum": ["active", "excluded", "superseded"] },
+              "commands": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "enum": [
+                    "keep",
+                    "exclude",
+                    "edit",
+                    "merge",
+                    "split",
+                    "resolve_confirmation",
+                    "set_balloon_required",
+                    "set_sip_detail_fields"
+                  ]
+                },
+                "uniqueItems": true
+              }
+            }
+          }
+        },
+        "merge_split_disposition": {
+          "enum": ["merge", "split", "not_applicable"]
+        },
+        "merge_split_note": { "type": "string", "minLength": 1 },
+        "evidence_ref": {
+          "type": "string",
+          "pattern": "^reports/review-[1-4]\\.json$"
+        },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "balloon_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hard_collision_count",
+        "unresolved_manual_required_count",
+        "active_item_ids",
+        "formal_numbers",
+        "browser"
+      ],
+      "properties": {
+        "hard_collision_count": { "const": 0 },
+        "unresolved_manual_required_count": { "const": 0 },
+        "active_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "formal_numbers": { "$ref": "#/$defs/positive_number_array" },
+        "browser": {
+          "oneOf": [
+            { "$ref": "#/$defs/browser_evidence" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "export_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewed_result_id",
+        "export_id",
+        "status",
+        "artifact_kinds",
+        "artifact_sha256",
+        "artifact_reviewed_result_ids",
+        "download_kinds",
+        "browser"
+      ],
+      "properties": {
+        "reviewed_result_id": { "type": "string", "minLength": 1 },
+        "export_id": { "type": "string", "minLength": 1 },
+        "status": { "const": "success" },
+        "artifact_kinds": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "ballooned_pdf" },
+            { "const": "sip_excel" },
+            { "const": "manifest" }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "artifact_sha256": {
+          "type": "array",
+          "prefixItems": [
+            { "$ref": "#/$defs/sha256" },
+            { "$ref": "#/$defs/sha256" },
+            { "$ref": "#/$defs/sha256" }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "artifact_reviewed_result_ids": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "download_kinds": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "ballooned_pdf" },
+            { "const": "sip_excel" },
+            { "const": "manifest" }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "browser": { "$ref": "#/$defs/browser_evidence" }
+      }
+    },
+    "consistency_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verified",
+        "reviewed_result_id",
+        "workbench_active_item_ids",
+        "reviewed_active_item_ids",
+        "reviewed_item_ids",
+        "balloon_item_ids",
+        "workbench_numbers",
+        "workbench_item_numbers",
+        "workbench_overlay_item_numbers",
+        "reviewed_item_numbers",
+        "reviewed_numbers",
+        "pdf_numbers",
+        "excel_numbers",
+        "reviewed_item_count",
+        "balloon_required_count",
+        "balloon_count",
+        "source_page_count",
+        "manifest_reviewed_item_count",
+        "manifest_balloon_required_count",
+        "manifest_balloon_count",
+        "manifest_source_page_count",
+        "evidence_ref",
+        "evidence_sha256"
+      ],
+      "properties": {
+        "verified": { "const": true },
+        "reviewed_result_id": { "type": "string", "minLength": 1 },
+        "workbench_active_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "reviewed_active_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "reviewed_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "balloon_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "workbench_numbers": { "$ref": "#/$defs/positive_number_array" },
+        "workbench_item_numbers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["item_id", "formal_number"],
+            "properties": {
+              "item_id": { "type": "string", "minLength": 1 },
+              "formal_number": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "workbench_overlay_item_numbers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["item_id", "formal_number"],
+            "properties": {
+              "item_id": { "type": "string", "minLength": 1 },
+              "formal_number": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "reviewed_item_numbers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["item_id", "formal_number"],
+            "properties": {
+              "item_id": { "type": "string", "minLength": 1 },
+              "formal_number": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "reviewed_numbers": { "$ref": "#/$defs/positive_number_array" },
+        "pdf_numbers": { "$ref": "#/$defs/positive_number_array" },
+        "excel_numbers": { "$ref": "#/$defs/positive_number_array" },
+        "reviewed_item_count": { "type": "integer", "minimum": 1 },
+        "balloon_required_count": { "type": "integer", "minimum": 1 },
+        "balloon_count": { "type": "integer", "minimum": 1 },
+        "source_page_count": { "type": "integer", "minimum": 1 },
+        "manifest_reviewed_item_count": { "type": "integer", "minimum": 1 },
+        "manifest_balloon_required_count": { "type": "integer", "minimum": 1 },
+        "manifest_balloon_count": { "type": "integer", "minimum": 1 },
+        "manifest_source_page_count": { "type": "integer", "minimum": 1 },
+        "evidence_ref": {
+          "type": "string",
+          "pattern": "^reports/consistency-[1-4]\\.json$"
+        },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "opaque_ref",
+        "project_id",
+        "project_url",
+        "process",
+        "candidates",
+        "review",
+        "human_verdict",
+        "balloons",
+        "export",
+        "consistency"
+      ],
+      "properties": {
+        "order": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "opaque_ref": { "type": "string", "minLength": 1 },
+        "project_id": { "type": "string", "minLength": 1 },
+        "project_url": {
+          "type": "string",
+          "pattern": "^/\\?project_id=.+&operator_id=.+$"
+        },
+        "process": {
+          "oneOf": [
+            { "$ref": "#/$defs/process_evidence" },
+            { "type": "null" }
+          ]
+        },
+        "candidates": {
+          "oneOf": [
+            { "$ref": "#/$defs/candidate_evidence" },
+            { "type": "null" }
+          ]
+        },
+        "review": {
+          "oneOf": [
+            { "$ref": "#/$defs/review_evidence" },
+            { "type": "null" }
+          ]
+        },
+        "human_verdict": {
+          "oneOf": [
+            { "$ref": "#/$defs/human_verdict" },
+            { "type": "null" }
+          ]
+        },
+        "balloons": {
+          "oneOf": [
+            { "$ref": "#/$defs/balloon_evidence" },
+            { "type": "null" }
+          ]
+        },
+        "export": {
+          "oneOf": [
+            { "$ref": "#/$defs/export_evidence" },
+            { "type": "null" }
+          ]
+        },
+        "consistency": {
+          "oneOf": [
+            { "$ref": "#/$defs/consistency_evidence" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

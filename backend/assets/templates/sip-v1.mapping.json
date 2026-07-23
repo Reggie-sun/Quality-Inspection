@@ -1,12 +1,12 @@
 {
   "template_id": "sip-v1",
-  "template_version": "1",
-  "template_sha256": "8c117838e906939b76cd8158849e85b86e147d343d66e906df09794ef29e54bb",
-  "mapping_version": "1",
+  "template_version": "2",
+  "template_sha256": "6a946e9279a489f845e94f08d0ecb5917829a20378bba85cccc9171e50b16720",
+  "mapping_version": "2",
   "sheet": "SIP检验记录",
   "capacity": {
     "first_row": 6,
-    "last_row": 69
+    "last_row": 517
   },
   "metadata_cells": {
     "material_code": "B2",
@@ -35,12 +35,12 @@
     "C3",
     "A4:H4",
     "A5:H5",
-    "A70:H70"
+    "A518:H518"
   ],
   "signoff_ranges": [
-    "A71:B74",
-    "C71:D74",
-    "E71:F74",
-    "G71:H74"
+    "A519:B522",
+    "C519:D522",
+    "E519:F522",
+    "G519:H522"
   ]
 }

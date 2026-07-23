@@ -40,3 +40,8 @@ export const postJson: PostJson = async <Result>(path: string, body: unknown, he
   });
   return json<Result>(response);
 };
+
+
+export function downloadPath(exportId: string, kind: string): string {
+  return `/api/v1/exports/${encodeURIComponent(exportId)}/downloads/${encodeURIComponent(kind)}`;
+}

@@ -16,7 +16,16 @@ from app.balloons.numbering import (
     assign_formal_numbers,
     assign_suggested_numbers,
 )
-from app.balloons.placement import PlacementInput, PlacementResult, place_balloon
+from app.balloons.placement import (
+    BALLOON_RADIUS_PDF,
+    OccupiedBalloon,
+    PlacementItem,
+    PlacementResult,
+    PlacementScene,
+    evaluate_placement,
+    glyph_bbox,
+    place_balloons,
+)
 from app.balloons.schemas import BBox, PdfPoint
 from app.balloons.validator import validate_balloons
 from app.candidates.models import AutomaticResult
@@ -26,6 +35,19 @@ from app.projects.state import ProjectState
 from app.review.locks import require_active_lock
 from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.storage.local import LocalFileStorage
+
+
+PROTECTED_TEXT_TOKENS = (
+    "approved",
+    "checked",
+    "signature",
+    "sign-off",
+    "审核",
+    "批准",
+    "签字",
+    "校对",
+)
+REGISTERED_ADMINISTRATION_STRIP_START = 0.79
 
 
 class BalloonNotFound(LookupError):
@@ -66,6 +88,8 @@ class SourceGeometry:
 class InventoryIndex:
     page_sizes: dict[int, PdfPoint]
     source_geometries: dict[str, SourceGeometry]
+    source_text_boxes: dict[int, tuple[BBox, ...]]
+    protected_boxes: dict[int, tuple[BBox, ...]]
 
 
 class BalloonService:
@@ -158,10 +182,28 @@ class BalloonService:
             value.item_id: value.number
             for value in assign_formal_numbers(numberable)
         }
+        placements: dict[str, PlacementResult] = {}
+        by_page: dict[int, list[PlacementItem]] = {}
+        for item_id, number in sorted(formal.items(), key=lambda value: value[1]):
+            geometry = geometries[item_id]
+            by_page.setdefault(geometry.page_index, []).append(
+                self._placement_item(item_id, number, geometry)
+            )
+        for page_index, placement_items in sorted(by_page.items()):
+            for placement in place_balloons(
+                tuple(placement_items),
+                self._scene(
+                    inventory,
+                    page_index,
+                    source_text_boxes=self._source_text_boxes(working, inventory),
+                ),
+            ):
+                placements[placement.item_id] = placement
+
         generated: list[Balloon] = []
         for item_id, number in sorted(formal.items(), key=lambda value: value[1]):
             geometry = geometries[item_id]
-            placement = self._placement(geometry)
+            placement = placements[item_id]
             balloon = Balloon(
                 project_id=project_id,
                 inspection_item_id=item_id,
@@ -204,12 +246,34 @@ class BalloonService:
         balloon = self._locked_balloon(balloon_id, operator_id, active=True)
         self._require_balloon_version(balloon, expected_version)
         center = self._pdf_point(center_pdf)
+        working = self._working_copy(balloon.project_id)
+        inventory = self._inventory(working)
+        item = self._item(working, balloon.inspection_item_id)
+        geometry = self._geometry_for_item(item, inventory)
+        active = self._active_balloons(balloon.project_id, for_update=True)
+        placement = evaluate_placement(
+            self._placement_item(
+                balloon.inspection_item_id,
+                balloon.formal_number or balloon.suggested_number,
+                geometry,
+            ),
+            self._scene(
+                inventory,
+                balloon.page_index,
+                balloons=active,
+                exclude_id=balloon.id,
+                source_text_boxes=self._source_text_boxes(working, inventory),
+            ),
+            center,
+        )
         before = balloon.version
         balloon.center_pdf = list(center)
-        balloon.placement_status = "placed"
-        balloon.collision_flags = []
+        balloon.placement_status = placement.status
+        balloon.collision_flags = list(placement.collision_flags)
         balloon.version += 1
         self._record_balloon(balloon, operator_id, "move_balloon", before)
+        self.session.flush()
+        self._revalidate_positions(working, active)
         self.session.commit()
         return balloon
 
@@ -222,10 +286,16 @@ class BalloonService:
     ) -> Balloon:
         balloon = self._locked_balloon(balloon_id, operator_id, active=True)
         self._require_balloon_version(balloon, expected_version)
+        working = self._working_copy(balloon.project_id, for_update=True)
         before = balloon.version
         balloon.status = "deleted"
         balloon.version += 1
         self._record_balloon(balloon, operator_id, "delete_balloon", before)
+        self.session.flush()
+        self._revalidate_positions(
+            working,
+            self._active_balloons(balloon.project_id, for_update=True),
+        )
         self.session.commit()
         return balloon
 
@@ -243,12 +313,28 @@ class BalloonService:
         if not item.get("active", True) or item.get("balloon_required") is not True:
             self.session.rollback()
             raise BalloonOrderConflict("reviewed item no longer requires a balloon")
-        geometry = self._geometry_for_item(item, self._inventory(working))
-        placement = self._placement(geometry)
+        inventory = self._inventory(working)
+        geometry = self._geometry_for_item(item, inventory)
         active_balloons = self._active_balloons(
             balloon.project_id,
             for_update=True,
         )
+        placement = place_balloons(
+            (
+                self._placement_item(
+                    balloon.inspection_item_id,
+                    balloon.formal_number or balloon.suggested_number,
+                    geometry,
+                ),
+            ),
+            self._scene(
+                inventory,
+                geometry.page_index,
+                balloons=active_balloons,
+                exclude_id=balloon.id,
+                source_text_boxes=self._source_text_boxes(working, inventory),
+            ),
+        )[0]
         number_reused = balloon.formal_number is None or any(
             active.id != balloon.id
             and active.formal_number == balloon.formal_number
@@ -268,6 +354,11 @@ class BalloonService:
         balloon.status = "active"
         balloon.version += 1
         self._record_balloon(balloon, operator_id, "rebuild_balloon", before)
+        self.session.flush()
+        self._revalidate_positions(
+            working,
+            self._active_balloons(balloon.project_id, for_update=True),
+        )
         self.session.commit()
         return balloon
 
@@ -326,6 +417,8 @@ class BalloonService:
             balloon.formal_number = number
             balloon.version += 1
             target_ids.append(str(balloon.id))
+        self.session.flush()
+        self._revalidate_positions(working, ordered)
         working.numbering_stale = False
         self._record(
             project_id,
@@ -342,7 +435,13 @@ class BalloonService:
         working = self._working_copy(project_id)
         inventory = self._inventory(working)
         balloons = self._active_balloons(project_id)
-        return validate_balloons(working.items, balloons, inventory.page_sizes)
+        return validate_balloons(
+            working.items,
+            balloons,
+            inventory.page_sizes,
+            protected_boxes=inventory.protected_boxes,
+            source_text_boxes=self._source_text_boxes(working, inventory),
+        )
 
     def _locked_balloon(
         self,
@@ -431,7 +530,7 @@ class BalloonService:
             raise BalloonSourceUnavailable("page inventory is unavailable") from error
 
         page_sizes: dict[int, PdfPoint] = {}
-        observations: list[tuple[str, int, BBox, PdfPoint]] = []
+        observations: list[tuple[str, int, BBox, PdfPoint, str]] = []
         try:
             for page in pages:
                 page_index = int(page["page_index"])
@@ -446,16 +545,48 @@ class BalloonService:
                             page_index,
                             self._pdf_bbox(observation["bbox_pdf"]),
                             self._pdf_point(observation.get("direction", (1, 0))),
+                            str(
+                                observation.get("normalized_text")
+                                or observation.get("raw_text")
+                                or ""
+                            ).casefold(),
                         )
                     )
         except (KeyError, TypeError, ValueError) as error:
             raise BalloonSourceUnavailable("page inventory geometry is invalid") from error
 
         geometries: dict[str, SourceGeometry] = {}
-        for source_id, page_index, bbox, direction in observations:
+        source_text_boxes = {
+            page_index: tuple(
+                bbox
+                for _, observation_page, bbox, _, _ in observations
+                if observation_page == page_index
+            )
+            for page_index in page_sizes
+        }
+        protected_boxes = {}
+        for page_index, (width, height) in page_sizes.items():
+            # The selected A3/A4 drawing forms reserve the bottom administration
+            # strip for title, revision and sign-off cells, including blank cells.
+            registered = (
+                0.0,
+                height * REGISTERED_ADMINISTRATION_STRIP_START,
+                width,
+                height,
+            )
+            keyword_boxes = (
+                bbox
+                for _, observation_page, bbox, _, text in observations
+                if observation_page == page_index
+                and any(token in text for token in PROTECTED_TEXT_TOKENS)
+            )
+            protected_boxes[page_index] = tuple(
+                dict.fromkeys((registered, *keyword_boxes))
+            )
+        for source_id, page_index, bbox, direction, _ in observations:
             forbidden = tuple(
                 self._expand(other_bbox, 10.0)
-                for other_id, other_page, other_bbox, _ in observations
+                for other_id, other_page, other_bbox, _, _ in observations
                 if other_page == page_index and other_id != source_id
             )
             geometries[source_id] = SourceGeometry(
@@ -466,7 +597,12 @@ class BalloonService:
                 page_size=page_sizes[page_index],
                 forbidden=forbidden,
             )
-        return InventoryIndex(page_sizes=page_sizes, source_geometries=geometries)
+        return InventoryIndex(
+            page_sizes=page_sizes,
+            source_geometries=geometries,
+            source_text_boxes=source_text_boxes,
+            protected_boxes=protected_boxes,
+        )
 
     def _geometry_for_item(
         self,
@@ -506,14 +642,111 @@ class BalloonService:
         )
 
     @staticmethod
-    def _placement(geometry: SourceGeometry) -> PlacementResult:
-        return place_balloon(
-            PlacementInput(
-                page_size=geometry.page_size,
-                anchor_bbox=geometry.anchor_bbox,
-                forbidden=geometry.forbidden,
-            )
+    def _placement_item(
+        item_id: str,
+        formal_number: int,
+        geometry: SourceGeometry,
+    ) -> PlacementItem:
+        return PlacementItem(
+            item_id=item_id,
+            formal_number=formal_number,
+            anchor_bbox=geometry.anchor_bbox,
+            page_index=geometry.page_index,
+            leader_target=BalloonService._anchor_center(geometry.anchor_bbox),
         )
+
+    def _scene(
+        self,
+        inventory: InventoryIndex,
+        page_index: int,
+        *,
+        balloons: list[Balloon] | None = None,
+        exclude_id: uuid.UUID | None = None,
+        source_text_boxes: dict[int, tuple[BBox, ...]] | None = None,
+    ) -> PlacementScene:
+        occupied: list[OccupiedBalloon] = []
+        for balloon in balloons or []:
+            if (
+                balloon.id == exclude_id
+                or balloon.status != "active"
+                or balloon.page_index != page_index
+            ):
+                continue
+            center = self._pdf_point(balloon.center_pdf)
+            number = balloon.formal_number or balloon.suggested_number
+            occupied.append(
+                OccupiedBalloon(
+                    item_id=balloon.inspection_item_id,
+                    formal_number=number,
+                    center=center,
+                    radius=BALLOON_RADIUS_PDF,
+                    glyph_bbox=glyph_bbox(number, center),
+                    leader_target=self._pdf_point(balloon.leader_target_pdf),
+                )
+            )
+        return PlacementScene(
+            page_size=inventory.page_sizes[page_index],
+            source_text_boxes=(source_text_boxes or inventory.source_text_boxes).get(
+                page_index,
+                (),
+            ),
+            protected_boxes=inventory.protected_boxes.get(page_index, ()),
+            occupied=tuple(occupied),
+        )
+
+    def _source_text_boxes(
+        self,
+        working: ReviewWorkingCopy,
+        inventory: InventoryIndex,
+    ) -> dict[int, tuple[BBox, ...]]:
+        boxes = {
+            page_index: list(values)
+            for page_index, values in inventory.source_text_boxes.items()
+        }
+        for item in working.items:
+            source_ids = item.get("source_location_ids", [])
+            if not any(str(source_id).startswith("manual:") for source_id in source_ids):
+                continue
+            page_index = item.get("page_index")
+            if not isinstance(page_index, int) or isinstance(page_index, bool):
+                raise BalloonSourceUnavailable(
+                    f"manual item {item['item_id']} has no valid page"
+                )
+            if page_index not in inventory.page_sizes:
+                raise BalloonSourceUnavailable(
+                    f"manual item {item['item_id']} references an unknown page"
+                )
+            bbox = self._pdf_bbox(item.get("coordinates"))
+            if bbox not in boxes.setdefault(page_index, []):
+                boxes[page_index].append(bbox)
+        return {
+            page_index: tuple(values)
+            for page_index, values in boxes.items()
+        }
+
+    def _revalidate_positions(
+        self,
+        working: ReviewWorkingCopy,
+        balloons: list[Balloon],
+    ) -> None:
+        inventory = self._inventory(working)
+        for balloon in balloons:
+            item = self._item(working, balloon.inspection_item_id)
+            geometry = self._geometry_for_item(item, inventory)
+            number = balloon.formal_number or balloon.suggested_number
+            placement = evaluate_placement(
+                self._placement_item(balloon.inspection_item_id, number, geometry),
+                self._scene(
+                    inventory,
+                    balloon.page_index,
+                    balloons=balloons,
+                    exclude_id=balloon.id,
+                    source_text_boxes=self._source_text_boxes(working, inventory),
+                ),
+                self._pdf_point(balloon.center_pdf),
+            )
+            balloon.placement_status = placement.status
+            balloon.collision_flags = list(placement.collision_flags)
 
     @staticmethod
     def _item(

@@ -36,5 +36,7 @@ def test_capacity_overflow_is_blocking() -> None:
     """P0-EXP-003 blocks details beyond the registered sip-v1 capacity."""
     registration = _approved_registration()
 
+    assert registration.capacity == 512
+    assert_capacity(registration, 512)
     with pytest.raises(CapacityExceeded):
-        assert_capacity(registration, registration.capacity + 1)
+        assert_capacity(registration, 513)

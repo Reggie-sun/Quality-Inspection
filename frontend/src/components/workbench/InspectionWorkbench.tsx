@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type {
   BalloonOverlay,
   OverlayBox,
   PdfDocumentLike,
   PdfPageTransform,
+  PostJson,
   ReviewCommand,
   ReviewItem,
   ReviewWorkingCopy,
@@ -12,7 +13,14 @@ import type {
 import { BalloonToolbar } from "../balloons/BalloonToolbar";
 import { PdfWorkspace } from "../pdf/PdfWorkspace";
 import { ReviewPanel } from "../review/ReviewPanel";
+import { ExportPanel } from "./ExportPanel";
 import { FreezeReviewButton } from "./FreezeReviewButton";
+import { InspectionItemTable } from "./InspectionItemTable";
+import {
+  RecognitionSummary,
+  type InspectionFilter,
+} from "./RecognitionSummary";
+import "../../styles/workbench.css";
 
 
 type InspectionWorkbenchProps = {
@@ -47,9 +55,31 @@ type InspectionWorkbenchProps = {
     expectedVersions: Record<string, number>,
   ) => void;
   projectState?: string;
+  projectId?: string;
+  reviewedResultId?: string;
+  exportPost?: PostJson;
   operatorId?: string;
   actionState?: string;
 };
+
+type MetadataDraft = {
+  material_code: string;
+  material_name: string;
+  drawing_number: string;
+  material: string;
+  revision: string;
+};
+
+
+function metadataDraft(workingCopy?: ReviewWorkingCopy): MetadataDraft {
+  return {
+    material_code: workingCopy?.sip_metadata?.material_code ?? "",
+    material_name: workingCopy?.sip_metadata?.material_name ?? "",
+    drawing_number: workingCopy?.sip_metadata?.drawing_number ?? "",
+    material: workingCopy?.sip_metadata?.material ?? "",
+    revision: workingCopy?.sip_metadata?.revision ?? "",
+  };
+}
 
 
 export function InspectionWorkbench({
@@ -73,6 +103,9 @@ export function InspectionWorkbench({
   onReorderBalloon,
   onRenumberBalloons,
   projectState,
+  projectId,
+  reviewedResultId,
+  exportPost,
   operatorId,
   actionState,
 }: InspectionWorkbenchProps) {
@@ -82,12 +115,23 @@ export function InspectionWorkbench({
   const [selectedItemId, setSelectedItemId] = useState<string>();
   const [selectedBalloonId, setSelectedBalloonId] = useState<string>();
   const [pageIndex, setPageIndex] = useState(0);
+  const [filter, setFilter] = useState<InspectionFilter>("all");
+  const [metadata, setMetadata] = useState<MetadataDraft>(() => metadataDraft(workingCopy));
+  useEffect(() => setMetadata(metadataDraft(workingCopy)), [workingCopy?.version]);
+
   const finalized = projectState === "reviewed";
   const reviewImmutable =
     finalized || (workingCopy !== undefined && workingCopy.items_frozen_at !== null);
   const selectItem = (itemId: string) => {
     setSelectedItemId(itemId);
     setSelectedBalloonId(undefined);
+    const item = items.find((candidate) => candidate.item_id === itemId);
+    const balloon = balloons.find((candidate) => candidate.itemId === itemId);
+    setPageIndex(item?.page_index ?? balloon?.pageIndex ?? pageIndex);
+  };
+  const queueCommand = (command: ReviewCommand) => {
+    setPendingCommand(command);
+    setSaveState(`Pending command: ${command.type}`);
   };
 
   const save = async () => {
@@ -106,40 +150,22 @@ export function InspectionWorkbench({
   };
 
   return (
-    <main style={{ maxWidth: 1760, margin: "0 auto", padding: 24, color: "#172033" }}>
-      <header
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 20,
-          alignItems: "flex-start",
-          marginBottom: 16,
-          padding: 18,
-          background: "white",
-          border: "1px solid #e2e8f0",
-          borderRadius: 12,
-          boxShadow: "0 8px 24px rgba(15, 23, 42, 0.05)",
-        }}
-      >
+    <main className="workbench-shell">
+      <header className="workbench-header">
         <div>
-          <p style={{ margin: 0, color: "#64748b", fontSize: 13, letterSpacing: 0.4 }}>
-            PDF BALLOON REVIEW
-          </p>
-          <h1 style={{ margin: "4px 0", fontSize: 30, letterSpacing: -0.6 }}>
-            Quality Inspection Review
-          </h1>
-          <p style={{ margin: 0, color: "#475569" }}>
+          <p className="workbench-eyebrow">PDF BALLOON REVIEW</p>
+          <h1>Quality Inspection Review</h1>
+          <p className="workbench-context">
             {projectState === undefined ? "Local review" : `Project ${projectState}`}
             {operatorId === undefined ? "" : ` · Operator ${operatorId}`}
           </p>
         </div>
-        <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
-          {actionState === undefined
-            ? null
-            : <p role="status" style={{ margin: 0 }}>{actionState}</p>}
-          <p style={{ margin: 0 }}>{saveState}</p>
+        <div className="workbench-save-state">
+          {actionState === undefined ? null : <p role="status">{actionState}</p>}
+          <p>{saveState}</p>
           <button
             type="button"
+            className="primary-action"
             disabled={pendingCommand === undefined || saving || busy}
             onClick={() => void save()}
           >
@@ -147,10 +173,11 @@ export function InspectionWorkbench({
           </button>
         </div>
       </header>
-      {workingCopy === undefined || onFreeze === undefined || onGenerate === undefined || onConfirm === undefined
-        ? null
-        : (
-          <div style={{ marginBottom: 16 }}>
+
+      <div className="workbench-finalization">
+        {workingCopy === undefined || onFreeze === undefined || onGenerate === undefined || onConfirm === undefined
+          ? null
+          : (
             <FreezeReviewButton
               workingCopy={workingCopy}
               balloons={balloons}
@@ -160,44 +187,59 @@ export function InspectionWorkbench({
               onGenerate={onGenerate}
               onConfirm={onConfirm}
             />
-          </div>
+          )}
+        {projectId === undefined || exportPost === undefined ? null : (
+          <ExportPanel
+            projectId={projectId}
+            reviewedResultId={reviewedResultId}
+            balloonBlockers={balloonBlockers}
+            post={exportPost}
+          />
         )}
-      <div
-        style={{
-          display: "grid",
-            gridTemplateColumns: "minmax(0, 1.65fr) minmax(420px, 1fr)",
-          gap: 16,
-          alignItems: "start",
-        }}
-      >
-        <PdfWorkspace
-          pdfDocument={pdfDocument}
-          pageCount={pageCount}
-          candidates={candidates}
-          sources={sources}
-          balloons={balloons}
-          pageTransforms={pageTransforms}
-          selectedItemId={selectedItemId}
-          selectedBalloonId={selectedBalloonId}
-          onSelectItem={selectItem}
-          onSelectBalloon={(itemId, balloonId) => {
-            setSelectedItemId(itemId);
-            setSelectedBalloonId(balloonId);
-          }}
-          onMoveBalloon={finalized ? undefined : onMoveBalloon}
-          onPageChange={setPageIndex}
-        />
-        <aside
-          style={{
-            padding: 16,
-            background: "white",
-            border: "1px solid #e2e8f0",
-            borderRadius: 12,
-            maxHeight: "calc(100vh - 210px)",
-            minHeight: 640,
-            overflow: "auto",
-          }}
-        >
+      </div>
+
+      <div className="workbench-layout">
+        <section className="drawing-pane" aria-label="Engineering drawing">
+          <PdfWorkspace
+            pdfDocument={pdfDocument}
+            pageCount={pageCount}
+            candidates={candidates}
+            sources={sources}
+            balloons={balloons}
+            pageTransforms={pageTransforms}
+            selectedItemId={selectedItemId}
+            selectedBalloonId={selectedBalloonId}
+            onSelectItem={selectItem}
+            onSelectBalloon={(itemId, balloonId) => {
+              setSelectedItemId(itemId);
+              setSelectedBalloonId(balloonId);
+              const balloon = balloons.find((candidate) => candidate.id === balloonId);
+              setPageIndex(balloon?.pageIndex ?? pageIndex);
+            }}
+            onMoveBalloon={finalized ? undefined : onMoveBalloon}
+            onPageChange={setPageIndex}
+          />
+        </section>
+
+        <aside className="inspection-pane">
+          <RecognitionSummary
+            items={items}
+            balloons={balloons}
+            filter={filter}
+            onFilterChange={setFilter}
+          />
+          {projectId === undefined ? null : (
+            <InspectionItemTable
+              items={items}
+              balloons={balloons}
+              filter={filter}
+              selectedItemId={selectedItemId}
+              disabled={pendingCommand !== undefined || busy || reviewImmutable}
+              onSelectItem={selectItem}
+              onCommand={queueCommand}
+            />
+          )}
+
           {onDeleteBalloon === undefined || onRebuildBalloon === undefined ||
           onReorderBalloon === undefined || onRenumberBalloons === undefined
             ? null
@@ -212,17 +254,49 @@ export function InspectionWorkbench({
                 onRenumber={onRenumberBalloons}
               />
             )}
-          <ReviewPanel
-            items={items}
-            disabled={pendingCommand !== undefined || busy || reviewImmutable}
-            selectedItemId={selectedItemId}
-            onSelectItem={selectItem}
-            pageIndex={pageIndex}
-            onCommand={(command) => {
-              setPendingCommand(command);
-              setSaveState(`Pending command: ${command.type}`);
-            }}
-          />
+
+          {workingCopy === undefined ? null : (
+            <fieldset className="sip-metadata" disabled={busy || reviewImmutable || pendingCommand !== undefined}>
+              <legend>Drawing and SIP metadata</legend>
+              {(
+                [
+                  ["material_code", "Material code"],
+                  ["material_name", "Material name"],
+                  ["drawing_number", "Drawing number"],
+                  ["material", "Material"],
+                  ["revision", "Revision"],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key}>
+                  {label}
+                  <input
+                    aria-label={label}
+                    value={metadata[key]}
+                    onChange={(event) => setMetadata({ ...metadata, [key]: event.target.value })}
+                  />
+                </label>
+              ))}
+              <button
+                type="button"
+                disabled={Object.values(metadata).some((value) => value.trim() === "")}
+                onClick={() => queueCommand({ type: "set_sip_metadata", ...metadata })}
+              >
+                Confirm SIP metadata
+              </button>
+            </fieldset>
+          )}
+
+          <details className="candidate-editor" open>
+            <summary>Candidate editing and review commands</summary>
+            <ReviewPanel
+              items={items}
+              disabled={pendingCommand !== undefined || busy || reviewImmutable}
+              selectedItemId={selectedItemId}
+              onSelectItem={selectItem}
+              pageIndex={pageIndex}
+              onCommand={queueCommand}
+            />
+          </details>
         </aside>
       </div>
     </main>
