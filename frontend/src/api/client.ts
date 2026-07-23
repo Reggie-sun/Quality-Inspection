@@ -1,4 +1,4 @@
-import type { GetJson, PostJson } from "./types";
+import type { GetJson, PostForm, PostJson } from "./types";
 
 
 export class ApiError extends Error {
@@ -27,8 +27,13 @@ async function json<Result>(response: Response): Promise<Result> {
 }
 
 
-export const getJson: GetJson = async <Result>(path: string) => {
-  return json<Result>(await fetch(path, { headers: { Accept: "application/json" } }));
+export const getJson: GetJson = async <Result>(
+  path: string,
+  signal?: AbortSignal,
+) => {
+  const request: RequestInit = { headers: { Accept: "application/json" } };
+  if (signal !== undefined) request.signal = signal;
+  return json<Result>(await fetch(path, request));
 };
 
 
@@ -39,6 +44,16 @@ export const postJson: PostJson = async <Result>(path: string, body: unknown, he
     body: JSON.stringify(body),
   });
   return json<Result>(response);
+};
+
+export const postForm: PostForm = async <Result>(
+  path: string,
+  body: FormData,
+  signal?: AbortSignal,
+) => {
+  const request: RequestInit = { method: "POST", body };
+  if (signal !== undefined) request.signal = signal;
+  return json<Result>(await fetch(path, request));
 };
 
 

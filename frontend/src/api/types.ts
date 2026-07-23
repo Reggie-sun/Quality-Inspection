@@ -223,10 +223,36 @@ export type ExportJob = {
   artifacts: ExportArtifact[];
 };
 
-export type GetJson = <Result>(path: string) => Promise<Result>;
+export type ProjectPhase =
+  | "queued"
+  | "processing"
+  | "ready_for_review"
+  | "failed";
+
+export type ProjectStatus = {
+  project_id?: string;
+  phase: ProjectPhase;
+  workbench_ready: boolean;
+  retryable: boolean;
+  error: {
+    code: string;
+    stage: string;
+  } | null;
+};
+
+export type GetJson = <Result>(
+  path: string,
+  signal?: AbortSignal,
+) => Promise<Result>;
 
 export type PostJson = <Result = unknown>(
   path: string,
   body: unknown,
   headers: Record<string, string>,
+) => Promise<Result>;
+
+export type PostForm = <Result>(
+  path: string,
+  body: FormData,
+  signal?: AbortSignal,
 ) => Promise<Result>;
