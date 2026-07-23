@@ -155,10 +155,13 @@ export function InspectionWorkbench({
       : 2;
   const selectItem = (itemId: string) => {
     setSelectedItemId(itemId);
-    setSelectedBalloonId(undefined);
     setSelectedSourceId(undefined);
     const item = items.find((candidate) => candidate.item_id === itemId);
-    const balloon = balloons.find((candidate) => candidate.itemId === itemId);
+    const balloon = balloons.find(
+      (candidate) =>
+        candidate.status !== "deleted" && candidate.itemId === itemId,
+    );
+    setSelectedBalloonId(balloon?.id);
     setPageIndex(item?.page_index ?? balloon?.pageIndex ?? pageIndex);
   };
   const queueCommand = (command: ReviewCommand) => {
