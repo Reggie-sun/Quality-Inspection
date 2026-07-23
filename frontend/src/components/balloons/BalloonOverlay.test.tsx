@@ -141,6 +141,66 @@ describe("BalloonOverlay", () => {
     expect(onMove).not.toHaveBeenCalled();
   });
 
+  test("越出页面的气泡仍可通过可见引线拖回合法位置", () => {
+    const onMove = vi.fn();
+    render(
+      <svg aria-label="test overlay">
+        <BalloonOverlay
+          balloon={{
+            id: "outside-balloon",
+            itemId: "outside-item",
+            sourceId: "outside-source",
+            pageIndex: 0,
+            center: [50, 120],
+            leaderTarget: [50, 80],
+            number: 12,
+            version: 3,
+            status: "active",
+            sortOrder: 11,
+            placementStatus: "manual_required",
+            collisionFlags: ["outside_cropbox"],
+          }}
+          renderToPdfMatrix={[1, 0, 0, 1, 0, 0]}
+          selected
+          onSelect={vi.fn()}
+          onMove={onMove}
+        />
+      </svg>,
+    );
+    const overlay = screen.getByTestId(
+      "balloon-outside-balloon",
+    ) as unknown as SVGGElement;
+    const leader = screen.getByTestId("leader-outside-balloon");
+    expect(leader.style.pointerEvents).toBe("stroke");
+    const owner = overlay.ownerSVGElement;
+    if (owner === null) throw new Error("missing owner SVG");
+    Object.defineProperty(owner, "getScreenCTM", {
+      configurable: true,
+      value: () => ({
+        inverse: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
+      }),
+    });
+    Object.defineProperty(overlay, "setPointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+
+    for (const [eventName, clientY] of [
+      ["pointerdown", 100],
+      ["pointerup", 70],
+    ] as const) {
+      const pointer = new Event(eventName, { bubbles: true });
+      Object.defineProperties(pointer, {
+        pointerId: { value: 9 },
+        clientX: { value: 50 },
+        clientY: { value: clientY },
+      });
+      fireEvent(leader, pointer);
+    }
+
+    expect(onMove).toHaveBeenCalledWith("outside-balloon", 3, [50, 70]);
+  });
+
   test("P0-UI-004 renders leaders and backend collision state without cross-balloon overlap", () => {
     const balloons = [
       {

@@ -183,7 +183,7 @@ export function BalloonOverlay({
           y2={displayLeaderTarget[1]}
           stroke={blocked ? "#b91c1c" : "#334155"}
           strokeWidth={1.1}
-          style={{ pointerEvents: "none" }}
+          style={{ pointerEvents: "stroke" }}
         />
       )}
       <circle
