@@ -52,8 +52,10 @@ type OverlayLayerProps = {
   pdfToRenderMatrix?: PdfMatrix;
   renderToPdfMatrix?: PdfMatrix;
   selectedItemId?: string;
+  selectedSourceId?: string;
   selectedBalloonId?: string;
   onSelectItem?: (itemId: string) => void;
+  onSelectSource?: (sourceId: string) => void;
   onSelectBalloon?: (itemId: string, balloonId: string) => void;
   onMoveBalloon?: (
     balloonId: string,
@@ -75,8 +77,10 @@ export function OverlayLayer({
   pdfToRenderMatrix = IDENTITY_MATRIX,
   renderToPdfMatrix = IDENTITY_MATRIX,
   selectedItemId,
+  selectedSourceId,
   selectedBalloonId,
   onSelectItem,
+  onSelectSource,
   onSelectBalloon,
   onMoveBalloon,
   selectedId,
@@ -133,7 +137,7 @@ export function OverlayLayer({
         const isSelected = selectedRelation(
           { itemId: item.itemId, itemIds: item.itemIds },
           selected,
-        );
+        ) || item.id === selectedSourceId;
         return (
           <rect
             key={item.id}
@@ -149,9 +153,13 @@ export function OverlayLayer({
             strokeWidth={1.5}
             onClick={() => {
               const itemId = selectRelationItem(item, selected);
-              if (itemId !== undefined) selectItem?.(itemId);
+              if (itemId !== undefined) {
+                selectItem?.(itemId);
+                return;
+              }
+              onSelectSource?.(item.id);
             }}
-            style={{ cursor: selectItem ? "pointer" : "default" }}
+            style={{ cursor: selectItem || onSelectSource ? "pointer" : "default" }}
           />
         );
       })}

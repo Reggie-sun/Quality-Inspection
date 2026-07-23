@@ -492,6 +492,42 @@ def test_resolve_confirmation_records_explicit_outcome(
     assert resolved["confirmation_accepted"] is False
 
 
+def test_resolve_source_only_coverage_decrements_review_required_count(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    coverage = copy.deepcopy(working_copy.coverage)
+    coverage["entries"] = [
+        {
+            "observation_id": "source-only",
+            "disposition": "ambiguous",
+            "source_location_id": "source-only",
+            "coordinates": [21, 22, 23, 24],
+            "candidate_id": None,
+            "requires_confirmation": True,
+        }
+    ]
+    coverage["review_required_count"] = 1
+    working_copy.coverage = coverage
+    db_session.commit()
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "resolve_confirmation",
+            "item_id": "source-only",
+            "accepted": True,
+        },
+    )
+
+    assert saved.coverage["review_required_count"] == 0
+    assert saved.coverage["entries"][0]["requires_confirmation"] is False
+    assert saved.coverage["entries"][0]["confirmation_accepted"] is True
+
+
 def test_modification_log_records_command_sequence(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,

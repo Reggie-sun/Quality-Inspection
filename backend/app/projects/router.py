@@ -188,13 +188,18 @@ def _workbench_payload(
         raise ProjectWorkbenchUnavailable("project page inventory is unavailable")
 
     projected_pages, observations = _project_pages(pages)
-    candidates, source_items = _project_items(working.items, observations)
+    candidates, source_items = _project_items(
+        working.items,
+        working.coverage,
+        observations,
+    )
     sources = [
         {
             "id": source_id,
             "item_ids": relation["item_ids"],
             "page_index": relation["page_index"],
             "bbox_pdf": relation["bbox_pdf"],
+            "raw_text": relation["raw_text"],
         }
         for source_id, relation in sorted(source_items.items())
     ]
@@ -285,9 +290,11 @@ def _project_pages(
                 if not isinstance(raw_observation, dict):
                     raise TypeError
                 source_id = str(raw_observation["observation_id"])
+                raw_text = raw_observation.get("raw_text")
                 observations[source_id] = {
                     "page_index": page_index,
                     "bbox_pdf": list(raw_observation["bbox_pdf"]),
+                    "raw_text": raw_text if isinstance(raw_text, str) else "",
                 }
     except (KeyError, TypeError, ValueError) as error:
         raise ProjectWorkbenchUnavailable("project page inventory is invalid") from error
@@ -296,6 +303,7 @@ def _project_pages(
 
 def _project_items(
     items: list[dict[str, Any]],
+    coverage: dict[str, Any],
     observations: dict[str, dict[str, object]],
 ) -> tuple[list[dict[str, object]], dict[str, dict[str, object]]]:
     candidates: list[dict[str, object]] = []
@@ -336,9 +344,30 @@ def _project_items(
                     "item_ids": [],
                     "page_index": geometry["page_index"],
                     "bbox_pdf": geometry["bbox_pdf"],
+                    "raw_text": geometry.get("raw_text", ""),
                 },
             )
             relation["item_ids"].append(item_id)  # type: ignore[union-attr]
+    for raw_entry in coverage.get("entries", []):
+        if not isinstance(raw_entry, dict):
+            continue
+        if raw_entry.get("requires_confirmation") is not True:
+            continue
+        source_id = raw_entry.get("source_location_id")
+        if not isinstance(source_id, str):
+            continue
+        geometry = observations.get(source_id)
+        if geometry is None:
+            continue
+        sources.setdefault(
+            source_id,
+            {
+                "item_ids": [],
+                "page_index": geometry["page_index"],
+                "bbox_pdf": geometry["bbox_pdf"],
+                "raw_text": geometry.get("raw_text", ""),
+            },
+        )
     return sorted(candidates, key=lambda value: str(value["id"])), sources
 
 

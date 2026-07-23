@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib.util
+import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -129,6 +131,114 @@ def test_project_workbench_delivers_real_pdf_without_internal_references(
         missing = client.get(f"/api/v1/projects/00000000-0000-0000-0000-000000000000/workbench")
         assert missing.status_code == 404
         assert missing.json()["error"]["code"] == "project_not_found"
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+        outer_transaction.rollback()
+        connection.close()
+
+
+def test_project_workbench_projects_source_only_coverage_for_review(
+    tmp_path: Path,
+) -> None:
+    connection = engine.connect()
+    outer_transaction = connection.begin()
+    session = Session(
+        bind=connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    context = make_balloon_context(session, tmp_path, frozen=False)
+    raw = session.get(AutomaticResult, context.working_copy.raw_result_id)
+    assert raw is not None
+    inventory = json.loads(context.storage.read_bytes(raw.inventory_ref))
+    inventory["pages"][0]["observations"].append(
+        {
+            "observation_id": "source-only",
+            "source_type": "native_text",
+            "observation_level": "line",
+            "raw_text": "技术要求：去除毛刺",
+            "normalized_text": "技术要求:去除毛刺",
+            "page_index": 0,
+            "bbox_pdf": [60.0, 70.0, 150.0, 84.0],
+            "bbox_normalized": [0.3, 0.35, 0.75, 0.42],
+            "direction": [1.0, 0.0],
+            "direction_angle_degrees": 0.0,
+            "confidence": None,
+        }
+    )
+    inventory["pages"][0]["observations"].append(
+        {
+            "observation_id": "source-resolved",
+            "source_type": "native_text",
+            "observation_level": "line",
+            "raw_text": "仅供参考",
+            "normalized_text": "仅供参考",
+            "page_index": 0,
+            "bbox_pdf": [20.0, 30.0, 50.0, 44.0],
+            "bbox_normalized": [0.1, 0.15, 0.25, 0.22],
+            "direction": [1.0, 0.0],
+            "direction_angle_degrees": 0.0,
+            "confidence": None,
+        }
+    )
+    inventory_bytes = json.dumps(inventory).encode("utf-8")
+    context.storage.write_verified(
+        raw.inventory_ref.removeprefix("asset://"),
+        inventory_bytes,
+        hashlib.sha256(inventory_bytes).hexdigest(),
+    )
+    coverage = copy.deepcopy(context.working_copy.coverage)
+    coverage["entries"] = [
+        {
+            "observation_id": "source-only",
+            "source_location_id": "source-only",
+            "candidate_id": None,
+            "disposition": "ambiguous",
+            "coordinates": [60.0, 70.0, 150.0, 84.0],
+            "requires_confirmation": True,
+        },
+        {
+            "observation_id": "source-resolved",
+            "source_location_id": "source-resolved",
+            "candidate_id": None,
+            "disposition": "reference_context",
+            "coordinates": [20.0, 30.0, 50.0, 44.0],
+            "requires_confirmation": False,
+        },
+    ]
+    coverage["review_required_count"] = 1
+    context.working_copy.coverage = coverage
+    session.commit()
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[get_project_session] = override_session
+    app.dependency_overrides[get_storage] = lambda: context.storage
+    try:
+        client = TestClient(app)
+        response = client.get(
+            f"/api/v1/projects/{context.working_copy.project_id}/workbench"
+        )
+
+        assert response.status_code == 200
+        source = next(
+            item
+            for item in response.json()["sources"]
+            if item["id"] == "source-only"
+        )
+        assert source == {
+            "id": "source-only",
+            "item_ids": [],
+            "page_index": 0,
+            "bbox_pdf": [60.0, 70.0, 150.0, 84.0],
+            "raw_text": "技术要求：去除毛刺",
+        }
+        assert all(
+            item["id"] != "source-resolved"
+            for item in response.json()["sources"]
+        )
     finally:
         app.dependency_overrides.clear()
         session.close()

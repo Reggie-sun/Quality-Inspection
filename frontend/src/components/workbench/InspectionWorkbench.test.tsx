@@ -458,4 +458,79 @@ describe("InspectionWorkbench", () => {
         .toBe("已保存");
     });
   });
+
+  test("source-only coverage 可通过中文审核入口保存并解除冻结前置项", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const items = [{
+      item_id: "item-1",
+      item_type: "thread" as const,
+      raw_text: "M6",
+      balloon_required: true,
+      requires_confirmation: false,
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[{
+          id: "hidden-source-id",
+          pageIndex: 0,
+          bbox: [60, 70, 150, 84],
+          rawText: "技术要求：去除毛刺",
+        }]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "hidden-working-id",
+          project_id: "hidden-project-id",
+          raw_result_id: "hidden-result-id",
+          version: 4,
+          items,
+          coverage: {
+            blocking_count: 0,
+            review_required_count: 1,
+            entries: [{
+              observation_id: "hidden-observation-id",
+              source_location_id: "hidden-source-id",
+              candidate_id: null,
+              disposition: "ambiguous",
+              coordinates: [60, 70, 150, 84],
+              requires_confirmation: true,
+            }],
+          },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={onSave}
+        onFreeze={vi.fn()}
+        onGenerate={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "来源待确认" }).textContent)
+      .toContain("技术要求：去除毛刺");
+    expect(
+      screen.getByRole("region", { name: "来源待确认" })
+        .compareDocumentPosition(screen.getByRole("table", { name: "检验项列表" }))
+        & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(screen.getByTestId("source-hidden-source-id").getAttribute("data-selected"))
+      .toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "确认保留此来源" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith({
+        type: "resolve_confirmation",
+        item_id: "hidden-observation-id",
+        accepted: true,
+      });
+    });
+    expect(document.body.textContent).not.toContain("hidden-observation-id");
+    expect(document.body.textContent).not.toContain("hidden-source-id");
+  });
 });

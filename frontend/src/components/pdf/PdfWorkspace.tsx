@@ -28,8 +28,10 @@ type PdfWorkspaceProps = {
   pageCount?: number;
   fallbackPageSize?: [number, number];
   selectedItemId?: string;
+  selectedSourceId?: string;
   selectedBalloonId?: string;
   onSelectItem?: (itemId: string) => void;
+  onSelectSource?: (sourceId: string) => void;
   onSelectBalloon?: (itemId: string, balloonId: string) => void;
   onMoveBalloon?: (
     balloonId: string,
@@ -49,8 +51,10 @@ export function PdfWorkspace({
   pageCount = 1,
   fallbackPageSize = DEFAULT_PAGE_SIZE,
   selectedItemId,
+  selectedSourceId,
   selectedBalloonId,
   onSelectItem,
+  onSelectSource,
   onSelectBalloon,
   onMoveBalloon,
   onPageChange,
@@ -103,6 +107,16 @@ export function PdfWorkspace({
       ?.querySelector<SVGElement>("[data-selected='true']");
     selectedOverlay?.scrollIntoView?.({ block: "center", inline: "center" });
   }, [balloons, candidates, pageIndex, selection, sources]);
+
+  useEffect(() => {
+    if (selectedSourceId === undefined) return;
+    const sourcePage = sources.find(
+      (source) => source.id === selectedSourceId,
+    )?.pageIndex;
+    if (sourcePage !== undefined && sourcePage !== pageIndex) {
+      setPageIndex(sourcePage);
+    }
+  }, [pageIndex, selectedSourceId, sources]);
 
   useEffect(() => {
     setRenderError(undefined);
@@ -291,11 +305,13 @@ export function PdfWorkspace({
               pdfToRenderMatrix={currentPageTransform?.pdfToRenderMatrix}
               renderToPdfMatrix={currentPageTransform?.renderToPdfMatrix}
               selectedItemId={selection}
+              selectedSourceId={selectedSourceId}
               selectedBalloonId={selectedBalloonId}
               onSelectItem={(itemId) => {
                 setLocalSelectedItemId(itemId);
                 onSelectItem?.(itemId);
               }}
+              onSelectSource={onSelectSource}
               onSelectBalloon={onSelectBalloon}
               onMoveBalloon={onMoveBalloon}
             />

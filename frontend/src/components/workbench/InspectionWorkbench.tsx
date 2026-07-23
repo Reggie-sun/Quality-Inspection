@@ -14,6 +14,7 @@ import type {
 import { projectStateCopy, zhCN } from "../../copy/zhCN";
 import { BalloonToolbar } from "../balloons/BalloonToolbar";
 import { PdfWorkspace } from "../pdf/PdfWorkspace";
+import { CoverageReviewPanel } from "../review/CoverageReviewPanel";
 import { ReviewPanel } from "../review/ReviewPanel";
 import { ExportPanel } from "./ExportPanel";
 import { FreezeReviewButton } from "./FreezeReviewButton";
@@ -122,6 +123,7 @@ export function InspectionWorkbench({
     () => items.find((item) => item.active)?.item_id,
   );
   const [selectedBalloonId, setSelectedBalloonId] = useState<string>();
+  const [selectedSourceId, setSelectedSourceId] = useState<string>();
   const [pageIndex, setPageIndex] = useState(0);
   const [filter, setFilter] = useState<InspectionFilter>("all");
   const [metadata, setMetadata] = useState<MetadataDraft>(
@@ -154,6 +156,7 @@ export function InspectionWorkbench({
   const selectItem = (itemId: string) => {
     setSelectedItemId(itemId);
     setSelectedBalloonId(undefined);
+    setSelectedSourceId(undefined);
     const item = items.find((candidate) => candidate.item_id === itemId);
     const balloon = balloons.find((candidate) => candidate.itemId === itemId);
     setPageIndex(item?.page_index ?? balloon?.pageIndex ?? pageIndex);
@@ -314,8 +317,15 @@ export function InspectionWorkbench({
             balloons={balloons}
             pageTransforms={pageTransforms}
             selectedItemId={selectedItemId}
+            selectedSourceId={selectedSourceId}
             selectedBalloonId={selectedBalloonId}
             onSelectItem={selectItem}
+            onSelectSource={(sourceId) => {
+              setSelectedSourceId(sourceId);
+              setSelectedBalloonId(undefined);
+              const source = sources.find((candidate) => candidate.id === sourceId);
+              setPageIndex(source?.pageIndex ?? pageIndex);
+            }}
             onSelectBalloon={(itemId, balloonId) => {
               setSelectedItemId(itemId);
               setSelectedBalloonId(balloonId);
@@ -342,6 +352,21 @@ export function InspectionWorkbench({
             <SelectedInspectionItemSummary
               item={selectedReviewItem}
               balloon={selectedReviewBalloon}
+            />
+          )}
+          {workingCopy === undefined ? null : (
+            <CoverageReviewPanel
+              entries={workingCopy.coverage.entries ?? []}
+              sources={sources}
+              selectedSourceId={selectedSourceId}
+              disabled={pendingCommand !== undefined || busy || reviewImmutable}
+              onSelectSource={(sourceId) => {
+                setSelectedSourceId(sourceId);
+                setSelectedBalloonId(undefined);
+                const source = sources.find((candidate) => candidate.id === sourceId);
+                setPageIndex(source?.pageIndex ?? pageIndex);
+              }}
+              onCommand={queueCommand}
             />
           )}
           <InspectionItemTable

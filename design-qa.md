@@ -147,3 +147,65 @@ formal captures:
 - console and network gate: passed
 - Task 4 result: passed
 - successor boundary: Task 5 bare-root upload-to-two-download browser closure remains intentionally not started in this session
+
+## Successor Task 5 Prerequisite — Source-Only Coverage Review
+
+### Grounding
+
+真实裸根上传发现 124 个检验项之外还存在 90 个 `source-only coverage` 待确认项。既有 backend freeze veto 正确阻止未确认 coverage，但 Task 4 UI 没有对应审核入口，因此用户无法进入正式气泡编号阶段。本修复继续使用用户参考图作为唯一主要视觉基线，仅补齐既有 Review Owner 的可操作入口，不绕过 freeze，也不改变 Balloon、collision、Reviewed Result 或 Export Owner。
+
+source identity: user-attached reference image
+source sha256: e9693f9d27083271af68754c7260ad813316c6cdd39807f6a4e90e74ace33de4
+source pixels: 1550x1014
+implementation route: /
+browser: Google Chrome
+locale: zh-CN
+timezone: Asia/Hong_Kong
+viewport: 1565x796
+runtime: isolated source-mounted Task 5 QA stack
+real input: 152.3 KB engineering PDF
+implementation capture: /tmp/qi-task5-design-zhcn-before.png
+implementation capture sha256: 907cb88832c63af82931064184651f4752ca2b6a873c1a9bcc40ded96bce8f76
+post-save capture: /tmp/qi-task5-design-zhcn-after.png
+post-save capture sha256: f159dc52f18e501509aed1a80db557768f4cd05486a6c0e70350b6c36a627cfa
+comparison capture: /tmp/qi-task5-reference-vs-coverage.png
+comparison capture sha256: 6b68c39fd97c9f18548c59fce79a4b1e1b759ec1c046e21043b04ae7a41dc172
+
+### Product And Visual Decisions
+
+- backend Workbench projection 只补充当前 `requires_confirmation == true` 的 source-only observation；已解决、参考上下文或非检验来源不会长期留在 SVG 中增加图面噪声。
+- 中栏在识别汇总与检验项列表之间显示单条紧凑“来源待确认”卡片；待确认项存在时首次进入即可看见，全部解决后卡片自动消失并把空间归还给列表。
+- 卡片只展示真实原始标注、真实来源页码和 `current / total` 阶段计数，并提供“上一条来源”“下一条来源”“确认忽略此来源”“确认保留此来源”。
+- 当前来源使用既有青色虚线来源框并自动跳转到对应 PDF 页；未增加第二状态 Owner、批量自动接受或静态假数据。
+- 每次决定仍先进入既有 pending Review command，再由顶部“保存审核修改”显式提交；保存中禁用重复操作。
+
+### Interaction Evidence
+
+Chrome 从裸 `/` 上传真实 PDF 后自动创建项目并进入 Workbench，初始卡片显示 `1 / 90`。浏览到下一条后显示真实标注“铣深1mm”；选择“确认保留此来源”并点击“保存审核修改”后，既有 `resolve_confirmation` 返回 200，刷新后的计数为 `2 / 89`，已确认 source-only 框不再由新增投影保留。
+
+Playwright `zh-CN` context 复核结果：
+
+- route path `/`，query string 为空；
+- `navigator.language == zh-CN`；
+- `scrollWidth == innerWidth == 1565`；
+- 来源审核卡片顶部为 `290px`，处于首屏；
+- PDF canvas 已实际渲染，PNG data length 为 `250658`；
+- 可见文案未匹配 UUID；
+- console errors 为 0；
+- HTTP `>= 400` 为 0；
+- 唯一 request failure 是保存刷新时旧 `/api/v1/projects/[id]/source-pdf` fetch 被 Chrome 以 `net::ERR_ABORTED` 取消；新 Workbench 与新 PDF 随后均成功加载，属于已解释的 superseded stream。
+
+### QA Result
+
+- P0 issues: 0
+- P1 issues: 0
+- P2 issues: 0
+- source-only confirmation is browser-operable: passed
+- existing Review Owner and freeze veto preserved: passed
+- pending-only source projection: passed
+- selected source page jump and cyan dashed highlight: passed
+- no visible internal ID or static fake data: passed
+- no horizontal overflow at 1565x796: passed
+- PDF remains the largest visual region: passed
+- console and network gate: passed with one explained superseded source stream
+- prerequisite result: passed

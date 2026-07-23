@@ -202,6 +202,35 @@ describe("PdfWorkspace", () => {
     expect(screen.getByTestId("candidate-c1").getAttribute("x")).toBe("10");
   });
 
+  test("来源待确认选择会跳页并高亮真实来源框", async () => {
+    const onSelectSource = vi.fn();
+    render(
+      <PdfWorkspace
+        pdfDocument={documentFixture()}
+        candidates={[]}
+        sources={[
+          {
+            id: "source-only",
+            pageIndex: 1,
+            bbox: [10, 20, 30, 40],
+            rawText: "技术要求：去除毛刺",
+          },
+        ]}
+        balloons={[]}
+        selectedSourceId="source-only"
+        onSelectSource={onSelectSource}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("page-indicator").textContent).toBe("2 / 2");
+    });
+    const source = await screen.findByTestId("source-source-only");
+    expect(source.getAttribute("data-selected")).toBe("true");
+    fireEvent.click(source);
+    expect(onSelectSource).toHaveBeenCalledWith("source-only");
+  });
+
   test("提供适合页面、展开和中文图例控件", () => {
     render(
       <PdfWorkspace
