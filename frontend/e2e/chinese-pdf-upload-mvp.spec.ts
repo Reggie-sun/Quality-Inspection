@@ -398,6 +398,14 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
     .toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "检验项目审核" }))
     .toBeVisible({ timeout: 10 * 60_000 });
+  const candidateMarkers = page.getByRole("button", {
+    name: /^候选气泡 [1-9]\d*$/,
+  });
+  await expect(candidateMarkers.first()).toBeVisible();
+  expect(
+    await candidateMarkers.count(),
+    "审核前必须显示正整数候选气泡序号",
+  ).toBeGreaterThan(0);
   expect(new URL(page.url()).search, "产品 URL 不得包含 query").toBe("");
 
   const activeCountText = await page.getByTestId("summary-active-count").textContent();
@@ -409,12 +417,25 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   await expect(pdfCanvas).toBeVisible();
   await expect(pdfCanvas).toHaveAttribute("width", /^[1-9]\d*$/);
   await expect(pdfCanvas).toHaveAttribute("height", /^[1-9]\d*$/);
+  const candidateScreenshot = process.env.QI_MVP_CANDIDATE_SCREENSHOT;
+  if (candidateScreenshot) {
+    await page.screenshot({ path: candidateScreenshot });
+  }
 
   await resolveSourceOnlyCoverage(page);
   await processActiveItems(page, activeCount);
   await populateSipMetadata(page);
   await clickAndRefresh(page, "冻结检验项", "/review/freeze");
   await clickAndRefresh(page, "生成气泡", "/balloons/generate");
+  await expect(page.getByRole("button", { name: /^候选气泡 / })).toHaveCount(0);
+  const generatedBalloons = page.getByRole("button", {
+    name: /^气泡 [1-9]\d*(?:，需人工处理)?$/,
+  });
+  await expect(generatedBalloons.first()).toBeVisible();
+  expect(
+    await generatedBalloons.count(),
+    "生成后必须显示正式气泡编号",
+  ).toBeGreaterThan(0);
 
   const activeRows = page.getByRole("table", { name: "检验项列表" })
     .locator("[role='row'][data-active='true']:visible");

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   BalloonOverlay,
@@ -130,6 +130,19 @@ export function InspectionWorkbench({
     () => metadataDraft(workingCopy),
   );
   useEffect(() => setMetadata(metadataDraft(workingCopy)), [workingCopy?.version]);
+  const candidateNumbers = useMemo(() => {
+    const lookup = new Map<string, number>();
+    for (const candidate of candidates) {
+      if (
+        candidate.itemId !== undefined
+        && candidate.candidateNumber !== undefined
+        && !lookup.has(candidate.itemId)
+      ) {
+        lookup.set(candidate.itemId, candidate.candidateNumber);
+      }
+    }
+    return lookup;
+  }, [candidates]);
 
   const finalized = projectState === "reviewed";
   const reviewImmutable =
@@ -355,6 +368,7 @@ export function InspectionWorkbench({
             <SelectedInspectionItemSummary
               item={selectedReviewItem}
               balloon={selectedReviewBalloon}
+              candidateNumber={candidateNumbers.get(selectedReviewItem.item_id)}
             />
           )}
           {workingCopy === undefined ? null : (
@@ -375,6 +389,7 @@ export function InspectionWorkbench({
           <InspectionItemTable
             items={items}
             balloons={balloons}
+            candidateNumbers={candidateNumbers}
             filter={filter}
             selectedItemId={selectedItemId}
             disabled={pendingCommand !== undefined || busy || reviewImmutable}

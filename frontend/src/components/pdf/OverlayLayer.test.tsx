@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { OverlayLayer } from "./OverlayLayer";
@@ -35,5 +35,96 @@ describe("OverlayLayer", () => {
       "200",
     );
     expect(candidate.getAttribute("data-selected")).toBe("true");
+  });
+
+  test("候选气泡显示在首个候选框并可通过鼠标和键盘选择", () => {
+    const onSelectItem = vi.fn();
+    render(
+      <OverlayLayer
+        pageWidth={100}
+        pageHeight={100}
+        scale={1}
+        candidates={[
+          {
+            id: "candidate-first",
+            itemId: "item-1",
+            bbox: [90, 0, 110, 20],
+            candidateNumber: 3,
+          },
+          {
+            id: "candidate-duplicate",
+            itemId: "item-1",
+            bbox: [20, 30, 40, 50],
+            candidateNumber: 3,
+          },
+        ]}
+        sources={[]}
+        balloons={[]}
+        onSelectItem={onSelectItem}
+      />,
+    );
+
+    const markers = screen.getAllByRole("button", { name: "候选气泡 3" });
+    expect(markers).toHaveLength(1);
+    expect(markers[0].getAttribute("data-testid")).toBe(
+      "candidate-number-candidate-first",
+    );
+    expect(markers[0].querySelector("circle")?.getAttribute("cx")).toBe("90");
+    expect(markers[0].querySelector("circle")?.getAttribute("cy")).toBe("10");
+
+    fireEvent.click(markers[0]);
+    fireEvent.keyDown(markers[0], { key: "Enter" });
+    fireEvent.keyDown(markers[0], { key: " " });
+
+    expect(onSelectItem).toHaveBeenNthCalledWith(1, "item-1");
+    expect(onSelectItem).toHaveBeenNthCalledWith(2, "item-1");
+    expect(onSelectItem).toHaveBeenNthCalledWith(3, "item-1");
+  });
+
+  test("有效正式气泡抑制候选气泡，已删除正式气泡不抑制", () => {
+    const candidate = {
+      id: "candidate-1",
+      itemId: "item-1",
+      bbox: [10, 20, 30, 40] as [number, number, number, number],
+      candidateNumber: 1,
+    };
+    const { rerender } = render(
+      <OverlayLayer
+        pageWidth={100}
+        pageHeight={100}
+        scale={1}
+        candidates={[candidate]}
+        sources={[]}
+        balloons={[{
+          id: "balloon-active",
+          itemId: "item-1",
+          center: [50, 60],
+          number: 7,
+          status: "active",
+        }]}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "候选气泡 1" })).toBeNull();
+    expect(screen.getByRole("button", { name: "气泡 7" })).not.toBeNull();
+
+    rerender(
+      <OverlayLayer
+        pageWidth={100}
+        pageHeight={100}
+        scale={1}
+        candidates={[candidate]}
+        sources={[]}
+        balloons={[{
+          id: "balloon-deleted",
+          itemId: "item-1",
+          center: [50, 60],
+          number: 7,
+          status: "deleted",
+        }]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "候选气泡 1" })).not.toBeNull();
   });
 });

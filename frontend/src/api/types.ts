@@ -14,6 +14,7 @@ export type OverlayBox = {
   pageIndex?: number;
   bbox: PdfCoordinates;
   rawText?: string;
+  candidateNumber?: number;
 };
 
 export type BalloonOverlay = {

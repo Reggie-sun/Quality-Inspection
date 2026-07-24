@@ -552,11 +552,27 @@
   width: 28px;
   height: 28px;
   place-items: center;
-  border: 1px solid #c23b3b;
+  border: 1px solid #cbd5e1;
   border-radius: 50%;
   background: #ffffff;
-  color: #9f2f2f;
+  color: var(--qi-muted);
   font-size: 11px;
+}
+
+.inspection-number--formal {
+  border-color: #c23b3b;
+  color: #9f2f2f;
+}
+
+.inspection-number--candidate {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.inspection-table__row[data-selected="true"] .inspection-number--candidate {
+  background: #2563eb;
+  color: #ffffff;
 }
 
 .geometry-state--manual strong,

@@ -13,6 +13,7 @@ import type { InspectionFilter } from "./RecognitionSummary";
 type InspectionItemTableProps = {
   items: ReviewItem[];
   balloons: BalloonOverlay[];
+  candidateNumbers?: ReadonlyMap<string, number>;
   filter: InspectionFilter;
   selectedItemId?: string;
   disabled?: boolean;
@@ -23,6 +24,7 @@ type InspectionItemTableProps = {
 type SelectedInspectionItemSummaryProps = {
   item: ReviewItem;
   balloon?: BalloonOverlay;
+  candidateNumber?: number;
 };
 
 type DetailDraft = {
@@ -43,6 +45,7 @@ type ItemStatus =
   | "collision";
 
 const PAGE_SIZE = 50;
+const EMPTY_CANDIDATE_NUMBERS: ReadonlyMap<string, number> = new Map();
 const TYPE_LABELS: Partial<Record<CandidateType, string>> = {
   ...zhCN.inspection.types,
 };
@@ -114,6 +117,7 @@ function itemStatus(item: ReviewItem, balloon?: BalloonOverlay): ItemStatus {
 export function SelectedInspectionItemSummary({
   item,
   balloon,
+  candidateNumber,
 }: SelectedInspectionItemSummaryProps) {
   const page = item.source_page
     ?? (item.page_index === null || item.page_index === undefined
@@ -131,7 +135,7 @@ export function SelectedInspectionItemSummary({
       <dl>
         <div>
           <dt>{zhCN.inspection.balloonNumber}</dt>
-          <dd>{balloon?.number ?? zhCN.workbench.unknown}</dd>
+          <dd>{balloon?.number ?? candidateNumber ?? zhCN.workbench.unknown}</dd>
         </div>
         <div className="selected-inspection-summary__item">
           <dt>{zhCN.inspection.item}</dt>
@@ -158,6 +162,7 @@ export function SelectedInspectionItemSummary({
 export function InspectionItemTable({
   items,
   balloons,
+  candidateNumbers = EMPTY_CANDIDATE_NUMBERS,
   filter,
   selectedItemId,
   disabled = false,
@@ -274,6 +279,13 @@ export function InspectionItemTable({
             <p className="inspection-table__empty">{zhCN.inspection.empty}</p>
           ) : pageItems.map((item) => {
             const balloon = balloonByItem.get(item.item_id);
+            const candidateNumber = candidateNumbers.get(item.item_id);
+            const displayNumber = balloon?.number ?? candidateNumber;
+            const numberKind = balloon !== undefined
+              ? "formal"
+              : candidateNumber !== undefined
+                ? "candidate"
+                : "empty";
             const status = itemStatus(item, balloon);
             const collisions = balloon?.collisionFlags
               ?.map((flag) => COLLISION_LABELS[flag] ?? zhCN.workbench.unknown)
@@ -295,8 +307,16 @@ export function InspectionItemTable({
                   }
                 }}
               >
-                <strong role="cell" className="inspection-number">
-                  {balloon?.number ?? zhCN.workbench.unknown}
+                <strong
+                  role="cell"
+                  className={`inspection-number inspection-number--${numberKind}`}
+                  aria-label={
+                    balloon === undefined && candidateNumber !== undefined
+                      ? zhCN.inspection.candidateNumber(candidateNumber)
+                      : undefined
+                  }
+                >
+                  {displayNumber ?? zhCN.workbench.unknown}
                 </strong>
                 <span role="cell" className="inspection-item-copy">
                   <strong title={item.raw_text}>{item.raw_text}</strong>

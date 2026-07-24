@@ -200,3 +200,44 @@ test("工作台加载完成后不保留过期识别状态", async () => {
   expect(await screen.findByRole("heading", { name: "检验项目审核" })).not.toBeNull();
   expect(screen.queryByText("识别完成，已进入审核")).toBeNull();
 });
+
+
+test("无正式气泡时显示候选气泡并在所选检验项摘要复用候选序号", async () => {
+  const snapshot = reviewedResponse();
+  snapshot.project.state = "editing";
+  snapshot.working_copy.items_frozen_at = null;
+  snapshot.working_copy.items_frozen_by = null;
+  snapshot.working_copy.items_frozen_version = null;
+  snapshot.candidates = [{
+    id: "candidate-secret-uuid",
+    item_id: "item-secret-uuid",
+    page_index: 0,
+    bbox_pdf: [10, 20, 30, 40],
+  }];
+  snapshot.balloons = [];
+  snapshot.reviewed_result_id = null;
+  snapshot.latest_export = null;
+  vi.stubGlobal("fetch", vi.fn(async (
+    path: RequestInfo | URL,
+    _init?: RequestInit,
+  ) => new Response(JSON.stringify(
+    String(path).endsWith("/review/lock")
+      ? { operator_id: "operator-real" }
+      : snapshot,
+  ), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })));
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+    />,
+  );
+
+  expect(await screen.findByRole("button", { name: "候选气泡 1" })).not.toBeNull();
+  const selectedSummary = screen.getByRole("region", { name: "所选检验项" });
+  expect(selectedSummary.textContent).toContain("气泡编号1");
+});

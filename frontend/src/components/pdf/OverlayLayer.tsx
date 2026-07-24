@@ -13,6 +13,7 @@ import { selectRelationItem, selectedRelation } from "../workbench/selection";
 
 
 const IDENTITY_MATRIX: PdfMatrix = [1, 0, 0, 1, 0, 0];
+const CANDIDATE_MARKER_RADIUS = 10;
 
 function normalizeMatrix(matrix: PdfMatrix): PdfMatrix {
   const matrixScale = Math.hypot(matrix[0], matrix[1]);
@@ -39,6 +40,13 @@ function transformBox(matrix: PdfMatrix, bbox: PdfCoordinates): PdfCoordinates {
   const xs = corners.map(([x]) => x);
   const ys = corners.map(([, y]) => y);
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+function clampMarker(value: number, extent: number): number {
+  return Math.min(
+    Math.max(value, CANDIDATE_MARKER_RADIUS),
+    Math.max(CANDIDATE_MARKER_RADIUS, extent - CANDIDATE_MARKER_RADIUS),
+  );
 }
 
 
@@ -93,6 +101,13 @@ export function OverlayLayer({
   );
   const selected = selectedItemId ?? selectedId;
   const selectItem = onSelectItem ?? onSelect;
+  const activeBalloonItemIds = new Set(
+    balloons
+      .filter((balloon) => balloon.status !== "deleted")
+      .map((balloon) => balloon.itemId)
+      .filter((itemId): itemId is string => itemId !== undefined),
+  );
+  const candidateMarkerItemIds = new Set<string>();
 
   return (
     <svg
@@ -105,31 +120,83 @@ export function OverlayLayer({
     >
       {candidates.map((item) => {
         const [x0, y0, x1, y1] = transformBox(matrix, item.bbox);
+        const itemId = item.itemId ?? item.id;
+        const candidateNumber = item.candidateNumber;
         const isSelected = selectedRelation(
-          { itemId: item.itemId ?? item.id, itemIds: item.itemIds },
+          { itemId, itemIds: item.itemIds },
           selected,
         );
+        const showCandidateMarker =
+          candidateNumber !== undefined
+          && !activeBalloonItemIds.has(itemId)
+          && !candidateMarkerItemIds.has(itemId);
+        if (candidateNumber !== undefined) {
+          candidateMarkerItemIds.add(itemId);
+        }
+        const markerX = clampMarker(x1, pageWidth);
+        const markerY = clampMarker(y0, pageHeight);
+        const selectCandidate = () => {
+          const selectedItem = selectRelationItem(
+            { itemId, itemIds: item.itemIds },
+            selected,
+          );
+          if (selectedItem !== undefined) selectItem?.(selectedItem);
+        };
         return (
-          <rect
-            key={item.id}
-            data-testid={`candidate-${item.id}`}
-            data-selected={isSelected}
-            x={x0}
-            y={y0}
-            width={x1 - x0}
-            height={y1 - y0}
-            fill="transparent"
-            stroke={isSelected ? "#1d4ed8" : "#2563eb"}
-            strokeWidth={isSelected ? 3 : 1.5}
-            onClick={() => {
-              const itemId = selectRelationItem(
-                { itemId: item.itemId ?? item.id, itemIds: item.itemIds },
-                selected,
-              );
-              if (itemId !== undefined) selectItem?.(itemId);
-            }}
-            style={{ cursor: selectItem ? "pointer" : "default" }}
-          />
+          <g key={item.id}>
+            <rect
+              data-testid={`candidate-${item.id}`}
+              data-selected={isSelected}
+              x={x0}
+              y={y0}
+              width={x1 - x0}
+              height={y1 - y0}
+              fill="transparent"
+              stroke={isSelected ? "#1d4ed8" : "#2563eb"}
+              strokeWidth={isSelected ? 3 : 1.5}
+              onClick={selectCandidate}
+              style={{ cursor: selectItem ? "pointer" : "default" }}
+            />
+            {showCandidateMarker ? (
+              <g
+                data-testid={`candidate-number-${item.id}`}
+                data-item-id={itemId}
+                data-selected={isSelected}
+                role="button"
+                aria-label={zhCN.pdf.candidateMarker(candidateNumber)}
+                tabIndex={0}
+                onClick={selectCandidate}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    selectCandidate();
+                  }
+                }}
+                style={{ cursor: selectItem ? "pointer" : "default" }}
+              >
+                <circle
+                  cx={markerX}
+                  cy={markerY}
+                  r={CANDIDATE_MARKER_RADIUS}
+                  fill={isSelected ? "#2563EB" : "#EFF6FF"}
+                  stroke="#2563EB"
+                  strokeWidth={isSelected ? 2 : 1.5}
+                />
+                <text
+                  x={markerX}
+                  y={markerY}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontFamily="DejaVu Sans"
+                  fontSize={8}
+                  fill={isSelected ? "#FFFFFF" : "#2563EB"}
+                  style={{ pointerEvents: "none" }}
+                >
+                  {candidateNumber}
+                </text>
+              </g>
+            ) : null}
+          </g>
         );
       })}
       {sources.map((item) => {

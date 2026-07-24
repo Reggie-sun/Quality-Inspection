@@ -194,3 +194,55 @@ test("未知后端枚举只显示安全中文占位，表头不使用 inline sty
   const header = document.querySelector(".inspection-table__head")!;
   expect(header.getAttribute("style")).toBeNull();
 });
+
+test("候选序号使用蓝色圆标，且有效正式气泡编号优先", () => {
+  render(
+    <InspectionItemTable
+      items={[
+        {
+          item_id: "formal-item",
+          raw_text: "正式编号项",
+          active: true,
+        },
+        {
+          item_id: "candidate-item",
+          raw_text: "候选编号项",
+          active: true,
+        },
+        {
+          item_id: "empty-item",
+          raw_text: "无编号项",
+          active: false,
+        },
+      ]}
+      balloons={[{
+        id: "formal-balloon",
+        itemId: "formal-item",
+        center: [30, 30],
+        number: 9,
+        status: "active",
+      }]}
+      candidateNumbers={new Map([
+        ["formal-item", 1],
+        ["candidate-item", 2],
+      ])}
+      filter="all"
+      onSelectItem={vi.fn()}
+    />,
+  );
+
+  const formalNumber = screen.getByRole("row", { name: /正式编号项/ })
+    .querySelector(".inspection-number");
+  expect(formalNumber?.textContent).toBe("9");
+  expect(formalNumber?.classList.contains("inspection-number--formal")).toBe(true);
+  expect(screen.queryByLabelText("候选序号 1")).toBeNull();
+
+  const candidateNumber = screen.getByLabelText("候选序号 2");
+  expect(candidateNumber.textContent).toBe("2");
+  expect(candidateNumber.classList.contains("inspection-number--candidate")).toBe(true);
+
+  const emptyNumber = screen.getByRole("row", { name: /无编号项/ })
+    .querySelector(".inspection-number");
+  expect(emptyNumber?.textContent).toBe("—");
+  expect(emptyNumber?.classList.contains("inspection-number--empty")).toBe(true);
+});

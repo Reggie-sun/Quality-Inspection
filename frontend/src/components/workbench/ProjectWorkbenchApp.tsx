@@ -17,6 +17,7 @@ import {
 } from "../../features/review/api";
 import { saveWorkingCopy } from "../../features/review/saveWorkingCopy";
 import { apiErrorCopy, zhCN } from "../../copy/zhCN";
+import { deriveCandidateNumbers } from "./candidateNumbering";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 
 
@@ -129,6 +130,10 @@ export function ProjectWorkbenchApp({
     })) ?? [],
     [snapshot],
   );
+  const candidateNumbers = useMemo(
+    () => deriveCandidateNumbers(snapshot?.working_copy.items ?? []),
+    [snapshot?.working_copy.items],
+  );
 
   const run = async (
     nextStatus: string,
@@ -198,6 +203,7 @@ export function ProjectWorkbenchApp({
           itemId: candidate.item_id,
           pageIndex: candidate.page_index,
           bbox: candidate.bbox_pdf,
+          candidateNumber: candidateNumbers.get(candidate.item_id),
         }))}
         sources={snapshot.sources.map((source) => ({
           id: source.id,
