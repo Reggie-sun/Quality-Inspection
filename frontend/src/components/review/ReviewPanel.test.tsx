@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { CandidateType, ReviewItem } from "../../api/types";
@@ -85,6 +91,7 @@ describe("ReviewPanel", () => {
     rerender(
       <ReviewPanel items={items} onCommand={onCommand} selectedItemId="typed-1" />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：10 ±0.02" }));
     fireEvent.change(screen.getByLabelText("原始标注：10 ±0.02"), {
       target: { value: "12.50 +0.03" },
     });
@@ -94,11 +101,14 @@ describe("ReviewPanel", () => {
     fireEvent.change(screen.getByLabelText("上公差：10 ±0.02"), {
       target: { value: "0.03" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "修改检验项：10 ±0.02" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "修改保存检验项：10 ±0.02" }),
+    );
 
     rerender(
       <ReviewPanel items={items} onCommand={onCommand} selectedItemId="complex-1" />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：Ra 3.2" }));
     fireEvent.change(screen.getByLabelText("原始标注：Ra 3.2"), {
       target: { value: "Ra 1.6" },
     });
@@ -109,7 +119,9 @@ describe("ReviewPanel", () => {
       target: { value: "weld" },
     });
     fireEvent.click(screen.getByLabelText("需要人工确认：Ra 3.2"));
-    fireEvent.click(screen.getByRole("button", { name: "修改检验项：Ra 3.2" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "修改保存检验项：Ra 3.2" }),
+    );
     fireEvent.click(
       screen.getByRole("button", { name: "确认候选项：Ra 3.2" }),
     );
@@ -193,6 +205,146 @@ describe("ReviewPanel", () => {
     ).toEqual([false, true]);
   });
 
+  test("所选检验项默认只读，显式修改后仅在草稿有差异时允许保存", async () => {
+    const onCommand = vi.fn().mockResolvedValue(true);
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "edit-item",
+          item_type: "linear_dimension",
+          raw_text: "10",
+          nominal: "10",
+          active: true,
+        }]}
+        onCommand={onCommand}
+        selectedItemId="edit-item"
+      />,
+    );
+
+    const rawText = screen.getByRole("textbox", { name: "原始标注：10" });
+    const nominal = screen.getByRole("textbox", { name: "基本尺寸：10" });
+    const save = screen.getByRole(
+      "button",
+      { name: "修改保存检验项：10" },
+    );
+
+    expect(rawText.hasAttribute("disabled")).toBe(true);
+    expect(nominal.hasAttribute("disabled")).toBe(true);
+    expect(save.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：10" }));
+    expect(rawText.hasAttribute("disabled")).toBe(false);
+    expect(nominal.hasAttribute("disabled")).toBe(false);
+    expect(save.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(rawText, { target: { value: "11" } });
+    expect(save.hasAttribute("disabled")).toBe(false);
+    fireEvent.change(rawText, { target: { value: "10" } });
+    expect(save.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(rawText, { target: { value: "11" } });
+    fireEvent.click(save);
+
+    await waitFor(() => {
+      expect(onCommand).toHaveBeenCalledWith({
+        type: "edit",
+        item_id: "edit-item",
+        fields: {
+          raw_text: "11",
+          nominal: "10",
+        },
+      });
+      expect(rawText.hasAttribute("disabled")).toBe(true);
+    });
+    expect((rawText as HTMLInputElement).value).toBe("10");
+    expect(save.hasAttribute("disabled")).toBe(true);
+  });
+
+  test("修改命令显式失败时保留本地草稿和编辑模式", async () => {
+    const onCommand = vi.fn().mockResolvedValue(false);
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "failed-edit-item",
+          item_type: "linear_dimension",
+          raw_text: "10",
+          nominal: "10",
+          active: true,
+        }]}
+        onCommand={onCommand}
+        selectedItemId="failed-edit-item"
+      />,
+    );
+
+    const rawText = screen.getByRole("textbox", { name: "原始标注：10" });
+    const save = screen.getByRole(
+      "button",
+      { name: "修改保存检验项：10" },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：10" }));
+    fireEvent.change(rawText, { target: { value: "11" } });
+    fireEvent.click(save);
+
+    await waitFor(() => expect(onCommand).toHaveBeenCalledTimes(1));
+    expect((rawText as HTMLInputElement).value).toBe("11");
+    expect(rawText.hasAttribute("disabled")).toBe(false);
+    expect(save.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("新增和拆分草稿仅在命令成功后重置", async () => {
+    const onCommand = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "split-item",
+          item_type: "thread",
+          raw_text: "M8 深10",
+          active: true,
+        }]}
+        onCommand={onCommand}
+        selectedItemId="split-item"
+      />,
+    );
+
+    const manualRawText = screen.getByLabelText("新增检验项原始标注");
+    const manualCoordinates = screen.getByLabelText("新增检验项坐标");
+    fireEvent.change(manualRawText, { target: { value: "M10" } });
+    fireEvent.change(manualCoordinates, { target: { value: "1,2,3,4" } });
+    fireEvent.click(screen.getByRole("button", { name: "新增检验项" }));
+
+    await waitFor(() => expect(onCommand).toHaveBeenCalledTimes(1));
+    expect((manualRawText as HTMLInputElement).value).toBe("M10");
+    expect((manualCoordinates as HTMLInputElement).value).toBe("1,2,3,4");
+
+    fireEvent.click(screen.getByRole("button", { name: "新增检验项" }));
+    await waitFor(() => {
+      expect(onCommand).toHaveBeenCalledTimes(2);
+      expect((manualRawText as HTMLInputElement).value).toBe("");
+    });
+    expect((manualCoordinates as HTMLInputElement).value).toBe("");
+
+    const splitDraft = screen.getByLabelText("拆分内容：M8 深10");
+    fireEvent.change(splitDraft, { target: { value: "M8|深10" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "拆分检验项：M8 深10" }),
+    );
+
+    await waitFor(() => expect(onCommand).toHaveBeenCalledTimes(3));
+    expect((splitDraft as HTMLInputElement).value).toBe("M8|深10");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "拆分检验项：M8 深10" }),
+    );
+    await waitFor(() => {
+      expect(onCommand).toHaveBeenCalledTimes(4);
+      expect((splitDraft as HTMLInputElement).value).toBe("");
+    });
+  });
+
   test("大量检验项只渲染所选 active item 的完整详情表单", () => {
     const items: ReviewItem[] = Array.from({ length: 200 }, (_, index) => ({
       item_id: `item-${index + 1}`,
@@ -265,11 +417,17 @@ describe("ReviewPanel", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "修改检验项：新型标注" }),
     );
+    fireEvent.change(screen.getByLabelText("原始标注：新型标注"), {
+      target: { value: "新型标注（修改）" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "修改保存检验项：新型标注" }),
+    );
 
     expect(onCommand).toHaveBeenCalledWith({
       type: "edit",
       item_id: "future-item",
-      fields: { raw_text: "新型标注" },
+      fields: { raw_text: "新型标注（修改）" },
     });
   });
 

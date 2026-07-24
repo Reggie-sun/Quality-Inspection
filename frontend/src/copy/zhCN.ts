@@ -211,7 +211,7 @@ export const zhCN = {
     keep: "保留",
     exclude: "排除",
     edit: "修改",
-    cancelEdit: "取消检验项修改",
+    saveEdit: "修改保存",
     accept: "确认候选项",
     reject: "拒绝候选项",
     requireBalloon: "设为需要气泡",
