@@ -21,7 +21,8 @@ function openAuxiliaryPanel(): void {
 }
 
 describe("InspectionWorkbench", () => {
-  test("本地草稿立即显示未保存，取消后恢复真实保存状态", () => {
+  test("本地草稿立即显示未保存且只在修改保存时提交", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
     render(
       <InspectionWorkbench
         pdfDocument={null}
@@ -34,7 +35,7 @@ describe("InspectionWorkbench", () => {
           raw_text: "M6",
           active: true,
         }]}
-        onSave={vi.fn().mockResolvedValue(undefined)}
+        onSave={onSave}
       />,
     );
 
@@ -43,20 +44,24 @@ describe("InspectionWorkbench", () => {
     ).getByRole("status");
     expect(saveStatus.textContent).toBe("已保存");
 
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：M6" }));
     fireEvent.change(screen.getByRole("textbox", { name: "原始标注：M6" }), {
       target: { value: "M8" },
     });
 
     expect(saveStatus.textContent).toBe("有未保存修改");
-    expect(screen.getByRole("button", { name: "保存审核修改" })
-      .hasAttribute("disabled")).toBe(true);
+    expect(onSave).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "取消检验项修改：M6" }));
-    expect(
-      (screen.getByRole("textbox", { name: "原始标注：M6" }) as HTMLInputElement)
-        .value,
-    ).toBe("M6");
-    expect(saveStatus.textContent).toBe("已保存");
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改保存检验项：M6",
+    }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
+      type: "edit",
+      item_id: "i1",
+      fields: {
+        raw_text: "M8",
+      },
+    }));
   });
 
   test("外部操作反馈仅显示在项目摘要的保存状态中", () => {
@@ -74,11 +79,10 @@ describe("InspectionWorkbench", () => {
 
     const summary = screen.getByRole("region", { name: "项目摘要" });
     expect(within(summary).getByRole("status").textContent).toBe("审核修改已提交");
-    expect(screen.getByRole("region", { name: "审核流程操作" }).textContent)
-      .not.toContain("审核修改已提交");
+    expect(screen.queryByRole("region", { name: "审核流程操作" })).toBeNull();
   });
 
-  test("项目摘要后保留审核操作且不重复全局头部", () => {
+  test("无最终审核 handlers 时不渲染空操作区且不重复全局头部", () => {
     render(
       <InspectionWorkbench
         pdfDocument={null}
@@ -92,18 +96,16 @@ describe("InspectionWorkbench", () => {
 
     const shell = screen.getByRole("main");
     const projectSummary = screen.getByRole("region", { name: "项目摘要" });
-    const reviewActions = screen.getByRole("region", { name: "审核流程操作" });
     const children = Array.from(shell.children);
 
-    expect(children.indexOf(projectSummary)).toBeLessThan(
-      children.indexOf(reviewActions),
-    );
+    expect(children.indexOf(projectSummary)).toBe(0);
+    expect(screen.queryByRole("region", { name: "审核流程操作" })).toBeNull();
     expect(screen.queryByText("工程图纸检验工作台")).toBeNull();
     expect(screen.queryByRole("heading", { name: "检验项目审核" })).toBeNull();
-    expect(screen.getByRole("button", { name: "保存审核修改" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "保存审核修改" })).toBeNull();
   });
 
-  test("P0-UI-007 keeps one pending command stable until explicit Save", async () => {
+  test("明确审核动作直接提交且不渲染额外保存按钮", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
       <InspectionWorkbench
@@ -127,28 +129,19 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("row", { name: /M6/ }));
+    expect(screen.queryByRole("button", { name: "保存审核修改" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "保留检验项：M6" }));
 
-    expect(screen.getByText("有未保存修改")).not.toBeNull();
-    expect(
-      screen.getByRole("button", { name: "排除检验项：M6" }).getAttribute("disabled"),
-    ).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "排除检验项：M6" }));
-    expect(onSave).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
-
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith({ type: "keep", item_id: "i1" });
-      expect(screen.getByText("已保存")).not.toBeNull();
-    });
-    expect(
-      screen.getByRole("button", { name: "排除检验项：M6" }).getAttribute("disabled"),
-    ).toBeNull();
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
+      type: "keep",
+      item_id: "i1",
+    }));
+    expect(within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status").textContent).toBe("已保存");
   });
 
-  test("P0-UI-007 submits Save only once while the request is in flight", async () => {
+  test("审核命令请求期间阻止第二个明确动作", async () => {
     let resolveSave!: () => void;
     const onSave = vi.fn(
       () =>
@@ -173,18 +166,16 @@ describe("InspectionWorkbench", () => {
         onSave={onSave}
       />,
     );
-    fireEvent.click(screen.getByRole("row", { name: /M6/ }));
-    fireEvent.click(screen.getByRole("button", { name: "保留检验项：M6" }));
-    const save = screen.getByRole("button", { name: "保存审核修改" });
+    const keep = screen.getByRole("button", { name: "保留检验项：M6" });
+    const exclude = screen.getByRole("button", { name: "排除检验项：M6" });
+    fireEvent.click(keep);
+    fireEvent.click(exclude);
 
-    fireEvent.click(save);
-    fireEvent.click(save);
-
-    expect(save.getAttribute("disabled")).not.toBeNull();
     expect(onSave).toHaveBeenCalledOnce();
+    expect(exclude.hasAttribute("disabled")).toBe(true);
 
     resolveSave();
-    await waitFor(() => expect(screen.getByText("已保存")).not.toBeNull());
+    await waitFor(() => expect(exclude.hasAttribute("disabled")).toBe(false));
   });
 
   test("展示真实项目摘要、两栏区域和默认收起的工作区", () => {
@@ -267,14 +258,12 @@ describe("InspectionWorkbench", () => {
     const actionLabels = screen.getAllByRole("button")
       .map((button) => button.textContent?.trim())
       .filter((label) => [
-        "保存审核修改",
         "冻结检验项",
         "生成气泡",
         "确认审核结果",
         "生成正式文件",
       ].includes(label ?? ""));
     expect(actionLabels).toEqual([
-      "保存审核修改",
       "冻结检验项",
       "生成气泡",
       "确认审核结果",
@@ -632,9 +621,6 @@ describe("InspectionWorkbench", () => {
       target: { value: "新上座" },
     });
     fireEvent.click(confirmMetadata);
-    expect(summary.getByText("保存状态").nextElementSibling?.textContent)
-      .toBe("有未保存修改");
-    fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith({
@@ -712,7 +698,6 @@ describe("InspectionWorkbench", () => {
       target: { value: "general_requirement" },
     });
     fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
-    fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith({
@@ -784,7 +769,6 @@ describe("InspectionWorkbench", () => {
       target: { value: "general_requirement" },
     });
     fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
-    fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
 
     await waitFor(() => {
       expect(within(
@@ -808,7 +792,7 @@ describe("InspectionWorkbench", () => {
     expect(
       (screen.getByRole("combobox", { name: "检验类型" }) as HTMLSelectElement).value,
     ).toBe("general_requirement");
-    expect(screen.getByRole("button", { name: "保存审核修改" })
+    expect(screen.getByRole("button", { name: "添加为检验项" })
       .hasAttribute("disabled")).toBe(false);
   });
 
@@ -867,7 +851,6 @@ describe("InspectionWorkbench", () => {
     fireEvent.change(rawText, { target: { value: "人工补录的真实要求" } });
     expect(promote.hasAttribute("disabled")).toBe(false);
     fireEvent.click(promote);
-    fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({
       type: "promote_source",
       observation_id: "blank-observation-id",

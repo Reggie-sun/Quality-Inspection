@@ -89,7 +89,6 @@ export const zhCN = {
     confirmedItems: "已确认",
     currentState: "当前状态",
     saveStatus: "保存状态",
-    save: "保存审核修改",
     pending: "有未保存修改",
     saving: "正在保存",
     saved: "已保存",

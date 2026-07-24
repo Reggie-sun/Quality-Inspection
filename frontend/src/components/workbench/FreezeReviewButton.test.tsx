@@ -119,7 +119,6 @@ test("P0-UI-008 Save does not freeze and project identity drives real APIs", asy
   fireEvent.click(screen.getByRole("button", { name: "保留检验项：M6" }));
   expect(screen.getByRole("button", { name: "冻结检验项" }).hasAttribute("disabled"))
     .toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
 
   await waitFor(() => {
     expect(screen.getByText("审核修改已提交")).not.toBeNull();
@@ -169,7 +168,6 @@ test("P0-UI-008 failed API Save stays failed and preserves the pending command",
   );
 
   fireEvent.click(await screen.findByRole("button", { name: "保留检验项：M6" }));
-  fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
 
   expect(await screen.findByText("保存失败")).not.toBeNull();
   expect(screen.queryByText("已保存")).toBeNull();
