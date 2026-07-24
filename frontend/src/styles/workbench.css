@@ -173,8 +173,7 @@
 
 .panel-heading h2,
 .balloon-toolbar h2,
-.company-log h2,
-.candidate-editor h2 {
+.company-log h2 {
   margin: 0;
   color: var(--qi-text);
 }
@@ -259,8 +258,8 @@
 .workbench-layout {
   display: grid;
   grid-template-columns:
-    minmax(0, 2fr)
-    minmax(400px, 1fr);
+    minmax(0, 1.6fr)
+    minmax(560px, 1fr);
   gap: 10px;
   align-items: start;
   margin-top: 10px;
@@ -284,9 +283,20 @@
   display: grid;
   align-content: start;
   gap: 10px;
+  padding: 10px;
+}
+
+.inspection-pane {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: calc(100vh - 248px);
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+
+.workbench-aside {
   max-height: calc(100vh - 248px);
   min-height: 570px;
-  padding: 10px;
   overflow: auto;
 }
 
@@ -620,6 +630,15 @@
   overflow: auto;
 }
 
+.inspection-table-section--compact .inspection-table__head,
+.inspection-table-section--compact .inspection-table__row {
+  grid-template-columns: 34px minmax(90px, 1fr) minmax(72px, 0.75fr);
+}
+
+.inspection-table-section--compact .inspection-table__body {
+  max-height: none;
+}
+
 .inspection-table__row {
   min-height: 52px;
   padding: 6px 7px;
@@ -859,25 +878,36 @@
   font-size: 11px;
 }
 
-.candidate-editor {
+.inspection-review-workspace {
+  display: grid;
+  grid-template-columns:
+    minmax(190px, 0.78fr)
+    minmax(330px, 1.22fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--qi-border);
   border-radius: 6px;
+  background: #ffffff;
 }
 
-.candidate-editor > summary {
-  padding: 9px 10px;
-  color: #344054;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
+.inspection-review-workspace__list,
+.inspection-review-workspace__detail {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
-.candidate-editor > section {
-  padding: 0 9px 9px;
+.inspection-review-workspace__list {
+  padding: 10px;
+  border-right: 1px solid var(--qi-border);
 }
 
-.candidate-editor article {
-  font-size: 12px;
+.inspection-review-workspace__detail {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 10px;
 }
 
 .review-panel {
@@ -1138,12 +1168,6 @@
   }
 }
 
-.candidate-editor article button {
-  min-height: 30px;
-  padding: 4px 8px;
-  font-size: 11px;
-}
-
 .workbench-aside {
   min-width: 0;
 }
@@ -1221,6 +1245,16 @@
     grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr);
   }
 
+  .inspection-review-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  }
+
+  .inspection-review-workspace__list {
+    border-right: 0;
+    border-bottom: 1px solid var(--qi-border);
+  }
+
   .project-summary dl {
     grid-template-columns: repeat(4, minmax(100px, 1fr));
     row-gap: 10px;
@@ -1255,7 +1289,20 @@
   }
 
   .inspection-pane {
+    height: auto;
     max-height: none;
+    overflow: visible;
+  }
+
+  .inspection-review-workspace {
+    grid-template-rows: auto auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  .inspection-review-workspace__list,
+  .inspection-review-workspace__detail {
+    max-height: 520px;
   }
 }
 

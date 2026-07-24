@@ -83,6 +83,44 @@ test("P0-UI-004 keeps the dense list and drawing selection on one item identity"
     .toBe("false");
 });
 
+test("compact 模式只保留序号、检验项和状态三列", () => {
+  render(
+    <InspectionItemTable
+      compact
+      items={[{
+        item_id: "compact-item",
+        raw_text: "M8",
+        item_type: "thread",
+        page_index: 0,
+        status: "kept",
+        active: true,
+      }]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "compact-observation",
+        sourceId: "compact-source",
+        rawText: "去除毛刺",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 1,
+      }]}
+      filter="all"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+    />,
+  );
+
+  const table = screen.getByRole("table", { name: "检验项列表" });
+  expect(
+    within(table).getAllByRole("columnheader").map((header) => header.textContent),
+  ).toEqual(["序号", "检验项", "状态"]);
+  expect(
+    within(screen.getByRole("row", { name: /M8/ })).getAllByRole("cell"),
+  ).toHaveLength(3);
+  expect(
+    within(screen.getByRole("row", { name: /去除毛刺/ })).getAllByRole("cell"),
+  ).toHaveLength(3);
+});
+
 test("搜索、状态筛选和紧凑分页可处理大量检验项", () => {
   const items = Array.from({ length: 51 }, (_, index) => ({
     item_id: `internal-${index}`,

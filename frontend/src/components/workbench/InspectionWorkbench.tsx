@@ -483,27 +483,49 @@ export function InspectionWorkbench({
             filter={filter}
             onFilterChange={setFilter}
           />
-          {selectedReviewItem === undefined ? null : (
-            <SelectedInspectionItemSummary
-              item={selectedReviewItem}
-              balloon={selectedReviewBalloon}
-              candidateNumber={candidateNumbers.get(selectedReviewItem.item_id)}
-            />
-          )}
-          <InspectionItemTable
-            items={items}
-            balloons={balloons}
-            pendingSources={pendingSources}
-            candidateNumbers={candidateNumbers}
-            filter={filter}
-            selectedItemId={selectedItemId}
-            selectedSourceId={selectedSourceId}
-            disabled={saving || busy || reviewImmutable}
-            onSelectItem={selectItem}
-            onSelectSource={selectSource}
-            onCommand={submitCommand}
-            onDraftChange={setSipDraftDirty}
-          />
+          <div
+            className="inspection-review-workspace"
+            role="group"
+            aria-label={zhCN.workbench.mergedReviewWorkspace}
+          >
+            <div className="inspection-review-workspace__list">
+              <InspectionItemTable
+                compact
+                items={items}
+                balloons={balloons}
+                pendingSources={pendingSources}
+                candidateNumbers={candidateNumbers}
+                filter={filter}
+                selectedItemId={selectedItemId}
+                selectedSourceId={selectedSourceId}
+                disabled={saving || busy || reviewImmutable}
+                onSelectItem={selectItem}
+                onSelectSource={selectSource}
+                onCommand={submitCommand}
+                onDraftChange={setSipDraftDirty}
+              />
+            </div>
+            <div className="inspection-review-workspace__detail">
+              {selectedReviewItem === undefined ? null : (
+                <SelectedInspectionItemSummary
+                  item={selectedReviewItem}
+                  balloon={selectedReviewBalloon}
+                  candidateNumber={candidateNumbers.get(
+                    selectedReviewItem.item_id,
+                  )}
+                />
+              )}
+              <ReviewPanel
+                items={items}
+                disabled={saving || busy || reviewImmutable}
+                selectedItemId={selectedItemId}
+                onSelectItem={selectItem}
+                pageIndex={pageIndex}
+                onCommand={submitCommand}
+                onDraftChange={setReviewDraftDirty}
+              />
+            </div>
+          </div>
           {onDeleteBalloon === undefined || onRebuildBalloon === undefined
           || onReorderBalloon === undefined || onRenumberBalloons === undefined
             ? null
@@ -518,18 +540,6 @@ export function InspectionWorkbench({
                 onRenumber={onRenumberBalloons}
               />
             )}
-          <details className="candidate-editor" open>
-            <summary>{zhCN.workbench.reviewCommands}</summary>
-            <ReviewPanel
-              items={items}
-              disabled={saving || busy || reviewImmutable}
-              selectedItemId={selectedItemId}
-              onSelectItem={selectItem}
-              pageIndex={pageIndex}
-              onCommand={submitCommand}
-              onDraftChange={setReviewDraftDirty}
-            />
-          </details>
         </section>
 
       </div>
