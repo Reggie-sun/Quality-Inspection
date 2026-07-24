@@ -608,7 +608,7 @@ describe("InspectionWorkbench", () => {
     });
   });
 
-  test("source-only coverage 可通过中文审核入口保存并解除冻结前置项", async () => {
+  test("source-only coverage 在统一列表中添加为真实检验项并保存", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const items = [{
       item_id: "item-1",
@@ -660,26 +660,113 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    expect(screen.getByRole("region", { name: "来源待确认" }).textContent)
-      .toContain("技术要求：去除毛刺");
-    expect(
-      screen.getByRole("region", { name: "来源待确认" })
-        .compareDocumentPosition(screen.getByRole("table", { name: "检验项列表" }))
-        & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).not.toBe(0);
+    expect(screen.queryByRole("region", { name: "来源待确认" })).toBeNull();
+    const sourceRow = screen.getByRole("row", { name: /技术要求：去除毛刺/ });
+    fireEvent.click(sourceRow);
     expect(screen.getByTestId("source-hidden-source-id").getAttribute("data-selected"))
       .toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "确认保留此来源" }));
+    expect(screen.queryByRole("region", { name: "所选检验项" })).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+      target: { value: "general_requirement" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
     fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith({
-        type: "resolve_confirmation",
-        item_id: "hidden-observation-id",
-        accepted: true,
+        type: "promote_source",
+        observation_id: "hidden-observation-id",
+        raw_text: "技术要求：去除毛刺",
+        item_type: "general_requirement",
+        scope: "local_feature",
+        balloon_required: true,
+        page_index: 0,
       });
     });
-    expect(document.body.textContent).not.toContain("hidden-observation-id");
-    expect(document.body.textContent).not.toContain("hidden-source-id");
+  });
+
+  test("来源 promote 保存失败后保留选择和草稿供重试", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("save failed"));
+    const items = [{
+      item_id: "item-1",
+      item_type: "thread" as const,
+      raw_text: "M6",
+      balloon_required: true,
+      requires_confirmation: false,
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[{
+          id: "retry-source-id",
+          pageIndex: 0,
+          bbox: [60, 70, 150, 84],
+          rawText: "技术要求：去除毛刺",
+        }]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "retry-working-id",
+          project_id: "retry-project-id",
+          raw_result_id: "retry-result-id",
+          version: 4,
+          items,
+          coverage: {
+            blocking_count: 0,
+            review_required_count: 1,
+            entries: [{
+              observation_id: "retry-observation-id",
+              source_location_id: "retry-source-id",
+              candidate_id: null,
+              disposition: "ambiguous",
+              coordinates: [60, 70, 150, 84],
+              requires_confirmation: true,
+            }],
+          },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("row", { name: /技术要求：去除毛刺/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "原始标注" }), {
+      target: { value: "技术要求：去除全部毛刺" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+      target: { value: "general_requirement" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
+
+    await waitFor(() => {
+      expect(within(
+        screen.getByRole("region", { name: "项目摘要" }),
+      ).getByRole("status").textContent).toBe("保存失败");
+    });
+    expect(onSave).toHaveBeenCalledWith({
+      type: "promote_source",
+      observation_id: "retry-observation-id",
+      raw_text: "技术要求：去除全部毛刺",
+      item_type: "general_requirement",
+      scope: "local_feature",
+      balloon_required: true,
+      page_index: 0,
+    });
+    expect(screen.getByTestId("source-retry-source-id").getAttribute("data-selected"))
+      .toBe("true");
+    expect(
+      (screen.getByRole("textbox", { name: "原始标注" }) as HTMLInputElement).value,
+    ).toBe("技术要求：去除全部毛刺");
+    expect(
+      (screen.getByRole("combobox", { name: "检验类型" }) as HTMLSelectElement).value,
+    ).toBe("general_requirement");
+    expect(screen.getByRole("button", { name: "保存审核修改" })
+      .hasAttribute("disabled")).toBe(false);
   });
 });

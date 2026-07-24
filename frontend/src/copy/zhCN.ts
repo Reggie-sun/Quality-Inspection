@@ -277,18 +277,6 @@ export const zhCN = {
     mergeSelection: "选择需要合并的检验项",
     selectItemHint: "请先从检验项列表选择一项。",
   },
-  coverageReview: {
-    region: "来源待确认",
-    title: "来源待确认",
-    hint: "请核对图纸中的原始来源，再确认是否保留。",
-    progress: (current: number, total: number) => `${current} / ${total}`,
-    rawText: "原始标注",
-    sourcePage: "来源页码",
-    previous: "上一条来源",
-    next: "下一条来源",
-    accept: "确认保留此来源",
-    reject: "确认忽略此来源",
-  },
   balloon: {
     commands: "气泡操作",
     active: "个有效气泡",
