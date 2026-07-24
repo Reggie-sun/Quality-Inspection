@@ -338,6 +338,86 @@ describe("ReviewPanel", () => {
     });
   });
 
+  test("持久化签名不变的新快照仍会规范化数量值", async () => {
+    let resolveCommand: (outcome: boolean) => void = () => undefined;
+    const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
+      resolveCommand = resolve;
+    }));
+    const onDraftChange = vi.fn();
+    const items: ReviewItem[] = [{
+      item_id: "same-signature-quantity",
+      item_type: "linear_dimension",
+      raw_text: "数量尺寸",
+      quantity: 2,
+      active: true,
+    }];
+    const { rerender } = render(
+      <ReviewPanel
+        items={items}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="same-signature-quantity"
+      />,
+    );
+
+    const quantity = screen.getByRole(
+      "spinbutton",
+      { name: "数量：数量尺寸" },
+    );
+    const save = screen.getByRole(
+      "button",
+      { name: "修改保存检验项：数量尺寸" },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "修改检验项：数量尺寸" }),
+    );
+    fireEvent.change(quantity, { target: { value: "02" } });
+    fireEvent.click(save);
+
+    rerender(
+      <ReviewPanel
+        items={items.map((item) => ({ ...item }))}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="same-signature-quantity"
+      />,
+    );
+    await act(async () => resolveCommand(true));
+
+    await waitFor(() => {
+      expect((quantity as HTMLInputElement).value).toBe("2");
+      expect(quantity.hasAttribute("disabled")).toBe(true);
+      expect(save.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "修改检验项：数量尺寸" }),
+    );
+    fireEvent.change(quantity, { target: { value: "02" } });
+    fireEvent.click(save);
+    await act(async () => resolveCommand(true));
+    await waitFor(() => {
+      expect((quantity as HTMLInputElement).value).toBe("02");
+      expect(quantity.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    });
+
+    rerender(
+      <ReviewPanel
+        items={items.map((item) => ({ ...item }))}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="same-signature-quantity"
+      />,
+    );
+    await waitFor(() => {
+      expect((quantity as HTMLInputElement).value).toBe("2");
+      expect(save.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    });
+  });
+
   test("修改成功后采用服务端规范化的复杂检验项坐标", async () => {
     let resolveCommand: (outcome: boolean) => void = () => undefined;
     const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
@@ -382,6 +462,61 @@ describe("ReviewPanel", () => {
         onCommand={onCommand}
         onDraftChange={onDraftChange}
         selectedItemId="canonical-coordinates"
+      />,
+    );
+    await act(async () => resolveCommand(true));
+
+    await waitFor(() => {
+      expect((coordinates as HTMLInputElement).value).toBe("1,2,3,4");
+      expect(coordinates.closest("fieldset")?.hasAttribute("disabled")).toBe(true);
+      expect(save.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    });
+  });
+
+  test("持久化签名不变的新快照仍会规范化复杂检验项坐标", async () => {
+    let resolveCommand: (outcome: boolean) => void = () => undefined;
+    const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
+      resolveCommand = resolve;
+    }));
+    const onDraftChange = vi.fn();
+    const items: ReviewItem[] = [{
+      item_id: "same-signature-coordinates",
+      raw_text: "同值位置度",
+      coordinates: [1, 2, 3, 4],
+      coarse_type: "geometric_tolerance",
+      requires_confirmation: false,
+      active: true,
+    }];
+    const { rerender } = render(
+      <ReviewPanel
+        items={items}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="same-signature-coordinates"
+      />,
+    );
+
+    const coordinates = screen.getByRole(
+      "textbox",
+      { name: "坐标：同值位置度" },
+    );
+    const save = screen.getByRole(
+      "button",
+      { name: "修改保存检验项：同值位置度" },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "修改检验项：同值位置度" }),
+    );
+    fireEvent.change(coordinates, { target: { value: "1, 2, 3, 4" } });
+    fireEvent.click(save);
+
+    rerender(
+      <ReviewPanel
+        items={items.map((item) => ({ ...item }))}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="same-signature-coordinates"
       />,
     );
     await act(async () => resolveCommand(true));
@@ -451,20 +586,22 @@ describe("ReviewPanel", () => {
   test("void 修改命令成功后保留提交值并清理本地草稿", async () => {
     const onCommand = vi.fn();
     const onDraftChange = vi.fn();
-    render(
+    const items: ReviewItem[] = [{
+      item_id: "void-edit-item",
+      item_type: "linear_dimension",
+      raw_text: "10",
+      nominal: "10",
+      active: true,
+    }];
+    const renderPanel = () => (
       <ReviewPanel
-        items={[{
-          item_id: "void-edit-item",
-          item_type: "linear_dimension",
-          raw_text: "10",
-          nominal: "10",
-          active: true,
-        }]}
+        items={items}
         onCommand={onCommand}
         onDraftChange={onDraftChange}
         selectedItemId="void-edit-item"
-      />,
+      />
     );
+    const { rerender } = render(renderPanel());
 
     const rawText = screen.getByRole("textbox", { name: "原始标注：10" });
     const save = screen.getByRole(
@@ -484,6 +621,11 @@ describe("ReviewPanel", () => {
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
     expect((rawText as HTMLInputElement).value).toBe("11");
+
+    rerender(renderPanel());
+    expect((rawText as HTMLInputElement).value).toBe("11");
+    expect(save.hasAttribute("disabled")).toBe(true);
+    expect(onDraftChange).toHaveBeenLastCalledWith(false);
 
     fireEvent.click(screen.getByRole("button", { name: "修改检验项：10" }));
     fireEvent.change(rawText, { target: { value: "10" } });
