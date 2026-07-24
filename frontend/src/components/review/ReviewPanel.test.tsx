@@ -283,6 +283,54 @@ describe("ReviewPanel", () => {
     expect(save.hasAttribute("disabled")).toBe(true);
   });
 
+  test("void 修改命令成功后保留提交值并清理本地草稿", async () => {
+    const onCommand = vi.fn();
+    const onDraftChange = vi.fn();
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "void-edit-item",
+          item_type: "linear_dimension",
+          raw_text: "10",
+          nominal: "10",
+          active: true,
+        }]}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="void-edit-item"
+      />,
+    );
+
+    const rawText = screen.getByRole("textbox", { name: "原始标注：10" });
+    const save = screen.getByRole(
+      "button",
+      { name: "修改保存检验项：10" },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：10" }));
+    fireEvent.change(rawText, { target: { value: "11" } });
+    expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(save);
+
+    await waitFor(() => {
+      expect(onCommand).toHaveBeenCalledTimes(1);
+      expect(rawText.hasAttribute("disabled")).toBe(true);
+      expect(save.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    });
+    expect((rawText as HTMLInputElement).value).toBe("11");
+
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：10" }));
+    fireEvent.change(rawText, { target: { value: "10" } });
+    expect((rawText as HTMLInputElement).value).toBe("10");
+    expect(save.hasAttribute("disabled")).toBe(false);
+    expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.change(rawText, { target: { value: "11" } });
+    expect(save.hasAttribute("disabled")).toBe(true);
+    expect(onDraftChange).toHaveBeenLastCalledWith(false);
+  });
+
   test("切换所选检验项会结束原检验项的编辑模式", () => {
     const items: ReviewItem[] = [
       {
