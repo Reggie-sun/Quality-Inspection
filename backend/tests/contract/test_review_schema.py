@@ -63,6 +63,19 @@ def test_typed_edit_rejects_identity_and_balloon_fields(field: str) -> None:
             "item_id": "i1",
             "balloon_required": False,
         },
+        {
+            "type": "promote_source",
+            "observation_id": "observation-1",
+            "raw_text": "  M6 通  ",
+            "item_type": "thread",
+            "scope": "local_feature",
+            "balloon_required": True,
+            "page_index": 0,
+        },
+        {
+            "type": "ignore_source",
+            "observation_id": "observation-1",
+        },
     ],
 )
 def test_review_command_union_accepts_only_planned_commands(
@@ -71,6 +84,8 @@ def test_review_command_union_accepts_only_planned_commands(
     parsed = parse_review_command(command)
 
     assert parsed.type == command["type"]
+    if parsed.type == "promote_source":
+        assert parsed.raw_text == "M6 通"
 
 
 @pytest.mark.parametrize(
@@ -102,6 +117,40 @@ def test_manual_add_requires_explicit_coordinates_and_scope(
 def test_review_commands_forbid_unknown_fields() -> None:
     with pytest.raises(ValidationError):
         parse_review_command({"type": "keep", "item_id": "i1", "quiet": True})
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        {
+            "type": "promote_source",
+            "observation_id": "observation-1",
+            "raw_text": "   ",
+            "item_type": "thread",
+            "scope": "local_feature",
+            "balloon_required": True,
+            "page_index": 0,
+        },
+        {
+            "type": "promote_source",
+            "observation_id": "observation-1",
+            "raw_text": "M6 通",
+            "item_type": "thread",
+            "scope": "local_feature",
+            "balloon_required": True,
+        },
+        {
+            "type": "ignore_source",
+            "observation_id": "observation-1",
+            "page_index": 0,
+        },
+    ],
+)
+def test_source_review_commands_require_exact_fields(
+    command: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        parse_review_command(command)
 
 
 def test_sip_detail_remarks_are_optional_and_bounded() -> None:

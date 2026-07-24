@@ -11,6 +11,12 @@ class CommandBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+NonBlankText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1),
+]
+
+
 class Keep(CommandBase):
     type: Literal["keep"]
     item_id: str = Field(min_length=1)
@@ -35,6 +41,21 @@ class Add(CommandBase):
     scope: Literal["local_feature", "global_requirement"]
     balloon_required: bool
     page_index: int | None = Field(default=None, ge=0)
+
+
+class PromoteSource(CommandBase):
+    type: Literal["promote_source"]
+    observation_id: str = Field(min_length=1)
+    raw_text: NonBlankText
+    item_type: CandidateType
+    scope: Literal["local_feature", "global_requirement"]
+    balloon_required: bool
+    page_index: int = Field(ge=0)
+
+
+class IgnoreSource(CommandBase):
+    type: Literal["ignore_source"]
+    observation_id: str = Field(min_length=1)
 
 
 class Merge(CommandBase):
@@ -67,10 +88,6 @@ class SetBalloonRequired(CommandBase):
     balloon_required: bool
 
 
-NonBlankText = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
 SIP_DETAIL_FIELDS = (
     "inspection_item",
     "inspection_standard",
@@ -116,6 +133,8 @@ ReviewCommand = Annotated[
         Exclude,
         Edit,
         Add,
+        PromoteSource,
+        IgnoreSource,
         Merge,
         Split,
         ResolveConfirmation,
