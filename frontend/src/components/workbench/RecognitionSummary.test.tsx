@@ -45,14 +45,17 @@ test("P0-UI-004 derives active, excluded and manual-required filters from projec
           leaderTarget: [60, 60],
         },
       ]}
+      pendingSourceCount={2}
       filter="all"
       onFilterChange={onFilterChange}
     />,
   );
 
+  expect(screen.getByRole("button", { name: "筛选全部" }).textContent)
+    .toContain("5");
   expect(screen.getByTestId("summary-active-count").textContent).toBe("2");
   expect(screen.getByTestId("summary-excluded-count").textContent).toBe("1");
-  expect(screen.getByTestId("summary-manual-count").textContent).toBe("1");
+  expect(screen.getByTestId("summary-manual-count").textContent).toBe("3");
   expect(screen.getByRole("button", { name: "筛选有效项" })).not.toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "筛选需人工处理" }));

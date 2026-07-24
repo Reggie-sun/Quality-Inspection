@@ -13,13 +13,24 @@ import type { InspectionFilter } from "./RecognitionSummary";
 type InspectionItemTableProps = {
   items: ReviewItem[];
   balloons: BalloonOverlay[];
+  pendingSources?: PendingSourceReview[];
   candidateNumbers?: ReadonlyMap<string, number>;
   filter: InspectionFilter;
   selectedItemId?: string;
+  selectedSourceId?: string;
   disabled?: boolean;
   onSelectItem: (itemId: string) => void;
+  onSelectSource?: (sourceId: string) => void;
   onCommand?: (command: ReviewCommand) => void;
   onDraftChange?: (dirty: boolean) => void;
+};
+
+export type PendingSourceReview = {
+  observationId: string;
+  sourceId: string;
+  rawText: string;
+  coordinates: [number, number, number, number];
+  pageIndex?: number;
 };
 
 type SelectedInspectionItemSummaryProps = {
@@ -38,13 +49,24 @@ type DetailDraft = {
   remarks: string;
 };
 
+type SourceDraft = {
+  rawText: string;
+  itemType: CandidateType | "";
+  scope: "local_feature" | "global_requirement";
+  balloonRequired: boolean;
+};
+type ListEntry =
+  | { kind: "item"; key: string; item: ReviewItem }
+  | { kind: "source"; key: string; source: PendingSourceReview };
+
 type ItemStatus =
   | "pending"
   | "confirmed"
   | "candidate"
   | "excluded"
   | "manual"
-  | "collision";
+  | "collision"
+  | "source_pending";
 
 const PAGE_SIZE = 50;
 const EMPTY_CANDIDATE_NUMBERS: ReadonlyMap<string, number> = new Map();
@@ -64,6 +86,7 @@ const STATUS_LABELS: Record<ItemStatus, string> = {
   excluded: zhCN.inspection.statusExcluded,
   manual: zhCN.inspection.statusManual,
   collision: zhCN.inspection.statusCollision,
+  source_pending: zhCN.inspection.sourcePending,
 };
 
 
@@ -111,6 +134,15 @@ function detailDraft(item?: ReviewItem, balloon?: BalloonOverlay): DetailDraft {
     inspectionRole: item?.inspection_role ?? "",
     sourcePage: sourcePage(item, balloon)?.toString() ?? "",
     remarks: item?.remarks ?? "",
+  };
+}
+
+function sourceDraft(source: PendingSourceReview): SourceDraft {
+  return {
+    rawText: source.rawText,
+    itemType: "",
+    scope: "local_feature",
+    balloonRequired: true,
   };
 }
 
@@ -192,11 +224,14 @@ export function SelectedInspectionItemSummary({
 export function InspectionItemTable({
   items,
   balloons,
+  pendingSources = [],
   candidateNumbers = EMPTY_CANDIDATE_NUMBERS,
   filter,
   selectedItemId,
+  selectedSourceId,
   disabled = false,
   onSelectItem,
+  onSelectSource,
   onCommand,
   onDraftChange,
 }: InspectionItemTableProps) {
@@ -211,8 +246,31 @@ export function InspectionItemTable({
     ),
     [balloons],
   );
-  const filtered = items
-    .filter((item) => {
+  const entries: ListEntry[] = [
+    ...items.map((item) => ({
+      kind: "item" as const,
+      key: `item:${item.item_id}`,
+      item,
+    })),
+    ...pendingSources.map((source) => ({
+      kind: "source" as const,
+      key: `source:${source.observationId}`,
+      source,
+    })),
+  ];
+  const filtered = entries
+    .filter((entry) => {
+      if (entry.kind === "source") {
+        const matchesSummary =
+          filter === "all" || filter === "manual_required";
+        const matchesStatus =
+          statusFilter === "all" || statusFilter === "source_pending";
+        const matchesSearch = entry.source.rawText
+          .toLocaleLowerCase("zh-CN")
+          .includes(search.trim().toLocaleLowerCase("zh-CN"));
+        return matchesSummary && matchesStatus && matchesSearch;
+      }
+      const item = entry.item;
       const balloon = balloonByItem.get(item.item_id);
       const matchesSummary = filter === "active"
         ? item.active
@@ -232,8 +290,11 @@ export function InspectionItemTable({
         && matchesSearch;
     })
     .sort((left, right) => {
-      const leftNumber = balloonByItem.get(left.item_id)?.number;
-      const rightNumber = balloonByItem.get(right.item_id)?.number;
+      if (left.kind === "source" && right.kind === "source") return 0;
+      if (left.kind === "source") return 1;
+      if (right.kind === "source") return -1;
+      const leftNumber = balloonByItem.get(left.item.item_id)?.number;
+      const rightNumber = balloonByItem.get(right.item.item_id)?.number;
       if (leftNumber !== undefined && rightNumber !== undefined) {
         return leftNumber - rightNumber;
       }
@@ -245,14 +306,18 @@ export function InspectionItemTable({
   const safePage = Math.min(page, pageCount);
   const pageStart = (safePage - 1) * PAGE_SIZE;
   const pageEnd = safePage * PAGE_SIZE;
-  const pageItems = filtered.slice(pageStart, pageEnd);
-  const selectedFilteredIndex = filtered.findIndex(
-    (item) => item.item_id === selectedItemId,
+  const pageEntries = filtered.slice(pageStart, pageEnd);
+  const selectedFilteredIndex = filtered.findIndex((entry) =>
+    entry.kind === "item"
+      ? entry.item.item_id === selectedItemId
+      : entry.source.sourceId === selectedSourceId,
   );
   const selectedPage = selectedFilteredIndex < 0
     ? undefined
     : Math.floor(selectedFilteredIndex / PAGE_SIZE) + 1;
   const selected = items.find((item) => item.item_id === selectedItemId);
+  const selectedSource = pendingSources.find((source) =>
+    source.sourceId === selectedSourceId);
   const selectedBalloon = selected === undefined
     ? undefined
     : balloonByItem.get(selected.item_id);
@@ -263,9 +328,18 @@ export function InspectionItemTable({
       : { [selected.item_id]: selectedBaseline },
   );
   const [dirtyItemIds, setDirtyItemIds] = useState<string[]>([]);
+  const selectedSourceBaseline = selectedSource && sourceDraft(selectedSource);
+  const [sourceDrafts, setSourceDrafts] = useState<Record<string, SourceDraft>>(
+    () => selectedSource === undefined ? {} : {
+      [selectedSource.observationId]: sourceDraft(selectedSource),
+    },
+  );
+  const [dirtySourceIds, setDirtySourceIds] = useState<string[]>([]);
   const draft = selected === undefined
     ? selectedBaseline
     : drafts[selected.item_id] ?? selectedBaseline;
+  const selectedSourceDraft = selectedSource && (
+    sourceDrafts[selectedSource.observationId] ?? selectedSourceBaseline);
 
   useEffect(() => {
     if (selected === undefined || dirtyItemIds.includes(selected.item_id)) return;
@@ -275,12 +349,29 @@ export function InspectionItemTable({
     }));
   }, [balloons, items, selectedItemId]);
   useEffect(() => {
-    onDraftChange?.(dirtyItemIds.length > 0);
-  }, [dirtyItemIds, onDraftChange]);
+    if (
+      selectedSource === undefined
+      || dirtySourceIds.includes(selectedSource.observationId)
+    ) return;
+    setSourceDrafts((current) => ({
+      ...current,
+      [selectedSource.observationId]: sourceDraft(selectedSource),
+    }));
+  }, [selectedSource?.observationId, selectedSource?.rawText, selectedSourceId]);
+  useEffect(() => {
+    onDraftChange?.(dirtyItemIds.length > 0 || dirtySourceIds.length > 0);
+  }, [dirtyItemIds, dirtySourceIds, onDraftChange]);
   useEffect(() => setPage(1), [filter, search, statusFilter]);
   useEffect(() => {
     if (selectedPage !== undefined) setPage(selectedPage);
-  }, [filter, search, selectedItemId, selectedPage, statusFilter]);
+  }, [
+    filter,
+    search,
+    selectedItemId,
+    selectedPage,
+    selectedSourceId,
+    statusFilter,
+  ]);
   const updateDraft = (change: Partial<DetailDraft>) => {
     if (selected === undefined) return;
     setDrafts((current) => ({
@@ -300,6 +391,30 @@ export function InspectionItemTable({
     if (selected === undefined) return;
     setDirtyItemIds((current) =>
       current.filter((candidate) => candidate !== selected.item_id),
+    );
+  };
+  const updateSourceDraft = (change: Partial<SourceDraft>) => {
+    if (selectedSource === undefined || selectedSourceBaseline === undefined) {
+      return;
+    }
+    setSourceDrafts((current) => ({
+      ...current,
+      [selectedSource.observationId]: {
+        ...(current[selectedSource.observationId] ?? selectedSourceBaseline),
+        ...change,
+      },
+    }));
+    setDirtySourceIds((current) =>
+      current.includes(selectedSource.observationId)
+        ? current
+        : [...current, selectedSource.observationId],
+    );
+  };
+  const clearSelectedSourceDirty = () => {
+    if (selectedSource === undefined) return;
+    setDirtySourceIds((current) =>
+      current.filter((observationId) =>
+        observationId !== selectedSource.observationId),
     );
   };
 
@@ -350,7 +465,51 @@ export function InspectionItemTable({
         <div className="inspection-table__body">
           {filtered.length === 0 ? (
             <p className="inspection-table__empty">{zhCN.inspection.empty}</p>
-          ) : pageItems.map((item) => {
+          ) : pageEntries.map((entry) => {
+            if (entry.kind === "source") {
+              const source = entry.source;
+              return (
+                <div
+                  key={entry.key}
+                  role="row"
+                  tabIndex={0}
+                  aria-selected={selectedSourceId === source.sourceId}
+                  data-selected={selectedSourceId === source.sourceId}
+                  data-source-id={source.sourceId}
+                  className="inspection-table__row inspection-table__row--source"
+                  onClick={() => onSelectSource?.(source.sourceId)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      onSelectSource?.(source.sourceId);
+                    }
+                  }}
+                >
+                  <strong
+                    role="cell"
+                    className="inspection-number inspection-number--empty"
+                  >
+                    {zhCN.workbench.unknown}
+                  </strong>
+                  <span role="cell" className="inspection-item-copy">
+                    <strong title={source.rawText}>{source.rawText}</strong>
+                    <small>{zhCN.inspection.sourceType}</small>
+                  </span>
+                  <span role="cell">{zhCN.workbench.unknown}</span>
+                  <span role="cell">
+                    {source.pageIndex === undefined
+                      ? zhCN.workbench.unknown
+                      : zhCN.inspection.sourcePage(source.pageIndex + 1)}
+                  </span>
+                  <span
+                    role="cell"
+                    className="geometry-state geometry-state--source_pending"
+                  >
+                    <strong>{zhCN.inspection.sourcePending}</strong>
+                  </span>
+                </div>
+              );
+            }
+            const item = entry.item;
             const balloon = balloonByItem.get(item.item_id);
             const candidateNumber = candidateNumbers.get(item.item_id);
             const displayNumber = balloon?.number ?? candidateNumber;
@@ -366,7 +525,7 @@ export function InspectionItemTable({
               .join("、");
             return (
               <div
-                key={item.item_id}
+                key={entry.key}
                 role="row"
                 tabIndex={0}
                 aria-selected={selectedItemId === item.item_id}
@@ -433,7 +592,117 @@ export function InspectionItemTable({
           {zhCN.inspection.nextPage}
         </button>
       </nav>
-      {selected === undefined || onCommand === undefined || !selected.active ? null : (
+      {
+        selectedSource === undefined
+        || selectedSourceDraft === undefined
+        || onCommand === undefined
+          ? null
+          : (
+            <fieldset className="source-review-fields" disabled={disabled}>
+              <legend>{zhCN.inspection.sourceEditor}</legend>
+              <label>
+                {zhCN.inspection.sourceRawText}
+                <input
+                  aria-label={zhCN.inspection.sourceRawText}
+                  value={selectedSourceDraft.rawText}
+                  onChange={(event) =>
+                    updateSourceDraft({ rawText: event.target.value })}
+                />
+              </label>
+              <label>
+                {zhCN.inspection.sourceItemType}
+                <select
+                  aria-label={zhCN.inspection.sourceItemType}
+                  value={selectedSourceDraft.itemType}
+                  onChange={(event) =>
+                    updateSourceDraft({
+                      itemType: event.target.value as CandidateType | "",
+                    })}
+                >
+                  <option value="">{zhCN.inspection.selectItemType}</option>
+                  {Object.entries(TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {zhCN.inspection.sourceScope}
+                <select
+                  aria-label={zhCN.inspection.sourceScope}
+                  value={selectedSourceDraft.scope}
+                  onChange={(event) =>
+                    updateSourceDraft({
+                      scope: event.target.value as SourceDraft["scope"],
+                    })}
+                >
+                  <option value="local_feature">{zhCN.review.localFeature}</option>
+                  <option value="global_requirement">
+                    {zhCN.review.globalRequirement}
+                  </option>
+                </select>
+              </label>
+              <label>
+                {zhCN.inspection.sourceBalloonRequired}
+                <input
+                  aria-label={zhCN.inspection.sourceBalloonRequired}
+                  type="checkbox"
+                  checked={selectedSourceDraft.balloonRequired}
+                  onChange={(event) =>
+                    updateSourceDraft({ balloonRequired: event.target.checked })}
+                />
+              </label>
+              <div className="source-review-actions">
+                <button
+                  type="button"
+                  disabled={
+                    disabled
+                    || selectedSourceDraft.itemType === ""
+                    || selectedSource.pageIndex === undefined
+                    || selectedSourceDraft.rawText.trim() === ""
+                  }
+                  onClick={() => {
+                    if (
+                      selectedSourceDraft.itemType === ""
+                      || selectedSource.pageIndex === undefined
+                    ) return;
+                    clearSelectedSourceDirty();
+                    onCommand({
+                      type: "promote_source",
+                      observation_id: selectedSource.observationId,
+                      raw_text: selectedSourceDraft.rawText,
+                      item_type: selectedSourceDraft.itemType,
+                      scope: selectedSourceDraft.scope,
+                      balloon_required: selectedSourceDraft.balloonRequired,
+                      page_index: selectedSource.pageIndex,
+                    });
+                  }}
+                >
+                  {zhCN.inspection.promoteSource}
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    clearSelectedSourceDirty();
+                    onCommand({
+                      type: "ignore_source",
+                      observation_id: selectedSource.observationId,
+                    });
+                  }}
+                >
+                  {zhCN.inspection.ignoreSource}
+                </button>
+              </div>
+            </fieldset>
+          )
+      }
+      {
+        selectedSource !== undefined
+        || selected === undefined
+        || onCommand === undefined
+        || !selected.active
+          ? null
+          : (
         <fieldset className="sip-detail-fields" disabled={disabled}>
           <legend>{zhCN.inspection.selectedSip}</legend>
           {(
@@ -523,7 +792,8 @@ export function InspectionItemTable({
             </button>
           </div>
         </fieldset>
-      )}
+          )
+      }
     </section>
   );
 }

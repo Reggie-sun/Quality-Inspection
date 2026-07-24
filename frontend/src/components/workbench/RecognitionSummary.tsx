@@ -12,6 +12,7 @@ export type InspectionFilter =
 type RecognitionSummaryProps = {
   items: ReviewItem[];
   balloons: BalloonOverlay[];
+  pendingSourceCount?: number;
   filter: InspectionFilter;
   onFilterChange: (filter: InspectionFilter) => void;
 };
@@ -20,6 +21,7 @@ type RecognitionSummaryProps = {
 export function RecognitionSummary({
   items,
   balloons,
+  pendingSourceCount = 0,
   filter,
   onFilterChange,
 }: RecognitionSummaryProps) {
@@ -28,7 +30,7 @@ export function RecognitionSummary({
   const manual = balloons.filter(
     (balloon) =>
       balloon.status !== "deleted" && balloon.placementStatus === "manual_required",
-  ).length;
+  ).length + pendingSourceCount;
   const hardCollision = balloons.filter(
     (balloon) =>
       balloon.status !== "deleted" && (balloon.collisionFlags?.length ?? 0) > 0,
@@ -79,7 +81,7 @@ export function RecognitionSummary({
         onClick={() => onFilterChange("all")}
       >
         <span>{zhCN.summary.all}</span>
-        <strong>{items.length}</strong>
+        <strong>{items.length + pendingSourceCount}</strong>
       </button>
       {chips.map((chip) => (
         <button

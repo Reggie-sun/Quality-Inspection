@@ -975,3 +975,33 @@
     max-height: none;
   }
 }
+
+.inspection-table__row--source {
+  background: #fffaf0;
+}
+
+.inspection-table__row--source[data-selected="true"] {
+  background: #fff3d6;
+}
+
+.source-review-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #f2c46d;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.source-review-fields legend {
+  color: var(--qi-text);
+  font-weight: 700;
+}
+
+.source-review-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 8px;
+}
