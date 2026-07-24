@@ -192,6 +192,9 @@ export function ReviewPanel({
   );
   const [splitTexts, setSplitTexts] = useState<Record<string, string>>({});
   const [editingItemId, setEditingItemId] = useState<string>();
+  const [acknowledgedItemSignatures, setAcknowledgedItemSignatures] = useState<
+    Record<string, string>
+  >({});
   const [dirtySplitIds, setDirtySplitIds] = useState<string[]>([]);
   const [manualDraftDirty, setManualDraftDirty] = useState(false);
   const [manualRawText, setManualRawText] = useState("");
@@ -202,30 +205,49 @@ export function ReviewPanel({
   const [manualType, setManualType] = useState<CandidateType>("thread");
   const [manualBalloonRequired, setManualBalloonRequired] = useState(true);
   const activeItems = useMemo(() => items.filter((item) => item.active), [items]);
+  const itemDraftSignature = (item: ReviewItem) => JSON.stringify(
+    item.coarse_type !== undefined
+      ? [
+          rawTexts[item.item_id] ?? item.raw_text,
+          complexCoordinates[item.item_id] ?? "",
+          coarseTypes[item.item_id] ?? item.coarse_type,
+          confirmationFields[item.item_id] ?? false,
+        ]
+      : [
+          rawTexts[item.item_id] ?? item.raw_text,
+          ...coreFieldsFor(item.item_type).map(
+            (field) => coreValues[item.item_id]?.[field.key] ?? "",
+          ),
+        ],
+  );
+  const persistedItemSignature = (item: ReviewItem) => JSON.stringify(
+    item.coarse_type !== undefined
+      ? [
+          item.raw_text,
+          item.coordinates?.join(",") ?? "",
+          item.coarse_type,
+          item.requires_confirmation ?? false,
+        ]
+      : [
+          item.raw_text,
+          ...coreFieldsFor(item.item_type).map(
+            (field) => displayValue(item[field.key]),
+          ),
+        ],
+  );
   const dirtyItemIds = useMemo(
     () => activeItems
-      .filter((item) => {
-        if ((rawTexts[item.item_id] ?? item.raw_text) !== item.raw_text) {
-          return true;
-        }
-        if (item.coarse_type !== undefined) {
-          return (
-            (complexCoordinates[item.item_id] ?? "")
-              !== (item.coordinates?.join(",") ?? "")
-            || (coarseTypes[item.item_id] ?? item.coarse_type)
-              !== item.coarse_type
-            || (confirmationFields[item.item_id] ?? false)
-              !== (item.requires_confirmation ?? false)
-          );
-        }
-        return coreFieldsFor(item.item_type).some(
-          (field) =>
-            (coreValues[item.item_id]?.[field.key] ?? "")
-              !== displayValue(item[field.key]),
-        );
-      })
+      .filter(
+        (item) =>
+          itemDraftSignature(item)
+            !== (
+              acknowledgedItemSignatures[item.item_id]
+              ?? persistedItemSignature(item)
+            ),
+      )
       .map((item) => item.item_id),
     [
+      acknowledgedItemSignatures,
       activeItems,
       coarseTypes,
       complexCoordinates,
@@ -266,6 +288,7 @@ export function ReviewPanel({
   };
 
   const editItem = async (item: ReviewItem) => {
+    const submittedSignature = itemDraftSignature(item);
     const fields: Record<string, unknown> = {
       raw_text: rawTexts[item.item_id] ?? item.raw_text,
     };
@@ -293,6 +316,10 @@ export function ReviewPanel({
       fields,
     });
     if (outcome === false) return;
+    setAcknowledgedItemSignatures((current) => ({
+      ...current,
+      [item.item_id]: submittedSignature,
+    }));
     setEditingItemId((current) =>
       current === item.item_id ? undefined : current,
     );
