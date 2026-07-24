@@ -27,8 +27,10 @@ aggregate、Review command schema、working-copy version、审核状态或后端
 - 不改变候选项、正式项、气泡要求或审核状态的业务语义。
 - 不重设计 PDF workspace、SIP metadata、export 或 balloon toolbar。
 - 不增加自动保存、批量后台提交、草稿恢复或新的持久化层。
-- 不修改当前已有未提交变更的
-  `frontend/e2e/chinese-pdf-upload-mvp.spec.ts`。
+- 不重写 `frontend/e2e/chinese-pdf-upload-mvp.spec.ts` 的 PDF、balloon 或 export
+  流程。设计阶段该文件的未提交改动不得覆盖；implementation-plan preflight 已确认
+  这些改动后来独立提交到 `6f4cd6a` 且文件恢复 clean，因此只允许把旧
+  “action → 顶部 Save” helper 最小改为“action 直接提交”。
 
 ## Selected Layout
 
