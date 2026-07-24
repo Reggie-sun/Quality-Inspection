@@ -141,8 +141,8 @@ def test_review_commands_forbid_unknown_fields() -> None:
         },
         {
             "type": "ignore_source",
-            "observation_id": "observation-1",
-            "page_index": 0,
+            "observation_id": "source-only",
+            "accepted": False,
         },
     ],
 )
