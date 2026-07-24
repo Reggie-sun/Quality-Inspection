@@ -119,6 +119,19 @@ export function SelectedInspectionItemSummary({
   balloon,
   candidateNumber,
 }: SelectedInspectionItemSummaryProps) {
+  const numberKind = balloon !== undefined
+    ? "formal"
+    : candidateNumber !== undefined
+      ? "candidate"
+      : "empty";
+  const displayNumber = balloon?.number
+    ?? candidateNumber
+    ?? zhCN.workbench.unknown;
+  const numberLabel = balloon !== undefined
+    ? zhCN.inspection.formalNumber(balloon.number)
+    : candidateNumber !== undefined
+      ? zhCN.inspection.candidateNumber(candidateNumber)
+      : zhCN.inspection.noNumber;
   const page = item.source_page
     ?? (item.page_index === null || item.page_index === undefined
       ? balloon?.pageIndex === undefined
@@ -135,7 +148,12 @@ export function SelectedInspectionItemSummary({
       <dl>
         <div>
           <dt>{zhCN.inspection.balloonNumber}</dt>
-          <dd>{balloon?.number ?? candidateNumber ?? zhCN.workbench.unknown}</dd>
+          <dd
+            className={`selected-inspection-number selected-inspection-number--${numberKind}`}
+            aria-label={numberLabel}
+          >
+            {displayNumber}
+          </dd>
         </div>
         <div className="selected-inspection-summary__item">
           <dt>{zhCN.inspection.item}</dt>

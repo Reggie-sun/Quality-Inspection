@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { OverlayLayer } from "./OverlayLayer";
 
+afterEach(cleanup);
 
 describe("OverlayLayer", () => {
   test("P0-UI-004 renders candidate, source and balloon layers", () => {
@@ -79,6 +80,58 @@ describe("OverlayLayer", () => {
     expect(onSelectItem).toHaveBeenNthCalledWith(1, "item-1");
     expect(onSelectItem).toHaveBeenNthCalledWith(2, "item-1");
     expect(onSelectItem).toHaveBeenNthCalledWith(3, "item-1");
+  });
+
+  test("候选气泡位于来源标注之后并在重叠时保持可选择", () => {
+    const onSelectItem = vi.fn();
+    render(
+      <OverlayLayer
+        pageWidth={100}
+        pageHeight={100}
+        scale={1}
+        candidates={[{
+          id: "candidate-overlap",
+          itemId: "item-1",
+          bbox: [10, 20, 30, 40],
+          candidateNumber: 1,
+        }]}
+        sources={[{
+          id: "source-overlap",
+          itemId: "item-1",
+          bbox: [20, 10, 40, 30],
+        }]}
+        balloons={[]}
+        onSelectItem={onSelectItem}
+      />,
+    );
+
+    const source = screen.getByTestId("source-source-overlap");
+    const marker = screen.getByRole("button", { name: "候选气泡 1" });
+    expect(source.compareDocumentPosition(marker) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .not.toBe(0);
+
+    fireEvent.click(marker);
+    expect(onSelectItem).toHaveBeenCalledWith("item-1");
+  });
+
+  test("缺少 itemId 时只显示候选框，不显示候选序号", () => {
+    render(
+      <OverlayLayer
+        pageWidth={100}
+        pageHeight={100}
+        scale={1}
+        candidates={[{
+          id: "candidate-without-item",
+          bbox: [10, 20, 30, 40],
+          candidateNumber: 1,
+        }]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+
+    expect(screen.getByTestId("candidate-candidate-without-item")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "候选气泡 1" })).toBeNull();
   });
 
   test("有效正式气泡抑制候选气泡，已删除正式气泡不抑制", () => {

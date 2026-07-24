@@ -108,6 +108,25 @@ export function OverlayLayer({
       .filter((itemId): itemId is string => itemId !== undefined),
   );
   const candidateMarkerItemIds = new Set<string>();
+  const candidateMarkers = candidates.flatMap((item) => {
+    if (
+      item.itemId === undefined
+      || item.candidateNumber === undefined
+      || activeBalloonItemIds.has(item.itemId)
+      || candidateMarkerItemIds.has(item.itemId)
+    ) {
+      return [];
+    }
+    candidateMarkerItemIds.add(item.itemId);
+    const [, y0, x1] = transformBox(matrix, item.bbox);
+    return [{
+      item,
+      itemId: item.itemId,
+      candidateNumber: item.candidateNumber,
+      markerX: clampMarker(x1, pageWidth),
+      markerY: clampMarker(y0, pageHeight),
+    }];
+  });
 
   return (
     <svg
@@ -121,20 +140,10 @@ export function OverlayLayer({
       {candidates.map((item) => {
         const [x0, y0, x1, y1] = transformBox(matrix, item.bbox);
         const itemId = item.itemId ?? item.id;
-        const candidateNumber = item.candidateNumber;
         const isSelected = selectedRelation(
           { itemId, itemIds: item.itemIds },
           selected,
         );
-        const showCandidateMarker =
-          candidateNumber !== undefined
-          && !activeBalloonItemIds.has(itemId)
-          && !candidateMarkerItemIds.has(itemId);
-        if (candidateNumber !== undefined) {
-          candidateMarkerItemIds.add(itemId);
-        }
-        const markerX = clampMarker(x1, pageWidth);
-        const markerY = clampMarker(y0, pageHeight);
         const selectCandidate = () => {
           const selectedItem = selectRelationItem(
             { itemId, itemIds: item.itemIds },
@@ -157,45 +166,6 @@ export function OverlayLayer({
               onClick={selectCandidate}
               style={{ cursor: selectItem ? "pointer" : "default" }}
             />
-            {showCandidateMarker ? (
-              <g
-                data-testid={`candidate-number-${item.id}`}
-                data-item-id={itemId}
-                data-selected={isSelected}
-                role="button"
-                aria-label={zhCN.pdf.candidateMarker(candidateNumber)}
-                tabIndex={0}
-                onClick={selectCandidate}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    selectCandidate();
-                  }
-                }}
-                style={{ cursor: selectItem ? "pointer" : "default" }}
-              >
-                <circle
-                  cx={markerX}
-                  cy={markerY}
-                  r={CANDIDATE_MARKER_RADIUS}
-                  fill={isSelected ? "#2563EB" : "#EFF6FF"}
-                  stroke="#2563EB"
-                  strokeWidth={isSelected ? 2 : 1.5}
-                />
-                <text
-                  x={markerX}
-                  y={markerY}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fontFamily="DejaVu Sans"
-                  fontSize={8}
-                  fill={isSelected ? "#FFFFFF" : "#2563EB"}
-                  style={{ pointerEvents: "none" }}
-                >
-                  {candidateNumber}
-                </text>
-              </g>
-            ) : null}
           </g>
         );
       })}
@@ -228,6 +198,65 @@ export function OverlayLayer({
             }}
             style={{ cursor: selectItem || onSelectSource ? "pointer" : "default" }}
           />
+        );
+      })}
+      {candidateMarkers.map(({
+        item,
+        itemId,
+        candidateNumber,
+        markerX,
+        markerY,
+      }) => {
+        const isSelected = selectedRelation(
+          { itemId, itemIds: item.itemIds },
+          selected,
+        );
+        const selectCandidate = () => {
+          const selectedItem = selectRelationItem(
+            { itemId, itemIds: item.itemIds },
+            selected,
+          );
+          if (selectedItem !== undefined) selectItem?.(selectedItem);
+        };
+        return (
+          <g
+            key={`candidate-number-${item.id}`}
+            data-testid={`candidate-number-${item.id}`}
+            data-item-id={itemId}
+            data-selected={isSelected}
+            role="button"
+            aria-label={zhCN.pdf.candidateMarker(candidateNumber)}
+            tabIndex={0}
+            onClick={selectCandidate}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                selectCandidate();
+              }
+            }}
+            style={{ cursor: selectItem ? "pointer" : "default" }}
+          >
+            <circle
+              cx={markerX}
+              cy={markerY}
+              r={CANDIDATE_MARKER_RADIUS}
+              fill={isSelected ? "#2563EB" : "#EFF6FF"}
+              stroke="#2563EB"
+              strokeWidth={isSelected ? 2 : 1.5}
+            />
+            <text
+              x={markerX}
+              y={markerY}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontFamily="DejaVu Sans"
+              fontSize={8}
+              fill={isSelected ? "#FFFFFF" : "#2563EB"}
+              style={{ pointerEvents: "none" }}
+            >
+              {candidateNumber}
+            </text>
+          </g>
         );
       })}
       {balloons.map((item) => {

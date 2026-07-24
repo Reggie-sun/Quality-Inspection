@@ -421,6 +421,18 @@
   white-space: nowrap;
 }
 
+.selected-inspection-summary .selected-inspection-number--candidate {
+  color: #2563eb;
+}
+
+.selected-inspection-summary .selected-inspection-number--formal {
+  color: #9f2f2f;
+}
+
+.selected-inspection-summary .selected-inspection-number--empty {
+  color: var(--qi-muted);
+}
+
 .summary-chip {
   display: grid;
   gap: 2px;
