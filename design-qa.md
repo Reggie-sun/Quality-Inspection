@@ -618,3 +618,60 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - Remaining P1: 0.
 - Remaining P2: 0.
 - final result: passed
+
+## Successor Task 6 — Pending Source Decision Card — 2026-07-24
+
+### Scope And Visual Grounding
+
+本轮只重做检验项列表下方“待判定来源处理”卡片的结构与视觉层级。`promote_source`、`ignore_source`、草稿更新、页码校验、禁用条件和上层保存流程均保持不变。
+
+- source visual truth: `/tmp/codex-clipboard-qG7S5l.png`
+- source pixels / density: `576x236 / 1x`
+- source SHA-256: `1393c07563ee2def756818efbbfbb41c31d0170bf694b31f4371d9ad6122bd36`
+- rendered implementation, incomplete state: `/tmp/source-review-implementation-v1.png`
+- rendered implementation, complete state: `/tmp/source-review-implementation-v2.png`
+- implementation screenshot pixels / density: `1885x985 / device scale 1`
+- rendered card CSS size: `560x266.6875`
+- browser viewport: `1900x953`
+- normalized side-by-side comparison: `/tmp/source-review-comparison-final.png`
+- comparison pixels / SHA-256: `1200x706` / `c126fa2f87fa00d529e3da8d10de6963f09bbdee79960a5a2cb457a345275413`
+- comparison state: 原始标注为 `A`，检验类型未选择，添加按钮禁用；source 与 implementation 状态一致。
+
+### Full And Focused Comparison
+
+- Full-view evidence: 独立 Vite 预览在真实 `InspectionItemTable` 内同时显示来源行、分页和决策卡片，确认卡片与列表密度、背景和控制高度协调。
+- Focused evidence: normalized comparison 将原始截图与实现卡片并排。组件本身就是本轮完整视觉范围，不需要额外更小的局部裁切。
+- Initial comparison: 未发现 P0、P1 或 P2；因此没有为视觉 QA 进行第二轮生产代码修改。
+
+### Fidelity Surfaces
+
+- Fonts and typography: 沿用项目既有 Inter / 中文系统字体栈；标题 `13px/700`，辅助说明与状态标签降级为 `10px`，不再使用 fieldset legend 作为醒目的浮动标题。
+- Spacing and layout rhythm: 卡片采用 `header / two-column field grid / action footer` 三段结构；字段统一为 `36px` 控件高度，第二行的范围选择与气泡开关实测同高 `57px`。
+- Colors and tokens: 大面积橙色警告底替换为白色与浅灰；橙色只保留在“待判定来源”状态胶囊，主要动作使用既有 `--qi-blue`，边框继续复用中性灰体系。
+- Image quality and assets: 本组件没有 Logo、图标、插画或其他图像资产；未新增 SVG、emoji、CSS 图形或占位资源。
+- Copy and content: 保留全部业务字段与动作文案；新增一句简短说明和气泡行为提示，帮助用户理解当前决策，不改变字段含义。
+- Accessibility: fieldset 的可访问名称继续为“待判定来源处理”；新增可见 `h3`，checkbox 和所有输入仍有原中文 accessible name；键盘 focus 样式继续继承全局 token。
+
+### Interaction And Browser Evidence
+
+- incomplete state: 未选择检验类型时“添加为检验项”保持禁用。
+- complete state: 在真实浏览器渲染中将检验类型切换为“通用要求”后，主要动作立即启用并显示工程蓝；没有提交后端命令。
+- component tests: 继续覆盖 `promote_source` 与 `ignore_source` 的完整 payload，新测试覆盖标题层级、字段网格、气泡开关和按钮顺序。
+- real persisted workbench: `/?project_id=2d438ac8-7f3c-4661-9cab-a2bd2dba1c51&operator_id=reggi` 成功加载；该已完成项目没有待判定来源，因此只用于确认周边真实工作台无回归。
+- console errors / warnings after final real-workbench navigation: `0 / 0`。
+- 临时预览入口和对比资源已删除，未进入 Git。
+
+### Verification
+
+- focused test: `InspectionItemTable.test.tsx`，17 tests passed；新增测试先以缺少标题和分层结构的预期原因失败，再随实现转绿。
+- full frontend tests: 16 files，108 tests passed。
+- production build: passed；仅保留既有 Vite large-chunk warning。
+- API verification: not applicable，本轮未修改 API 或后端行为。
+- Chrome smoke: component incomplete/complete states、真实 workbench 加载和 console 检查 passed。
+
+### Result
+
+- Remaining P0: 0.
+- Remaining P1: 0.
+- Remaining P2: 0.
+- final result: passed

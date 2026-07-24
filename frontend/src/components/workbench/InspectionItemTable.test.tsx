@@ -521,6 +521,50 @@ test("待判定来源进入统一列表并产生显式 source review commands", 
   });
 });
 
+test("待判定来源编辑器使用分层决策布局并突出纳入动作", () => {
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-layout",
+        sourceId: "source-layout",
+        rawText: "A",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="all"
+      selectedSourceId="source-layout"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={vi.fn()}
+    />,
+  );
+
+  const editor = screen.getByRole("group", { name: "待判定来源处理" });
+  expect(
+    within(editor).getByRole("heading", {
+      name: "待判定来源处理",
+      level: 3,
+    }),
+  ).not.toBeNull();
+  expect(editor.querySelector(".source-review-grid")).not.toBeNull();
+  expect(editor.querySelector(".source-review-toggle")).not.toBeNull();
+
+  const actions = editor.querySelector(".source-review-actions");
+  expect(actions).not.toBeNull();
+  expect(
+    within(actions as HTMLElement)
+      .getAllByRole("button")
+      .map((button) => button.textContent),
+  ).toEqual(["忽略，不作为检验项", "添加为检验项"]);
+  expect(
+    within(actions as HTMLElement)
+      .getByRole("button", { name: "添加为检验项" })
+      .classList.contains("source-review-actions__primary"),
+  ).toBe(true);
+});
+
 test("需人工处理筛选包含待判定来源", () => {
   render(
     <InspectionItemTable

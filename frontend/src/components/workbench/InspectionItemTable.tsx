@@ -599,60 +599,95 @@ export function InspectionItemTable({
           ? null
           : (
             <fieldset className="source-review-fields" disabled={disabled}>
-              <legend>{zhCN.inspection.sourceEditor}</legend>
-              <label>
-                {zhCN.inspection.sourceRawText}
-                <input
-                  aria-label={zhCN.inspection.sourceRawText}
-                  value={selectedSourceDraft.rawText}
-                  onChange={(event) =>
-                    updateSourceDraft({ rawText: event.target.value })}
-                />
-              </label>
-              <label>
-                {zhCN.inspection.sourceItemType}
-                <select
-                  aria-label={zhCN.inspection.sourceItemType}
-                  value={selectedSourceDraft.itemType}
-                  onChange={(event) =>
-                    updateSourceDraft({
-                      itemType: event.target.value as CandidateType | "",
-                    })}
-                >
-                  <option value="">{zhCN.inspection.selectItemType}</option>
-                  {Object.entries(TYPE_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                {zhCN.inspection.sourceScope}
-                <select
-                  aria-label={zhCN.inspection.sourceScope}
-                  value={selectedSourceDraft.scope}
-                  onChange={(event) =>
-                    updateSourceDraft({
-                      scope: event.target.value as SourceDraft["scope"],
-                    })}
-                >
-                  <option value="local_feature">{zhCN.review.localFeature}</option>
-                  <option value="global_requirement">
-                    {zhCN.review.globalRequirement}
-                  </option>
-                </select>
-              </label>
-              <label>
-                {zhCN.inspection.sourceBalloonRequired}
-                <input
-                  aria-label={zhCN.inspection.sourceBalloonRequired}
-                  type="checkbox"
-                  checked={selectedSourceDraft.balloonRequired}
-                  onChange={(event) =>
-                    updateSourceDraft({ balloonRequired: event.target.checked })}
-                />
-              </label>
+              <legend className="visually-hidden">
+                {zhCN.inspection.sourceEditor}
+              </legend>
+              <header className="source-review-header">
+                <div>
+                  <h3>{zhCN.inspection.sourceEditor}</h3>
+                  <p>{zhCN.inspection.sourceEditorHint}</p>
+                </div>
+                <span className="source-review-status">
+                  {zhCN.inspection.sourcePending}
+                </span>
+              </header>
+              <div className="source-review-grid">
+                <label className="source-review-field">
+                  <span>{zhCN.inspection.sourceRawText}</span>
+                  <input
+                    aria-label={zhCN.inspection.sourceRawText}
+                    value={selectedSourceDraft.rawText}
+                    onChange={(event) =>
+                      updateSourceDraft({ rawText: event.target.value })}
+                  />
+                </label>
+                <label className="source-review-field">
+                  <span>{zhCN.inspection.sourceItemType}</span>
+                  <select
+                    aria-label={zhCN.inspection.sourceItemType}
+                    value={selectedSourceDraft.itemType}
+                    onChange={(event) =>
+                      updateSourceDraft({
+                        itemType: event.target.value as CandidateType | "",
+                      })}
+                  >
+                    <option value="">{zhCN.inspection.selectItemType}</option>
+                    {Object.entries(TYPE_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="source-review-field">
+                  <span>{zhCN.inspection.sourceScope}</span>
+                  <select
+                    aria-label={zhCN.inspection.sourceScope}
+                    value={selectedSourceDraft.scope}
+                    onChange={(event) =>
+                      updateSourceDraft({
+                        scope: event.target.value as SourceDraft["scope"],
+                      })}
+                  >
+                    <option value="local_feature">
+                      {zhCN.review.localFeature}
+                    </option>
+                    <option value="global_requirement">
+                      {zhCN.review.globalRequirement}
+                    </option>
+                  </select>
+                </label>
+                <label className="source-review-toggle">
+                  <span>
+                    <strong>{zhCN.inspection.sourceBalloonRequired}</strong>
+                    <small>{zhCN.inspection.sourceBalloonHint}</small>
+                  </span>
+                  <input
+                    aria-label={zhCN.inspection.sourceBalloonRequired}
+                    type="checkbox"
+                    checked={selectedSourceDraft.balloonRequired}
+                    onChange={(event) =>
+                      updateSourceDraft({
+                        balloonRequired: event.target.checked,
+                      })}
+                  />
+                </label>
+              </div>
               <div className="source-review-actions">
                 <button
+                  className="source-review-actions__secondary"
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    clearSelectedSourceDirty();
+                    onCommand({
+                      type: "ignore_source",
+                      observation_id: selectedSource.observationId,
+                    });
+                  }}
+                >
+                  {zhCN.inspection.ignoreSource}
+                </button>
+                <button
+                  className="source-review-actions__primary"
                   type="button"
                   disabled={
                     disabled
@@ -678,19 +713,6 @@ export function InspectionItemTable({
                   }}
                 >
                   {zhCN.inspection.promoteSource}
-                </button>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    clearSelectedSourceDirty();
-                    onCommand({
-                      type: "ignore_source",
-                      observation_id: selectedSource.observationId,
-                    });
-                  }}
-                >
-                  {zhCN.inspection.ignoreSource}
                 </button>
               </div>
             </fieldset>
