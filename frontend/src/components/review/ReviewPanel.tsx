@@ -246,29 +246,9 @@ export function ReviewPanel({
     );
   }, [dirtyItemIds, dirtySplitIds, manualDraftDirty, onDraftChange]);
 
-  const resetItemDraft = (item: ReviewItem) => {
-    setRawTexts((current) => ({ ...current, [item.item_id]: item.raw_text }));
-    setCoreValues((current) => ({
-      ...current,
-      [item.item_id]: Object.fromEntries(
-        coreFieldsFor(item.item_type).map(
-          (field) => [field.key, displayValue(item[field.key])],
-        ),
-      ),
-    }));
-    setComplexCoordinates((current) => ({
-      ...current,
-      [item.item_id]: item.coordinates?.join(",") ?? "",
-    }));
-    setCoarseTypes((current) => ({
-      ...current,
-      [item.item_id]: item.coarse_type ?? "roughness",
-    }));
-    setConfirmationFields((current) => ({
-      ...current,
-      [item.item_id]: item.requires_confirmation ?? false,
-    }));
-  };
+  useEffect(() => {
+    setEditingItemId(undefined);
+  }, [selectedItemId]);
 
   const toggleSelected = (itemId: string) => {
     setSelectedIds((current) =>
@@ -313,7 +293,6 @@ export function ReviewPanel({
       fields,
     });
     if (outcome === false) return;
-    resetItemDraft(item);
     setEditingItemId((current) =>
       current === item.item_id ? undefined : current,
     );

@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -206,8 +207,12 @@ describe("ReviewPanel", () => {
   });
 
   test("所选检验项默认只读，显式修改后仅在草稿有差异时允许保存", async () => {
-    const onCommand = vi.fn().mockResolvedValue(true);
-    render(
+    let resolveCommand: (outcome: boolean) => void = () => undefined;
+    const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
+      resolveCommand = resolve;
+    }));
+    const onDraftChange = vi.fn();
+    const { rerender } = render(
       <ReviewPanel
         items={[{
           item_id: "edit-item",
@@ -217,6 +222,7 @@ describe("ReviewPanel", () => {
           active: true,
         }]}
         onCommand={onCommand}
+        onDraftChange={onDraftChange}
         selectedItemId="edit-item"
       />,
     );
@@ -245,19 +251,94 @@ describe("ReviewPanel", () => {
     fireEvent.change(rawText, { target: { value: "11" } });
     fireEvent.click(save);
 
-    await waitFor(() => {
-      expect(onCommand).toHaveBeenCalledWith({
-        type: "edit",
-        item_id: "edit-item",
-        fields: {
+    expect(onCommand).toHaveBeenCalledWith({
+      type: "edit",
+      item_id: "edit-item",
+      fields: {
+        raw_text: "11",
+        nominal: "10",
+      },
+    });
+    rerender(
+      <ReviewPanel
+        items={[{
+          item_id: "edit-item",
+          item_type: "linear_dimension",
           raw_text: "11",
           nominal: "10",
-        },
-      });
+          active: true,
+        }]}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="edit-item"
+      />,
+    );
+    await act(async () => resolveCommand(true));
+
+    await waitFor(() => {
       expect(rawText.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
-    expect((rawText as HTMLInputElement).value).toBe("10");
+    expect((rawText as HTMLInputElement).value).toBe("11");
     expect(save.hasAttribute("disabled")).toBe(true);
+  });
+
+  test("切换所选检验项会结束原检验项的编辑模式", () => {
+    const items: ReviewItem[] = [
+      {
+        item_id: "item-a",
+        item_type: "linear_dimension",
+        raw_text: "A",
+        nominal: "10",
+        active: true,
+      },
+      {
+        item_id: "item-b",
+        item_type: "linear_dimension",
+        raw_text: "B",
+        nominal: "20",
+        active: true,
+      },
+    ];
+    const onCommand = vi.fn();
+    const { rerender } = render(
+      <ReviewPanel
+        items={items}
+        onCommand={onCommand}
+        selectedItemId="item-a"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：A" }));
+    expect(
+      screen.getByRole("textbox", { name: "原始标注：A" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
+
+    rerender(
+      <ReviewPanel
+        items={items}
+        onCommand={onCommand}
+        selectedItemId="item-b"
+      />,
+    );
+    expect(
+      screen.getByRole("textbox", { name: "原始标注：B" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+
+    rerender(
+      <ReviewPanel
+        items={items}
+        onCommand={onCommand}
+        selectedItemId="item-a"
+      />,
+    );
+    const rawText = screen.getByRole("textbox", { name: "原始标注：A" });
+    expect(rawText.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：A" }));
+    expect(rawText.hasAttribute("disabled")).toBe(false);
   });
 
   test("修改命令显式失败时保留本地草稿和编辑模式", async () => {
