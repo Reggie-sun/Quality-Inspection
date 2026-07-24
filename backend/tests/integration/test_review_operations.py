@@ -719,6 +719,60 @@ def test_source_review_rejects_candidate_backed_entry_atomically(
     assert persisted.items == before_items
 
 
+@pytest.mark.parametrize(
+    ("malformed_entries", "command_type"),
+    [
+        pytest.param(entries, command_type, id=f"{entries!r}-{command_type}")
+        for entries in (None, 1, [None])
+        for command_type in ("promote_source", "ignore_source")
+    ],
+)
+def test_source_review_rejects_malformed_coverage_entries_atomically(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+    malformed_entries: object,
+    command_type: str,
+) -> None:
+    coverage = copy.deepcopy(working_copy.coverage)
+    coverage["entries"] = malformed_entries
+    working_copy.coverage = coverage
+    db_session.commit()
+    db_session.refresh(working_copy)
+    before_version = working_copy.version
+    before_coverage = copy.deepcopy(working_copy.coverage)
+    before_items = copy.deepcopy(working_copy.items)
+    command: dict[str, object] = {
+        "type": command_type,
+        "observation_id": "source-only",
+    }
+    if command_type == "promote_source":
+        command.update(
+            {
+                "raw_text": "M16",
+                "item_type": "thread",
+                "scope": "local_feature",
+                "balloon_required": True,
+                "page_index": 1,
+            }
+        )
+
+    with pytest.raises(ReviewNotFound):
+        review_service.apply(
+            working_copy.id,
+            expected_version=before_version,
+            operator_id="quality-1",
+            command=command,
+        )
+
+    db_session.expire_all()
+    persisted = db_session.get(ReviewWorkingCopy, working_copy.id)
+    assert persisted is not None
+    assert persisted.version == before_version
+    assert persisted.coverage == before_coverage
+    assert persisted.items == before_items
+
+
 def test_modification_log_records_command_sequence(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,

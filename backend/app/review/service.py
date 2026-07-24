@@ -750,11 +750,8 @@ class ReviewService:
                 item["requires_confirmation"] = False
                 item["confirmation_accepted"] = accepted
                 resolved = True
-        for entry in coverage.get("entries", []):
-            if (
-                isinstance(entry, dict)
-                and entry.get("candidate_id") == item_id
-            ):
+        for entry in ReviewService._coverage_entries(coverage):
+            if entry.get("candidate_id") == item_id:
                 entry["requires_confirmation"] = False
                 entry["confirmation_accepted"] = accepted
                 resolved = True
@@ -768,11 +765,7 @@ class ReviewService:
         observation_id: str,
     ) -> dict[str, Any]:
         matches: list[dict[str, Any]] = []
-        for entry in coverage.get("entries", []):
-            if not isinstance(entry, dict):
-                raise ReviewNotFound(
-                    f"source review target {observation_id} was not found"
-                )
+        for entry in ReviewService._coverage_entries(coverage):
             if entry.get("observation_id") == observation_id:
                 matches.append(entry)
         if (
@@ -786,11 +779,21 @@ class ReviewService:
         return matches[0]
 
     @staticmethod
+    def _coverage_entries(
+        coverage: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        entries = coverage.get("entries", [])
+        if not isinstance(entries, list) or any(
+            not isinstance(entry, dict) for entry in entries
+        ):
+            raise ReviewNotFound("review coverage entries are malformed")
+        return entries
+
+    @staticmethod
     def _refresh_review_required_count(coverage: dict[str, Any]) -> None:
         coverage["review_required_count"] = sum(
-            isinstance(entry, dict)
-            and entry.get("requires_confirmation") is True
-            for entry in coverage.get("entries", [])
+            entry.get("requires_confirmation") is True
+            for entry in ReviewService._coverage_entries(coverage)
         )
 
     @staticmethod
