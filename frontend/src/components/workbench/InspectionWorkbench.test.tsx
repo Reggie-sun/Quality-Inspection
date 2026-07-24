@@ -59,6 +59,25 @@ describe("InspectionWorkbench", () => {
     expect(saveStatus.textContent).toBe("已保存");
   });
 
+  test("外部操作反馈仅显示在项目摘要的保存状态中", () => {
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        actionState="审核修改已提交"
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    const summary = screen.getByRole("region", { name: "项目摘要" });
+    expect(within(summary).getByRole("status").textContent).toBe("审核修改已提交");
+    expect(document.querySelector(".workbench-header")?.textContent)
+      .not.toContain("审核修改已提交");
+  });
+
   test("P0-UI-007 keeps one pending command stable until explicit Save", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(

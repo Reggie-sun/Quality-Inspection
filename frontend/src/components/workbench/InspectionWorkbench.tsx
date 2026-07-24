@@ -334,7 +334,6 @@ export function InspectionWorkbench({
           <h1>{zhCN.workbench.title}</h1>
         </div>
         <div className="workbench-save-state">
-          {actionState === undefined ? null : <p role="status">{actionState}</p>}
           <button
             type="button"
             className="primary-action"
@@ -420,7 +419,7 @@ export function InspectionWorkbench({
           <div>
             <dt>{zhCN.workbench.saveStatus}</dt>
             <dd role="status" aria-live="polite" aria-atomic="true">
-              {displayedSaveState}
+              {actionState ?? displayedSaveState}
             </dd>
           </div>
         </dl>
