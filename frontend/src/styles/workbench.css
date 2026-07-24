@@ -275,10 +275,13 @@
   white-space: nowrap;
 }
 
-.pdf-controls output,
-.pdf-controls [data-testid="page-indicator"] {
+.pdf-control-status {
+  display: inline-grid;
+  height: 32px;
+  place-items: center;
   color: #344054;
-  font-size: 12px;
+  font-size: 14px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

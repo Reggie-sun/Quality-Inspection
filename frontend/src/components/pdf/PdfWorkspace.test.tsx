@@ -71,6 +71,22 @@ describe("PdfWorkspace", () => {
     expect(screen.getByTestId("page-indicator").textContent).toBe("2 / 2");
   });
 
+  test("分页与缩放状态复用工具栏垂直居中样式", () => {
+    render(
+      <PdfWorkspace
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+
+    expect(screen.getByTestId("page-indicator").classList.contains("pdf-control-status"))
+      .toBe(true);
+    expect(screen.getByLabelText("缩放比例").classList.contains("pdf-control-status"))
+      .toBe(true);
+  });
+
   test("P0-UI-002 zooms overlays with the PDF viewport", async () => {
     const bbox: [number, number, number, number] = [10, 20, 30, 40];
     render(

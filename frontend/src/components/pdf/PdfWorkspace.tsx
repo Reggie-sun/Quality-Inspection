@@ -271,7 +271,7 @@ export function PdfWorkspace({
         >
           {zhCN.pdf.previous}
         </button>
-        <span data-testid="page-indicator">
+        <span className="pdf-control-status" data-testid="page-indicator">
           {pageIndex + 1} / {totalPages}
         </span>
         <button
@@ -289,7 +289,9 @@ export function PdfWorkspace({
         >
           {zhCN.pdf.zoomOut}
         </button>
-        <output aria-label={zhCN.pdf.zoomLevel}>{Math.round(scale * 100)}%</output>
+        <output className="pdf-control-status" aria-label={zhCN.pdf.zoomLevel}>
+          {Math.round(scale * 100)}%
+        </output>
         <button
           type="button"
           aria-label={zhCN.pdf.zoomIn}
