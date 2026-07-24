@@ -1,6 +1,17 @@
 QA_DEV_COMPOSE = docker compose -p quality-inspection-qa -f compose.yaml -f compose.qa-dev.yaml
+LOCAL_API_PORT ?= 8000
+LOCAL_FRONTEND_PORT ?= 5173
 
-.PHONY: check-contracts test-backend test-frontend verify-p0-offline verify-p0-live qa-dev-config qa-dev-up qa-dev-down qa-dev-status qa-dev-restart-worker
+.PHONY: check-contracts test-backend test-frontend verify-p0-offline verify-p0-live qa-dev-config qa-dev-up qa-dev-down qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
+
+dev-local-api:
+	@docker compose stop api >/dev/null 2>&1 || true
+	@fuser -k "$(LOCAL_API_PORT)/tcp" >/dev/null 2>&1 || true
+	docker compose up --build api
+
+dev-local-frontend:
+	@fuser -k "$(LOCAL_FRONTEND_PORT)/tcp" >/dev/null 2>&1 || true
+	QI_API_PROXY_TARGET=http://127.0.0.1:$(LOCAL_API_PORT) npm --prefix frontend run dev -- --port $(LOCAL_FRONTEND_PORT) --strictPort
 
 qa-dev-config:
 	$(QA_DEV_COMPOSE) config

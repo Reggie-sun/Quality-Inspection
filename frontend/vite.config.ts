@@ -1,6 +1,7 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const apiProxyTarget = process.env.QI_API_PROXY_TARGET ?? "http://api:8000";
 
 export default defineConfig({
   plugins: [react()],
@@ -8,7 +9,7 @@ export default defineConfig({
     allowedHosts: ["qa.srj666.com"],
     proxy: {
       "/api": {
-        target: "http://api:8000",
+        target: apiProxyTarget,
         changeOrigin: false,
       },
     },
