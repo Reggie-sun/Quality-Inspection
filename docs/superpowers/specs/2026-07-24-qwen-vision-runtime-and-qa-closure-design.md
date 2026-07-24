@@ -180,6 +180,7 @@ cache hit 复用原始 request ID 和 validated suggestion，不产生新的付�
 - 实际 `model`、`prompt_version` 和 `schema_version`；
 - 零起始 `page_index`；
 - 四个有限数字组成的 `crop_bbox_pdf`；
+- 与 crop 计算一致的有限数字 `padding_pdf`；
 - 当前 PNG 内容计算得到的 64 位小写十六进制 `crop_sha256`；
 - boolean `validated`；
 - validator 接受时为 `null`、拒绝时为本地枚举值的 `rejection_code`。
