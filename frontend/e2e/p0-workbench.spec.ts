@@ -164,18 +164,46 @@ async function assertPageGeometry(page: Page) {
 
 
 async function tableEvidence(page: Page) {
-  const rows = await page.locator("[role='row'][data-item-id]").evaluateAll((elements) => (
-    elements.map((row) => {
-      const itemId = row.getAttribute("data-item-id");
-      const text = row.querySelector(".inspection-number")?.textContent?.trim() ?? "";
-      if (!itemId) throw new Error("inspection row is missing item identity");
-      return {
-        itemId,
-        active: row.getAttribute("data-active") === "true",
-        formalNumber: /^\d+$/.test(text) ? Number(text) : null,
-      };
-    })
-  ));
+  const pagination = page.getByRole("navigation", { name: "检验项分页" });
+  const previousPage = pagination.getByRole("button", { name: "上一页" });
+  const nextPage = pagination.getByRole("button", { name: "下一页" });
+  const table = page.getByRole("table", { name: "检验项列表" });
+  const rowsByItemId = new Map<string, {
+    itemId: string;
+    active: boolean;
+    formalNumber: number | null;
+  }>();
+  const rewindTable = async () => {
+    while (!(await previousPage.isDisabled())) await previousPage.click();
+  };
+
+  await rewindTable();
+  for (;;) {
+    const visibleRows = table.locator("[role='row'][data-item-id]:visible");
+    await expect(visibleRows.first()).toBeVisible();
+    const pageRows = await visibleRows.evaluateAll((elements) => (
+      elements.map((row) => {
+        const itemId = row.getAttribute("data-item-id");
+        const text = row.querySelector(".inspection-number")?.textContent?.trim() ?? "";
+        if (!itemId) throw new Error("inspection row is missing item identity");
+        return {
+          itemId,
+          active: row.getAttribute("data-active") === "true",
+          formalNumber: /^\d+$/.test(text) ? Number(text) : null,
+        };
+      })
+    ));
+    expect(pageRows.length).toBeGreaterThan(0);
+    expect(new Set(pageRows.map((row) => row.itemId)).size).toBe(pageRows.length);
+    for (const row of pageRows) {
+      expect(rowsByItemId.has(row.itemId)).toBe(false);
+      rowsByItemId.set(row.itemId, row);
+    }
+    if (await nextPage.isDisabled()) break;
+    await nextPage.click();
+  }
+  await rewindTable();
+  const rows = [...rowsByItemId.values()];
   return {
     activeItemIds: rows
       .filter((row) => row.active)
@@ -194,6 +222,7 @@ async function tableEvidence(page: Page) {
 
 async function rewindToFirstPage(page: Page): Promise<void> {
   const pageIndicator = page.getByTestId("page-indicator");
+  const pdfControls = page.getByLabel("PDF 控件");
   for (;;) {
     const indicator = (await pageIndicator.textContent())?.trim() ?? "";
     const currentPage = Number(indicator.split("/")[0]?.trim());
@@ -201,7 +230,7 @@ async function rewindToFirstPage(page: Page): Promise<void> {
     if (!Number.isInteger(currentPage) || currentPage < 1) {
       throw new Error("invalid page indicator");
     }
-    await page.getByRole("button", { name: "Previous page" }).click();
+    await pdfControls.getByRole("button", { name: "上一页" }).click();
   }
 }
 
@@ -219,7 +248,9 @@ async function collectAllPageGeometry(page: Page, totalPages: number) {
     itemNumbers.push(...pageGeometry.itemNumbers);
     glyphMetricsVerified = glyphMetricsVerified && pageGeometry.glyphMetricsVerified;
     if (pageNumber < totalPages) {
-      await page.getByRole("button", { name: "Next page" }).click();
+      await page.getByLabel("PDF 控件")
+        .getByRole("button", { name: "下一页" })
+        .click();
     }
   }
   return {
@@ -298,9 +329,12 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
   });
 
   await page.goto(projectUrl, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { name: "Quality Inspection Review" })).toBeVisible();
-  await expect(page.getByRole("table", { name: "Inspection item list" })).toBeVisible();
-  await expect(page.getByLabel("Engineering drawing")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "检验项目审核" })).toBeVisible();
+  const inspectionTable = page.getByRole("table", { name: "检验项列表" });
+  await expect(inspectionTable).toBeVisible();
+  await expect(inspectionTable.locator(".inspection-table__head"))
+    .toHaveCSS("position", "sticky");
+  await expect(page.getByLabel("工程图纸")).toBeVisible();
 
   const pageIndicator = page.getByTestId("page-indicator");
   const indicator = (await pageIndicator.textContent())?.trim() ?? "";
@@ -321,12 +355,12 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
   expect(overlayNumbers).toEqual(initialNumbers);
   expect(initialGeometry.itemNumbers).toEqual(initialBackendItemNumbers);
 
-  await page.getByRole("button", { name: "Zoom in" }).click();
-  await expect(page.getByLabel("Zoom level")).toHaveText("125%");
-  await page.getByRole("button", { name: "Pan right" }).click();
-  await page.getByRole("button", { name: "Pan left" }).click();
-  await page.getByRole("button", { name: "Zoom out" }).click();
-  await expect(page.getByLabel("Zoom level")).toHaveText("100%");
+  await page.getByRole("button", { name: "放大" }).click();
+  await expect(page.getByLabel("缩放比例")).toHaveText("125%");
+  await page.getByRole("button", { name: "向右平移" }).click();
+  await page.getByRole("button", { name: "向左平移" }).click();
+  await page.getByRole("button", { name: "缩小" }).click();
+  await expect(page.getByLabel("缩放比例")).toHaveText("100%");
 
   if (phase === "pre-export") {
     await rewindToFirstPage(page);
@@ -339,7 +373,7 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
     );
     await row.click();
     const firstBalloon = page.getByRole("button", {
-      name: new RegExp(`^Balloon ${firstNumber}(?:,|$)`),
+      name: new RegExp(`^气泡 ${firstNumber}(?:，|$)`),
     });
     await expect(firstBalloon).toHaveAttribute("data-selected", "true");
     await firstBalloon.click();
@@ -356,7 +390,7 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
     await page.mouse.up();
     expect((await moveResponse).ok()).toBe(true);
 
-    const actionButtons = ["Delete balloon", "Rebuild balloon", "Renumber balloons"];
+    const actionButtons = ["删除气泡", "重建气泡", "重新编号"];
     for (const name of actionButtons) {
       const responsePromise = page.waitForResponse((response) => (
         response.url().includes("/balloons/commands")
@@ -365,9 +399,9 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
       await page.getByRole("button", { name }).click();
       expect((await responsePromise).ok()).toBe(true);
     }
-    await expect(page.getByRole("button", { name: "Confirm Reviewed Result" })).toBeEnabled();
-    await expect(page.getByRole("button", { name: "Create formal export" })).toBeDisabled();
-    await expect(page.getByRole("navigation", { name: "Formal downloads" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "确认审核结果" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "生成正式文件" })).toBeDisabled();
+    await expect(page.getByRole("navigation", { name: "正式文件下载" })).toHaveCount(0);
 
     const finalSnapshot = await workbench(page, projectId);
     const balloons = activeBalloons(finalSnapshot);
@@ -433,16 +467,16 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
   const confirmResponse = page.waitForResponse((response) => (
     response.url().includes("/review/confirm") && response.request().method() === "POST"
   ));
-  await page.getByRole("button", { name: "Confirm Reviewed Result" }).click();
+  await page.getByRole("button", { name: "确认审核结果" }).click();
   const reviewedResponse = await confirmResponse;
   expect(reviewedResponse.ok()).toBe(true);
   const reviewed = await reviewedResponse.json();
-  await expect(page.getByRole("button", { name: "Create formal export" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "生成正式文件" })).toBeEnabled();
 
   const exportResponse = page.waitForResponse((response) => (
     response.url().includes("/exports") && response.request().method() === "POST"
   ));
-  await page.getByRole("button", { name: "Create formal export" }).click();
+  await page.getByRole("button", { name: "生成正式文件" }).click();
   const createdResponse = await exportResponse;
   expect(createdResponse.ok()).toBe(true);
   const created = await createdResponse.json();
@@ -451,7 +485,7 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
   expect(created.artifacts).toHaveLength(3);
 
   const canonicalKinds = ["ballooned_pdf", "sip_excel", "manifest"];
-  const downloads = page.getByRole("navigation", { name: "Formal downloads" }).getByRole("link");
+  const downloads = page.getByRole("navigation", { name: "正式文件下载" }).getByRole("link");
   await expect(downloads).toHaveCount(3);
   const artifactByKind = new Map(
     created.artifacts.map((artifact: { kind: string }) => [artifact.kind, artifact]),

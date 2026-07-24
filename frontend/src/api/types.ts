@@ -13,6 +13,7 @@ export type OverlayBox = {
   itemIds?: string[];
   pageIndex?: number;
   bbox: PdfCoordinates;
+  rawText?: string;
 };
 
 export type BalloonOverlay = {
@@ -139,7 +140,7 @@ export type ReviewWorkingCopy = {
   raw_result_id: string;
   version: number;
   items: ReviewItem[];
-  coverage: Record<string, unknown>;
+  coverage: ReviewCoverage;
   numbering_stale: boolean;
   items_frozen_at: string | null;
   items_frozen_by: string | null;
@@ -151,6 +152,24 @@ export type ReviewWorkingCopy = {
     material?: string;
     revision?: string;
   };
+};
+
+export type ReviewCoverageEntry = {
+  observation_id: string;
+  source_location_id: string;
+  candidate_id?: string | null;
+  disposition: string;
+  coordinates: PdfCoordinates;
+  requires_confirmation: boolean;
+};
+
+export type ReviewCoverage = {
+  blocking_count?: number;
+  review_required_count?: number;
+  coverage_checked?: boolean;
+  entries?: ReviewCoverageEntry[];
+  blocking_observation_ids?: string[];
+  relations?: Array<Record<string, unknown>>;
 };
 
 export type ProjectWorkbenchPage = {
@@ -173,6 +192,7 @@ export type ProjectWorkbenchSource = {
   item_ids: string[];
   page_index: number;
   bbox_pdf: PdfCoordinates;
+  raw_text?: string;
 };
 
 export type BalloonRecord = {
@@ -202,6 +222,8 @@ export type ProjectWorkbenchResponse = {
   balloons: BalloonRecord[];
   balloon_blockers: string[];
   source_pdf_url: string;
+  reviewed_result_id: string | null;
+  latest_export: ExportJob | null;
 };
 
 export type ExportArtifactKind = "ballooned_pdf" | "sip_excel" | "manifest";
@@ -223,10 +245,36 @@ export type ExportJob = {
   artifacts: ExportArtifact[];
 };
 
-export type GetJson = <Result>(path: string) => Promise<Result>;
+export type ProjectPhase =
+  | "queued"
+  | "processing"
+  | "ready_for_review"
+  | "failed";
+
+export type ProjectStatus = {
+  project_id?: string;
+  phase: ProjectPhase;
+  workbench_ready: boolean;
+  retryable: boolean;
+  error: {
+    code: string;
+    stage: string;
+  } | null;
+};
+
+export type GetJson = <Result>(
+  path: string,
+  signal?: AbortSignal,
+) => Promise<Result>;
 
 export type PostJson = <Result = unknown>(
   path: string,
   body: unknown,
   headers: Record<string, string>,
+) => Promise<Result>;
+
+export type PostForm = <Result>(
+  path: string,
+  body: FormData,
+  signal?: AbortSignal,
 ) => Promise<Result>;

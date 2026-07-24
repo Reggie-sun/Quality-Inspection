@@ -11,7 +11,7 @@ from typing import Any
 
 import fitz
 from openpyxl import load_workbook
-from sqlalchemy import select, update
+from sqlalchemy import case, select, update
 from sqlalchemy.orm import Session
 
 from app.balloons.renderer import FrozenBalloon, render_ballooned_pdf
@@ -340,13 +340,29 @@ class ExportService:
             raise ExportNotFound(f"export {export_id} was not found")
         return export
 
+    def latest_for_project(self, project_id: uuid.UUID) -> ExportJob | None:
+        return self.session.scalar(
+            select(ExportJob)
+            .where(ExportJob.project_id == project_id)
+            .order_by(ExportJob.created_at.desc(), ExportJob.id.desc())
+            .limit(1)
+        )
+
     def artifacts(self, export_id: uuid.UUID) -> list[ExportArtifact]:
         self.get(export_id)
         return list(
             self.session.scalars(
                 select(ExportArtifact)
                 .where(ExportArtifact.export_id == export_id)
-                .order_by(ExportArtifact.kind)
+                .order_by(
+                    case(
+                        (ExportArtifact.kind == "ballooned_pdf", 0),
+                        (ExportArtifact.kind == "sip_excel", 1),
+                        (ExportArtifact.kind == "manifest", 2),
+                        else_=3,
+                    ),
+                    ExportArtifact.id,
+                )
             )
         )
 

@@ -4,6 +4,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
@@ -433,3 +434,48 @@ def test_unicode_download_filename_has_rfc5987_fallback() -> None:
     assert 'filename="-sip.xlsx"' not in header
     assert 'filename="_-' not in header
     assert "filename*=UTF-8''%E4%B8%8A%E5%BA%A7-sip.xlsx" in header
+
+
+def test_latest_export_for_project_uses_created_at_then_id_descending(
+    db_session: Session,
+    reviewed_result: tuple[ReviewedResult, LocalFileStorage],
+) -> None:
+    reviewed, storage = reviewed_result
+    created_at = datetime(2026, 7, 23, 5, 0, tzinfo=timezone.utc)
+    older = ExportJob(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        project_id=reviewed.project_id,
+        reviewed_result_id=reviewed.id,
+        status="failed",
+        template_version="1",
+        mapping_version="1",
+        renderer_version="balloon-pdf/1",
+        created_at=datetime(2026, 7, 23, 4, 59, tzinfo=timezone.utc),
+    )
+    same_time_lower_id = ExportJob(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+        project_id=reviewed.project_id,
+        reviewed_result_id=reviewed.id,
+        status="failed",
+        template_version="1",
+        mapping_version="1",
+        renderer_version="balloon-pdf/1",
+        created_at=created_at,
+    )
+    same_time_higher_id = ExportJob(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000003"),
+        project_id=reviewed.project_id,
+        reviewed_result_id=reviewed.id,
+        status="running",
+        template_version="1",
+        mapping_version="1",
+        renderer_version="balloon-pdf/1",
+        created_at=created_at,
+    )
+    db_session.add_all([older, same_time_lower_id, same_time_higher_id])
+    db_session.commit()
+
+    service = ExportService(db_session, storage=storage)
+
+    assert service.latest_for_project(reviewed.project_id) is same_time_higher_id
+    assert service.latest_for_project(uuid.uuid4()) is None

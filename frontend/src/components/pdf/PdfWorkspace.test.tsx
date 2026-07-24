@@ -60,7 +60,7 @@ describe("PdfWorkspace", () => {
       "c1",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
 
     await waitFor(() => {
       expect(pdfDocument.getPage).toHaveBeenCalledWith(2);
@@ -87,7 +87,7 @@ describe("PdfWorkspace", () => {
         balloons={[{ id: "b1", pageIndex: 0, center: [80, 90], number: 1 }]}
       />,
     );
-    const overlay = await screen.findByLabelText("engineering overlays");
+    const overlay = await screen.findByLabelText("工程图纸标注层");
     expect(overlay.getAttribute("data-scale")).toBe("1");
     expect(screen.getByTestId("candidate-c1").getAttribute("x")).toBe("160");
     expect(screen.getByTestId("candidate-c1").getAttribute("y")).toBe("10");
@@ -97,7 +97,7 @@ describe("PdfWorkspace", () => {
     expect(balloon?.getAttribute("cx")).toBe("110");
     expect(balloon?.getAttribute("cy")).toBe("80");
 
-    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    fireEvent.click(screen.getByRole("button", { name: "放大" }));
 
     await waitFor(() => {
       expect(overlay.getAttribute("data-scale")).toBe("1.25");
@@ -141,7 +141,7 @@ describe("PdfWorkspace", () => {
     );
     await waitFor(() => expect(tasks).toHaveLength(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
 
     await waitFor(() => expect(tasks[0].cancel).toHaveBeenCalledOnce());
     expect(screen.queryByRole("alert")).toBeNull();
@@ -174,7 +174,7 @@ describe("PdfWorkspace", () => {
     );
     expect(await screen.findByRole("alert")).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(screen.getByTestId("page-indicator").textContent).toBe("2 / 2");
@@ -193,12 +193,59 @@ describe("PdfWorkspace", () => {
     );
     await screen.findByTestId("candidate-c1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Pan right" }));
+    fireEvent.click(screen.getByRole("button", { name: "向右平移" }));
 
     expect(screen.getByTestId("pdf-page-layer").getAttribute("style")).toContain(
       "translate(24px, 0px)",
     );
     expect(bbox).toEqual(original);
     expect(screen.getByTestId("candidate-c1").getAttribute("x")).toBe("10");
+  });
+
+  test("来源待确认选择会跳页并高亮真实来源框", async () => {
+    const onSelectSource = vi.fn();
+    render(
+      <PdfWorkspace
+        pdfDocument={documentFixture()}
+        candidates={[]}
+        sources={[
+          {
+            id: "source-only",
+            pageIndex: 1,
+            bbox: [10, 20, 30, 40],
+            rawText: "技术要求：去除毛刺",
+          },
+        ]}
+        balloons={[]}
+        selectedSourceId="source-only"
+        onSelectSource={onSelectSource}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("page-indicator").textContent).toBe("2 / 2");
+    });
+    const source = await screen.findByTestId("source-source-only");
+    expect(source.getAttribute("data-selected")).toBe("true");
+    fireEvent.click(source);
+    expect(onSelectSource).toHaveBeenCalledWith("source-only");
+  });
+
+  test("提供适合页面、展开和中文图例控件", () => {
+    render(
+      <PdfWorkspace
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "适合页面" }));
+    expect(screen.getByLabelText("缩放比例").textContent).toBe("100%");
+    fireEvent.click(screen.getByRole("button", { name: "展开工作区" }));
+    expect(screen.getByTestId("pdf-workspace").getAttribute("data-expanded")).toBe("true");
+    expect(screen.getByRole("list", { name: "图纸标注图例" }).textContent)
+      .toContain("正式气泡候选项来源标注已排除");
   });
 });

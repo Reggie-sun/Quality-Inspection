@@ -6,6 +6,7 @@ import type {
   ReviewCommand,
   ReviewItem,
 } from "../../api/types";
+import { zhCN } from "../../copy/zhCN";
 
 
 type ReviewPanelProps = {
@@ -38,53 +39,72 @@ type CoreField = {
 
 const QUANTITY_FIELD: CoreField = {
   key: "quantity",
-  label: "Quantity",
+  label: zhCN.review.fields.quantity,
   kind: "integer",
 };
 
 const CORE_FIELDS: Record<CandidateType, CoreField[]> = {
   linear_dimension: [
     QUANTITY_FIELD,
-    { key: "nominal", label: "Nominal", kind: "decimal" },
-    { key: "upper_tolerance", label: "Upper tolerance", kind: "decimal" },
-    { key: "lower_tolerance", label: "Lower tolerance", kind: "decimal" },
+    { key: "nominal", label: zhCN.review.fields.nominal, kind: "decimal" },
+    { key: "upper_tolerance", label: zhCN.review.fields.upperTolerance, kind: "decimal" },
+    { key: "lower_tolerance", label: zhCN.review.fields.lowerTolerance, kind: "decimal" },
   ],
   diameter_dimension: [
     QUANTITY_FIELD,
-    { key: "nominal", label: "Diameter", kind: "decimal" },
-    { key: "feature_kind", label: "Feature kind", kind: "feature_kind" },
-    { key: "depth", label: "Depth", kind: "decimal" },
-    { key: "through", label: "Through", kind: "boolean" },
+    { key: "nominal", label: zhCN.review.fields.diameter, kind: "decimal" },
+    { key: "feature_kind", label: zhCN.review.fields.featureKind, kind: "feature_kind" },
+    { key: "depth", label: zhCN.review.fields.depth, kind: "decimal" },
+    { key: "through", label: zhCN.review.fields.through, kind: "boolean" },
   ],
   thread: [
     QUANTITY_FIELD,
-    { key: "thread_spec", label: "Thread specification", kind: "text" },
-    { key: "thread_depth", label: "Thread depth", kind: "decimal" },
-    { key: "through", label: "Through", kind: "boolean" },
+    { key: "thread_spec", label: zhCN.review.fields.threadSpec, kind: "text" },
+    { key: "thread_depth", label: zhCN.review.fields.threadDepth, kind: "decimal" },
+    { key: "through", label: zhCN.review.fields.through, kind: "boolean" },
   ],
   radius: [
     QUANTITY_FIELD,
-    { key: "radius_value", label: "Radius", kind: "decimal" },
+    { key: "radius_value", label: zhCN.review.fields.radius, kind: "decimal" },
   ],
   angle: [
     QUANTITY_FIELD,
-    { key: "angle_value", label: "Angle", kind: "decimal" },
-    { key: "upper_tolerance", label: "Upper tolerance", kind: "decimal" },
-    { key: "lower_tolerance", label: "Lower tolerance", kind: "decimal" },
+    { key: "angle_value", label: zhCN.review.fields.angle, kind: "decimal" },
+    { key: "upper_tolerance", label: zhCN.review.fields.upperTolerance, kind: "decimal" },
+    { key: "lower_tolerance", label: zhCN.review.fields.lowerTolerance, kind: "decimal" },
   ],
   general_requirement: [QUANTITY_FIELD],
   composite: [QUANTITY_FIELD],
 };
 
+function coreFieldsFor(itemType: unknown): CoreField[] {
+  if (typeof itemType !== "string") return [];
+  const fields = (CORE_FIELDS as Readonly<Record<string, CoreField[]>>)[itemType];
+  return Array.isArray(fields) ? fields : [];
+}
+
 const CANDIDATE_TYPES: Array<{ value: CandidateType; label: string }> = [
-  { value: "linear_dimension", label: "Linear dimension" },
-  { value: "diameter_dimension", label: "Diameter dimension" },
-  { value: "thread", label: "Thread" },
-  { value: "radius", label: "Radius" },
-  { value: "angle", label: "Angle" },
-  { value: "general_requirement", label: "General requirement" },
-  { value: "composite", label: "Composite" },
+  { value: "linear_dimension", label: zhCN.review.types.linear_dimension },
+  { value: "diameter_dimension", label: zhCN.review.types.diameter_dimension },
+  { value: "thread", label: zhCN.review.types.thread },
+  { value: "radius", label: zhCN.review.types.radius },
+  { value: "angle", label: zhCN.review.types.angle },
+  { value: "general_requirement", label: zhCN.review.types.general_requirement },
+  { value: "composite", label: zhCN.review.types.composite },
 ];
+
+const COARSE_TYPES = [
+  {
+    value: "geometric_tolerance",
+    label: zhCN.review.coarseTypes.geometric_tolerance,
+  },
+  { value: "roughness", label: zhCN.review.coarseTypes.roughness },
+  { value: "weld", label: zhCN.review.coarseTypes.weld },
+  {
+    value: "cross_view_duplicate",
+    label: zhCN.review.coarseTypes.cross_view_duplicate,
+  },
+] as const;
 
 function parseCoordinates(value: string): PdfCoordinates | null {
   const coordinates = value.split(",").map((part) => Number(part.trim()));
@@ -142,7 +162,7 @@ export function ReviewPanel({
       items.map((item) => [
         item.item_id,
         Object.fromEntries(
-          (item.item_type === undefined ? [] : CORE_FIELDS[item.item_type]).map(
+          coreFieldsFor(item.item_type).map(
             (field) => [field.key, displayValue(item[field.key])],
           ),
         ),
@@ -175,6 +195,7 @@ export function ReviewPanel({
   const [manualType, setManualType] = useState<CandidateType>("thread");
   const [manualBalloonRequired, setManualBalloonRequired] = useState(true);
   const activeItems = useMemo(() => items.filter((item) => item.active), [items]);
+  const selectedItem = activeItems.find((item) => item.item_id === selectedItemId);
 
   const toggleSelected = (itemId: string) => {
     setSelectedIds((current) =>
@@ -211,7 +232,7 @@ export function ReviewPanel({
       });
       return;
     }
-    for (const field of item.item_type === undefined ? [] : CORE_FIELDS[item.item_type]) {
+    for (const field of coreFieldsFor(item.item_type)) {
       const value = coreValues[item.item_id]?.[field.key] ?? "";
       if (value.trim() === "" && item[field.key] === undefined) continue;
       const parsed = parseCoreValue(field, value);
@@ -246,289 +267,371 @@ export function ReviewPanel({
   };
 
   return (
-    <section aria-label="Review commands">
-      <h2 style={{ margin: "18px 0 10px", fontSize: 20 }}>Inspection items</h2>
-      {activeItems.map((item) => (
-        <article
-          key={item.item_id}
-          role="row"
-          aria-label={`${item.raw_text} ${item.item_id}`}
-          data-selected={selectedItemId === item.item_id}
-          onClick={() => onSelectItem?.(item.item_id)}
-          style={{
-            border: selectedItemId === item.item_id
-              ? "2px solid #7c3aed"
-              : "1px solid #e5e7eb",
-            borderRadius: 8,
-            padding: 10,
-            marginBottom: 8,
-            background: selectedItemId === item.item_id ? "#f5f3ff" : "white",
-          }}
+    <section aria-label={zhCN.review.region}>
+      <h2>{zhCN.review.title}</h2>
+      <details className="review-merge-selector">
+        <summary>{zhCN.review.mergeSelection}</summary>
+        <div className="review-merge-selector__items">
+          {activeItems.map((item, index) => (
+            <label key={item.item_id}>
+              <input
+                type="checkbox"
+                aria-label={zhCN.review.selectItem(index + 1, item.raw_text)}
+                checked={selectedIds.includes(item.item_id)}
+                onChange={() => toggleSelected(item.item_id)}
+              />
+              <span>{item.raw_text}</span>
+            </label>
+          ))}
+        </div>
+        <button
+          type="button"
+          aria-label={zhCN.review.merge}
+          disabled={disabled}
+          onClick={mergeSelected}
         >
-          <label>
-            <input
-              type="checkbox"
-              aria-label={`Select ${item.item_id}`}
-              checked={selectedIds.includes(item.item_id)}
-              onChange={() => toggleSelected(item.item_id)}
-            />
-            {item.item_id}
-          </label>
+          {zhCN.review.merge}
+        </button>
+      </details>
+      {selectedItem === undefined ? (
+        <p className="review-select-hint">{zhCN.review.selectItemHint}</p>
+      ) : (
+        <article
+          aria-label={selectedItem.raw_text}
+          className="review-selected-item"
+          data-selected="true"
+          onClick={() => onSelectItem?.(selectedItem.item_id)}
+        >
+          <h3>{selectedItem.raw_text}</h3>
           <label style={{ display: "block" }}>
-            Raw text {item.item_id}
+            {zhCN.review.rawText}
             <input
-              aria-label={`Raw text ${item.item_id}`}
-              value={rawTexts[item.item_id] ?? item.raw_text}
+              aria-label={zhCN.review.fieldForItem(
+                zhCN.review.rawText,
+                selectedItem.raw_text,
+              )}
+              value={rawTexts[selectedItem.item_id] ?? selectedItem.raw_text}
               onChange={(event) =>
                 setRawTexts((current) => ({
                   ...current,
-                  [item.item_id]: event.target.value,
+                  [selectedItem.item_id]: event.target.value,
                 }))
               }
             />
           </label>
-          {item.item_type === undefined
-            ? null
-            : CORE_FIELDS[item.item_type].map((field) => (
+          {coreFieldsFor(selectedItem.item_type).map((field) => (
                 <label key={field.key} style={{ display: "block" }}>
-                  {field.label} {item.item_id}
+                  {field.label}
                   {field.kind === "boolean" ? (
                     <select
-                      aria-label={`${field.label} ${item.item_id}`}
-                      value={coreValues[item.item_id]?.[field.key] ?? ""}
+                      aria-label={zhCN.review.fieldForItem(
+                        field.label,
+                        selectedItem.raw_text,
+                      )}
+                      value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
                       onChange={(event) =>
-                        setCoreValue(item.item_id, field.key, event.target.value)
+                        setCoreValue(
+                          selectedItem.item_id,
+                          field.key,
+                          event.target.value,
+                        )
                       }
                     >
-                      <option value="">Unspecified</option>
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
+                      <option value="">{zhCN.review.unspecified}</option>
+                      <option value="true">{zhCN.review.yes}</option>
+                      <option value="false">{zhCN.review.no}</option>
                     </select>
                   ) : field.kind === "feature_kind" ? (
                     <select
-                      aria-label={`${field.label} ${item.item_id}`}
-                      value={coreValues[item.item_id]?.[field.key] ?? ""}
+                      aria-label={zhCN.review.fieldForItem(
+                        field.label,
+                        selectedItem.raw_text,
+                      )}
+                      value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
                       onChange={(event) =>
-                        setCoreValue(item.item_id, field.key, event.target.value)
+                        setCoreValue(
+                          selectedItem.item_id,
+                          field.key,
+                          event.target.value,
+                        )
                       }
                     >
-                      <option value="">Unspecified</option>
-                      <option value="hole">Hole</option>
-                      <option value="shaft">Shaft</option>
-                      <option value="cylindrical_feature">Cylindrical feature</option>
-                      <option value="unknown">Unknown</option>
+                      <option value="">{zhCN.review.unspecified}</option>
+                      <option value="hole">{zhCN.review.featureKinds.hole}</option>
+                      <option value="shaft">{zhCN.review.featureKinds.shaft}</option>
+                      <option value="cylindrical_feature">{zhCN.review.featureKinds.cylindrical_feature}</option>
+                      <option value="unknown">{zhCN.review.featureKinds.unknown}</option>
                     </select>
                   ) : (
                     <input
-                      aria-label={`${field.label} ${item.item_id}`}
+                      aria-label={zhCN.review.fieldForItem(
+                        field.label,
+                        selectedItem.raw_text,
+                      )}
                       inputMode={field.kind === "decimal" ? "decimal" : undefined}
                       type={field.kind === "integer" ? "number" : "text"}
                       min={field.kind === "integer" ? 1 : undefined}
                       step={field.kind === "integer" ? 1 : undefined}
-                      value={coreValues[item.item_id]?.[field.key] ?? ""}
+                      value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
                       onChange={(event) =>
-                        setCoreValue(item.item_id, field.key, event.target.value)
+                        setCoreValue(
+                          selectedItem.item_id,
+                          field.key,
+                          event.target.value,
+                        )
                       }
                     />
                   )}
                 </label>
               ))}
-          {item.coarse_type === undefined ? null : (
+          {selectedItem.coarse_type === undefined ? null : (
             <fieldset>
-              <legend>Complex item fields</legend>
+              <legend>{zhCN.review.complexFields}</legend>
               <label>
-                Coordinates {item.item_id}
+                {zhCN.review.coordinates}
                 <input
-                  aria-label={`Coordinates ${item.item_id}`}
-                  value={complexCoordinates[item.item_id] ?? ""}
+                  aria-label={zhCN.review.fieldForItem(
+                    zhCN.review.coordinates,
+                    selectedItem.raw_text,
+                  )}
+                  value={complexCoordinates[selectedItem.item_id] ?? ""}
                   onChange={(event) =>
                     setComplexCoordinates((current) => ({
                       ...current,
-                      [item.item_id]: event.target.value,
+                      [selectedItem.item_id]: event.target.value,
                     }))
                   }
                 />
               </label>
               <label>
-                Coarse type {item.item_id}
+                {zhCN.review.coarseType}
                 <select
-                  aria-label={`Coarse type ${item.item_id}`}
-                  value={coarseTypes[item.item_id] ?? item.coarse_type}
+                  aria-label={zhCN.review.fieldForItem(
+                    zhCN.review.coarseType,
+                    selectedItem.raw_text,
+                  )}
+                  value={
+                    coarseTypes[selectedItem.item_id] ?? selectedItem.coarse_type
+                  }
                   onChange={(event) =>
                     setCoarseTypes((current) => ({
                       ...current,
-                      [item.item_id]: event.target.value,
+                      [selectedItem.item_id]: event.target.value,
                     }))
                   }
                 >
-                  <option value="geometric_tolerance">Geometric tolerance</option>
-                  <option value="roughness">Roughness</option>
-                  <option value="weld">Weld</option>
-                  <option value="cross_view_duplicate">Cross-view duplicate</option>
+                  {COARSE_TYPES.some(
+                    ({ value }) =>
+                      value
+                      === (coarseTypes[selectedItem.item_id]
+                        ?? selectedItem.coarse_type),
+                  ) ? null : (
+                    <option
+                      value={
+                        coarseTypes[selectedItem.item_id]
+                        ?? selectedItem.coarse_type
+                      }
+                    >
+                      {zhCN.workbench.unknown}
+                    </option>
+                  )}
+                  {COARSE_TYPES.map(({ value, label }) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
                 </select>
               </label>
               <label>
                 <input
                   type="checkbox"
-                  aria-label={`Requires confirmation field ${item.item_id}`}
-                  checked={confirmationFields[item.item_id] ?? false}
+                  aria-label={zhCN.review.fieldForItem(
+                    zhCN.review.requiresConfirmation,
+                    selectedItem.raw_text,
+                  )}
+                  checked={confirmationFields[selectedItem.item_id] ?? false}
                   onChange={(event) =>
                     setConfirmationFields((current) => ({
                       ...current,
-                      [item.item_id]: event.target.checked,
+                      [selectedItem.item_id]: event.target.checked,
                     }))
                   }
                 />
-                Requires confirmation
+                {zhCN.review.requiresConfirmation}
               </label>
             </fieldset>
           )}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button
               type="button"
-              aria-label={`Keep ${item.item_id}`}
+              aria-label={zhCN.review.actionForItem(
+                zhCN.review.keep,
+                selectedItem.raw_text,
+              )}
               disabled={disabled}
-              onClick={() => onCommand({ type: "keep", item_id: item.item_id })}
+              onClick={() =>
+                onCommand({ type: "keep", item_id: selectedItem.item_id })
+              }
             >
-              Keep
+              {zhCN.review.keep}
             </button>
             <button
               type="button"
-              aria-label={`Exclude ${item.item_id}`}
+              aria-label={zhCN.review.actionForItem(
+                zhCN.review.exclude,
+                selectedItem.raw_text,
+              )}
               disabled={disabled}
-              onClick={() => onCommand({ type: "exclude", item_id: item.item_id })}
+              onClick={() =>
+                onCommand({ type: "exclude", item_id: selectedItem.item_id })
+              }
             >
-              Exclude
+              {zhCN.review.exclude}
             </button>
             <button
               type="button"
-              aria-label={`Edit ${item.item_id}`}
+              aria-label={zhCN.review.actionForItem(
+                zhCN.review.edit,
+                selectedItem.raw_text,
+              )}
               disabled={disabled}
-              onClick={() => editItem(item)}
+              onClick={() => editItem(selectedItem)}
             >
-              Edit
+              {zhCN.review.edit}
             </button>
             <button
               type="button"
-              aria-label={`Accept confirmation ${item.item_id}`}
-              disabled={disabled || !item.requires_confirmation}
+              aria-label={zhCN.review.fieldForItem(
+                zhCN.review.accept,
+                selectedItem.raw_text,
+              )}
+              disabled={disabled || !selectedItem.requires_confirmation}
               onClick={() =>
                 onCommand({
                   type: "resolve_confirmation",
-                  item_id: item.item_id,
+                  item_id: selectedItem.item_id,
                   accepted: true,
                 })
               }
             >
-              Accept
+              {zhCN.review.accept}
             </button>
             <button
               type="button"
-              aria-label={`Reject confirmation ${item.item_id}`}
-              disabled={disabled || !item.requires_confirmation}
+              aria-label={zhCN.review.fieldForItem(
+                zhCN.review.reject,
+                selectedItem.raw_text,
+              )}
+              disabled={disabled || !selectedItem.requires_confirmation}
               onClick={() =>
                 onCommand({
                   type: "resolve_confirmation",
-                  item_id: item.item_id,
+                  item_id: selectedItem.item_id,
                   accepted: false,
                 })
               }
             >
-              Reject
+              {zhCN.review.reject}
             </button>
             <button
               type="button"
-              aria-label={`Require balloon ${item.item_id}`}
-              disabled={disabled || item.balloon_required === true}
+              aria-label={zhCN.review.fieldForItem(
+                zhCN.review.requireBalloon,
+                selectedItem.raw_text,
+              )}
+              disabled={disabled || selectedItem.balloon_required === true}
               onClick={() =>
                 onCommand({
                   type: "set_balloon_required",
-                  item_id: item.item_id,
+                  item_id: selectedItem.item_id,
                   balloon_required: true,
                 })
               }
             >
-              Require balloon
+              {zhCN.review.requireBalloon}
             </button>
             <button
               type="button"
-              aria-label={`Set balloon not required ${item.item_id}`}
-              disabled={disabled || item.balloon_required === false}
+              aria-label={zhCN.review.fieldForItem(
+                zhCN.review.noBalloon,
+                selectedItem.raw_text,
+              )}
+              disabled={disabled || selectedItem.balloon_required === false}
               onClick={() =>
                 onCommand({
                   type: "set_balloon_required",
-                  item_id: item.item_id,
+                  item_id: selectedItem.item_id,
                   balloon_required: false,
                 })
               }
             >
-              No balloon
+              {zhCN.review.noBalloon}
             </button>
           </div>
           <label style={{ display: "block" }}>
-            Split parts {item.item_id}
+            {zhCN.review.splitParts}
             <input
-              aria-label={`Split parts ${item.item_id}`}
-              value={splitTexts[item.item_id] ?? ""}
-              placeholder="part one|part two"
+              aria-label={zhCN.review.fieldForItem(
+                zhCN.review.splitParts,
+                selectedItem.raw_text,
+              )}
+              value={splitTexts[selectedItem.item_id] ?? ""}
+              placeholder={zhCN.review.splitPlaceholder}
               onChange={(event) =>
                 setSplitTexts((current) => ({
                   ...current,
-                  [item.item_id]: event.target.value,
+                  [selectedItem.item_id]: event.target.value,
                 }))
               }
             />
           </label>
           <button
             type="button"
-            aria-label={`Split ${item.item_id}`}
-            disabled={disabled || item.item_type === undefined}
+            aria-label={zhCN.review.actionForItem(
+              zhCN.review.split,
+              selectedItem.raw_text,
+            )}
+            disabled={disabled || selectedItem.item_type === undefined}
             onClick={() => {
-              const parts = (splitTexts[item.item_id] ?? "")
+              const parts = (splitTexts[selectedItem.item_id] ?? "")
                 .split("|")
                 .map((rawText) => rawText.trim())
                 .filter(Boolean)
                 .map((raw_text) => ({ raw_text }));
               if (parts.length >= 2) {
-                onCommand({ type: "split", item_id: item.item_id, parts });
+                onCommand({
+                  type: "split",
+                  item_id: selectedItem.item_id,
+                  parts,
+                });
               }
             }}
           >
-            Split
+            {zhCN.review.split}
           </button>
         </article>
-      ))}
-      <button
-        type="button"
-        aria-label="Merge selected"
-        disabled={disabled}
-        onClick={mergeSelected}
-      >
-        Merge selected
-      </button>
+      )}
       <fieldset>
-        <legend>Manual item</legend>
+        <legend>{zhCN.review.manualItem}</legend>
         <label>
-          Raw text
+          {zhCN.review.rawText}
           <input
-            aria-label="Manual raw text"
+            aria-label={zhCN.review.manualRawText}
             value={manualRawText}
             onChange={(event) => setManualRawText(event.target.value)}
           />
         </label>
         <label>
-          Coordinates
+          {zhCN.review.coordinates}
           <input
-            aria-label="Manual coordinates"
+            aria-label={zhCN.review.manualCoordinates}
             value={manualCoordinates}
-            placeholder="x1,y1,x2,y2"
+            placeholder={zhCN.review.manualCoordinatesPlaceholder}
             onChange={(event) => setManualCoordinates(event.target.value)}
           />
         </label>
         <label>
-          Scope
+          {zhCN.review.scope}
           <select
-            aria-label="Manual scope"
+            aria-label={zhCN.review.manualScope}
             value={manualScope}
             onChange={(event) =>
               setManualScope(
@@ -536,14 +639,14 @@ export function ReviewPanel({
               )
             }
           >
-            <option value="local_feature">Local feature</option>
-            <option value="global_requirement">Global requirement</option>
+            <option value="local_feature">{zhCN.review.localFeature}</option>
+            <option value="global_requirement">{zhCN.review.globalRequirement}</option>
           </select>
         </label>
         <label>
-          Type
+          {zhCN.review.type}
           <select
-            aria-label="Manual item type"
+            aria-label={zhCN.review.manualType}
             value={manualType}
             onChange={(event) => setManualType(event.target.value as CandidateType)}
           >
@@ -557,19 +660,19 @@ export function ReviewPanel({
         <label>
           <input
             type="checkbox"
-            aria-label="Manual balloon required"
+            aria-label={zhCN.review.manualBalloonRequired}
             checked={manualBalloonRequired}
             onChange={(event) => setManualBalloonRequired(event.target.checked)}
           />
-          Balloon required
+          {zhCN.review.balloonRequired}
         </label>
         <button
           type="button"
-          aria-label="Add item"
+          aria-label={zhCN.review.addItem}
           disabled={disabled}
           onClick={addManualItem}
         >
-          Add item
+          {zhCN.review.addItem}
         </button>
       </fieldset>
     </section>

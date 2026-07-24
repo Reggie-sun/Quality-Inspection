@@ -53,7 +53,12 @@ test("P0-UI-004 derives active, excluded and manual-required filters from projec
   expect(screen.getByTestId("summary-active-count").textContent).toBe("2");
   expect(screen.getByTestId("summary-excluded-count").textContent).toBe("1");
   expect(screen.getByTestId("summary-manual-count").textContent).toBe("1");
+  expect(screen.getByRole("button", { name: "筛选有效项" })).not.toBeNull();
 
-  fireEvent.click(screen.getByRole("button", { name: "Filter manual required" }));
+  fireEvent.click(screen.getByRole("button", { name: "筛选需人工处理" }));
   expect(onFilterChange).toHaveBeenCalledWith("manual_required");
+  for (const label of ["全部", "有效项", "已排除", "需人工处理", "硬碰撞"]) {
+    expect(screen.getByRole("region", { name: "识别汇总" }).textContent)
+      .toContain(label);
+  }
 });

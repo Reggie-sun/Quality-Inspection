@@ -19,11 +19,12 @@ export default defineConfig({
     ? [["list"]]
     : [["json", { outputFile: `${reportDirectory}/playwright-${sampleOrder}-${phase}.json` }]],
   use: {
+    baseURL: process.env.QI_MVP_BASE_URL ?? "http://localhost:3000",
     channel: "chrome",
     viewport: { width: 1565, height: 796 },
     deviceScaleFactor: 1,
     colorScheme: "light",
-    locale: "en-US",
+    locale: "zh-CN",
     timezoneId: "Asia/Hong_Kong",
     trace: "retain-on-failure",
   },

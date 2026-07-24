@@ -9,6 +9,7 @@ import type {
   PdfPageTransform,
   PdfRenderTaskLike,
 } from "../../api/types";
+import { zhCN } from "../../copy/zhCN";
 import { OverlayLayer } from "./OverlayLayer";
 import { relatedItemIds } from "../workbench/selection";
 
@@ -27,8 +28,10 @@ type PdfWorkspaceProps = {
   pageCount?: number;
   fallbackPageSize?: [number, number];
   selectedItemId?: string;
+  selectedSourceId?: string;
   selectedBalloonId?: string;
   onSelectItem?: (itemId: string) => void;
+  onSelectSource?: (sourceId: string) => void;
   onSelectBalloon?: (itemId: string, balloonId: string) => void;
   onMoveBalloon?: (
     balloonId: string,
@@ -48,8 +51,10 @@ export function PdfWorkspace({
   pageCount = 1,
   fallbackPageSize = DEFAULT_PAGE_SIZE,
   selectedItemId,
+  selectedSourceId,
   selectedBalloonId,
   onSelectItem,
+  onSelectSource,
   onSelectBalloon,
   onMoveBalloon,
   onPageChange,
@@ -60,6 +65,7 @@ export function PdfWorkspace({
   const [pageIndex, setPageIndex] = useState(0);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [expanded, setExpanded] = useState(false);
   const [localSelectedItemId, setLocalSelectedItemId] = useState<string>();
   const [renderError, setRenderError] = useState<string>();
   const [pageSize, setPageSize] = useState({
@@ -103,6 +109,16 @@ export function PdfWorkspace({
   }, [balloons, candidates, pageIndex, selection, sources]);
 
   useEffect(() => {
+    if (selectedSourceId === undefined) return;
+    const sourcePage = sources.find(
+      (source) => source.id === selectedSourceId,
+    )?.pageIndex;
+    if (sourcePage !== undefined && sourcePage !== pageIndex) {
+      setPageIndex(sourcePage);
+    }
+  }, [pageIndex, selectedSourceId, sources]);
+
+  useEffect(() => {
     setRenderError(undefined);
     if (pdfDocument === null) {
       setPageSize({ width: fallbackPageSize[0], height: fallbackPageSize[1] });
@@ -138,7 +154,7 @@ export function PdfWorkspace({
           cancelled ||
           (error instanceof Error && error.name === "RenderingCancelledException")
         ) return;
-        setRenderError("PDF page could not be rendered");
+        setRenderError(zhCN.pdf.renderFailed);
       }
     };
 
@@ -170,116 +186,144 @@ export function PdfWorkspace({
   return (
     <section
       ref={workspaceRef}
-      aria-label="PDF review workspace"
+      aria-label={zhCN.pdf.workspace}
+      aria-busy={pdfDocument === null}
       data-testid="pdf-workspace"
       data-selected-id={selection ?? ""}
-      style={{
-        padding: 14,
-        background: "white",
-        border: "1px solid #e2e8f0",
-        borderRadius: 12,
-        overflow: "hidden",
-      }}
+      data-expanded={expanded}
+      className="pdf-workspace"
     >
       <div
-        aria-label="PDF controls"
-        style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}
+        aria-label={zhCN.pdf.controls}
+        className="pdf-controls"
       >
         <button
           type="button"
-          aria-label="Previous page"
+          aria-label={zhCN.pdf.previous}
           disabled={pageIndex === 0}
           onClick={() => setPageIndex((current) => Math.max(0, current - 1))}
         >
-          Previous
+          {zhCN.pdf.previous}
         </button>
         <span data-testid="page-indicator">
           {pageIndex + 1} / {totalPages}
         </span>
         <button
           type="button"
-          aria-label="Next page"
+          aria-label={zhCN.pdf.next}
           disabled={pageIndex >= totalPages - 1}
           onClick={() => setPageIndex((current) => Math.min(totalPages - 1, current + 1))}
         >
-          Next
+          {zhCN.pdf.next}
         </button>
         <button
           type="button"
-          aria-label="Zoom out"
+          aria-label={zhCN.pdf.zoomOut}
           onClick={() => setScale((current) => Math.max(0.5, current - 0.25))}
         >
-          Zoom out
+          {zhCN.pdf.zoomOut}
         </button>
-        <output aria-label="Zoom level">{Math.round(scale * 100)}%</output>
+        <output aria-label={zhCN.pdf.zoomLevel}>{Math.round(scale * 100)}%</output>
         <button
           type="button"
-          aria-label="Zoom in"
+          aria-label={zhCN.pdf.zoomIn}
           onClick={() => setScale((current) => Math.min(4, current + 0.25))}
         >
-          Zoom in
+          {zhCN.pdf.zoomIn}
         </button>
-        <button type="button" aria-label="Pan left" onClick={() => setPan((p) => ({ ...p, x: p.x - 24 }))}>
-          Pan left
+        <button type="button" aria-label={zhCN.pdf.panLeft} onClick={() => setPan((p) => ({ ...p, x: p.x - 24 }))}>
+          {zhCN.pdf.panLeft}
         </button>
-        <button type="button" aria-label="Pan right" onClick={() => setPan((p) => ({ ...p, x: p.x + 24 }))}>
-          Pan right
+        <button type="button" aria-label={zhCN.pdf.panRight} onClick={() => setPan((p) => ({ ...p, x: p.x + 24 }))}>
+          {zhCN.pdf.panRight}
         </button>
-        <button type="button" aria-label="Pan up" onClick={() => setPan((p) => ({ ...p, y: p.y - 24 }))}>
-          Pan up
+        <button type="button" aria-label={zhCN.pdf.panUp} onClick={() => setPan((p) => ({ ...p, y: p.y - 24 }))}>
+          {zhCN.pdf.panUp}
         </button>
-        <button type="button" aria-label="Pan down" onClick={() => setPan((p) => ({ ...p, y: p.y + 24 }))}>
-          Pan down
+        <button type="button" aria-label={zhCN.pdf.panDown} onClick={() => setPan((p) => ({ ...p, y: p.y + 24 }))}>
+          {zhCN.pdf.panDown}
+        </button>
+        <button
+          type="button"
+          aria-label={zhCN.pdf.fit}
+          onClick={() => {
+            setScale(1);
+            setPan({ x: 0, y: 0 });
+          }}
+        >
+          {zhCN.pdf.fit}
+        </button>
+        <button
+          type="button"
+          aria-label={expanded ? zhCN.pdf.collapse : zhCN.pdf.expand}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? zhCN.pdf.collapse : zhCN.pdf.expand}
         </button>
       </div>
       {renderError === undefined ? null : <p role="alert">{renderError}</p>}
-      <div
-        style={{
-          overflow: "auto",
-          minHeight: 520,
-          maxHeight: "calc(100vh - 285px)",
-          border: "1px solid #cbd5e1",
-          borderRadius: 8,
-          background: "#e9edf3",
-        }}
-      >
-        <div
-          data-testid="pdf-page-layer"
-          style={{
-            position: "relative",
-            width: pageSize.width * scale,
-            height: pageSize.height * scale,
-            transform: `translate(${pan.x}px, ${pan.y}px)`,
-            transformOrigin: "top left",
-            background: "white",
-          }}
-        >
-          <canvas
-            ref={canvasRef}
-            data-testid="pdf-canvas"
-            width={Math.round(pageSize.width * scale)}
-            height={Math.round(pageSize.height * scale)}
-          />
-          <OverlayLayer
-            pageWidth={pageSize.width}
-            pageHeight={pageSize.height}
-            scale={scale}
-            candidates={pageCandidates}
-            sources={pageSources}
-            balloons={pageBalloons}
-            pdfToRenderMatrix={currentPageTransform?.pdfToRenderMatrix}
-            renderToPdfMatrix={currentPageTransform?.renderToPdfMatrix}
-            selectedItemId={selection}
-            selectedBalloonId={selectedBalloonId}
-            onSelectItem={(itemId) => {
-              setLocalSelectedItemId(itemId);
-              onSelectItem?.(itemId);
+      <div className="pdf-content">
+        <nav className="pdf-thumbnails" aria-label={zhCN.pdf.pages}>
+          {Array.from({ length: totalPages }, (_, index) => (
+            <button
+              key={index}
+              type="button"
+              aria-label={zhCN.pdf.viewPage(index + 1)}
+              aria-current={pageIndex === index ? "page" : undefined}
+              onClick={() => setPageIndex(index)}
+            >
+              <span>{index + 1}</span>
+              <small>{zhCN.inspection.sourcePage(index + 1)}</small>
+            </button>
+          ))}
+        </nav>
+        <div className="pdf-scroll-frame">
+          <div
+            data-testid="pdf-page-layer"
+            style={{
+              position: "relative",
+              width: pageSize.width * scale,
+              height: pageSize.height * scale,
+              transform: `translate(${pan.x}px, ${pan.y}px)`,
+              transformOrigin: "top left",
+              background: "white",
             }}
-            onSelectBalloon={onSelectBalloon}
-            onMoveBalloon={onMoveBalloon}
-          />
+          >
+            <canvas
+              ref={canvasRef}
+              data-testid="pdf-canvas"
+              width={Math.round(pageSize.width * scale)}
+              height={Math.round(pageSize.height * scale)}
+            />
+            <OverlayLayer
+              pageWidth={pageSize.width}
+              pageHeight={pageSize.height}
+              scale={scale}
+              candidates={pageCandidates}
+              sources={pageSources}
+              balloons={pageBalloons}
+              pdfToRenderMatrix={currentPageTransform?.pdfToRenderMatrix}
+              renderToPdfMatrix={currentPageTransform?.renderToPdfMatrix}
+              selectedItemId={selection}
+              selectedSourceId={selectedSourceId}
+              selectedBalloonId={selectedBalloonId}
+              onSelectItem={(itemId) => {
+                setLocalSelectedItemId(itemId);
+                onSelectItem?.(itemId);
+              }}
+              onSelectSource={onSelectSource}
+              onSelectBalloon={onSelectBalloon}
+              onMoveBalloon={onMoveBalloon}
+            />
+          </div>
         </div>
       </div>
+      <ul className="drawing-legend" aria-label={zhCN.pdf.legend}>
+        <li><i data-color="balloon" />{zhCN.pdf.formalBalloon}</li>
+        <li><i data-color="candidate" />{zhCN.pdf.candidate}</li>
+        <li><i data-color="source" />{zhCN.pdf.source}</li>
+        <li><i data-color="excluded" />{zhCN.pdf.excluded}</li>
+      </ul>
     </section>
   );
 }

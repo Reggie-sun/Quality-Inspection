@@ -8,6 +8,7 @@ import {
   BalloonOverlay as BalloonMarker,
   displayToPdfMatrix,
 } from "../balloons/BalloonOverlay";
+import { zhCN } from "../../copy/zhCN";
 import { selectRelationItem, selectedRelation } from "../workbench/selection";
 
 
@@ -51,8 +52,10 @@ type OverlayLayerProps = {
   pdfToRenderMatrix?: PdfMatrix;
   renderToPdfMatrix?: PdfMatrix;
   selectedItemId?: string;
+  selectedSourceId?: string;
   selectedBalloonId?: string;
   onSelectItem?: (itemId: string) => void;
+  onSelectSource?: (sourceId: string) => void;
   onSelectBalloon?: (itemId: string, balloonId: string) => void;
   onMoveBalloon?: (
     balloonId: string,
@@ -74,8 +77,10 @@ export function OverlayLayer({
   pdfToRenderMatrix = IDENTITY_MATRIX,
   renderToPdfMatrix = IDENTITY_MATRIX,
   selectedItemId,
+  selectedSourceId,
   selectedBalloonId,
   onSelectItem,
+  onSelectSource,
   onSelectBalloon,
   onMoveBalloon,
   selectedId,
@@ -91,7 +96,7 @@ export function OverlayLayer({
 
   return (
     <svg
-      aria-label="engineering overlays"
+      aria-label={zhCN.pdf.overlay}
       data-scale={scale}
       width={pageWidth * scale}
       height={pageHeight * scale}
@@ -114,7 +119,7 @@ export function OverlayLayer({
             width={x1 - x0}
             height={y1 - y0}
             fill="transparent"
-            stroke={isSelected ? "#dc2626" : "#f59e0b"}
+            stroke={isSelected ? "#1d4ed8" : "#2563eb"}
             strokeWidth={isSelected ? 3 : 1.5}
             onClick={() => {
               const itemId = selectRelationItem(
@@ -132,7 +137,7 @@ export function OverlayLayer({
         const isSelected = selectedRelation(
           { itemId: item.itemId, itemIds: item.itemIds },
           selected,
-        );
+        ) || item.id === selectedSourceId;
         return (
           <rect
             key={item.id}
@@ -143,14 +148,18 @@ export function OverlayLayer({
             width={x1 - x0}
             height={y1 - y0}
             fill="transparent"
-            stroke={isSelected ? "#7c3aed" : "#2563eb"}
+            stroke={isSelected ? "#0e7490" : "#0891b2"}
             strokeDasharray="4 3"
             strokeWidth={1.5}
             onClick={() => {
               const itemId = selectRelationItem(item, selected);
-              if (itemId !== undefined) selectItem?.(itemId);
+              if (itemId !== undefined) {
+                selectItem?.(itemId);
+                return;
+              }
+              onSelectSource?.(item.id);
             }}
-            style={{ cursor: selectItem ? "pointer" : "default" }}
+            style={{ cursor: selectItem || onSelectSource ? "pointer" : "default" }}
           />
         );
       })}
