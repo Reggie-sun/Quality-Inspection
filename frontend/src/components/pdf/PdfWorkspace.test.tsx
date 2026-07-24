@@ -256,6 +256,32 @@ describe("PdfWorkspace", () => {
     expect(onSelectSource).toHaveBeenCalledWith("source-only");
   });
 
+  test("来源定位完成后仍允许手动切换 PDF 页面", async () => {
+    render(
+      <PdfWorkspace
+        pdfDocument={documentFixture()}
+        candidates={[]}
+        sources={[
+          {
+            id: "source-only",
+            pageIndex: 0,
+            bbox: [10, 20, 30, 40],
+            rawText: "技术要求：去除毛刺",
+          },
+        ]}
+        balloons={[]}
+        selectedSourceId="source-only"
+      />,
+    );
+
+    await screen.findByTestId("source-source-only");
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("page-indicator").textContent).toBe("2 / 2");
+    });
+  });
+
   test("每个页码按钮渲染独立真实缩略图", async () => {
     const pdfDocument = documentFixture();
     render(

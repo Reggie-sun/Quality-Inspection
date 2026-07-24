@@ -127,6 +127,7 @@ export function PdfWorkspace({
   const scrollFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const locatedSelectionRef = useRef<string | undefined>(undefined);
+  const locatedSourceRef = useRef<string | undefined>(undefined);
   const [pageIndex, setPageIndex] = useState(0);
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -175,11 +176,17 @@ export function PdfWorkspace({
   }, [balloons, candidates, pageIndex, selection, sources]);
 
   useEffect(() => {
-    if (selectedSourceId === undefined) return;
+    if (selectedSourceId === undefined) {
+      locatedSourceRef.current = undefined;
+      return;
+    }
     const sourcePage = sources.find(
       (source) => source.id === selectedSourceId,
     )?.pageIndex;
-    if (sourcePage !== undefined && sourcePage !== pageIndex) {
+    if (sourcePage === undefined) return;
+    const isNewSource = locatedSourceRef.current !== selectedSourceId;
+    locatedSourceRef.current = selectedSourceId;
+    if (isNewSource && sourcePage !== pageIndex) {
       setPageIndex(sourcePage);
     }
   }, [pageIndex, selectedSourceId, sources]);
