@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   CandidateType,
@@ -38,6 +38,11 @@ type CoreField = {
   key: CoreFieldKey;
   label: string;
   kind: "decimal" | "integer" | "text" | "boolean" | "feature_kind";
+};
+
+type AcknowledgedItemDraft = {
+  draftSignature: string;
+  persistedSignature: string;
 };
 
 const QUANTITY_FIELD: CoreField = {
@@ -146,6 +151,24 @@ function parseCoreValue(
   return { valid: true, value: trimmed };
 }
 
+function persistedItemSignature(item: ReviewItem): string {
+  return JSON.stringify(
+    item.coarse_type !== undefined
+      ? [
+          item.raw_text,
+          item.coordinates?.join(",") ?? "",
+          item.coarse_type,
+          item.requires_confirmation ?? false,
+        ]
+      : [
+          item.raw_text,
+          ...coreFieldsFor(item.item_type).map(
+            (field) => displayValue(item[field.key]),
+          ),
+        ],
+  );
+}
+
 export function ReviewPanel({
   items,
   onCommand,
@@ -192,8 +215,8 @@ export function ReviewPanel({
   );
   const [splitTexts, setSplitTexts] = useState<Record<string, string>>({});
   const [editingItemId, setEditingItemId] = useState<string>();
-  const [acknowledgedItemSignatures, setAcknowledgedItemSignatures] = useState<
-    Record<string, string>
+  const [acknowledgedItemDrafts, setAcknowledgedItemDrafts] = useState<
+    Record<string, AcknowledgedItemDraft>
   >({});
   const [dirtySplitIds, setDirtySplitIds] = useState<string[]>([]);
   const [manualDraftDirty, setManualDraftDirty] = useState(false);
@@ -205,6 +228,13 @@ export function ReviewPanel({
   const [manualType, setManualType] = useState<CandidateType>("thread");
   const [manualBalloonRequired, setManualBalloonRequired] = useState(true);
   const activeItems = useMemo(() => items.filter((item) => item.active), [items]);
+  const latestItemsRef = useRef(items);
+  latestItemsRef.current = items;
+  const persistedSignaturesRef = useRef<Record<string, string>>(
+    Object.fromEntries(items.map(
+      (item) => [item.item_id, persistedItemSignature(item)],
+    )),
+  );
   const itemDraftSignature = (item: ReviewItem) => JSON.stringify(
     item.coarse_type !== undefined
       ? [
@@ -220,34 +250,49 @@ export function ReviewPanel({
           ),
         ],
   );
-  const persistedItemSignature = (item: ReviewItem) => JSON.stringify(
-    item.coarse_type !== undefined
-      ? [
-          item.raw_text,
-          item.coordinates?.join(",") ?? "",
-          item.coarse_type,
-          item.requires_confirmation ?? false,
-        ]
-      : [
-          item.raw_text,
-          ...coreFieldsFor(item.item_type).map(
-            (field) => displayValue(item[field.key]),
-          ),
-        ],
+  const latestDraftSignaturesRef = useRef<Record<string, string>>({});
+  latestDraftSignaturesRef.current = Object.fromEntries(
+    activeItems.map((item) => [item.item_id, itemDraftSignature(item)]),
   );
+  const syncItemDraftFromPersisted = (item: ReviewItem) => {
+    setRawTexts((current) => ({
+      ...current,
+      [item.item_id]: item.raw_text,
+    }));
+    setCoreValues((current) => ({
+      ...current,
+      [item.item_id]: Object.fromEntries(
+        coreFieldsFor(item.item_type).map(
+          (field) => [field.key, displayValue(item[field.key])],
+        ),
+      ),
+    }));
+    setComplexCoordinates((current) => ({
+      ...current,
+      [item.item_id]: item.coordinates?.join(",") ?? "",
+    }));
+    setCoarseTypes((current) => ({
+      ...current,
+      [item.item_id]: item.coarse_type ?? "roughness",
+    }));
+    setConfirmationFields((current) => ({
+      ...current,
+      [item.item_id]: item.requires_confirmation ?? false,
+    }));
+  };
   const dirtyItemIds = useMemo(
     () => activeItems
       .filter(
         (item) =>
           itemDraftSignature(item)
             !== (
-              acknowledgedItemSignatures[item.item_id]
+              acknowledgedItemDrafts[item.item_id]?.draftSignature
               ?? persistedItemSignature(item)
             ),
       )
       .map((item) => item.item_id),
     [
-      acknowledgedItemSignatures,
+      acknowledgedItemDrafts,
       activeItems,
       coarseTypes,
       complexCoordinates,
@@ -272,6 +317,55 @@ export function ReviewPanel({
     setEditingItemId(undefined);
   }, [selectedItemId]);
 
+  useEffect(() => {
+    const nextPersistedSignatures = { ...persistedSignaturesRef.current };
+    const acknowledgedIdsToRetire: string[] = [];
+    for (const item of activeItems) {
+      const itemId = item.item_id;
+      const persistedSignature = persistedItemSignature(item);
+      const previousPersistedSignature =
+        persistedSignaturesRef.current[itemId];
+      const acknowledgedDraft = acknowledgedItemDrafts[itemId];
+      const draftSignature = itemDraftSignature(item);
+
+      if (
+        acknowledgedDraft !== undefined
+        && persistedSignature !== acknowledgedDraft.persistedSignature
+        && draftSignature === acknowledgedDraft.draftSignature
+        && editingItemId !== itemId
+      ) {
+        syncItemDraftFromPersisted(item);
+        acknowledgedIdsToRetire.push(itemId);
+      } else if (
+        acknowledgedDraft === undefined
+        && previousPersistedSignature !== undefined
+        && persistedSignature !== previousPersistedSignature
+        && draftSignature === previousPersistedSignature
+        && editingItemId !== itemId
+      ) {
+        syncItemDraftFromPersisted(item);
+      }
+      nextPersistedSignatures[itemId] = persistedSignature;
+    }
+    persistedSignaturesRef.current = nextPersistedSignatures;
+    if (acknowledgedIdsToRetire.length > 0) {
+      setAcknowledgedItemDrafts((current) => {
+        const next = { ...current };
+        for (const itemId of acknowledgedIdsToRetire) delete next[itemId];
+        return next;
+      });
+    }
+  }, [
+    acknowledgedItemDrafts,
+    activeItems,
+    coarseTypes,
+    complexCoordinates,
+    confirmationFields,
+    coreValues,
+    editingItemId,
+    rawTexts,
+  ]);
+
   const toggleSelected = (itemId: string) => {
     setSelectedIds((current) =>
       current.includes(itemId)
@@ -289,6 +383,7 @@ export function ReviewPanel({
 
   const editItem = async (item: ReviewItem) => {
     const submittedSignature = itemDraftSignature(item);
+    const preSubmitPersistedSignature = persistedItemSignature(item);
     const fields: Record<string, unknown> = {
       raw_text: rawTexts[item.item_id] ?? item.raw_text,
     };
@@ -316,13 +411,39 @@ export function ReviewPanel({
       fields,
     });
     if (outcome === false) return;
-    setAcknowledgedItemSignatures((current) => ({
-      ...current,
-      [item.item_id]: submittedSignature,
-    }));
-    setEditingItemId((current) =>
-      current === item.item_id ? undefined : current,
+    const latestItem = latestItemsRef.current.find(
+      (candidate) => candidate.item_id === item.item_id,
     );
+    const draftStillMatchesSubmission =
+      latestDraftSignaturesRef.current[item.item_id] === submittedSignature;
+    if (
+      draftStillMatchesSubmission
+      && latestItem !== undefined
+      && persistedItemSignature(latestItem) !== preSubmitPersistedSignature
+    ) {
+      syncItemDraftFromPersisted(latestItem);
+      persistedSignaturesRef.current[item.item_id] =
+        persistedItemSignature(latestItem);
+      setAcknowledgedItemDrafts((current) => {
+        if (current[item.item_id] === undefined) return current;
+        const next = { ...current };
+        delete next[item.item_id];
+        return next;
+      });
+    } else {
+      setAcknowledgedItemDrafts((current) => ({
+        ...current,
+        [item.item_id]: {
+          draftSignature: submittedSignature,
+          persistedSignature: preSubmitPersistedSignature,
+        },
+      }));
+    }
+    if (draftStillMatchesSubmission) {
+      setEditingItemId((current) =>
+        current === item.item_id ? undefined : current,
+      );
+    }
   };
 
   const resetManualItem = () => {
