@@ -153,6 +153,48 @@ def test_source_review_commands_require_exact_fields(
         parse_review_command(command)
 
 
+def test_promote_source_rejects_coordinates_as_extra_field() -> None:
+    command = {
+        "type": "promote_source",
+        "observation_id": "observation-1",
+        "raw_text": "M6 通",
+        "item_type": "thread",
+        "scope": "local_feature",
+        "balloon_required": True,
+        "page_index": 0,
+        "coordinates": (1, 2, 3, 4),
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        parse_review_command(command)
+
+    assert any(
+        error["loc"][-1] == "coordinates" and error["type"] == "extra_forbidden"
+        for error in exc_info.value.errors()
+    )
+
+
+def test_promote_source_rejects_negative_page_index() -> None:
+    command = {
+        "type": "promote_source",
+        "observation_id": "observation-1",
+        "raw_text": "M6 通",
+        "item_type": "thread",
+        "scope": "local_feature",
+        "balloon_required": True,
+        "page_index": -1,
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        parse_review_command(command)
+
+    assert any(
+        error["loc"][-1] == "page_index"
+        and error["type"] == "greater_than_equal"
+        for error in exc_info.value.errors()
+    )
+
+
 def test_sip_detail_remarks_are_optional_and_bounded() -> None:
     command = {
         "type": "set_sip_detail_fields",
