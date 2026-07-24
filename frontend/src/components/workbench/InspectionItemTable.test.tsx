@@ -618,3 +618,51 @@ test("来源命令入队后保留草稿值并只清理未保存标记", () => {
   ).toBe("修订后的来源文字");
   expect(onDraftChange).toHaveBeenLastCalledWith(false);
 });
+
+test("空白来源只在列表显示占位符且补全真实文字后才允许 promote", () => {
+  const onCommand = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-empty",
+        sourceId: "source-empty",
+        rawText: "",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="all"
+      selectedSourceId="source-empty"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={onCommand}
+    />,
+  );
+
+  const row = screen.getByRole("row", { name: /原始来源.*待判定来源/ });
+  const sourceCopy = row.querySelector(".inspection-item-copy strong");
+  expect(sourceCopy?.textContent).toBe("—");
+  expect(sourceCopy?.getAttribute("title")).toBe("—");
+
+  const rawText = screen.getByRole("textbox", { name: "原始标注" });
+  const promote = screen.getByRole("button", { name: "添加为检验项" });
+  expect((rawText as HTMLInputElement).value).toBe("");
+  fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+    target: { value: "general_requirement" },
+  });
+  expect(promote.hasAttribute("disabled")).toBe(true);
+
+  fireEvent.change(rawText, { target: { value: "人工补录的真实要求" } });
+  expect(promote.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(promote);
+  expect(onCommand).toHaveBeenCalledWith({
+    type: "promote_source",
+    observation_id: "observation-empty",
+    raw_text: "人工补录的真实要求",
+    item_type: "general_requirement",
+    scope: "local_feature",
+    balloon_required: true,
+    page_index: 0,
+  });
+});

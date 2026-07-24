@@ -491,7 +491,7 @@ export function InspectionItemTable({
                     {zhCN.workbench.unknown}
                   </strong>
                   <span role="cell" className="inspection-item-copy">
-                    <strong title={source.rawText}>{source.rawText}</strong>
+                    <strong title={source.rawText || zhCN.workbench.unknown}>{source.rawText || zhCN.workbench.unknown}</strong>
                     <small>{zhCN.inspection.sourceType}</small>
                   </span>
                   <span role="cell">{zhCN.workbench.unknown}</span>

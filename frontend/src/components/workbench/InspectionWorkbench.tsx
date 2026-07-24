@@ -164,7 +164,7 @@ export function InspectionWorkbench({
         return {
           observationId: entry.observation_id,
           sourceId: entry.source_location_id,
-          rawText: source?.rawText?.trim() || zhCN.workbench.unknown,
+          rawText: source?.rawText?.trim() ?? "",
           coordinates: entry.coordinates,
           pageIndex: source?.pageIndex,
         };
