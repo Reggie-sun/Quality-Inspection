@@ -281,6 +281,14 @@ export function OverlayLayer({
       leaderTargetY: leaderTarget.y,
     }];
   });
+  const selectedCandidateId = candidateMarkers.find(({ item, itemId }) =>
+    selectedRelation({ itemId, itemIds: item.itemIds }, selected),
+  )?.item.id;
+  const activeBalloons = balloons.filter((item) => item.status !== "deleted");
+  const selectedActiveBalloonId = activeBalloons.find((item) =>
+    selectedBalloonId === item.id
+    || selectedRelation({ itemId: item.itemId ?? item.id }, selected),
+  )?.id;
 
   return (
     <svg
@@ -409,7 +417,13 @@ export function OverlayLayer({
               data-selected={isSelected}
               role="button"
               aria-label={zhCN.pdf.candidateMarker(candidateNumber)}
-              tabIndex={selectItem === undefined ? undefined : 0}
+              tabIndex={
+                selectItem === undefined
+                  ? undefined
+                  : item.id === (selectedCandidateId ?? candidateMarkers[0]?.item.id)
+                    ? 0
+                    : -1
+              }
               onClick={selectCandidate}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -443,23 +457,29 @@ export function OverlayLayer({
           </Fragment>
         );
       })}
-      {balloons.filter((item) => item.status !== "deleted").map((item) => {
+      {activeBalloons.map((item) => {
         const [x, y] = transformPoint(matrix, item.center);
+        const isSelected =
+          selectedBalloonId === item.id
+          || selectedRelation({ itemId: item.itemId ?? item.id }, selected);
         return (
           <BalloonMarker
             key={item.id}
             balloon={item}
             displayCenter={[x, y]}
             renderToPdfMatrix={effectiveRenderToPdfMatrix}
-            selected={
-              selectedBalloonId === item.id ||
-              selectedRelation({ itemId: item.itemId ?? item.id }, selected)
+            selected={isSelected}
+            readOnly={onMoveBalloon === undefined}
+            tabIndex={
+              item.id === (selectedActiveBalloonId ?? activeBalloons[0]?.id)
+                ? 0
+                : -1
             }
             onSelect={(itemId, balloonId) => {
               selectItem?.(itemId);
               onSelectBalloon?.(itemId, balloonId);
             }}
-            onMove={onMoveBalloon ?? (() => undefined)}
+            onMove={onMoveBalloon}
           />
         );
       })}

@@ -99,8 +99,10 @@ type BalloonOverlayProps = {
   renderToPdfMatrix: PdfMatrix;
   displayCenter?: [number, number];
   selected: boolean;
+  readOnly?: boolean;
+  tabIndex?: number;
   onSelect: (itemId: string, balloonId: string) => void;
-  onMove: (
+  onMove?: (
     balloonId: string,
     expectedVersion: number,
     centerPdf: [number, number],
@@ -113,6 +115,8 @@ export function BalloonOverlay({
   renderToPdfMatrix,
   displayCenter = balloon.center,
   selected,
+  readOnly = false,
+  tabIndex = 0,
   onSelect,
   onMove,
 }: BalloonOverlayProps) {
@@ -128,6 +132,7 @@ export function BalloonOverlay({
     : applyMatrix(invertMatrix(renderToPdfMatrix), balloon.leaderTarget);
   const collisionFlags = balloon.collisionFlags ?? [];
   const blocked = balloon.placementStatus === "manual_required" || collisionFlags.length > 0;
+  const movable = !readOnly && onMove !== undefined;
 
   return (
     <g
@@ -138,15 +143,17 @@ export function BalloonOverlay({
       data-collision-flags={collisionFlags.join(",")}
       data-circle={`${displayCenter[0]},${displayCenter[1]},${radius}`}
       data-glyph-bbox={glyphBox.join(",")}
+      data-read-only={String(!movable)}
       role="button"
       aria-label={zhCN.balloon.marker(balloon.number, blocked)}
-      tabIndex={0}
+      tabIndex={tabIndex}
       onClick={select}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") select();
       }}
       onPointerDown={(event) => {
         select();
+        if (!movable) return;
         pointerStart.current = {
           pointerId: event.pointerId,
           clientX: event.clientX,
@@ -155,6 +162,7 @@ export function BalloonOverlay({
         event.currentTarget.setPointerCapture?.(event.pointerId);
       }}
       onPointerUp={(event) => {
+        if (!movable || onMove === undefined) return;
         const start = pointerStart.current;
         pointerStart.current = undefined;
         if (
@@ -172,7 +180,7 @@ export function BalloonOverlay({
       onPointerCancel={() => {
         pointerStart.current = undefined;
       }}
-      style={{ cursor: "grab" }}
+      style={{ cursor: movable ? "grab" : "pointer" }}
     >
       {displayLeaderTarget === undefined ? null : (
         <line

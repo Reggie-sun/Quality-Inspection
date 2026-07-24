@@ -90,6 +90,84 @@ describe("OverlayLayer", () => {
     expect(onSelectItem).toHaveBeenNthCalledWith(3, "item-1");
   });
 
+  test("大量候选和正式气泡仅保留当前项进入 Tab 顺序", () => {
+    render(
+      <OverlayLayer
+        pageWidth={200}
+        pageHeight={200}
+        scale={1}
+        candidates={[
+          {
+            id: "candidate-1",
+            itemId: "item-1",
+            bbox: [20, 20, 40, 40],
+            candidateNumber: 1,
+          },
+          {
+            id: "candidate-2",
+            itemId: "item-2",
+            bbox: [80, 20, 100, 40],
+            candidateNumber: 2,
+          },
+        ]}
+        sources={[]}
+        balloons={[
+          {
+            id: "balloon-3",
+            itemId: "item-3",
+            center: [40, 120],
+            number: 3,
+            status: "active",
+          },
+          {
+            id: "balloon-4",
+            itemId: "item-4",
+            center: [100, 120],
+            number: 4,
+            status: "active",
+          },
+        ]}
+        selectedItemId="item-2"
+        onSelectItem={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "候选气泡 1" })
+      .getAttribute("tabindex")).toBe("-1");
+    expect(screen.getByRole("button", { name: "候选气泡 2" })
+      .getAttribute("tabindex")).toBe("0");
+    expect(screen.getByRole("button", { name: "气泡 3" })
+      .getAttribute("tabindex")).toBe("0");
+    expect(screen.getByRole("button", { name: "气泡 4" })
+      .getAttribute("tabindex")).toBe("-1");
+  });
+
+  test("没有移动权限时正式气泡仍可选择但不呈现可拖动状态", () => {
+    render(
+      <OverlayLayer
+        pageWidth={100}
+        pageHeight={100}
+        scale={1}
+        candidates={[]}
+        sources={[]}
+        balloons={[{
+          id: "reviewed-balloon",
+          itemId: "reviewed-item",
+          center: [50, 50],
+          number: 1,
+          version: 3,
+          status: "active",
+        }]}
+        selectedItemId="reviewed-item"
+        onSelectItem={vi.fn()}
+      />,
+    );
+
+    const balloon = screen.getByRole("button", { name: "气泡 1" });
+    expect(balloon.style.cursor).toBe("pointer");
+    expect(balloon.getAttribute("data-read-only")).toBe("true");
+  });
+
   test("候选气泡优先放在候选框外且相邻序号不会互相重叠", () => {
     render(
       <OverlayLayer

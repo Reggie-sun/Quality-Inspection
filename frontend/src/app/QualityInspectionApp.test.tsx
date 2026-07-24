@@ -95,6 +95,26 @@ test("文件选择与上传状态都使用真实文件信息和不确定进度",
   finishUpload?.(status("queued", { project_id: PROJECT_ID }));
 });
 
+test("已选文件可以直接更换或移除", () => {
+  render(<QualityInspectionApp api={fakeApi()} />);
+  choosePdf("待更换图纸.pdf");
+  const input = screen.getByLabelText("选择工程 PDF") as HTMLInputElement;
+  const openPicker = vi.fn();
+  Object.defineProperty(input, "click", {
+    configurable: true,
+    value: openPicker,
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "重新选择文件" }));
+  expect(openPicker).toHaveBeenCalledOnce();
+  expect(screen.getByText("待更换图纸.pdf")).not.toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "移除已选文件" }));
+  expect(screen.queryByText("待更换图纸.pdf")).toBeNull();
+  expect(screen.getByRole("button", { name: "上传并开始识别" })
+    .hasAttribute("disabled")).toBe(true);
+});
+
 
 test("上传后显示处理进度并自动进入现有工作台", async () => {
   const createProject = vi.fn().mockResolvedValue(
@@ -174,7 +194,7 @@ test("后端已识别但工作台未就绪时显示正在准备审核并继续�
 });
 
 
-test("fatal failure 显示中文错误并可重新处理", async () => {
+test("不支持的 PDF 显示中文错误并只允许重新选择文件", async () => {
   const createProject = vi.fn()
     .mockResolvedValue(status("queued", { project_id: PROJECT_ID }));
   const getProjectStatus = vi.fn().mockResolvedValue(status("failed", {
@@ -191,12 +211,26 @@ test("fatal failure 显示中文错误并可重新处理", async () => {
   fireEvent.click(screen.getByRole("button", { name: "上传并开始识别" }));
 
   expect((await screen.findByRole("alert")).textContent).toContain("当前 PDF 暂不支持");
-  expect(screen.getByRole("button", { name: "重新处理" })
-    .hasAttribute("disabled")).toBe(false);
+  expect(screen.queryByRole("button", { name: "重新处理" })).toBeNull();
+  expect(screen.getByRole("button", { name: "重新选择文件" })).not.toBeNull();
   expect(document.body.textContent).not.toContain("unsupported_input");
+  expect(createProject).toHaveBeenCalledOnce();
+});
 
-  fireEvent.click(screen.getByRole("button", { name: "重新处理" }));
-  await waitFor(() => expect(createProject).toHaveBeenCalledTimes(2));
+test("上传校验失败不允许对同一无效 PDF 重新处理", async () => {
+  const createProject = vi.fn().mockRejectedValue(
+    new ApiError(422, "invalid_pdf", "private backend validation message"),
+  );
+  render(<QualityInspectionApp api={fakeApi(createProject)} />);
+
+  choosePdf();
+  fireEvent.click(screen.getByRole("button", { name: "上传并开始识别" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("PDF 格式错误，请选择有效的工程 PDF");
+  expect(alert.textContent).not.toContain("private backend validation message");
+  expect(screen.queryByRole("button", { name: "重新处理" })).toBeNull();
+  expect(screen.getByRole("button", { name: "重新选择文件" })).not.toBeNull();
 });
 
 
@@ -205,6 +239,7 @@ test("识别服务不可用时显示安全中文错误并保留重试入口", as
     .mockResolvedValue(status("queued", { project_id: PROJECT_ID }));
   const getProjectStatus = vi.fn().mockResolvedValue(status("failed", {
     error: { code: "ocr_provider_unavailable", stage: "preflight" },
+    retryable: true,
   }));
   render(
     <QualityInspectionApp
@@ -255,6 +290,35 @@ test("状态请求失败保留项目并允许重新获取", async () => {
   expect(await screen.findByRole("heading", { name: "检验项目审核" })).not.toBeNull();
   expect(createProject).toHaveBeenCalledTimes(1);
   expect(getProjectStatus).toHaveBeenCalledTimes(2);
+});
+
+test("状态请求失败后选择新 PDF 会放弃旧项目并恢复上传入口", async () => {
+  const createProject = vi.fn()
+    .mockResolvedValue(status("queued", { project_id: PROJECT_ID }));
+  const getProjectStatus = vi.fn().mockRejectedValue(
+    new ApiError(503, "project_status_failed", "private backend status message"),
+  );
+  render(
+    <QualityInspectionApp
+      api={fakeApi(createProject, getProjectStatus)}
+      pollIntervalMs={1}
+    />,
+  );
+
+  choosePdf("旧图纸.pdf");
+  fireEvent.click(screen.getByRole("button", { name: "上传并开始识别" }));
+  expect((await screen.findByRole("alert")).textContent)
+    .toContain("状态获取失败，请重试");
+  expect(window.sessionStorage.getItem("qi.current-project-id")).toBe(PROJECT_ID);
+
+  choosePdf("新图纸.pdf");
+
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByText("新图纸.pdf")).not.toBeNull();
+  expect(screen.getByRole("button", { name: "上传并开始识别" })
+    .hasAttribute("disabled")).toBe(false);
+  expect(window.sessionStorage.getItem("qi.current-project-id")).toBeNull();
+  expect(createProject).toHaveBeenCalledOnce();
 });
 
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   CandidateType,
@@ -16,6 +16,7 @@ type ReviewPanelProps = {
   selectedItemId?: string;
   onSelectItem?: (itemId: string) => void;
   pageIndex?: number;
+  onDraftChange?: (dirty: boolean) => void;
 };
 
 type CoreFieldKey =
@@ -150,6 +151,7 @@ export function ReviewPanel({
   selectedItemId,
   onSelectItem,
   pageIndex = 0,
+  onDraftChange,
 }: ReviewPanelProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [rawTexts, setRawTexts] = useState<Record<string, string>>(() =>
@@ -187,6 +189,9 @@ export function ReviewPanel({
       ),
   );
   const [splitTexts, setSplitTexts] = useState<Record<string, string>>({});
+  const [dirtyItemIds, setDirtyItemIds] = useState<string[]>([]);
+  const [dirtySplitIds, setDirtySplitIds] = useState<string[]>([]);
+  const [manualDraftDirty, setManualDraftDirty] = useState(false);
   const [manualRawText, setManualRawText] = useState("");
   const [manualCoordinates, setManualCoordinates] = useState("");
   const [manualScope, setManualScope] = useState<
@@ -197,6 +202,49 @@ export function ReviewPanel({
   const activeItems = useMemo(() => items.filter((item) => item.active), [items]);
   const selectedItem = activeItems.find((item) => item.item_id === selectedItemId);
 
+  useEffect(() => {
+    onDraftChange?.(
+      dirtyItemIds.length > 0 || dirtySplitIds.length > 0 || manualDraftDirty,
+    );
+  }, [dirtyItemIds, dirtySplitIds, manualDraftDirty, onDraftChange]);
+
+  const markItemDirty = (itemId: string) => {
+    setDirtyItemIds((current) =>
+      current.includes(itemId) ? current : [...current, itemId],
+    );
+  };
+  const clearItemDirty = (itemId: string) => {
+    setDirtyItemIds((current) => current.filter((candidate) => candidate !== itemId));
+  };
+  const resetItemDraft = (item: ReviewItem) => {
+    setRawTexts((current) => ({ ...current, [item.item_id]: item.raw_text }));
+    setCoreValues((current) => ({
+      ...current,
+      [item.item_id]: Object.fromEntries(
+        coreFieldsFor(item.item_type).map(
+          (field) => [field.key, displayValue(item[field.key])],
+        ),
+      ),
+    }));
+    setComplexCoordinates((current) => ({
+      ...current,
+      [item.item_id]: item.coordinates?.join(",") ?? "",
+    }));
+    setCoarseTypes((current) => ({
+      ...current,
+      [item.item_id]: item.coarse_type ?? "roughness",
+    }));
+    setConfirmationFields((current) => ({
+      ...current,
+      [item.item_id]: item.requires_confirmation ?? false,
+    }));
+    setSplitTexts((current) => ({ ...current, [item.item_id]: "" }));
+    clearItemDirty(item.item_id);
+    setDirtySplitIds((current) =>
+      current.filter((candidate) => candidate !== item.item_id),
+    );
+  };
+
   const toggleSelected = (itemId: string) => {
     setSelectedIds((current) =>
       current.includes(itemId)
@@ -206,6 +254,7 @@ export function ReviewPanel({
   };
 
   const setCoreValue = (itemId: string, key: CoreFieldKey, value: string) => {
+    markItemDirty(itemId);
     setCoreValues((current) => ({
       ...current,
       [itemId]: { ...current[itemId], [key]: value },
@@ -230,6 +279,7 @@ export function ReviewPanel({
             confirmationFields[item.item_id] ?? item.requires_confirmation ?? false,
         },
       });
+      clearItemDirty(item.item_id);
       return;
     }
     for (const field of coreFieldsFor(item.item_type)) {
@@ -240,8 +290,17 @@ export function ReviewPanel({
       fields[field.key] = parsed.value;
     }
     onCommand({ type: "edit", item_id: item.item_id, fields });
+    clearItemDirty(item.item_id);
   };
 
+  const resetManualItem = () => {
+    setManualRawText("");
+    setManualCoordinates("");
+    setManualScope("local_feature");
+    setManualType("thread");
+    setManualBalloonRequired(true);
+    setManualDraftDirty(false);
+  };
   const addManualItem = () => {
     const coordinates = parseCoordinates(manualCoordinates);
     if (manualRawText.trim() === "" || coordinates === null) return;
@@ -254,6 +313,7 @@ export function ReviewPanel({
       balloon_required: manualBalloonRequired,
       page_index: pageIndex,
     });
+    resetManualItem();
   };
 
   const mergeSelected = () => {
@@ -310,13 +370,15 @@ export function ReviewPanel({
                 zhCN.review.rawText,
                 selectedItem.raw_text,
               )}
+              disabled={disabled}
               value={rawTexts[selectedItem.item_id] ?? selectedItem.raw_text}
-              onChange={(event) =>
+              onChange={(event) => {
+                markItemDirty(selectedItem.item_id);
                 setRawTexts((current) => ({
                   ...current,
                   [selectedItem.item_id]: event.target.value,
-                }))
-              }
+                }));
+              }}
             />
           </label>
           {coreFieldsFor(selectedItem.item_type).map((field) => (
@@ -328,6 +390,7 @@ export function ReviewPanel({
                         field.label,
                         selectedItem.raw_text,
                       )}
+                      disabled={disabled}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
                       onChange={(event) =>
                         setCoreValue(
@@ -347,6 +410,7 @@ export function ReviewPanel({
                         field.label,
                         selectedItem.raw_text,
                       )}
+                      disabled={disabled}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
                       onChange={(event) =>
                         setCoreValue(
@@ -368,6 +432,7 @@ export function ReviewPanel({
                         field.label,
                         selectedItem.raw_text,
                       )}
+                      disabled={disabled}
                       inputMode={field.kind === "decimal" ? "decimal" : undefined}
                       type={field.kind === "integer" ? "number" : "text"}
                       min={field.kind === "integer" ? 1 : undefined}
@@ -385,7 +450,7 @@ export function ReviewPanel({
                 </label>
               ))}
           {selectedItem.coarse_type === undefined ? null : (
-            <fieldset>
+            <fieldset disabled={disabled}>
               <legend>{zhCN.review.complexFields}</legend>
               <label>
                 {zhCN.review.coordinates}
@@ -395,12 +460,13 @@ export function ReviewPanel({
                     selectedItem.raw_text,
                   )}
                   value={complexCoordinates[selectedItem.item_id] ?? ""}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    markItemDirty(selectedItem.item_id);
                     setComplexCoordinates((current) => ({
                       ...current,
                       [selectedItem.item_id]: event.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                 />
               </label>
               <label>
@@ -413,12 +479,13 @@ export function ReviewPanel({
                   value={
                     coarseTypes[selectedItem.item_id] ?? selectedItem.coarse_type
                   }
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    markItemDirty(selectedItem.item_id);
                     setCoarseTypes((current) => ({
                       ...current,
                       [selectedItem.item_id]: event.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                 >
                   {COARSE_TYPES.some(
                     ({ value }) =>
@@ -448,12 +515,13 @@ export function ReviewPanel({
                     selectedItem.raw_text,
                   )}
                   checked={confirmationFields[selectedItem.item_id] ?? false}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    markItemDirty(selectedItem.item_id);
                     setConfirmationFields((current) => ({
                       ...current,
                       [selectedItem.item_id]: event.target.checked,
-                    }))
-                  }
+                    }));
+                  }}
                 />
                 {zhCN.review.requiresConfirmation}
               </label>
@@ -496,6 +564,23 @@ export function ReviewPanel({
               onClick={() => editItem(selectedItem)}
             >
               {zhCN.review.edit}
+            </button>
+            <button
+              type="button"
+              aria-label={zhCN.review.fieldForItem(
+                zhCN.review.cancelEdit,
+                selectedItem.raw_text,
+              )}
+              disabled={
+                disabled
+                || (
+                  !dirtyItemIds.includes(selectedItem.item_id)
+                  && !dirtySplitIds.includes(selectedItem.item_id)
+                )
+              }
+              onClick={() => resetItemDraft(selectedItem)}
+            >
+              {zhCN.review.cancelEdit}
             </button>
             <button
               type="button"
@@ -575,12 +660,19 @@ export function ReviewPanel({
               )}
               value={splitTexts[selectedItem.item_id] ?? ""}
               placeholder={zhCN.review.splitPlaceholder}
-              onChange={(event) =>
+              disabled={disabled}
+              onChange={(event) => {
+                const value = event.target.value;
                 setSplitTexts((current) => ({
                   ...current,
-                  [selectedItem.item_id]: event.target.value,
-                }))
-              }
+                  [selectedItem.item_id]: value,
+                }));
+                setDirtySplitIds((current) => value === ""
+                  ? current.filter((candidate) => candidate !== selectedItem.item_id)
+                  : current.includes(selectedItem.item_id)
+                    ? current
+                    : [...current, selectedItem.item_id]);
+              }}
             />
           </label>
           <button
@@ -602,6 +694,13 @@ export function ReviewPanel({
                   item_id: selectedItem.item_id,
                   parts,
                 });
+                setSplitTexts((current) => ({
+                  ...current,
+                  [selectedItem.item_id]: "",
+                }));
+                setDirtySplitIds((current) =>
+                  current.filter((candidate) => candidate !== selectedItem.item_id),
+                );
               }
             }}
           >
@@ -609,14 +708,17 @@ export function ReviewPanel({
           </button>
         </article>
       )}
-      <fieldset>
+      <fieldset disabled={disabled}>
         <legend>{zhCN.review.manualItem}</legend>
         <label>
           {zhCN.review.rawText}
           <input
             aria-label={zhCN.review.manualRawText}
             value={manualRawText}
-            onChange={(event) => setManualRawText(event.target.value)}
+            onChange={(event) => {
+              setManualRawText(event.target.value);
+              setManualDraftDirty(true);
+            }}
           />
         </label>
         <label>
@@ -625,7 +727,10 @@ export function ReviewPanel({
             aria-label={zhCN.review.manualCoordinates}
             value={manualCoordinates}
             placeholder={zhCN.review.manualCoordinatesPlaceholder}
-            onChange={(event) => setManualCoordinates(event.target.value)}
+            onChange={(event) => {
+              setManualCoordinates(event.target.value);
+              setManualDraftDirty(true);
+            }}
           />
         </label>
         <label>
@@ -633,11 +738,12 @@ export function ReviewPanel({
           <select
             aria-label={zhCN.review.manualScope}
             value={manualScope}
-            onChange={(event) =>
+            onChange={(event) => {
               setManualScope(
                 event.target.value as "local_feature" | "global_requirement",
-              )
-            }
+              );
+              setManualDraftDirty(true);
+            }}
           >
             <option value="local_feature">{zhCN.review.localFeature}</option>
             <option value="global_requirement">{zhCN.review.globalRequirement}</option>
@@ -648,7 +754,10 @@ export function ReviewPanel({
           <select
             aria-label={zhCN.review.manualType}
             value={manualType}
-            onChange={(event) => setManualType(event.target.value as CandidateType)}
+            onChange={(event) => {
+              setManualType(event.target.value as CandidateType);
+              setManualDraftDirty(true);
+            }}
           >
             {CANDIDATE_TYPES.map((candidateType) => (
               <option key={candidateType.value} value={candidateType.value}>
@@ -662,18 +771,31 @@ export function ReviewPanel({
             type="checkbox"
             aria-label={zhCN.review.manualBalloonRequired}
             checked={manualBalloonRequired}
-            onChange={(event) => setManualBalloonRequired(event.target.checked)}
+            onChange={(event) => {
+              setManualBalloonRequired(event.target.checked);
+              setManualDraftDirty(true);
+            }}
           />
           {zhCN.review.balloonRequired}
         </label>
-        <button
-          type="button"
-          aria-label={zhCN.review.addItem}
-          disabled={disabled}
-          onClick={addManualItem}
-        >
-          {zhCN.review.addItem}
-        </button>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            aria-label={zhCN.review.addItem}
+            disabled={disabled}
+            onClick={addManualItem}
+          >
+            {zhCN.review.addItem}
+          </button>
+          <button
+            type="button"
+            aria-label={zhCN.review.cancelManualItem}
+            disabled={disabled || !manualDraftDirty}
+            onClick={resetManualItem}
+          >
+            {zhCN.review.cancelManualItem}
+          </button>
+        </div>
       </fieldset>
     </section>
   );

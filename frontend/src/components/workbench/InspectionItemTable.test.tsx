@@ -300,3 +300,91 @@ test("所选检验项摘要明确区分候选、正式和无序号状态", () =>
   expect(empty.textContent).toBe("—");
   expect(empty.classList.contains("selected-inspection-number--empty")).toBe(true);
 });
+
+test("缺少真实页码时列表和详情保持空状态且不回填第 1 页", () => {
+  const onDraftChange = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[{
+        item_id: "page-unknown",
+        raw_text: "页码未知标注",
+        item_type: "thread",
+        active: true,
+      }]}
+      balloons={[]}
+      filter="all"
+      selectedItemId="page-unknown"
+      onSelectItem={vi.fn()}
+      onCommand={vi.fn()}
+      onDraftChange={onDraftChange}
+    />,
+  );
+
+  expect(screen.getByRole("row", { name: /页码未知标注/ }).textContent)
+    .toContain("—");
+  expect(
+    (screen.getByRole("spinbutton", {
+      name: "页码：页码未知标注",
+    }) as HTMLInputElement).value,
+  ).toBe("");
+
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "检验方法：页码未知标注",
+  }), { target: { value: "卡尺" } });
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+  fireEvent.click(screen.getByRole("button", { name: "取消 SIP 字段修改" }));
+  expect(onDraftChange).toHaveBeenLastCalledWith(false);
+});
+
+test("切换检验项时保留尚未确认的 SIP 草稿和未保存状态", () => {
+  const onDraftChange = vi.fn();
+  const props = {
+    items: [
+      {
+        item_id: "draft-1",
+        raw_text: "标注一",
+        item_type: "thread" as const,
+        inspection_item: "项目一",
+        inspection_standard: "标准一",
+        inspection_method: "方法一",
+        key_dimension: "重点一",
+        inspection_role: "角色一",
+        source_page: 1,
+        active: true,
+      },
+      {
+        item_id: "draft-2",
+        raw_text: "标注二",
+        item_type: "thread" as const,
+        inspection_item: "项目二",
+        inspection_standard: "标准二",
+        inspection_method: "方法二",
+        key_dimension: "重点二",
+        inspection_role: "角色二",
+        source_page: 2,
+        active: true,
+      },
+    ],
+    balloons: [],
+    filter: "all" as const,
+    onSelectItem: vi.fn(),
+    onCommand: vi.fn(),
+    onDraftChange,
+  };
+  const { rerender } = render(
+    <InspectionItemTable {...props} selectedItemId="draft-1" />,
+  );
+
+  fireEvent.change(screen.getByRole("textbox", { name: "检验方法：标注一" }), {
+    target: { value: "更新方法" },
+  });
+  rerender(<InspectionItemTable {...props} selectedItemId="draft-2" />);
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+  rerender(<InspectionItemTable {...props} selectedItemId="draft-1" />);
+  expect(
+    (screen.getByRole("textbox", { name: "检验方法：标注一" }) as HTMLInputElement)
+      .value,
+  ).toBe("更新方法");
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+});

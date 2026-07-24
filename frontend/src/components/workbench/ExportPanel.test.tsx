@@ -30,6 +30,9 @@ test("P0-UI-004 gates export and exposes exactly three atomic backend downloads"
   );
 
   expect(screen.getByText("尚未审核")).not.toBeNull();
+  const status = screen.getByRole("status");
+  expect(status.getAttribute("aria-live")).toBe("polite");
+  expect(status.getAttribute("aria-atomic")).toBe("true");
   expect(screen.getByRole("button", { name: "生成正式文件" })
     .hasAttribute("disabled")).toBe(true);
   expect(screen.queryAllByRole("link")).toHaveLength(0);

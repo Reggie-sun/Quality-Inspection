@@ -630,6 +630,18 @@
   font-size: 11px;
 }
 
+.sip-detail-actions,
+.sip-metadata-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sip-detail-actions button,
+.sip-metadata-actions button {
+  flex: 1 1 120px;
+}
+
 .balloon-toolbar,
 .sip-metadata-card,
 .export-panel,

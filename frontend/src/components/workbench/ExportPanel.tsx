@@ -79,7 +79,15 @@ export function ExportPanel({
           <h2>{zhCN.export.title}</h2>
           <p>{zhCN.export.atomicHint}</p>
         </div>
-        <span className="status-badge" data-status={status}>{status}</span>
+        <span
+          className="status-badge"
+          data-status={status}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {status}
+        </span>
       </div>
       <button
         type="button"

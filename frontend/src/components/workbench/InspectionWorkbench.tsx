@@ -129,7 +129,13 @@ export function InspectionWorkbench({
   const [metadata, setMetadata] = useState<MetadataDraft>(
     () => metadataDraft(workingCopy),
   );
-  useEffect(() => setMetadata(metadataDraft(workingCopy)), [workingCopy?.version]);
+  const [reviewDraftDirty, setReviewDraftDirty] = useState(false);
+  const [sipDraftDirty, setSipDraftDirty] = useState(false);
+  const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
+  useEffect(() => {
+    setMetadata(metadataDraft(workingCopy));
+    setMetadataDraftDirty(false);
+  }, [workingCopy?.version]);
   const candidateNumbers = useMemo(() => {
     const lookup = new Map<string, number>();
     for (const candidate of candidates) {
@@ -145,6 +151,15 @@ export function InspectionWorkbench({
   }, [candidates]);
 
   const finalized = projectState === "reviewed";
+  const localDraftDirty =
+    reviewDraftDirty || sipDraftDirty || metadataDraftDirty;
+  const displayedSaveState = saving
+    ? zhCN.workbench.saving
+    : saveState === zhCN.workbench.saveFailed
+      ? zhCN.workbench.saveFailed
+      : pendingCommand !== undefined || localDraftDirty
+        ? zhCN.workbench.pending
+        : zhCN.workbench.saved;
   const reviewImmutable =
     finalized || (workingCopy !== undefined && workingCopy.items_frozen_at !== null);
   const reviewedCount = items.filter(
@@ -251,7 +266,9 @@ export function InspectionWorkbench({
               workingCopy={workingCopy}
               balloons={balloons}
               balloonBlockers={balloonBlockers}
-              busy={busy || finalized || pendingCommand !== undefined}
+              busy={
+                busy || finalized || pendingCommand !== undefined || localDraftDirty
+              }
               onFreeze={onFreeze}
               onGenerate={onGenerate}
               onConfirm={onConfirm}
@@ -314,7 +331,9 @@ export function InspectionWorkbench({
           </div>
           <div>
             <dt>{zhCN.workbench.saveStatus}</dt>
-            <dd>{saveState}</dd>
+            <dd role="status" aria-live="polite" aria-atomic="true">
+              {displayedSaveState}
+            </dd>
           </div>
         </dl>
       </section>
@@ -395,6 +414,7 @@ export function InspectionWorkbench({
             disabled={pendingCommand !== undefined || busy || reviewImmutable}
             onSelectItem={selectItem}
             onCommand={queueCommand}
+            onDraftChange={setSipDraftDirty}
           />
           {onDeleteBalloon === undefined || onRebuildBalloon === undefined
           || onReorderBalloon === undefined || onRenumberBalloons === undefined
@@ -419,6 +439,7 @@ export function InspectionWorkbench({
               onSelectItem={selectItem}
               pageIndex={pageIndex}
               onCommand={queueCommand}
+              onDraftChange={setReviewDraftDirty}
             />
           </details>
         </section>
@@ -467,22 +488,38 @@ export function InspectionWorkbench({
                         placeholder={zhCN.workbench.unknown}
                         onChange={(event) => {
                           setMetadata({ ...metadata, [key]: event.target.value });
+                          setMetadataDraftDirty(true);
                         }}
                       />
                     </label>
                   ))}
-                  <button
-                    type="button"
-                    disabled={Object.values(metadata).some(
-                      (value) => value.trim() === "",
-                    )}
-                    onClick={() => queueCommand({
-                      type: "set_sip_metadata",
-                      ...metadata,
-                    })}
-                  >
-                    {zhCN.workbench.confirmMetadata}
-                  </button>
+                  <div className="sip-metadata-actions">
+                    <button
+                      type="button"
+                      disabled={Object.values(metadata).some(
+                        (value) => value.trim() === "",
+                      )}
+                      onClick={() => {
+                        setMetadataDraftDirty(false);
+                        queueCommand({
+                          type: "set_sip_metadata",
+                          ...metadata,
+                        });
+                      }}
+                    >
+                      {zhCN.workbench.confirmMetadata}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!metadataDraftDirty}
+                      onClick={() => {
+                        setMetadata(metadataDraft(workingCopy));
+                        setMetadataDraftDirty(false);
+                      }}
+                    >
+                      {zhCN.workbench.cancelMetadata}
+                    </button>
+                  </div>
                 </fieldset>
               </details>
             </section>

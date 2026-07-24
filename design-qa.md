@@ -209,3 +209,146 @@ Playwright `zh-CN` context 复核结果：
 - PDF remains the largest visual region: passed
 - console and network gate: passed with one explained superseded source stream
 - prerequisite result: passed
+
+## Full Product Frontend QA — 2026-07-24
+
+### Scope And Grounding
+
+本轮以 `d2133135ce2e7af246f4c44164374ac13b3510b9` 为 QA 基线，仅检查并修复裸根上传、Review Workbench、气泡和导出前端中确认存在的 P0/P1。没有新增依赖、路由、业务 Owner 或后端状态语义，也没有修改长期契约和封存计划。
+
+source identity: user-attached reference image
+source sha256: e9693f9d27083271af68754c7260ad813316c6cdd39807f6a4e90e74ace33de4
+source pixels: 1550x1014
+implementation route: /
+browser: Google Chrome 149.0.7827.53
+Playwright browser channel: chrome
+locale: zh-CN
+timezone: Asia/Hong_Kong
+device scale factor: 1
+primary viewport: 1565x796
+responsive viewports: 1366x768, 1180x800
+Product Design calls: `product-design:index`, `product-design:image-to-code`
+Design QA workflow: reference 与当前真实实现截图合并为单一 comparison image 后进行视觉核验
+
+参考图只用于视觉层级、布局比例、色彩、间距、表格和面板组织、操作层级与工业软件质感。参考图中的 Logo、自动保存、第二个 Excel、静态操作记录和业务样例没有进入实现。
+
+### Initial Findings
+
+P0:
+
+- 本地 Review、SIP 明细和 SIP metadata 草稿变化后，项目摘要仍显示“已保存”，并可能让用户误以为可以冻结。
+- 检验项缺少真实页码时，列表和详情用第 1 页兜底，形成不存在的业务事实。
+
+P1:
+
+- `invalid_pdf` 与 `unsupported_input` 仍提供“重新处理”，可能对同一无效输入创建重复项目；已选文件的“重新选择文件”也没有真正打开文件选择器。
+- 状态请求失败后选择新 PDF 没有清理旧错误态和旧项目指针，新的上传入口仍被隐藏。
+- 数百个候选项和正式气泡全部进入 Tab 顺序，键盘浏览不可用。
+- 已确认结果中的正式气泡仍显示抓取光标并挂载拖动处理器，视觉语义像是仍可修改。
+- 冻结或确认后的草稿字段仍可编辑；Review、SIP 与 metadata 缺少取消入口。
+- 保存状态和导出状态没有稳定的 `aria-live` 状态播报。
+- PDF“缩略图”目前仍是页码卡片；“适合页面”仍是恢复 100% 与平移归零，不是真实容器适配。
+- 后端当前没有独立的解析/识别阶段 projection，也没有备注字段的正式 schema；前端不能补假阶段或假字段。
+
+P2:
+
+- 高密度图纸上的气泡与来源框仍有视觉拥挤；部分紧凑区域的间距可继续打磨，但不影响操作闭环。
+
+### Fixed Findings
+
+- 上传失败按真实 `retryable` 与 HTTP 状态分流；无效或不支持的 PDF 只保留“重新选择文件”，不再对同一输入显示“重新处理”。
+- 已选文件提供真实“重新选择文件”和“移除已选文件”操作，文件名与大小来自浏览器 `File`。
+- 状态请求失败后接受新有效 PDF 时，清理旧错误态和旧项目指针并恢复新的上传入口，不创建隐藏重复项目。
+- 未知页码统一显示“—”或空输入；只接受 item、page index 或 balloon 中真实存在的页码。
+- Review、SIP 明细和 SIP metadata 草稿即时驱动“有未保存修改”，并阻止冻结；保存、冻结、确认的既有 Owner 和顺序没有改变。
+- 为 Review、手工新增项、SIP 明细和 SIP metadata 增加局部取消操作；切换检验项时保留该项未确认的 SIP 草稿。
+- 冻结或 reviewed 状态下禁用 Review/SIP 编辑；reviewed 气泡仍可选择定位，但不再可拖动。
+- 候选项和正式气泡分别使用 roving `tabIndex`，每组最多一个当前标记进入 Tab 顺序。
+- 保存与导出状态增加中文 `role=status`、`aria-live=polite` 和 `aria-atomic=true`。
+
+changed files:
+
+- `frontend/src/app/QualityInspectionApp.tsx`
+- `frontend/src/app/QualityInspectionApp.test.tsx`
+- `frontend/src/components/balloons/BalloonOverlay.tsx`
+- `frontend/src/components/pdf/OverlayLayer.tsx`
+- `frontend/src/components/pdf/OverlayLayer.test.tsx`
+- `frontend/src/components/review/ReviewPanel.tsx`
+- `frontend/src/components/review/ReviewPanel.test.tsx`
+- `frontend/src/components/workbench/ExportPanel.tsx`
+- `frontend/src/components/workbench/ExportPanel.test.tsx`
+- `frontend/src/components/workbench/InspectionItemTable.tsx`
+- `frontend/src/components/workbench/InspectionItemTable.test.tsx`
+- `frontend/src/components/workbench/InspectionWorkbench.tsx`
+- `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- `frontend/src/copy/zhCN.ts`
+- `frontend/src/styles/workbench.css`
+
+### Screenshot Evidence
+
+- `.local/design-qa/01-upload-idle.png` — `bc6b9d2bffd0a6b772afa468cfdeaffb322e1a5a409dbf64ad44484f2ac1affc`
+- `.local/design-qa/02-file-selected.png` — `dc0f81dac03d5d15ba2bb49356e3c00848364e7b6cb2dadf23f78213b097ecd6`
+- `.local/design-qa/03-processing.png` — `1c09748eb02d67e51a3d5e576f433005ac5bc9d960e48e054419073c0d3daa60`
+- `.local/design-qa/04-fatal-retry.png` — `09b69d08ab0582a4a6005226ca7aeceb7f8f5d4a388583a4b8a4c2f641cf1752`
+- `.local/design-qa/05-workbench-overview.png` — `6e970b26e763fbce56d3c5175b77f82eea8f1201f6f08bc495161cf9021ac101`
+- `.local/design-qa/06-item-selected.png` — `71d175e2b888eb7164a85dca3bf034ae2b8ed8b1bf17475430293fd18d2b20a3`
+- `.local/design-qa/07-items-frozen.png` — `a772662178aea224046a39764bc0e28a4715428d75e811da67b56f3a0d5a61e7`
+- `.local/design-qa/08-balloons-adjusted.png` — `33495879fec05590c5dfb96b848be9a1b9cd003f65c71e4e9706e45a9642e27e`
+- `.local/design-qa/09-export-success.png` — `fcfda059b27d9609358fb179074c9cebe03fe936cf108ca2dcac2e749646603d`
+- `.local/design-qa/10-reference-comparison.png` — `4a33c72c98bd6e428f60d94c70c5889fa026a25aa9fa2649519f217c33ea90a6`
+- `.local/design-qa/11-workbench-1366.png` — `d3030d888680a9c05cfe5a15c486f4750225f67f5edcb348de5733bd5cdee2f8`
+- `.local/design-qa/12-workbench-1180.png` — `e264ac8f1b9927247c9059a7ee1522267c3cf921b819b038d7750fb07f8f5fcf`
+
+截图和 comparison image 保持未跟踪，不加入 Git。
+
+### Console, Network And Accessibility
+
+- 当前源码的真实裸根 Chrome E2E 完整执行上传、90 条来源确认、124 条检验项审核、冻结、气泡生成与调整、碰撞解决、确认、原子导出及三个下载；console errors、HTTP `>= 400` 和 request failures 均为 0。
+- Design QA 的 reviewed workbench capture 中 console errors 和 network errors 均为 0。
+- invalid PDF capture 与 Chrome MCP smoke 各自只有预期的 `POST /api/v1/projects` 422；页面显示安全中文错误，不显示后端 message。Chrome 对该预期 422 记录的 resource console error 已解释，不计为未解释错误。
+- 状态请求失败 Chrome MCP smoke 使用不存在的临时项目触发真实 404；重新选择有效 PDF 后实测旧项目指针已清理、上传按钮恢复且错误提示消失。该预期 404 的 resource console error 已解释。
+- Chrome accessibility snapshot 的可访问名称均为中文；可见文本与可访问名称没有 UUID。下载 API 的资源标识只存在于真实 link target，不作为可见文案或 accessible name。
+- 上传控件可通过 Tab 聚焦，实测 `focus-visible` 为 3px solid outline 与 2px offset；fatal 使用 alert，processing 使用 busy/live 状态，保存和导出状态使用 live region。
+- candidate 与 formal balloon 各自最多一个当前标记进入 Tab 顺序；reviewed balloon 保留键盘选择能力但不提供拖动。
+- `prefers-reduced-motion` 下停止 processing indicator 动画；状态同时使用中文文字和形状/边框，不只依赖红绿颜色。
+- 1565x796、1366x768 与 1180x800 均没有页面级横向溢出；1180px 将右侧 SIP/导出栏重排到主工作区之后，仍可使用。
+
+### Truthfulness And Functional Result
+
+- 无 Logo、紫色主视觉、渐变、玻璃拟态或 AI 光效。
+- 页面不显示 project/operator/item UUID、Provider、模型、文件 hash、后端路径或原始英文错误。
+- 生产代码没有静态产品数据、静态公司日志或虚假进度百分比；E2E 中 SIP 值是 QA 操作明确输入并由后端保存的测试数据，不是前端默认值或文件名推断。
+- “公司处理记录”在没有正式事件 projection 时只显示“暂无处理记录”。
+- 正式导出只包含带气泡 PDF、SIP Excel 与 manifest；成功态要求三项均可下载，三个产物来自同一 reviewed result。
+- 下载的 PDF 与 XLSX 均为非空且通过文件签名校验。
+- 保存不等于冻结，冻结不等于确认；pending command 或本地未确认草稿存在时不能进入下一阶段。
+- 气泡拖动保存 PDF 坐标；删除气泡不删除检验项；manual required 与 hard collision 未解决时不能确认。
+
+### Remaining Findings And Conclusion
+
+- Remaining P0: 0.
+- Remaining P1: 页码卡片不是真实页面缩略图；“适合页面”不是真实 fit-to-container。二者需要扩大 PDF workspace 行为，未在本轮局部修复中实现。
+- Remaining P1 copy edge: 若后端把 `ocr_provider_unavailable` 等非输入类错误标记为 `retryable=false`，错误标题的“稍后重试”与通用下一步“重新选择有效 PDF”可能不一致；应在后续按正式错误类别细化中文下一步，不改变后端 retryable 语义。
+- Backend semantic blockers: 独立的“正在解析/正在识别”精确阶段和备注字段没有正式 projection/schema；前端没有伪造。
+- Remaining P2: 极高密度图纸的气泡视觉拥挤与局部紧凑间距。
+- Runtime risk: 仓库现有无关 `compose.yaml` 改动把 canonical frontend host port 指向已占用端口，导致指定 canonical compose 命令的 frontend 启动失败；隔离 QA stack 的当前源码完整闭环通过。
+- Backend host-test risk: 指定的 host pytest 命令缺少 `PYTHONPATH=backend`，补充后仍因 host 无法解析 Compose hostname `postgres` 产生拓扑失败；这不是本轮前端回归。
+- Final frontend QA conclusion: P0 为 0，核心中文裸根上传到正式导出的真实闭环通过；剩余 P1/P2 和后端语义 blocker 已明确保留，没有用前端假状态绕过。
+
+### Verification
+
+- `python .agent/harness/scripts/check-contracts.py`: passed；`unclassified=0`、`mirror_drift=0`、`bindings_drift=0`。
+- `micromamba run -n qi-p0 npm --prefix frontend test -- --run`: 17/17 test files，84/84 tests passed。
+- `micromamba run -n qi-p0 npm --prefix frontend run build`: passed；仅保留既有 large-chunk warning。
+- `micromamba run -n qi-p0 npm --prefix frontend run e2e -- --list`: 2 tests / 2 files，可发现中文裸根闭环和 P0 current-four regression。
+- 当前源码真实中文裸根闭环：1 passed，2.7m；覆盖来源确认、检验项审核、冻结、气泡、碰撞处理、确认、原子导出和三个非空下载。
+- `micromamba run -n qi-p0 pytest backend/tests -q`: collection 因 host import path 缺少 `app` 失败；补 `PYTHONPATH=backend` 后因 host 无法解析 Compose service hostname `postgres` 得到 302 passed、27 failed、116 errors。
+- 指定 canonical compose 启动中 postgres、redis、api、worker 正常，frontend 因现有无关 host port 冲突失败；API health 成功，指定 frontend root curl 失败。隔离 source-mounted QA stack 的 API/frontend health 与完整浏览器闭环通过。
+
+### Independent Reviewer
+
+- verdict: accept with concerns
+- blocking findings: 0
+- confirmed: 无 Logo、无可见内部 ID、无静态假数据/假日志/假进度；PDF 保持最大工作区；中文和可访问性修改成立；保存、冻结、气泡、确认、导出顺序未改变；未新增依赖、路由或业务 Owner。
+- evidence correction: `07-items-frozen.png` 已重抓为真实 stage 4 冻结未确认态，与 stage 5 的 `09-export-success.png` 独立。
+- non-blocking findings: 真实缩略图/fit-to-container、`retryable=false` 的少数错误文案边缘、极高密度气泡拥挤。

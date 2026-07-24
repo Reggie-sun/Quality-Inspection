@@ -60,6 +60,12 @@ function readableSize(size: number): string {
 }
 
 
+function retryableUploadFailure(caught: unknown): boolean {
+  if (!(caught instanceof ApiError)) return true;
+  return caught.status === 408 || caught.status === 429 || caught.status >= 500;
+}
+
+
 function activeStage(screen: ProductScreen): number {
   if (screen.kind === "ready") return 2;
   if (screen.kind === "processing" && screen.phase === "preparing") return 2;
@@ -143,6 +149,7 @@ export function QualityInspectionApp({
   const [retryStatusToken, setRetryStatusToken] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const uploadAbort = useRef<AbortController | undefined>(undefined);
+  const fileInput = useRef<HTMLInputElement | null>(null);
   const operatorId = useMemo(() => getOrCreateLocalOperatorId(), []);
   const processingProjectId = screen.kind === "processing"
     ? screen.projectId
@@ -250,7 +257,7 @@ export function QualityInspectionApp({
         kind: "fatal",
         file,
         code: caught instanceof ApiError ? caught.code : "network_error",
-        retryable: true,
+        retryable: retryableUploadFailure(caught),
       });
     } finally {
       if (uploadAbort.current === controller) uploadAbort.current = undefined;
@@ -268,6 +275,8 @@ export function QualityInspectionApp({
       setSelectionError(projectErrorCopy("invalid_pdf"));
       return;
     }
+    clearCurrentProjectId();
+    setStatusError(false);
     setSelectedFile(file);
     setScreen({ kind: "idle" });
   };
@@ -288,8 +297,17 @@ export function QualityInspectionApp({
     setStatusError(false);
     setScreen({ kind: "idle" });
   };
+  const openFilePicker = () => {
+    if (fileInput.current === null) return;
+    fileInput.current.value = "";
+    fileInput.current.click();
+  };
   const retryProcessing = () => {
     if (screen.kind !== "fatal") return;
+    if (!screen.retryable) {
+      reset();
+      return;
+    }
     if (screen.file === undefined) {
       reset();
       return;
@@ -339,6 +357,7 @@ export function QualityInspectionApp({
             onDrop={onDrop}
           >
             <input
+              ref={fileInput}
               className="visually-hidden"
               type="file"
               accept=".pdf,application/pdf"
@@ -367,7 +386,11 @@ export function QualityInspectionApp({
           {screen.kind === "fatal" ? (
             <div className="message message--error" role="alert">
               <strong>{projectErrorCopy(screen.code)}</strong>
-              <span>未生成正式检验结果，请重新处理或选择其他文件。</span>
+              <span>
+                {screen.retryable
+                  ? "未生成正式检验结果，请重新处理或选择其他文件。"
+                  : "未生成正式检验结果，请重新选择有效的工程 PDF。"}
+              </span>
             </div>
           ) : null}
           {statusError ? (
@@ -389,14 +412,20 @@ export function QualityInspectionApp({
 
           <div className="upload-actions">
             {screen.kind === "fatal" ? (
-              <>
-                <button className="button button--primary" type="button" onClick={retryProcessing}>
-                  {zhCN.upload.retry}
-                </button>
-                <button className="button" type="button" onClick={reset}>
+              screen.retryable ? (
+                <>
+                  <button className="button button--primary" type="button" onClick={retryProcessing}>
+                    {zhCN.upload.retry}
+                  </button>
+                  <button className="button" type="button" onClick={openFilePicker}>
+                    {zhCN.upload.replace}
+                  </button>
+                </>
+              ) : (
+                <button className="button button--primary" type="button" onClick={openFilePicker}>
                   {zhCN.upload.replace}
                 </button>
-              </>
+              )
             ) : statusError ? (
               <>
                 <button
@@ -409,7 +438,7 @@ export function QualityInspectionApp({
                 >
                   {zhCN.upload.retryStatus}
                 </button>
-                <button className="button" type="button" onClick={reset}>
+                <button className="button" type="button" onClick={openFilePicker}>
                   {zhCN.upload.replace}
                 </button>
               </>
@@ -426,9 +455,14 @@ export function QualityInspectionApp({
                   {zhCN.upload.submit}
                 </button>
                 {selectedFile === undefined || busy ? null : (
-                  <button className="button" type="button" onClick={() => selectFile(undefined)}>
-                    {zhCN.upload.replace}
-                  </button>
+                  <>
+                    <button className="button" type="button" onClick={openFilePicker}>
+                      {zhCN.upload.replace}
+                    </button>
+                    <button className="button" type="button" onClick={() => selectFile(undefined)}>
+                      {zhCN.upload.remove}
+                    </button>
+                  </>
                 )}
               </>
             )}

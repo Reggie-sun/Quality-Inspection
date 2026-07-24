@@ -14,6 +14,44 @@ import { InspectionWorkbench } from "./InspectionWorkbench";
 afterEach(cleanup);
 
 describe("InspectionWorkbench", () => {
+  test("本地草稿立即显示未保存，取消后恢复真实保存状态", () => {
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[{
+          item_id: "i1",
+          item_type: "thread",
+          raw_text: "M6",
+          active: true,
+        }]}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    const saveStatus = within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status");
+    expect(saveStatus.textContent).toBe("已保存");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "原始标注：M6" }), {
+      target: { value: "M8" },
+    });
+
+    expect(saveStatus.textContent).toBe("有未保存修改");
+    expect(screen.getByRole("button", { name: "保存审核修改" })
+      .hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "取消检验项修改：M6" }));
+    expect(
+      (screen.getByRole("textbox", { name: "原始标注：M6" }) as HTMLInputElement)
+        .value,
+    ).toBe("M6");
+    expect(saveStatus.textContent).toBe("已保存");
+  });
+
   test("P0-UI-007 keeps one pending command stable until explicit Save", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
@@ -423,6 +461,8 @@ describe("InspectionWorkbench", () => {
     fireEvent.change(sipCard.getByRole("textbox", { name: "物料编码" }), {
       target: { value: "MAT-001" },
     });
+    expect(summary.getByText("保存状态").nextElementSibling?.textContent)
+      .toBe("有未保存修改");
     expect(confirmMetadata.hasAttribute("disabled")).toBe(false);
     expect(
       (sipCard.getByRole("textbox", { name: "产品名称" }) as HTMLInputElement).value,

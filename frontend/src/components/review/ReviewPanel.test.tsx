@@ -251,4 +251,55 @@ describe("ReviewPanel", () => {
       fields: { raw_text: "新型标注" },
     });
   });
+
+  test("审核冻结后详情草稿字段不可继续编辑", () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "frozen-item",
+          item_type: "linear_dimension",
+          raw_text: "10",
+          nominal: "10",
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="frozen-item"
+        disabled
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "原始标注：10" })
+      .hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("textbox", { name: "基本尺寸：10" })
+      .hasAttribute("disabled")).toBe(true);
+  });
+
+  test("取消新增检验项会清空草稿并恢复已保存状态", () => {
+    const onDraftChange = vi.fn();
+    render(
+      <ReviewPanel
+        items={[]}
+        onCommand={vi.fn()}
+        onDraftChange={onDraftChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("新增检验项原始标注"), {
+      target: { value: "M8" },
+    });
+    fireEvent.change(screen.getByLabelText("新增检验项坐标"), {
+      target: { value: "10,20,30,40" },
+    });
+    expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "取消新增检验项" }));
+
+    expect(
+      (screen.getByLabelText("新增检验项原始标注") as HTMLInputElement).value,
+    ).toBe("");
+    expect(
+      (screen.getByLabelText("新增检验项坐标") as HTMLInputElement).value,
+    ).toBe("");
+    expect(onDraftChange).toHaveBeenLastCalledWith(false);
+  });
 });

@@ -19,6 +19,7 @@ type InspectionItemTableProps = {
   disabled?: boolean;
   onSelectItem: (itemId: string) => void;
   onCommand?: (command: ReviewCommand) => void;
+  onDraftChange?: (dirty: boolean) => void;
 };
 
 type SelectedInspectionItemSummaryProps = {
@@ -86,14 +87,28 @@ function tolerance(item: ReviewItem): string {
 }
 
 
-function detailDraft(item?: ReviewItem): DetailDraft {
+function sourcePage(
+  item?: ReviewItem,
+  balloon?: BalloonOverlay,
+): number | undefined {
+  if (item?.source_page !== null && item?.source_page !== undefined) {
+    return item.source_page;
+  }
+  if (item?.page_index !== null && item?.page_index !== undefined) {
+    return item.page_index + 1;
+  }
+  return balloon?.pageIndex === undefined ? undefined : balloon.pageIndex + 1;
+}
+
+
+function detailDraft(item?: ReviewItem, balloon?: BalloonOverlay): DetailDraft {
   return {
     inspectionItem: item?.inspection_item ?? "",
     inspectionStandard: item?.inspection_standard ?? "",
     inspectionMethod: item?.inspection_method ?? "",
     keyDimension: item?.key_dimension ?? "",
     inspectionRole: item?.inspection_role ?? "",
-    sourcePage: String(item?.source_page ?? ((item?.page_index ?? 0) + 1)),
+    sourcePage: sourcePage(item, balloon)?.toString() ?? "",
   };
 }
 
@@ -132,12 +147,7 @@ export function SelectedInspectionItemSummary({
     : candidateNumber !== undefined
       ? zhCN.inspection.candidateNumber(candidateNumber)
       : zhCN.inspection.noNumber;
-  const page = item.source_page
-    ?? (item.page_index === null || item.page_index === undefined
-      ? balloon?.pageIndex === undefined
-        ? undefined
-        : balloon.pageIndex + 1
-      : item.page_index + 1);
+  const page = sourcePage(item, balloon);
 
   return (
     <section
@@ -186,6 +196,7 @@ export function InspectionItemTable({
   disabled = false,
   onSelectItem,
   onCommand,
+  onDraftChange,
 }: InspectionItemTableProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ItemStatus | "all">("all");
@@ -240,13 +251,55 @@ export function InspectionItemTable({
     ? undefined
     : Math.floor(selectedFilteredIndex / PAGE_SIZE) + 1;
   const selected = items.find((item) => item.item_id === selectedItemId);
-  const [draft, setDraft] = useState<DetailDraft>(() => detailDraft(selected));
+  const selectedBalloon = selected === undefined
+    ? undefined
+    : balloonByItem.get(selected.item_id);
+  const selectedBaseline = detailDraft(selected, selectedBalloon);
+  const [drafts, setDrafts] = useState<Record<string, DetailDraft>>(
+    () => selected === undefined
+      ? {}
+      : { [selected.item_id]: selectedBaseline },
+  );
+  const [dirtyItemIds, setDirtyItemIds] = useState<string[]>([]);
+  const draft = selected === undefined
+    ? selectedBaseline
+    : drafts[selected.item_id] ?? selectedBaseline;
 
-  useEffect(() => setDraft(detailDraft(selected)), [selectedItemId]);
+  useEffect(() => {
+    if (selected === undefined || dirtyItemIds.includes(selected.item_id)) return;
+    setDrafts((current) => ({
+      ...current,
+      [selected.item_id]: detailDraft(selected, selectedBalloon),
+    }));
+  }, [balloons, items, selectedItemId]);
+  useEffect(() => {
+    onDraftChange?.(dirtyItemIds.length > 0);
+  }, [dirtyItemIds, onDraftChange]);
   useEffect(() => setPage(1), [filter, search, statusFilter]);
   useEffect(() => {
     if (selectedPage !== undefined) setPage(selectedPage);
   }, [filter, search, selectedItemId, selectedPage, statusFilter]);
+  const updateDraft = (change: Partial<DetailDraft>) => {
+    if (selected === undefined) return;
+    setDrafts((current) => ({
+      ...current,
+      [selected.item_id]: {
+        ...(current[selected.item_id] ?? selectedBaseline),
+        ...change,
+      },
+    }));
+    setDirtyItemIds((current) =>
+      current.includes(selected.item_id)
+        ? current
+        : [...current, selected.item_id],
+    );
+  };
+  const clearSelectedDraft = () => {
+    if (selected === undefined) return;
+    setDirtyItemIds((current) =>
+      current.filter((candidate) => candidate !== selected.item_id),
+    );
+  };
 
   return (
     <section
@@ -305,6 +358,7 @@ export function InspectionItemTable({
                 ? "candidate"
                 : "empty";
             const status = itemStatus(item, balloon);
+            const pageNumber = sourcePage(item, balloon);
             const collisions = balloon?.collisionFlags
               ?.map((flag) => COLLISION_LABELS[flag] ?? zhCN.workbench.unknown)
               .join("、");
@@ -345,9 +399,9 @@ export function InspectionItemTable({
                   <small>{tolerance(item)}</small>
                 </span>
                 <span role="cell">
-                  {zhCN.inspection.sourcePage(
-                    (item.page_index ?? balloon?.pageIndex ?? 0) + 1,
-                  )}
+                  {pageNumber === undefined
+                    ? zhCN.workbench.unknown
+                    : zhCN.inspection.sourcePage(pageNumber)}
                 </span>
                 <span role="cell" className={`geometry-state geometry-state--${status}`}>
                   <strong>{STATUS_LABELS[status]}</strong>
@@ -394,7 +448,9 @@ export function InspectionItemTable({
               <input
                 aria-label={`${label}：${selected.raw_text}`}
                 value={draft[key]}
-                onChange={(event) => setDraft({ ...draft, [key]: event.target.value })}
+                onChange={(event) => {
+                  updateDraft({ [key]: event.target.value });
+                }}
               />
             </label>
           ))}
@@ -405,25 +461,45 @@ export function InspectionItemTable({
               type="number"
               min={1}
               value={draft.sourcePage}
-              onChange={(event) => setDraft({ ...draft, sourcePage: event.target.value })}
+              onChange={(event) => {
+                updateDraft({ sourcePage: event.target.value });
+              }}
             />
           </label>
-          <button
-            type="button"
-            disabled={disabled || Object.values(draft).some((value) => value.trim() === "")}
-            onClick={() => onCommand({
-              type: "set_sip_detail_fields",
-              item_id: selected.item_id,
-              inspection_item: draft.inspectionItem,
-              inspection_standard: draft.inspectionStandard,
-              inspection_method: draft.inspectionMethod,
-              key_dimension: draft.keyDimension,
-              inspection_role: draft.inspectionRole,
-              source_page: Number(draft.sourcePage),
-            })}
-          >
-            {zhCN.inspection.confirmSip}
-          </button>
+          <div className="sip-detail-actions">
+            <button
+              type="button"
+              disabled={disabled || Object.values(draft).some((value) => value.trim() === "")}
+              onClick={() => {
+                clearSelectedDraft();
+                onCommand({
+                  type: "set_sip_detail_fields",
+                  item_id: selected.item_id,
+                  inspection_item: draft.inspectionItem,
+                  inspection_standard: draft.inspectionStandard,
+                  inspection_method: draft.inspectionMethod,
+                  key_dimension: draft.keyDimension,
+                  inspection_role: draft.inspectionRole,
+                  source_page: Number(draft.sourcePage),
+                });
+              }}
+            >
+              {zhCN.inspection.confirmSip}
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                setDrafts((current) => ({
+                  ...current,
+                  [selected.item_id]: detailDraft(selected, selectedBalloon),
+                }));
+                clearSelectedDraft();
+              }}
+            >
+              {zhCN.inspection.cancelSip}
+            </button>
+          </div>
         </fieldset>
       )}
     </section>
