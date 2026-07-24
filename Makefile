@@ -7,7 +7,7 @@ LOCAL_FRONTEND_PORT ?= 5173
 dev-local-api:
 	@docker compose stop api >/dev/null 2>&1 || true
 	@fuser -k "$(LOCAL_API_PORT)/tcp" >/dev/null 2>&1 || true
-	docker compose up --build api
+	docker compose -f compose.yaml -f compose.dev-local.yaml up --build api
 
 dev-local-frontend:
 	@fuser -k "$(LOCAL_FRONTEND_PORT)/tcp" >/dev/null 2>&1 || true
