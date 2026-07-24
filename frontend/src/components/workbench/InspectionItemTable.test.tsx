@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
@@ -389,8 +390,9 @@ test("切换检验项时保留尚未确认的 SIP 草稿和未保存状态", () 
   expect(onDraftChange).toHaveBeenLastCalledWith(true);
 });
 
-test("备注作为可选字段随显式保存命令提交", () => {
+test("备注作为可选字段随显式保存命令提交", async () => {
   const onCommand = vi.fn();
+  const onDraftChange = vi.fn();
   render(
     <InspectionItemTable
       items={[{
@@ -411,28 +413,83 @@ test("备注作为可选字段随显式保存命令提交", () => {
       selectedItemId="remarks-item"
       onSelectItem={vi.fn()}
       onCommand={onCommand}
+      onDraftChange={onDraftChange}
     />,
   );
 
   fireEvent.change(screen.getByRole("textbox", { name: "备注（可选）：M6" }), {
     target: { value: "首件需复核" },
   });
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
   fireEvent.click(screen.getByRole("button", { name: "确认所选 SIP 字段" }));
 
-  expect(onCommand).toHaveBeenCalledWith({
-    type: "set_sip_detail_fields",
-    item_id: "remarks-item",
-    inspection_item: "螺纹检验",
-    inspection_standard: "GB/T 197",
-    inspection_method: "螺纹规",
-    key_dimension: "是",
-    inspection_role: "检验员",
-    source_page: 1,
-    remarks: "首件需复核",
+  await waitFor(() => {
+    expect(onCommand).toHaveBeenCalledWith({
+      type: "set_sip_detail_fields",
+      item_id: "remarks-item",
+      inspection_item: "螺纹检验",
+      inspection_standard: "GB/T 197",
+      inspection_method: "螺纹规",
+      key_dimension: "是",
+      inspection_role: "检验员",
+      source_page: 1,
+      remarks: "首件需复核",
+    });
+    expect(onDraftChange).toHaveBeenLastCalledWith(false);
   });
 });
 
+test("SIP 字段保存失败时保留草稿和未保存状态", async () => {
+  const onCommand = vi.fn().mockResolvedValue(false);
+  const onDraftChange = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[{
+        item_id: "sip-retry",
+        raw_text: "M10",
+        item_type: "thread",
+        inspection_item: "螺纹检验",
+        inspection_standard: "GB/T 197",
+        inspection_method: "螺纹规",
+        key_dimension: "是",
+        inspection_role: "检验员",
+        source_page: 1,
+        active: true,
+      }]}
+      balloons={[]}
+      filter="all"
+      selectedItemId="sip-retry"
+      onSelectItem={vi.fn()}
+      onCommand={onCommand}
+      onDraftChange={onDraftChange}
+    />,
+  );
+
+  const method = screen.getByRole("textbox", {
+    name: "检验方法：M10",
+  }) as HTMLInputElement;
+  fireEvent.change(method, { target: { value: "三针法复核" } });
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "确认所选 SIP 字段" }));
+
+  await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
+    type: "set_sip_detail_fields",
+    item_id: "sip-retry",
+    inspection_item: "螺纹检验",
+    inspection_standard: "GB/T 197",
+    inspection_method: "三针法复核",
+    key_dimension: "是",
+    inspection_role: "检验员",
+    source_page: 1,
+    remarks: "",
+  }));
+  expect(method.value).toBe("三针法复核");
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+});
+
 test("取消 SIP 字段修改会恢复后端备注基线", () => {
+  const onCommand = vi.fn();
   render(
     <InspectionItemTable
       items={[{
@@ -452,7 +509,7 @@ test("取消 SIP 字段修改会恢复后端备注基线", () => {
       filter="all"
       selectedItemId="remarks-cancel"
       onSelectItem={vi.fn()}
-      onCommand={vi.fn()}
+      onCommand={onCommand}
     />,
   );
 
@@ -463,6 +520,7 @@ test("取消 SIP 字段修改会恢复后端备注基线", () => {
   fireEvent.click(screen.getByRole("button", { name: "取消 SIP 字段修改" }));
 
   expect(remarks.value).toBe("保留原文");
+  expect(onCommand).not.toHaveBeenCalled();
 });
 
 test("待判定来源进入统一列表并产生显式 source review commands", () => {
@@ -624,8 +682,9 @@ test("待判定来源参与状态筛选、搜索和外部选择分页跳转", ()
   expect(screen.queryByRole("row", { name: /检验项 1/ })).toBeNull();
 });
 
-test("来源命令入队后保留草稿值并只清理未保存标记", () => {
+test("来源命令成功后保留草稿值并只清理未保存标记", async () => {
   const onDraftChange = vi.fn();
+  const onCommand = vi.fn();
   render(
     <InspectionItemTable
       items={[]}
@@ -641,7 +700,7 @@ test("来源命令入队后保留草稿值并只清理未保存标记", () => {
       selectedSourceId="source-draft"
       onSelectItem={vi.fn()}
       onSelectSource={vi.fn()}
-      onCommand={vi.fn()}
+      onCommand={onCommand}
       onDraftChange={onDraftChange}
     />,
   );
@@ -656,11 +715,107 @@ test("来源命令入队后保留草稿值并只清理未保存标记", () => {
 
   fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
 
+  await waitFor(() => {
+    expect(onCommand).toHaveBeenCalledOnce();
+    expect(onDraftChange).toHaveBeenLastCalledWith(false);
+  });
   expect(
     (screen.getByRole("textbox", { name: "原始标注" }) as HTMLInputElement)
       .value,
   ).toBe("修订后的来源文字");
-  expect(onDraftChange).toHaveBeenLastCalledWith(false);
+});
+
+test("来源 promote 失败时保留编辑后的文字、类型和未保存状态", async () => {
+  const onCommand = vi.fn().mockResolvedValue(false);
+  const onDraftChange = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-retry",
+        sourceId: "source-retry",
+        rawText: "原始来源文字",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="all"
+      selectedSourceId="source-retry"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={onCommand}
+      onDraftChange={onDraftChange}
+    />,
+  );
+
+  const rawText = screen.getByRole(
+    "textbox",
+    { name: "原始标注" },
+  ) as HTMLInputElement;
+  const itemType = screen.getByRole(
+    "combobox",
+    { name: "检验类型" },
+  ) as HTMLSelectElement;
+  fireEvent.change(rawText, { target: { value: "修订后来源文字" } });
+  fireEvent.change(itemType, { target: { value: "thread" } });
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
+
+  await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
+    type: "promote_source",
+    observation_id: "observation-retry",
+    raw_text: "修订后来源文字",
+    item_type: "thread",
+    scope: "local_feature",
+    balloon_required: true,
+    page_index: 0,
+  }));
+  expect(rawText.value).toBe("修订后来源文字");
+  expect(itemType.value).toBe("thread");
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+});
+
+test("来源 ignore 失败时保留来源草稿和未保存状态", async () => {
+  const onCommand = vi.fn().mockResolvedValue(false);
+  const onDraftChange = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-ignore-retry",
+        sourceId: "source-ignore-retry",
+        rawText: "待忽略来源",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="all"
+      selectedSourceId="source-ignore-retry"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={onCommand}
+      onDraftChange={onDraftChange}
+    />,
+  );
+
+  const rawText = screen.getByRole(
+    "textbox",
+    { name: "原始标注" },
+  ) as HTMLInputElement;
+  fireEvent.change(rawText, { target: { value: "待忽略来源（已复核）" } });
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+  fireEvent.click(screen.getByRole("button", {
+    name: "忽略，不作为检验项",
+  }));
+
+  await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
+    type: "ignore_source",
+    observation_id: "observation-ignore-retry",
+  }));
+  expect(rawText.value).toBe("待忽略来源（已复核）");
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
 });
 
 test("空白来源只在列表显示占位符且补全真实文字后才允许 promote", () => {
