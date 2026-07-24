@@ -283,6 +283,171 @@ describe("ReviewPanel", () => {
     expect(save.hasAttribute("disabled")).toBe(true);
   });
 
+  test("修改成功后采用服务端规范化的数量值", async () => {
+    let resolveCommand: (outcome: boolean) => void = () => undefined;
+    const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
+      resolveCommand = resolve;
+    }));
+    const onDraftChange = vi.fn();
+    const { rerender } = render(
+      <ReviewPanel
+        items={[{
+          item_id: "canonical-quantity",
+          item_type: "linear_dimension",
+          raw_text: "尺寸",
+          quantity: 2,
+          active: true,
+        }]}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="canonical-quantity"
+      />,
+    );
+
+    const quantity = screen.getByRole("spinbutton", { name: "数量：尺寸" });
+    const save = screen.getByRole(
+      "button",
+      { name: "修改保存检验项：尺寸" },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：尺寸" }));
+    fireEvent.change(quantity, { target: { value: "01" } });
+    expect(save.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(save);
+
+    rerender(
+      <ReviewPanel
+        items={[{
+          item_id: "canonical-quantity",
+          item_type: "linear_dimension",
+          raw_text: "尺寸",
+          quantity: 1,
+          active: true,
+        }]}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="canonical-quantity"
+      />,
+    );
+    await act(async () => resolveCommand(true));
+
+    await waitFor(() => {
+      expect((quantity as HTMLInputElement).value).toBe("1");
+      expect(quantity.hasAttribute("disabled")).toBe(true);
+      expect(save.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    });
+  });
+
+  test("修改成功后采用服务端规范化的复杂检验项坐标", async () => {
+    let resolveCommand: (outcome: boolean) => void = () => undefined;
+    const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
+      resolveCommand = resolve;
+    }));
+    const onDraftChange = vi.fn();
+    const { rerender } = render(
+      <ReviewPanel
+        items={[{
+          item_id: "canonical-coordinates",
+          raw_text: "位置度",
+          coordinates: [0, 0, 0, 0],
+          coarse_type: "geometric_tolerance",
+          requires_confirmation: false,
+          active: true,
+        }]}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="canonical-coordinates"
+      />,
+    );
+
+    const coordinates = screen.getByRole("textbox", { name: "坐标：位置度" });
+    const save = screen.getByRole(
+      "button",
+      { name: "修改保存检验项：位置度" },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "修改检验项：位置度" }));
+    fireEvent.change(coordinates, { target: { value: "1, 2, 3, 4" } });
+    fireEvent.click(save);
+
+    rerender(
+      <ReviewPanel
+        items={[{
+          item_id: "canonical-coordinates",
+          raw_text: "位置度",
+          coordinates: [1, 2, 3, 4],
+          coarse_type: "geometric_tolerance",
+          requires_confirmation: false,
+          active: true,
+        }]}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="canonical-coordinates"
+      />,
+    );
+    await act(async () => resolveCommand(true));
+
+    await waitFor(() => {
+      expect((coordinates as HTMLInputElement).value).toBe("1,2,3,4");
+      expect(coordinates.closest("fieldset")?.hasAttribute("disabled")).toBe(true);
+      expect(save.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    });
+  });
+
+  test("成功确认并刷新后继续采用同一检验项的后续服务端更新", async () => {
+    let resolveCommand: (outcome: boolean) => void = () => undefined;
+    const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
+      resolveCommand = resolve;
+    }));
+    const onDraftChange = vi.fn();
+    const renderPanel = (rawText: string) => (
+      <ReviewPanel
+        items={[{
+          item_id: "later-server-update",
+          item_type: "linear_dimension",
+          raw_text: rawText,
+          nominal: "10",
+          active: true,
+        }]}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        selectedItemId="later-server-update"
+      />
+    );
+    const { rerender } = render(renderPanel("服务器原值"));
+
+    const rawText = screen.getByRole(
+      "textbox",
+      { name: "原始标注：服务器原值" },
+    );
+    const save = screen.getByRole(
+      "button",
+      { name: "修改保存检验项：服务器原值" },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "修改检验项：服务器原值" }),
+    );
+    fireEvent.change(rawText, { target: { value: "保存后" } });
+    fireEvent.click(save);
+
+    rerender(renderPanel("保存后"));
+    await act(async () => resolveCommand(true));
+    await waitFor(() => {
+      expect((rawText as HTMLInputElement).value).toBe("保存后");
+      expect(rawText.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    });
+
+    rerender(renderPanel("服务器后续更新"));
+
+    await waitFor(() => {
+      expect((rawText as HTMLInputElement).value).toBe("服务器后续更新");
+      expect(rawText.hasAttribute("disabled")).toBe(true);
+      expect(save.hasAttribute("disabled")).toBe(true);
+      expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    });
+  });
+
   test("void 修改命令成功后保留提交值并清理本地草稿", async () => {
     const onCommand = vi.fn();
     const onDraftChange = vi.fn();
