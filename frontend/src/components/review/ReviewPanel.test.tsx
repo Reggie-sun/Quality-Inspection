@@ -217,6 +217,27 @@ describe("ReviewPanel", () => {
     expect(screen.getByText("请先从检验项列表选择一项。")).not.toBeNull();
   });
 
+  test("所选检验项将字段、操作和拆分区分成独立工作区", () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "layout-item",
+          item_type: "linear_dimension",
+          raw_text: "10",
+          nominal: "10",
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="layout-item"
+      />,
+    );
+
+    const item = screen.getByRole("article");
+    expect(item.querySelector(".review-selected-item__form")).not.toBeNull();
+    expect(item.querySelector(".review-command-rail")).not.toBeNull();
+    expect(item.querySelector(".review-split-row")).not.toBeNull();
+  });
+
   test("未来 item_type 安全降级且审核命令仍可用", () => {
     const onCommand = vi.fn();
     const item: ReviewItem = {

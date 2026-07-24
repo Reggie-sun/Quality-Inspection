@@ -327,7 +327,7 @@ export function ReviewPanel({
   };
 
   return (
-    <section aria-label={zhCN.review.region}>
+    <section className="review-panel" aria-label={zhCN.review.region}>
       <h2>{zhCN.review.title}</h2>
       <details className="review-merge-selector">
         <summary>{zhCN.review.mergeSelection}</summary>
@@ -363,7 +363,9 @@ export function ReviewPanel({
           onClick={() => onSelectItem?.(selectedItem.item_id)}
         >
           <h3>{selectedItem.raw_text}</h3>
-          <label style={{ display: "block" }}>
+          <div className="review-selected-item__workspace">
+          <div className="review-selected-item__form">
+          <label>
             {zhCN.review.rawText}
             <input
               aria-label={zhCN.review.fieldForItem(
@@ -382,7 +384,7 @@ export function ReviewPanel({
             />
           </label>
           {coreFieldsFor(selectedItem.item_type).map((field) => (
-                <label key={field.key} style={{ display: "block" }}>
+                <label key={field.key}>
                   {field.label}
                   {field.kind === "boolean" ? (
                     <select
@@ -527,9 +529,11 @@ export function ReviewPanel({
               </label>
             </fieldset>
           )}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          </div>
+          <aside className="review-command-rail" aria-label="检验项操作">
             <button
               type="button"
+              className="review-command-rail__secondary"
               aria-label={zhCN.review.actionForItem(
                 zhCN.review.keep,
                 selectedItem.raw_text,
@@ -543,6 +547,7 @@ export function ReviewPanel({
             </button>
             <button
               type="button"
+              className="review-command-rail__secondary"
               aria-label={zhCN.review.actionForItem(
                 zhCN.review.exclude,
                 selectedItem.raw_text,
@@ -556,6 +561,7 @@ export function ReviewPanel({
             </button>
             <button
               type="button"
+              className="review-command-rail__primary"
               aria-label={zhCN.review.actionForItem(
                 zhCN.review.edit,
                 selectedItem.raw_text,
@@ -567,6 +573,7 @@ export function ReviewPanel({
             </button>
             <button
               type="button"
+              className="review-command-rail__secondary"
               aria-label={zhCN.review.fieldForItem(
                 zhCN.review.cancelEdit,
                 selectedItem.raw_text,
@@ -584,6 +591,7 @@ export function ReviewPanel({
             </button>
             <button
               type="button"
+              className="review-command-rail__secondary"
               aria-label={zhCN.review.fieldForItem(
                 zhCN.review.accept,
                 selectedItem.raw_text,
@@ -601,6 +609,7 @@ export function ReviewPanel({
             </button>
             <button
               type="button"
+              className="review-command-rail__secondary"
               aria-label={zhCN.review.fieldForItem(
                 zhCN.review.reject,
                 selectedItem.raw_text,
@@ -618,6 +627,7 @@ export function ReviewPanel({
             </button>
             <button
               type="button"
+              className="review-command-rail__secondary"
               aria-label={zhCN.review.fieldForItem(
                 zhCN.review.requireBalloon,
                 selectedItem.raw_text,
@@ -635,6 +645,7 @@ export function ReviewPanel({
             </button>
             <button
               type="button"
+              className="review-command-rail__secondary"
               aria-label={zhCN.review.fieldForItem(
                 zhCN.review.noBalloon,
                 selectedItem.raw_text,
@@ -650,8 +661,10 @@ export function ReviewPanel({
             >
               {zhCN.review.noBalloon}
             </button>
+          </aside>
           </div>
-          <label style={{ display: "block" }}>
+          <div className="review-split-row">
+          <label>
             {zhCN.review.splitParts}
             <input
               aria-label={zhCN.review.fieldForItem(
@@ -706,9 +719,10 @@ export function ReviewPanel({
           >
             {zhCN.review.split}
           </button>
+          </div>
         </article>
       )}
-      <fieldset disabled={disabled}>
+      <fieldset className="review-manual-item" disabled={disabled}>
         <legend>{zhCN.review.manualItem}</legend>
         <label>
           {zhCN.review.rawText}
