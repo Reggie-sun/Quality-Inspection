@@ -23,10 +23,6 @@ make dev-local-frontend
 
 The API uses `compose.dev-local.yaml` for bind mounts and Uvicorn reload. The frontend runs Vite directly from the checkout and proxies `/api` to `127.0.0.1:8000`.
 
-```bash
-make qa-dev-restart-worker
-```
-
 ## Cloudflare Handoff
 
 The hostname rule, DNS route, connector lifecycle, and Access policy are host/Cloudflare-owned configuration. Configure them outside this repository.
