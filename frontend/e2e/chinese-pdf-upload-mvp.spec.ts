@@ -535,7 +535,9 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   expect((await moveResponse).ok(), "气泡拖动命令响应必须成功").toBe(true);
   expect((await moveRefresh).ok(), "气泡拖动后的工作台刷新必须成功").toBe(true);
 
-  await resolveManualBalloonPlacements(page);
+  const resolvedManualBalloons = await resolveManualBalloonPlacements(page);
+  expect(resolvedManualBalloons, "真实 PDF 必须覆盖人工气泡调整残余路径")
+    .toBeGreaterThan(0);
   await expect(page.getByTestId("summary-manual-count")).toHaveText("0");
   await expect(page.getByTestId("summary-collision-count")).toHaveText("0");
   await page.getByRole("button", { name: "筛选全部" }).click();

@@ -152,6 +152,22 @@
 - Human/automatic boundary: `--stage balloons` 只记录当时可直接观察的 `all_required_balloons_visible` 与 `hard_collisions_resolved`。pre-export browser gate 自动证明 table/backend/overlay 的 item→number mapping 一致；post-export consistency gate 自动证明 workbench、reviewed result、PDF、Excel 与 manifest 的 item identity、count 和 formal number 一致。不得用人工预承诺替代尚未生成产物的验证。
 - Actual-interface delta and allowed paths: D7-T2 允许最小修改 `.agent/harness/scripts/check-contracts.py` 与 `.agent/harness/scripts/generate-receipt.py`，仅登记 `human-verdict.schema.json` 和 `live-run-evidence.schema.json` 的精确 schema inventory/identity；不得在此提前改变 D7-T3 formal verdict policy。用户已明确批准 `frontend/index.html` 的空 favicon data URL，以消除浏览器无关 favicon network error；该文件随 D7-T2 commit stage，不引入新资产、route 或外部请求。
 
+### D7-T2 manual-balloon E2E residual continuation — 2026-07-24
+
+本节只收口统一来源审核已经越过 freeze 和 balloon generation 后暴露的人工气泡 Playwright refresh timeout，不创建第二份 plan、task、runtime path 或产品 Owner。
+
+- Selected lane: `Standard`；稳定 API/schema、runtime entry/config 和 formal balloon semantics 均不改变，但必须用真实 browser integration/smoke 证明残余风险关闭。
+- Selected plan: 本文件，仍是唯一 current implementation plan；本次只修复 D7-T2 的 `frontend/e2e/chinese-pdf-upload-mvp.spec.ts` manual-balloon residual。
+- Selection evidence: 同一真实 PDF 两次都已完成 source resolution、freeze 和 balloon generation，随后稳定停在 `resolveManualBalloonPlacements()` 的 balloon command/workbench refresh wait；当前 working tree 还保留一组未提交的 item-identity/refresh assertions，必须先验证而不能当成已生效结论。
+- Validation action: `continue`；先在隔离 runtime 重现并用 network/DOM evidence 验证 root-cause hypothesis，再执行 RED → minimal GREEN，不修改或放宽 production failure policy。
+- Writer ownership and order: 父 agent 是唯一 writer；read-only explorer 只追踪 Playwright → React → API event flow，reviewer 在最终 diff 后独立复核，二者都不得修改 workspace 或 nested delegation。
+- Problem boundary and single Owner: 本次 owner 是 `chinese-pdf-upload-mvp.spec.ts` 的 browser synchronization/selection helper；只有运行证据证明 production command/refresh contract 错误时，才允许 replan 到相应 production Owner。
+- Old path action: 经 RED 证明后，替换会绑定 stale SVG/summary state 或假定每次 drag 必然产生匹配 refresh 的不稳定 waiter；不得仅通过增大 timeout、跳过人工调整、直接调用 mutation API 或忽略失败取得通过。若真实 current-four 完整路径超过旧 suite 预算，只能在根因修复并取得 fresh runtime 证据后调整 suite 总预算。
+- Unchanged contract: 每次合法 drag 仍必须由可见 UI 产生一个成功 balloon command，最终 server workbench 中该 item 必须为 `placed` 且无 collision；frontend/Playwright 不产生 formal result，freeze、confirm、export 和 backend Veto Gate 不变。
+- Allowed paths: `frontend/e2e/chinese-pdf-upload-mvp.spec.ts`、其最小必要测试文件，以及本计划的本节；现有 `.env.example`、`.gitignore`、`AGENTS.md`、`compose.yaml` 和其他未提交内容不属于本次 writer scope。
+- Next verification: 在隔离 runtime 用真实 `QI_MVP_E2E_PDF` 执行 `npm --prefix frontend run e2e -- e2e/chinese-pdf-upload-mvp.spec.ts`，预期先复现或证伪 manual-balloon refresh timeout，并保存精确 request/response/DOM 证据。
+- Closure evidence: current-HEAD RED 先证明旧 `heading[name="检验项目审核"]` 已被真实 `region[name="项目摘要"]` 取代；最小 selector 修正后，同一真实双页 PDF 的 final current-diff Playwright run 为 `1 passed (23.0m)`。运行中 275 个 active items 全部完成审核并 freeze，275 个 balloons 的 manual count 从 20 收敛到 0；全局重校验曾出现 `12 → 14` 的非单调变化，但当前 item 均按 identity 正确退出人工列表。最终 `balloon_blockers=[]`、project=`reviewed`、同一 reviewed result 的 export=`success` 且存在三个 artifacts。fresh frontend regression 为 108 passed，production build passed，仅保留既有 bundle-size warning。
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：
