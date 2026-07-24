@@ -587,6 +587,64 @@ describe("InspectionWorkbench", () => {
     ]);
   });
 
+  test("检验项列表与编辑合并为同一紧凑工作区并保持操作顺序", () => {
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[{
+          id: "balloon-1",
+          itemId: "item-1",
+          pageIndex: 0,
+          center: [20, 30],
+          number: 1,
+          version: 1,
+          status: "active",
+          sortOrder: 0,
+        }]}
+        items={[{
+          item_id: "item-1",
+          item_type: "thread",
+          raw_text: "M6",
+          page_index: 0,
+          status: "kept",
+          active: true,
+        }]}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onDeleteBalloon={vi.fn()}
+        onRebuildBalloon={vi.fn()}
+        onReorderBalloon={vi.fn()}
+        onRenumberBalloons={vi.fn()}
+      />,
+    );
+
+    const reviewRegion = screen.getByRole("region", { name: "检验项审核" });
+    const recognitionSummary = screen.getByRole("region", { name: "识别汇总" });
+    const workspace = screen.getByRole("group", {
+      name: "检验项列表与编辑",
+    });
+    const toolbar = screen.getByRole("region", { name: "气泡操作" });
+    const table = within(workspace).getByRole("table", {
+      name: "检验项列表",
+    });
+
+    expect(workspace.querySelector(".inspection-review-workspace__list"))
+      .not.toBeNull();
+    expect(workspace.querySelector(".inspection-review-workspace__detail"))
+      .not.toBeNull();
+    expect(table.closest(".inspection-table-section")?.classList.contains(
+      "inspection-table-section--compact",
+    )).toBe(true);
+    expect(within(workspace).getByRole("article", { name: "M6" })).not.toBeNull();
+    expect(document.querySelector(".candidate-editor")).toBeNull();
+
+    const children = Array.from(reviewRegion.children);
+    expect(children.indexOf(recognitionSummary))
+      .toBeLessThan(children.indexOf(workspace));
+    expect(children.indexOf(workspace)).toBeLessThan(children.indexOf(toolbar));
+  });
+
   test("编辑所选检验项时持续显示真实编号、页码、状态和原始标注", () => {
     render(
       <InspectionWorkbench

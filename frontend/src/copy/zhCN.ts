@@ -79,6 +79,7 @@ export const zhCN = {
     projectSummary: "项目摘要",
     drawingRegion: "工程图纸",
     reviewRegion: "检验项审核",
+    mergedReviewWorkspace: "检验项列表与编辑",
     asideRegion: "SIP 与导出信息",
     drawingType: "图纸类型",
     drawingNumber: "图号",

@@ -19,6 +19,7 @@ type InspectionItemTableProps = {
   selectedItemId?: string;
   selectedSourceId?: string;
   disabled?: boolean;
+  compact?: boolean;
   onSelectItem: (itemId: string) => void;
   onSelectSource?: (sourceId: string) => void;
   onCommand?: (
@@ -241,6 +242,7 @@ export function InspectionItemTable({
   selectedItemId,
   selectedSourceId,
   disabled = false,
+  compact = false,
   onSelectItem,
   onSelectSource,
   onCommand,
@@ -431,7 +433,10 @@ export function InspectionItemTable({
 
   return (
     <section
-      className="inspection-table-section"
+      className={[
+        "inspection-table-section",
+        compact ? "inspection-table-section--compact" : "",
+      ].filter(Boolean).join(" ")}
       aria-label={zhCN.inspection.region}
     >
       <div className="inspection-list-controls">
@@ -469,8 +474,12 @@ export function InspectionItemTable({
         <div className="inspection-table__head" role="row">
           <span role="columnheader">{zhCN.inspection.number}</span>
           <span role="columnheader">{zhCN.inspection.item}</span>
-          <span role="columnheader">{zhCN.inspection.value}</span>
-          <span role="columnheader">{zhCN.inspection.page}</span>
+          {compact
+            ? null
+            : <span role="columnheader">{zhCN.inspection.value}</span>}
+          {compact
+            ? null
+            : <span role="columnheader">{zhCN.inspection.page}</span>}
           <span role="columnheader">{zhCN.inspection.status}</span>
         </div>
         <div className="inspection-table__body">
@@ -505,12 +514,16 @@ export function InspectionItemTable({
                     <strong title={source.rawText || zhCN.workbench.unknown}>{source.rawText || zhCN.workbench.unknown}</strong>
                     <small>{zhCN.inspection.sourceType}</small>
                   </span>
-                  <span role="cell">{zhCN.workbench.unknown}</span>
-                  <span role="cell">
-                    {source.pageIndex === undefined
-                      ? zhCN.workbench.unknown
-                      : zhCN.inspection.sourcePage(source.pageIndex + 1)}
-                  </span>
+                  {compact
+                    ? null
+                    : <span role="cell">{zhCN.workbench.unknown}</span>}
+                  {compact ? null : (
+                    <span role="cell">
+                      {source.pageIndex === undefined
+                        ? zhCN.workbench.unknown
+                        : zhCN.inspection.sourcePage(source.pageIndex + 1)}
+                    </span>
+                  )}
                   <span
                     role="cell"
                     className="geometry-state geometry-state--source_pending"
@@ -566,15 +579,19 @@ export function InspectionItemTable({
                   <strong title={item.raw_text}>{item.raw_text}</strong>
                   <small>{typeLabel(item)}</small>
                 </span>
-                <span role="cell">
-                  <strong>{item.nominal ?? item.raw_text}</strong>
-                  <small>{tolerance(item)}</small>
-                </span>
-                <span role="cell">
-                  {pageNumber === undefined
-                    ? zhCN.workbench.unknown
-                    : zhCN.inspection.sourcePage(pageNumber)}
-                </span>
+                {compact ? null : (
+                  <span role="cell">
+                    <strong>{item.nominal ?? item.raw_text}</strong>
+                    <small>{tolerance(item)}</small>
+                  </span>
+                )}
+                {compact ? null : (
+                  <span role="cell">
+                    {pageNumber === undefined
+                      ? zhCN.workbench.unknown
+                      : zhCN.inspection.sourcePage(pageNumber)}
+                  </span>
+                )}
                 <span role="cell" className={`geometry-state geometry-state--${status}`}>
                   <strong>{STATUS_LABELS[status]}</strong>
                   {collisions ? <small>{collisions}</small> : null}
