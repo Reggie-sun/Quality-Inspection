@@ -54,22 +54,32 @@ async function saveQueuedReviewCommand(page: Page): Promise<void> {
 
 
 async function resolveSourceOnlyCoverage(page: Page): Promise<number> {
-  const panel = page.getByRole("region", { name: "来源待确认" });
+  const activeCount = await page.getByTestId("summary-active-count").textContent();
+  await page.getByRole("button", { name: "筛选需人工处理" }).click();
+  const table = page.getByRole("table", { name: "检验项列表" });
   let resolved = 0;
 
-  while (await panel.count() > 0) {
-    await expect(panel).toBeVisible();
-    const accept = panel.getByRole("button", { name: "确认保留此来源" });
-    await expect(accept).toBeEnabled();
-    await accept.click();
+  for (;;) {
+    const sourceRows = table.locator("[role='row'][data-source-id]:visible");
+    if (await sourceRows.count() === 0) break;
+
+    await sourceRows.first().click();
+    const ignore = page.getByRole("button", {
+      name: "忽略，不作为检验项",
+    });
+    await expect(ignore).toBeEnabled();
+    await ignore.click();
     await saveQueuedReviewCommand(page);
     resolved += 1;
     expect(
       resolved,
-      "来源待确认项数量异常，审核循环必须有界",
+      "待判定来源数量异常，审核循环必须有界",
     ).toBeLessThan(1_000);
   }
 
+  await expect(page.getByTestId("summary-active-count")).toHaveText(
+    activeCount?.trim() ?? "",
+  );
   return resolved;
 }
 
