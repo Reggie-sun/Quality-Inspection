@@ -14,6 +14,19 @@ import { selectRelationItem, selectedRelation } from "../workbench/selection";
 
 const IDENTITY_MATRIX: PdfMatrix = [1, 0, 0, 1, 0, 0];
 const CANDIDATE_MARKER_RADIUS = 10;
+const CANDIDATE_MARKER_GAP = 2;
+const CANDIDATE_MARKER_INSET = 1;
+
+type MarkerPoint = {
+  x: number;
+  y: number;
+};
+
+type MarkerObstacle = {
+  id: string;
+  kind: "candidate" | "source";
+  bbox: PdfCoordinates;
+};
 
 function normalizeMatrix(matrix: PdfMatrix): PdfMatrix {
   const matrixScale = Math.hypot(matrix[0], matrix[1]);
@@ -43,10 +56,92 @@ function transformBox(matrix: PdfMatrix, bbox: PdfCoordinates): PdfCoordinates {
 }
 
 function clampMarker(value: number, extent: number): number {
+  const insetRadius = CANDIDATE_MARKER_RADIUS + CANDIDATE_MARKER_INSET;
   return Math.min(
-    Math.max(value, CANDIDATE_MARKER_RADIUS),
-    Math.max(CANDIDATE_MARKER_RADIUS, extent - CANDIDATE_MARKER_RADIUS),
+    Math.max(value, insetRadius),
+    Math.max(insetRadius, extent - insetRadius),
   );
+}
+
+function candidateMarkerOptions(
+  bbox: PdfCoordinates,
+  pageWidth: number,
+  pageHeight: number,
+): MarkerPoint[] {
+  const [x0, y0, x1, y1] = bbox;
+  const centerX = (x0 + x1) / 2;
+  const centerY = (y0 + y1) / 2;
+  const options: MarkerPoint[] = [];
+
+  for (const ring of [0, 1]) {
+    const offset = CANDIDATE_MARKER_RADIUS
+      + CANDIDATE_MARKER_GAP
+      + ring * (CANDIDATE_MARKER_RADIUS * 2 + CANDIDATE_MARKER_GAP * 2);
+    options.push(
+      { x: x1 + offset, y: y0 - offset },
+      { x: x1 + offset, y: y1 + offset },
+      { x: x0 - offset, y: y0 - offset },
+      { x: x0 - offset, y: y1 + offset },
+      { x: x1 + offset, y: centerY },
+      { x: x0 - offset, y: centerY },
+      { x: centerX, y: y0 - offset },
+      { x: centerX, y: y1 + offset },
+    );
+  }
+
+  const seen = new Set<string>();
+  return options.flatMap((option) => {
+    const point = {
+      x: clampMarker(option.x, pageWidth),
+      y: clampMarker(option.y, pageHeight),
+    };
+    const key = `${point.x}:${point.y}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [point];
+  });
+}
+
+function markerOverlapsBox(point: MarkerPoint, bbox: PdfCoordinates): boolean {
+  const [x0, y0, x1, y1] = bbox;
+  const closestX = Math.min(Math.max(point.x, x0), x1);
+  const closestY = Math.min(Math.max(point.y, y0), y1);
+  return Math.hypot(point.x - closestX, point.y - closestY)
+    < CANDIDATE_MARKER_RADIUS + CANDIDATE_MARKER_GAP;
+}
+
+function chooseCandidateMarker(
+  bbox: PdfCoordinates,
+  pageWidth: number,
+  pageHeight: number,
+  obstacles: MarkerObstacle[],
+  placedMarkers: MarkerPoint[],
+): MarkerPoint {
+  const options = candidateMarkerOptions(bbox, pageWidth, pageHeight);
+  const preferred = options[0];
+  return options.reduce((best, option, index) => {
+    const markerOverlapCount = placedMarkers.filter((placed) => (
+      Math.hypot(option.x - placed.x, option.y - placed.y)
+        < CANDIDATE_MARKER_RADIUS * 2 + CANDIDATE_MARKER_GAP
+    )).length;
+    const boxOverlapCount = obstacles.filter((obstacle) => (
+      markerOverlapsBox(option, obstacle.bbox)
+    )).length;
+    const distanceFromPreferred = preferred === undefined
+      ? 0
+      : Math.hypot(option.x - preferred.x, option.y - preferred.y);
+    const score = markerOverlapCount * 1_000_000
+      + boxOverlapCount * 500
+      + distanceFromPreferred * 10
+      + index;
+    return score < best.score ? { point: option, score } : best;
+  }, {
+    point: options[0] ?? {
+      x: clampMarker(bbox[2], pageWidth),
+      y: clampMarker(bbox[1], pageHeight),
+    },
+    score: Number.POSITIVE_INFINITY,
+  }).point;
 }
 
 
@@ -108,6 +203,19 @@ export function OverlayLayer({
       .filter((itemId): itemId is string => itemId !== undefined),
   );
   const candidateMarkerItemIds = new Set<string>();
+  const markerObstacles: MarkerObstacle[] = [
+    ...candidates.map((item) => ({
+      id: item.id,
+      kind: "candidate" as const,
+      bbox: transformBox(matrix, item.bbox),
+    })),
+    ...sources.map((item) => ({
+      id: item.id,
+      kind: "source" as const,
+      bbox: transformBox(matrix, item.bbox),
+    })),
+  ];
+  const placedCandidateMarkers: MarkerPoint[] = [];
   const candidateMarkers = candidates.flatMap((item) => {
     if (
       item.itemId === undefined
@@ -118,13 +226,23 @@ export function OverlayLayer({
       return [];
     }
     candidateMarkerItemIds.add(item.itemId);
-    const [, y0, x1] = transformBox(matrix, item.bbox);
+    const bbox = transformBox(matrix, item.bbox);
+    const marker = chooseCandidateMarker(
+      bbox,
+      pageWidth,
+      pageHeight,
+      markerObstacles.filter((obstacle) => (
+        obstacle.kind !== "candidate" || obstacle.id !== item.id
+      )),
+      placedCandidateMarkers,
+    );
+    placedCandidateMarkers.push(marker);
     return [{
       item,
       itemId: item.itemId,
       candidateNumber: item.candidateNumber,
-      markerX: clampMarker(x1, pageWidth),
-      markerY: clampMarker(y0, pageHeight),
+      markerX: marker.x,
+      markerY: marker.y,
     }];
   });
 
@@ -226,7 +344,7 @@ export function OverlayLayer({
             data-selected={isSelected}
             role="button"
             aria-label={zhCN.pdf.candidateMarker(candidateNumber)}
-            tabIndex={0}
+            tabIndex={selectItem === undefined ? undefined : 0}
             onClick={selectCandidate}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
@@ -259,7 +377,7 @@ export function OverlayLayer({
           </g>
         );
       })}
-      {balloons.map((item) => {
+      {balloons.filter((item) => item.status !== "deleted").map((item) => {
         const [x, y] = transformPoint(matrix, item.center);
         return (
           <BalloonMarker

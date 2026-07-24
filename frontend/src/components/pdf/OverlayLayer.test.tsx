@@ -70,8 +70,8 @@ describe("OverlayLayer", () => {
     expect(markers[0].getAttribute("data-testid")).toBe(
       "candidate-number-candidate-first",
     );
-    expect(markers[0].querySelector("circle")?.getAttribute("cx")).toBe("90");
-    expect(markers[0].querySelector("circle")?.getAttribute("cy")).toBe("10");
+    expect(markers[0].querySelector("circle")?.getAttribute("cx")).toBe("89");
+    expect(markers[0].querySelector("circle")?.getAttribute("cy")).toBe("11");
 
     fireEvent.click(markers[0]);
     fireEvent.keyDown(markers[0], { key: "Enter" });
@@ -80,6 +80,45 @@ describe("OverlayLayer", () => {
     expect(onSelectItem).toHaveBeenNthCalledWith(1, "item-1");
     expect(onSelectItem).toHaveBeenNthCalledWith(2, "item-1");
     expect(onSelectItem).toHaveBeenNthCalledWith(3, "item-1");
+  });
+
+  test("候选气泡优先放在候选框外且相邻序号不会互相重叠", () => {
+    render(
+      <OverlayLayer
+        pageWidth={200}
+        pageHeight={200}
+        scale={1}
+        candidates={[
+          {
+            id: "candidate-near-1",
+            itemId: "item-1",
+            bbox: [50, 50, 80, 70],
+            candidateNumber: 1,
+          },
+          {
+            id: "candidate-near-2",
+            itemId: "item-2",
+            bbox: [52, 52, 82, 72],
+            candidateNumber: 2,
+          },
+        ]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+
+    const firstCircle = screen.getByRole("button", { name: "候选气泡 1" })
+      .querySelector("circle")!;
+    const secondCircle = screen.getByRole("button", { name: "候选气泡 2" })
+      .querySelector("circle")!;
+    const firstX = Number(firstCircle.getAttribute("cx"));
+    const firstY = Number(firstCircle.getAttribute("cy"));
+    const secondX = Number(secondCircle.getAttribute("cx"));
+    const secondY = Number(secondCircle.getAttribute("cy"));
+
+    expect(firstX).toBeGreaterThan(80);
+    expect(firstY).toBeLessThan(50);
+    expect(Math.hypot(secondX - firstX, secondY - firstY)).toBeGreaterThanOrEqual(20);
   });
 
   test("候选气泡位于来源标注之后并在重叠时保持可选择", () => {
@@ -178,6 +217,9 @@ describe("OverlayLayer", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "候选气泡 1" })).not.toBeNull();
+    const restoredCandidate = screen.getByRole("button", { name: "候选气泡 1" });
+    expect(restoredCandidate).not.toBeNull();
+    expect(restoredCandidate.getAttribute("tabindex")).toBeNull();
+    expect(screen.queryByTestId("balloon-balloon-deleted")).toBeNull();
   });
 });
