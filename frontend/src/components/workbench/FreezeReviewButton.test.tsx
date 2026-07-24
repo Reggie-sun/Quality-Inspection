@@ -136,6 +136,7 @@ test("P0-UI-008 Save does not freeze and project identity drives real APIs", asy
 });
 
 test("P0-UI-008 failed API Save stays failed and preserves the pending command", async () => {
+  let commandAttempts = 0;
   const fetchMock = vi.fn(async (path: RequestInfo | URL) => {
     const value = String(path);
     if (value.endsWith("/review/lock")) {
@@ -145,12 +146,19 @@ test("P0-UI-008 failed API Save stays failed and preserves the pending command",
       });
     }
     if (value.endsWith("/review/commands")) {
-      return new Response(
-        JSON.stringify({
-          error: { code: "stale_working_copy", message: "working copy version is stale" },
-        }),
-        { status: 409, headers: { "Content-Type": "application/json" } },
-      );
+      commandAttempts += 1;
+      if (commandAttempts === 1) {
+        return new Response(
+          JSON.stringify({
+            error: { code: "stale_working_copy", message: "working copy version is stale" },
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify(response().working_copy), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
     return new Response(JSON.stringify(response()), {
       status: 200,
@@ -167,7 +175,8 @@ test("P0-UI-008 failed API Save stays failed and preserves the pending command",
     />,
   );
 
-  fireEvent.click(await screen.findByRole("button", { name: "保留检验项：M6" }));
+  const keep = await screen.findByRole("button", { name: "保留检验项：M6" });
+  fireEvent.click(keep);
 
   expect(await screen.findByText("保存失败")).not.toBeNull();
   expect(screen.queryByText("已保存")).toBeNull();
@@ -177,6 +186,64 @@ test("P0-UI-008 failed API Save stays failed and preserves the pending command",
     .not.toContain("working copy version is stale");
   expect(fetchMock.mock.calls.filter(([path]) => String(path).endsWith("/review/commands")))
     .toHaveLength(1);
+
+  expect((keep as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(keep);
+
+  expect(await screen.findByText("审核修改已提交")).not.toBeNull();
+  expect(fetchMock.mock.calls.filter(([path]) => String(path).endsWith("/review/commands")))
+    .toHaveLength(2);
+});
+
+test("审核锁续期失败保持 fail-closed，续期恢复后重新启用操作", async () => {
+  let rejectRenewal = false;
+  const fetchMock = vi.fn(async (path: RequestInfo | URL) => {
+    const value = String(path);
+    if (value.endsWith("/review/lock")) {
+      if (rejectRenewal) {
+        return new Response(JSON.stringify({
+          error: { code: "review_lock_conflict", message: "lock lost" },
+        }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ operator_id: "operator-real" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify(response()), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue(pdfFixture())}
+    />,
+  );
+
+  const keep = await screen.findByRole("button", { name: "保留检验项：M6" });
+  expect((keep as HTMLButtonElement).disabled).toBe(false);
+
+  rejectRenewal = true;
+  window.dispatchEvent(new Event("focus"));
+
+  expect(await screen.findByText("审核锁续期失败，修改操作已暂停。")).not.toBeNull();
+  expect((keep as HTMLButtonElement).disabled).toBe(true);
+
+  rejectRenewal = false;
+  window.dispatchEvent(new Event("focus"));
+
+  await waitFor(() => {
+    expect((keep as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText("审核锁续期失败，修改操作已暂停。")).toBeNull();
+  });
 });
 
 test("P0-UI-008 Freeze, generate and Confirm remain explicit ordered actions", async () => {
