@@ -78,6 +78,31 @@ describe("InspectionWorkbench", () => {
       .not.toContain("审核修改已提交");
   });
 
+  test("流程阶段条显示在审核操作栏之前", () => {
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    const shell = screen.getByRole("main");
+    const stageRail = screen.getByRole("navigation", {
+      name: "检验处理阶段",
+    });
+    const actionHeader = document.querySelector(".workbench-header");
+    const children = Array.from(shell.children);
+
+    expect(actionHeader).not.toBeNull();
+    expect(children.indexOf(stageRail)).toBeLessThan(
+      children.indexOf(actionHeader as HTMLElement),
+    );
+  });
+
   test("P0-UI-007 keeps one pending command stable until explicit Save", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(

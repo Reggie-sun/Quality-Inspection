@@ -9,6 +9,7 @@
   display: flex;
   align-items: center;
   gap: 18px;
+  margin-top: 10px;
   min-height: 72px;
   padding: 12px 16px;
   border: 1px solid var(--qi-border);

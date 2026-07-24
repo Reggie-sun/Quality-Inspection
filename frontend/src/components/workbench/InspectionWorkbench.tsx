@@ -328,6 +328,21 @@ export function InspectionWorkbench({
 
   return (
     <main className="workbench-shell">
+      <nav className="stage-rail" aria-label={zhCN.workbench.stageNavigation}>
+        <ol>
+          {zhCN.stages.map((stage, index) => (
+            <li
+              key={stage}
+              data-state={index < activeStage ? "complete" : index === activeStage ? "active" : "pending"}
+              aria-current={index === activeStage ? "step" : undefined}
+            >
+              <span aria-hidden="true" data-number={index + 1} />
+              <strong>{stage}</strong>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
       <header className="workbench-header">
         <div>
           <p className="workbench-eyebrow">{zhCN.workbench.eyebrow}</p>
@@ -362,21 +377,6 @@ export function InspectionWorkbench({
             />
           )}
       </header>
-
-      <nav className="stage-rail" aria-label={zhCN.workbench.stageNavigation}>
-        <ol>
-          {zhCN.stages.map((stage, index) => (
-            <li
-              key={stage}
-              data-state={index < activeStage ? "complete" : index === activeStage ? "active" : "pending"}
-              aria-current={index === activeStage ? "step" : undefined}
-            >
-              <span aria-hidden="true" data-number={index + 1} />
-              <strong>{stage}</strong>
-            </li>
-          ))}
-        </ol>
-      </nav>
 
       <section
         className="project-summary"
