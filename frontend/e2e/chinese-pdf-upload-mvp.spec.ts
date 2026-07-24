@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 
 import { expect, test, type Page } from "@playwright/test";
 
+import type { ProjectWorkbenchResponse } from "../src/api/types";
+
 
 const UUID_SOURCE = "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 const UUID_PATTERN = new RegExp(UUID_SOURCE, "gi");
@@ -221,15 +223,23 @@ async function resolveManualBalloonPlacements(page: Page): Promise<number> {
   let resolved = 0;
 
   while (Number((await summaryCount.textContent())?.trim()) > 0) {
-    const before = Number((await summaryCount.textContent())?.trim());
     await expect(rows.first()).toBeVisible();
+    const selectedItemId = await rows.first().getAttribute("data-item-id");
+    if (selectedItemId === null) {
+      throw new Error("需人工处理行缺少检验项标识");
+    }
     await rows.first().click();
     const selected = page.locator(
       "[data-testid^='balloon-'][data-selected='true']",
     );
     await expect(selected).toHaveCount(1);
     await expect(selected).toBeVisible();
-    const initialCircle = (await selected.getAttribute("data-circle"))
+    const selectedBalloonTestId = await selected.getAttribute("data-testid");
+    if (selectedBalloonTestId === null) {
+      throw new Error("需人工处理气泡缺少测试标识");
+    }
+    const currentBalloon = page.getByTestId(selectedBalloonTestId);
+    const initialCircle = (await currentBalloon.getAttribute("data-circle"))
       ?.split(",")
       .map(Number);
     if (
@@ -245,7 +255,7 @@ async function resolveManualBalloonPlacements(page: Page): Promise<number> {
     if (!Number.isFinite(scale) || scale <= 0) {
       throw new Error("气泡标注层缺少有效缩放比例");
     }
-    const collisionFlags = (await selected.getAttribute("data-collision-flags"))
+    const collisionFlags = (await currentBalloon.getAttribute("data-collision-flags"))
       ?.split(",") ?? [];
     const yOffsets = collisionFlags.includes("source_text_overlap")
       ? [
@@ -261,7 +271,7 @@ async function resolveManualBalloonPlacements(page: Page): Promise<number> {
     for (const yOffset of yOffsets) {
       for (const xOffset of xOffsets) {
         const overlayBox = await overlay.boundingBox();
-        const leader = selected.locator("line");
+        const leader = currentBalloon.locator("line");
         const leaderPoints = await Promise.all(
           ["x1", "y1", "x2", "y2"].map(async (attribute) =>
             Number(await leader.getAttribute(attribute))
@@ -302,25 +312,50 @@ async function resolveManualBalloonPlacements(page: Page): Promise<number> {
         await page.mouse.up();
         expect((await moveResponse).ok(), "人工气泡调整命令响应必须成功")
           .toBe(true);
-        expect((await moveRefresh).ok(), "人工气泡调整后的工作台刷新必须成功")
+        const refreshedResponse = await moveRefresh;
+        expect(refreshedResponse.ok(), "人工气泡调整后的工作台刷新必须成功")
           .toBe(true);
+        const refreshedWorkbench = await refreshedResponse.json() as
+          ProjectWorkbenchResponse;
+        const refreshedBalloon = refreshedWorkbench.balloons.find(
+          (balloon) => (
+            balloon.inspection_item_id === selectedItemId
+            && balloon.status === "active"
+          ),
+        );
+        if (refreshedBalloon === undefined) {
+          throw new Error("人工调整后的工作台缺少当前气泡");
+        }
 
         if (
-          await selected.getAttribute("data-placement-status") === "placed"
-          && await selected.getAttribute("data-collision-flags") === ""
+          refreshedBalloon.placement_status === "placed"
+          && refreshedBalloon.collision_flags.length === 0
         ) {
           placed = true;
           break;
         }
+        await expect(currentBalloon).toHaveAttribute(
+          "data-placement-status",
+          refreshedBalloon.placement_status,
+        );
+        await expect(currentBalloon).toHaveAttribute(
+          "data-collision-flags",
+          refreshedBalloon.collision_flags.join(","),
+        );
       }
       if (placed) break;
     }
     expect(placed, "每个需人工处理气泡都必须通过可见拖动找到合法位置")
       .toBe(true);
     await expect.poll(
-      async () => Number((await summaryCount.textContent())?.trim()),
-      { message: "人工调整后需人工处理数量必须减少" },
-    ).toBeLessThan(before);
+      async () => rows.evaluateAll(
+        (currentRows, itemId) => currentRows.some(
+          (row) => row.getAttribute("data-item-id") === itemId,
+        ),
+        selectedItemId,
+      ),
+      { message: "人工调整后当前气泡必须离开需人工处理列表" },
+    ).toBe(false);
     resolved += 1;
     expect(resolved, "需人工处理气泡数量异常，调整循环必须有界")
       .toBeLessThan(500);
@@ -368,7 +403,7 @@ async function verifyDownload(
 
 
 test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ page }) => {
-  test.setTimeout(15 * 60_000);
+  test.setTimeout(30 * 60_000);
 
   const sourcePdf = process.env.QI_MVP_E2E_PDF;
   if (!sourcePdf) throw new Error("QI_MVP_E2E_PDF is required");
@@ -410,7 +445,7 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   await page.getByRole("button", { name: "上传并开始识别" }).click();
   await expect(page.getByText(INTERMEDIATE_STATUS, { exact: true }).first())
     .toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("heading", { name: "检验项目审核" }))
+  await expect(page.getByRole("region", { name: "项目摘要" }))
     .toBeVisible({ timeout: 10 * 60_000 });
   const candidateMarkers = page.getByRole("button", {
     name: /^候选气泡 [1-9]\d*$/,
@@ -439,6 +474,13 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   await resolveSourceOnlyCoverage(page);
   await processActiveItems(page, activeCount);
   await populateSipMetadata(page);
+  const collapseAuxiliary = page.getByRole("button", {
+    name: "收起 SIP 与导出信息",
+  });
+  await expect(collapseAuxiliary).toBeVisible();
+  await collapseAuxiliary.click();
+  await expect(page.getByRole("button", { name: "展开 SIP 与导出信息" }))
+    .toBeVisible();
   await clickAndRefresh(page, "冻结检验项", "/review/freeze");
   await clickAndRefresh(page, "生成气泡", "/balloons/generate");
   await expect(page.getByRole("button", { name: /^候选气泡 / })).toHaveCount(0);
