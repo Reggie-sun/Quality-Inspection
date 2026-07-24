@@ -8,7 +8,12 @@ import { QualityInspectionApp } from "./QualityInspectionApp";
 
 
 vi.mock("../components/workbench/ProjectWorkbenchApp", () => ({
-  ProjectWorkbenchApp: () => <h2>检验项目审核</h2>,
+  ProjectWorkbenchApp: ({ onReset }: { onReset: () => void }) => (
+    <>
+      <h2>检验项目审核</h2>
+      <button type="button" onClick={onReset}>处理另一份图纸</button>
+    </>
+  ),
 }));
 
 const PROJECT_ID = "550e8400-e29b-41d4-a716-446655440000";

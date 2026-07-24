@@ -22,6 +22,12 @@ if (!compatibilityLink && (window.location.pathname !== "/" || window.location.s
 
 createRoot(root).render(
   compatibilityLink
-    ? <ProjectWorkbenchApp projectId={projectId} operatorId={operatorId} />
+    ? (
+      <ProjectWorkbenchApp
+        projectId={projectId}
+        operatorId={operatorId}
+        onReset={() => window.location.assign("/")}
+      />
+    )
     : <QualityInspectionApp />,
 );

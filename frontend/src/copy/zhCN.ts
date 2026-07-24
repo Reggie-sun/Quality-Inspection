@@ -39,6 +39,13 @@ export const zhCN = {
     "气泡调整",
     "文件导出",
   ],
+  stageDescriptions: [
+    "PDF文件上传",
+    "识别检验项",
+    "确认检验项",
+    "调整气泡位置",
+    "生成PDF与SIP",
+  ],
   upload: {
     heading: "上传工程 PDF",
     select: "选择工程 PDF",

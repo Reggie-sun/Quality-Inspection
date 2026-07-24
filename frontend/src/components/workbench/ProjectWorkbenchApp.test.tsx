@@ -1,4 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { ProjectWorkbenchResponse } from "../../api/types";
@@ -175,6 +182,61 @@ test("刷新后从只读 projection 恢复 reviewed result 和三项下载", asy
   expect(document.body.textContent).not.toContain("item-secret-uuid");
 });
 
+test("就绪页头部横向组合纯文字品牌、真实阶段和重新处理入口", async () => {
+  const snapshot = reviewedResponse();
+  vi.stubGlobal("fetch", vi.fn(async (
+    path: RequestInfo | URL,
+    _init?: RequestInit,
+  ) => new Response(JSON.stringify(
+    String(path).endsWith("/review/lock")
+      ? { operator_id: "operator-real" }
+      : snapshot,
+  ), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })));
+  const onReset = vi.fn();
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+      onReset={onReset}
+    />,
+  );
+
+  const header = await screen.findByRole("banner", {
+    name: "工程图纸检验流程",
+  });
+  expect(within(header).getByText("智检通")).not.toBeNull();
+  expect(within(header).getByText("工程图纸智能检验")).not.toBeNull();
+  expect(header.querySelector("img, svg")).toBeNull();
+
+  const stages = within(header).getByRole("navigation", {
+    name: "检验处理阶段",
+  });
+  for (const label of [
+    "PDF文件上传",
+    "识别检验项",
+    "确认检验项",
+    "调整气泡位置",
+    "生成PDF与SIP",
+  ]) {
+    expect(within(stages).getByText(label)).not.toBeNull();
+  }
+  expect(
+    within(stages).getByRole("listitem", {
+      name: "文件导出，当前阶段",
+    }).getAttribute("aria-current"),
+  ).toBe("step");
+
+  fireEvent.click(within(header).getByRole("button", {
+    name: "处理另一份图纸",
+  }));
+  expect(onReset).toHaveBeenCalledOnce();
+});
+
 
 test("工作台加载完成后不保留过期识别状态", async () => {
   const snapshot = reviewedResponse();
@@ -198,7 +260,7 @@ test("工作台加载完成后不保留过期识别状态", async () => {
     />,
   );
 
-  expect(await screen.findByRole("heading", { name: "检验项目审核" })).not.toBeNull();
+  expect(await screen.findByRole("region", { name: "项目摘要" })).not.toBeNull();
   expect(screen.queryByText("识别完成，已进入审核")).toBeNull();
 });
 

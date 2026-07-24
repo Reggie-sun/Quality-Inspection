@@ -19,6 +19,7 @@ import { saveWorkingCopy } from "../../features/review/saveWorkingCopy";
 import { apiErrorCopy, zhCN } from "../../copy/zhCN";
 import { deriveCandidateNumbers } from "./candidateNumbering";
 import { InspectionWorkbench } from "./InspectionWorkbench";
+import { WorkbenchWorkflowHeader } from "./WorkbenchWorkflowHeader";
 
 
 const LOCK_RENEWAL_MS = 240_000;
@@ -36,6 +37,7 @@ type ProjectWorkbenchAppProps = {
   projectId: string;
   operatorId: string;
   loadPdf?: PdfLoader;
+  onReset?: () => void;
 };
 
 
@@ -43,6 +45,7 @@ export function ProjectWorkbenchApp({
   projectId,
   operatorId,
   loadPdf = loadPdfDocument,
+  onReset,
 }: ProjectWorkbenchAppProps) {
   const [snapshot, setSnapshot] = useState<ProjectWorkbenchResponse>();
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentLike | null>(null);
@@ -134,6 +137,13 @@ export function ProjectWorkbenchApp({
     () => deriveCandidateNumbers(snapshot?.working_copy.items ?? []),
     [snapshot?.working_copy.items],
   );
+  const activeStage = snapshot?.latest_export?.status === "success"
+    || reviewedResultId !== undefined
+    ? 4
+    : snapshot?.balloons.some((balloon) => balloon.status !== "deleted")
+      || snapshot?.working_copy.items_frozen_at != null
+      ? 3
+      : 2;
 
   const run = async (
     nextStatus: string,
@@ -186,14 +196,25 @@ export function ProjectWorkbenchApp({
   ));
 
   if (error !== undefined && snapshot === undefined) {
-    return <main role="alert">{error}</main>;
+    return (
+      <>
+        <WorkbenchWorkflowHeader activeStage={activeStage} onReset={onReset} />
+        <main role="alert">{error}</main>
+      </>
+    );
   }
   if (snapshot === undefined) {
-    return <main aria-busy="true">{zhCN.workbench.loading}</main>;
+    return (
+      <>
+        <WorkbenchWorkflowHeader activeStage={activeStage} onReset={onReset} />
+        <main aria-busy="true">{zhCN.workbench.loading}</main>
+      </>
+    );
   }
 
   return (
     <>
+      <WorkbenchWorkflowHeader activeStage={activeStage} onReset={onReset} />
       {error === undefined ? null : <p role="alert">{error}</p>}
       <InspectionWorkbench
         pdfDocument={pdfDocument}

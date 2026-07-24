@@ -160,6 +160,9 @@ export function InspectionWorkbench({
       : pendingCommand !== undefined || localDraftDirty
         ? zhCN.workbench.pending
         : zhCN.workbench.saved;
+  const visibleSaveState = saveState === zhCN.workbench.saveFailed
+    ? displayedSaveState
+    : actionState ?? displayedSaveState;
   const reviewImmutable =
     finalized || (workingCopy !== undefined && workingCopy.items_frozen_at !== null);
   const reviewedCount = items.filter(
@@ -175,12 +178,6 @@ export function InspectionWorkbench({
     (balloon) =>
       balloon.status !== "deleted" && balloon.itemId === selectedReviewItem?.item_id,
   );
-  const activeStage = initialExport?.status === "success" || reviewedResultId !== undefined
-    ? 4
-    : balloons.some((balloon) => balloon.status !== "deleted")
-      || workingCopy?.items_frozen_at != null
-      ? 3
-      : 2;
   const selectItem = (itemId: string) => {
     setSelectedItemId(itemId);
     setSelectedSourceId(undefined);
@@ -328,56 +325,6 @@ export function InspectionWorkbench({
 
   return (
     <main className="workbench-shell">
-      <nav className="stage-rail" aria-label={zhCN.workbench.stageNavigation}>
-        <ol>
-          {zhCN.stages.map((stage, index) => (
-            <li
-              key={stage}
-              data-state={index < activeStage ? "complete" : index === activeStage ? "active" : "pending"}
-              aria-current={index === activeStage ? "step" : undefined}
-            >
-              <span aria-hidden="true" data-number={index + 1} />
-              <strong>{stage}</strong>
-            </li>
-          ))}
-        </ol>
-      </nav>
-
-      <header className="workbench-header">
-        <div>
-          <p className="workbench-eyebrow">{zhCN.workbench.eyebrow}</p>
-          <h1>{zhCN.workbench.title}</h1>
-        </div>
-        <div className="workbench-save-state">
-          <button
-            type="button"
-            className="primary-action"
-            disabled={pendingCommand === undefined || saving || busy}
-            onClick={() => void save()}
-          >
-            {zhCN.workbench.save}
-          </button>
-        </div>
-        {workingCopy === undefined
-          || onFreeze === undefined
-          || onGenerate === undefined
-          || onConfirm === undefined
-          ? null
-          : (
-            <FreezeReviewButton
-              workingCopy={workingCopy}
-              balloons={balloons}
-              balloonBlockers={balloonBlockers}
-              busy={
-                busy || finalized || pendingCommand !== undefined || localDraftDirty
-              }
-              onFreeze={onFreeze}
-              onGenerate={onGenerate}
-              onConfirm={onConfirm}
-            />
-          )}
-      </header>
-
       <section
         className="project-summary"
         role="region"
@@ -419,10 +366,39 @@ export function InspectionWorkbench({
           <div>
             <dt>{zhCN.workbench.saveStatus}</dt>
             <dd role="status" aria-live="polite" aria-atomic="true">
-              {actionState ?? displayedSaveState}
+              {visibleSaveState}
             </dd>
           </div>
         </dl>
+      </section>
+
+      <section className="review-actions" aria-label="审核流程操作">
+        <button
+          type="button"
+          className="primary-action"
+          disabled={pendingCommand === undefined || saving || busy}
+          onClick={() => void save()}
+        >
+          {zhCN.workbench.save}
+        </button>
+        {workingCopy === undefined
+          || onFreeze === undefined
+          || onGenerate === undefined
+          || onConfirm === undefined
+          ? null
+          : (
+            <FreezeReviewButton
+              workingCopy={workingCopy}
+              balloons={balloons}
+              balloonBlockers={balloonBlockers}
+              busy={
+                busy || finalized || pendingCommand !== undefined || localDraftDirty
+              }
+              onFreeze={onFreeze}
+              onGenerate={onGenerate}
+              onConfirm={onConfirm}
+            />
+          )}
       </section>
 
       <div className="workbench-layout">

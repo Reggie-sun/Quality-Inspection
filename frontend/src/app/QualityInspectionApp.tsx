@@ -100,7 +100,7 @@ function ProcessRail({ screen }: { screen: ProductScreen }) {
               <span>
                 <strong>{stage}</strong>
                 <small>
-                  {["PDF文件上传", "识别检验项", "确认检验项", "调整气泡位置", "生成PDF与SIP"][index]}
+                  {zhCN.stageDescriptions[index]}
                   {" · "}
                   {stageState}
                 </small>
@@ -323,10 +323,11 @@ export function QualityInspectionApp({
   if (screen.kind === "ready") {
     return (
       <div className="ready-shell">
-        <ProductHeader action={(
-          <button type="button" onClick={reset}>{zhCN.upload.another}</button>
-        )} />
-        <ProjectWorkbenchApp projectId={screen.projectId} operatorId={operatorId} />
+        <ProjectWorkbenchApp
+          projectId={screen.projectId}
+          operatorId={operatorId}
+          onReset={reset}
+        />
       </div>
     );
   }

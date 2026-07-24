@@ -74,11 +74,11 @@ describe("InspectionWorkbench", () => {
 
     const summary = screen.getByRole("region", { name: "项目摘要" });
     expect(within(summary).getByRole("status").textContent).toBe("审核修改已提交");
-    expect(document.querySelector(".workbench-header")?.textContent)
+    expect(screen.getByRole("region", { name: "审核流程操作" }).textContent)
       .not.toContain("审核修改已提交");
   });
 
-  test("流程阶段条显示在审核操作栏之前", () => {
+  test("项目摘要后保留审核操作且不重复全局头部", () => {
     render(
       <InspectionWorkbench
         pdfDocument={null}
@@ -91,16 +91,16 @@ describe("InspectionWorkbench", () => {
     );
 
     const shell = screen.getByRole("main");
-    const stageRail = screen.getByRole("navigation", {
-      name: "检验处理阶段",
-    });
-    const actionHeader = document.querySelector(".workbench-header");
+    const projectSummary = screen.getByRole("region", { name: "项目摘要" });
+    const reviewActions = screen.getByRole("region", { name: "审核流程操作" });
     const children = Array.from(shell.children);
 
-    expect(actionHeader).not.toBeNull();
-    expect(children.indexOf(stageRail)).toBeLessThan(
-      children.indexOf(actionHeader as HTMLElement),
+    expect(children.indexOf(projectSummary)).toBeLessThan(
+      children.indexOf(reviewActions),
     );
+    expect(screen.queryByText("工程图纸检验工作台")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "检验项目审核" })).toBeNull();
+    expect(screen.getByRole("button", { name: "保存审核修改" })).not.toBeNull();
   });
 
   test("P0-UI-007 keeps one pending command stable until explicit Save", async () => {
@@ -187,7 +187,7 @@ describe("InspectionWorkbench", () => {
     await waitFor(() => expect(screen.getByText("已保存")).not.toBeNull());
   });
 
-  test("展示五阶段、真实项目摘要、两栏区域和默认收起的工作区", () => {
+  test("展示真实项目摘要、两栏区域和默认收起的工作区", () => {
     render(
       <InspectionWorkbench
         pdfDocument={null}
@@ -240,8 +240,6 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    expect(screen.getByRole("navigation", { name: "检验处理阶段" }).textContent)
-      .toContain("上传图纸智能识别人工审核气泡调整文件导出");
     const projectSummary = screen.getByRole("region", { name: "项目摘要" });
     for (const value of ["上座", "JS26032501", "A1"]) {
       expect(projectSummary.textContent).toContain(value);

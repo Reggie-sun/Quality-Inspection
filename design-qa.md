@@ -555,3 +555,66 @@ changed production files:
 - Product Design direction: 保持白色、浅灰、工程蓝、无 Logo、无紫色/渐变/玻璃拟态；PDF 仍为最大工作区，表格、SIP 和导出层级与参考方向一致。
 - Truthfulness: 无可见内部 ID、静态假产品数据、静态假日志、虚假百分比或参考图写死字段；“公司处理记录”只显示真实事件或空状态。
 - Final QA conclusion: passed。P0 为 0，Qwen Vision advisor 已进入 canonical runtime，上一轮全部 P1 已关闭；只保留不影响闭环的极端密度 P2。
+
+## Successor Task 5 — Compact Workbench Workflow Header — 2026-07-24
+
+### Scope And Visual Grounding
+
+本轮只重做 ready workbench 顶部结构与视觉层级：文字品牌、五阶段流程和“处理另一份图纸”入口合并为单一轻量横向头部；原审核动作保留在项目摘要后的轻量操作区。没有修改步骤语义、snapshot 状态推进、保存/冻结/生成/确认事件或后端接口。
+
+- source reference: `/tmp/codex-clipboard-PBmihd.png`
+- source pixels: `1292x846`
+- source SHA-256: `8b14544c48ad2e04ba007172c4bef5077c77279290ff0c5c3676b42f582b4d90`
+- implementation route: `/?project_id=2d438ac8-7f3c-4661-9cab-a2bd2dba1c51&operator_id=reggi`
+- browser: Google Chrome
+- primary real-project viewport: `1900x953 / device scale 1`
+- step-3 focused viewport: `1812x922 / device scale 1`
+- responsive viewport: `800x826 / device scale 1`
+- normalized comparison: `/tmp/qi-header-comparison-final.png`
+- comparison pixels / SHA-256: `1832x945` / `1ec9b0b0bab7859a0b3b5c51c76d4d248e6630bf8d035d68711f0b50c9257f75`
+
+comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` 宽；两者均处于第 3 步“人工审核”状态。step-3 implementation 截图来自只用于 header 状态核验的兼容直达页，页头以下的项目错误不参与比较；真实 persisted project 则用于完整 workbench、状态推进和按钮交互核验。
+
+### Findings And Iteration
+
+- Initial P1: 已完成节点沿用旧绿色，仍带有当前后台样式痕迹。Fix: 完成节点和已完成连接线统一改为参考方向的工程蓝；连接线保持 `1px`，当前节点用轻量外环区分。
+- Initial P1: compatibility query route 由 `main.tsx` 直接渲染 `ProjectWorkbenchApp`，新按钮首次真实点击时没有 reset callback。Fix: 该入口显式传入返回 `/` 的 callback；Chrome 再次点击后成功进入 PDF 上传页。
+- Initial P2: ready 页面重复显示全局品牌标题、阶段卡片和 workbench 标题。Fix: 删除 ready 页旧 `.stage-rail` 与 `.workbench-header`，只保留单一 `WorkbenchWorkflowHeader`；审核操作迁到项目摘要后。
+- Post-fix comparison: 未发现新的 P0、P1 或 P2。
+
+### Fidelity And Layout
+
+- Branding: 只保留“智检通 / 工程图纸智能检验”纯文字，header 内 `img, svg` count 为 `0`；没有参考图 Logo 或替代图形。
+- Structure: desktop 使用 `brand | workflow | action` 单行 grid；实测 header 高 `76px`，没有旧式大卡片、圆角外框或粗分割线。
+- Steps: 五个节点均保留标题与副文案；完成、当前、待开始分别使用实心蓝、蓝色外环、浅灰；状态仍由最新 workbench snapshot 推进。
+- Hierarchy: 主标题 `21px`，副标题 `12px`；阶段标题 `12px`、说明 `10px`；右侧按钮高 `36px`，视觉权重低于流程。
+- Responsive: `800px` 宽时品牌与按钮分列、流程占第二行；header 高 `137.1875px`，页面级横向溢出为 false，五段标题与副文案完整可读。
+- Adjacent actions: 保存、冻结、生成和确认按钮顺序及 disabled 条件保持不变，只从重复标题栏移至项目摘要后的 `审核流程操作` region。
+
+### Browser And Interaction Evidence
+
+- real-project screenshot: `/tmp/qi-workflow-header-final.png`，`1900x953`，SHA-256 `5b51cb44a3efb01669adfae5073573b47ebd2f7874c3291ef976fda5f45139f8`
+- step-3 screenshot: `/tmp/qi-workflow-step3-desktop-final.png`，`1812x922`，SHA-256 `0b8c9534fd419c51e87162b254e6755060c19e27b7f55928b7f51ccee87edb9b`
+- responsive screenshot: `/tmp/qi-workflow-header-800x826-final.png`，`800x826`，SHA-256 `2fee1e6eacc67e5c53f8444e885ead1c02c8d89bc7f39e06892692b4a9249be4`
+- real reviewed project: 当前阶段为“文件导出”，证明 reviewed result / successful export 仍驱动第 5 步。
+- editing projection tests: 当前阶段为“人工审核”，冻结或气泡存在时进入第 4 步；未用外层固定值替代 snapshot Owner。
+- Chrome actual click: “处理另一份图纸”从 compatibility query route 成功导航到 `/`，PDF 上传入口出现；随后恢复 persisted project preview。
+- accessibility: banner 为“工程图纸检验流程”，navigation 为“检验处理阶段”，当前项带 `aria-current=step`；审核动作保留独立中文 region。
+- legacy duplicate count: `.workbench-header,.stage-rail` 为 `0`。
+- page horizontal overflow: none。
+- console errors / warnings after final real-project navigation: `0 / 0`。
+
+### Verification
+
+- focused component tests: 3 files，35 tests passed。
+- full frontend tests: 17 files，102 tests passed。
+- production build: passed；仅保留既有 Vite large-chunk warning。
+- Chrome smoke: desktop visual, responsive visual, snapshot-driven stage progression, reset navigation and console checks passed。
+- screenshots and comparison artifacts remain under `/tmp` and are not committed。
+
+### Result
+
+- Remaining P0: 0.
+- Remaining P1: 0.
+- Remaining P2: 0.
+- final result: passed

@@ -112,7 +112,7 @@ test("P0-UI-008 Save does not freeze and project identity drives real APIs", asy
     />,
   );
 
-  expect(await screen.findByText("检验项目审核")).not.toBeNull();
+  expect(await screen.findByRole("region", { name: "项目摘要" })).not.toBeNull();
   expect(loadPdf).toHaveBeenCalledWith(
     "/api/v1/projects/project-real/source-pdf",
   );
@@ -122,7 +122,7 @@ test("P0-UI-008 Save does not freeze and project identity drives real APIs", asy
   fireEvent.click(screen.getByRole("button", { name: "保存审核修改" }));
 
   await waitFor(() => {
-    expect(screen.getByText("已保存")).not.toBeNull();
+    expect(screen.getByText("审核修改已提交")).not.toBeNull();
   });
   const save = calls.find((call) => call.path.endsWith("/review/commands"));
   expect(save).toBeDefined();
