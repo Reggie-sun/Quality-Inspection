@@ -211,9 +211,8 @@
 .workbench-layout {
   display: grid;
   grid-template-columns:
-    minmax(0, 46fr)
-    minmax(360px, 32fr)
-    minmax(260px, 22fr);
+    minmax(0, 2fr)
+    minmax(400px, 1fr);
   gap: 10px;
   align-items: start;
   margin-top: 10px;
@@ -244,6 +243,7 @@
 }
 
 .pdf-workspace {
+  position: relative;
   padding: 10px;
   overflow: hidden;
   background: #ffffff;
@@ -281,6 +281,20 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.pdf-auxiliary-panel {
+  position: absolute;
+  z-index: 12;
+  top: 50px;
+  right: 10px;
+  width: min(380px, calc(100% - 20px));
+}
+
+.pdf-auxiliary-panel .workbench-aside {
+  min-height: 0;
+  max-height: calc(100vh - 140px);
+  box-shadow: 0 12px 32px rgb(15 23 42 / 18%);
 }
 
 .pdf-content {
@@ -894,13 +908,6 @@
     grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr);
   }
 
-  .workbench-aside {
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    min-height: auto;
-    max-height: none;
-  }
-
   .project-summary dl {
     grid-template-columns: repeat(4, minmax(100px, 1fr));
     row-gap: 10px;
@@ -921,17 +928,11 @@
   }
 
   .project-summary dl,
-  .workbench-layout,
-  .workbench-aside {
+  .workbench-layout {
     grid-template-columns: 1fr;
   }
 
-  .workbench-aside {
-    grid-column: auto;
-  }
-
-  .inspection-pane,
-  .workbench-aside {
+  .inspection-pane {
     max-height: none;
   }
 }

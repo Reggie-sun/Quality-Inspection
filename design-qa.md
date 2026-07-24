@@ -352,3 +352,52 @@ changed files:
 - confirmed: 无 Logo、无可见内部 ID、无静态假数据/假日志/假进度；PDF 保持最大工作区；中文和可访问性修改成立；保存、冻结、气泡、确认、导出顺序未改变；未新增依赖、路由或业务 Owner。
 - evidence correction: `07-items-frozen.png` 已重抓为真实 stage 4 冻结未确认态，与 stage 5 的 `09-export-success.png` 独立。
 - non-blocking findings: 真实缩略图/fit-to-container、`retryable=false` 的少数错误文案边缘、极高密度气泡拥挤。
+
+## Toolbar Workspace Layout Correction — 2026-07-24
+
+### Grounding And Normalization
+
+本轮以用户当前会话提供的两张视觉目标为准：一张定义“两栏大图 + 右侧检验区”的主工作台比例，另一张定义 `SIP基本信息 / 正式文件 / 公司处理记录` 的内容和顺序。实现继续使用真实项目 `2d438ac8-7f3c-4661-9cab-a2bd2dba1c51`，没有 mock 业务数据或修改正式结果。
+
+- source visual truth: `.local/source-large-workbench.png`，`1832x966`，SHA-256 `4abd42e23614c7ba3f60b9b653de87d97837d2e1f0a3d9ac8f59942570d6cf29`
+- source panel truth: `.local/source-sip-panel.png`，`409x622`，SHA-256 `a18b90f9501b7fc01902557234f6b70fe93ae02b287b8917df5a778a999707db`
+- implementation route: `/?project_id=2d438ac8-7f3c-4661-9cab-a2bd2dba1c51&operator_id=reggi`
+- browser: Google Chrome
+- CSS viewport / device scale factor: `1832x966 / 1`
+- default capture: `.local/toolbar-workspace-default.png`，`1832x966`，SHA-256 `7e37f7b01c638c80b875660d69d1cdd8c74284bea06e1568fb002ca664c627cd`
+- open capture: `.local/toolbar-workspace-open.png`，`1832x966`，SHA-256 `945624a689d434635a123b667ac0842e9a02446caf7cf98482e7adabbe976feb`
+- combined comparison: `.local/design-qa-comparison.png`，SHA-256 `7eec79d2acc3a7ca4d51eda5fb02bca9c7bf88424ec10d0cc14a79ac928fa579`
+- normalization: 主工作台 source 与 implementation 均为 `1832x966`；source 包含浏览器 chrome，判断时只比较 app-owned content。面板 source 保持原始比例，与 implementation 的 `380px` 右上浮层做 focused comparison。
+
+### Findings And Iteration
+
+- Earlier P1: 常驻 `46 / 32 / 22` 三栏让 PDF 工作区明显窄于参考大图。Fix: 删除常驻第三栏路径，主工作台改为 `2 / 1` 两栏；Chrome 实测为 `1142.66px / 571.33px`，PDF 继续是最大区域。
+- Earlier P1: SIP、正式文件和公司记录默认常驻，占用首屏。Fix: 在 PDF 控件行增加中文“展开 SIP 与导出信息”，默认 `aria-expanded=false`；点击后显示同顺序右上浮层，按钮变为“收起 SIP 与导出信息”。
+- Earlier P2: 面板若直接放进横向滚动控件容器会被裁切。Fix: 控件负责切换，浮层作为 PDF workspace 的直接子节点定位；展开和收起均无页面级横向溢出。
+- Review P1: 收起时卸载 `ExportPanel` 会丢失本轮导出结果或进行中状态。Fix: 面板始终挂载，仅用 `hidden` 控制可见性；新增成功态和进行中态的收起再展开回归。
+- Post-fix comparison: 未发现新的 P0、P1 或 P2。
+
+### Required Fidelity Surfaces
+
+- Fonts and typography: 沿用现有中文系统字体、字号、粗细和层级；按钮、标题、表格和小字无新增截断。业务字段值来自后端，未把英文数据值误改为界面文案。
+- Spacing and layout rhythm: 两栏比例、10px 主间距、380px 浮层宽度和右上锚点与参考密度一致；默认态释放第三栏后，图纸面积与参考 smoke 同级。
+- Colors and visual tokens: 继续使用既有白色、浅灰、工程蓝、细边框和低阴影；没有引入渐变、紫色主视觉或新 token。
+- Image quality and asset fidelity: PDF 仍由真实 PDF.js canvas 与真实 overlay 渲染；缩略图、气泡和来源标注未替换为占位图，也没有新增 raster/icon 资产。
+- Copy and content: 新增控件及可访问名称均为中文；三个面板的标题、说明、下载动作和空状态保持中文，真实 SIP/检验值不被伪造。
+
+### Browser And Interaction Evidence
+
+- 默认加载：两栏大图可见，辅助面板不存在于可访问树，toggle 为“展开 SIP 与导出信息”且 `aria-expanded=false`。
+- 点击展开：同一按钮变为“收起 SIP 与导出信息”，可访问树出现 `SIP基本信息`、`正式文件导出`、`公司处理记录`，三个真实下载仍可访问。
+- 点击收起：面板保留同一 DOM 节点但以 `hidden` 从可访问树隐藏，toggle 恢复默认状态；再次展开仍保留三个下载与组件状态。
+- 原“展开工作区”继续可用；点击后 `data-expanded=true` 且按钮变为“收起工作区”。
+- 页面级横向溢出：none。
+- console errors / warnings: 0 / 0。
+- focused region comparison: 使用 combined comparison 的下半行检查面板标题、字段网格、导出卡片、三下载与公司记录；无需额外裁图即可清晰读取。
+
+### Result
+
+- Remaining P0: 0.
+- Remaining P1: 0.
+- Remaining P2: 0.
+- final result: passed

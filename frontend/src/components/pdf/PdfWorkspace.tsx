@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { GlobalWorkerOptions } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -39,6 +39,7 @@ type PdfWorkspaceProps = {
     centerPdf: [number, number],
   ) => void;
   onPageChange?: (pageIndex: number) => void;
+  auxiliaryPanel?: ReactNode;
 };
 
 
@@ -58,6 +59,7 @@ export function PdfWorkspace({
   onSelectBalloon,
   onMoveBalloon,
   onPageChange,
+  auxiliaryPanel,
 }: PdfWorkspaceProps) {
   const workspaceRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -66,6 +68,7 @@ export function PdfWorkspace({
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [expanded, setExpanded] = useState(false);
+  const [auxiliaryOpen, setAuxiliaryOpen] = useState(false);
   const [localSelectedItemId, setLocalSelectedItemId] = useState<string>();
   const [renderError, setRenderError] = useState<string>();
   const [pageSize, setPageSize] = useState({
@@ -253,6 +256,18 @@ export function PdfWorkspace({
         >
           {zhCN.pdf.fit}
         </button>
+        {auxiliaryPanel === undefined ? null : (
+          <button
+            type="button"
+            aria-controls="pdf-auxiliary-panel"
+            aria-expanded={auxiliaryOpen}
+            onClick={() => setAuxiliaryOpen((current) => !current)}
+          >
+            {auxiliaryOpen
+              ? zhCN.pdf.collapseAuxiliary
+              : zhCN.pdf.expandAuxiliary}
+          </button>
+        )}
         <button
           type="button"
           aria-label={expanded ? zhCN.pdf.collapse : zhCN.pdf.expand}
@@ -261,6 +276,15 @@ export function PdfWorkspace({
           {expanded ? zhCN.pdf.collapse : zhCN.pdf.expand}
         </button>
       </div>
+      {auxiliaryPanel === undefined ? null : (
+        <div
+          id="pdf-auxiliary-panel"
+          className="pdf-auxiliary-panel"
+          hidden={!auxiliaryOpen}
+        >
+          {auxiliaryPanel}
+        </div>
+      )}
       {renderError === undefined ? null : <p role="alert">{renderError}</p>}
       <div className="pdf-content">
         <nav className="pdf-thumbnails" aria-label={zhCN.pdf.pages}>

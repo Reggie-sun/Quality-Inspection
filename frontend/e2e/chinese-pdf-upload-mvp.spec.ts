@@ -144,6 +144,10 @@ async function processActiveItems(page: Page, activeCount: number): Promise<void
 
 
 async function populateSipMetadata(page: Page): Promise<void> {
+  const openButton = page.getByRole("button", {
+    name: "展开 SIP 与导出信息",
+  });
+  if (await openButton.count() > 0) await openButton.click();
   const metadata = page.getByRole("region", { name: "SIP基本信息" });
   await metadata.locator("summary").filter({ hasText: "编辑 SIP 信息" }).click();
   const fields = [
@@ -494,6 +498,10 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   await expect(page.getByRole("button", { name: "确认审核结果" })).toBeEnabled();
   await clickAndRefresh(page, "确认审核结果", "/review/confirm");
 
+  const openButton = page.getByRole("button", {
+    name: "展开 SIP 与导出信息",
+  });
+  if (await openButton.count() > 0) await openButton.click();
   const exportResponse = page.waitForResponse(
     (response) => (
       response.request().method() === "POST"

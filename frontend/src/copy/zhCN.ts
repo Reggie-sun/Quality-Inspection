@@ -304,6 +304,8 @@ export const zhCN = {
     panUp: "向上平移",
     panDown: "向下平移",
     fit: "适合页面",
+    expandAuxiliary: "展开 SIP 与导出信息",
+    collapseAuxiliary: "收起 SIP 与导出信息",
     expand: "展开工作区",
     collapse: "收起工作区",
     renderFailed: "PDF 页面渲染失败，请切换页面后重试。",

@@ -8,10 +8,17 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import type { PostJson } from "../../api/types";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 
 
 afterEach(cleanup);
+
+function openAuxiliaryPanel(): void {
+  fireEvent.click(screen.getByRole("button", {
+    name: "展开 SIP 与导出信息",
+  }));
+}
 
 describe("InspectionWorkbench", () => {
   test("本地草稿立即显示未保存，取消后恢复真实保存状态", () => {
@@ -136,7 +143,7 @@ describe("InspectionWorkbench", () => {
     await waitFor(() => expect(screen.getByText("已保存")).not.toBeNull());
   });
 
-  test("展示五阶段、真实项目摘要、三栏区域和空的公司处理记录", () => {
+  test("展示五阶段、真实项目摘要、两栏区域和默认收起的工作区", () => {
     render(
       <InspectionWorkbench
         pdfDocument={null}
@@ -197,6 +204,16 @@ describe("InspectionWorkbench", () => {
     }
     expect(screen.getByRole("region", { name: "工程图纸" })).not.toBeNull();
     expect(screen.getByRole("region", { name: "检验项审核" })).not.toBeNull();
+    expect(screen.queryByRole("complementary", { name: "SIP 与导出信息" }))
+      .toBeNull();
+    const workspaceButton = screen.getByRole("button", {
+      name: "展开 SIP 与导出信息",
+    });
+    expect(workspaceButton.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(workspaceButton);
+
+    expect(workspaceButton.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("complementary", { name: "SIP 与导出信息" }))
       .not.toBeNull();
     expect(screen.getByText("公司处理记录")).not.toBeNull();
@@ -334,6 +351,8 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
+    openAuxiliaryPanel();
+
     const aside = screen.getByRole("complementary", {
       name: "SIP 与导出信息",
     });
@@ -357,6 +376,94 @@ describe("InspectionWorkbench", () => {
     expect(summary?.textContent).toContain("图号JS26032501");
     const editor = sipRegion.querySelector("details");
     expect(editor?.hasAttribute("open")).toBe(false);
+  });
+
+  test("生成正式文件后收起再展开仍保留三份下载", async () => {
+    const exportPost = vi.fn().mockResolvedValue({
+      id: "export-success",
+      project_id: "project-1",
+      reviewed_result_id: "reviewed-1",
+      status: "success",
+      artifacts: [
+        { kind: "ballooned_pdf", downloadable: true },
+        { kind: "sip_excel", downloadable: true },
+        { kind: "manifest", downloadable: true },
+      ],
+    });
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        projectId="project-1"
+        reviewedResultId="reviewed-1"
+        exportPost={exportPost as unknown as PostJson}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    openAuxiliaryPanel();
+    fireEvent.click(screen.getByRole("button", { name: "生成正式文件" }));
+    await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(3));
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "收起 SIP 与导出信息",
+    }));
+    fireEvent.click(screen.getByRole("button", {
+      name: "展开 SIP 与导出信息",
+    }));
+
+    expect(screen.getAllByRole("link")).toHaveLength(3);
+    expect(exportPost).toHaveBeenCalledOnce();
+  });
+
+  test("正式文件生成中收起再展开仍保持禁用且不会重复提交", async () => {
+    let resolveExport!: (value: unknown) => void;
+    const exportPost = vi.fn(() => new Promise((resolve) => {
+      resolveExport = resolve;
+    }));
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        projectId="project-1"
+        reviewedResultId="reviewed-1"
+        exportPost={exportPost as unknown as PostJson}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    openAuxiliaryPanel();
+    fireEvent.click(screen.getByRole("button", { name: "生成正式文件" }));
+    fireEvent.click(screen.getByRole("button", {
+      name: "收起 SIP 与导出信息",
+    }));
+    fireEvent.click(screen.getByRole("button", {
+      name: "展开 SIP 与导出信息",
+    }));
+
+    const exportButton = screen.getByRole("button", { name: "生成正式文件" });
+    expect(exportButton.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(exportButton);
+    expect(exportPost).toHaveBeenCalledOnce();
+
+    resolveExport({
+      id: "export-success",
+      project_id: "project-1",
+      reviewed_result_id: "reviewed-1",
+      status: "success",
+      artifacts: [
+        { kind: "ballooned_pdf", downloadable: true },
+        { kind: "sip_excel", downloadable: true },
+        { kind: "manifest", downloadable: true },
+      ],
+    });
+    await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(3));
   });
 
   test("摘要分离已审核与已确认，并以真实 SIP 字段提交既有 metadata command", async () => {
@@ -427,6 +534,8 @@ describe("InspectionWorkbench", () => {
     expect(summary.getByText("已确认").nextElementSibling?.textContent).toBe("1");
     expect(summary.getByText("保存状态").nextElementSibling?.textContent)
       .toBe("已保存");
+
+    openAuxiliaryPanel();
 
     const sipRegion = screen.getByRole("region", { name: "SIP基本信息" });
     const sipSummary = sipRegion.querySelector("dl");

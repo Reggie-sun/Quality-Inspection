@@ -237,6 +237,94 @@ export function InspectionWorkbench({
     ],
     [zhCN.workbench.metadataFields.reviewerRole, undefined],
   ];
+  const auxiliaryPanel = (
+    <aside
+      className="workbench-aside"
+      aria-label={zhCN.workbench.asideRegion}
+    >
+      {workingCopy === undefined ? null : (
+        <section
+          className="sip-metadata-card"
+          aria-label={zhCN.workbench.metadata}
+          role="region"
+        >
+          <h2>{zhCN.workbench.metadata}</h2>
+          <dl className="sip-metadata-summary">
+            {metadataValues.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd title={value}>{value || zhCN.workbench.unknown}</dd>
+              </div>
+            ))}
+          </dl>
+          <details className="sip-metadata-editor">
+            <summary>{zhCN.workbench.editMetadata}</summary>
+            <fieldset
+              disabled={busy || reviewImmutable || pendingCommand !== undefined}
+            >
+              <legend className="visually-hidden">
+                {zhCN.workbench.editMetadata}
+              </legend>
+              {(
+                [
+                  ["material_code", zhCN.workbench.metadataFields.materialCode],
+                  ["material_name", zhCN.workbench.metadataFields.materialName],
+                  ["drawing_number", zhCN.workbench.metadataFields.drawingNumber],
+                  ["revision", zhCN.workbench.metadataFields.revision],
+                  ["material", zhCN.workbench.metadataFields.material],
+                ] as const
+              ).map(([key, label]) => (
+                <label key={key}>
+                  {label}
+                  <input
+                    aria-label={label}
+                    value={metadata[key]}
+                    placeholder={zhCN.workbench.unknown}
+                    onChange={(event) => {
+                      setMetadata({ ...metadata, [key]: event.target.value });
+                      setMetadataDraftDirty(true);
+                    }}
+                  />
+                </label>
+              ))}
+              <div className="sip-metadata-actions">
+                <button
+                  type="button"
+                  disabled={Object.values(metadata).some(
+                    (value) => value.trim() === "",
+                  )}
+                  onClick={() => {
+                    setMetadataDraftDirty(false);
+                    queueCommand({
+                      type: "set_sip_metadata",
+                      ...metadata,
+                    });
+                  }}
+                >
+                  {zhCN.workbench.confirmMetadata}
+                </button>
+                <button
+                  type="button"
+                  disabled={!metadataDraftDirty}
+                  onClick={() => {
+                    setMetadata(metadataDraft(workingCopy));
+                    setMetadataDraftDirty(false);
+                  }}
+                >
+                  {zhCN.workbench.cancelMetadata}
+                </button>
+              </div>
+            </fieldset>
+          </details>
+        </section>
+      )}
+      {exportPanel}
+      <section className="company-log" aria-label={zhCN.workbench.companyLog}>
+        <h2>{zhCN.workbench.companyLog}</h2>
+        <p>{zhCN.workbench.emptyCompanyLog}</p>
+      </section>
+    </aside>
+  );
 
   return (
     <main className="workbench-shell">
@@ -369,6 +457,7 @@ export function InspectionWorkbench({
             }}
             onMoveBalloon={finalized ? undefined : onMoveBalloon}
             onPageChange={setPageIndex}
+            auxiliaryPanel={auxiliaryPanel}
           />
         </section>
 
@@ -444,92 +533,6 @@ export function InspectionWorkbench({
           </details>
         </section>
 
-        <aside
-          className="workbench-aside"
-          aria-label={zhCN.workbench.asideRegion}
-        >
-          {workingCopy === undefined ? null : (
-            <section
-              className="sip-metadata-card"
-              aria-label={zhCN.workbench.metadata}
-              role="region"
-            >
-              <h2>{zhCN.workbench.metadata}</h2>
-              <dl className="sip-metadata-summary">
-                {metadataValues.map(([label, value]) => (
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd title={value}>{value || zhCN.workbench.unknown}</dd>
-                  </div>
-                ))}
-              </dl>
-              <details className="sip-metadata-editor">
-                <summary>{zhCN.workbench.editMetadata}</summary>
-                <fieldset
-                  disabled={busy || reviewImmutable || pendingCommand !== undefined}
-                >
-                  <legend className="visually-hidden">
-                    {zhCN.workbench.editMetadata}
-                  </legend>
-                  {(
-                    [
-                      ["material_code", zhCN.workbench.metadataFields.materialCode],
-                      ["material_name", zhCN.workbench.metadataFields.materialName],
-                      ["drawing_number", zhCN.workbench.metadataFields.drawingNumber],
-                      ["revision", zhCN.workbench.metadataFields.revision],
-                      ["material", zhCN.workbench.metadataFields.material],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <label key={key}>
-                      {label}
-                      <input
-                        aria-label={label}
-                        value={metadata[key]}
-                        placeholder={zhCN.workbench.unknown}
-                        onChange={(event) => {
-                          setMetadata({ ...metadata, [key]: event.target.value });
-                          setMetadataDraftDirty(true);
-                        }}
-                      />
-                    </label>
-                  ))}
-                  <div className="sip-metadata-actions">
-                    <button
-                      type="button"
-                      disabled={Object.values(metadata).some(
-                        (value) => value.trim() === "",
-                      )}
-                      onClick={() => {
-                        setMetadataDraftDirty(false);
-                        queueCommand({
-                          type: "set_sip_metadata",
-                          ...metadata,
-                        });
-                      }}
-                    >
-                      {zhCN.workbench.confirmMetadata}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!metadataDraftDirty}
-                      onClick={() => {
-                        setMetadata(metadataDraft(workingCopy));
-                        setMetadataDraftDirty(false);
-                      }}
-                    >
-                      {zhCN.workbench.cancelMetadata}
-                    </button>
-                  </div>
-                </fieldset>
-              </details>
-            </section>
-          )}
-          {exportPanel}
-          <section className="company-log" aria-label={zhCN.workbench.companyLog}>
-            <h2>{zhCN.workbench.companyLog}</h2>
-            <p>{zhCN.workbench.emptyCompanyLog}</p>
-          </section>
-        </aside>
       </div>
     </main>
   );

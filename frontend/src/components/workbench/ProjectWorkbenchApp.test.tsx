@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { ProjectWorkbenchResponse } from "../../api/types";
@@ -158,9 +158,10 @@ test("刷新后从只读 projection 恢复 reviewed result 和三项下载", asy
     />,
   );
 
-  await waitFor(() => {
-    expect(screen.getAllByRole("link")).toHaveLength(3);
-  });
+  fireEvent.click(await screen.findByRole("button", {
+    name: "展开 SIP 与导出信息",
+  }));
+  await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(3));
   expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([
     "下载带气泡 PDF",
     "下载 SIP Excel",
