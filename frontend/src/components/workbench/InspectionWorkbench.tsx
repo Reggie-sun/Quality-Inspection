@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   BalloonOverlay,
@@ -116,9 +116,9 @@ export function InspectionWorkbench({
   exportPost,
   actionState,
 }: InspectionWorkbenchProps) {
-  const [pendingCommand, setPendingCommand] = useState<ReviewCommand>();
   const [saveState, setSaveState] = useState<string>(zhCN.workbench.saved);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(
     () => items.find((item) => item.active)?.item_id,
   );
@@ -178,7 +178,7 @@ export function InspectionWorkbench({
     ? zhCN.workbench.saving
     : saveState === zhCN.workbench.saveFailed
       ? zhCN.workbench.saveFailed
-      : pendingCommand !== undefined || localDraftDirty
+      : localDraftDirty
         ? zhCN.workbench.pending
         : zhCN.workbench.saved;
   const visibleSaveState = saveState === zhCN.workbench.saveFailed
@@ -186,6 +186,23 @@ export function InspectionWorkbench({
     : actionState ?? displayedSaveState;
   const reviewImmutable =
     finalized || (workingCopy !== undefined && workingCopy.items_frozen_at !== null);
+  const submitCommand = async (command: ReviewCommand): Promise<boolean> => {
+    if (savingRef.current || busy || reviewImmutable) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveState(zhCN.workbench.saving);
+    try {
+      await onSave(command);
+      setSaveState(zhCN.workbench.saved);
+      return true;
+    } catch {
+      setSaveState(zhCN.workbench.saveFailed);
+      return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
   const reviewedCount = items.filter(
     (item) => item.active && item.status === "kept",
   ).length;
@@ -216,24 +233,6 @@ export function InspectionWorkbench({
     setSelectedBalloonId(undefined);
     const source = sources.find((candidate) => candidate.id === sourceId);
     setPageIndex(source?.pageIndex ?? pageIndex);
-  };
-  const queueCommand = (command: ReviewCommand) => {
-    setPendingCommand(command);
-    setSaveState(zhCN.workbench.pending);
-  };
-  const save = async () => {
-    if (pendingCommand === undefined || saving) return;
-    setSaving(true);
-    setSaveState(zhCN.workbench.saving);
-    try {
-      await onSave(pendingCommand);
-      setPendingCommand(undefined);
-      setSaveState(zhCN.workbench.saved);
-    } catch {
-      setSaveState(zhCN.workbench.saveFailed);
-    } finally {
-      setSaving(false);
-    }
   };
   const exportPanel = projectId === undefined || exportPost === undefined
     ? null
@@ -285,7 +284,7 @@ export function InspectionWorkbench({
           <details className="sip-metadata-editor">
             <summary>{zhCN.workbench.editMetadata}</summary>
             <fieldset
-              disabled={busy || reviewImmutable || pendingCommand !== undefined}
+              disabled={saving || busy || reviewImmutable}
             >
               <legend className="visually-hidden">
                 {zhCN.workbench.editMetadata}
@@ -319,11 +318,13 @@ export function InspectionWorkbench({
                     (value) => value.trim() === "",
                   )}
                   onClick={() => {
-                    setMetadataDraftDirty(false);
-                    queueCommand({
-                      type: "set_sip_metadata",
-                      ...metadata,
-                    });
+                    void (async () => {
+                      const saved = await submitCommand({
+                        type: "set_sip_metadata",
+                        ...metadata,
+                      });
+                      if (saved) setMetadataDraftDirty(false);
+                    })();
                   }}
                 >
                   {zhCN.workbench.confirmMetadata}
@@ -400,34 +401,24 @@ export function InspectionWorkbench({
         </dl>
       </section>
 
-      <section className="review-actions" aria-label="审核流程操作">
-        <button
-          type="button"
-          className="primary-action"
-          disabled={pendingCommand === undefined || saving || busy}
-          onClick={() => void save()}
-        >
-          {zhCN.workbench.save}
-        </button>
-        {workingCopy === undefined
-          || onFreeze === undefined
-          || onGenerate === undefined
-          || onConfirm === undefined
-          ? null
-          : (
+      {workingCopy === undefined
+        || onFreeze === undefined
+        || onGenerate === undefined
+        || onConfirm === undefined
+        ? null
+        : (
+          <section className="review-actions" aria-label="审核流程操作">
             <FreezeReviewButton
               workingCopy={workingCopy}
               balloons={balloons}
               balloonBlockers={balloonBlockers}
-              busy={
-                busy || finalized || pendingCommand !== undefined || localDraftDirty
-              }
+              busy={busy || saving || finalized || localDraftDirty}
               onFreeze={onFreeze}
               onGenerate={onGenerate}
               onConfirm={onConfirm}
             />
-          )}
-      </section>
+          </section>
+        )}
 
       <div className="workbench-layout">
         <section
@@ -486,10 +477,10 @@ export function InspectionWorkbench({
             filter={filter}
             selectedItemId={selectedItemId}
             selectedSourceId={selectedSourceId}
-            disabled={pendingCommand !== undefined || busy || reviewImmutable}
+            disabled={saving || busy || reviewImmutable}
             onSelectItem={selectItem}
             onSelectSource={selectSource}
-            onCommand={queueCommand}
+            onCommand={submitCommand}
             onDraftChange={setSipDraftDirty}
           />
           {onDeleteBalloon === undefined || onRebuildBalloon === undefined
@@ -510,11 +501,11 @@ export function InspectionWorkbench({
             <summary>{zhCN.workbench.reviewCommands}</summary>
             <ReviewPanel
               items={items}
-              disabled={pendingCommand !== undefined || busy || reviewImmutable}
+              disabled={saving || busy || reviewImmutable}
               selectedItemId={selectedItemId}
               onSelectItem={selectItem}
               pageIndex={pageIndex}
-              onCommand={queueCommand}
+              onCommand={submitCommand}
               onDraftChange={setReviewDraftDirty}
             />
           </details>

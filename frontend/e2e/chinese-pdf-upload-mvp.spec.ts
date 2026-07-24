@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import type { ProjectWorkbenchResponse } from "../src/api/types";
 
@@ -31,7 +31,10 @@ function sanitizeUrl(value: string): string {
 }
 
 
-async function saveQueuedReviewCommand(page: Page): Promise<void> {
+async function submitReviewAction(
+  page: Page,
+  action: Locator,
+): Promise<void> {
   const commandResponse = page.waitForResponse(
     (response) => (
       response.request().method() === "POST"
@@ -46,12 +49,10 @@ async function saveQueuedReviewCommand(page: Page): Promise<void> {
     ),
     { timeout: 60_000 },
   );
-  const saveButton = page.getByRole("button", { name: "保存审核修改" });
-  await expect(saveButton).toBeEnabled();
-  await saveButton.click();
+  await expect(action).toBeEnabled();
+  await action.click();
   expect((await commandResponse).ok(), "审核命令响应必须成功").toBe(true);
   expect((await refreshedWorkbench).ok(), "审核命令后的工作台刷新必须成功").toBe(true);
-  await expect(saveButton).toBeDisabled();
 }
 
 
@@ -69,9 +70,7 @@ async function resolveSourceOnlyCoverage(page: Page): Promise<number> {
     const ignore = page.getByRole("button", {
       name: "忽略，不作为检验项",
     });
-    await expect(ignore).toBeEnabled();
-    await ignore.click();
-    await saveQueuedReviewCommand(page);
+    await submitReviewAction(page, ignore);
     resolved += 1;
     expect(
       resolved,
@@ -105,8 +104,7 @@ async function processActiveItems(page: Page, activeCount: number): Promise<void
         name: /^确认候选项：/,
       });
       if (await acceptConfirmation.isEnabled()) {
-        await acceptConfirmation.click();
-        await saveQueuedReviewCommand(page);
+        await submitReviewAction(page, acceptConfirmation);
         await expect(acceptConfirmation).toBeDisabled();
       }
 
@@ -117,8 +115,7 @@ async function processActiveItems(page: Page, activeCount: number): Promise<void
         name: /^设为无需气泡：/,
       });
       if (await requireBalloon.isEnabled() && await noBalloon.isEnabled()) {
-        await requireBalloon.click();
-        await saveQueuedReviewCommand(page);
+        await submitReviewAction(page, requireBalloon);
         await expect(requireBalloon).toBeDisabled();
       }
 
@@ -142,8 +139,10 @@ async function processActiveItems(page: Page, activeCount: number): Promise<void
       await expect(sourcePage).toHaveCount(1);
       const currentPage = await sourcePage.inputValue();
       await sourcePage.fill(currentPage.trim() || "1");
-      await sipDetails.getByRole("button", { name: "确认所选 SIP 字段" }).click();
-      await saveQueuedReviewCommand(page);
+      await submitReviewAction(
+        page,
+        sipDetails.getByRole("button", { name: "确认所选 SIP 字段" }),
+      );
 
       processed += 1;
     }
@@ -172,8 +171,10 @@ async function populateSipMetadata(page: Page): Promise<void> {
   for (const [label, value] of fields) {
     await metadata.getByLabel(label, { exact: true }).fill(value);
   }
-  await metadata.getByRole("button", { name: "确认 SIP 信息" }).click();
-  await saveQueuedReviewCommand(page);
+  await submitReviewAction(
+    page,
+    metadata.getByRole("button", { name: "确认 SIP 信息" }),
+  );
 }
 
 
