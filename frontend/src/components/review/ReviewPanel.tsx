@@ -43,6 +43,7 @@ type CoreField = {
 type AcknowledgedItemDraft = {
   draftSignature: string;
   persistedSignature: string;
+  snapshotGeneration: number;
 };
 
 const QUANTITY_FIELD: CoreField = {
@@ -228,8 +229,14 @@ export function ReviewPanel({
   const [manualType, setManualType] = useState<CandidateType>("thread");
   const [manualBalloonRequired, setManualBalloonRequired] = useState(true);
   const activeItems = useMemo(() => items.filter((item) => item.active), [items]);
-  const latestItemsRef = useRef(items);
-  latestItemsRef.current = items;
+  const latestItemsSnapshotRef = useRef({ items, generation: 0 });
+  if (latestItemsSnapshotRef.current.items !== items) {
+    latestItemsSnapshotRef.current = {
+      items,
+      generation: latestItemsSnapshotRef.current.generation + 1,
+    };
+  }
+  const itemsSnapshotGeneration = latestItemsSnapshotRef.current.generation;
   const persistedSignaturesRef = useRef<Record<string, string>>(
     Object.fromEntries(items.map(
       (item) => [item.item_id, persistedItemSignature(item)],
@@ -330,7 +337,10 @@ export function ReviewPanel({
 
       if (
         acknowledgedDraft !== undefined
-        && persistedSignature !== acknowledgedDraft.persistedSignature
+        && (
+          persistedSignature !== acknowledgedDraft.persistedSignature
+          || itemsSnapshotGeneration > acknowledgedDraft.snapshotGeneration
+        )
         && draftSignature === acknowledgedDraft.draftSignature
         && editingItemId !== itemId
       ) {
@@ -363,6 +373,7 @@ export function ReviewPanel({
     confirmationFields,
     coreValues,
     editingItemId,
+    itemsSnapshotGeneration,
     rawTexts,
   ]);
 
@@ -384,6 +395,8 @@ export function ReviewPanel({
   const editItem = async (item: ReviewItem) => {
     const submittedSignature = itemDraftSignature(item);
     const preSubmitPersistedSignature = persistedItemSignature(item);
+    const preSubmitSnapshotGeneration =
+      latestItemsSnapshotRef.current.generation;
     const fields: Record<string, unknown> = {
       raw_text: rawTexts[item.item_id] ?? item.raw_text,
     };
@@ -411,7 +424,8 @@ export function ReviewPanel({
       fields,
     });
     if (outcome === false) return;
-    const latestItem = latestItemsRef.current.find(
+    const latestItemsSnapshot = latestItemsSnapshotRef.current;
+    const latestItem = latestItemsSnapshot.items.find(
       (candidate) => candidate.item_id === item.item_id,
     );
     const draftStillMatchesSubmission =
@@ -419,7 +433,10 @@ export function ReviewPanel({
     if (
       draftStillMatchesSubmission
       && latestItem !== undefined
-      && persistedItemSignature(latestItem) !== preSubmitPersistedSignature
+      && (
+        persistedItemSignature(latestItem) !== preSubmitPersistedSignature
+        || latestItemsSnapshot.generation > preSubmitSnapshotGeneration
+      )
     ) {
       syncItemDraftFromPersisted(latestItem);
       persistedSignaturesRef.current[item.item_id] =
@@ -436,6 +453,7 @@ export function ReviewPanel({
         [item.item_id]: {
           draftSignature: submittedSignature,
           persistedSignature: preSubmitPersistedSignature,
+          snapshotGeneration: preSubmitSnapshotGeneration,
         },
       }));
     }
