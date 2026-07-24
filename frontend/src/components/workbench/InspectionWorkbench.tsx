@@ -77,6 +77,8 @@ type MetadataDraft = {
   revision: string;
 };
 
+const NO_SELECTED_REVIEW_ITEM_ID = "__no_selected_review_item__";
+
 
 function metadataDraft(workingCopy?: ReviewWorkingCopy): MetadataDraft {
   return {
@@ -178,12 +180,12 @@ export function InspectionWorkbench({
   const finalized = projectState === "reviewed";
   const localDraftDirty =
     reviewDraftDirty || sipDraftDirty || metadataDraftDirty;
-  const displayedSaveState = selectionBlocked
-    ? zhCN.workbench.finishCurrentEdit
-    : saving
-      ? zhCN.workbench.saving
-      : saveState === zhCN.workbench.saveFailed
-        ? zhCN.workbench.saveFailed
+  const displayedSaveState = saving
+    ? zhCN.workbench.saving
+    : saveState === zhCN.workbench.saveFailed
+      ? zhCN.workbench.saveFailed
+      : selectionBlocked
+        ? zhCN.workbench.finishCurrentEdit
         : localDraftDirty
           ? zhCN.workbench.pending
           : zhCN.workbench.saved;
@@ -452,7 +454,7 @@ export function InspectionWorkbench({
             sources={sources}
             balloons={balloons}
             pageTransforms={pageTransforms}
-            selectedItemId={selectedItemId}
+            selectedItemId={selectedItemId ?? NO_SELECTED_REVIEW_ITEM_ID}
             selectedSourceId={selectedSourceId}
             selectedBalloonId={selectedBalloonId}
             onSelectItem={selectItem}

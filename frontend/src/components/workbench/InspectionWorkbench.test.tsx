@@ -110,6 +110,169 @@ describe("InspectionWorkbench", () => {
     ).getByRole("status").textContent).toBe("请先修改保存当前检验项");
   });
 
+  test("被阻止切换后保存失败优先显示失败并保留编辑草稿", async () => {
+    let rejectSave!: (reason?: unknown) => void;
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectSave = reject;
+        }),
+    );
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[
+          {
+            item_id: "item-10",
+            item_type: "linear_dimension",
+            raw_text: "10",
+            active: true,
+          },
+          {
+            item_id: "item-20",
+            item_type: "linear_dimension",
+            raw_text: "20",
+            active: true,
+          },
+        ]}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10",
+    }));
+    const rawText = screen.getByRole("textbox", {
+      name: "原始标注：10",
+    }) as HTMLInputElement;
+    fireEvent.change(rawText, { target: { value: "10.0" } });
+    fireEvent.click(screen.getByRole("row", { name: /20/ }));
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改保存检验项：10",
+    }));
+
+    const saveStatus = within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status");
+    fireEvent.click(screen.getByRole("row", { name: /20/ }));
+    rejectSave(new Error("save failed"));
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith({
+        type: "edit",
+        item_id: "item-10",
+        fields: {
+          raw_text: "10.0",
+        },
+      });
+      expect(saveStatus.textContent).toBe("保存失败");
+    });
+    expect(rawText.value).toBe("10.0");
+    expect(rawText.hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", {
+      name: "修改保存检验项：10",
+    }).hasAttribute("disabled")).toBe(false);
+  });
+
+  test("被拒绝的 PDF 候选项不会在后续选择来源时恢复选中", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const items = [
+      {
+        item_id: "item-10",
+        item_type: "linear_dimension" as const,
+        raw_text: "10",
+        active: true,
+      },
+      {
+        item_id: "item-20",
+        item_type: "linear_dimension" as const,
+        raw_text: "20",
+        active: true,
+      },
+    ];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[{
+          id: "candidate-20",
+          itemId: "item-20",
+          candidateNumber: 2,
+          pageIndex: 0,
+          bbox: [30, 40, 50, 60],
+          rawText: "20",
+        }]}
+        sources={[{
+          id: "pending-source",
+          pageIndex: 0,
+          bbox: [60, 70, 150, 84],
+          rawText: "来源待判定",
+        }]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "working-copy",
+          project_id: "project",
+          raw_result_id: "raw-result",
+          version: 1,
+          items,
+          coverage: {
+            blocking_count: 0,
+            review_required_count: 1,
+            entries: [{
+              observation_id: "pending-observation",
+              source_location_id: "pending-source",
+              candidate_id: null,
+              disposition: "ambiguous",
+              coordinates: [60, 70, 150, 84],
+              requires_confirmation: true,
+            }],
+          },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10",
+    }));
+    fireEvent.change(screen.getByRole("textbox", {
+      name: "原始标注：10",
+    }), { target: { value: "10.0" } });
+
+    const candidate = screen.getByTestId("candidate-number-candidate-20");
+    fireEvent.click(candidate);
+    expect(screen.getByRole("article", { name: "10" })).not.toBeNull();
+    expect(candidate.getAttribute("data-selected")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改保存检验项：10",
+    }));
+    const saveStatus = within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status");
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith({
+        type: "edit",
+        item_id: "item-10",
+        fields: {
+          raw_text: "10.0",
+        },
+      });
+      expect(saveStatus.textContent).toBe("已保存");
+    });
+
+    fireEvent.click(screen.getByRole("row", { name: /来源待判定/ }));
+    expect(screen.getByTestId("source-pending-source").getAttribute("data-selected"))
+      .toBe("true");
+    expect(candidate.getAttribute("data-selected")).toBe("false");
+  });
+
   test("未保存编辑阻止来源和 PDF 气泡选择，保存后清除提示并恢复切换", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const items = [
