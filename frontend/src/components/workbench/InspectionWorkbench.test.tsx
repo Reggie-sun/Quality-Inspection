@@ -64,6 +64,159 @@ describe("InspectionWorkbench", () => {
     }));
   });
 
+  test("未保存的 ReviewPanel 编辑阻止从列表切换检验项", () => {
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[
+          {
+            item_id: "item-10",
+            item_type: "linear_dimension",
+            raw_text: "10",
+            active: true,
+          },
+          {
+            item_id: "item-20",
+            item_type: "linear_dimension",
+            raw_text: "20",
+            active: true,
+          },
+        ]}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10",
+    }));
+    const rawText = screen.getByRole("textbox", {
+      name: "原始标注：10",
+    }) as HTMLInputElement;
+    fireEvent.change(rawText, { target: { value: "10.0" } });
+
+    fireEvent.click(screen.getByRole("row", { name: /20/ }));
+
+    const selectedSummary = screen.getByRole("region", {
+      name: "所选检验项",
+    });
+    expect(selectedSummary.textContent).toContain("10");
+    expect(selectedSummary.textContent).not.toContain("20");
+    expect(rawText.value).toBe("10.0");
+    expect(within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status").textContent).toBe("请先修改保存当前检验项");
+  });
+
+  test("未保存编辑阻止来源和 PDF 气泡选择，保存后清除提示并恢复切换", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const items = [
+      {
+        item_id: "item-10",
+        item_type: "linear_dimension" as const,
+        raw_text: "10",
+        active: true,
+      },
+      {
+        item_id: "item-20",
+        item_type: "linear_dimension" as const,
+        raw_text: "20",
+        active: true,
+      },
+    ];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[{
+          id: "pending-source",
+          pageIndex: 0,
+          bbox: [60, 70, 150, 84],
+          rawText: "来源待判定",
+        }]}
+        balloons={[{
+          id: "balloon-20",
+          itemId: "item-20",
+          pageIndex: 0,
+          center: [80, 90],
+          number: 2,
+          status: "active",
+        }]}
+        items={items}
+        workingCopy={{
+          id: "working-copy",
+          project_id: "project",
+          raw_result_id: "raw-result",
+          version: 1,
+          items,
+          coverage: {
+            blocking_count: 0,
+            review_required_count: 1,
+            entries: [{
+              observation_id: "pending-observation",
+              source_location_id: "pending-source",
+              candidate_id: null,
+              disposition: "ambiguous",
+              coordinates: [60, 70, 150, 84],
+              requires_confirmation: true,
+            }],
+          },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10",
+    }));
+    fireEvent.change(screen.getByRole("textbox", {
+      name: "原始标注：10",
+    }), { target: { value: "10.0" } });
+
+    const source = screen.getByRole("row", { name: /来源待判定/ });
+    const balloon = screen.getByTestId("balloon-balloon-20");
+    fireEvent.click(source);
+    fireEvent.click(balloon);
+
+    expect(screen.getByRole("article", { name: "10" })).not.toBeNull();
+    expect(screen.getByTestId("source-pending-source").getAttribute("data-selected"))
+      .toBe("false");
+    expect(balloon.getAttribute("data-selected")).toBe("false");
+    const saveStatus = within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status");
+    expect(saveStatus.textContent).toBe("请先修改保存当前检验项");
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改保存检验项：10",
+    }));
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith({
+        type: "edit",
+        item_id: "item-10",
+        fields: {
+          raw_text: "10.0",
+        },
+      });
+      expect(saveStatus.textContent).toBe("已保存");
+    });
+
+    fireEvent.click(source);
+    expect(screen.getByTestId("source-pending-source").getAttribute("data-selected"))
+      .toBe("true");
+    expect(screen.queryByRole("article", { name: "10" })).toBeNull();
+
+    fireEvent.click(balloon);
+    expect(screen.getByRole("article", { name: "20" })).not.toBeNull();
+    expect(balloon.getAttribute("data-selected")).toBe("true");
+  });
+
   test("外部操作反馈仅显示在项目摘要的保存状态中", () => {
     render(
       <InspectionWorkbench

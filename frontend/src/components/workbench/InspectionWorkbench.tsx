@@ -132,10 +132,14 @@ export function InspectionWorkbench({
   const [reviewDraftDirty, setReviewDraftDirty] = useState(false);
   const [sipDraftDirty, setSipDraftDirty] = useState(false);
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
+  const [selectionBlocked, setSelectionBlocked] = useState(false);
   useEffect(() => {
     setMetadata(metadataDraft(workingCopy));
     setMetadataDraftDirty(false);
   }, [workingCopy?.version]);
+  useEffect(() => {
+    if (!reviewDraftDirty) setSelectionBlocked(false);
+  }, [reviewDraftDirty]);
   const candidateNumbers = useMemo(() => {
     const lookup = new Map<string, number>();
     for (const candidate of candidates) {
@@ -174,14 +178,17 @@ export function InspectionWorkbench({
   const finalized = projectState === "reviewed";
   const localDraftDirty =
     reviewDraftDirty || sipDraftDirty || metadataDraftDirty;
-  const displayedSaveState = saving
-    ? zhCN.workbench.saving
-    : saveState === zhCN.workbench.saveFailed
-      ? zhCN.workbench.saveFailed
-      : localDraftDirty
-        ? zhCN.workbench.pending
-        : zhCN.workbench.saved;
-  const visibleSaveState = saveState === zhCN.workbench.saveFailed
+  const displayedSaveState = selectionBlocked
+    ? zhCN.workbench.finishCurrentEdit
+    : saving
+      ? zhCN.workbench.saving
+      : saveState === zhCN.workbench.saveFailed
+        ? zhCN.workbench.saveFailed
+        : localDraftDirty
+          ? zhCN.workbench.pending
+          : zhCN.workbench.saved;
+  const visibleSaveState =
+    selectionBlocked || saveState === zhCN.workbench.saveFailed
     ? displayedSaveState
     : actionState ?? displayedSaveState;
   const reviewImmutable =
@@ -216,7 +223,12 @@ export function InspectionWorkbench({
     (balloon) =>
       balloon.status !== "deleted" && balloon.itemId === selectedReviewItem?.item_id,
   );
-  const selectItem = (itemId: string) => {
+  const selectItem = (itemId: string): boolean => {
+    if (reviewDraftDirty && itemId !== selectedItemId) {
+      setSelectionBlocked(true);
+      return false;
+    }
+    setSelectionBlocked(false);
     setSelectedItemId(itemId);
     setSelectedSourceId(undefined);
     const item = items.find((candidate) => candidate.item_id === itemId);
@@ -226,13 +238,20 @@ export function InspectionWorkbench({
     );
     setSelectedBalloonId(balloon?.id);
     setPageIndex(item?.page_index ?? balloon?.pageIndex ?? pageIndex);
+    return true;
   };
-  const selectSource = (sourceId: string) => {
+  const selectSource = (sourceId: string): boolean => {
+    if (reviewDraftDirty && sourceId !== selectedSourceId) {
+      setSelectionBlocked(true);
+      return false;
+    }
+    setSelectionBlocked(false);
     setSelectedItemId(undefined);
     setSelectedSourceId(sourceId);
     setSelectedBalloonId(undefined);
     const source = sources.find((candidate) => candidate.id === sourceId);
     setPageIndex(source?.pageIndex ?? pageIndex);
+    return true;
   };
   const exportPanel = projectId === undefined || exportPost === undefined
     ? null
@@ -439,7 +458,7 @@ export function InspectionWorkbench({
             onSelectItem={selectItem}
             onSelectSource={selectSource}
             onSelectBalloon={(itemId, balloonId) => {
-              setSelectedItemId(itemId);
+              if (!selectItem(itemId)) return;
               setSelectedBalloonId(balloonId);
               const balloon = balloons.find((candidate) => candidate.id === balloonId);
               setPageIndex(balloon?.pageIndex ?? pageIndex);

@@ -21,7 +21,9 @@ type InspectionItemTableProps = {
   disabled?: boolean;
   onSelectItem: (itemId: string) => void;
   onSelectSource?: (sourceId: string) => void;
-  onCommand?: (command: ReviewCommand) => void;
+  onCommand?: (
+    command: ReviewCommand,
+  ) => boolean | void | Promise<boolean | void>;
   onDraftChange?: (dirty: boolean) => void;
 };
 
@@ -88,6 +90,15 @@ const STATUS_LABELS: Record<ItemStatus, string> = {
   collision: zhCN.inspection.statusCollision,
   source_pending: zhCN.inspection.sourcePending,
 };
+
+
+async function commandSucceeded(
+  onCommand: InspectionItemTableProps["onCommand"],
+  command: ReviewCommand,
+): Promise<boolean> {
+  if (onCommand === undefined) return false;
+  return (await onCommand(command)) !== false;
+}
 
 
 function typeLabel(item: ReviewItem): string {
@@ -676,12 +687,12 @@ export function InspectionItemTable({
                   className="source-review-actions__secondary"
                   type="button"
                   disabled={disabled}
-                  onClick={() => {
-                    clearSelectedSourceDirty();
-                    onCommand({
+                  onClick={async () => {
+                    const succeeded = await commandSucceeded(onCommand, {
                       type: "ignore_source",
                       observation_id: selectedSource.observationId,
                     });
+                    if (succeeded) clearSelectedSourceDirty();
                   }}
                 >
                   {zhCN.inspection.ignoreSource}
@@ -695,13 +706,12 @@ export function InspectionItemTable({
                     || selectedSource.pageIndex === undefined
                     || selectedSourceDraft.rawText.trim() === ""
                   }
-                  onClick={() => {
+                  onClick={async () => {
                     if (
                       selectedSourceDraft.itemType === ""
                       || selectedSource.pageIndex === undefined
                     ) return;
-                    clearSelectedSourceDirty();
-                    onCommand({
+                    const succeeded = await commandSucceeded(onCommand, {
                       type: "promote_source",
                       observation_id: selectedSource.observationId,
                       raw_text: selectedSourceDraft.rawText,
@@ -710,6 +720,7 @@ export function InspectionItemTable({
                       balloon_required: selectedSourceDraft.balloonRequired,
                       page_index: selectedSource.pageIndex,
                     });
+                    if (succeeded) clearSelectedSourceDirty();
                   }}
                 >
                   {zhCN.inspection.promoteSource}
@@ -782,9 +793,8 @@ export function InspectionItemTable({
                 draft.inspectionRole,
                 draft.sourcePage,
               ].some((value) => value.trim() === "")}
-              onClick={() => {
-                clearSelectedDraft();
-                onCommand({
+              onClick={async () => {
+                const succeeded = await commandSucceeded(onCommand, {
                   type: "set_sip_detail_fields",
                   item_id: selected.item_id,
                   inspection_item: draft.inspectionItem,
@@ -795,6 +805,7 @@ export function InspectionItemTable({
                   source_page: Number(draft.sourcePage),
                   remarks: draft.remarks,
                 });
+                if (succeeded) clearSelectedDraft();
               }}
             >
               {zhCN.inspection.confirmSip}

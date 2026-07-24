@@ -93,6 +93,7 @@ export const zhCN = {
     saving: "正在保存",
     saved: "已保存",
     saveFailed: "保存失败",
+    finishCurrentEdit: "请先修改保存当前检验项",
     localReview: "待审核",
     companyLog: "公司处理记录",
     emptyCompanyLog: "暂无处理记录",
