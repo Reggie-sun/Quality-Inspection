@@ -50,6 +50,8 @@ export function ProjectWorkbenchApp({
   const [snapshot, setSnapshot] = useState<ProjectWorkbenchResponse>();
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentLike | null>(null);
   const [busy, setBusy] = useState(false);
+  const [startupBlocked, setStartupBlocked] = useState(false);
+  const [lockBlocked, setLockBlocked] = useState(false);
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const [reviewedResultId, setReviewedResultId] = useState<string>();
@@ -81,6 +83,12 @@ export function ProjectWorkbenchApp({
 
     const renew = async () => {
       await acquireReviewLock(postJson, projectId, operatorId);
+      if (!cancelled) {
+        setLockBlocked(false);
+        setError((current) => (
+          current === zhCN.errors.lockRenewal ? undefined : current
+        ));
+      }
     };
     const start = async () => {
       try {
@@ -91,17 +99,20 @@ export function ProjectWorkbenchApp({
         setPdfDocument(document);
         renewal = window.setInterval(() => {
           void renew().catch(() => {
+            setLockBlocked(true);
             setError(zhCN.errors.lockRenewal);
           });
         }, LOCK_RENEWAL_MS);
       } catch (caught) {
         if (!cancelled) {
+          setStartupBlocked(true);
           setError(safeError(caught));
         }
       }
     };
     const onFocus = () => {
       void renew().catch(() => {
+        setLockBlocked(true);
         setError(zhCN.errors.lockRenewal);
       });
     };
@@ -150,7 +161,7 @@ export function ProjectWorkbenchApp({
     action: () => Promise<unknown>,
     completedStatus = zhCN.workbench.completed(nextStatus),
   ): Promise<boolean> => {
-    if (busy || snapshot === undefined) return false;
+    if (busy || startupBlocked || lockBlocked || snapshot === undefined) return false;
     setBusy(true);
     setError(undefined);
     setStatus(nextStatus);
@@ -249,7 +260,7 @@ export function ProjectWorkbenchApp({
         exportPost={postJson}
         operatorId={operatorId}
         actionState={status}
-        busy={busy || error !== undefined}
+        busy={busy || startupBlocked || lockBlocked}
         onSave={save}
         onFreeze={() => void run(
           zhCN.balloon.freeze,
