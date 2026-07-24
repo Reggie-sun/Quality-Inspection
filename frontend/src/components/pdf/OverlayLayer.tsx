@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import type {
   BalloonOverlay,
   OverlayBox,
@@ -110,6 +111,28 @@ function markerOverlapsBox(point: MarkerPoint, bbox: PdfCoordinates): boolean {
     < CANDIDATE_MARKER_RADIUS + CANDIDATE_MARKER_GAP;
 }
 
+function candidateLeaderTarget(
+  point: MarkerPoint,
+  bbox: PdfCoordinates,
+): MarkerPoint {
+  const [x0, y0, x1, y1] = bbox;
+  const target = {
+    x: Math.min(Math.max(point.x, x0), x1),
+    y: Math.min(Math.max(point.y, y0), y1),
+  };
+  if (target.x !== point.x || target.y !== point.y) return target;
+
+  const edges = [
+    { distance: Math.abs(point.x - x0), point: { x: x0, y: point.y } },
+    { distance: Math.abs(x1 - point.x), point: { x: x1, y: point.y } },
+    { distance: Math.abs(point.y - y0), point: { x: point.x, y: y0 } },
+    { distance: Math.abs(y1 - point.y), point: { x: point.x, y: y1 } },
+  ];
+  return edges.reduce((nearest, edge) => (
+    edge.distance < nearest.distance ? edge : nearest
+  )).point;
+}
+
 function chooseCandidateMarker(
   bbox: PdfCoordinates,
   pageWidth: number,
@@ -130,8 +153,18 @@ function chooseCandidateMarker(
     const distanceFromPreferred = preferred === undefined
       ? 0
       : Math.hypot(option.x - preferred.x, option.y - preferred.y);
+    const leaderTarget = candidateLeaderTarget(option, bbox);
+    const leaderDistance = Math.hypot(
+      option.x - leaderTarget.x,
+      option.y - leaderTarget.y,
+    );
+    const leaderShortfall = Math.max(
+      0,
+      CANDIDATE_MARKER_RADIUS + 5 - leaderDistance,
+    );
     const score = markerOverlapCount * 1_000_000
       + boxOverlapCount * 500
+      + leaderShortfall * 10_000
       + distanceFromPreferred * 10
       + index;
     return score < best.score ? { point: option, score } : best;
@@ -237,12 +270,15 @@ export function OverlayLayer({
       placedCandidateMarkers,
     );
     placedCandidateMarkers.push(marker);
+    const leaderTarget = candidateLeaderTarget(marker, bbox);
     return [{
       item,
       itemId: item.itemId,
       candidateNumber: item.candidateNumber,
       markerX: marker.x,
       markerY: marker.y,
+      leaderTargetX: leaderTarget.x,
+      leaderTargetY: leaderTarget.y,
     }];
   });
 
@@ -255,6 +291,20 @@ export function OverlayLayer({
       viewBox={`0 0 ${pageWidth} ${pageHeight}`}
       style={{ position: "absolute", inset: 0 }}
     >
+      <defs aria-hidden="true">
+        <marker
+          id="candidate-arrowhead"
+          viewBox="0 0 7 7"
+          markerWidth={7}
+          markerHeight={7}
+          refX={6.5}
+          refY={3.5}
+          orient="auto"
+          markerUnits="userSpaceOnUse"
+        >
+          <path d="M 0 0 L 7 3.5 L 0 7 z" fill="#111111" />
+        </marker>
+      </defs>
       {candidates.map((item) => {
         const [x0, y0, x1, y1] = transformBox(matrix, item.bbox);
         const itemId = item.itemId ?? item.id;
@@ -324,6 +374,8 @@ export function OverlayLayer({
         candidateNumber,
         markerX,
         markerY,
+        leaderTargetX,
+        leaderTargetY,
       }) => {
         const isSelected = selectedRelation(
           { itemId, itemIds: item.itemIds },
@@ -337,44 +389,58 @@ export function OverlayLayer({
           if (selectedItem !== undefined) selectItem?.(selectedItem);
         };
         return (
-          <g
-            key={`candidate-number-${item.id}`}
-            data-testid={`candidate-number-${item.id}`}
-            data-item-id={itemId}
-            data-selected={isSelected}
-            role="button"
-            aria-label={zhCN.pdf.candidateMarker(candidateNumber)}
-            tabIndex={selectItem === undefined ? undefined : 0}
-            onClick={selectCandidate}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                selectCandidate();
-              }
-            }}
-            style={{ cursor: selectItem ? "pointer" : "default" }}
-          >
-            <circle
-              cx={markerX}
-              cy={markerY}
-              r={CANDIDATE_MARKER_RADIUS}
-              fill={isSelected ? "#2563EB" : "#EFF6FF"}
-              stroke="#2563EB"
-              strokeWidth={isSelected ? 2 : 1.5}
-            />
-            <text
-              x={markerX}
-              y={markerY}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontFamily="DejaVu Sans"
-              fontSize={8}
-              fill={isSelected ? "#FFFFFF" : "#2563EB"}
+          <Fragment key={`candidate-number-${item.id}`}>
+            <line
+              data-testid={`candidate-leader-${item.id}`}
+              x1={markerX}
+              y1={markerY}
+              x2={leaderTargetX}
+              y2={leaderTargetY}
+              stroke="#111111"
+              strokeWidth={1.1}
+              markerEnd="url(#candidate-arrowhead)"
+              vectorEffect="non-scaling-stroke"
+              aria-hidden="true"
               style={{ pointerEvents: "none" }}
+            />
+            <g
+              data-testid={`candidate-number-${item.id}`}
+              data-item-id={itemId}
+              data-selected={isSelected}
+              role="button"
+              aria-label={zhCN.pdf.candidateMarker(candidateNumber)}
+              tabIndex={selectItem === undefined ? undefined : 0}
+              onClick={selectCandidate}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  selectCandidate();
+                }
+              }}
+              style={{ cursor: selectItem ? "pointer" : "default" }}
             >
-              {candidateNumber}
-            </text>
-          </g>
+              <circle
+                cx={markerX}
+                cy={markerY}
+                r={CANDIDATE_MARKER_RADIUS}
+                fill={isSelected ? "#2563EB" : "#EFF6FF"}
+                stroke="#2563EB"
+                strokeWidth={isSelected ? 2 : 1.5}
+              />
+              <text
+                x={markerX}
+                y={markerY}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontFamily="DejaVu Sans"
+                fontSize={8}
+                fill={isSelected ? "#FFFFFF" : "#2563EB"}
+                style={{ pointerEvents: "none" }}
+              >
+                {candidateNumber}
+              </text>
+            </g>
+          </Fragment>
         );
       })}
       {balloons.filter((item) => item.status !== "deleted").map((item) => {

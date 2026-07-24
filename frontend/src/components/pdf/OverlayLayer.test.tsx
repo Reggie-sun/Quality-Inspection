@@ -70,8 +70,16 @@ describe("OverlayLayer", () => {
     expect(markers[0].getAttribute("data-testid")).toBe(
       "candidate-number-candidate-first",
     );
-    expect(markers[0].querySelector("circle")?.getAttribute("cx")).toBe("89");
-    expect(markers[0].querySelector("circle")?.getAttribute("cy")).toBe("11");
+    const edgeCircle = markers[0].querySelector("circle")!;
+    expect(Number(edgeCircle.getAttribute("cx"))).toBeGreaterThanOrEqual(11);
+    expect(Number(edgeCircle.getAttribute("cx"))).toBeLessThanOrEqual(89);
+    expect(Number(edgeCircle.getAttribute("cy"))).toBeGreaterThanOrEqual(11);
+    expect(Number(edgeCircle.getAttribute("cy"))).toBeLessThanOrEqual(89);
+    const edgeLeader = screen.getByTestId("candidate-leader-candidate-first");
+    expect(Math.hypot(
+      Number(edgeLeader.getAttribute("x2")) - Number(edgeLeader.getAttribute("x1")),
+      Number(edgeLeader.getAttribute("y2")) - Number(edgeLeader.getAttribute("y1")),
+    )).toBeGreaterThanOrEqual(15);
 
     fireEvent.click(markers[0]);
     fireEvent.keyDown(markers[0], { key: "Enter" });
@@ -119,6 +127,36 @@ describe("OverlayLayer", () => {
     expect(firstX).toBeGreaterThan(80);
     expect(firstY).toBeLessThan(50);
     expect(Math.hypot(secondX - firstX, secondY - firstY)).toBeGreaterThanOrEqual(20);
+  });
+
+  test("候选气泡使用黑色箭头指向对应候选框", () => {
+    render(
+      <OverlayLayer
+        pageWidth={200}
+        pageHeight={200}
+        scale={1}
+        candidates={[{
+          id: "candidate-with-leader",
+          itemId: "item-1",
+          bbox: [50, 50, 80, 70],
+          candidateNumber: 1,
+        }]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+
+    const leader = screen.getByTestId("candidate-leader-candidate-with-leader");
+    expect(leader.getAttribute("x1")).toBe("92");
+    expect(leader.getAttribute("y1")).toBe("38");
+    expect(leader.getAttribute("x2")).toBe("80");
+    expect(leader.getAttribute("y2")).toBe("50");
+    expect(leader.getAttribute("stroke")).toBe("#111111");
+    expect(leader.getAttribute("marker-end")).toBe("url(#candidate-arrowhead)");
+    expect(leader.getAttribute("aria-hidden")).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "候选气泡 1" }).contains(leader),
+    ).toBe(false);
   });
 
   test("候选气泡位于来源标注之后并在重叠时保持可选择", () => {
@@ -220,6 +258,7 @@ describe("OverlayLayer", () => {
     const restoredCandidate = screen.getByRole("button", { name: "候选气泡 1" });
     expect(restoredCandidate).not.toBeNull();
     expect(restoredCandidate.getAttribute("tabindex")).toBeNull();
+    expect(screen.getByTestId("candidate-leader-candidate-1")).not.toBeNull();
     expect(screen.queryByTestId("balloon-balloon-deleted")).toBeNull();
   });
 });
