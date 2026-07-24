@@ -14,13 +14,13 @@ import type {
 import { projectStateCopy, zhCN } from "../../copy/zhCN";
 import { BalloonToolbar } from "../balloons/BalloonToolbar";
 import { PdfWorkspace } from "../pdf/PdfWorkspace";
-import { CoverageReviewPanel } from "../review/CoverageReviewPanel";
 import { ReviewPanel } from "../review/ReviewPanel";
 import { ExportPanel } from "./ExportPanel";
 import { FreezeReviewButton } from "./FreezeReviewButton";
 import {
   InspectionItemTable,
   SelectedInspectionItemSummary,
+  type PendingSourceReview,
 } from "./InspectionItemTable";
 import {
   RecognitionSummary,
@@ -149,6 +149,27 @@ export function InspectionWorkbench({
     }
     return lookup;
   }, [candidates]);
+  const pendingSources = useMemo<PendingSourceReview[]>(() => {
+    if (workingCopy === undefined) return [];
+    return (workingCopy.coverage.entries ?? [])
+      .filter(
+        (entry) =>
+          entry.requires_confirmation === true
+          && (entry.candidate_id === null || entry.candidate_id === undefined),
+      )
+      .map((entry) => {
+        const source = sources.find(
+          (candidate) => candidate.id === entry.source_location_id,
+        );
+        return {
+          observationId: entry.observation_id,
+          sourceId: entry.source_location_id,
+          rawText: source?.rawText?.trim() ?? "",
+          coordinates: entry.coordinates,
+          pageIndex: source?.pageIndex,
+        };
+      });
+  }, [sources, workingCopy?.coverage.entries]);
 
   const finalized = projectState === "reviewed";
   const localDraftDirty =
@@ -188,6 +209,13 @@ export function InspectionWorkbench({
     );
     setSelectedBalloonId(balloon?.id);
     setPageIndex(item?.page_index ?? balloon?.pageIndex ?? pageIndex);
+  };
+  const selectSource = (sourceId: string) => {
+    setSelectedItemId(undefined);
+    setSelectedSourceId(sourceId);
+    setSelectedBalloonId(undefined);
+    const source = sources.find((candidate) => candidate.id === sourceId);
+    setPageIndex(source?.pageIndex ?? pageIndex);
   };
   const queueCommand = (command: ReviewCommand) => {
     setPendingCommand(command);
@@ -418,12 +446,7 @@ export function InspectionWorkbench({
             selectedSourceId={selectedSourceId}
             selectedBalloonId={selectedBalloonId}
             onSelectItem={selectItem}
-            onSelectSource={(sourceId) => {
-              setSelectedSourceId(sourceId);
-              setSelectedBalloonId(undefined);
-              const source = sources.find((candidate) => candidate.id === sourceId);
-              setPageIndex(source?.pageIndex ?? pageIndex);
-            }}
+            onSelectSource={selectSource}
             onSelectBalloon={(itemId, balloonId) => {
               setSelectedItemId(itemId);
               setSelectedBalloonId(balloonId);
@@ -444,6 +467,7 @@ export function InspectionWorkbench({
           <RecognitionSummary
             items={items}
             balloons={balloons}
+            pendingSourceCount={pendingSources.length}
             filter={filter}
             onFilterChange={setFilter}
           />
@@ -454,29 +478,17 @@ export function InspectionWorkbench({
               candidateNumber={candidateNumbers.get(selectedReviewItem.item_id)}
             />
           )}
-          {workingCopy === undefined ? null : (
-            <CoverageReviewPanel
-              entries={workingCopy.coverage.entries ?? []}
-              sources={sources}
-              selectedSourceId={selectedSourceId}
-              disabled={pendingCommand !== undefined || busy || reviewImmutable}
-              onSelectSource={(sourceId) => {
-                setSelectedSourceId(sourceId);
-                setSelectedBalloonId(undefined);
-                const source = sources.find((candidate) => candidate.id === sourceId);
-                setPageIndex(source?.pageIndex ?? pageIndex);
-              }}
-              onCommand={queueCommand}
-            />
-          )}
           <InspectionItemTable
             items={items}
             balloons={balloons}
+            pendingSources={pendingSources}
             candidateNumbers={candidateNumbers}
             filter={filter}
             selectedItemId={selectedItemId}
+            selectedSourceId={selectedSourceId}
             disabled={pendingCommand !== undefined || busy || reviewImmutable}
             onSelectItem={selectItem}
+            onSelectSource={selectSource}
             onCommand={queueCommand}
             onDraftChange={setSipDraftDirty}
           />

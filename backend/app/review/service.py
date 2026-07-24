@@ -20,8 +20,10 @@ from app.review.schemas import (
     Add,
     Edit,
     Exclude,
+    IgnoreSource,
     Keep,
     Merge,
+    PromoteSource,
     ResolveConfirmation,
     ReviewCommand,
     SetBalloonRequired,
@@ -544,6 +546,75 @@ class ReviewService:
                 )
                 items.append(split_item)
             return [command.item_id, *split_ids], True
+        if isinstance(command, PromoteSource):
+            entry = self._pending_source_entry(
+                coverage,
+                command.observation_id,
+            )
+            source_location_id = entry.get("source_location_id")
+            if (
+                not isinstance(source_location_id, str)
+                or not source_location_id.strip()
+            ):
+                raise ReviewNotFound(
+                    f"source location for {command.observation_id} was not found"
+                )
+            coordinates = entry.get("coordinates")
+            if (
+                not isinstance(coordinates, (list, tuple))
+                or len(coordinates) != 4
+                or any(
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    for value in coordinates
+                )
+            ):
+                raise ReviewNotFound(
+                    f"source coordinates for {command.observation_id} were not found"
+                )
+            item_id = str(uuid.uuid4())
+            items.append(
+                {
+                    "item_id": item_id,
+                    "item_type": command.item_type,
+                    "raw_text": command.raw_text,
+                    "normalized_text": command.raw_text,
+                    "coordinates": list(coordinates),
+                    "scope": command.scope,
+                    "balloon_required": command.balloon_required,
+                    "requires_confirmation": False,
+                    "source_location_ids": [source_location_id],
+                    "page_index": command.page_index,
+                    "source_type": "manual",
+                    "status": "pending",
+                    "active": True,
+                }
+            )
+            entry.update(
+                {
+                    "disposition": "candidate",
+                    "candidate_id": item_id,
+                    "requires_confirmation": False,
+                    "confirmation_accepted": True,
+                }
+            )
+            self._refresh_review_required_count(coverage)
+            return [command.observation_id, item_id], True
+        if isinstance(command, IgnoreSource):
+            entry = self._pending_source_entry(
+                coverage,
+                command.observation_id,
+            )
+            entry.update(
+                {
+                    "disposition": "non_inspection",
+                    "candidate_id": None,
+                    "requires_confirmation": False,
+                    "confirmation_accepted": False,
+                }
+            )
+            self._refresh_review_required_count(coverage)
+            return [command.observation_id], numbering_stale
         if isinstance(command, ResolveConfirmation):
             self._resolve_confirmation(
                 items,
@@ -679,16 +750,50 @@ class ReviewService:
                 item["requires_confirmation"] = False
                 item["confirmation_accepted"] = accepted
                 resolved = True
-        for entry in coverage.get("entries", []):
-            if item_id in {entry.get("candidate_id"), entry.get("observation_id")}:
+        for entry in ReviewService._coverage_entries(coverage):
+            if entry.get("candidate_id") == item_id:
                 entry["requires_confirmation"] = False
                 entry["confirmation_accepted"] = accepted
                 resolved = True
         if not resolved:
             raise ReviewNotFound(f"confirmation target {item_id} was not found")
+        ReviewService._refresh_review_required_count(coverage)
+
+    @staticmethod
+    def _pending_source_entry(
+        coverage: dict[str, Any],
+        observation_id: str,
+    ) -> dict[str, Any]:
+        matches: list[dict[str, Any]] = []
+        for entry in ReviewService._coverage_entries(coverage):
+            if entry.get("observation_id") == observation_id:
+                matches.append(entry)
+        if (
+            len(matches) != 1
+            or matches[0].get("requires_confirmation") is not True
+            or matches[0].get("candidate_id") is not None
+        ):
+            raise ReviewNotFound(
+                f"source review target {observation_id} was not found"
+            )
+        return matches[0]
+
+    @staticmethod
+    def _coverage_entries(
+        coverage: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        entries = coverage.get("entries", [])
+        if not isinstance(entries, list) or any(
+            not isinstance(entry, dict) for entry in entries
+        ):
+            raise ReviewNotFound("review coverage entries are malformed")
+        return entries
+
+    @staticmethod
+    def _refresh_review_required_count(coverage: dict[str, Any]) -> None:
         coverage["review_required_count"] = sum(
-            bool(entry.get("requires_confirmation"))
-            for entry in coverage.get("entries", [])
+            entry.get("requires_confirmation") is True
+            for entry in ReviewService._coverage_entries(coverage)
         )
 
     @staticmethod

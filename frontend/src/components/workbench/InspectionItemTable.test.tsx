@@ -464,3 +464,205 @@ test("取消 SIP 字段修改会恢复后端备注基线", () => {
 
   expect(remarks.value).toBe("保留原文");
 });
+
+test("待判定来源进入统一列表并产生显式 source review commands", () => {
+  const onSelectSource = vi.fn();
+  const onCommand = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-1",
+        sourceId: "source-1",
+        rawText: "技术要求：去除毛刺",
+        coordinates: [60, 70, 150, 84],
+        pageIndex: 1,
+      }]}
+      filter="all"
+      selectedSourceId="source-1"
+      onSelectItem={vi.fn()}
+      onSelectSource={onSelectSource}
+      onCommand={onCommand}
+    />,
+  );
+
+  const row = screen.getByRole("row", { name: /技术要求：去除毛刺/ });
+  expect(row.textContent).toContain("原始来源");
+  expect(row.textContent).toContain("第 2 页");
+  expect(row.textContent).toContain("待判定来源");
+  fireEvent.click(row);
+  expect(onSelectSource).toHaveBeenCalledWith("source-1");
+
+  expect(
+    screen.getByRole("button", { name: "添加为检验项" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+    target: { value: "general_requirement" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
+  expect(onCommand).toHaveBeenLastCalledWith({
+    type: "promote_source",
+    observation_id: "observation-1",
+    raw_text: "技术要求：去除毛刺",
+    item_type: "general_requirement",
+    scope: "local_feature",
+    balloon_required: true,
+    page_index: 1,
+  });
+
+  fireEvent.click(screen.getByRole("button", {
+    name: "忽略，不作为检验项",
+  }));
+  expect(onCommand).toHaveBeenLastCalledWith({
+    type: "ignore_source",
+    observation_id: "observation-1",
+  });
+});
+
+test("需人工处理筛选包含待判定来源", () => {
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-1",
+        sourceId: "source-1",
+        rawText: "伟立机器人",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="manual_required"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("row", { name: /伟立机器人/ })).not.toBeNull();
+});
+
+test("待判定来源参与状态筛选、搜索和外部选择分页跳转", () => {
+  const items = Array.from({ length: 50 }, (_, index) => ({
+    item_id: `item-${index}`,
+    raw_text: `检验项 ${index + 1}`,
+    active: true,
+  }));
+  const props = {
+    items,
+    balloons: [],
+    pendingSources: [{
+      observationId: "observation-late",
+      sourceId: "source-late",
+      rawText: "第二页来源标注",
+      coordinates: [1, 2, 3, 4] as [number, number, number, number],
+      pageIndex: 0,
+    }],
+    filter: "all" as const,
+    onSelectItem: vi.fn(),
+    onSelectSource: vi.fn(),
+  };
+  const { rerender } = render(<InspectionItemTable {...props} />);
+
+  rerender(
+    <InspectionItemTable {...props} selectedSourceId="source-late" />,
+  );
+  expect(screen.getByText("第 2 / 2 页")).not.toBeNull();
+  expect(screen.getByRole("row", { name: /第二页来源标注/ })
+    .getAttribute("data-selected")).toBe("true");
+
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索检验项" }), {
+    target: { value: "第二页来源" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "筛选状态" }), {
+    target: { value: "source_pending" },
+  });
+  expect(screen.getByRole("row", { name: /第二页来源标注/ })).not.toBeNull();
+  expect(screen.queryByRole("row", { name: /检验项 1/ })).toBeNull();
+});
+
+test("来源命令入队后保留草稿值并只清理未保存标记", () => {
+  const onDraftChange = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-draft",
+        sourceId: "source-draft",
+        rawText: "原始来源文字",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="all"
+      selectedSourceId="source-draft"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={vi.fn()}
+      onDraftChange={onDraftChange}
+    />,
+  );
+
+  fireEvent.change(screen.getByRole("textbox", { name: "原始标注" }), {
+    target: { value: "修订后的来源文字" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+    target: { value: "thread" },
+  });
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
+
+  expect(
+    (screen.getByRole("textbox", { name: "原始标注" }) as HTMLInputElement)
+      .value,
+  ).toBe("修订后的来源文字");
+  expect(onDraftChange).toHaveBeenLastCalledWith(false);
+});
+
+test("空白来源只在列表显示占位符且补全真实文字后才允许 promote", () => {
+  const onCommand = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-empty",
+        sourceId: "source-empty",
+        rawText: "",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="all"
+      selectedSourceId="source-empty"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={onCommand}
+    />,
+  );
+
+  const row = screen.getByRole("row", { name: /原始来源.*待判定来源/ });
+  const sourceCopy = row.querySelector(".inspection-item-copy strong");
+  expect(sourceCopy?.textContent).toBe("—");
+  expect(sourceCopy?.getAttribute("title")).toBe("—");
+
+  const rawText = screen.getByRole("textbox", { name: "原始标注" });
+  const promote = screen.getByRole("button", { name: "添加为检验项" });
+  expect((rawText as HTMLInputElement).value).toBe("");
+  fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+    target: { value: "general_requirement" },
+  });
+  expect(promote.hasAttribute("disabled")).toBe(true);
+
+  fireEvent.change(rawText, { target: { value: "人工补录的真实要求" } });
+  expect(promote.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(promote);
+  expect(onCommand).toHaveBeenCalledWith({
+    type: "promote_source",
+    observation_id: "observation-empty",
+    raw_text: "人工补录的真实要求",
+    item_type: "general_requirement",
+    scope: "local_feature",
+    balloon_required: true,
+    page_index: 0,
+  });
+});

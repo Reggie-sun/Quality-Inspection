@@ -118,6 +118,16 @@ export type ReviewCommand =
   | { type: "resolve_confirmation"; item_id: string; accepted: boolean }
   | { type: "set_balloon_required"; item_id: string; balloon_required: boolean }
   | {
+      type: "promote_source";
+      observation_id: string;
+      raw_text: string;
+      item_type: CandidateType;
+      scope: "local_feature" | "global_requirement";
+      balloon_required: boolean;
+      page_index: number;
+    }
+  | { type: "ignore_source"; observation_id: string }
+  | {
       type: "set_sip_detail_fields";
       item_id: string;
       inspection_item: string;
