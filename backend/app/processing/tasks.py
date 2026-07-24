@@ -6,6 +6,7 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.candidates.advisor import CandidateAdvisor
 from app.capabilities.service import ProcessingPreflight
 from app.celery_app import celery_app
 from app.config import get_settings
@@ -14,12 +15,18 @@ from app.errors.models import ErrorRecord
 from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.projects.models import Project
-from app.providers.runtime import OcrProviderFactory, build_ocr_provider
+from app.providers.runtime import (
+    OcrProviderFactory,
+    VisionProviderFactory,
+    build_ocr_provider,
+    build_vision_provider,
+)
 from app.review.service import ReviewService
 from app.storage.local import LocalFileStorage
 
 
 OCR_PROVIDER_FACTORY: OcrProviderFactory = build_ocr_provider
+VISION_PROVIDER_FACTORY: VisionProviderFactory = build_vision_provider
 _AUTOMATIC_RESULT_PREFIX = "automatic-result://"
 
 
@@ -92,9 +99,16 @@ def inventory_project(
                 settings.qwen_model,
             ),
         )
+        advisor = CandidateAdvisor(
+            settings,
+            storage,
+            project_id=project_id,
+            provider_factory=VISION_PROVIDER_FACTORY,
+        )
         recognition = RuntimeRecognition(
             settings,
             provider_factory=OCR_PROVIDER_FACTORY,
+            advisor=advisor,
         )
         result_ref = InventoryPipeline(
             session,

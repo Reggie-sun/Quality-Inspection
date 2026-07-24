@@ -27,6 +27,8 @@ def test_all_fixed_fields_are_mapped() -> None:
 
     assert set(registration.metadata_cells) == REQUIRED_METADATA_FIELDS
     assert set(registration.detail_columns) == REQUIRED_DETAIL_FIELDS
+    assert "remarks" not in REQUIRED_DETAIL_FIELDS
+    assert "remarks" not in registration.detail_columns
     assert len(REQUIRED_METADATA_FIELDS | REQUIRED_DETAIL_FIELDS) == 12
     assert registration.image_sheet == "气泡图"
     assert registration.image_anchor == "B2"

@@ -6,6 +6,7 @@ const ERROR_COPY: Readonly<Record<string, string>> = {
   celery_worker_unavailable: "图纸处理服务暂不可用，请稍后重试。",
   ocr_provider_unavailable: "文字识别服务暂不可用，请稍后重试。",
   vision_provider_unavailable: "图纸识别服务暂不可用，请稍后重试。",
+  vision_provider_call_failed: "图纸识别服务调用失败，请稍后重试。",
   coverage_blocking: "图纸识别结果不完整，请重新处理或稍后重试。",
   network_error: "网络异常，请检查连接后重试。",
   project_status_failed: "状态获取失败，请重试。",
@@ -57,7 +58,8 @@ export const zhCN = {
   status: {
     uploading: "正在上传工程 PDF",
     queued: "项目已创建，等待处理",
-    processing: "正在解析图纸并识别检验项",
+    parsing: "正在解析工程图纸",
+    recognizing: "正在识别检验项",
     preparing: "正在准备审核",
     ready: "识别完成，已进入审核",
     hint: "处理完成后将自动进入审核工作台，请保持页面打开。",
@@ -158,6 +160,7 @@ export const zhCN = {
     method: "检验方法",
     keyDimension: "关键尺寸",
     role: "检验角色",
+    remarks: "备注（可选）",
     confirmSip: "确认所选 SIP 字段",
     cancelSip: "取消 SIP 字段修改",
     statusPending: "待审核",
@@ -314,6 +317,7 @@ export const zhCN = {
     legend: "图纸标注图例",
     pages: "图纸页面",
     viewPage: (page: number) => `查看第 ${page} 页`,
+    thumbnailUnavailable: (page: number) => `第 ${page} 页预览不可用`,
     formalBalloon: "正式气泡",
     candidate: "候选项",
     source: "来源标注",
@@ -356,6 +360,16 @@ export function apiErrorCopy(code: string): string {
 
 export function projectErrorCopy(code: string): string {
   return ERROR_COPY[code] ?? zhCN.errors.fatal;
+}
+
+export function projectErrorGuidance(code: string, retryable: boolean): string {
+  if (code === "invalid_pdf" || code === "unsupported_input") {
+    return "未生成正式检验结果，请重新选择符合支持范围的工程 PDF。";
+  }
+  if (retryable) {
+    return "未生成正式检验结果，请重新处理或选择其他文件。";
+  }
+  return "未生成正式检验结果，请重新选择 PDF；若文件有效，请联系管理员检查服务配置。";
 }
 
 export function projectStateCopy(state?: string): string {

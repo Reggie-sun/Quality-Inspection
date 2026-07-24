@@ -108,7 +108,10 @@ describe("PdfWorkspace", () => {
   });
 
   test("P0-UI-001 switches pages without leaking PDF.js cancellation rejection", async () => {
-    const tasks: Array<{ cancel: ReturnType<typeof vi.fn> }> = [];
+    const tasks: Array<{
+      cancel: ReturnType<typeof vi.fn>;
+      viewportWidth: number;
+    }> = [];
     const pdfDocument: PdfDocumentLike = {
       numPages: 2,
       getPage: vi.fn(async () => ({
@@ -116,7 +119,10 @@ describe("PdfWorkspace", () => {
           width: 100 * scale,
           height: 200 * scale,
         }),
-        render: vi.fn(() => {
+        render: vi.fn(({ viewport }: {
+          canvasContext: CanvasRenderingContext2D;
+          viewport: { width: number; height: number };
+        }) => {
           let rejectRender!: (reason: unknown) => void;
           const promise = new Promise<unknown>((_resolve, reject) => {
             rejectRender = reject;
@@ -126,7 +132,7 @@ describe("PdfWorkspace", () => {
             error.name = "RenderingCancelledException";
             rejectRender(error);
           });
-          tasks.push({ cancel });
+          tasks.push({ cancel, viewportWidth: viewport.width });
           return { promise, cancel };
         }),
       })),
@@ -139,11 +145,14 @@ describe("PdfWorkspace", () => {
         balloons={[]}
       />,
     );
-    await waitFor(() => expect(tasks).toHaveLength(1));
+    await waitFor(() => {
+      expect(tasks.find((task) => task.viewportWidth === 100)).toBeDefined();
+    });
+    const mainPageTask = tasks.find((task) => task.viewportWidth === 100)!;
 
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
 
-    await waitFor(() => expect(tasks[0].cancel).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mainPageTask.cancel).toHaveBeenCalledOnce());
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -229,6 +238,81 @@ describe("PdfWorkspace", () => {
     expect(source.getAttribute("data-selected")).toBe("true");
     fireEvent.click(source);
     expect(onSelectSource).toHaveBeenCalledWith("source-only");
+  });
+
+  test("每个页码按钮渲染独立真实缩略图", async () => {
+    const pdfDocument = documentFixture();
+    render(
+      <PdfWorkspace
+        pdfDocument={pdfDocument}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pdf-thumbnail-1").hasAttribute("hidden")).toBe(false);
+      expect(screen.getByTestId("pdf-thumbnail-2").hasAttribute("hidden")).toBe(false);
+    });
+    expect(pdfDocument.getPage).toHaveBeenCalledWith(1);
+    expect(pdfDocument.getPage).toHaveBeenCalledWith(2);
+  });
+
+  test("单页缩略图失败只显示中文页码 fallback", async () => {
+    const pdfDocument: PdfDocumentLike = {
+      numPages: 2,
+      getPage: vi.fn(async (pageNumber: number) => {
+        if (pageNumber === 2) throw new Error("thumbnail failed");
+        return {
+          getViewport: ({ scale }: { scale: number }) => ({
+            width: 100 * scale,
+            height: 200 * scale,
+          }),
+          render: vi.fn(() => ({
+            promise: Promise.resolve(),
+            cancel: vi.fn(),
+          })),
+        };
+      }),
+    };
+    render(
+      <PdfWorkspace
+        pdfDocument={pdfDocument}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+
+    expect(await screen.findByText("第 2 页预览不可用")).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  test("适合页面使用容器尺寸并清零 pan", async () => {
+    render(
+      <PdfWorkspace
+        pdfDocument={rotatedDocumentFixture()}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+    const frame = screen.getByTestId("pdf-scroll-frame");
+    Object.defineProperties(frame, {
+      clientWidth: { configurable: true, value: 424 },
+      clientHeight: { configurable: true, value: 224 },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("pdf-canvas").getAttribute("width")).toBe("200");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "向右平移" }));
+    fireEvent.click(screen.getByRole("button", { name: "适合页面" }));
+
+    expect(screen.getByLabelText("缩放比例").textContent).toBe("200%");
+    expect(screen.getByTestId("pdf-page-layer").getAttribute("style")).toContain(
+      "transform: translate(0px, 0px)",
+    );
   });
 
   test("提供适合页面、展开和中文图例控件", () => {

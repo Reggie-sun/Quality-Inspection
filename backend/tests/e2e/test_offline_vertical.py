@@ -7,7 +7,7 @@ import socket
 import stat
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.balloons.renderer import render_ballooned_pdf
 from app.balloons.service import BalloonService
+from app.candidates.advisor import CandidateAdvisor
 from app.candidates.models import AutomaticResult
 from app.capabilities.service import (
     CapabilityUnavailable,
@@ -27,17 +28,17 @@ from app.capabilities.service import (
     ProcessingPreflight,
 )
 from app.db import engine
+from app.config import Settings
 from app.errors.models import ErrorRecord
 from app.exports.models import ExportArtifact, ExportJob
 from app.exports.service import ExportService
 from app.jobs.idempotency import LogicalJob
 from app.pdf.inventory import build_inventory
-from app.processing.automatic_result import candidate_snapshot_from_inventory
 from app.processing.pipeline import InventoryPipeline
+from app.processing.runtime_recognition import RuntimeRecognition
 from app.projects.models import Project
 from app.projects.state import ProjectState
-from app.providers.qwen_vl import QwenVisionProvider
-from app.providers.tencent_ocr import TencentOcrProvider
+from app.providers.base import VisionResult
 from app.review.locks import acquire_lock
 from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.service import ReviewService
@@ -48,9 +49,6 @@ from app.storage.models import StoredFile
 ROOT = Path(__file__).resolve().parents[3]
 QWEN_FIXTURE = (
     ROOT / ".agent/harness/fixtures/providers/qwen-vl/candidate-review-v1.json"
-)
-TENCENT_FIXTURE = (
-    ROOT / ".agent/harness/fixtures/providers/tencent-ocr/general-accurate-v1.json"
 )
 FAILURE_EVIDENCE_REQUIREMENTS = {
     "provider": {
@@ -216,9 +214,9 @@ class VerticalSystem:
     @staticmethod
     def _source_pdf() -> bytes:
         document = fitz.open()
-        for _ in range(2):
+        for raw_text in ("M6", "Ra 3.2"):
             page = document.new_page(width=240, height=180)
-            page.insert_text((32, 48), "M6")
+            page.insert_text((32, 48), raw_text)
             page.draw_rect(fitz.Rect(20, 24, 180, 120))
         content = document.tobytes(garbage=4, deflate=True, no_new_id=True)
         document.close()
@@ -242,53 +240,77 @@ class VerticalSystem:
         self.session.commit()
         return project, source_file, source_bytes
 
-    def _provider_call_ids(self) -> tuple[str, str]:
+    def _vision_provider(self):
         qwen = json.loads(QWEN_FIXTURE.read_text(encoding="utf-8"))["payload"]
-        tencent = json.loads(TENCENT_FIXTURE.read_text(encoding="utf-8"))["payload"]
 
-        class FakeTencentClient:
+        class FixtureVisionProvider:
             @staticmethod
-            def GeneralAccurateOCR(_request):
-                return tencent
-
-        class FakeCompletions:
-            @staticmethod
-            def create(**_kwargs):
-                return SimpleNamespace(
-                    id=qwen["request_id"],
-                    choices=[
-                        SimpleNamespace(
-                            message=SimpleNamespace(content=qwen["content"])
-                        )
-                    ],
-                    usage=qwen["usage"],
+            def review_candidate(_image: bytes, prompt: str) -> VisionResult:
+                request = json.loads(prompt)
+                raw_text = str(request["raw_text"])
+                return VisionResult(
+                    request_id=qwen["request_id"],
+                    payload={
+                        "schema_version": "candidate-review/1",
+                        "raw_text": raw_text,
+                        "item_type": str(request["expected_type"]),
+                        "normalized_text": raw_text,
+                        "requires_confirmation": True,
+                    },
+                    usage=dict(qwen["usage"]),
                 )
 
-        def block_network(*_args, **_kwargs):
-            self.provider_network_connections += 1
-            raise AssertionError("sanitized Provider fixtures attempted network access")
+        return FixtureVisionProvider()
 
-        fake_qwen_client = SimpleNamespace(
-            chat=SimpleNamespace(completions=FakeCompletions())
+    def _block_provider_network(self, *_args, **_kwargs):
+        self.provider_network_connections += 1
+        raise AssertionError("sanitized Provider fixtures attempted network access")
+
+    @staticmethod
+    def _forbidden_ocr_provider(_settings: Settings):
+        raise AssertionError("native vertical fixture must not construct OCR Provider")
+
+    def _recognition(self, project_id: uuid.UUID) -> RuntimeRecognition:
+        settings = Settings(storage_root=self.storage.root)
+        advisor = CandidateAdvisor(
+            settings,
+            self.storage,
+            project_id=str(project_id),
+            provider_factory=lambda _settings: self._vision_provider(),
         )
+        return RuntimeRecognition(
+            settings,
+            provider_factory=self._forbidden_ocr_provider,
+            advisor=advisor,
+        )
+
+    def _run_processing(
+        self,
+        project: Project,
+        source_file: StoredFile,
+        task_key: str,
+    ) -> None:
+        recognition = self._recognition(project.id)
         with (
-            patch.object(socket, "socket", new=block_network),
-            patch.object(socket, "create_connection", new=block_network),
-            patch.object(socket, "getaddrinfo", new=block_network),
+            patch.object(socket, "socket", new=self._block_provider_network),
+            patch.object(
+                socket,
+                "create_connection",
+                new=self._block_provider_network,
+            ),
+            patch.object(socket, "getaddrinfo", new=self._block_provider_network),
         ):
-            ocr = TencentOcrProvider(FakeTencentClient()).recognize_png(b"fixture")
-            vision = QwenVisionProvider(fake_qwen_client).review_candidate(
-                b"fixture",
-                "Classify this local annotation.",
+            InventoryPipeline(
+                self.session,
+                self.storage,
+                PassingPreflight(),
+                inventory_builder=recognition.build_inventory,
+                candidate_snapshot_builder=recognition.build_candidate_snapshot,
+            ).run(
+                str(project.id),
+                source_file.resource_ref,
+                task_key,
             )
-        assert vision.payload["raw_text"] == ocr.observations[0].raw_text
-        return ocr.request_id, vision.request_id
-
-    def _fixture_snapshot(self, pages):
-        return replace(
-            candidate_snapshot_from_inventory(pages),
-            provider_call_ids=self._provider_call_ids(),
-        )
 
     def prepare_reviewed(self) -> PreparedVertical:
         project, source_file, source_bytes = self._create_processing_source()
@@ -296,15 +318,9 @@ class VerticalSystem:
         boundaries: list[str] = []
 
         boundaries.append("InventoryPipeline.run")
-        InventoryPipeline(
-            self.session,
-            self.storage,
-            PassingPreflight(),
-            inventory_builder=build_inventory,
-            candidate_snapshot_builder=self._fixture_snapshot,
-        ).run(
-            str(project.id),
-            source_file.resource_ref,
+        self._run_processing(
+            project,
+            source_file,
             f"process:d7-t1:{project.id}",
         )
         project = self.session.get(Project, project.id, populate_existing=True)
@@ -314,6 +330,11 @@ class VerticalSystem:
             select(AutomaticResult).where(AutomaticResult.project_id == project.id)
         )
         assert raw is not None
+        assert raw.provider_call_ids == ["fixture-qwen-request-id"]
+        assert any(
+            candidate.get("advisor_review", {}).get("validated") is True
+            for candidate in raw.candidates
+        )
 
         review_service = ReviewService(self.session, storage=self.storage)
         boundaries.append("ReviewService.create_from_raw")
@@ -330,7 +351,9 @@ class VerticalSystem:
                 command={
                     "type": "set_sip_detail_fields",
                     "item_id": str(item["item_id"]),
-                    "inspection_item": str(item["normalized_text"]),
+                    "inspection_item": str(
+                        item.get("normalized_text", item["raw_text"])
+                    ),
                     "inspection_standard": "per approved drawing",
                     "inspection_method": "thread gauge",
                     "key_dimension": "yes",
@@ -338,6 +361,28 @@ class VerticalSystem:
                     "source_page": page_number,
                 },
             )
+            if item.get("balloon_required") is None:
+                working = review_service.apply(
+                    working.id,
+                    expected_version=working.version,
+                    operator_id=OPERATOR_ID,
+                    command={
+                        "type": "set_balloon_required",
+                        "item_id": str(item["item_id"]),
+                        "balloon_required": True,
+                    },
+                )
+            if item.get("requires_confirmation") is True:
+                working = review_service.apply(
+                    working.id,
+                    expected_version=working.version,
+                    operator_id=OPERATOR_ID,
+                    command={
+                        "type": "resolve_confirmation",
+                        "item_id": str(item["item_id"]),
+                        "accepted": True,
+                    },
+                )
         working = review_service.apply(
             working.id,
             expected_version=working.version,
@@ -470,7 +515,6 @@ class VerticalSystem:
                 self.storage,
                 self._processing_preflight(failure_point),
                 inventory_builder=build_inventory,
-                candidate_snapshot_builder=self._fixture_snapshot,
             ).run(
                 str(project.id),
                 source_file.resource_ref,

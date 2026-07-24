@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.capabilities.service import CapabilityUnavailable
+from app.candidates.advisor import CandidateAdvisorFailure
 from app.candidates.coverage import check_coverage
 from app.candidates.models import AutomaticResult
 from app.errors.models import ErrorRecord
@@ -19,6 +20,7 @@ from app.jobs.idempotency import (
     LogicalJobStateError,
     claim_logical_job_failure,
     claim_logical_job,
+    set_processing_stage,
     successful_result_ref,
 )
 from app.pdf.inventory import build_inventory
@@ -229,11 +231,21 @@ class InventoryPipeline:
         safe_source_ref: str | None = None
         inventory_ref: str | None = None
         try:
+            set_processing_stage(
+                self._session,
+                job_id=job.id,
+                stage="parsing",
+            )
             self._preflight.check()
             source_path = self._storage.resolve_resource_ref(source_ref)
             safe_source_ref = source_ref
             pages = tuple(self._inventory_builder(source_path))
             inventory_ref = self._store_inventory(project_id, job, pages)
+            set_processing_stage(
+                self._session,
+                job_id=job.id,
+                stage="recognizing",
+            )
             if any(page.support_level == "unsupported" for page in pages):
                 existing = self._record_failure(
                     project,
@@ -288,6 +300,20 @@ class InventoryPipeline:
                 stage="coverage",
                 location_ref=inventory_ref,
                 cause_category="processing_defect",
+            )
+            if existing is not None:
+                return existing
+            raise
+        except CandidateAdvisorFailure:
+            existing = self._record_failure(
+                project,
+                job,
+                state=ProjectState.PROCESSING_FAILED,
+                code="vision_provider_call_failed",
+                message="Vision candidate Advisor call failed",
+                stage="candidate_advisor",
+                location_ref=None,
+                cause_category="transient_provider_failure",
             )
             if existing is not None:
                 return existing

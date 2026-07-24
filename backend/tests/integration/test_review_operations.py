@@ -341,6 +341,7 @@ def test_set_sip_detail_fields_are_fixed_confirmed_values(
             "key_dimension": "yes",
             "inspection_role": "IPQC",
             "source_page": 1,
+            "remarks": "现场复核量具",
         },
     )
 
@@ -351,6 +352,7 @@ def test_set_sip_detail_fields_are_fixed_confirmed_values(
     assert item["key_dimension"] == "yes"
     assert item["inspection_role"] == "IPQC"
     assert item["source_page"] == 1
+    assert item["remarks"] == "现场复核量具"
     assert item["sip_detail_fields_confirmed"] is True
 
     edited = review_service.apply(
@@ -361,6 +363,7 @@ def test_set_sip_detail_fields_are_fixed_confirmed_values(
     )
     assert "sip_detail_fields_confirmed" not in _item(edited, "i1")
     assert "inspection_item" not in _item(edited, "i1")
+    assert "remarks" not in _item(edited, "i1")
 
 
 def test_set_sip_metadata_replaces_the_fixed_review_snapshot(

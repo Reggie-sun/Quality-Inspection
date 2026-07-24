@@ -59,6 +59,7 @@ def _seed_project_status(
     project_state: str = "processing",
     job_status: str | None = None,
     has_working_copy: bool = False,
+    processing_stage: str | None = None,
     error: dict[str, str] | None = None,
 ) -> uuid.UUID:
     project_id = uuid.uuid4()
@@ -74,6 +75,7 @@ def _seed_project_status(
             project_id=str(project_id),
             logical_task_key=f"product-process:{project_id}",
             status=job_status,
+            processing_stage=processing_stage or "queued",
             result_ref=(
                 f"automatic-result://{result_id}"
                 if job_status == "succeeded"
@@ -131,6 +133,78 @@ def _seed_project_status(
         )
     session.commit()
     return project_id
+
+
+@pytest.mark.parametrize(
+    (
+        "project_state",
+        "job_status",
+        "has_working_copy",
+        "processing_stage",
+        "expected_phase",
+        "expected_stage",
+    ),
+    [
+        ("processing", None, False, None, "queued", "queued"),
+        ("processing", "processing", False, "parsing", "processing", "parsing"),
+        (
+            "processing",
+            "processing",
+            False,
+            "recognizing",
+            "processing",
+            "recognizing",
+        ),
+        (
+            "ready_for_edit",
+            "succeeded",
+            False,
+            "preparing_review",
+            "processing",
+            "preparing_review",
+        ),
+        (
+            "editing",
+            "succeeded",
+            True,
+            "preparing_review",
+            "ready_for_review",
+            None,
+        ),
+        (
+            "processing_failed",
+            "failed",
+            False,
+            "recognizing",
+            "failed",
+            None,
+        ),
+    ],
+)
+def test_status_projects_only_active_processing_stage(
+    status_context: StatusContext,
+    project_state: str,
+    job_status: str | None,
+    has_working_copy: bool,
+    processing_stage: str | None,
+    expected_phase: str,
+    expected_stage: str | None,
+) -> None:
+    project_id = _seed_project_status(
+        status_context.session,
+        project_state=project_state,
+        job_status=job_status,
+        has_working_copy=has_working_copy,
+        processing_stage=processing_stage,
+    )
+
+    response = status_context.client.get(
+        f"/api/v1/projects/{project_id}/status"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["phase"] == expected_phase
+    assert response.json().get("stage") == expected_stage
 
 
 @pytest.mark.parametrize(
@@ -244,6 +318,35 @@ def test_transient_failure_is_retryable_without_leaking_error_record(
         "traceback",
     ):
         assert forbidden not in response.text.lower()
+
+
+def test_vision_provider_failure_projects_retryable_sanitized_status(
+    status_context: StatusContext,
+) -> None:
+    project_id = _seed_project_status(
+        status_context.session,
+        project_state="processing_failed",
+        job_status="failed",
+        error={
+            "code": "vision_provider_call_failed",
+            "message": "/srv/private/customer.pdf credential=do-not-leak",
+            "stage": "candidate_advisor",
+            "cause_category": "transient_provider_failure",
+        },
+    )
+
+    response = status_context.client.get(
+        f"/api/v1/projects/{project_id}/status"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["retryable"] is True
+    assert response.json()["error"] == {
+        "code": "vision_provider_call_failed",
+        "stage": "candidate_advisor",
+    }
+    assert "do-not-leak" not in response.text
+    assert "/srv/private" not in response.text
 
 
 @pytest.mark.parametrize(

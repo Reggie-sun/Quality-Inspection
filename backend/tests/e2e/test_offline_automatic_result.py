@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import json
+import socket
 import uuid
 from collections.abc import Iterator
-from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
+from unittest.mock import patch
 
+import pymupdf
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.candidates.advisor import CandidateAdvisor
 from app.candidates.coverage import CoverageEntry
 from app.candidates.models import AutomaticResult
+from app.config import Settings
 from app.db import engine
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
@@ -23,10 +27,10 @@ from app.processing.automatic_result import (
     candidate_snapshot_from_inventory,
 )
 from app.processing.pipeline import InventoryPipeline
+from app.processing.runtime_recognition import RuntimeRecognition
 from app.projects.models import Project
 from app.projects.state import ProjectState
-from app.providers.qwen_vl import parse_candidate_json
-from app.providers.tencent_ocr import normalize_response
+from app.providers.base import VisionResult
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -36,12 +40,6 @@ QWEN_FIXTURE = (
     ROOT
     / ".agent/harness/fixtures/providers/qwen-vl/candidate-review-v1.json"
 )
-TENCENT_FIXTURE = (
-    ROOT
-    / ".agent/harness/fixtures/providers/tencent-ocr/general-accurate-v1.json"
-)
-
-
 class PassingPreflight:
     def check(self) -> None:
         return None
@@ -88,8 +86,14 @@ def _source(
     db_session: Session,
     storage: LocalFileStorage,
     project: Project,
+    *,
+    raw_text: str = "M6",
 ) -> StoredFile:
-    content = b"offline-provider-fixture-pdf"
+    document = pymupdf.open()
+    page = document.new_page(width=200.0, height=200.0)
+    page.insert_text((20.0, 30.0), raw_text)
+    content = document.tobytes(garbage=4, deflate=True, no_new_id=True)
+    document.close()
     stored = storage.write_verified(
         f"projects/{project.id}/source.pdf",
         content,
@@ -136,50 +140,75 @@ def test_offline_provider_fixtures_freeze_one_automatic_result(
 ) -> None:
     """D3-T2: sanitized fixtures yield one coverage-checked immutable result."""
     qwen = json.loads(QWEN_FIXTURE.read_text(encoding="utf-8"))["payload"]
-    tencent = json.loads(TENCENT_FIXTURE.read_text(encoding="utf-8"))["payload"]
-    advisor_payload = parse_candidate_json(qwen["content"])
-    ocr_result = normalize_response(tencent)
-    assert advisor_payload["raw_text"] == ocr_result.observations[0].raw_text
-    polygon = ocr_result.observations[0].polygon
-    observation = TextObservation(
-        observation_id="ocr-observation-1",
-        source_type="ocr",
-        observation_level="region",
-        raw_text=ocr_result.observations[0].raw_text,
-        normalized_text=ocr_result.observations[0].raw_text,
-        page_index=0,
-        bbox_pdf=(
-            min(point[0] for point in polygon),
-            min(point[1] for point in polygon),
-            max(point[0] for point in polygon),
-            max(point[1] for point in polygon),
-        ),
-        bbox_normalized=(0.12, 0.14, 0.72, 0.34),
-        direction=(1.0, 0.0),
-        direction_angle_degrees=ocr_result.observations[0].angle,
-        confidence=ocr_result.observations[0].confidence,
-    )
     project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
     storage = LocalFileStorage(tmp_path)
-    source_file = _source(db_session, storage, project)
+    source_file = _source(
+        db_session,
+        storage,
+        project,
+        raw_text="Ra 3.2",
+    )
+    provider_network_connections = 0
 
-    def fixture_snapshot(pages):
-        return replace(
-            candidate_snapshot_from_inventory(pages),
-            provider_call_ids=(ocr_result.request_id, qwen["request_id"]),
-        )
+    class FixtureVisionProvider:
+        @staticmethod
+        def review_candidate(_image: bytes, _prompt: str) -> VisionResult:
+            return VisionResult(
+                request_id=qwen["request_id"],
+                payload={
+                    "schema_version": "candidate-review/1",
+                    "raw_text": "Ra 3.2",
+                    "item_type": "roughness",
+                    "normalized_text": "Ra 3.2",
+                    "requires_confirmation": True,
+                },
+                usage=dict(qwen["usage"]),
+            )
+
+    def forbidden_ocr_factory(_settings: Settings):
+        raise AssertionError("native fixture must not construct OCR Provider")
+
+    advisor = CandidateAdvisor(
+        Settings(storage_root=storage.root),
+        storage,
+        project_id=str(project.id),
+        provider_factory=lambda _settings: FixtureVisionProvider(),
+    )
+    recognition = RuntimeRecognition(
+        Settings(storage_root=storage.root),
+        provider_factory=forbidden_ocr_factory,
+        advisor=advisor,
+    )
+
+    def block_network(*_args, **_kwargs):
+        nonlocal provider_network_connections
+        provider_network_connections += 1
+        raise AssertionError("offline Provider fixture attempted network access")
 
     pipeline = InventoryPipeline(
         db_session,
         storage,
         PassingPreflight(),
-        inventory_builder=lambda _path: (_page(observation),),
-        candidate_snapshot_builder=fixture_snapshot,
+        inventory_builder=recognition.build_inventory,
+        candidate_snapshot_builder=recognition.build_candidate_snapshot,
     )
     task_key = "process:offline-fixtures"
 
-    first_ref = pipeline.run(str(project.id), source_file.resource_ref, task_key)
-    second_ref = pipeline.run(str(project.id), source_file.resource_ref, task_key)
+    with (
+        patch.object(socket, "socket", new=block_network),
+        patch.object(socket, "create_connection", new=block_network),
+        patch.object(socket, "getaddrinfo", new=block_network),
+    ):
+        first_ref = pipeline.run(
+            str(project.id),
+            source_file.resource_ref,
+            task_key,
+        )
+        second_ref = pipeline.run(
+            str(project.id),
+            source_file.resource_ref,
+            task_key,
+        )
 
     result = db_session.scalar(
         select(AutomaticResult).where(AutomaticResult.project_id == project.id)
@@ -192,16 +221,13 @@ def test_offline_provider_fixtures_freeze_one_automatic_result(
         )
     ) == 1
     assert result.source_file_id == source_file.id
-    assert result.provider_call_ids == [
-        "fixture-request-id",
-        "fixture-qwen-request-id",
-    ]
+    assert result.provider_call_ids == ["fixture-qwen-request-id"]
     assert result.coverage["coverage_checked"] is True
     assert result.coverage["blocking_count"] == 0
-    assert result.candidates[0]["payload"]["item_type"] == "thread"
-    assert result.candidates[0]["source_location_ids"] == [
-        "ocr-observation-1"
-    ]
+    assert result.candidates[0]["payload"]["coarse_type"] == "roughness"
+    assert result.candidates[0]["source_location_ids"]
+    assert result.candidates[0]["advisor_review"]["validated"] is True
+    assert provider_network_connections == 0
     assert storage.resolve_resource_ref(result.inventory_ref).is_file()
     assert db_session.get(Project, project.id).state == ProjectState.READY_FOR_EDIT
     job = db_session.scalar(

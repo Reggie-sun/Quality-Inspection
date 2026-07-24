@@ -67,6 +67,10 @@ def raw_result(db_session: Session) -> AutomaticResult:
                 "page-0:observation-1",
                 (1, 2, 3, 4),
                 candidate_id="candidate-1",
+                advisor_review={
+                    "provider_role": "advisor",
+                    "validated": True,
+                },
             )
         ],
         expected_observation_ids={"observation-1"},
@@ -83,6 +87,10 @@ def raw_result(db_session: Session) -> AutomaticResult:
                 "candidate_id": "candidate-1",
                 "payload": {"raw_text": "M6", "item_type": "thread"},
                 "source_location_ids": ["page-0:observation-1"],
+                "advisor_review": {
+                    "provider_role": "advisor",
+                    "validated": True,
+                },
             }
         ],
         coverage=coverage,
@@ -133,6 +141,12 @@ def test_working_copy_is_versioned(
     assert saved.id == working.id
     assert saved.raw_result_id == raw_result.id
     assert saved.version == before_version + 1
+    assert "advisor_review" in raw_result.candidates[0]
+    assert all("advisor_review" not in item for item in working.items)
+    assert all(
+        "advisor_review" not in entry
+        for entry in working.coverage.get("entries", [])
+    )
 
 
 def test_item_set_freeze_does_not_create_reviewed_result(
@@ -189,6 +203,49 @@ def test_item_set_freeze_does_not_create_reviewed_result(
 
     assert service.reviewed_result_for(working.project_id) is None
     assert service.get_working_copy(working.id).items_frozen_at is not None
+
+
+def test_review_remarks_persist_without_mutating_raw_or_export_contract(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    context = make_balloon_context(db_session, tmp_path, frozen=False)
+    working = context.review_service.apply(
+        context.working_copy.id,
+        expected_version=context.working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_detail_fields",
+            "item_id": "i1",
+            "inspection_item": "M6",
+            "inspection_standard": "confirmed M6",
+            "inspection_method": "thread gauge",
+            "key_dimension": "yes",
+            "inspection_role": "IPQC",
+            "source_page": 1,
+            "remarks": "现场复核量具",
+        },
+    )
+    working = context.review_service.freeze_items(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+    )
+    context.balloon_service.generate_formal(
+        working.project_id,
+        expected_version=working.version,
+        operator_id="quality-1",
+    )
+    reviewed = context.review_service.confirm(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+    )
+    raw = db_session.get(AutomaticResult, working.raw_result_id)
+
+    assert reviewed.items[0]["remarks"] == "现场复核量具"
+    assert raw is not None
+    assert raw.candidates[0]["payload"].get("remarks") is None
 
 
 @pytest.fixture

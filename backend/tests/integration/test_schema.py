@@ -34,6 +34,7 @@ def test_processing_migration_has_exact_owned_columns() -> None:
         "logical_task_key",
         "status",
         "result_ref",
+        "processing_stage",
     }
     assert {column["name"] for column in inspector.get_columns("error_records")} == {
         "id",

@@ -4,11 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.capabilities.service import CapabilityUnavailable
+from app.config import Settings
 from app.providers.qwen_vl import (
     CandidateSchemaError,
     QwenVisionProvider,
     parse_candidate_json,
 )
+from app.providers.runtime import build_vision_provider
 
 
 def test_rejects_invalid_or_schema_incomplete_json() -> None:
@@ -120,3 +123,50 @@ def test_qwen_response_requires_non_empty_request_id(qwen_fixture: dict) -> None
 
     with pytest.raises(CandidateSchemaError, match="request ID"):
         QwenVisionProvider(client).review_candidate(b"controlled", "Review")
+
+
+def test_runtime_factory_builds_beijing_workspace_client(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr("app.providers.runtime.OpenAI", FakeOpenAI)
+    provider = build_vision_provider(
+        Settings(
+            qwen_api_key="test-only-key",
+            qwen_workspace_id="ws-test-123",
+            qwen_model="qwen3-vl-plus",
+        )
+    )
+
+    assert isinstance(provider, QwenVisionProvider)
+    assert captured == {
+        "api_key": "test-only-key",
+        "base_url": (
+            "https://ws-test-123.cn-beijing.maas.aliyuncs.com/"
+            "compatible-mode/v1"
+        ),
+        "timeout": 30.0,
+        "max_retries": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    "workspace_id",
+    (None, "", ".invalid", "invalid.example.com", "invalid/path"),
+)
+def test_runtime_factory_rejects_missing_or_unsafe_workspace(
+    workspace_id: str | None,
+) -> None:
+    with pytest.raises(
+        CapabilityUnavailable,
+        match="Vision Provider configuration is unavailable",
+    ):
+        build_vision_provider(
+            Settings(
+                qwen_api_key="test-only-key",
+                qwen_workspace_id=workspace_id,
+            )
+        )

@@ -79,6 +79,7 @@ SIP_DETAIL_FIELDS = (
     "inspection_role",
     "source_page",
 )
+SIP_OPTIONAL_DETAIL_FIELDS = ("remarks",)
 SIP_METADATA_FIELDS = (
     "material_code",
     "material_name",
@@ -97,6 +98,7 @@ class SetSipDetailFields(CommandBase):
     key_dimension: NonBlankText
     inspection_role: NonBlankText
     source_page: int = Field(ge=1, strict=True)
+    remarks: str = Field(default="", max_length=2000)
 
 
 class SetSipMetadata(CommandBase):

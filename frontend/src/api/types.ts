@@ -95,6 +95,7 @@ export type ReviewItem = {
   key_dimension?: string;
   inspection_role?: string;
   source_page?: number;
+  remarks?: string;
   sip_detail_fields_confirmed?: boolean;
   active: boolean;
 };
@@ -125,6 +126,7 @@ export type ReviewCommand =
       key_dimension: string;
       inspection_role: string;
       source_page: number;
+      remarks: string;
     }
   | {
       type: "set_sip_metadata";
@@ -252,9 +254,16 @@ export type ProjectPhase =
   | "ready_for_review"
   | "failed";
 
+export type ProcessingStage =
+  | "queued"
+  | "parsing"
+  | "recognizing"
+  | "preparing_review";
+
 export type ProjectStatus = {
   project_id?: string;
   phase: ProjectPhase;
+  stage?: ProcessingStage | null;
   workbench_ready: boolean;
   retryable: boolean;
   error: {

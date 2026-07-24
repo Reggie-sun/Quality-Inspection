@@ -12,17 +12,20 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
+from app.candidates.advisor import CandidateAdvisorFailure
 from app.candidates.models import AutomaticResult
 from app.config import Settings
 from app.db import engine
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
 from app.processing import tasks
+from app.processing.runtime_recognition import RuntimeRecognition
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.review.models import ReviewWorkingCopy
 from app.review.service import ReviewService
+from app.providers.base import VisionResult
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -57,10 +60,10 @@ def task_session_factory(
     return factory
 
 
-def _write_candidate_pdf(path: Path) -> bytes:
+def _write_candidate_pdf(path: Path, raw_text: str = "M6") -> bytes:
     document = pymupdf.open()
     page = document.new_page(width=200.0, height=200.0)
-    page.insert_text((20.0, 30.0), "M6")
+    page.insert_text((20.0, 30.0), raw_text)
     document.save(path)
     document.close()
     return path.read_bytes()
@@ -70,9 +73,14 @@ def _project_source(
     session: Session,
     storage: LocalFileStorage,
     tmp_path: Path,
+    *,
+    raw_text: str = "M6",
 ) -> tuple[Project, StoredFile]:
     project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
-    content = _write_candidate_pdf(tmp_path / f"{project.id}.pdf")
+    content = _write_candidate_pdf(
+        tmp_path / f"{project.id}.pdf",
+        raw_text,
+    )
     stored = storage.write_verified(
         f"projects/{project.id}/source.pdf",
         content,
@@ -114,6 +122,16 @@ def _configure_task(
         raise AssertionError("vector processing must not construct the OCR Provider")
 
     monkeypatch.setattr(tasks, "OCR_PROVIDER_FACTORY", forbidden_provider_factory)
+
+    def forbidden_vision_provider_factory(_settings: Settings):
+        external_calls.append("vision-provider")
+        raise AssertionError("clear candidate must not construct the Vision Provider")
+
+    monkeypatch.setattr(
+        tasks,
+        "VISION_PROVIDER_FACTORY",
+        forbidden_vision_provider_factory,
+    )
 
 
 def _counts(session: Session, project_id: uuid.UUID) -> dict[str, int]:
@@ -196,6 +214,172 @@ def test_canonical_task_creates_one_review_working_copy_and_is_idempotent(
             "source_ref",
             "logical_task_key",
         )
+    finally:
+        verify.close()
+
+
+def test_canonical_task_calls_vision_once_for_eligible_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    setup = task_session_factory()
+    project, source = _project_source(
+        setup,
+        storage,
+        tmp_path,
+        raw_text="Ra 3.2",
+    )
+    setup.close()
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+    vision_calls: list[str] = []
+
+    class FakeVisionProvider:
+        def review_candidate(self, _image: bytes, prompt: str) -> VisionResult:
+            import json
+
+            raw_text = str(json.loads(prompt)["raw_text"])
+            vision_calls.append(raw_text)
+            return VisionResult(
+                request_id="fixture-qwen-request-id",
+                payload={
+                    "schema_version": "candidate-review/1",
+                    "raw_text": raw_text,
+                    "item_type": "roughness",
+                    "normalized_text": raw_text,
+                    "requires_confirmation": True,
+                },
+                usage={"total_tokens": 10},
+            )
+
+    monkeypatch.setattr(
+        tasks,
+        "VISION_PROVIDER_FACTORY",
+        lambda _settings: FakeVisionProvider(),
+    )
+    observed_stages: list[str] = []
+    original_snapshot_builder = RuntimeRecognition.build_candidate_snapshot
+
+    def recording_snapshot_builder(
+        recognition: RuntimeRecognition,
+        pages,
+    ):
+        observer = task_session_factory()
+        try:
+            job = observer.scalar(
+                select(LogicalJob).where(
+                    LogicalJob.project_id == str(project.id)
+                )
+            )
+            assert job is not None
+            observed_stages.append(job.processing_stage)
+        finally:
+            observer.close()
+        return original_snapshot_builder(recognition, pages)
+
+    monkeypatch.setattr(
+        RuntimeRecognition,
+        "build_candidate_snapshot",
+        recording_snapshot_builder,
+    )
+    key = f"product-process:{project.id}"
+
+    first_result_ref = inventory_project.run(
+        str(project.id),
+        source.resource_ref,
+        key,
+    )
+    second_result_ref = inventory_project.run(
+        str(project.id),
+        source.resource_ref,
+        key,
+    )
+
+    verify = task_session_factory()
+    try:
+        raw = verify.scalar(
+            select(AutomaticResult).where(
+                AutomaticResult.project_id == project.id
+            )
+        )
+        assert raw is not None
+        completed_job = verify.scalar(
+            select(LogicalJob).where(
+                LogicalJob.project_id == str(project.id)
+            )
+        )
+        assert completed_job is not None
+        assert observed_stages == ["recognizing"]
+        assert completed_job.processing_stage == "preparing_review"
+        assert vision_calls == ["Ra 3.2"]
+        assert raw.provider_call_ids == ["fixture-qwen-request-id"]
+        assert raw.candidates[0]["advisor_review"]["validated"] is True
+        assert second_result_ref == first_result_ref
+        assert vision_calls == ["Ra 3.2"]
+        assert external_calls == []
+    finally:
+        verify.close()
+
+
+def test_vision_failure_is_sanitized_without_result_layers(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    setup = task_session_factory()
+    project, source = _project_source(
+        setup,
+        storage,
+        tmp_path,
+        raw_text="Ra 3.2",
+    )
+    setup.close()
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+    private_detail = "/srv/private/customer.pdf credential=do-not-leak"
+
+    class FailingVisionProvider:
+        def review_candidate(self, _image: bytes, _prompt: str) -> VisionResult:
+            raise RuntimeError(private_detail)
+
+    monkeypatch.setattr(
+        tasks,
+        "VISION_PROVIDER_FACTORY",
+        lambda _settings: FailingVisionProvider(),
+    )
+
+    with pytest.raises(CandidateAdvisorFailure):
+        inventory_project.run(
+            str(project.id),
+            source.resource_ref,
+            f"product-process:{project.id}",
+        )
+
+    verify = task_session_factory()
+    try:
+        error = verify.scalar(
+            select(ErrorRecord).where(ErrorRecord.project_id == project.id)
+        )
+        assert _counts(verify, project.id)["raw"] == 0
+        assert _counts(verify, project.id)["working"] == 0
+        assert error is not None
+        assert error.code == "vision_provider_call_failed"
+        assert error.stage == "candidate_advisor"
+        assert error.cause_category == "transient_provider_failure"
+        assert private_detail not in error.message
     finally:
         verify.close()
 

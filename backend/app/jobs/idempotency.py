@@ -30,10 +30,23 @@ class LogicalJob(Base):
         nullable=False,
     )
     result_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    processing_stage: Mapped[str] = mapped_column(
+        String(32),
+        default="queued",
+        nullable=False,
+    )
 
 
 class LogicalJobStateError(RuntimeError):
     pass
+
+
+PROCESSING_STAGES = {
+    "queued",
+    "parsing",
+    "recognizing",
+    "preparing_review",
+}
 
 
 @dataclass(frozen=True)
@@ -90,6 +103,29 @@ def claim_logical_job(
     return job
 
 
+def set_processing_stage(
+    session: Session,
+    *,
+    job_id: uuid.UUID,
+    stage: str,
+) -> None:
+    if stage not in PROCESSING_STAGES:
+        raise ValueError("unknown processing stage")
+    outcome = session.execute(
+        update(LogicalJob)
+        .where(
+            LogicalJob.id == job_id,
+            LogicalJob.result_ref.is_(None),
+            LogicalJob.status.in_(("pending", "processing")),
+        )
+        .values(status="processing", processing_stage=stage)
+    )
+    if outcome.rowcount != 1:
+        session.rollback()
+        raise LogicalJobStateError("logical job cannot change processing stage")
+    session.commit()
+
+
 def complete_logical_job(
     session: Session,
     *,
@@ -136,6 +172,11 @@ def claim_logical_job_failure(
         .execution_options(synchronize_session=False)
     )
     if outcome.rowcount == 1:
+        refreshed = session.get(LogicalJob, job_id, populate_existing=True)
+        if refreshed is None:
+            raise LogicalJobStateError(
+                "logical job disappeared after failure claim"
+            )
         return LogicalJobFailureClaim(
             owns_failure=True,
             successful_result_ref=None,

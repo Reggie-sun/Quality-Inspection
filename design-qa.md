@@ -401,3 +401,157 @@ changed files:
 - Remaining P1: 0.
 - Remaining P2: 0.
 - final result: passed
+
+## Qwen Vision Runtime And Remaining-Risk Closure — 2026-07-24
+
+### Scope And Grounding
+
+本轮从 commit `7d5ed9534b9dd263d572ea5364f03ed3af2f9a71` 开始，只完成已确认的 Qwen Vision runtime 接入和上一轮剩余 P0/P1 风险收口。实际接入的是现有 Qwen Vision OpenAI-compatible API，不是新增自托管 vLLM 服务。没有新增依赖、修改 `package.json`、建立第二套前端、改写 Review/Balloon/Export Owner，或用前端状态掩盖后端失败。
+
+source identity: user-attached confirmed reference image
+source sha256: e9693f9d27083271af68754c7260ad813316c6cdd39807f6a4e90e74ace33de4
+source pixels: 1550x1014
+implementation route: /
+browser: Google Chrome
+Playwright browser channel: chrome
+locale: zh-CN
+timezone: Asia/Hong_Kong
+device scale factor: 1
+primary viewport: 1565x796
+responsive viewports: 1366x768, 1180x800
+Product Design calls: `product-design:index`, `product-design:image-to-code`
+Design QA workflow: 使用 `product-design:image-to-code` 内置 design-QA workflow，对用户参考图、当前运行态截图和 comparison image 做同方向核验
+
+参考图继续只拥有视觉层级、布局比例、色彩、间距、表格与面板组织、操作层级和工业软件质感。Qwen 输出、检验项、页码、SIP 字段、公司记录、导出物和处理阶段全部来自正式代码或受控 QA runtime projection，不从参考图推导业务事实。
+
+### Initial Findings
+
+P0:
+
+- Qwen 配置虽然存在，但 canonical processing task 没有建立可审计的 runtime Provider factory、局部 crop、strict schema validation、cache 和 Provider call record，LLM advisor 并未形成正式闭环。
+- 首次真实 Qwen HTTP 200 响应因 prompt 未携带 frozen output schema 而缺少必填字段，导致需要 Vision advisor 的 PDF 进入安全失败而无法完成处理。
+- processing stage 更新提交后，failure claim 在 `expire_on_commit=False` session 中可能读取 stale identity map，影响并发失败归属和最终状态。
+
+P1:
+
+- 状态 projection 不能区分 queued、parsing、recognizing 和 preparing review，前端只能显示过粗阶段。
+- 页码卡片不是 PDF 页面缩略图；“适合页面”只恢复固定比例，不按真实容器测量。
+- Review/SIP 没有正式 `remarks` schema，前端不能安全增加备注编辑。
+- 少数 `retryable=false` 的非输入类错误仍可能给出不够精确的中文下一步。
+- 数百条检验项与数百个候选/来源标记需要更低噪声的默认密度和更强的选中态。
+
+P2:
+
+- 极高密度工程图在不隐藏真实候选和来源的前提下仍有视觉拥挤。
+
+### Fixed Findings
+
+- `backend/app/providers/runtime.py` 建立 Qwen OpenAI-compatible factory，只接受现有正式配置，超时 30 秒、SDK retry 为 0，不记录 credential。
+- 新增 `backend/app/candidates/advisor.py`：只路由 coarse、composite、OCR、requires-confirmation 或 parser-failed 对象；每页最多 16 次局部 crop；使用稳定 cache key、严格 frozen schema、原文与类型防漂移校验和脱敏 call record。
+- Advisor cache 命中前必须解析到对应 Provider call record；worker 若在 cache 与 call record 写入之间中断，后续处理会 fail closed，不会复用缺少审计记录的模型响应。
+- `backend/app/processing/runtime_recognition.py`、`tasks.py`、`pipeline.py` 和 `automatic_result.py` 将 advisor 接入 canonical task；正式 Working Copy 移除 advisor provenance，Provider 仍不是业务语义 Owner。
+- Qwen prompt 明确声明 `additionalProperties=false` 的完整 output schema；真实 HTTP 200 后成功生成 Automatic Result 和 Working Copy。同一 logical task 重放复用结果，call record 数不增加。
+- `backend/app/jobs/idempotency.py` 在成功 claim failure 后只 refresh 当前 logical job，消除 stage commit 后的 stale state，不改变并发 winner 语义。
+- 新增 migration `backend/alembic/versions/0007_processing_stage.py`，后端正式投影 queued/parsing/recognizing/preparing_review；前端只显示阶段和 indeterminate indicator，不显示百分比。
+- Review command schema、working copy 和前端 SIP 明细加入 optional `remarks`；空值保持空，不阻塞 freeze/export，不生成示例备注。
+- `PdfWorkspace.tsx` 使用 PDF.js canvas 渲染真实 48×32 页面缩略图；“适合页面”基于 scroll frame 与真实 page size 计算比例。
+- 错误 guidance 按 invalid/unsupported、Provider/config、processing failure 和 retryable 分流；不显示后端英文 message，也不将有效 PDF 误说成无效。
+- `OverlayLayer.tsx` 与 `workbench.css` 对高密度 candidate/source 降低默认 opacity，selected/related 保持完整强调；正式红色气泡语义和交互不变。
+
+changed production files:
+
+- `.agent/harness/scripts/run-p0.py`
+- `backend/alembic/versions/0007_processing_stage.py`
+- `backend/app/candidates/advisor.py`
+- `backend/app/candidates/coverage.py`
+- `backend/app/jobs/idempotency.py`
+- `backend/app/processing/automatic_result.py`
+- `backend/app/processing/pipeline.py`
+- `backend/app/processing/runtime_recognition.py`
+- `backend/app/processing/tasks.py`
+- `backend/app/projects/schemas.py`
+- `backend/app/projects/service.py`
+- `backend/app/providers/call_records.py`
+- `backend/app/providers/runtime.py`
+- `backend/app/review/schemas.py`
+- `backend/app/review/service.py`
+- `frontend/src/api/types.ts`
+- `frontend/src/app/QualityInspectionApp.tsx`
+- `frontend/src/components/pdf/OverlayLayer.tsx`
+- `frontend/src/components/pdf/PdfWorkspace.tsx`
+- `frontend/src/components/workbench/InspectionItemTable.tsx`
+- `frontend/src/copy/zhCN.ts`
+- `frontend/src/styles/workbench.css`
+
+对应 contract、unit、integration、E2E 和 frontend component tests 同步更新；未新增 runtime dependency。
+
+### Qwen Runtime Truth
+
+- `.env` 中 Qwen API key、workspace 和 model 配置均存在；QA 只检查是否存在，没有打印值。
+- 当前 runtime log 中 Qwen HTTP 200 count 为 2；对应 2 个 Provider call record 均通过字段 allowlist 和 forbidden-content 检查，credential/base64/data URL count 为 0。
+- 主 Qwen smoke 产生 1 个 Automatic Result、1 个 validated-or-rejected advisor decision 和 1 个 Working Copy；同一 canonical logical task 重放后结果复用，未增加 call record。
+- 最终原生 `M6` 浏览器 QA 前后 Qwen call record 都为 2，证明清晰 native candidate 没有不必要调用 Vision Provider。
+- runtime log：traceback 0、Authorization 0、API-key pattern 0、data-image 0。
+
+### Browser, Network And Accessibility
+
+- Google Chrome context 实测为 `1565x796 / scale 1 / zh-CN / Asia/Hong_Kong`。
+- 裸 `/` 显示文字品牌“智检通”和“工程图纸智能检验”，无 Logo 图形；空态上传按钮禁用，无内部 ID 和页面级横向溢出。
+- 选择文件后显示浏览器 `File` 的真实文件名和 784 B 大小，可重新选择或移除。
+- 为截取确定性阶段证据，QA 短暂停止 worker，在单一受控 QA 项目上写入正式 `LogicalJob.processing_stage` projection，分别验证 queued、parsing、recognizing、preparing_review；随后恢复 queued、重启 worker 并由 canonical task 完成真实处理。生产前端和业务代码没有 mock 或静态阶段。
+- processing 使用 `aria-busy=true` 和 polite live status；四阶段均无百分比。
+- invalid PDF 使用 `role=alert`、中文原因和“重新选择文件”；唯一 network failure 为预期 422，Chrome 对该 422 记录 1 条 resource console error，已解释。
+- 成功上传、工作台、缩略图、fit、remarks、密集图和响应式路径：console errors 0，HTTP `>=400` 0。
+- 当前已发布结果的三个真实下载均成功且签名有效：带气泡 PDF 887343 B、SIP Excel 1393236 B、manifest 1090 B；三者与 manifest 内部引用均来自同一个 reviewed result，下载路径 HTTP failure 为 0。
+- Tab 可到达 file input，`.pdf-dropzone:focus-within` 实测有可见 outline；workbench accessibility snapshot 包含中文 landmark 和可访问名称，无 UUID。
+- `prefers-reduced-motion: reduce` 实测生效，transition 和 animation duration 为 0。
+- 真实缩略图为 48×32 canvas，包含非白渲染像素；fit 后 page layer 为 `741×494`，完整落在 `918.65625×520` frame 内。
+- 当前两栏工作台中 PDF pane 实测宽 `1012.65625`，大于列表 pane 的 `506.34375`；SIP/导出辅助面板默认收起，无页面级横向溢出。
+- 高密度实图当前页为 89 个 candidate markers、75 个 source markers、50 行表格；candidate 点击可定位 selected row。
+- 1366×768 和 1180×800 的 `scrollWidth` 分别等于 viewport width，PDF 与表格均保留可用。
+- 独立 Reviewer 首轮发现 `05–10`、`15–17` 来自已退休的三栏 runtime。QA 随即从当前 worktree 重建隔离 frontend，重抓工作台、冻结、气泡、导出、comparison、缩略图、密集图和响应式证据；新截图均显示当前两栏布局和“展开 SIP 与导出信息”控件。
+
+### Screenshot Evidence
+
+- `.local/design-qa/01-upload-idle.png` — `bc6b9d2bffd0a6b772afa468cfdeaffb322e1a5a409dbf64ad44484f2ac1affc`
+- `.local/design-qa/02-file-selected.png` — `23426321c9b127efe295a39d3ebb5a63cb02595f89f07bdf0d323f158dac3912`
+- `.local/design-qa/03-processing.png` — `baf9db2265307092fbe8fb6e0d603cb815fdbd67b9770434a0236d98410564f6`
+- `.local/design-qa/04-fatal-retry.png` — `dda9ae812eebd2f4d8cbe3ddff2bbeda3da53812e3f4b3cd4fb8115df9272e7c`
+- `.local/design-qa/05-workbench-overview.png` — `b528ae96a6f22094c9bf75dd513e8044b98056668f92518e5c224b92adad2565`
+- `.local/design-qa/06-item-selected.png` — `0687a69b706c12b7591714d967e87c8e94f858fc3ca33ed9a670fb845620c5bc`
+- `.local/design-qa/07-items-frozen.png` — `044813b0f1575838122da15aeef536515e8ee818defcf6c6158534a4ae3dd7a6`
+- `.local/design-qa/08-balloons-adjusted.png` — `ea5e54e8357c2579fdec08b6a6b7c9c8be8ca10d6d7870388e3c34b296d0a78d`
+- `.local/design-qa/09-export-success.png` — `64017b11f5a90c2f865e403e7e44f490f0e710c6cb7d704c5318a9e670903418`
+- `.local/design-qa/10-reference-comparison.png` — `3da95a251ca0dab4321226b646c9ad41ea3cb48422d6aaef5d39829aa1df169c`
+- `.local/design-qa/11-workbench-1366.png` — `b569eae28257efcbaebf46cbe61245504baa487a4dadf6d032521f450dc4cf21`
+- `.local/design-qa/12-workbench-1180.png` — `a34e74eefbdd59de1a495bee8d0a7ff760b3de4a3ceeb80fe24eb7368f21126a`
+- `.local/design-qa/13-processing-parsing.png` — `9776914c7294d4e34fefd4b1531feba6d10df3acbcc257b31786c356b14045d3`
+- `.local/design-qa/14-processing-recognizing.png` — `cf52e58edccebec8e9aadab55a8a09b3e1d93b6767aed04d124905ca5a670fdf`
+- `.local/design-qa/15-real-thumbnails-fit.png` — `632f35bfc311d75f680f70f0bb4ea8a7374f35d77311100b5b924fbed447d661`
+- `.local/design-qa/16-item-remarks.png` — `996c1329668a0761e908165ef77432592ad87ada4123e2b6ffc64df98105e3f9`
+- `.local/design-qa/17-dense-overlay-focus.png` — `f4ec4b59afd7eac94660964f41fe14b62094866877880d815d3e0ced87338978`
+- `.local/design-qa/18-workbench-1180.png` — `416631b5a4731067336f77267b1771f45e18134ba1caaff6d8aa7386c1c991b1`
+- `.local/design-qa/19-processing-preparing-review.png` — `44f18a35f493c12fdcd0db7ea13cd3155f1d60fd946c52f8afcd0b9e571117fa`
+
+全部截图、受控 PDF、浏览器 evidence JSON 和下载物保持未跟踪，不加入 Git。
+
+### Verification
+
+- `python .agent/harness/scripts/check-contracts.py`: passed；`global_contracts=69`、`p0_contracts=111`、`unclassified=0`、`mirror_drift=0`、`bindings_drift=0`。
+- 用户指定的 `micromamba run -n qi-p0 pytest backend/tests -q`: 从仓库根执行时得到 55 个同源 collection errors，原因为 console entrypoint 没有把 `backend/app` 加入 import path。
+- 修正启动方式、先执行 Alembic migration，并使用自动创建/删除的隔离 PostgreSQL：`cd backend && micromamba run -n qi-p0 python -m pytest tests -q`，473 passed，1 条既有 Starlette deprecation warning。
+- `micromamba run -n qi-p0 npm --prefix frontend test -- --run`: 17/17 files，96/96 tests passed。
+- `micromamba run -n qi-p0 npm --prefix frontend run build`: passed；仅既有 large-chunk warning。
+- `micromamba run -n qi-p0 npm --prefix frontend run e2e -- --list`: 2 tests / 2 files，中文裸根闭环和 P0 Workbench regression 均可发现。
+- `QI_MVP_E2E_PDF`: 当前 shell 未设置，因此未执行依赖正式外部 PDF 的 Playwright closure。
+- API `:8000`、现有 frontend `:3000` 和隔离 QA frontend `:3002` health 均成功。
+- canonical Compose 的 postgres、redis、api、worker 正常；现有无关 `compose.yaml` host-port 改动仍使 canonical frontend container 无法绑定已占用端口，本轮未覆盖、未清理该改动。
+
+### Remaining Findings And Conclusion
+
+- Remaining P0: 0.
+- Remaining P1: 0.
+- Remaining P2: 极端密集图仍然天然拥挤；已通过默认降噪和 selected/related 强调缓解，但没有隐藏真实候选、来源或正式气泡。
+- Product Design direction: 保持白色、浅灰、工程蓝、无 Logo、无紫色/渐变/玻璃拟态；PDF 仍为最大工作区，表格、SIP 和导出层级与参考方向一致。
+- Truthfulness: 无可见内部 ID、静态假产品数据、静态假日志、虚假百分比或参考图写死字段；“公司处理记录”只显示真实事件或空状态。
+- Final QA conclusion: passed。P0 为 0，Qwen Vision advisor 已进入 canonical runtime，上一轮全部 P1 已关闭；只保留不影响闭环的极端密度 P2。

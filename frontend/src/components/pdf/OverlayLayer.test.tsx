@@ -339,4 +339,37 @@ describe("OverlayLayer", () => {
     expect(screen.getByTestId("candidate-leader-candidate-1")).not.toBeNull();
     expect(screen.queryByTestId("balloon-balloon-deleted")).toBeNull();
   });
+
+  test("非选中候选与来源提供可聚焦的密度层级 class", () => {
+    render(
+      <OverlayLayer
+        pageWidth={100}
+        pageHeight={100}
+        scale={1}
+        candidates={[{
+          id: "c1",
+          itemId: "item-1",
+          candidateNumber: 1,
+          bbox: [10, 10, 30, 30],
+        }]}
+        sources={[{
+          id: "s1",
+          itemId: "item-1",
+          bbox: [10, 10, 30, 30],
+        }]}
+        balloons={[]}
+        onSelectItem={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("candidate-c1").classList.contains(
+      "pdf-overlay-candidate",
+    )).toBe(true);
+    expect(screen.getByTestId("source-s1").classList.contains(
+      "pdf-overlay-source",
+    )).toBe(true);
+    const marker = screen.getByTestId("candidate-number-c1");
+    expect(marker.classList.contains("pdf-overlay-candidate-marker")).toBe(true);
+    expect(marker.getAttribute("data-selected")).toBe("false");
+  });
 });

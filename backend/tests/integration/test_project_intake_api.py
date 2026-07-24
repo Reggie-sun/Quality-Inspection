@@ -113,6 +113,7 @@ def test_create_project_accepts_one_pdf_and_dispatches_canonical_task(
         "workbench_ready": False,
         "retryable": False,
         "error": None,
+        "stage": "queued",
     }
     project = intake_context.session.get(Project, project_id)
     source_ref = f"asset://projects/{project_id}/source.pdf"
@@ -239,6 +240,7 @@ def test_dispatch_failure_is_sanitized_retryable_and_durable(
             "code": "project_dispatch_failed",
             "stage": "dispatch",
         },
+        "stage": None,
     }
     project = intake_context.session.get(Project, project_id)
     error = intake_context.session.scalar(

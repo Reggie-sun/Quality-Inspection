@@ -133,7 +133,7 @@ test("上传后显示处理进度并自动进入现有工作台", async () => {
   choosePdf();
   fireEvent.click(screen.getByRole("button", { name: "上传并开始识别" }));
 
-  expect(await screen.findByText("正在解析图纸并识别检验项")).not.toBeNull();
+  expect(await screen.findByText("正在识别检验项")).not.toBeNull();
   expect(await screen.findByRole("heading", { name: "检验项目审核" })).not.toBeNull();
   expect(screen.queryByText("识别完成，已进入审核")).toBeNull();
   expect(screen.getByRole("button", { name: "处理另一份图纸" })).not.toBeNull();
@@ -143,6 +143,47 @@ test("上传后显示处理进度并自动进入现有工作台", async () => {
   expect(window.location.pathname).toBe("/");
   expect(window.location.search).toBe("");
   expect(document.body.textContent).not.toContain(PROJECT_ID);
+});
+
+
+test.each([
+  ["parsing", "正在解析工程图纸"],
+  ["recognizing", "正在识别检验项"],
+  ["preparing_review", "正在准备审核"],
+] as const)("显示真实后端阶段 %s", async (stage, label) => {
+  window.sessionStorage.setItem("qi.current-project-id", PROJECT_ID);
+  const getProjectStatus = vi.fn().mockResolvedValue(
+    status("processing", { stage }),
+  );
+  render(
+    <QualityInspectionApp
+      api={fakeApi(undefined, getProjectStatus)}
+      pollIntervalMs={60_000}
+    />,
+  );
+
+  expect(await screen.findByText(label)).not.toBeNull();
+  expect(screen.queryByText(/%/)).toBeNull();
+});
+
+
+test("非重试配置错误不把有效 PDF 说成无效", async () => {
+  window.sessionStorage.setItem("qi.current-project-id", PROJECT_ID);
+  const getProjectStatus = vi.fn().mockResolvedValue(
+    status("failed", {
+      retryable: false,
+      error: {
+        code: "vision_provider_unavailable",
+        stage: "preflight",
+      },
+    }),
+  );
+  render(<QualityInspectionApp api={fakeApi(undefined, getProjectStatus)} />);
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("若文件有效，请联系管理员检查服务配置");
+  expect(alert.textContent).not.toContain("有效的工程 PDF");
+  expect(screen.queryByRole("button", { name: "重新处理" })).toBeNull();
 });
 
 

@@ -81,6 +81,12 @@ def _selected_observations(pages: Sequence[Any]) -> list[TextObservation]:
     )
 
 
+def selected_observations(
+    pages: Sequence[Any],
+) -> tuple[TextObservation, ...]:
+    return tuple(_selected_observations(pages))
+
+
 def _coarse_type(raw_text: str) -> str | None:
     if ROUGHNESS_TOKEN.search(raw_text) or "粗糙" in raw_text:
         return "roughness"
@@ -339,6 +345,7 @@ def build_automatic_result(
         ProjectState(project.state),
         ProjectState.READY_FOR_EDIT,
     )
+    job.processing_stage = "preparing_review"
     job.status = "succeeded"
     job.result_ref = automatic_result_ref(result)
     session.commit()

@@ -964,18 +964,15 @@ import os
 import sys
 import uuid
 
-from redis import Redis
 from sqlalchemy import select
 
-from app.capabilities.service import ProcessingPreflight
-from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import SessionLocal
 from app.candidates.models import AutomaticResult
-from app.processing.pipeline import InventoryPipeline
+from app.processing.tasks import inventory_project
 from app.projects.models import Project
 from app.projects.state import ProjectState
-from app.review.service import ReviewService
+from app.review.models import ReviewWorkingCopy
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -985,29 +982,7 @@ if hashlib.sha256(payload).hexdigest() != expected:
     raise RuntimeError("source identity changed before application upload")
 settings = get_settings()
 storage = LocalFileStorage(settings.storage_root)
-preflight = ProcessingPreflight(
-    storage,
-    Redis.from_url(settings.redis_url),
-    celery_app,
-    ocr_configured=all(
-        isinstance(value, str) and bool(value.strip())
-        for value in (
-            settings.tencent_secret_id,
-            settings.tencent_secret_key,
-            settings.tencent_region,
-        )
-    ),
-    vision_configured=all(
-        isinstance(value, str) and bool(value.strip())
-        for value in (
-            settings.qwen_api_key,
-            settings.qwen_workspace_id,
-            settings.qwen_model,
-        )
-    ),
-)
-preflight.check()
-session = SessionLocal()
+seed_session = SessionLocal()
 try:
     project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
     stored = storage.write_verified(
@@ -1021,19 +996,35 @@ try:
         size_bytes=stored.size_bytes,
         mime_type="application/pdf",
     )
-    session.add_all([project, source])
-    session.commit()
-    InventoryPipeline(session, storage, preflight).run(
-        str(project.id),
-        source.resource_ref,
-        "p0-live:" + os.environ["QI_P0_RUN_ID"] + ":" + os.environ["QI_P0_ORDER"],
-    )
+    seed_session.add_all([project, source])
+    seed_session.commit()
+    project_id = project.id
+    source_ref = source.resource_ref
+    source_sha256 = source.sha256
+finally:
+    seed_session.close()
+
+result_ref = inventory_project.run(
+    str(project_id),
+    source_ref,
+    "p0-live:" + os.environ["QI_P0_RUN_ID"] + ":" + os.environ["QI_P0_ORDER"],
+)
+session = SessionLocal()
+try:
     raw = session.scalar(
-        select(AutomaticResult).where(AutomaticResult.project_id == project.id)
+        select(AutomaticResult).where(AutomaticResult.project_id == project_id)
+    )
+    working = session.scalar(
+        select(ReviewWorkingCopy).where(
+            ReviewWorkingCopy.project_id == project_id
+        )
     )
     if raw is None:
         raise RuntimeError("automatic result was not created")
-    working = ReviewService(session, storage=storage).create_from_raw(raw.id)
+    if working is None:
+        raise RuntimeError("review working copy was not created")
+    if result_ref != f"automatic-result://{raw.id}":
+        raise RuntimeError("canonical processing result identity changed")
     inventory = json.loads(storage.read_bytes(raw.inventory_ref))
     pages = inventory.get("pages")
     if not isinstance(pages, list) or not pages:
@@ -1100,11 +1091,11 @@ try:
             "source_evidence": source_evidence,
         })
     print(json.dumps({
-        "project_id": str(project.id),
+        "project_id": str(project_id),
         "working_copy_id": str(working.id),
         "working_version": working.version,
         "process": {
-            "source_sha256": source.sha256,
+            "source_sha256": source_sha256,
             "actual_page_count": len(pages),
             "actual_physical_pages": sorted({physical_page(page) for page in pages}),
             "automatic_result_id": str(raw.id),

@@ -330,6 +330,7 @@ export function OverlayLayer({
         return (
           <g key={item.id}>
             <rect
+              className="pdf-overlay-candidate"
               data-testid={`candidate-${item.id}`}
               data-selected={isSelected}
               x={x0}
@@ -353,6 +354,7 @@ export function OverlayLayer({
         ) || item.id === selectedSourceId;
         return (
           <rect
+            className="pdf-overlay-source"
             key={item.id}
             data-testid={`source-${item.id}`}
             data-selected={isSelected}
@@ -399,6 +401,7 @@ export function OverlayLayer({
         return (
           <Fragment key={`candidate-number-${item.id}`}>
             <line
+              className="pdf-overlay-candidate-leader"
               data-testid={`candidate-leader-${item.id}`}
               x1={markerX}
               y1={markerY}
@@ -412,6 +415,7 @@ export function OverlayLayer({
               style={{ pointerEvents: "none" }}
             />
             <g
+              className="pdf-overlay-candidate-marker"
               data-testid={`candidate-number-${item.id}`}
               data-item-id={itemId}
               data-selected={isSelected}

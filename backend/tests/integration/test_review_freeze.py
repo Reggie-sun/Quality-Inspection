@@ -115,6 +115,7 @@ def working_copy(db_session: Session) -> ReviewWorkingCopy:
             "key_dimension": "yes",
             "inspection_role": "IPQC",
             "source_page": 1,
+            "remarks": "",
         },
     )
     working = service.apply(

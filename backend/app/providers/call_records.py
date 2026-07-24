@@ -68,7 +68,7 @@ class ProviderCallRecord:
     duration_ms: int
     retry_count: int
     input_image_count: int
-    estimated_cost: float
+    estimated_cost: float | None
     logical_task_reused: bool
     request_ref: str
     response_ref: str
@@ -98,13 +98,13 @@ class ProviderCallRecord:
             for value in counters
         ):
             raise ValueError("Provider call counters must be non-negative integers")
-        if (
+        if self.estimated_cost is not None and (
             isinstance(self.estimated_cost, bool)
             or not isinstance(self.estimated_cost, (int, float))
             or not math.isfinite(float(self.estimated_cost))
             or self.estimated_cost < 0
         ):
-            raise ValueError("estimated_cost must be non-negative")
+            raise ValueError("estimated_cost must be null or non-negative")
         if not isinstance(self.logical_task_reused, bool):
             raise ValueError("logical_task_reused must be boolean")
 

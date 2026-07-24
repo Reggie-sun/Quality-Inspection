@@ -10,9 +10,9 @@ import {
 } from "react";
 
 import { ApiError } from "../api/client";
-import type { ProjectStatus } from "../api/types";
+import type { ProcessingStage, ProjectStatus } from "../api/types";
 import { ProjectWorkbenchApp } from "../components/workbench/ProjectWorkbenchApp";
-import { projectErrorCopy, zhCN } from "../copy/zhCN";
+import { projectErrorCopy, projectErrorGuidance, zhCN } from "../copy/zhCN";
 import { projectApi, type ProjectApi } from "../features/projects/api";
 import {
   clearCurrentProjectId,
@@ -29,7 +29,7 @@ type ProductScreen =
       kind: "processing";
       file?: File;
       projectId: string;
-      phase: "queued" | "processing" | "preparing";
+      phase: ProcessingStage;
     }
   | { kind: "fatal"; file?: File; code: string; retryable: boolean }
   | { kind: "ready"; projectId: string };
@@ -68,7 +68,7 @@ function retryableUploadFailure(caught: unknown): boolean {
 
 function activeStage(screen: ProductScreen): number {
   if (screen.kind === "ready") return 2;
-  if (screen.kind === "processing" && screen.phase === "preparing") return 2;
+  if (screen.kind === "processing" && screen.phase === "preparing_review") return 2;
   if (screen.kind === "processing") return 1;
   return 0;
 }
@@ -131,10 +131,18 @@ function statusText(screen: ProductScreen): string | undefined {
   if (screen.kind === "uploading") return zhCN.status.uploading;
   if (screen.kind === "processing") {
     if (screen.phase === "queued") return zhCN.status.queued;
-    if (screen.phase === "preparing") return zhCN.status.preparing;
-    return zhCN.status.processing;
+    if (screen.phase === "parsing") return zhCN.status.parsing;
+    if (screen.phase === "recognizing") return zhCN.status.recognizing;
+    return zhCN.status.preparing;
   }
   return undefined;
+}
+
+function processingStage(result: ProjectStatus): ProcessingStage {
+  if (result.stage !== undefined && result.stage !== null) return result.stage;
+  if (result.phase === "queued") return "queued";
+  if (result.phase === "ready_for_review") return "preparing_review";
+  return "recognizing";
 }
 
 
@@ -188,9 +196,7 @@ export function QualityInspectionApp({
         setScreen((current) => current.kind === "processing"
           ? {
               ...current,
-              phase: result.phase === "queued"
-                ? "queued"
-                : result.phase === "ready_for_review" ? "preparing" : "processing",
+              phase: processingStage(result),
             }
           : current);
         timer = window.setTimeout(() => void poll(), pollIntervalMs);
@@ -246,9 +252,7 @@ export function QualityInspectionApp({
             kind: "processing",
             file,
             projectId: result.project_id,
-            phase: result.phase === "queued"
-              ? "queued"
-              : result.phase === "ready_for_review" ? "preparing" : "processing",
+            phase: processingStage(result),
           });
     } catch (caught) {
       if (controller.signal.aborted) return;
@@ -386,11 +390,7 @@ export function QualityInspectionApp({
           {screen.kind === "fatal" ? (
             <div className="message message--error" role="alert">
               <strong>{projectErrorCopy(screen.code)}</strong>
-              <span>
-                {screen.retryable
-                  ? "未生成正式检验结果，请重新处理或选择其他文件。"
-                  : "未生成正式检验结果，请重新选择有效的工程 PDF。"}
-              </span>
+              <span>{projectErrorGuidance(screen.code, screen.retryable)}</span>
             </div>
           ) : null}
           {statusError ? (

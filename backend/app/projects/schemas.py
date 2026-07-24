@@ -13,6 +13,13 @@ class ProjectPhase(StrEnum):
     FAILED = "failed"
 
 
+class ProcessingStage(StrEnum):
+    QUEUED = "queued"
+    PARSING = "parsing"
+    RECOGNIZING = "recognizing"
+    PREPARING_REVIEW = "preparing_review"
+
+
 class ProjectError(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -28,3 +35,4 @@ class ProjectStatusResponse(BaseModel):
     workbench_ready: bool
     retryable: bool
     error: ProjectError | None
+    stage: ProcessingStage | None = None

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pymupdf
 
+from app.candidates.advisor import CandidateAdvisor
 from app.config import Settings
 from app.pdf.coordinates import BBox, PageTransform, Point
 from app.pdf.inventory import (
@@ -35,14 +36,18 @@ class RuntimeRecognition:
         settings: Settings,
         *,
         provider_factory: OcrProviderFactory = build_ocr_provider,
+        advisor: CandidateAdvisor | None = None,
         render_scale: float = 2.0,
     ) -> None:
         self._settings = settings
         self._provider_factory = provider_factory
         self._render_scale = render_scale
         self._provider_call_ids: tuple[str, ...] = ()
+        self._advisor = advisor
+        self._source_path: Path | None = None
 
     def build_inventory(self, pdf_path: Path) -> tuple[PageInventory, ...]:
+        self._source_path = pdf_path
         native_pages = build_native_inventory(
             pdf_path,
             render_scale=self._render_scale,
@@ -115,10 +120,15 @@ class RuntimeRecognition:
         self,
         pages: tuple[PageInventory, ...],
     ) -> CandidateSnapshot:
-        return replace(
+        snapshot = replace(
             candidate_snapshot_from_inventory(pages),
             provider_call_ids=self._provider_call_ids,
         )
+        if self._advisor is None:
+            return snapshot
+        if self._source_path is None:
+            raise RuntimeError("candidate snapshot requires one source PDF")
+        return self._advisor.review(self._source_path, pages, snapshot)
 
     @staticmethod
     def _eligible_regions(

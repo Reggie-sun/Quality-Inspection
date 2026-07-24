@@ -388,3 +388,79 @@ test("切换检验项时保留尚未确认的 SIP 草稿和未保存状态", () 
   ).toBe("更新方法");
   expect(onDraftChange).toHaveBeenLastCalledWith(true);
 });
+
+test("备注作为可选字段随显式保存命令提交", () => {
+  const onCommand = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[{
+        item_id: "remarks-item",
+        raw_text: "M6",
+        item_type: "thread",
+        inspection_item: "螺纹检验",
+        inspection_standard: "GB/T 197",
+        inspection_method: "螺纹规",
+        key_dimension: "是",
+        inspection_role: "检验员",
+        source_page: 1,
+        remarks: "原始备注",
+        active: true,
+      }]}
+      balloons={[]}
+      filter="all"
+      selectedItemId="remarks-item"
+      onSelectItem={vi.fn()}
+      onCommand={onCommand}
+    />,
+  );
+
+  fireEvent.change(screen.getByRole("textbox", { name: "备注（可选）：M6" }), {
+    target: { value: "首件需复核" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "确认所选 SIP 字段" }));
+
+  expect(onCommand).toHaveBeenCalledWith({
+    type: "set_sip_detail_fields",
+    item_id: "remarks-item",
+    inspection_item: "螺纹检验",
+    inspection_standard: "GB/T 197",
+    inspection_method: "螺纹规",
+    key_dimension: "是",
+    inspection_role: "检验员",
+    source_page: 1,
+    remarks: "首件需复核",
+  });
+});
+
+test("取消 SIP 字段修改会恢复后端备注基线", () => {
+  render(
+    <InspectionItemTable
+      items={[{
+        item_id: "remarks-cancel",
+        raw_text: "Ra 3.2",
+        item_type: "general_requirement",
+        inspection_item: "表面粗糙度",
+        inspection_standard: "图纸要求",
+        inspection_method: "粗糙度仪",
+        key_dimension: "否",
+        inspection_role: "检验员",
+        source_page: 1,
+        remarks: "保留原文",
+        active: true,
+      }]}
+      balloons={[]}
+      filter="all"
+      selectedItemId="remarks-cancel"
+      onSelectItem={vi.fn()}
+      onCommand={vi.fn()}
+    />,
+  );
+
+  const remarks = screen.getByRole("textbox", {
+    name: "备注（可选）：Ra 3.2",
+  }) as HTMLTextAreaElement;
+  fireEvent.change(remarks, { target: { value: "临时修改" } });
+  fireEvent.click(screen.getByRole("button", { name: "取消 SIP 字段修改" }));
+
+  expect(remarks.value).toBe("保留原文");
+});

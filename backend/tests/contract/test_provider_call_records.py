@@ -85,6 +85,14 @@ def test_minimum_call_statistics() -> None:
     assert reused["logical_task_reused"] is True
 
 
+def test_unknown_pricing_is_serialized_as_null() -> None:
+    payload = json.loads(
+        serialize_call_record(replace(_record(), estimated_cost=None))
+    )
+
+    assert payload["estimated_cost"] is None
+
+
 @pytest.mark.parametrize(
     "forbidden",
     (

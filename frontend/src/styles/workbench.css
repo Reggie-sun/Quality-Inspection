@@ -299,7 +299,7 @@
 
 .pdf-content {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -328,12 +328,23 @@
 
 .pdf-thumbnails button span {
   display: grid;
-  width: 32px;
-  height: 38px;
+  width: 48px;
+  min-height: 52px;
   place-items: center;
   border: 1px solid #cbd5e1;
   background: #ffffff;
-  font-size: 11px;
+  color: #667085;
+  font-size: 9px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.pdf-thumbnails canvas {
+  display: block;
+  max-width: 48px;
+  max-height: 52px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
 }
 
 .pdf-thumbnails button small {
@@ -390,6 +401,31 @@
 .drawing-legend i[data-color="excluded"] {
   border-color: #98a2b3;
   background: #eef2f6;
+}
+
+.pdf-overlay-candidate,
+.pdf-overlay-source,
+.pdf-overlay-candidate-leader,
+.pdf-overlay-candidate-marker {
+  opacity: 0.58;
+}
+
+.pdf-overlay-candidate[data-selected="true"],
+.pdf-overlay-source[data-selected="true"],
+.pdf-overlay-candidate-marker[data-selected="true"],
+.pdf-overlay-candidate:hover,
+.pdf-overlay-source:hover,
+.pdf-overlay-candidate-marker:hover,
+.pdf-overlay-candidate-marker:focus-visible {
+  opacity: 1;
+}
+
+.pdf-overlay-candidate-marker:focus-visible {
+  outline: none;
+}
+
+.pdf-overlay-candidate-marker:focus-visible circle {
+  stroke-width: 3;
 }
 
 .recognition-summary {

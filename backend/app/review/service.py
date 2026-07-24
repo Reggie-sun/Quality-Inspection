@@ -29,6 +29,7 @@ from app.review.schemas import (
     SetSipMetadata,
     SIP_DETAIL_FIELDS,
     SIP_METADATA_FIELDS,
+    SIP_OPTIONAL_DETAIL_FIELDS,
     Split,
     parse_review_command,
     validate_edit_fields,
@@ -112,7 +113,7 @@ class ReviewService:
             raw_result_id=raw_result.id,
             version=1,
             items=[self._current_item(candidate) for candidate in raw_result.candidates],
-            coverage=copy.deepcopy(raw_result.coverage),
+            coverage=self._review_coverage(raw_result.coverage),
             sip_metadata={},
             numbering_stale=False,
         )
@@ -433,6 +434,14 @@ class ReviewService:
             "active": True,
         }
 
+    @staticmethod
+    def _review_coverage(raw_coverage: dict[str, Any]) -> dict[str, Any]:
+        coverage = copy.deepcopy(raw_coverage)
+        for entry in coverage.get("entries", []):
+            if isinstance(entry, dict):
+                entry.pop("advisor_review", None)
+        return coverage
+
     def _apply_command(
         self,
         items: list[dict[str, Any]],
@@ -550,7 +559,7 @@ class ReviewService:
         if isinstance(command, SetSipDetailFields):
             item = self._active_item(items, command.item_id)
             values = command.model_dump(mode="json")
-            for field in SIP_DETAIL_FIELDS:
+            for field in (*SIP_DETAIL_FIELDS, *SIP_OPTIONAL_DETAIL_FIELDS):
                 item[field] = values[field]
             item[_SIP_DETAIL_CONFIRMED] = True
             return [command.item_id], numbering_stale
@@ -617,7 +626,11 @@ class ReviewService:
 
     @staticmethod
     def _clear_sip_detail_fields(item: dict[str, Any]) -> None:
-        for field in (*SIP_DETAIL_FIELDS, _SIP_DETAIL_CONFIRMED):
+        for field in (
+            *SIP_DETAIL_FIELDS,
+            *SIP_OPTIONAL_DETAIL_FIELDS,
+            _SIP_DETAIL_CONFIRMED,
+        ):
             item.pop(field, None)
 
     @staticmethod

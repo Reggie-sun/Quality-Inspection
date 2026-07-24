@@ -35,6 +35,7 @@ type DetailDraft = {
   keyDimension: string;
   inspectionRole: string;
   sourcePage: string;
+  remarks: string;
 };
 
 type ItemStatus =
@@ -109,6 +110,7 @@ function detailDraft(item?: ReviewItem, balloon?: BalloonOverlay): DetailDraft {
     keyDimension: item?.key_dimension ?? "",
     inspectionRole: item?.inspection_role ?? "",
     sourcePage: sourcePage(item, balloon)?.toString() ?? "",
+    remarks: item?.remarks ?? "",
   };
 }
 
@@ -466,10 +468,29 @@ export function InspectionItemTable({
               }}
             />
           </label>
+          <label>
+            {zhCN.inspection.remarks}
+            <textarea
+              aria-label={`${zhCN.inspection.remarks}：${selected.raw_text}`}
+              maxLength={2000}
+              rows={3}
+              value={draft.remarks}
+              onChange={(event) => {
+                updateDraft({ remarks: event.target.value });
+              }}
+            />
+          </label>
           <div className="sip-detail-actions">
             <button
               type="button"
-              disabled={disabled || Object.values(draft).some((value) => value.trim() === "")}
+              disabled={disabled || [
+                draft.inspectionItem,
+                draft.inspectionStandard,
+                draft.inspectionMethod,
+                draft.keyDimension,
+                draft.inspectionRole,
+                draft.sourcePage,
+              ].some((value) => value.trim() === "")}
               onClick={() => {
                 clearSelectedDraft();
                 onCommand({
@@ -481,6 +502,7 @@ export function InspectionItemTable({
                   key_dimension: draft.keyDimension,
                   inspection_role: draft.inspectionRole,
                   source_page: Number(draft.sourcePage),
+                  remarks: draft.remarks,
                 });
               }}
             >

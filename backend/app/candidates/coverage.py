@@ -26,9 +26,10 @@ class CoverageEntry:
     coordinates: tuple[float, float, float, float] | None
     candidate_id: str | None = None
     requires_confirmation: bool = False
+    advisor_review: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "observation_id": self.observation_id,
             "disposition": self.disposition,
             "source_location_id": self.source_location_id,
@@ -36,6 +37,9 @@ class CoverageEntry:
             "candidate_id": self.candidate_id,
             "requires_confirmation": self.requires_confirmation,
         }
+        if self.advisor_review is not None:
+            payload["advisor_review"] = dict(self.advisor_review)
+        return payload
 
 
 @dataclass(frozen=True)

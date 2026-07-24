@@ -57,6 +57,19 @@ RECEIPT = _load_receipt_module()
 RUNNER = _load_runner_module()
 
 
+def test_live_prepare_uses_canonical_processing_task() -> None:
+    source = (ROOT / ".agent/harness/scripts/run-p0.py").read_text(
+        encoding="utf-8"
+    )
+    program = source.split('_PREPARE_PROJECT_PROGRAM = r"""', 1)[1].split(
+        '"""',
+        1,
+    )[0]
+
+    assert "inventory_project.run(" in program
+    assert "InventoryPipeline(" not in program
+
+
 def _receipt_sources() -> tuple[dict, dict, dict]:
     mirror = json.loads((HARNESS / "contracts/p0-contracts.json").read_text())
     bindings = json.loads((HARNESS / "contracts/global-contract-bindings.json").read_text())

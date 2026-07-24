@@ -102,3 +102,21 @@ def test_manual_add_requires_explicit_coordinates_and_scope(
 def test_review_commands_forbid_unknown_fields() -> None:
     with pytest.raises(ValidationError):
         parse_review_command({"type": "keep", "item_id": "i1", "quiet": True})
+
+
+def test_sip_detail_remarks_are_optional_and_bounded() -> None:
+    command = {
+        "type": "set_sip_detail_fields",
+        "item_id": "item-1",
+        "inspection_item": "直径",
+        "inspection_standard": "按图纸",
+        "inspection_method": "卡尺",
+        "key_dimension": "是",
+        "inspection_role": "IPQC",
+        "source_page": 1,
+    }
+    parsed = parse_review_command(command)
+    assert parsed.remarks == ""
+
+    with pytest.raises(ValidationError):
+        parse_review_command({**command, "remarks": "注" * 2001})

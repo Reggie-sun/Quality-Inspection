@@ -15,6 +15,7 @@ from app.projects.schemas import (
     ProjectError,
     ProjectPhase,
     ProjectStatusResponse,
+    ProcessingStage,
 )
 from app.projects.state import ProjectState
 from app.review.models import ReviewWorkingCopy
@@ -42,6 +43,7 @@ class ProjectDispatchFailed(RuntimeError):
 _TRANSIENT_CAUSE_CATEGORIES = {
     "transient_dependency_unavailable",
     "transient_dispatch_failure",
+    "transient_provider_failure",
 }
 
 _SAFE_ERROR_STAGES = {
@@ -51,6 +53,7 @@ _SAFE_ERROR_STAGES = {
     "celery_worker_unavailable": "preflight",
     "ocr_provider_unavailable": "preflight",
     "vision_provider_unavailable": "preflight",
+    "vision_provider_call_failed": "candidate_advisor",
     "unsupported_input": "page_inventory",
     "inventory_processing_failed": "page_inventory",
     "coverage_blocking": "coverage",
@@ -186,6 +189,7 @@ class ProjectIntakeService:
                 project_id,
                 include_project_id=include_project_id,
                 phase=ProjectPhase.QUEUED,
+                stage=ProcessingStage.QUEUED,
             )
         if job.status not in {"pending", "processing", "succeeded"}:
             return self._generic_failed_status(
@@ -196,6 +200,7 @@ class ProjectIntakeService:
             project_id,
             include_project_id=include_project_id,
             phase=ProjectPhase.PROCESSING,
+            stage=ProcessingStage(job.processing_stage),
         )
 
     def _record_dispatch_failure(
@@ -265,6 +270,7 @@ class ProjectIntakeService:
         workbench_ready: bool = False,
         retryable: bool = False,
         error: ProjectError | None = None,
+        stage: ProcessingStage | None = None,
     ) -> ProjectStatusResponse:
         return ProjectStatusResponse(
             project_id=project_id if include_project_id else None,
@@ -272,4 +278,5 @@ class ProjectIntakeService:
             workbench_ready=workbench_ready,
             retryable=retryable,
             error=error,
+            stage=stage,
         )

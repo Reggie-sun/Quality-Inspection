@@ -42,6 +42,68 @@ type PdfWorkspaceProps = {
   auxiliaryPanel?: ReactNode;
 };
 
+function PdfThumbnail({
+  pdfDocument,
+  pageIndex,
+}: {
+  pdfDocument: PdfDocumentLike | null;
+  pageIndex: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [available, setAvailable] = useState(false);
+
+  useEffect(() => {
+    setAvailable(false);
+    if (pdfDocument === null) return;
+    let cancelled = false;
+    let renderTask: PdfRenderTaskLike | undefined;
+
+    void (async () => {
+      try {
+        const page = await pdfDocument.getPage(pageIndex + 1);
+        const base = page.getViewport({ scale: 1 });
+        const thumbnailScale = Math.min(48 / base.width, 52 / base.height);
+        const viewport = page.getViewport({ scale: thumbnailScale });
+        const canvas = canvasRef.current;
+        const context = canvas?.getContext("2d");
+        if (cancelled || canvas === null || context == null) return;
+        canvas.width = Math.max(1, Math.round(viewport.width));
+        canvas.height = Math.max(1, Math.round(viewport.height));
+        renderTask = page.render({ canvasContext: context, viewport });
+        await renderTask.promise;
+        if (!cancelled) setAvailable(true);
+      } catch (error) {
+        if (
+          !cancelled
+          && !(error instanceof Error
+            && error.name === "RenderingCancelledException")
+        ) {
+          setAvailable(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      renderTask?.cancel();
+    };
+  }, [pageIndex, pdfDocument]);
+
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        data-testid={`pdf-thumbnail-${pageIndex + 1}`}
+        hidden={!available}
+        aria-hidden="true"
+      />
+      {available ? null : (
+        <span>{zhCN.pdf.thumbnailUnavailable(pageIndex + 1)}</span>
+      )}
+    </>
+  );
+}
+
 
 export function PdfWorkspace({
   pdfDocument,
@@ -62,6 +124,7 @@ export function PdfWorkspace({
   auxiliaryPanel,
 }: PdfWorkspaceProps) {
   const workspaceRef = useRef<HTMLElement>(null);
+  const scrollFrameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const locatedSelectionRef = useRef<string | undefined>(undefined);
   const [pageIndex, setPageIndex] = useState(0);
@@ -250,7 +313,19 @@ export function PdfWorkspace({
           type="button"
           aria-label={zhCN.pdf.fit}
           onClick={() => {
-            setScale(1);
+            const frame = scrollFrameRef.current;
+            if (
+              frame === null
+              || frame.clientWidth <= 24
+              || frame.clientHeight <= 24
+              || pageSize.width <= 0
+              || pageSize.height <= 0
+            ) return;
+            const fitted = Math.min(
+              (frame.clientWidth - 24) / pageSize.width,
+              (frame.clientHeight - 24) / pageSize.height,
+            );
+            setScale(Math.min(4, Math.max(0.1, fitted)));
             setPan({ x: 0, y: 0 });
           }}
         >
@@ -296,12 +371,16 @@ export function PdfWorkspace({
               aria-current={pageIndex === index ? "page" : undefined}
               onClick={() => setPageIndex(index)}
             >
-              <span>{index + 1}</span>
+              <PdfThumbnail pdfDocument={pdfDocument} pageIndex={index} />
               <small>{zhCN.inspection.sourcePage(index + 1)}</small>
             </button>
           ))}
         </nav>
-        <div className="pdf-scroll-frame">
+        <div
+          ref={scrollFrameRef}
+          className="pdf-scroll-frame"
+          data-testid="pdf-scroll-frame"
+        >
           <div
             data-testid="pdf-page-layer"
             style={{
