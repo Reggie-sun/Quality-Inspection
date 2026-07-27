@@ -1141,7 +1141,7 @@ describe("InspectionWorkbench", () => {
           items_frozen_version: null,
           sip_metadata: {
             material_code: "MAT-001",
-            material_name: "上座",
+            material_name: version === 1 ? "上座" : "新版上座",
             drawing_number: "JS26032501",
             material: "SUS304",
             revision: "A1",
@@ -1175,7 +1175,7 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(within(sipRegion).getByRole("button", {
       name: "取消项目 SIP 信息修改",
     }));
-    expect(productName.value).toBe("上座");
+    expect(productName.value).toBe("新版上座");
     expect(saveStatus.textContent).toBe("已保存");
   });
 
