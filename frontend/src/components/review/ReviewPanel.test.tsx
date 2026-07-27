@@ -94,9 +94,12 @@ describe("ReviewPanel", () => {
     const drawingSource = screen.getByRole("group", { name: "图纸原文" });
     const parsedResult = screen.getByRole("group", { name: "解析结果" });
 
-    expect(within(drawingSource).getByRole("textbox", {
+    const rawText = within(drawingSource).getByRole("textbox", {
       name: "原始标注：48",
-    })).not.toBeNull();
+    });
+    expect(rawText.closest("label")?.classList.contains(
+      "review-field-group__confirmation",
+    )).toBe(false);
     expect(within(drawingSource).queryByRole("textbox", {
       name: "基本尺寸：48",
     })).toBeNull();
@@ -141,9 +144,12 @@ describe("ReviewPanel", () => {
     expect(within(drawingSource).getByRole("combobox", {
       name: "粗分类：Ra 3.2",
     })).not.toBeNull();
-    expect(within(drawingSource).getByRole("checkbox", {
+    const requiresConfirmation = within(drawingSource).getByRole("checkbox", {
       name: "需要人工确认：Ra 3.2",
-    })).not.toBeNull();
+    });
+    expect(requiresConfirmation.closest("label")?.classList.contains(
+      "review-field-group__confirmation",
+    )).toBe(true);
     expect(screen.queryByRole("group", { name: "解析结果" })).toBeNull();
   });
 

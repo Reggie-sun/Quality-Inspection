@@ -1002,7 +1002,7 @@
   grid-column: 1 / -1;
 }
 
-.review-field-group--source > label:last-child:not(:first-child) {
+.review-field-group__confirmation {
   display: flex;
   grid-column: 1 / -1;
   gap: 7px;
