@@ -894,6 +894,105 @@
 
 .review-merge-selector > button { margin: 6px 0 0; }
 
+.merge-inspection-preview {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--qi-border);
+  border-radius: 8px;
+  background: var(--qi-panel);
+}
+
+.merge-inspection-preview__header h2,
+.merge-inspection-preview__header p,
+.merge-inspection-preview__sources h3 {
+  margin: 0;
+}
+
+.merge-inspection-preview__header h2 {
+  color: var(--qi-text);
+  font-size: 18px;
+}
+
+.merge-inspection-preview__header h2:focus-visible {
+  outline: 2px solid var(--qi-blue);
+  outline-offset: 3px;
+}
+
+.merge-inspection-preview__header p {
+  margin-top: 4px;
+  color: var(--qi-muted);
+  font-size: 11px;
+}
+
+.merge-inspection-preview__sources {
+  display: grid;
+  gap: 6px;
+}
+
+.merge-inspection-preview__sources h3,
+.merge-inspection-preview__draft > span {
+  color: var(--qi-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.merge-inspection-preview__sources ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.merge-inspection-preview__sources li {
+  padding: 8px 10px;
+  border: 1px solid var(--qi-border);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.merge-inspection-preview__sources li span {
+  color: var(--qi-text);
+  overflow-wrap: anywhere;
+}
+
+.merge-inspection-preview__sources li small {
+  display: block;
+  margin-top: 3px;
+  color: var(--qi-muted);
+}
+
+.merge-inspection-preview__draft {
+  display: grid;
+  gap: 6px;
+}
+
+.merge-inspection-preview__draft textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+}
+
+.merge-inspection-preview__actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.merge-inspection-preview__confirm:not(:disabled) {
+  border-color: var(--qi-blue);
+  background: var(--qi-blue);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.merge-inspection-preview__confirm:hover:not(:disabled) {
+  border-color: var(--qi-blue-hover);
+  background: var(--qi-blue-hover);
+  color: #ffffff;
+}
+
 .review-select-hint { margin: 0; padding: 10px 0; color: var(--qi-muted); }
 
 .review-selected-item {
