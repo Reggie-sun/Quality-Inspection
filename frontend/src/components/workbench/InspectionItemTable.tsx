@@ -7,6 +7,12 @@ import type {
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
+import {
+  INSPECTION_ITEM_STATUS_LABELS,
+  INSPECTION_ITEM_TYPE_LABELS,
+  inspectionItemPresentation,
+} from "./inspectionItemPresentation";
+import type { ItemStatus } from "./inspectionItemPresentation";
 import type { InspectionFilter } from "./RecognitionSummary";
 
 
@@ -62,34 +68,10 @@ type ListEntry =
   | { kind: "item"; key: string; item: ReviewItem }
   | { kind: "source"; key: string; source: PendingSourceReview };
 
-type ItemStatus =
-  | "pending"
-  | "confirmed"
-  | "candidate"
-  | "excluded"
-  | "manual"
-  | "collision"
-  | "source_pending";
-
 const PAGE_SIZE = 50;
 const EMPTY_CANDIDATE_NUMBERS: ReadonlyMap<string, number> = new Map();
-const TYPE_LABELS: Partial<Record<CandidateType, string>> = {
-  ...zhCN.inspection.types,
-};
-const COARSE_TYPE_LABELS: Readonly<Record<string, string>> = {
-  ...zhCN.review.coarseTypes,
-};
 const COLLISION_LABELS: Readonly<Record<string, string>> = {
   ...zhCN.inspection.collisions,
-};
-const STATUS_LABELS: Record<ItemStatus, string> = {
-  pending: zhCN.inspection.statusPending,
-  confirmed: zhCN.inspection.statusConfirmed,
-  candidate: zhCN.inspection.statusCandidate,
-  excluded: zhCN.inspection.statusExcluded,
-  manual: zhCN.inspection.statusManual,
-  collision: zhCN.inspection.statusCollision,
-  source_pending: zhCN.inspection.sourcePending,
 };
 
 
@@ -99,16 +81,6 @@ async function commandSucceeded(
 ): Promise<boolean> {
   if (onCommand === undefined) return false;
   return (await onCommand(command)) !== false;
-}
-
-
-function typeLabel(item: ReviewItem): string {
-  if (item.item_type !== undefined) {
-    return TYPE_LABELS[item.item_type] ?? zhCN.workbench.unknown;
-  }
-  return item.coarse_type === undefined
-    ? zhCN.workbench.unknown
-    : COARSE_TYPE_LABELS[item.coarse_type] ?? zhCN.workbench.unknown;
 }
 
 
@@ -123,20 +95,6 @@ function tolerance(item: ReviewItem): string {
 }
 
 
-function sourcePage(
-  item?: ReviewItem,
-  balloon?: BalloonOverlay,
-): number | undefined {
-  if (item?.source_page !== null && item?.source_page !== undefined) {
-    return item.source_page;
-  }
-  if (item?.page_index !== null && item?.page_index !== undefined) {
-    return item.page_index + 1;
-  }
-  return balloon?.pageIndex === undefined ? undefined : balloon.pageIndex + 1;
-}
-
-
 function detailDraft(item?: ReviewItem, balloon?: BalloonOverlay): DetailDraft {
   return {
     inspectionItem: item?.inspection_item ?? "",
@@ -144,7 +102,9 @@ function detailDraft(item?: ReviewItem, balloon?: BalloonOverlay): DetailDraft {
     inspectionMethod: item?.inspection_method ?? "",
     keyDimension: item?.key_dimension ?? "",
     inspectionRole: item?.inspection_role ?? "",
-    sourcePage: sourcePage(item, balloon)?.toString() ?? "",
+    sourcePage: item === undefined
+      ? ""
+      : inspectionItemPresentation(item, balloon).page?.toString() ?? "",
     remarks: item?.remarks ?? "",
   };
 }
@@ -159,41 +119,16 @@ function sourceDraft(source: PendingSourceReview): SourceDraft {
 }
 
 
-function itemStatus(item: ReviewItem, balloon?: BalloonOverlay): ItemStatus {
-  if (!item.active) return "excluded";
-  if (balloon?.placementStatus === "manual_required") return "manual";
-  if ((balloon?.collisionFlags?.length ?? 0) > 0) return "collision";
-  if (item.requires_confirmation === true || item.status === "pending") {
-    return "pending";
-  }
-  if (item.status === "kept" || item.sip_detail_fields_confirmed === true) {
-    return "confirmed";
-  }
-  return balloon === undefined && item.balloon_required === true
-    ? "candidate"
-    : "pending";
-}
-
-
 export function SelectedInspectionItemSummary({
   item,
   balloon,
   candidateNumber,
 }: SelectedInspectionItemSummaryProps) {
-  const numberKind = balloon !== undefined
-    ? "formal"
-    : candidateNumber !== undefined
-      ? "candidate"
-      : "empty";
-  const displayNumber = balloon?.number
-    ?? candidateNumber
-    ?? zhCN.workbench.unknown;
-  const numberLabel = balloon !== undefined
-    ? zhCN.inspection.formalNumber(balloon.number)
-    : candidateNumber !== undefined
-      ? zhCN.inspection.candidateNumber(candidateNumber)
-      : zhCN.inspection.noNumber;
-  const page = sourcePage(item, balloon);
+  const presentation = inspectionItemPresentation(
+    item,
+    balloon,
+    candidateNumber,
+  );
 
   return (
     <section
@@ -205,10 +140,10 @@ export function SelectedInspectionItemSummary({
         <div>
           <dt>{zhCN.inspection.balloonNumber}</dt>
           <dd
-            className={`selected-inspection-number selected-inspection-number--${numberKind}`}
-            aria-label={numberLabel}
+            className={`selected-inspection-number selected-inspection-number--${presentation.numberKind}`}
+            aria-label={presentation.numberLabel}
           >
-            {displayNumber}
+            {presentation.displayNumber ?? zhCN.workbench.unknown}
           </dd>
         </div>
         <div className="selected-inspection-summary__item">
@@ -218,14 +153,12 @@ export function SelectedInspectionItemSummary({
         <div>
           <dt>{zhCN.inspection.page}</dt>
           <dd>
-            {page === undefined
-              ? zhCN.workbench.unknown
-              : zhCN.inspection.sourcePage(page)}
+            {presentation.pageLabel}
           </dd>
         </div>
         <div>
           <dt>{zhCN.inspection.status}</dt>
-          <dd>{STATUS_LABELS[itemStatus(item, balloon)]}</dd>
+          <dd>{presentation.statusLabel}</dd>
         </div>
       </dl>
     </section>
@@ -294,7 +227,7 @@ export function InspectionItemTable({
             : filter === "hard_collision"
               ? (balloon?.collisionFlags?.length ?? 0) > 0
               : true;
-      const status = itemStatus(item, balloon);
+      const status = inspectionItemPresentation(item, balloon).status;
       const matchesSearch = item.raw_text
         .toLocaleLowerCase("zh-CN")
         .includes(search.trim().toLocaleLowerCase("zh-CN"));
@@ -460,7 +393,7 @@ export function InspectionItemTable({
             }}
           >
             <option value="all">{zhCN.inspection.allStatuses}</option>
-            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+            {Object.entries(INSPECTION_ITEM_STATUS_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
@@ -536,14 +469,11 @@ export function InspectionItemTable({
             const item = entry.item;
             const balloon = balloonByItem.get(item.item_id);
             const candidateNumber = candidateNumbers.get(item.item_id);
-            const displayNumber = balloon?.number ?? candidateNumber;
-            const numberKind = balloon !== undefined
-              ? "formal"
-              : candidateNumber !== undefined
-                ? "candidate"
-                : "empty";
-            const status = itemStatus(item, balloon);
-            const pageNumber = sourcePage(item, balloon);
+            const presentation = inspectionItemPresentation(
+              item,
+              balloon,
+              candidateNumber,
+            );
             const collisions = balloon?.collisionFlags
               ?.map((flag) => COLLISION_LABELS[flag] ?? zhCN.workbench.unknown)
               .join("、");
@@ -566,18 +496,18 @@ export function InspectionItemTable({
               >
                 <strong
                   role="cell"
-                  className={`inspection-number inspection-number--${numberKind}`}
+                  className={`inspection-number inspection-number--${presentation.numberKind}`}
                   aria-label={
-                    balloon === undefined && candidateNumber !== undefined
-                      ? zhCN.inspection.candidateNumber(candidateNumber)
+                    presentation.numberKind === "candidate"
+                      ? presentation.numberLabel
                       : undefined
                   }
                 >
-                  {displayNumber ?? zhCN.workbench.unknown}
+                  {presentation.displayNumber ?? zhCN.workbench.unknown}
                 </strong>
                 <span role="cell" className="inspection-item-copy">
                   <strong title={item.raw_text}>{item.raw_text}</strong>
-                  <small>{typeLabel(item)}</small>
+                  <small>{presentation.typeLabel}</small>
                 </span>
                 {compact ? null : (
                   <span role="cell">
@@ -587,13 +517,14 @@ export function InspectionItemTable({
                 )}
                 {compact ? null : (
                   <span role="cell">
-                    {pageNumber === undefined
-                      ? zhCN.workbench.unknown
-                      : zhCN.inspection.sourcePage(pageNumber)}
+                    {presentation.pageLabel}
                   </span>
                 )}
-                <span role="cell" className={`geometry-state geometry-state--${status}`}>
-                  <strong>{STATUS_LABELS[status]}</strong>
+                <span
+                  role="cell"
+                  className={`geometry-state geometry-state--${presentation.status}`}
+                >
+                  <strong>{presentation.statusLabel}</strong>
                   {collisions ? <small>{collisions}</small> : null}
                 </span>
               </div>
@@ -660,7 +591,7 @@ export function InspectionItemTable({
                       })}
                   >
                     <option value="">{zhCN.inspection.selectItemType}</option>
-                    {Object.entries(TYPE_LABELS).map(([value, label]) => (
+                    {Object.entries(INSPECTION_ITEM_TYPE_LABELS).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
                     ))}
                   </select>
