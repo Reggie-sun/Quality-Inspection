@@ -674,7 +674,7 @@ export function ReviewPanel({
                     ))}
                   </select>
                 </label>
-                <label>
+                <label className="review-field-group__confirmation">
                   <input
                     type="checkbox"
                     aria-label={zhCN.review.fieldForItem(
