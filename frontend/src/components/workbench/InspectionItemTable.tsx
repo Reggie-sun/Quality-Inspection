@@ -627,7 +627,11 @@ export function InspectionItemTable({
                         checked={mergeItemIdSet.has(item.item_id)}
                         disabled={disabled}
                         onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.stopPropagation();
+                          }
+                        }}
                         onChange={() => toggleMergeItem(item.item_id)}
                       />
                       <span aria-hidden="true">

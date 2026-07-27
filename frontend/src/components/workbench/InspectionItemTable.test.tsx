@@ -247,6 +247,32 @@ test("取消和 Escape 都退出合并模式并清空选择且不发命令", () 
   expect(onMergeItems).not.toHaveBeenCalled();
 });
 
+test("复选框聚焦时 Escape 仍退出并清空合并选择且不发命令", () => {
+  const onCommand = vi.fn();
+  const onMergeItems = vi.fn();
+  renderMergeTable({
+    items: mergeItems.slice(0, 2),
+    onCommand,
+    onMergeItems,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  const checkbox = screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  });
+  fireEvent.click(checkbox);
+  expect(screen.getByRole("status").textContent).toBe("已选择 1 项");
+
+  checkbox.focus();
+  fireEvent.keyDown(checkbox, { key: "Escape" });
+
+  expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  expect(onCommand).not.toHaveBeenCalled();
+  expect(onMergeItems).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  expect(screen.getByRole("status").textContent).toBe("已选择 0 项");
+});
+
 test("下一步生成确定性预览，返回保留选择，失败保留已编辑草稿", async () => {
   const onMergeItems = vi.fn().mockResolvedValue(false);
   renderMergeTable({
