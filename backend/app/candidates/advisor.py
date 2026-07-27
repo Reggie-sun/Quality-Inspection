@@ -12,7 +12,6 @@ from typing import Any
 
 import pymupdf
 
-from app.candidates.coverage import CoverageEntry
 from app.candidates.duplicates import (
     DuplicateCandidate,
     DuplicateRelation,
@@ -20,14 +19,37 @@ from app.candidates.duplicates import (
 )
 from app.candidates.parser import normalize_text, parse_annotation
 from app.candidates.schemas import stable_candidate_id
+from app.candidates.symbol_review import (
+    VISUAL_PROMPT_VERSION,
+    VISUAL_SCHEMA_VERSION,
+    build_visual_cache_envelope,
+    build_visual_failure_envelope,
+    build_visual_request_evidence,
+    canonical_visual_response_bytes,
+    parse_visual_cache_envelope,
+    parse_visual_request_evidence,
+    parse_visual_symbol_json,
+    visual_cache_identity,
+    visual_cache_key,
+    visual_review_prompt,
+)
 from app.capabilities.service import CapabilityUnavailable
 from app.config import Settings
 from app.pdf.coordinates import BBox
 from app.pdf.schemas import TextObservation
 from app.processing.automatic_result import CandidateSnapshot, selected_observations
 from app.providers.base import VisionResult
-from app.providers.call_records import ProviderCallRecord, persist_call_record
-from app.providers.qwen_vl import parse_candidate_json
+from app.providers.call_records import (
+    ProviderCallRecord,
+    persist_call_record,
+    serialize_call_record,
+)
+from app.providers.qwen_vl import (
+    VisualSymbolProviderError,
+    canonicalize_visual_png,
+    parse_candidate_json,
+    validate_visual_request_metadata,
+)
 from app.providers.runtime import VisionProviderFactory
 from app.storage.local import LocalFileStorage
 
@@ -440,6 +462,296 @@ class CandidateAdvisor:
             raise CandidateAdvisorFailure(
                 "Vision candidate Advisor cache is invalid"
             ) from None
+
+    def _visual_cache_result(
+        self,
+        relative_path: str,
+        *,
+        audit_relative_path: str,
+        crop_relative_path: str,
+        request_relative_path: str,
+        identity: dict[str, object],
+    ) -> VisionResult | None:
+        cache_candidate = self._storage.root.joinpath(
+            *relative_path.split("/")
+        )
+        current = self._storage.root
+        cache_path_has_symlink = False
+        for part in relative_path.split("/"):
+            current /= part
+            if current.is_symlink():
+                cache_path_has_symlink = True
+                break
+        if not cache_candidate.exists() and not cache_path_has_symlink:
+            return None
+        try:
+            cache_path = self._storage.resolve_resource_ref(
+                f"asset://{relative_path}"
+            )
+            audit_path = self._storage.resolve_resource_ref(
+                f"asset://{audit_relative_path}"
+            )
+            request_path = self._storage.resolve_resource_ref(
+                f"asset://{request_relative_path}"
+            )
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            audit_content = audit_path.read_bytes()
+            audit = json.loads(audit_content)
+            request_content = request_path.read_bytes()
+            request_payload = json.loads(request_content)
+            if (
+                not isinstance(payload, dict)
+                or not isinstance(audit, dict)
+                or not isinstance(request_payload, dict)
+            ):
+                raise ValueError("cache values")
+            request_id, response, usage = parse_visual_cache_envelope(
+                payload,
+                expected_identity=identity,
+            )
+            request_id, usage = validate_visual_request_metadata(
+                request_id,
+                usage,
+            )
+            request_evidence = parse_visual_request_evidence(
+                request_payload,
+                expected_crop_ref=f"asset://{crop_relative_path}",
+                expected_crop_sha256=str(identity["crop_sha256"]),
+                expected_usage=usage,
+            )
+            if _json_bytes(request_evidence) != request_content:
+                raise ValueError("request evidence")
+            crop_path = self._storage.resolve_resource_ref(
+                request_evidence["crop_ref"]
+            )
+            response_content = canonical_visual_response_bytes(response)
+            response_sha256 = hashlib.sha256(response_content).hexdigest()
+            response_relative_path = (
+                f"projects/{self._project_id}/provider-responses/"
+                f"qwen-symbol/{response_sha256}.json"
+            )
+            response_path = self._storage.resolve_resource_ref(
+                f"asset://{response_relative_path}"
+            )
+            if serialize_call_record(audit) != audit_content:
+                raise ValueError("cache audit")
+            expected_audit = {
+                "provider": "qwen-vl",
+                "request_id": request_id,
+                "model": identity["model"],
+                "prompt_version": VISUAL_PROMPT_VERSION,
+                "schema_version": VISUAL_SCHEMA_VERSION,
+                "retry_count": 0,
+                "input_image_count": 1,
+                "estimated_cost": None,
+                "logical_task_reused": False,
+                "request_ref": f"asset://{request_relative_path}",
+                "response_ref": f"asset://{response_relative_path}",
+            }
+            if any(
+                audit.get(key) != value
+                for key, value in expected_audit.items()
+            ) or hashlib.sha256(crop_path.read_bytes()).hexdigest() != identity.get(
+                "crop_sha256"
+            ) or response_path.read_bytes() != response_content:
+                raise ValueError("cache audit")
+            return VisionResult(
+                request_id=request_id,
+                payload=response,
+                usage=usage,
+            )
+        except Exception:
+            raise CandidateAdvisorFailure(
+                "Visual symbol Advisor cache is invalid"
+            ) from None
+
+    def _visual_review_result(
+        self,
+        *,
+        provider: object | None,
+        crop_png: bytes,
+        crop_bbox_pdf: BBox,
+        source_sha256: str,
+        visual_observation_ids: Sequence[str],
+        model: str,
+    ) -> tuple[VisionResult, object | None]:
+        canonical_crop_png = canonicalize_visual_png(crop_png)
+        crop_sha256 = hashlib.sha256(canonical_crop_png).hexdigest()
+        identity = visual_cache_identity(
+            source_sha256=source_sha256,
+            visual_observation_ids=visual_observation_ids,
+            crop_bbox_pdf=crop_bbox_pdf,
+            crop_sha256=crop_sha256,
+            model=model,
+        )
+        cache_key = visual_cache_key(
+            source_sha256=source_sha256,
+            visual_observation_ids=visual_observation_ids,
+            crop_bbox_pdf=crop_bbox_pdf,
+            crop_sha256=crop_sha256,
+            model=model,
+        )
+        cache_relative = (
+            f"projects/{self._project_id}/provider-cache/qwen-symbol/"
+            f"{cache_key}.json"
+        )
+        audit_relative = (
+            f"projects/{self._project_id}/provider-calls/qwen-symbol/"
+            f"{cache_key}.json"
+        )
+        crop_relative = (
+            f"projects/{self._project_id}/provider-inputs/qwen-symbol/"
+            f"{crop_sha256}.png"
+        )
+        request_relative = (
+            f"projects/{self._project_id}/provider-requests/"
+            f"qwen-symbol/{cache_key}.json"
+        )
+        cached = self._visual_cache_result(
+            cache_relative,
+            audit_relative_path=audit_relative,
+            crop_relative_path=crop_relative,
+            request_relative_path=request_relative,
+            identity=identity,
+        )
+        if cached is not None:
+            return cached, provider
+
+        if provider is None:
+            provider = self._provider_factory(self._settings)
+        crop_write = self._storage.write_verified(
+            crop_relative,
+            canonical_crop_png,
+            crop_sha256,
+        )
+        started = time.perf_counter_ns()
+        try:
+            raw_result = provider.review_symbols(
+                canonical_crop_png,
+                visual_review_prompt(visual_observation_ids),
+            )
+            response = parse_visual_symbol_json(raw_result.payload)
+            request_id, usage = validate_visual_request_metadata(
+                raw_result.request_id,
+                raw_result.usage,
+            )
+            result = VisionResult(
+                request_id=request_id,
+                payload=response,
+                usage=usage,
+            )
+        except VisualSymbolProviderError as exc:
+            duration_ms = max(
+                0,
+                (time.perf_counter_ns() - started) // 1_000_000,
+            )
+            request_content = _json_bytes(
+                build_visual_request_evidence(
+                    crop_ref=crop_write.resource_ref,
+                    crop_sha256=crop_write.sha256,
+                    usage=exc.usage,
+                )
+            )
+            request_write = self._storage.write_verified(
+                request_relative,
+                request_content,
+                hashlib.sha256(request_content).hexdigest(),
+            )
+            failure_content = _json_bytes(
+                build_visual_failure_envelope()
+            )
+            failure_relative = (
+                f"projects/{self._project_id}/provider-responses/"
+                f"qwen-symbol/{cache_key}.json"
+            )
+            failure_write = self._storage.write_verified(
+                failure_relative,
+                failure_content,
+                hashlib.sha256(failure_content).hexdigest(),
+            )
+            persist_call_record(
+                self._storage,
+                audit_relative,
+                ProviderCallRecord(
+                    provider="qwen-vl",
+                    request_id=exc.request_id,
+                    model=model,
+                    prompt_version=VISUAL_PROMPT_VERSION,
+                    schema_version=VISUAL_SCHEMA_VERSION,
+                    duration_ms=duration_ms,
+                    retry_count=0,
+                    input_image_count=1,
+                    estimated_cost=None,
+                    logical_task_reused=False,
+                    request_ref=request_write.resource_ref,
+                    response_ref=failure_write.resource_ref,
+                ),
+            )
+            raise CandidateAdvisorFailure(
+                "Visual symbol Advisor response is invalid"
+            ) from None
+        except CapabilityUnavailable:
+            raise
+        except Exception:
+            raise CandidateAdvisorFailure(
+                "Visual symbol Advisor call failed"
+            ) from None
+        duration_ms = max(0, (time.perf_counter_ns() - started) // 1_000_000)
+
+        request_content = _json_bytes(
+            build_visual_request_evidence(
+                crop_ref=crop_write.resource_ref,
+                crop_sha256=crop_write.sha256,
+                usage=result.usage,
+            )
+        )
+        request_write = self._storage.write_verified(
+            request_relative,
+            request_content,
+            hashlib.sha256(request_content).hexdigest(),
+        )
+        response_content = canonical_visual_response_bytes(result.payload)
+        response_sha256 = hashlib.sha256(response_content).hexdigest()
+        response_relative = (
+            f"projects/{self._project_id}/provider-responses/"
+            f"qwen-symbol/{response_sha256}.json"
+        )
+        response_write = self._storage.write_verified(
+            response_relative,
+            response_content,
+            response_sha256,
+        )
+        cache_payload = build_visual_cache_envelope(
+            request_id=result.request_id,
+            identity=identity,
+            response=result.payload,
+            usage=result.usage,
+        )
+        cache_content = _json_bytes(cache_payload)
+        self._storage.write_verified(
+            cache_relative,
+            cache_content,
+            hashlib.sha256(cache_content).hexdigest(),
+        )
+        persist_call_record(
+            self._storage,
+            audit_relative,
+            ProviderCallRecord(
+                provider="qwen-vl",
+                request_id=result.request_id,
+                model=model,
+                prompt_version=VISUAL_PROMPT_VERSION,
+                schema_version=VISUAL_SCHEMA_VERSION,
+                duration_ms=duration_ms,
+                retry_count=0,
+                input_image_count=1,
+                estimated_cost=None,
+                logical_task_reused=False,
+                request_ref=request_write.resource_ref,
+                response_ref=response_write.resource_ref,
+            ),
+        )
+        return result, provider
 
     def _review_result(
         self,

@@ -1,0 +1,20 @@
+{
+  "schema_version": "provider-fixture/1",
+  "provider": "qwen-vl",
+  "provider_version": "qwen3-vl-plus",
+  "adapter_version": "qwen-openai-compatible/1",
+  "provider_schema_version": "visual-symbol-review/1",
+  "request_ref": "fixture://sanitized/qwen-vl/visual-symbol-request-v1",
+  "response_ref": "fixture://sanitized/qwen-vl/visual-symbol-response-v1",
+  "sanitized": true,
+  "contains_secret": false,
+  "payload": {
+    "request_id": "fixture-qwen-visual-symbol-request-id",
+    "content": "{\"schema_version\":\"visual-symbol-review/1\",\"detections\":[{\"visual_observation_id\":\"visual-001\",\"symbol_kind\":\"diameter\",\"bbox_normalized\":[0.1,0.2,0.3,0.4],\"associated_text_observation_ids\":[\"text-001\"],\"requires_confirmation\":true},{\"visual_observation_id\":\"visual-002\",\"symbol_kind\":\"revision_marker\",\"bbox_normalized\":[0.6,0.5,0.8,0.9],\"associated_text_observation_ids\":[\"text-002\"],\"requires_confirmation\":true}]}",
+    "usage": {
+      "prompt_tokens": 20,
+      "completion_tokens": 16,
+      "total_tokens": 36
+    }
+  }
+}

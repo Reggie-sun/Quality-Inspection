@@ -20,11 +20,13 @@ HARNESS = ROOT / ".agent/harness"
 FIXTURE_RELATIVE_PATHS = (
     Path(".agent/harness/fixtures/providers/tencent-ocr/general-accurate-v1.json"),
     Path(".agent/harness/fixtures/providers/qwen-vl/candidate-review-v1.json"),
+    Path(".agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json"),
 )
 FIXTURE_PATHS = tuple(ROOT / path for path in FIXTURE_RELATIVE_PATHS)
 TEST_PATHS = (
     "backend/tests/contract/test_tencent_ocr_provider.py",
     "backend/tests/contract/test_qwen_vl_provider.py",
+    "backend/tests/contract/test_qwen_symbol_provider.py",
     "backend/tests/contract/test_provider_call_records.py",
 )
 FORBIDDEN_KEY_RE = re.compile(
