@@ -77,6 +77,12 @@ type MetadataDraft = {
   revision: string;
 };
 
+type PendingMergeReconciliation = {
+  activeIdsBefore: Set<string>;
+  itemsGeneration: number;
+  selectedItemId?: string;
+};
+
 const NO_SELECTED_REVIEW_ITEM_ID = "__no_selected_review_item__";
 
 
@@ -121,8 +127,7 @@ export function InspectionWorkbench({
   const [saveState, setSaveState] = useState<string>(zhCN.workbench.saved);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const latestItemsRef = useRef(items);
-  latestItemsRef.current = items;
+  const committedItemsRef = useRef({ items, generation: 0 });
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(
     () => items.find((item) => item.active)?.item_id,
   );
@@ -137,6 +142,10 @@ export function InspectionWorkbench({
   const [sipDraftDirty, setSipDraftDirty] = useState(false);
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
   const [selectionBlocked, setSelectionBlocked] = useState(false);
+  const [
+    pendingMergeReconciliation,
+    setPendingMergeReconciliation,
+  ] = useState<PendingMergeReconciliation>();
   useEffect(() => {
     setMetadata(metadataDraft(workingCopy));
     setMetadataDraftDirty(false);
@@ -144,6 +153,59 @@ export function InspectionWorkbench({
   useEffect(() => {
     if (!reviewDraftDirty) setSelectionBlocked(false);
   }, [reviewDraftDirty]);
+  useEffect(() => {
+    let committedItems = committedItemsRef.current;
+    if (committedItems.items !== items) {
+      committedItems = {
+        items,
+        generation: committedItems.generation + 1,
+      };
+      committedItemsRef.current = committedItems;
+    }
+    if (
+      pendingMergeReconciliation === undefined
+      || committedItems.generation
+        <= pendingMergeReconciliation.itemsGeneration
+    ) return;
+
+    const newActiveItems = committedItems.items.filter(
+      (item) =>
+        item.active
+        && !pendingMergeReconciliation.activeIdsBefore.has(item.item_id),
+    );
+    if (newActiveItems.length === 1) {
+      const mergedItem = newActiveItems[0];
+      const mergedBalloon = balloons.find(
+        (balloon) =>
+          balloon.status !== "deleted" && balloon.itemId === mergedItem.item_id,
+      );
+      setSelectionBlocked(false);
+      setSelectedItemId(mergedItem.item_id);
+      setSelectedSourceId(undefined);
+      setSelectedBalloonId(mergedBalloon?.id);
+      setPageIndex(
+        (current) =>
+          mergedItem.page_index ?? mergedBalloon?.pageIndex ?? current,
+      );
+    } else {
+      const selectionChangedSinceSubmit =
+        selectedItemId !== pendingMergeReconciliation.selectedItemId;
+      const selectionToValidate = selectionChangedSinceSubmit
+        ? selectedItemId
+        : pendingMergeReconciliation.selectedItemId;
+      if (
+        selectionToValidate !== undefined
+        && !committedItems.items.some(
+          (item) => item.active && item.item_id === selectionToValidate,
+        )
+      ) {
+        setSelectedItemId(undefined);
+        setSelectedBalloonId(undefined);
+        setSelectedSourceId(undefined);
+      }
+    }
+    setPendingMergeReconciliation(undefined);
+  }, [balloons, items, pendingMergeReconciliation, selectedItemId]);
   const candidateNumbers = useMemo(() => {
     const lookup = new Map<string, number>();
     for (const candidate of candidates) {
@@ -276,11 +338,17 @@ export function InspectionWorkbench({
     itemIds: string[],
     rawText: string,
   ): Promise<boolean> => {
+    const committedItems = committedItemsRef.current;
     const activeIdsBefore = new Set(
-      latestItemsRef.current
+      committedItems.items
         .filter((item) => item.active)
         .map((item) => item.item_id),
     );
+    const reconciliation = {
+      activeIdsBefore,
+      itemsGeneration: committedItems.generation,
+      selectedItemId,
+    };
     const succeeded = await submitCommand({
       type: "merge",
       item_ids: itemIds,
@@ -288,21 +356,7 @@ export function InspectionWorkbench({
     });
     if (!succeeded) return false;
 
-    const newActiveItems = latestItemsRef.current.filter(
-      (item) => item.active && !activeIdsBefore.has(item.item_id),
-    );
-    if (newActiveItems.length === 1) {
-      selectItem(newActiveItems[0].item_id);
-    } else if (
-      selectedItemId !== undefined
-      && !latestItemsRef.current.some(
-        (item) => item.active && item.item_id === selectedItemId,
-      )
-    ) {
-      setSelectedItemId(undefined);
-      setSelectedBalloonId(undefined);
-      setSelectedSourceId(undefined);
-    }
+    setPendingMergeReconciliation(reconciliation);
     return true;
   };
   const exportPanel = projectId === undefined || exportPost === undefined

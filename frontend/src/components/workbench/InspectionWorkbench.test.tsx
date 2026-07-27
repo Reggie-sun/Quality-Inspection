@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   cleanup,
   fireEvent,
@@ -8,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type { PostJson } from "../../api/types";
+import type { PostJson, ReviewCommand, ReviewItem } from "../../api/types";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 
 
@@ -42,6 +43,35 @@ const mergeSourceItems = [
     active: true,
   },
 ];
+
+function MergeRefreshHarness({
+  initialItems,
+  onSave,
+  refreshedItems,
+  saveCompletion,
+}: {
+  initialItems: ReviewItem[];
+  onSave: (command: ReviewCommand) => void;
+  refreshedItems: ReviewItem[];
+  saveCompletion?: Promise<void>;
+}) {
+  const [items, setItems] = useState(initialItems);
+  return (
+    <InspectionWorkbench
+      pdfDocument={null}
+      candidates={[]}
+      sources={[]}
+      balloons={[]}
+      items={items}
+      onSave={async (command) => {
+        onSave(command);
+        await Promise.resolve();
+        setItems(refreshedItems);
+        if (saveCompletion !== undefined) await saveCompletion;
+      }}
+    />
+  );
+}
 
 function openMergePreview(rawText = "  ⌀10 ±0.1  "): void {
   fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
@@ -203,7 +233,6 @@ describe("InspectionWorkbench", () => {
   });
 
   test("合并刷新后只选择唯一新增的 active 检验项", async () => {
-    const deferred = createDeferred<void>();
     const refreshedItems = [
       { ...mergeSourceItems[0], active: false },
       { ...mergeSourceItems[1], active: false },
@@ -214,37 +243,22 @@ describe("InspectionWorkbench", () => {
         active: true,
       },
     ];
-    let view!: ReturnType<typeof render>;
-    const onSave = vi.fn(async () => {
-      view.rerender(
-        <InspectionWorkbench
-          pdfDocument={null}
-          candidates={[]}
-          sources={[]}
-          balloons={[]}
-          items={refreshedItems}
-          onSave={onSave}
-        />,
-      );
-      await deferred.promise;
-    });
-    view = render(
-      <InspectionWorkbench
-        pdfDocument={null}
-        candidates={[]}
-        sources={[]}
-        balloons={[]}
-        items={mergeSourceItems}
+    const onSave = vi.fn();
+    render(
+      <MergeRefreshHarness
+        initialItems={mergeSourceItems}
+        refreshedItems={refreshedItems}
         onSave={onSave}
       />,
     );
 
     openMergePreview();
     fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
-    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    deferred.resolve();
 
     await waitFor(() => {
+      expect(onSave).toHaveBeenCalledOnce();
+      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
+        .toBe("merged-1");
       expect(screen.getByRole("heading", {
         name: "检验项 — · 线性尺寸",
       })).not.toBeNull();
@@ -259,27 +273,11 @@ describe("InspectionWorkbench", () => {
       ...item,
       active: false,
     }));
-    let view!: ReturnType<typeof render>;
-    const onSave = vi.fn(async () => {
-      view.rerender(
-        <InspectionWorkbench
-          pdfDocument={null}
-          candidates={[]}
-          sources={[]}
-          balloons={[]}
-          items={refreshedItems}
-          onSave={onSave}
-        />,
-      );
-    });
-    view = render(
-      <InspectionWorkbench
-        pdfDocument={null}
-        candidates={[]}
-        sources={[]}
-        balloons={[]}
-        items={mergeSourceItems}
-        onSave={onSave}
+    render(
+      <MergeRefreshHarness
+        initialItems={mergeSourceItems}
+        refreshedItems={refreshedItems}
+        onSave={vi.fn()}
       />,
     );
 
@@ -288,6 +286,8 @@ describe("InspectionWorkbench", () => {
 
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
+      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
+        .toBe("__no_selected_review_item__");
       expect(screen.queryByRole("article", { name: /检验项/ })).toBeNull();
       expect(screen.queryAllByRole("checkbox", {
         name: /选择检验项/,
@@ -333,27 +333,11 @@ describe("InspectionWorkbench", () => {
         active: true,
       },
     ];
-    let view!: ReturnType<typeof render>;
-    const onSave = vi.fn(async () => {
-      view.rerender(
-        <InspectionWorkbench
-          pdfDocument={null}
-          candidates={[]}
-          sources={[]}
-          balloons={[]}
-          items={refreshedItems}
-          onSave={onSave}
-        />,
-      );
-    });
-    view = render(
-      <InspectionWorkbench
-        pdfDocument={null}
-        candidates={[]}
-        sources={[]}
-        balloons={[]}
-        items={initialItems}
-        onSave={onSave}
+    render(
+      <MergeRefreshHarness
+        initialItems={initialItems}
+        refreshedItems={refreshedItems}
+        onSave={vi.fn()}
       />,
     );
 
@@ -362,6 +346,8 @@ describe("InspectionWorkbench", () => {
 
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
+      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
+        .toBe("item-1");
       expect(screen.getByRole("heading", {
         name: "检验项 — · 螺纹",
       })).not.toBeNull();
@@ -374,6 +360,41 @@ describe("InspectionWorkbench", () => {
       expect(screen.queryByRole("textbox", {
         name: "原始标注：合并候选 B",
       })).toBeNull();
+    });
+  });
+
+  test("合并刷新先 commit、保存后 resolve 时仍只选择唯一新增项", async () => {
+    const deferred = createDeferred<void>();
+    const refreshedItems = [
+      { ...mergeSourceItems[0], active: false },
+      { ...mergeSourceItems[1], active: false },
+      {
+        item_id: "merged-before-resolve",
+        item_type: "linear_dimension" as const,
+        raw_text: "先刷新后完成",
+        active: true,
+      },
+    ];
+    render(
+      <MergeRefreshHarness
+        initialItems={mergeSourceItems}
+        refreshedItems={refreshedItems}
+        onSave={vi.fn()}
+        saveCompletion={deferred.promise}
+      />,
+    );
+
+    openMergePreview();
+    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("summary-active-count").textContent).toBe("1");
+    });
+    deferred.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
+        .toBe("merged-before-resolve");
+      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
     });
   });
 
