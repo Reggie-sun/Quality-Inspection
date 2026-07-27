@@ -1,0 +1,124 @@
+import type {
+  BalloonOverlay,
+  CandidateType,
+  ReviewItem,
+} from "../../api/types";
+import { zhCN } from "../../copy/zhCN";
+
+
+export type ItemStatus =
+  | "pending"
+  | "confirmed"
+  | "candidate"
+  | "excluded"
+  | "manual"
+  | "collision"
+  | "source_pending";
+
+export type InspectionItemPresentation = {
+  displayNumber?: number;
+  numberKind: "formal" | "candidate" | "empty";
+  numberLabel: string;
+  typeLabel: string;
+  page?: number;
+  pageLabel: string;
+  status: ItemStatus;
+  statusLabel: string;
+};
+
+export const INSPECTION_ITEM_TYPE_LABELS: Partial<
+  Record<CandidateType, string>
+> = {
+  ...zhCN.inspection.types,
+};
+
+export const INSPECTION_ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
+  pending: zhCN.inspection.statusPending,
+  confirmed: zhCN.inspection.statusConfirmed,
+  candidate: zhCN.inspection.statusCandidate,
+  excluded: zhCN.inspection.statusExcluded,
+  manual: zhCN.inspection.statusManual,
+  collision: zhCN.inspection.statusCollision,
+  source_pending: zhCN.inspection.sourcePending,
+};
+
+const COARSE_TYPE_LABELS: Readonly<Record<string, string>> = {
+  ...zhCN.review.coarseTypes,
+};
+
+
+function inspectionItemTypeLabel(item: ReviewItem): string {
+  if (item.item_type !== undefined) {
+    return INSPECTION_ITEM_TYPE_LABELS[item.item_type]
+      ?? zhCN.workbench.unknown;
+  }
+  return item.coarse_type === undefined
+    ? zhCN.workbench.unknown
+    : COARSE_TYPE_LABELS[item.coarse_type] ?? zhCN.workbench.unknown;
+}
+
+
+function inspectionItemSourcePage(
+  item: ReviewItem,
+  balloon?: BalloonOverlay,
+): number | undefined {
+  if (item.source_page !== null && item.source_page !== undefined) {
+    return item.source_page;
+  }
+  if (item.page_index !== null && item.page_index !== undefined) {
+    return item.page_index + 1;
+  }
+  return balloon?.pageIndex === undefined ? undefined : balloon.pageIndex + 1;
+}
+
+
+function inspectionItemStatus(
+  item: ReviewItem,
+  balloon?: BalloonOverlay,
+): ItemStatus {
+  if (!item.active) return "excluded";
+  if (balloon?.placementStatus === "manual_required") return "manual";
+  if ((balloon?.collisionFlags?.length ?? 0) > 0) return "collision";
+  if (item.requires_confirmation === true || item.status === "pending") {
+    return "pending";
+  }
+  if (item.status === "kept" || item.sip_detail_fields_confirmed === true) {
+    return "confirmed";
+  }
+  return balloon === undefined && item.balloon_required === true
+    ? "candidate"
+    : "pending";
+}
+
+
+export function inspectionItemPresentation(
+  item: ReviewItem,
+  balloon?: BalloonOverlay,
+  candidateNumber?: number,
+): InspectionItemPresentation {
+  const displayNumber = balloon?.number ?? candidateNumber;
+  const page = inspectionItemSourcePage(item, balloon);
+  const status = inspectionItemStatus(item, balloon);
+  const numberKind = balloon !== undefined
+    ? "formal"
+    : candidateNumber !== undefined
+      ? "candidate"
+      : "empty";
+
+  return {
+    displayNumber,
+    numberKind,
+    numberLabel: balloon !== undefined
+      ? zhCN.inspection.formalNumber(balloon.number)
+      : candidateNumber !== undefined
+        ? zhCN.inspection.candidateNumber(candidateNumber)
+        : zhCN.inspection.noNumber,
+    typeLabel: inspectionItemTypeLabel(item),
+    page,
+    pageLabel: page === undefined
+      ? zhCN.workbench.unknown
+      : zhCN.inspection.sourcePage(page),
+    status,
+    statusLabel: INSPECTION_ITEM_STATUS_LABELS[status],
+  };
+}
