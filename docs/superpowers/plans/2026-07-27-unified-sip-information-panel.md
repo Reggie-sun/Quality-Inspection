@@ -62,6 +62,18 @@ micromamba run -n qi-p0 npm test -- --run \
   - `frontend/src/copy/zhCN.ts`
   - `frontend/src/styles/workbench.css`
   - `frontend/e2e/chinese-pdf-upload-mvp.spec.ts`
+- Task 5 scope amendment（仅补记分支已包含、原列表遗漏的路径）:
+  - `design-qa.md`: 记录统一 SIP 的当前真实 browser evidence，并用于核对该证据是否覆盖
+    `c89219c`。
+  - `frontend/e2e/p0-workbench.spec.ts`: 同步已退役辅助浮层文案，保持现有正式导出
+    browser flow 可被 Playwright 收集和复核。
+  - `frontend/src/components/workbench/ProjectWorkbenchApp.test.tsx`: 同步已退役辅助浮层文案，
+    保持 reviewed projection 与三项下载的既有 integration coverage。
+  - Writer ownership: 父 agent 是 amendment 与任何 verification-driven 修复的唯一 writer；
+    independent reviewer 只读，禁止并发 writer。
+  - Verification scope: 核对 `design-qa.md` 与 `c89219c` 的 evidence provenance；full frontend
+    suite 覆盖 `ProjectWorkbenchApp.test.tsx`；`e2e:list` 收集两条 Playwright spec；final diff
+    直接复核这三个路径。不扩展其他 scope。
 - Do not modify backend files、API types、schema、export implementation、PDF rendering、
   review form、balloon commands、Harness 或无关 copy/styles。
 - 执行前运行 `git status --short --branch`。保留当前两个无关 `__pycache__` 修改和
