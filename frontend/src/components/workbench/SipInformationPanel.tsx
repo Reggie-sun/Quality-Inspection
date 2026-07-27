@@ -47,6 +47,8 @@ export function SipInformationPanel({
   onCommand,
   onSelectedSipDraftChange,
 }: SipInformationPanelProps) {
+  const selectedItemActive = selectedItem?.active === true;
+
   return (
     <section
       className="sip-information-panel"
@@ -54,7 +56,10 @@ export function SipInformationPanel({
       aria-label={zhCN.workbench.sipInformation}
     >
       <h2>{zhCN.workbench.sipInformation}</h2>
-      <section className="sip-project-information">
+      <section
+        className="sip-project-information"
+        aria-label={zhCN.workbench.projectSipInformation}
+      >
         <h3>{zhCN.workbench.projectSipInformation}</h3>
         <dl className="sip-metadata-summary">
           {metadataValues.map(([label, value]) => (
@@ -115,20 +120,31 @@ export function SipInformationPanel({
           </fieldset>
         </details>
       </section>
-      <section className="sip-selected-information">
+      <section
+        className="sip-selected-information"
+        aria-label={zhCN.workbench.selectedSipInformation}
+      >
         <h3>{zhCN.workbench.selectedSipInformation}</h3>
         {selectedSourceActive ? (
           <p className="sip-information-panel__empty">
             {zhCN.workbench.selectedSourceSipUnavailable}
           </p>
-        ) : selectedItem === undefined ? (
+        ) : !selectedItemActive ? (
           <p className="sip-information-panel__empty">
             {zhCN.workbench.selectItemForSip}
           </p>
         ) : null}
         <SelectedSipDetailFields
-          item={selectedSourceActive ? undefined : selectedItem}
-          balloon={selectedSourceActive ? undefined : selectedBalloon}
+          item={
+            !selectedSourceActive && selectedItemActive
+              ? selectedItem
+              : undefined
+          }
+          balloon={
+            !selectedSourceActive && selectedItemActive
+              ? selectedBalloon
+              : undefined
+          }
           disabled={disabled}
           onCommand={onCommand}
           onDraftChange={onSelectedSipDraftChange}

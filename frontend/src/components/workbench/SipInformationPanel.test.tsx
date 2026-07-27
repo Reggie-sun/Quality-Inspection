@@ -194,3 +194,27 @@ test("没有当前检验项时显示精确 SIP 空状态", () => {
     name: "SIP 确认字段",
   })).toBeNull();
 });
+
+test("非 active 检验项显示精确 SIP 空状态", () => {
+  renderPanel({ selectedItem: reviewItem({ active: false }) });
+
+  const region = screen.getByRole("region", { name: "SIP 信息" });
+  expect(region.textContent).toContain(
+    "请选择一个有效检验项以填写 SIP 信息。",
+  );
+  expect(within(region).queryByRole("group", {
+    name: "SIP 确认字段",
+  })).toBeNull();
+});
+
+test("项目和当前检验项子区是具名可访问区域", () => {
+  renderPanel();
+
+  const region = screen.getByRole("region", { name: "SIP 信息" });
+  expect(within(region).getByRole("region", {
+    name: "项目基本信息",
+  })).toBeTruthy();
+  expect(within(region).getByRole("region", {
+    name: "当前检验项",
+  })).toBeTruthy();
+});
