@@ -1,0 +1,43 @@
+{
+  "browser": "Google Chrome",
+  "viewport": {
+    "width": 1565,
+    "height": 796,
+    "deviceScaleFactor": 1
+  },
+  "locale": "zh-CN",
+  "timezone": "Asia/Hong_Kong",
+  "currentTwoPaneLayout": {
+    "drawingWidth": 1012.65625,
+    "inspectionWidth": 506.34375,
+    "auxiliaryHidden": true,
+    "pageScrollWidth": 1565,
+    "viewportWidth": 1565
+  },
+  "auxiliaryCollapsedByDefault": true,
+  "reviewedWorkbench": {
+    "selectedItem": true,
+    "selectedBalloon": true,
+    "formalDownloads": [
+      "ballooned_pdf",
+      "sip_excel",
+      "manifest"
+    ],
+    "consoleErrors": 0,
+    "failedResponses": 0
+  },
+  "frozenWorkbench": {
+    "freezeDisabled": true,
+    "formalDownloadsHidden": true,
+    "consoleErrors": 0,
+    "failedResponses": 0
+  },
+  "hashes": {
+    "05-workbench-overview.png": "b528ae96a6f22094c9bf75dd513e8044b98056668f92518e5c224b92adad2565",
+    "06-item-selected.png": "0687a69b706c12b7591714d967e87c8e94f858fc3ca33ed9a670fb845620c5bc",
+    "07-items-frozen.png": "044813b0f1575838122da15aeef536515e8ee818defcf6c6158534a4ae3dd7a6",
+    "08-balloons-adjusted.png": "ea5e54e8357c2579fdec08b6a6b7c9c8be8ca10d6d7870388e3c34b296d0a78d",
+    "09-export-success.png": "64017b11f5a90c2f865e403e7e44f490f0e710c6cb7d704c5318a9e670903418",
+    "10-reference-comparison.png": "3da95a251ca0dab4321226b646c9ad41ea3cb48422d6aaef5d39829aa1df169c"
+  }
+}

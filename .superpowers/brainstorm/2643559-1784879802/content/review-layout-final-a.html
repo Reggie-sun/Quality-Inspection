@@ -1,0 +1,107 @@
+<h2>最终设计：同卡片双栏审核</h2>
+<p class="subtitle">固定在当前可视高度；左侧列表与右侧编辑区独立滚动。顶部“保存审核修改”移除，右侧每个明确动作直接提交。</p>
+
+<div class="mockup">
+  <div class="mockup-header">检验项审核 · 默认查看状态</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:8px">
+      <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>全部</small><br><strong>99</strong></div>
+      <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>有效项</small><br><strong>29</strong></div>
+      <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>已排除</small><br><strong>0</strong></div>
+      <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>需人工</small><br><strong style="color:#dc2626">70</strong></div>
+      <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>硬碰撞</small><br><strong>0</strong></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:minmax(190px,38%) minmax(330px,62%);height:390px;border:1px solid #d7e0ec;border-radius:7px;overflow:hidden;background:#fff">
+      <section style="display:grid;grid-template-rows:auto 1fr;border-right:1px solid #d7e0ec;min-width:0">
+        <div style="padding:8px;border-bottom:1px solid #e8edf3">
+          <input class="mock-input" style="width:100%" placeholder="搜索检验项">
+          <div style="display:flex;gap:5px;margin-top:5px">
+            <button class="mock-button" style="flex:1">全部状态</button>
+            <button class="mock-button">合并选择</button>
+          </div>
+        </div>
+        <div style="overflow:auto">
+          <div style="padding:9px;border-bottom:1px solid #e8edf3"><strong>① 117</strong><br><small>线性尺寸 · 待审核</small></div>
+          <div style="padding:9px;border-bottom:1px solid #e8edf3"><strong>② 77</strong><br><small>线性尺寸 · 待审核</small></div>
+          <div style="padding:9px;border-bottom:1px solid #e8edf3"><strong>③ 16</strong><br><small>线性尺寸 · 待审核</small></div>
+          <div style="padding:9px;border-bottom:1px solid #e8edf3;background:#eaf2ff;box-shadow:inset 3px 0 #2563eb">
+            <strong>④ 50</strong><br><small>线性尺寸 · 待审核</small>
+          </div>
+          <div style="padding:9px;border-bottom:1px solid #e8edf3"><strong>⑤ 98</strong><br><small>线性尺寸 · 待审核</small></div>
+          <div style="padding:9px"><strong>⑥ 36</strong><br><small>线性尺寸 · 待审核</small></div>
+        </div>
+      </section>
+
+      <section style="display:grid;grid-template-rows:auto 1fr;min-width:0">
+        <header style="display:flex;align-items:center;justify-content:space-between;padding:9px 11px;border-bottom:1px solid #e8edf3">
+          <div><strong>检验项目 · 50</strong><br><small>第 4 项 · 第 1 页 · 待审核</small></div>
+          <span style="padding:3px 7px;border-radius:999px;background:#eff6ff;color:#2563eb;font-size:11px">查看状态</span>
+        </header>
+        <div style="display:grid;grid-template-columns:minmax(185px,1fr) 126px;min-height:0">
+          <div style="overflow:auto;padding:10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
+              <label style="grid-column:1/-1"><small>原始标注</small><input class="mock-input" style="width:100%;background:#f3f4f6" value="50" disabled></label>
+              <label><small>数量</small><input class="mock-input" style="width:100%;background:#f3f4f6" disabled></label>
+              <label><small>基本尺寸</small><input class="mock-input" style="width:100%;background:#f3f4f6" value="50" disabled></label>
+              <label><small>上公差</small><input class="mock-input" style="width:100%;background:#f3f4f6" disabled></label>
+              <label><small>下公差</small><input class="mock-input" style="width:100%;background:#f3f4f6" disabled></label>
+            </div>
+            <div style="display:grid;grid-template-columns:72px 1fr auto;gap:6px;align-items:center;margin-top:10px">
+              <small><strong>拆分内容</strong></small>
+              <input class="mock-input" style="width:100%;background:#f3f4f6" value="第一部分|第二部分" disabled>
+              <button class="mock-button" disabled>拆分</button>
+            </div>
+          </div>
+          <aside style="display:grid;align-content:start;gap:6px;padding:10px;border-left:1px solid #e8edf3;background:#f8fafc">
+            <button class="mock-button">保留</button>
+            <button class="mock-button">排除</button>
+            <button class="mock-button" style="background:#2563eb;color:#fff" disabled>修改保存</button>
+            <button class="mock-button">修改</button>
+            <button class="mock-button">确认候选项</button>
+            <button class="mock-button">拒绝候选项</button>
+            <button class="mock-button">设为需要气泡</button>
+            <button class="mock-button">设为无需气泡</button>
+          </aside>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:18px">
+  <h3>交互状态</h3>
+  <div class="options">
+    <div class="option">
+      <div class="letter">1</div>
+      <div class="content"><h3>查看</h3><p>字段只读；“修改”可用，“修改保存”不可用。</p></div>
+    </div>
+    <div class="option">
+      <div class="letter">2</div>
+      <div class="content"><h3>编辑</h3><p>点击“修改”后字段可输入；有有效变更时“修改保存”可用。</p></div>
+    </div>
+    <div class="option">
+      <div class="letter">3</div>
+      <div class="content"><h3>提交</h3><p>“保留 / 排除 / 修改保存 / 确认 / 拒绝 / 气泡”均直接调用现有审核提交；失败时留在当前状态并显示保存失败。</p></div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>保持不变</h4>
+    <ul>
+      <li>后端 Review command 与版本冲突语义</li>
+      <li>检验项筛选、选中、PDF 联动</li>
+      <li>审核状态与候选项业务含义</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>明确移除</h4>
+    <ul>
+      <li>顶部“保存审核修改”按钮</li>
+      <li>列表下方第二套独立编辑面板</li>
+      <li>“取消检验项修改”动作</li>
+    </ul>
+  </div>
+</div>

@@ -1,0 +1,116 @@
+<h2>检验项列表与编辑区，合并成哪种方式？</h2>
+<p class="subtitle">三种方案都移除顶部“保存审核修改”，并把操作区改为“修改保存”与“修改”。请重点看选中检验项后，列表和表单之间的空间关系。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A · 同卡片双栏（推荐）</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:8px">
+            <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>全部</small><br><strong>99</strong></div>
+            <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>有效项</small><br><strong>29</strong></div>
+            <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>已排除</small><br><strong>0</strong></div>
+            <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>需人工</small><br><strong style="color:#dc2626">70</strong></div>
+            <div style="padding:6px;border:1px solid #d7e0ec;border-radius:5px"><small>硬碰撞</small><br><strong>0</strong></div>
+          </div>
+          <div style="display:grid;grid-template-columns:210px minmax(300px,1fr);border:1px solid #d7e0ec;border-radius:7px;overflow:hidden">
+            <div style="border-right:1px solid #d7e0ec;background:#fff">
+              <div style="padding:8px;border-bottom:1px solid #e8edf3"><input class="mock-input" style="width:100%" placeholder="搜索检验项"></div>
+              <div style="padding:8px;border-bottom:1px solid #e8edf3;background:#eaf2ff"><strong>④ 50</strong><br><small>线性尺寸 · 待审核</small></div>
+              <div style="padding:8px;border-bottom:1px solid #e8edf3"><strong>⑤ 98</strong><br><small>线性尺寸 · 待审核</small></div>
+              <div style="padding:8px"><strong>⑥ 16</strong><br><small>线性尺寸 · 待审核</small></div>
+            </div>
+            <div style="padding:10px;background:#fff">
+              <strong style="display:block;margin-bottom:8px">检验项目 · 50</strong>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
+                <label><small>原始标注</small><input class="mock-input" style="width:100%" value="50"></label>
+                <label><small>数量</small><input class="mock-input" style="width:100%"></label>
+                <label><small>基本尺寸</small><input class="mock-input" style="width:100%" value="50"></label>
+                <label><small>上公差</small><input class="mock-input" style="width:100%"></label>
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+                <button class="mock-button">保留</button>
+                <button class="mock-button">排除</button>
+                <button class="mock-button" style="background:#2563eb;color:#fff">修改保存</button>
+                <button class="mock-button">修改</button>
+                <button class="mock-button">确认候选项</button>
+                <button class="mock-button">设为无需气泡</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · 同卡片双栏</h3>
+      <p>左侧始终保留可搜索列表，右侧直接编辑当前项。批量审核效率最高，不再上下跳转；窄屏时可切为列表/编辑两段式。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B · 选中行原位展开</div>
+        <div class="mockup-body">
+          <div style="padding:8px;border:1px solid #d7e0ec;border-radius:7px;background:#fff">
+            <input class="mock-input" style="width:100%;margin-bottom:7px" placeholder="搜索检验项">
+            <div style="padding:7px;border-bottom:1px solid #e8edf3">① 117　线性尺寸　待审核</div>
+            <div style="padding:7px;border-bottom:1px solid #e8edf3">② 77　线性尺寸　待审核</div>
+            <div style="padding:8px;border:1px solid #93b4ef;border-radius:5px;background:#eff6ff">
+              <strong>③ 50　线性尺寸　待审核</strong>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px">
+                <input class="mock-input" value="50">
+                <input class="mock-input" placeholder="数量">
+                <input class="mock-input" value="50">
+                <input class="mock-input" placeholder="上公差">
+              </div>
+              <div style="display:flex;gap:6px;margin-top:8px">
+                <button class="mock-button" style="background:#2563eb;color:#fff">修改保存</button>
+                <button class="mock-button">修改</button>
+                <button class="mock-button">排除</button>
+              </div>
+            </div>
+            <div style="padding:7px">④ 98　线性尺寸　待审核</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 选中行原位展开</h3>
+      <p>选中项就在列表中展开编辑，定位最直接；但复杂检验项会撑高单行，长列表浏览时仍会产生明显的纵向位移。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C · 列表与编辑模式切换</div>
+        <div class="mockup-body">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong>正在编辑：④ 50</strong>
+            <button class="mock-button">返回检验项列表</button>
+          </div>
+          <div style="padding:10px;border:1px solid #d7e0ec;border-radius:7px;background:#fff">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <label><small>原始标注</small><input class="mock-input" style="width:100%" value="50"></label>
+              <label><small>数量</small><input class="mock-input" style="width:100%"></label>
+              <label><small>基本尺寸</small><input class="mock-input" style="width:100%" value="50"></label>
+              <label><small>上公差</small><input class="mock-input" style="width:100%"></label>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:10px">
+              <button class="mock-button">保留</button>
+              <button class="mock-button">排除</button>
+              <button class="mock-button" style="background:#2563eb;color:#fff">修改保存</button>
+              <button class="mock-button">修改</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 列表/编辑模式切换</h3>
+      <p>编辑区最宽、完全消除同页纵向跳转；代价是编辑时看不到其他检验项，需要返回列表才能切换。</p>
+    </div>
+  </div>
+</div>

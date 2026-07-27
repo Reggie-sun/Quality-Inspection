@@ -1,0 +1,85 @@
+{
+  "browser": "Google Chrome",
+  "rootAndProcessing": {
+    "environment": {
+      "width": 1565,
+      "height": 796,
+      "deviceScaleFactor": 1,
+      "locale": "zh-CN",
+      "timezone": "Asia/Hong_Kong"
+    },
+    "focusVisible": true,
+    "idleNoHorizontalOverflow": true,
+    "idleNoLogoGraphic": true,
+    "idleNoInternalId": true,
+    "selectedFileTruthful": true,
+    "busyAria": true,
+    "indeterminateStages": [
+      "queued",
+      "parsing",
+      "recognizing",
+      "preparing_review"
+    ],
+    "thumbnail": {
+      "width": 48,
+      "height": 32,
+      "nonwhite": 4
+    },
+    "fit": {
+      "frameWidth": 918.65625,
+      "frameHeight": 520,
+      "layerWidth": 741,
+      "layerHeight": 494,
+      "fitsWidth": true,
+      "fitsHeight": true
+    },
+    "remarksEditCancel": true,
+    "table": {
+      "rowCount": 1,
+      "sticky": "sticky"
+    },
+    "consoleErrors": 0,
+    "failedResponses": 0
+  },
+  "fatal": {
+    "roleAlert": true,
+    "chineseGuidance": true,
+    "noInternalId": true,
+    "expectedHttpFailure": 422,
+    "consoleErrors": 1
+  },
+  "denseWorkbench": {
+    "density": {
+      "candidateMarkers": 89,
+      "sourceMarkers": 75,
+      "tableRows": 50,
+      "candidateOpacity": "0.58"
+    },
+    "selectedCrossLink": true,
+    "responsive": [
+      {
+        "width": 1366,
+        "height": 768,
+        "scrollWidth": 1366,
+        "pdfVisible": true,
+        "tableVisible": true
+      },
+      {
+        "width": 1180,
+        "height": 800,
+        "scrollWidth": 1180,
+        "pdfVisible": true,
+        "tableVisible": true
+      }
+    ],
+    "accessibilitySnapshot": true,
+    "noInternalId": true,
+    "consoleErrors": 0,
+    "failedResponses": 0
+  },
+  "reducedMotion": {
+    "mediaMatches": true,
+    "transitionDuration": "0s",
+    "animationDuration": "0s"
+  }
+}

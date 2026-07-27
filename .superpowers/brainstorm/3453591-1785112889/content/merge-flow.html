@@ -1,0 +1,70 @@
+<style>
+  .flow { display:grid; grid-template-columns:1fr 52px 1fr 52px 1fr; gap:10px; align-items:stretch; }
+  .arrow { display:grid; place-items:center; color:#2563eb; font-size:30px; font-weight:700; }
+  .panel { border:1px solid #cbd5e1; border-radius:14px; background:white; overflow:hidden; }
+  .panel-head { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid #e2e8f0; }
+  .step { width:26px; height:26px; border-radius:50%; background:#2563eb; color:white; display:grid; place-items:center; font-weight:700; }
+  .toolbar { display:flex; gap:7px; padding:10px; background:#f8fafc; }
+  .search { flex:1; border:1px solid #cbd5e1; border-radius:6px; padding:7px; color:#64748b; font-size:12px; }
+  .button { border:1px solid #9db6df; background:white; color:#1e40af; border-radius:6px; padding:6px 9px; font-size:12px; }
+  .button.primary { background:#2563eb; border-color:#2563eb; color:white; }
+  .button.disabled { opacity:.45; }
+  .row { display:grid; grid-template-columns:24px 1fr auto; gap:8px; align-items:center; padding:10px; border-top:1px solid #e2e8f0; font-size:12px; }
+  .row.selected { background:#eaf2ff; }
+  .radio { width:16px; height:16px; border:1px solid #2563eb; border-radius:50%; }
+  .check { width:16px; height:16px; border:1px solid #2563eb; border-radius:3px; background:white; }
+  .check.on { background:#2563eb; box-shadow:inset 0 0 0 3px white; }
+  .row small { display:block; color:#64748b; margin-top:2px; }
+  .status { color:#475569; font-weight:600; }
+  .selection-bar { display:flex; justify-content:space-between; align-items:center; padding:9px 10px; background:#eff6ff; color:#1d4ed8; font-size:12px; }
+  .preview { padding:12px; }
+  .source { display:flex; gap:7px; flex-wrap:wrap; margin:6px 0 13px; }
+  .chip { background:#f1f5f9; border:1px solid #cbd5e1; border-radius:999px; padding:5px 9px; font-size:12px; }
+  .field { margin-top:11px; }
+  .field label { display:block; color:#475569; font-size:11px; font-weight:600; margin-bottom:5px; }
+  .value { border:1px solid #cbd5e1; border-radius:7px; padding:9px; color:#0f172a; font-size:13px; }
+  .warning { margin-top:11px; padding:8px; border-radius:7px; background:#fff7ed; color:#9a3412; font-size:11px; line-height:1.45; }
+  .foot { display:flex; justify-content:flex-end; gap:7px; margin-top:14px; }
+  .caption { padding:12px 14px; border-top:1px solid #e2e8f0; color:#475569; font-size:12px; line-height:1.5; background:#f8fafc; }
+  @media (max-width:1100px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); min-height:32px; } }
+</style>
+
+<h2>“合并重复项”应当是三步批量操作</h2>
+<p class="subtitle">默认不占详情空间；只有主动点击合并时，列表才进入多选模式。</p>
+
+<div class="flow">
+  <div class="panel">
+    <div class="panel-head"><strong>正常浏览</strong><span class="step">1</span></div>
+    <div class="toolbar"><div class="search">搜索检验项</div><button class="button">合并重复项</button></div>
+    <div class="row"><span class="radio"></span><span><b>85</b><small>线性尺寸</small></span><span class="status">待审核</span></div>
+    <div class="row selected"><span class="radio"></span><span><b>48</b><small>线性尺寸</small></span><span class="status">待审核</span></div>
+    <div class="row"><span class="radio"></span><span><b>48</b><small>线性尺寸</small></span><span class="status">待审核</span></div>
+    <div class="caption">详情区只编辑当前项。“合并重复项”放在列表工具栏，因为它影响多条记录。</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <div class="panel">
+    <div class="panel-head"><strong>选择待合并项</strong><span class="step">2</span></div>
+    <div class="selection-bar"><span>已选择 2 项</span><span><button class="button">取消</button> <button class="button primary">下一步</button></span></div>
+    <div class="row"><span class="check"></span><span><b>85</b><small>线性尺寸</small></span><span class="status">待审核</span></div>
+    <div class="row selected"><span class="check on"></span><span><b>48</b><small>线性尺寸 · 第 1 页</small></span><span class="status">待审核</span></div>
+    <div class="row selected"><span class="check on"></span><span><b>48</b><small>线性尺寸 · 第 1 页</small></span><span class="status">待审核</span></div>
+    <div class="caption">进入模式后才显示复选框。未满两项时“下一步”不可用；取消后恢复普通单选。</div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <div class="panel option" data-choice="approve-merge-flow" onclick="toggleSelect(this)">
+    <div class="panel-head"><strong>预览并确认</strong><span class="step">3</span></div>
+    <div class="preview">
+      <label style="font-size:11px;color:#475569;font-weight:600">将合并以下原始标注</label>
+      <div class="source"><span class="chip">48</span><span class="chip">48</span></div>
+      <div class="field"><label>合并后的原始标注</label><div class="value">48</div></div>
+      <div class="field"><label>检验项类型</label><div class="value">线性尺寸</div></div>
+      <div class="warning">合并不是数值相加。仅用于同一检验要求被重复识别，或一条标注被拆成多项的情况。</div>
+      <div class="foot"><button class="button">返回修改</button><button class="button primary">确认合并 2 项</button></div>
+    </div>
+    <div class="caption">确认成功后选中新生成的合并项；失败则保留已选项和预览内容，便于重试。</div>
+  </div>
+</div>

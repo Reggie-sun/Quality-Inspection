@@ -1,0 +1,131 @@
+<style>
+  .qi-grid { display:grid; grid-template-columns:repeat(3,minmax(300px,1fr)); gap:18px; }
+  .qi-card { border:1px solid #cbd5e1; border-radius:14px; overflow:hidden; background:#f8fafc; cursor:pointer; transition:.16s ease; }
+  .qi-card:hover { border-color:#2563eb; transform:translateY(-2px); box-shadow:0 10px 24px rgba(37,99,235,.10); }
+  .qi-card.selected { border:2px solid #2563eb; }
+  .qi-title { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:white; border-bottom:1px solid #e2e8f0; }
+  .qi-title strong { color:#0f172a; }
+  .qi-tag { font-size:12px; padding:3px 8px; border-radius:999px; background:#dbeafe; color:#1d4ed8; }
+  .qi-shell { display:grid; grid-template-columns:42% 58%; min-height:330px; }
+  .qi-list { padding:10px; background:#f8fafc; border-right:1px solid #dbe3ed; }
+  .qi-toolbar { display:flex; gap:6px; margin-bottom:8px; }
+  .qi-input { height:28px; border:1px solid #cbd5e1; border-radius:6px; background:white; flex:1; color:#64748b; padding:0 8px; font-size:12px; }
+  .qi-btn { border:1px solid #9db6df; border-radius:6px; background:white; color:#1e40af; padding:5px 9px; font-size:12px; white-space:nowrap; }
+  .qi-btn.primary { background:#2563eb; color:white; border-color:#2563eb; }
+  .qi-row { display:grid; grid-template-columns:28px 1fr auto; align-items:center; gap:7px; padding:9px 7px; border-bottom:1px solid #e2e8f0; background:white; font-size:12px; }
+  .qi-row.active { background:#eaf2ff; border-left:3px solid #2563eb; }
+  .qi-num { width:24px; height:24px; display:grid; place-items:center; border:1px solid #2563eb; color:#2563eb; border-radius:50%; }
+  .qi-row small { display:block; color:#64748b; margin-top:2px; }
+  .qi-status { color:#334155; font-weight:600; font-size:11px; }
+  .qi-detail { padding:12px; background:white; }
+  .qi-detail-head { display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid #e2e8f0; }
+  .qi-detail-head strong { color:#0f172a; font-size:15px; }
+  .qi-meta { display:flex; gap:8px; color:#64748b; font-size:11px; margin-top:4px; }
+  .qi-field { margin-top:12px; }
+  .qi-field label { display:block; color:#475569; font-size:11px; margin-bottom:5px; font-weight:600; }
+  .qi-field-value { border:1px solid #cbd5e1; border-radius:7px; padding:8px; font-size:13px; color:#0f172a; background:#f8fafc; }
+  .qi-fields { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+  .qi-actions { display:flex; gap:6px; margin-top:14px; }
+  .qi-mergebar { margin:9px 0; padding:8px; border-radius:8px; background:#eff6ff; color:#1d4ed8; font-size:11px; display:flex; justify-content:space-between; align-items:center; }
+  .qi-checkbox { width:14px; height:14px; border:1px solid #2563eb; border-radius:3px; background:white; }
+  .qi-note { padding:12px 14px; color:#475569; font-size:13px; line-height:1.55; border-top:1px solid #e2e8f0; background:white; }
+  .qi-note b { color:#0f172a; }
+  @media (max-width:1100px) { .qi-grid { grid-template-columns:1fr; } }
+</style>
+
+<h2>哪种信息层级更合理？</h2>
+<p class="subtitle">重点观察：数字出现几次、详情标题是否提供新信息，以及“合并”是否属于列表批量操作。</p>
+
+<div class="qi-grid">
+  <div class="qi-card option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="qi-title">
+      <strong>A · 主从分工清晰</strong>
+      <span class="qi-tag">推荐</span>
+    </div>
+    <div class="qi-shell">
+      <div class="qi-list">
+        <div class="qi-toolbar">
+          <div class="qi-input">搜索检验项</div>
+          <button class="qi-btn">合并</button>
+        </div>
+        <div class="qi-row"><span class="qi-num">1</span><span><b>85</b><small>线性尺寸</small></span><span class="qi-status">待审核</span></div>
+        <div class="qi-row active"><span class="qi-num">2</span><span><b>48</b><small>线性尺寸</small></span><span class="qi-status">待审核</span></div>
+        <div class="qi-row"><span class="qi-num">3</span><span><b>16</b><small>线性尺寸</small></span><span class="qi-status">待审核</span></div>
+      </div>
+      <div class="qi-detail">
+        <div class="qi-detail-head">
+          <div>
+            <strong>检验项 2 · 线性尺寸</strong>
+            <div class="qi-meta"><span>气泡 2</span><span>第 1 页</span></div>
+          </div>
+          <span class="qi-tag">待审核</span>
+        </div>
+        <div class="qi-field"><label>原始标注</label><div class="qi-field-value">48</div></div>
+        <div class="qi-fields">
+          <div class="qi-field"><label>数量</label><div class="qi-field-value">—</div></div>
+          <div class="qi-field"><label>基本尺寸</label><div class="qi-field-value">48</div></div>
+          <div class="qi-field"><label>上公差</label><div class="qi-field-value">—</div></div>
+          <div class="qi-field"><label>下公差</label><div class="qi-field-value">—</div></div>
+        </div>
+        <div class="qi-actions"><button class="qi-btn">保留</button><button class="qi-btn">排除</button><button class="qi-btn primary">修改</button></div>
+      </div>
+    </div>
+    <div class="qi-note"><b>只保留必要重复：</b>列表里的 48 用于定位；表单里的 48 是可核对的原始数据。详情标题改为序号、类型和状态，不再复制数值。</div>
+  </div>
+
+  <div class="qi-card option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="qi-title">
+      <strong>B · 解析结果优先</strong>
+      <span class="qi-tag">更紧凑</span>
+    </div>
+    <div class="qi-shell">
+      <div class="qi-list">
+        <div class="qi-toolbar"><div class="qi-input">搜索检验项</div><button class="qi-btn">合并</button></div>
+        <div class="qi-row"><span class="qi-num">1</span><span><b>85</b><small>线性尺寸</small></span><span class="qi-status">待审核</span></div>
+        <div class="qi-row active"><span class="qi-num">2</span><span><b>48</b><small>线性尺寸</small></span><span class="qi-status">待审核</span></div>
+        <div class="qi-row"><span class="qi-num">3</span><span><b>16</b><small>线性尺寸</small></span><span class="qi-status">待审核</span></div>
+      </div>
+      <div class="qi-detail">
+        <div class="qi-detail-head">
+          <div><strong>基本尺寸 48</strong><div class="qi-meta"><span>检验项 2</span><span>线性尺寸</span></div></div>
+          <span class="qi-tag">待审核</span>
+        </div>
+        <div class="qi-field"><label>图纸原文（折叠）</label><div class="qi-field-value">查看原始标注</div></div>
+        <div class="qi-fields">
+          <div class="qi-field"><label>数量</label><div class="qi-field-value">—</div></div>
+          <div class="qi-field"><label>基本尺寸</label><div class="qi-field-value">48</div></div>
+          <div class="qi-field"><label>上公差</label><div class="qi-field-value">—</div></div>
+          <div class="qi-field"><label>下公差</label><div class="qi-field-value">—</div></div>
+        </div>
+        <div class="qi-actions"><button class="qi-btn">保留</button><button class="qi-btn">排除</button><button class="qi-btn primary">修改</button></div>
+      </div>
+    </div>
+    <div class="qi-note"><b>适合解析结果可靠时：</b>用户先看系统理解出的尺寸，原始标注默认收起。风险是识别错误时不容易第一眼发现。</div>
+  </div>
+
+  <div class="qi-card option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="qi-title">
+      <strong>C · 最小改动</strong>
+      <span class="qi-tag">成本最低</span>
+    </div>
+    <div class="qi-shell">
+      <div class="qi-list">
+        <div class="qi-toolbar"><div class="qi-input">搜索检验项</div></div>
+        <div class="qi-row"><span class="qi-num">1</span><span><b>85</b><small>线性尺寸</small></span><span class="qi-status">待审核</span></div>
+        <div class="qi-row active"><span class="qi-num">2</span><span><b>48</b><small>线性尺寸</small></span><span class="qi-status">待审核</span></div>
+        <div class="qi-row"><span class="qi-num">3</span><span><b>16</b><small>线性尺寸</small></span><span class="qi-status">待审核</span></div>
+      </div>
+      <div class="qi-detail">
+        <div class="qi-detail-head"><strong>检验项 2</strong><span class="qi-tag">待审核</span></div>
+        <div class="qi-mergebar"><span>合并重复或拆分的识别项</span><button class="qi-btn">展开</button></div>
+        <div class="qi-field"><label>原始标注</label><div class="qi-field-value">48</div></div>
+        <div class="qi-fields">
+          <div class="qi-field"><label>数量</label><div class="qi-field-value">—</div></div>
+          <div class="qi-field"><label>基本尺寸</label><div class="qi-field-value">48</div></div>
+        </div>
+        <div class="qi-actions"><button class="qi-btn">保留</button><button class="qi-btn">排除</button><button class="qi-btn primary">修改</button></div>
+      </div>
+    </div>
+    <div class="qi-note"><b>只修重复标题：</b>开发量最小，但“合并”仍混在单项详情里，长期信息架构问题没有完全解决。</div>
+  </div>
+</div>

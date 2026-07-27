@@ -1,0 +1,158 @@
+diff --git a/frontend/src/components/pdf/PdfWorkspace.tsx b/frontend/src/components/pdf/PdfWorkspace.tsx
+index 6fd226b..0000000 100644
+--- a/frontend/src/components/pdf/PdfWorkspace.tsx
++++ b/frontend/src/components/pdf/PdfWorkspace.tsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useMemo, useRef, useState } from "react";
++import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+ import { GlobalWorkerOptions } from "pdfjs-dist";
+ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+ 
+@@ -39,6 +39,7 @@ type PdfWorkspaceProps = {
+   ) => void;
+   onPageChange?: (pageIndex: number) => void;
++  auxiliaryPanel?: ReactNode;
+ };
+ 
+ 
+@@ -58,6 +59,7 @@ export function PdfWorkspace({
+   onSelectBalloon,
+   onMoveBalloon,
+   onPageChange,
++  auxiliaryPanel,
+ }: PdfWorkspaceProps) {
+   const workspaceRef = useRef<HTMLElement>(null);
+   const canvasRef = useRef<HTMLCanvasElement>(null);
+@@ -66,6 +68,7 @@ export function PdfWorkspace({
+   const [scale, setScale] = useState(1);
+   const [pan, setPan] = useState({ x: 0, y: 0 });
+   const [expanded, setExpanded] = useState(false);
++  const [auxiliaryOpen, setAuxiliaryOpen] = useState(false);
+   const [localSelectedItemId, setLocalSelectedItemId] = useState<string>();
+   const [renderError, setRenderError] = useState<string>();
+   const [pageSize, setPageSize] = useState({
+@@ -253,6 +256,18 @@ export function PdfWorkspace({
+         >
+           {zhCN.pdf.fit}
+         </button>
++        {auxiliaryPanel === undefined ? null : (
++          <button
++            type="button"
++            aria-controls="pdf-auxiliary-panel"
++            aria-expanded={auxiliaryOpen}
++            onClick={() => setAuxiliaryOpen((current) => !current)}
++          >
++            {auxiliaryOpen
++              ? zhCN.pdf.collapseAuxiliary
++              : zhCN.pdf.expandAuxiliary}
++          </button>
++        )}
+         <button
+           type="button"
+           aria-label={expanded ? zhCN.pdf.collapse : zhCN.pdf.expand}
+@@ -261,6 +276,14 @@ export function PdfWorkspace({
+           {expanded ? zhCN.pdf.collapse : zhCN.pdf.expand}
+         </button>
+       </div>
++      {auxiliaryPanel === undefined || !auxiliaryOpen ? null : (
++        <div
++          id="pdf-auxiliary-panel"
++          className="pdf-auxiliary-panel"
++        >
++          {auxiliaryPanel}
++        </div>
++      )}
+       {renderError === undefined ? null : <p role="alert">{renderError}</p>}
+       <div className="pdf-content">
+         <nav className="pdf-thumbnails" aria-label={zhCN.pdf.pages}>
+diff --git a/frontend/src/copy/zhCN.ts b/frontend/src/copy/zhCN.ts
+index 6b02a02..0000000 100644
+--- a/frontend/src/copy/zhCN.ts
++++ b/frontend/src/copy/zhCN.ts
+@@ -304,6 +304,8 @@ export const zhCN = {
+     panUp: "向上平移",
+     panDown: "向下平移",
+     fit: "适合页面",
++    expandAuxiliary: "展开 SIP 与导出信息",
++    collapseAuxiliary: "收起 SIP 与导出信息",
+     expand: "展开工作区",
+     collapse: "收起工作区",
+     renderFailed: "PDF 页面渲染失败，请切换页面后重试。",
+diff --git a/frontend/src/styles/workbench.css b/frontend/src/styles/workbench.css
+index 821bacd..0000000 100644
+--- a/frontend/src/styles/workbench.css
++++ b/frontend/src/styles/workbench.css
+@@ -211,9 +211,8 @@
+ .workbench-layout {
+   display: grid;
+   grid-template-columns:
+-    minmax(0, 46fr)
+-    minmax(360px, 32fr)
+-    minmax(260px, 22fr);
++    minmax(0, 2fr)
++    minmax(400px, 1fr);
+   gap: 10px;
+   align-items: start;
+   margin-top: 10px;
+@@ -244,6 +243,7 @@
+ }
+ 
+ .pdf-workspace {
++  position: relative;
+   padding: 10px;
+   overflow: hidden;
+   background: #ffffff;
+@@ -283,6 +283,20 @@
+   white-space: nowrap;
+ }
+ 
++.pdf-auxiliary-panel {
++  position: absolute;
++  z-index: 12;
++  top: 50px;
++  right: 10px;
++  width: min(380px, calc(100% - 20px));
++}
++
++.pdf-auxiliary-panel .workbench-aside {
++  min-height: 0;
++  max-height: calc(100vh - 140px);
++  box-shadow: 0 12px 32px rgb(15 23 42 / 18%);
++}
++
+ .pdf-content {
+   display: grid;
+   grid-template-columns: 58px minmax(0, 1fr);
+@@ -894,13 +908,6 @@
+     grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr);
+   }
+ 
+-  .workbench-aside {
+-    grid-column: 1 / -1;
+-    grid-template-columns: repeat(3, minmax(0, 1fr));
+-    min-height: auto;
+-    max-height: none;
+-  }
+-
+   .project-summary dl {
+     grid-template-columns: repeat(4, minmax(100px, 1fr));
+     row-gap: 10px;
+@@ -921,17 +928,11 @@
+ 
+   .project-summary dl,
+-  .workbench-layout,
+-  .workbench-aside {
++  .workbench-layout {
+     grid-template-columns: 1fr;
+   }
+ 
+-  .workbench-aside {
+-    grid-column: auto;
+-  }
+-
+-  .inspection-pane,
+-  .workbench-aside {
++  .inspection-pane {
+     max-height: none;
+   }
+ }
