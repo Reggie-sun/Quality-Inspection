@@ -263,8 +263,18 @@ export function InspectionWorkbench({
     : actionState ?? displayedSaveState;
   const reviewImmutable =
     finalized || (workingCopy !== undefined && workingCopy.items_frozen_at !== null);
+  const reviewCommandsDisabled =
+    saving
+    || busy
+    || reviewImmutable
+    || pendingMergeReconciliation !== undefined;
   const submitCommand = async (command: ReviewCommand): Promise<boolean> => {
-    if (savingRef.current || busy || reviewImmutable) return false;
+    if (
+      savingRef.current
+      || busy
+      || reviewImmutable
+      || pendingMergeReconciliationRef.current !== undefined
+    ) return false;
     savingRef.current = true;
     setSaving(true);
     setSaveState(zhCN.workbench.saving);
@@ -416,7 +426,7 @@ export function InspectionWorkbench({
           <details className="sip-metadata-editor">
             <summary>{zhCN.workbench.editMetadata}</summary>
             <fieldset
-              disabled={saving || busy || reviewImmutable}
+              disabled={reviewCommandsDisabled}
             >
               <legend className="visually-hidden">
                 {zhCN.workbench.editMetadata}
@@ -609,12 +619,7 @@ export function InspectionWorkbench({
                 filter={filter}
                 selectedItemId={selectedItemId}
                 selectedSourceId={selectedSourceId}
-                disabled={
-                  saving
-                  || busy
-                  || reviewImmutable
-                  || pendingMergeReconciliation !== undefined
-                }
+                disabled={reviewCommandsDisabled}
                 onSelectItem={selectItem}
                 onSelectSource={selectSource}
                 onCommand={submitCommand}
@@ -626,7 +631,7 @@ export function InspectionWorkbench({
             <div className="inspection-review-workspace__detail">
               <ReviewPanel
                 items={items}
-                disabled={saving || busy || reviewImmutable}
+                disabled={reviewCommandsDisabled}
                 selectedItemId={selectedItemId}
                 selectedItemPresentation={selectedItemPresentation}
                 onSelectItem={selectItem}

@@ -431,7 +431,7 @@ describe("InspectionWorkbench", () => {
     });
   });
 
-  test("合并成功后在 refresh commit 前阻止第二次合并", async () => {
+  test("合并成功后在 refresh commit 前阻止其他审核命令和第二次合并", async () => {
     const refresh = createDeferred<void>();
     const refreshedItems = [
       { ...mergeSourceItems[0], active: false },
@@ -469,13 +469,24 @@ describe("InspectionWorkbench", () => {
     expect(screen.queryAllByRole("checkbox", {
       name: /选择检验项/,
     })).toHaveLength(0);
+
+    const keep = screen.getByRole(
+      "button",
+      { name: "保留检验项：⌀10" },
+    ) as HTMLButtonElement;
+    fireEvent.click(keep);
     expect(onSave).toHaveBeenCalledOnce();
+    expect(keep.disabled).toBe(true);
 
     refresh.resolve();
     await waitFor(() => {
       expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
         .toBe("merged-after-delay");
       expect(beginMerge.disabled).toBe(false);
+      expect((screen.getByRole(
+        "button",
+        { name: "保留检验项：延迟刷新后的合并项" },
+      ) as HTMLButtonElement).disabled).toBe(false);
     });
   });
 
