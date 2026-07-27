@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   cleanup,
   fireEvent,
@@ -51,7 +51,7 @@ function MergeRefreshHarness({
   saveCompletion,
 }: {
   initialItems: ReviewItem[];
-  onSave: (command: ReviewCommand) => void;
+  onSave: (command: ReviewCommand) => Promise<void> | void;
   refreshedItems: ReviewItem[];
   saveCompletion?: Promise<void>;
 }) {
@@ -64,11 +64,44 @@ function MergeRefreshHarness({
       balloons={[]}
       items={items}
       onSave={async (command) => {
-        onSave(command);
+        await onSave(command);
         await Promise.resolve();
         setItems(refreshedItems);
         if (saveCompletion !== undefined) await saveCompletion;
       }}
+    />
+  );
+}
+
+function DelayedMergeRefreshHarness({
+  initialItems,
+  onSave,
+  refreshedItems,
+  refreshCompletion,
+}: {
+  initialItems: ReviewItem[];
+  onSave: (command: ReviewCommand) => Promise<void>;
+  refreshedItems: ReviewItem[];
+  refreshCompletion: Promise<void>;
+}) {
+  const [items, setItems] = useState(initialItems);
+  useEffect(() => {
+    let active = true;
+    void refreshCompletion.then(() => {
+      if (active) setItems(refreshedItems);
+    });
+    return () => {
+      active = false;
+    };
+  }, [refreshCompletion, refreshedItems]);
+  return (
+    <InspectionWorkbench
+      pdfDocument={null}
+      candidates={[]}
+      sources={[]}
+      balloons={[]}
+      items={items}
+      onSave={onSave}
     />
   );
 }
@@ -398,17 +431,72 @@ describe("InspectionWorkbench", () => {
     });
   });
 
+  test("合并成功后在 refresh commit 前阻止第二次合并", async () => {
+    const refresh = createDeferred<void>();
+    const refreshedItems = [
+      { ...mergeSourceItems[0], active: false },
+      { ...mergeSourceItems[1], active: false },
+      {
+        item_id: "merged-after-delay",
+        item_type: "linear_dimension" as const,
+        raw_text: "延迟刷新后的合并项",
+        active: true,
+      },
+    ];
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <DelayedMergeRefreshHarness
+        initialItems={mergeSourceItems}
+        refreshedItems={refreshedItems}
+        refreshCompletion={refresh.promise}
+        onSave={onSave}
+      />,
+    );
+
+    openMergePreview();
+    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
+    });
+
+    const beginMerge = screen.getByRole(
+      "button",
+      { name: "合并重复项" },
+    ) as HTMLButtonElement;
+    expect(beginMerge.disabled).toBe(true);
+    fireEvent.click(beginMerge);
+    expect(screen.queryAllByRole("checkbox", {
+      name: /选择检验项/,
+    })).toHaveLength(0);
+    expect(onSave).toHaveBeenCalledOnce();
+
+    refresh.resolve();
+    await waitFor(() => {
+      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
+        .toBe("merged-after-delay");
+      expect(beginMerge.disabled).toBe(false);
+    });
+  });
+
   test("合并保存失败保留预览选择和草稿，重试相同命令后可成功", async () => {
+    const refreshedItems = [
+      { ...mergeSourceItems[0], active: false },
+      { ...mergeSourceItems[1], active: false },
+      {
+        item_id: "merged-after-retry",
+        item_type: "linear_dimension" as const,
+        raw_text: "保留的合并草稿",
+        active: true,
+      },
+    ];
     const onSave = vi.fn()
       .mockRejectedValueOnce(new Error("save failed"))
       .mockResolvedValueOnce(undefined);
     render(
-      <InspectionWorkbench
-        pdfDocument={null}
-        candidates={[]}
-        sources={[]}
-        balloons={[]}
-        items={mergeSourceItems}
+      <MergeRefreshHarness
+        initialItems={mergeSourceItems}
+        refreshedItems={refreshedItems}
         onSave={onSave}
       />,
     );
@@ -435,6 +523,8 @@ describe("InspectionWorkbench", () => {
       expect(within(
         screen.getByRole("region", { name: "项目摘要" }),
       ).getByRole("status").textContent).toBe("已保存");
+      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
+        .toBe("merged-after-retry");
     });
     expect(onSave.mock.calls[0]?.[0]).toEqual({
       type: "merge",

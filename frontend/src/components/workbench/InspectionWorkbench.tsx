@@ -146,6 +146,9 @@ export function InspectionWorkbench({
     pendingMergeReconciliation,
     setPendingMergeReconciliation,
   ] = useState<PendingMergeReconciliation>();
+  const pendingMergeReconciliationRef = useRef<
+    PendingMergeReconciliation | undefined
+  >(undefined);
   useEffect(() => {
     setMetadata(metadataDraft(workingCopy));
     setMetadataDraftDirty(false);
@@ -204,6 +207,7 @@ export function InspectionWorkbench({
         setSelectedSourceId(undefined);
       }
     }
+    pendingMergeReconciliationRef.current = undefined;
     setPendingMergeReconciliation(undefined);
   }, [balloons, items, pendingMergeReconciliation, selectedItemId]);
   const candidateNumbers = useMemo(() => {
@@ -327,6 +331,7 @@ export function InspectionWorkbench({
     return true;
   };
   const beginMerge = (): boolean => {
+    if (pendingMergeReconciliationRef.current !== undefined) return false;
     if (reviewDraftDirty) {
       setSelectionBlocked(true);
       return false;
@@ -338,6 +343,7 @@ export function InspectionWorkbench({
     itemIds: string[],
     rawText: string,
   ): Promise<boolean> => {
+    if (pendingMergeReconciliationRef.current !== undefined) return false;
     const committedItems = committedItemsRef.current;
     const activeIdsBefore = new Set(
       committedItems.items
@@ -356,6 +362,7 @@ export function InspectionWorkbench({
     });
     if (!succeeded) return false;
 
+    pendingMergeReconciliationRef.current = reconciliation;
     setPendingMergeReconciliation(reconciliation);
     return true;
   };
@@ -602,7 +609,12 @@ export function InspectionWorkbench({
                 filter={filter}
                 selectedItemId={selectedItemId}
                 selectedSourceId={selectedSourceId}
-                disabled={saving || busy || reviewImmutable}
+                disabled={
+                  saving
+                  || busy
+                  || reviewImmutable
+                  || pendingMergeReconciliation !== undefined
+                }
                 onSelectItem={selectItem}
                 onSelectSource={selectSource}
                 onCommand={submitCommand}
