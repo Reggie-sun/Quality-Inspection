@@ -1187,6 +1187,23 @@ describe("InspectionWorkbench", () => {
       }) as HTMLInputElement).value,
     ).toBe("三针法复核");
     expect(saveStatus.textContent).toBe("有未保存修改");
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "取消当前检验项 SIP 修改",
+    }));
+    expect(
+      (screen.getByRole("textbox", {
+        name: "检验方法：M16",
+      }) as HTMLInputElement).value,
+    ).toBe("螺纹规");
+    expect(saveStatus.textContent).toBe("有未保存修改");
+
+    fireEvent.click(screen.getByRole("row", { name: /去除毛刺/ }));
+    expect(
+      (screen.getByRole("textbox", {
+        name: "原始标注",
+      }) as HTMLInputElement).value,
+    ).toBe("去除全部毛刺");
   });
 
   test.each([
