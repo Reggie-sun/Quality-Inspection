@@ -312,6 +312,9 @@ export function ReviewPanel({
     ],
   );
   const selectedItem = activeItems.find((item) => item.item_id === selectedItemId);
+  const selectedCoreFields = selectedItem === undefined
+    ? []
+    : coreFieldsFor(selectedItem.item_type);
   const selectedItemHeading = zhCN.review.itemHeading(
     selectedItemPresentation?.displayNumber,
     selectedItemPresentation?.typeLabel ?? zhCN.workbench.unknown,
@@ -593,24 +596,111 @@ export function ReviewPanel({
           </header>
           <div className="review-selected-item__workspace">
           <div className="review-selected-item__form">
-          <label>
-            {zhCN.review.rawText}
-            <input
-              aria-label={zhCN.review.fieldForItem(
-                zhCN.review.rawText,
-                selectedItem.raw_text,
-              )}
+          <fieldset
+            className="review-field-group review-field-group--source"
+            disabled={disabled || !isEditingSelected}
+          >
+            <legend>{zhCN.review.drawingSource}</legend>
+            <label>
+              {zhCN.review.rawText}
+              <input
+                aria-label={zhCN.review.fieldForItem(
+                  zhCN.review.rawText,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled || !isEditingSelected}
+                value={rawTexts[selectedItem.item_id] ?? selectedItem.raw_text}
+                onChange={(event) => {
+                  setRawTexts((current) => ({
+                    ...current,
+                    [selectedItem.item_id]: event.target.value,
+                  }));
+                }}
+              />
+            </label>
+            {selectedItem.coarse_type === undefined ? null : (
+              <>
+                <label>
+                  {zhCN.review.coordinates}
+                  <input
+                    aria-label={zhCN.review.fieldForItem(
+                      zhCN.review.coordinates,
+                      selectedItem.raw_text,
+                    )}
+                    value={complexCoordinates[selectedItem.item_id] ?? ""}
+                    onChange={(event) => {
+                      setComplexCoordinates((current) => ({
+                        ...current,
+                        [selectedItem.item_id]: event.target.value,
+                      }));
+                    }}
+                  />
+                </label>
+                <label>
+                  {zhCN.review.coarseType}
+                  <select
+                    aria-label={zhCN.review.fieldForItem(
+                      zhCN.review.coarseType,
+                      selectedItem.raw_text,
+                    )}
+                    value={
+                      coarseTypes[selectedItem.item_id]
+                      ?? selectedItem.coarse_type
+                    }
+                    onChange={(event) => {
+                      setCoarseTypes((current) => ({
+                        ...current,
+                        [selectedItem.item_id]: event.target.value,
+                      }));
+                    }}
+                  >
+                    {COARSE_TYPES.some(
+                      ({ value }) =>
+                        value
+                        === (coarseTypes[selectedItem.item_id]
+                          ?? selectedItem.coarse_type),
+                    ) ? null : (
+                      <option
+                        value={
+                          coarseTypes[selectedItem.item_id]
+                          ?? selectedItem.coarse_type
+                        }
+                      >
+                        {zhCN.workbench.unknown}
+                      </option>
+                    )}
+                    {COARSE_TYPES.map(({ value, label }) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    aria-label={zhCN.review.fieldForItem(
+                      zhCN.review.requiresConfirmation,
+                      selectedItem.raw_text,
+                    )}
+                    checked={confirmationFields[selectedItem.item_id] ?? false}
+                    onChange={(event) => {
+                      setConfirmationFields((current) => ({
+                        ...current,
+                        [selectedItem.item_id]: event.target.checked,
+                      }));
+                    }}
+                  />
+                  {zhCN.review.requiresConfirmation}
+                </label>
+              </>
+            )}
+          </fieldset>
+          {selectedCoreFields.length === 0 ? null : (
+            <fieldset
+              className="review-field-group review-field-group--parsed"
               disabled={disabled || !isEditingSelected}
-              value={rawTexts[selectedItem.item_id] ?? selectedItem.raw_text}
-              onChange={(event) => {
-                setRawTexts((current) => ({
-                  ...current,
-                  [selectedItem.item_id]: event.target.value,
-                }));
-              }}
-            />
-          </label>
-          {coreFieldsFor(selectedItem.item_type).map((field) => (
+            >
+              <legend>{zhCN.review.parsedResult}</legend>
+              {selectedCoreFields.map((field) => (
                 <label key={field.key}>
                   {field.label}
                   {field.kind === "boolean" ? (
@@ -678,79 +768,6 @@ export function ReviewPanel({
                   )}
                 </label>
               ))}
-          {selectedItem.coarse_type === undefined ? null : (
-            <fieldset disabled={disabled || !isEditingSelected}>
-              <legend>{zhCN.review.complexFields}</legend>
-              <label>
-                {zhCN.review.coordinates}
-                <input
-                  aria-label={zhCN.review.fieldForItem(
-                    zhCN.review.coordinates,
-                    selectedItem.raw_text,
-                  )}
-                  value={complexCoordinates[selectedItem.item_id] ?? ""}
-                  onChange={(event) => {
-                    setComplexCoordinates((current) => ({
-                      ...current,
-                      [selectedItem.item_id]: event.target.value,
-                    }));
-                  }}
-                />
-              </label>
-              <label>
-                {zhCN.review.coarseType}
-                <select
-                  aria-label={zhCN.review.fieldForItem(
-                    zhCN.review.coarseType,
-                    selectedItem.raw_text,
-                  )}
-                  value={
-                    coarseTypes[selectedItem.item_id] ?? selectedItem.coarse_type
-                  }
-                  onChange={(event) => {
-                    setCoarseTypes((current) => ({
-                      ...current,
-                      [selectedItem.item_id]: event.target.value,
-                    }));
-                  }}
-                >
-                  {COARSE_TYPES.some(
-                    ({ value }) =>
-                      value
-                      === (coarseTypes[selectedItem.item_id]
-                        ?? selectedItem.coarse_type),
-                  ) ? null : (
-                    <option
-                      value={
-                        coarseTypes[selectedItem.item_id]
-                        ?? selectedItem.coarse_type
-                      }
-                    >
-                      {zhCN.workbench.unknown}
-                    </option>
-                  )}
-                  {COARSE_TYPES.map(({ value, label }) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  aria-label={zhCN.review.fieldForItem(
-                    zhCN.review.requiresConfirmation,
-                    selectedItem.raw_text,
-                  )}
-                  checked={confirmationFields[selectedItem.item_id] ?? false}
-                  onChange={(event) => {
-                    setConfirmationFields((current) => ({
-                      ...current,
-                      [selectedItem.item_id]: event.target.checked,
-                    }));
-                  }}
-                />
-                {zhCN.review.requiresConfirmation}
-              </label>
             </fieldset>
           )}
           </div>

@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -71,6 +72,79 @@ describe("ReviewPanel", () => {
       name: "检验项 — · —",
     })).not.toBeNull();
     expect(screen.queryByText("待审核")).toBeNull();
+  });
+
+  test("将图纸原文与类型化解析结果放入独立语义分组", () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "grouped-typed-item",
+          item_type: "linear_dimension",
+          raw_text: "48",
+          nominal: "48",
+          upper_tolerance: "0.02",
+          lower_tolerance: "-0.01",
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="grouped-typed-item"
+      />,
+    );
+
+    const drawingSource = screen.getByRole("group", { name: "图纸原文" });
+    const parsedResult = screen.getByRole("group", { name: "解析结果" });
+
+    expect(within(drawingSource).getByRole("textbox", {
+      name: "原始标注：48",
+    })).not.toBeNull();
+    expect(within(drawingSource).queryByRole("textbox", {
+      name: "基本尺寸：48",
+    })).toBeNull();
+    expect(within(parsedResult).getByRole("textbox", {
+      name: "基本尺寸：48",
+    })).not.toBeNull();
+    expect(within(parsedResult).getByRole("textbox", {
+      name: "上公差：48",
+    })).not.toBeNull();
+    expect(within(parsedResult).getByRole("textbox", {
+      name: "下公差：48",
+    })).not.toBeNull();
+    expect(within(parsedResult).queryByRole("textbox", {
+      name: "原始标注：48",
+    })).toBeNull();
+  });
+
+  test("将复杂检验项的来源字段放入图纸原文且不渲染空解析分组", () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "grouped-complex-item",
+          raw_text: "Ra 3.2",
+          coordinates: [9, 10, 11, 12],
+          coarse_type: "roughness",
+          requires_confirmation: true,
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="grouped-complex-item"
+      />,
+    );
+
+    const drawingSource = screen.getByRole("group", { name: "图纸原文" });
+
+    expect(within(drawingSource).getByRole("textbox", {
+      name: "原始标注：Ra 3.2",
+    })).not.toBeNull();
+    expect(within(drawingSource).getByRole("textbox", {
+      name: "坐标：Ra 3.2",
+    })).not.toBeNull();
+    expect(within(drawingSource).getByRole("combobox", {
+      name: "粗分类：Ra 3.2",
+    })).not.toBeNull();
+    expect(within(drawingSource).getByRole("checkbox", {
+      name: "需要人工确认：Ra 3.2",
+    })).not.toBeNull();
+    expect(screen.queryByRole("group", { name: "解析结果" })).toBeNull();
   });
 
   test("P0-UI-006 exposes all eight review commands only on explicit actions", () => {
