@@ -42,12 +42,6 @@ export type PendingSourceReview = {
   pageIndex?: number;
 };
 
-type SelectedInspectionItemSummaryProps = {
-  item: ReviewItem;
-  balloon?: BalloonOverlay;
-  candidateNumber?: number;
-};
-
 type DetailDraft = {
   inspectionItem: string;
   inspectionStandard: string;
@@ -116,53 +110,6 @@ function sourceDraft(source: PendingSourceReview): SourceDraft {
     scope: "local_feature",
     balloonRequired: true,
   };
-}
-
-
-export function SelectedInspectionItemSummary({
-  item,
-  balloon,
-  candidateNumber,
-}: SelectedInspectionItemSummaryProps) {
-  const presentation = inspectionItemPresentation(
-    item,
-    balloon,
-    candidateNumber,
-  );
-
-  return (
-    <section
-      className="selected-inspection-summary"
-      aria-label={zhCN.inspection.selectedItemSummary}
-      role="region"
-    >
-      <dl>
-        <div>
-          <dt>{zhCN.inspection.balloonNumber}</dt>
-          <dd
-            className={`selected-inspection-number selected-inspection-number--${presentation.numberKind}`}
-            aria-label={presentation.numberLabel}
-          >
-            {presentation.displayNumber ?? zhCN.workbench.unknown}
-          </dd>
-        </div>
-        <div className="selected-inspection-summary__item">
-          <dt>{zhCN.inspection.item}</dt>
-          <dd title={item.raw_text}>{item.raw_text}</dd>
-        </div>
-        <div>
-          <dt>{zhCN.inspection.page}</dt>
-          <dd>
-            {presentation.pageLabel}
-          </dd>
-        </div>
-        <div>
-          <dt>{zhCN.inspection.status}</dt>
-          <dd>{presentation.statusLabel}</dd>
-        </div>
-      </dl>
-    </section>
-  );
 }
 
 

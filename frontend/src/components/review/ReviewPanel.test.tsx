@@ -15,6 +15,42 @@ import { ReviewPanel } from "./ReviewPanel";
 afterEach(cleanup);
 
 describe("ReviewPanel", () => {
+  test("详情标题使用检验项语义身份且原始标注仅出现在编辑输入", () => {
+    const item: ReviewItem = {
+      item_id: "semantic-heading",
+      item_type: "linear_dimension",
+      raw_text: "48",
+      active: true,
+    };
+
+    render(
+      <ReviewPanel
+        items={[item]}
+        onCommand={vi.fn()}
+        selectedItemId={item.item_id}
+        selectedItemPresentation={{
+          displayNumber: 2,
+          numberKind: "candidate",
+          numberLabel: "候选序号 2",
+          typeLabel: "线性尺寸",
+          page: 1,
+          pageLabel: "第 1 页",
+          status: "pending",
+          statusLabel: "待审核",
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("article", {
+      name: "检验项 2 · 线性尺寸",
+    })).not.toBeNull();
+    expect(screen.getByRole("heading", {
+      name: "检验项 2 · 线性尺寸",
+    })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "48" })).toBeNull();
+    expect(screen.getAllByDisplayValue("48")).toHaveLength(1);
+  });
+
   test("P0-UI-006 exposes all eight review commands only on explicit actions", () => {
     const onCommand = vi.fn();
     const items: ReviewItem[] = [
@@ -797,7 +833,8 @@ describe("ReviewPanel", () => {
     );
 
     expect(screen.getAllByRole("article")).toHaveLength(1);
-    expect(screen.getByRole("article").textContent).toContain("尺寸 157");
+    expect(screen.getByRole("article").textContent).not.toContain("尺寸 157");
+    expect(screen.getByDisplayValue("尺寸 157")).not.toBeNull();
     expect(screen.getAllByLabelText(/^原始标注：/)).toHaveLength(1);
 
     rerender(<ReviewPanel items={items} onCommand={vi.fn()} />);
@@ -844,7 +881,8 @@ describe("ReviewPanel", () => {
       />,
     )).not.toThrow();
 
-    expect(screen.getByRole("article").textContent).toContain("新型标注");
+    expect(screen.getByRole("article").textContent).not.toContain("新型标注");
+    expect(screen.getByDisplayValue("新型标注")).not.toBeNull();
     expect(document.body.textContent).not.toContain("future_network_type");
     expect(screen.getByRole("button", { name: "保留检验项：新型标注" }))
       .not.toBeNull();

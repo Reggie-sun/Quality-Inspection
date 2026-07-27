@@ -144,8 +144,6 @@ export const zhCN = {
   },
   inspection: {
     region: "检验项列表",
-    selectedItemSummary: "所选检验项",
-    balloonNumber: "气泡编号",
     candidateNumber: (number: number) => `候选序号 ${number}`,
     formalNumber: (number: number) => `正式序号 ${number}`,
     noNumber: "暂无序号",
@@ -272,6 +270,8 @@ export const zhCN = {
       cross_view_duplicate: "跨视图重复",
     },
     itemIndex: (index: number) => `检验项 ${index}`,
+    itemHeading: (number: number | undefined, type: string) =>
+      `检验项 ${number ?? zhCN.workbench.unknown} · ${type}`,
     selectItem: (index: number, rawText: string) =>
       `选择检验项 ${index}：${rawText}`,
     fieldForItem: (field: string, rawText: string) => `${field}：${rawText}`,

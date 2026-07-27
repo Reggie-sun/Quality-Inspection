@@ -8,10 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import {
-  InspectionItemTable,
-  SelectedInspectionItemSummary,
-} from "./InspectionItemTable";
+import { InspectionItemTable } from "./InspectionItemTable";
 
 
 afterEach(cleanup);
@@ -293,51 +290,6 @@ test("候选序号使用蓝色圆标，且有效正式气泡编号优先", () =>
     .querySelector(".inspection-number");
   expect(emptyNumber?.textContent).toBe("—");
   expect(emptyNumber?.classList.contains("inspection-number--empty")).toBe(true);
-});
-
-test("所选检验项摘要明确区分候选、正式和无序号状态", () => {
-  const item = {
-    item_id: "selected-item",
-    raw_text: "选中检验项",
-    active: true,
-  };
-  const { rerender } = render(
-    <SelectedInspectionItemSummary
-      item={item}
-      candidateNumber={2}
-    />,
-  );
-
-  const summary = screen.getByRole("region", { name: "所选检验项" });
-  const candidate = within(summary).getByLabelText("候选序号 2");
-  expect(candidate.classList.contains("selected-inspection-number--candidate"))
-    .toBe(true);
-
-  rerender(
-    <SelectedInspectionItemSummary
-      item={item}
-      balloon={{
-        id: "formal-balloon",
-        itemId: "selected-item",
-        center: [30, 30],
-        number: 9,
-        status: "active",
-      }}
-      candidateNumber={2}
-    />,
-  );
-
-  const formal = within(summary).getByLabelText("正式序号 9");
-  expect(formal.classList.contains("selected-inspection-number--formal")).toBe(true);
-  expect(within(summary).queryByLabelText("候选序号 2")).toBeNull();
-
-  rerender(
-    <SelectedInspectionItemSummary item={item} />,
-  );
-
-  const empty = within(summary).getByLabelText("暂无序号");
-  expect(empty.textContent).toBe("—");
-  expect(empty.classList.contains("selected-inspection-number--empty")).toBe(true);
 });
 
 test("缺少真实页码时列表和详情保持空状态且不回填第 1 页", () => {

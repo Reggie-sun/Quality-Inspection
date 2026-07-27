@@ -19,9 +19,9 @@ import { ExportPanel } from "./ExportPanel";
 import { FreezeReviewButton } from "./FreezeReviewButton";
 import {
   InspectionItemTable,
-  SelectedInspectionItemSummary,
   type PendingSourceReview,
 } from "./InspectionItemTable";
+import { inspectionItemPresentation } from "./inspectionItemPresentation";
 import {
   RecognitionSummary,
   type InspectionFilter,
@@ -225,6 +225,13 @@ export function InspectionWorkbench({
     (balloon) =>
       balloon.status !== "deleted" && balloon.itemId === selectedReviewItem?.item_id,
   );
+  const selectedItemPresentation = selectedReviewItem === undefined
+    ? undefined
+    : inspectionItemPresentation(
+        selectedReviewItem,
+        selectedReviewBalloon,
+        candidateNumbers.get(selectedReviewItem.item_id),
+      );
   const selectItem = (itemId: string): boolean => {
     if (reviewDraftDirty && itemId !== selectedItemId) {
       setSelectionBlocked(true);
@@ -506,19 +513,11 @@ export function InspectionWorkbench({
               />
             </div>
             <div className="inspection-review-workspace__detail">
-              {selectedReviewItem === undefined ? null : (
-                <SelectedInspectionItemSummary
-                  item={selectedReviewItem}
-                  balloon={selectedReviewBalloon}
-                  candidateNumber={candidateNumbers.get(
-                    selectedReviewItem.item_id,
-                  )}
-                />
-              )}
               <ReviewPanel
                 items={items}
                 disabled={saving || busy || reviewImmutable}
                 selectedItemId={selectedItemId}
+                selectedItemPresentation={selectedItemPresentation}
                 onSelectItem={selectItem}
                 pageIndex={pageIndex}
                 onCommand={submitCommand}

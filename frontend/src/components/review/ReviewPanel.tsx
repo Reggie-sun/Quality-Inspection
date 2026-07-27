@@ -7,6 +7,7 @@ import type {
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
+import type { InspectionItemPresentation } from "../workbench/inspectionItemPresentation";
 
 
 type ReviewPanelProps = {
@@ -16,6 +17,7 @@ type ReviewPanelProps = {
   ) => boolean | void | Promise<boolean | void>;
   disabled?: boolean;
   selectedItemId?: string;
+  selectedItemPresentation?: InspectionItemPresentation;
   onSelectItem?: (itemId: string) => void;
   pageIndex?: number;
   onDraftChange?: (dirty: boolean) => void;
@@ -175,6 +177,7 @@ export function ReviewPanel({
   onCommand,
   disabled = false,
   selectedItemId,
+  selectedItemPresentation,
   onSelectItem,
   pageIndex = 0,
   onDraftChange,
@@ -309,6 +312,10 @@ export function ReviewPanel({
     ],
   );
   const selectedItem = activeItems.find((item) => item.item_id === selectedItemId);
+  const selectedItemHeading = zhCN.review.itemHeading(
+    selectedItemPresentation?.displayNumber,
+    selectedItemPresentation?.typeLabel ?? zhCN.workbench.unknown,
+  );
   const isEditingSelected =
     selectedItem !== undefined && editingItemId === selectedItem.item_id;
   const isSelectedItemDirty =
@@ -551,12 +558,34 @@ export function ReviewPanel({
         <p className="review-select-hint">{zhCN.review.selectItemHint}</p>
       ) : (
         <article
-          aria-label={selectedItem.raw_text}
+          aria-label={selectedItemHeading}
           className="review-selected-item"
           data-selected="true"
           onClick={() => onSelectItem?.(selectedItem.item_id)}
         >
-          <h3>{selectedItem.raw_text}</h3>
+          <header className="review-selected-item__header">
+            <div>
+              <h3>{selectedItemHeading}</h3>
+              <p>
+                <span>
+                  {selectedItemPresentation?.numberLabel
+                    ?? zhCN.workbench.unknown}
+                </span>
+                <span>
+                  {selectedItemPresentation?.pageLabel
+                    ?? zhCN.workbench.unknown}
+                </span>
+              </p>
+            </div>
+            <span
+              className={`geometry-state geometry-state--${
+                selectedItemPresentation?.status ?? "pending"
+              }`}
+            >
+              {selectedItemPresentation?.statusLabel
+                ?? zhCN.inspection.statusPending}
+            </span>
+          </header>
           <div className="review-selected-item__workspace">
           <div className="review-selected-item__form">
           <label>
