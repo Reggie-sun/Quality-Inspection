@@ -568,8 +568,16 @@ export function InspectionItemTable({
           )
       }
       <SelectedSipDetailFields
-        item={selectedSource === undefined ? selected : undefined}
-        balloon={selectedSource === undefined ? selectedBalloon : undefined}
+        item={
+          selectedSource === undefined && onCommand !== undefined
+            ? selected
+            : undefined
+        }
+        balloon={
+          selectedSource === undefined && onCommand !== undefined
+            ? selectedBalloon
+            : undefined
+        }
         disabled={disabled}
         onCommand={onCommand ?? (() => false)}
         onDraftChange={setSelectedSipDraftDirty}

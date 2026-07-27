@@ -353,6 +353,93 @@ test("抽取后的 SIP 字段组暂时仍位于检验项列表 legacy location",
   ).not.toBeNull();
 });
 
+test("缺少 onCommand 时不渲染 SIP 字段组", () => {
+  render(
+    <InspectionItemTable
+      items={[{
+        item_id: "optional-command-item",
+        raw_text: "M8",
+        item_type: "thread",
+        active: true,
+      }]}
+      balloons={[]}
+      filter="all"
+      selectedItemId="optional-command-item"
+      onSelectItem={vi.fn()}
+    />,
+  );
+
+  expect(
+    screen.queryByRole("group", { name: "SIP 确认字段" }),
+  ).toBeNull();
+});
+
+test("table wiring 在待判定来源选择期间保持 SIP 草稿挂载", () => {
+  const onDraftChange = vi.fn();
+  const props = {
+    items: [{
+      item_id: "mounted-sip-item",
+      raw_text: "M16",
+      item_type: "thread" as const,
+      inspection_item: "螺纹检验",
+      inspection_standard: "GB/T 197",
+      inspection_method: "螺纹规",
+      key_dimension: "是",
+      inspection_role: "检验员",
+      source_page: 1,
+      active: true,
+    }],
+    balloons: [],
+    pendingSources: [{
+      observationId: "mounted-source-observation",
+      sourceId: "mounted-source",
+      rawText: "去除毛刺",
+      coordinates: [1, 2, 3, 4] as [number, number, number, number],
+      pageIndex: 0,
+    }],
+    filter: "all" as const,
+    onSelectItem: vi.fn(),
+    onSelectSource: vi.fn(),
+    onCommand: vi.fn(),
+    onDraftChange,
+  };
+  const { rerender } = render(
+    <InspectionItemTable
+      {...props}
+      selectedItemId="mounted-sip-item"
+    />,
+  );
+
+  fireEvent.change(screen.getByRole("textbox", { name: "检验方法：M16" }), {
+    target: { value: "三针法复核" },
+  });
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+  rerender(
+    <InspectionItemTable
+      {...props}
+      selectedItemId={undefined}
+      selectedSourceId="mounted-source"
+    />,
+  );
+  expect(screen.queryByRole("group", { name: "SIP 确认字段" })).toBeNull();
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+
+  rerender(
+    <InspectionItemTable
+      {...props}
+      selectedItemId="mounted-sip-item"
+      selectedSourceId={undefined}
+    />,
+  );
+  expect(
+    (screen.getByRole("textbox", {
+      name: "检验方法：M16",
+    }) as HTMLInputElement).value,
+  ).toBe("三针法复核");
+  expect(onDraftChange).toHaveBeenLastCalledWith(true);
+});
+
 test("待判定来源进入统一列表并产生显式 source review commands", () => {
   const onSelectSource = vi.fn();
   const onCommand = vi.fn();
