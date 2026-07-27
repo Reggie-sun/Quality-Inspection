@@ -329,6 +329,11 @@ export function ReviewPanel({
     selectedItem !== undefined && editingItemId === selectedItem.item_id;
   const isSelectedItemDirty =
     selectedItem !== undefined && dirtyItemIds.includes(selectedItem.item_id);
+  const beginEditingSelected = () => {
+    if (!disabled && selectedItem !== undefined) {
+      setEditingItemId(selectedItem.item_id);
+    }
+  };
 
   useEffect(() => {
     onDraftChange?.(
@@ -555,7 +560,7 @@ export function ReviewPanel({
           <div className="review-selected-item__form">
           <fieldset
             className="review-field-group review-field-group--source"
-            disabled={disabled || !isEditingSelected}
+            disabled={disabled}
           >
             <legend>{zhCN.review.drawingSource}</legend>
             <label>
@@ -565,8 +570,10 @@ export function ReviewPanel({
                   zhCN.review.rawText,
                   selectedItem.raw_text,
                 )}
-                disabled={disabled || !isEditingSelected}
+                disabled={disabled}
+                readOnly={!isEditingSelected}
                 value={rawTexts[selectedItem.item_id] ?? selectedItem.raw_text}
+                onFocus={beginEditingSelected}
                 onChange={(event) => {
                   setRawTexts((current) => ({
                     ...current,
@@ -584,7 +591,10 @@ export function ReviewPanel({
                       zhCN.review.coordinates,
                       selectedItem.raw_text,
                     )}
+                    disabled={disabled}
+                    readOnly={!isEditingSelected}
                     value={complexCoordinates[selectedItem.item_id] ?? ""}
+                    onFocus={beginEditingSelected}
                     onChange={(event) => {
                       setComplexCoordinates((current) => ({
                         ...current,
@@ -600,6 +610,7 @@ export function ReviewPanel({
                       zhCN.review.coarseType,
                       selectedItem.raw_text,
                     )}
+                    disabled={disabled || !isEditingSelected}
                     value={
                       coarseTypes[selectedItem.item_id]
                       ?? selectedItem.coarse_type
@@ -638,6 +649,7 @@ export function ReviewPanel({
                       zhCN.review.requiresConfirmation,
                       selectedItem.raw_text,
                     )}
+                    disabled={disabled || !isEditingSelected}
                     checked={confirmationFields[selectedItem.item_id] ?? false}
                     onChange={(event) => {
                       setConfirmationFields((current) => ({
@@ -654,7 +666,7 @@ export function ReviewPanel({
           {selectedCoreFields.length === 0 ? null : (
             <fieldset
               className="review-field-group review-field-group--parsed"
-              disabled={disabled || !isEditingSelected}
+              disabled={disabled}
             >
               <legend>{zhCN.review.parsedResult}</legend>
               {selectedCoreFields.map((field) => (
@@ -708,12 +720,14 @@ export function ReviewPanel({
                         field.label,
                         selectedItem.raw_text,
                       )}
-                      disabled={disabled || !isEditingSelected}
+                      disabled={disabled}
+                      readOnly={!isEditingSelected}
                       inputMode={field.kind === "decimal" ? "decimal" : undefined}
                       type={field.kind === "integer" ? "number" : "text"}
                       min={field.kind === "integer" ? 1 : undefined}
                       step={field.kind === "integer" ? 1 : undefined}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
+                      onFocus={beginEditingSelected}
                       onChange={(event) =>
                         setCoreValue(
                           selectedItem.item_id,
@@ -765,7 +779,7 @@ export function ReviewPanel({
                 selectedItem.raw_text,
               )}
               disabled={disabled || isEditingSelected}
-              onClick={() => setEditingItemId(selectedItem.item_id)}
+              onClick={beginEditingSelected}
             >
               {zhCN.review.edit}
             </button>
