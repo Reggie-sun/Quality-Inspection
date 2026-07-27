@@ -751,22 +751,12 @@
 }
 
 .balloon-toolbar,
-.sip-metadata-card,
 .export-panel,
 .company-log {
   padding: 10px;
   border: 1px solid var(--qi-border);
   border-radius: 6px;
   background: #ffffff;
-}
-
-.sip-metadata-card h2 {
-  margin: 0 0 6px;
-  font-size: 14px;
-}
-
-.sip-metadata-card {
-  padding: 8px 10px;
 }
 
 .sip-metadata-summary {

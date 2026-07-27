@@ -26,6 +26,10 @@ import {
   RecognitionSummary,
   type InspectionFilter,
 } from "./RecognitionSummary";
+import {
+  SipInformationPanel,
+  type MetadataDraft,
+} from "./SipInformationPanel";
 import "../../styles/workbench.css";
 
 
@@ -67,14 +71,6 @@ type InspectionWorkbenchProps = {
   exportPost?: PostJson;
   operatorId?: string;
   actionState?: string;
-};
-
-type MetadataDraft = {
-  material_code: string;
-  material_name: string;
-  drawing_number: string;
-  material: string;
-  revision: string;
 };
 
 const NO_SELECTED_REVIEW_ITEM_ID = "__no_selected_review_item__";
@@ -132,7 +128,8 @@ export function InspectionWorkbench({
     () => metadataDraft(workingCopy),
   );
   const [reviewDraftDirty, setReviewDraftDirty] = useState(false);
-  const [sipDraftDirty, setSipDraftDirty] = useState(false);
+  const [sourceDraftDirty, setSourceDraftDirty] = useState(false);
+  const [selectedSipDraftDirty, setSelectedSipDraftDirty] = useState(false);
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
   const [selectionBlocked, setSelectionBlocked] = useState(false);
   useEffect(() => {
@@ -179,7 +176,10 @@ export function InspectionWorkbench({
 
   const finalized = projectState === "reviewed";
   const localDraftDirty =
-    reviewDraftDirty || sipDraftDirty || metadataDraftDirty;
+    reviewDraftDirty
+    || sourceDraftDirty
+    || selectedSipDraftDirty
+    || metadataDraftDirty;
   const displayedSaveState = saving
     ? zhCN.workbench.saving
     : saveState === zhCN.workbench.saveFailed
@@ -219,6 +219,17 @@ export function InspectionWorkbench({
       savingRef.current = false;
       setSaving(false);
     }
+  };
+  const confirmMetadata = async (): Promise<void> => {
+    const saved = await submitCommand({
+      type: "set_sip_metadata",
+      ...metadata,
+    });
+    if (saved) setMetadataDraftDirty(false);
+  };
+  const cancelMetadata = (): void => {
+    setMetadata(metadataDraft(workingCopy));
+    setMetadataDraftDirty(false);
   };
   const reviewedCount = items.filter(
     (item) => item.active && item.status === "kept",
@@ -302,84 +313,6 @@ export function InspectionWorkbench({
       className="workbench-aside"
       aria-label={zhCN.workbench.asideRegion}
     >
-      {workingCopy === undefined ? null : (
-        <section
-          className="sip-metadata-card"
-          aria-label={zhCN.workbench.metadata}
-          role="region"
-        >
-          <h2>{zhCN.workbench.metadata}</h2>
-          <dl className="sip-metadata-summary">
-            {metadataValues.map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd title={value}>{value || zhCN.workbench.unknown}</dd>
-              </div>
-            ))}
-          </dl>
-          <details className="sip-metadata-editor">
-            <summary>{zhCN.workbench.editMetadata}</summary>
-            <fieldset
-              disabled={reviewCommandsDisabled}
-            >
-              <legend className="visually-hidden">
-                {zhCN.workbench.editMetadata}
-              </legend>
-              {(
-                [
-                  ["material_code", zhCN.workbench.metadataFields.materialCode],
-                  ["material_name", zhCN.workbench.metadataFields.materialName],
-                  ["drawing_number", zhCN.workbench.metadataFields.drawingNumber],
-                  ["revision", zhCN.workbench.metadataFields.revision],
-                  ["material", zhCN.workbench.metadataFields.material],
-                ] as const
-              ).map(([key, label]) => (
-                <label key={key}>
-                  {label}
-                  <input
-                    aria-label={label}
-                    value={metadata[key]}
-                    placeholder={zhCN.workbench.unknown}
-                    onChange={(event) => {
-                      setMetadata({ ...metadata, [key]: event.target.value });
-                      setMetadataDraftDirty(true);
-                    }}
-                  />
-                </label>
-              ))}
-              <div className="sip-metadata-actions">
-                <button
-                  type="button"
-                  disabled={Object.values(metadata).some(
-                    (value) => value.trim() === "",
-                  )}
-                  onClick={() => {
-                    void (async () => {
-                      const saved = await submitCommand({
-                        type: "set_sip_metadata",
-                        ...metadata,
-                      });
-                      if (saved) setMetadataDraftDirty(false);
-                    })();
-                  }}
-                >
-                  {zhCN.workbench.confirmMetadata}
-                </button>
-                <button
-                  type="button"
-                  disabled={!metadataDraftDirty}
-                  onClick={() => {
-                    setMetadata(metadataDraft(workingCopy));
-                    setMetadataDraftDirty(false);
-                  }}
-                >
-                  {zhCN.workbench.cancelMetadata}
-                </button>
-              </div>
-            </fieldset>
-          </details>
-        </section>
-      )}
       {exportPanel}
       <section className="company-log" aria-label={zhCN.workbench.companyLog}>
         <h2>{zhCN.workbench.companyLog}</h2>
@@ -517,7 +450,7 @@ export function InspectionWorkbench({
                 onSelectItem={selectItem}
                 onSelectSource={selectSource}
                 onCommand={submitCommand}
-                onDraftChange={setSipDraftDirty}
+                onDraftChange={setSourceDraftDirty}
               />
             </div>
             <div className="inspection-review-workspace__detail">
@@ -530,6 +463,23 @@ export function InspectionWorkbench({
                 pageIndex={pageIndex}
                 onCommand={submitCommand}
                 onDraftChange={setReviewDraftDirty}
+              />
+              <SipInformationPanel
+                metadata={metadata}
+                metadataValues={metadataValues}
+                metadataDirty={metadataDraftDirty}
+                disabled={reviewCommandsDisabled}
+                selectedItem={selectedReviewItem}
+                selectedBalloon={selectedReviewBalloon}
+                selectedSourceActive={selectedSourceId !== undefined}
+                onMetadataChange={(next) => {
+                  setMetadata(next);
+                  setMetadataDraftDirty(true);
+                }}
+                onConfirmMetadata={confirmMetadata}
+                onCancelMetadata={cancelMetadata}
+                onCommand={submitCommand}
+                onSelectedSipDraftChange={setSelectedSipDraftDirty}
               />
             </div>
           </div>

@@ -292,8 +292,7 @@ test("候选序号使用蓝色圆标，且有效正式气泡编号优先", () =>
   expect(emptyNumber?.classList.contains("inspection-number--empty")).toBe(true);
 });
 
-test("缺少真实页码时列表和详情保持空状态且不回填第 1 页", () => {
-  const onDraftChange = vi.fn();
+test("缺少真实页码时列表保持空状态且不回填第 1 页", () => {
   render(
     <InspectionItemTable
       items={[{
@@ -307,29 +306,14 @@ test("缺少真实页码时列表和详情保持空状态且不回填第 1 页",
       selectedItemId="page-unknown"
       onSelectItem={vi.fn()}
       onCommand={vi.fn()}
-      onDraftChange={onDraftChange}
     />,
   );
 
   expect(screen.getByRole("row", { name: /页码未知标注/ }).textContent)
     .toContain("—");
-  expect(
-    (screen.getByRole("spinbutton", {
-      name: "页码：页码未知标注",
-    }) as HTMLInputElement).value,
-  ).toBe("");
-
-  fireEvent.change(screen.getByRole("textbox", {
-    name: "检验方法：页码未知标注",
-  }), { target: { value: "卡尺" } });
-  expect(onDraftChange).toHaveBeenLastCalledWith(true);
-  fireEvent.click(screen.getByRole("button", {
-    name: "取消当前检验项 SIP 修改",
-  }));
-  expect(onDraftChange).toHaveBeenLastCalledWith(false);
 });
 
-test("抽取后的 SIP 字段组暂时仍位于检验项列表 legacy location", () => {
+test("检验项列表不再渲染 legacy SIP 字段组或确认操作", () => {
   const { container } = render(
     <InspectionItemTable
       items={[{
@@ -349,8 +333,13 @@ test("抽取后的 SIP 字段组暂时仍位于检验项列表 legacy location",
   const tableSection = container.querySelector(".inspection-table-section");
   expect(
     within(tableSection as HTMLElement)
-      .getByRole("group", { name: "SIP 确认字段" }),
-  ).not.toBeNull();
+      .queryByRole("group", { name: "SIP 确认字段" }),
+  ).toBeNull();
+  expect(
+    within(tableSection as HTMLElement)
+      .queryByRole("button", { name: "确认当前检验项 SIP" }),
+  ).toBeNull();
+  expect(tableSection?.textContent).not.toContain("确认当前检验项 SIP");
 });
 
 test("缺少 onCommand 时不渲染 SIP 字段组", () => {
@@ -372,72 +361,6 @@ test("缺少 onCommand 时不渲染 SIP 字段组", () => {
   expect(
     screen.queryByRole("group", { name: "SIP 确认字段" }),
   ).toBeNull();
-});
-
-test("table wiring 在待判定来源选择期间保持 SIP 草稿挂载", () => {
-  const onDraftChange = vi.fn();
-  const props = {
-    items: [{
-      item_id: "mounted-sip-item",
-      raw_text: "M16",
-      item_type: "thread" as const,
-      inspection_item: "螺纹检验",
-      inspection_standard: "GB/T 197",
-      inspection_method: "螺纹规",
-      key_dimension: "是",
-      inspection_role: "检验员",
-      source_page: 1,
-      active: true,
-    }],
-    balloons: [],
-    pendingSources: [{
-      observationId: "mounted-source-observation",
-      sourceId: "mounted-source",
-      rawText: "去除毛刺",
-      coordinates: [1, 2, 3, 4] as [number, number, number, number],
-      pageIndex: 0,
-    }],
-    filter: "all" as const,
-    onSelectItem: vi.fn(),
-    onSelectSource: vi.fn(),
-    onCommand: vi.fn(),
-    onDraftChange,
-  };
-  const { rerender } = render(
-    <InspectionItemTable
-      {...props}
-      selectedItemId="mounted-sip-item"
-    />,
-  );
-
-  fireEvent.change(screen.getByRole("textbox", { name: "检验方法：M16" }), {
-    target: { value: "三针法复核" },
-  });
-  expect(onDraftChange).toHaveBeenLastCalledWith(true);
-
-  rerender(
-    <InspectionItemTable
-      {...props}
-      selectedItemId={undefined}
-      selectedSourceId="mounted-source"
-    />,
-  );
-  expect(screen.queryByRole("group", { name: "SIP 确认字段" })).toBeNull();
-  expect(onDraftChange).toHaveBeenLastCalledWith(true);
-
-  rerender(
-    <InspectionItemTable
-      {...props}
-      selectedItemId="mounted-sip-item"
-      selectedSourceId={undefined}
-    />,
-  );
-  expect(
-    (screen.getByRole("textbox", {
-      name: "检验方法：M16",
-    }) as HTMLInputElement).value,
-  ).toBe("三针法复核");
-  expect(onDraftChange).toHaveBeenLastCalledWith(true);
 });
 
 test("待判定来源进入统一列表并产生显式 source review commands", () => {

@@ -598,7 +598,7 @@ describe("InspectionWorkbench", () => {
     }
     expect(screen.getByRole("region", { name: "工程图纸" })).not.toBeNull();
     expect(screen.getByRole("region", { name: "检验项审核" })).not.toBeNull();
-    expect(screen.queryByRole("complementary", { name: "SIP 与导出信息" }))
+    expect(screen.queryByRole("complementary", { name: "导出与处理信息" }))
       .toBeNull();
     const workspaceButton = screen.getByRole("button", {
       name: "展开 SIP 与导出信息",
@@ -608,10 +608,18 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(workspaceButton);
 
     expect(workspaceButton.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("complementary", { name: "SIP 与导出信息" }))
-      .not.toBeNull();
-    expect(screen.getByText("公司处理记录")).not.toBeNull();
-    expect(screen.getByText("暂无处理记录")).not.toBeNull();
+    const aside = screen.getByRole("complementary", {
+      name: "导出与处理信息",
+    });
+    expect(within(aside).queryByRole("region", { name: "SIP基本信息" }))
+      .toBeNull();
+    expect(within(aside).getByRole("region", {
+      name: "正式文件导出",
+    })).not.toBeNull();
+    expect(within(aside).getByRole("region", {
+      name: "公司处理记录",
+    })).not.toBeNull();
+    expect(within(aside).getByText("暂无处理记录")).not.toBeNull();
     expect(document.body.textContent).not.toContain("hidden-project-uuid");
     expect(document.body.textContent).not.toContain("hidden-operator-uuid");
     expect(document.body.textContent).not.toContain("hidden-item-uuid");
@@ -762,7 +770,7 @@ describe("InspectionWorkbench", () => {
     expect(screen.getByLabelText("识别原文：M8").textContent).toBe("M8");
   });
 
-  test("正式导出完成时紧凑显示 SIP 基本信息及三份真实下载", () => {
+  test("正式导出完成时辅助区只显示导出与处理信息", () => {
     const items = [{
       item_id: "reviewed-item",
       item_type: "thread" as const,
@@ -820,14 +828,14 @@ describe("InspectionWorkbench", () => {
     openAuxiliaryPanel();
 
     const aside = screen.getByRole("complementary", {
-      name: "SIP 与导出信息",
+      name: "导出与处理信息",
     });
     const exportRegion = screen.getByRole("region", {
       name: "正式文件导出",
     });
-    const sipRegion = screen.getByRole("region", { name: "SIP基本信息" });
-    expect(aside.firstElementChild).toBe(sipRegion);
-    expect(sipRegion.nextElementSibling).toBe(exportRegion);
+    expect(within(aside).queryByRole("region", { name: "SIP基本信息" }))
+      .toBeNull();
+    expect(aside.firstElementChild).toBe(exportRegion);
     expect(
       within(exportRegion).getAllByRole("link").map((link) => link.textContent),
     ).toEqual([
@@ -835,13 +843,6 @@ describe("InspectionWorkbench", () => {
       "下载 SIP Excel",
       "下载校验清单",
     ]);
-
-    const summary = sipRegion.querySelector("dl");
-    expect(summary).not.toBeNull();
-    expect(summary?.textContent).toContain("产品名称上座");
-    expect(summary?.textContent).toContain("图号JS26032501");
-    const editor = sipRegion.querySelector("details");
-    expect(editor?.hasAttribute("open")).toBe(false);
   });
 
   test("生成正式文件后收起再展开仍保留三份下载", async () => {
@@ -941,8 +942,13 @@ describe("InspectionWorkbench", () => {
         raw_text: "M6",
         status: "kept",
         sip_detail_fields_confirmed: false,
+        inspection_item: "螺纹检验",
         inspection_standard: "GB/T 197",
+        inspection_method: "螺纹规",
+        key_dimension: "是",
         inspection_role: "尺寸检验员",
+        source_page: 1,
+        remarks: "首件复核",
         active: true,
       },
       {
@@ -1001,12 +1007,17 @@ describe("InspectionWorkbench", () => {
     expect(summary.getByText("保存状态").nextElementSibling?.textContent)
       .toBe("已保存");
 
-    openAuxiliaryPanel();
-
-    const sipRegion = screen.getByRole("region", { name: "SIP基本信息" });
-    const sipSummary = sipRegion.querySelector("dl");
+    expect(screen.getAllByRole("region", { name: "SIP 信息" })).toHaveLength(1);
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const projectRegion = within(sipRegion).getByRole("region", {
+      name: "项目基本信息",
+    });
+    const currentRegion = within(sipRegion).getByRole("region", {
+      name: "当前检验项",
+    });
+    const sipSummary = projectRegion.querySelector("dl");
     expect(sipSummary).not.toBeNull();
-    const sipCard = within(sipRegion);
+    const sipCard = within(projectRegion);
     for (const label of [
       "产品名称",
       "图号",
@@ -1027,11 +1038,35 @@ describe("InspectionWorkbench", () => {
     expect(sipSummary?.textContent).toContain("检验标准GB/T 197");
     expect(sipSummary?.textContent).toContain("检验人员角色尺寸检验员");
     expect(sipSummary?.querySelectorAll("dd")).toHaveLength(8);
+    const selectedFields = within(currentRegion).getByRole("group", {
+      name: "SIP 确认字段",
+    });
+    for (const [label, value] of [
+      ["检验项目：M6", "螺纹检验"],
+      ["检验标准：M6", "GB/T 197"],
+      ["检验方法：M6", "螺纹规"],
+      ["关键尺寸：M6", "是"],
+      ["检验角色：M6", "尺寸检验员"],
+      ["备注（可选）：M6", "首件复核"],
+    ]) {
+      expect((
+        within(selectedFields).getByRole("textbox", {
+          name: label,
+        }) as HTMLInputElement
+      ).value).toBe(value);
+    }
+    expect((
+      within(selectedFields).getByRole("spinbutton", {
+        name: "页码：M6",
+      }) as HTMLInputElement
+    ).value).toBe("1");
 
     const editorSummary = sipRegion.querySelector("summary");
-    expect(editorSummary?.textContent).toBe("编辑 SIP 信息");
+    expect(editorSummary?.textContent).toBe("编辑项目 SIP 信息");
     fireEvent.click(editorSummary as HTMLElement);
-    const confirmMetadata = sipCard.getByRole("button", { name: "确认 SIP 信息" });
+    const confirmMetadata = sipCard.getByRole("button", {
+      name: "确认项目 SIP 信息",
+    });
     expect(confirmMetadata.hasAttribute("disabled")).toBe(true);
     fireEvent.change(sipCard.getByRole("textbox", { name: "物料编码" }), {
       target: { value: "MAT-001" },
@@ -1069,6 +1104,156 @@ describe("InspectionWorkbench", () => {
       expect(summary.getByText("保存状态").nextElementSibling?.textContent)
         .toBe("已保存");
     });
+  });
+
+  test("selected SIP 与待判定来源草稿分别保持未保存状态和切换草稿", () => {
+    const items = [{
+      item_id: "sip-item",
+      item_type: "thread" as const,
+      raw_text: "M16",
+      inspection_item: "螺纹检验",
+      inspection_standard: "GB/T 197",
+      inspection_method: "螺纹规",
+      key_dimension: "是",
+      inspection_role: "检验员",
+      source_page: 1,
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[{
+          id: "pending-source",
+          pageIndex: 0,
+          bbox: [1, 2, 3, 4],
+          rawText: "去除毛刺",
+        }]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: {
+            blocking_count: 0,
+            review_required_count: 1,
+            entries: [{
+              observation_id: "pending-observation",
+              source_location_id: "pending-source",
+              candidate_id: null,
+              disposition: "ambiguous",
+              coordinates: [1, 2, 3, 4],
+              requires_confirmation: true,
+            }],
+          },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    const saveStatus = within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status");
+    fireEvent.change(screen.getByRole("textbox", {
+      name: "检验方法：M16",
+    }), { target: { value: "三针法复核" } });
+    expect(saveStatus.textContent).toBe("有未保存修改");
+
+    fireEvent.click(screen.getByRole("row", { name: /去除毛刺/ }));
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    expect(within(sipRegion).getByText("当前选择的是待判定来源。"))
+      .not.toBeNull();
+    expect(within(sipRegion).queryByRole("group", {
+      name: "SIP 确认字段",
+    })).toBeNull();
+    expect(saveStatus.textContent).toBe("有未保存修改");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "原始标注" }), {
+      target: { value: "去除全部毛刺" },
+    });
+    expect(saveStatus.textContent).toBe("有未保存修改");
+
+    fireEvent.click(screen.getByRole("row", { name: /M16/ }));
+    expect(
+      (screen.getByRole("textbox", {
+        name: "检验方法：M16",
+      }) as HTMLInputElement).value,
+    ).toBe("三针法复核");
+    expect(saveStatus.textContent).toBe("有未保存修改");
+  });
+
+  test.each([
+    ["reviewed", "reviewed", null],
+    ["frozen", "editing", "2026-07-27T10:00:00Z"],
+  ])("%s 状态禁用项目和当前检验项 SIP fieldset", (
+    _caseName,
+    projectState,
+    frozenAt,
+  ) => {
+    const items = [{
+      item_id: "immutable-item",
+      item_type: "thread" as const,
+      raw_text: "M6",
+      inspection_item: "螺纹检验",
+      inspection_standard: "GB/T 197",
+      inspection_method: "螺纹规",
+      key_dimension: "是",
+      inspection_role: "检验员",
+      source_page: 1,
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: frozenAt,
+          items_frozen_by: frozenAt === null ? null : "reviewer",
+          items_frozen_version: frozenAt === null ? null : 1,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "上座",
+            drawing_number: "JS26032501",
+            material: "SUS304",
+            revision: "A1",
+          },
+        }}
+        projectState={projectState}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    expect((
+      within(sipRegion).getByRole("group", {
+        name: "编辑项目 SIP 信息",
+      }) as HTMLFieldSetElement
+    ).disabled).toBe(true);
+    expect((
+      within(sipRegion).getByRole("group", {
+        name: "SIP 确认字段",
+      }) as HTMLFieldSetElement
+    ).disabled).toBe(true);
   });
 
   test("source-only coverage 在统一列表中添加为真实检验项并保存", async () => {

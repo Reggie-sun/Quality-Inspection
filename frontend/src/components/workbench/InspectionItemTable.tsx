@@ -14,7 +14,6 @@ import {
 } from "./inspectionItemPresentation";
 import type { ItemStatus } from "./inspectionItemPresentation";
 import type { InspectionFilter } from "./RecognitionSummary";
-import { SelectedSipDetailFields } from "./SelectedSipDetailFields";
 
 
 type InspectionItemTableProps = {
@@ -185,13 +184,8 @@ export function InspectionItemTable({
   const selectedPage = selectedFilteredIndex < 0
     ? undefined
     : Math.floor(selectedFilteredIndex / PAGE_SIZE) + 1;
-  const selected = items.find((item) => item.item_id === selectedItemId);
   const selectedSource = pendingSources.find((source) =>
     source.sourceId === selectedSourceId);
-  const selectedBalloon = selected === undefined
-    ? undefined
-    : balloonByItem.get(selected.item_id);
-  const [selectedSipDraftDirty, setSelectedSipDraftDirty] = useState(false);
   const selectedSourceBaseline = selectedSource && sourceDraft(selectedSource);
   const [sourceDrafts, setSourceDrafts] = useState<Record<string, SourceDraft>>(
     () => selectedSource === undefined ? {} : {
@@ -213,8 +207,8 @@ export function InspectionItemTable({
     }));
   }, [selectedSource?.observationId, selectedSource?.rawText, selectedSourceId]);
   useEffect(() => {
-    onDraftChange?.(selectedSipDraftDirty || dirtySourceIds.length > 0);
-  }, [dirtySourceIds, onDraftChange, selectedSipDraftDirty]);
+    onDraftChange?.(dirtySourceIds.length > 0);
+  }, [dirtySourceIds, onDraftChange]);
   useEffect(() => setPage(1), [filter, search, statusFilter]);
   useEffect(() => {
     if (selectedPage !== undefined) setPage(selectedPage);
@@ -567,21 +561,6 @@ export function InspectionItemTable({
             </fieldset>
           )
       }
-      <SelectedSipDetailFields
-        item={
-          selectedSource === undefined && onCommand !== undefined
-            ? selected
-            : undefined
-        }
-        balloon={
-          selectedSource === undefined && onCommand !== undefined
-            ? selectedBalloon
-            : undefined
-        }
-        disabled={disabled}
-        onCommand={onCommand ?? (() => false)}
-        onDraftChange={setSelectedSipDraftDirty}
-      />
     </section>
   );
 }
