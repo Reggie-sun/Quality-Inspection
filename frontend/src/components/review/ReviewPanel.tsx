@@ -316,6 +316,13 @@ export function ReviewPanel({
     selectedItemPresentation?.displayNumber,
     selectedItemPresentation?.typeLabel ?? zhCN.workbench.unknown,
   );
+  const selectedItemNumberLabel =
+    selectedItemPresentation?.numberKind === "formal"
+    && selectedItemPresentation.displayNumber !== undefined
+      ? zhCN.review.formalBalloonNumber(
+          selectedItemPresentation.displayNumber,
+        )
+      : selectedItemPresentation?.numberLabel ?? zhCN.workbench.unknown;
   const isEditingSelected =
     selectedItem !== undefined && editingItemId === selectedItem.item_id;
   const isSelectedItemDirty =
@@ -567,24 +574,22 @@ export function ReviewPanel({
             <div>
               <h3>{selectedItemHeading}</h3>
               <p>
-                <span>
-                  {selectedItemPresentation?.numberLabel
-                    ?? zhCN.workbench.unknown}
-                </span>
+                <span>{selectedItemNumberLabel}</span>
                 <span>
                   {selectedItemPresentation?.pageLabel
                     ?? zhCN.workbench.unknown}
                 </span>
               </p>
             </div>
-            <span
-              className={`geometry-state geometry-state--${
-                selectedItemPresentation?.status ?? "pending"
-              }`}
-            >
-              {selectedItemPresentation?.statusLabel
-                ?? zhCN.inspection.statusPending}
-            </span>
+            {selectedItemPresentation === undefined ? null : (
+              <span
+                className={`geometry-state geometry-state--${
+                  selectedItemPresentation.status
+                }`}
+              >
+                {selectedItemPresentation.statusLabel}
+              </span>
+            )}
           </header>
           <div className="review-selected-item__workspace">
           <div className="review-selected-item__form">

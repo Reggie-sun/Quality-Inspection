@@ -648,7 +648,7 @@ describe("InspectionWorkbench", () => {
       name: "检验项 1 · 螺纹",
     })).not.toBeNull();
     expect(within(detail).getByText("已确认")).not.toBeNull();
-    expect(within(detail).getByText("正式序号 1")).not.toBeNull();
+    expect(within(detail).getByText("气泡 1")).not.toBeNull();
     expect(within(detail).getByText("第 1 页")).not.toBeNull();
     expect(within(workspace).queryByRole("region", {
       name: "所选检验项",
@@ -712,7 +712,7 @@ describe("InspectionWorkbench", () => {
     expect(within(detail).getByRole("heading", {
       name: "检验项 17 · 螺纹",
     })).not.toBeNull();
-    for (const value of ["正式序号 17", "第 2 页", "已确认"]) {
+    for (const value of ["气泡 17", "第 2 页", "已确认"]) {
       expect(detail.textContent).toContain(value);
     }
     expect(detail.textContent).not.toContain("selected-hidden-uuid");

@@ -272,6 +272,7 @@ export const zhCN = {
     itemIndex: (index: number) => `检验项 ${index}`,
     itemHeading: (number: number | undefined, type: string) =>
       `检验项 ${number ?? zhCN.workbench.unknown} · ${type}`,
+    formalBalloonNumber: (number: number) => `气泡 ${number}`,
     selectItem: (index: number, rawText: string) =>
       `选择检验项 ${index}：${rawText}`,
     fieldForItem: (field: string, rawText: string) => `${field}：${rawText}`,

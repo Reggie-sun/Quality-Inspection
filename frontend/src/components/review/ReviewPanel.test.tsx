@@ -15,7 +15,7 @@ import { ReviewPanel } from "./ReviewPanel";
 afterEach(cleanup);
 
 describe("ReviewPanel", () => {
-  test("详情标题使用检验项语义身份且原始标注仅出现在编辑输入", () => {
+  test("详情标题使用检验项语义身份且不重复原始标注", () => {
     const item: ReviewItem = {
       item_id: "semantic-heading",
       item_type: "linear_dimension",
@@ -47,8 +47,30 @@ describe("ReviewPanel", () => {
     expect(screen.getByRole("heading", {
       name: "检验项 2 · 线性尺寸",
     })).not.toBeNull();
+    expect(screen.getByText("候选序号 2")).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "48" })).toBeNull();
     expect(screen.getAllByDisplayValue("48")).toHaveLength(1);
+  });
+
+  test("缺少 presentation 时不伪造所选检验项状态", () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "missing-presentation",
+          item_type: "thread",
+          raw_text: "M8",
+          status: "kept",
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="missing-presentation"
+      />,
+    );
+
+    expect(screen.getByRole("article", {
+      name: "检验项 — · —",
+    })).not.toBeNull();
+    expect(screen.queryByText("待审核")).toBeNull();
   });
 
   test("P0-UI-006 exposes all eight review commands only on explicit actions", () => {
