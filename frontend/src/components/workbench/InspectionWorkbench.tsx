@@ -133,9 +133,9 @@ export function InspectionWorkbench({
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
   const [selectionBlocked, setSelectionBlocked] = useState(false);
   useEffect(() => {
+    if (metadataDraftDirty) return;
     setMetadata(metadataDraft(workingCopy));
-    setMetadataDraftDirty(false);
-  }, [workingCopy?.version]);
+  }, [metadataDraftDirty, workingCopy?.version]);
   useEffect(() => {
     if (!reviewDraftDirty) setSelectionBlocked(false);
   }, [reviewDraftDirty]);

@@ -968,7 +968,7 @@ describe("InspectionWorkbench", () => {
         active: false,
       },
     ];
-    render(
+    const { container } = render(
       <InspectionWorkbench
         pdfDocument={null}
         candidates={[]}
@@ -1008,7 +1008,12 @@ describe("InspectionWorkbench", () => {
       .toBe("已保存");
 
     expect(screen.getAllByRole("region", { name: "SIP 信息" })).toHaveLength(1);
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const detail = container.querySelector(
+      ".inspection-review-workspace__detail",
+    ) as HTMLElement;
+    const sipRegion = within(detail).getByRole("region", { name: "SIP 信息" });
+    expect(detail.querySelector(".review-panel")?.nextElementSibling)
+      .toBe(sipRegion);
     const projectRegion = within(sipRegion).getByRole("region", {
       name: "项目基本信息",
     });
@@ -1103,6 +1108,153 @@ describe("InspectionWorkbench", () => {
       });
       expect(summary.getByText("保存状态").nextElementSibling?.textContent)
         .toBe("已保存");
+    });
+  });
+
+  test("working copy 刷新不覆盖未保存 metadata 草稿且取消恢复最新基线", () => {
+    const items = [{
+      item_id: "metadata-item",
+      item_type: "thread" as const,
+      raw_text: "M6",
+      active: true,
+    }];
+    const workbench = (version: number) => (
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version,
+          items,
+          coverage: {
+            blocking_count: 0,
+            review_required_count: version === 1 ? 0 : 1,
+          },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "上座",
+            drawing_number: "JS26032501",
+            material: "SUS304",
+            revision: "A1",
+          },
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />
+    );
+    const { rerender } = render(workbench(1));
+
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    const productName = within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }) as HTMLInputElement;
+    const saveStatus = within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status");
+    fireEvent.change(productName, {
+      target: { value: "未保存新名称" },
+    });
+    expect(saveStatus.textContent).toBe("有未保存修改");
+
+    rerender(workbench(2));
+
+    expect(productName.value).toBe("未保存新名称");
+    expect(saveStatus.textContent).toBe("有未保存修改");
+
+    fireEvent.click(within(sipRegion).getByRole("button", {
+      name: "取消项目 SIP 信息修改",
+    }));
+    expect(productName.value).toBe("上座");
+    expect(saveStatus.textContent).toBe("已保存");
+  });
+
+  test("metadata 保存失败保留草稿并允许原命令重试", async () => {
+    const onSave = vi.fn()
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockResolvedValueOnce(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "上座",
+            drawing_number: "JS26032501",
+            material: "SUS304",
+            revision: "A1",
+          },
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    const productName = within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }) as HTMLInputElement;
+    const confirm = within(sipRegion).getByRole("button", {
+      name: "确认项目 SIP 信息",
+    });
+    const saveStatus = within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status");
+    fireEvent.change(productName, { target: { value: "失败后重试名称" } });
+    fireEvent.click(confirm);
+
+    await waitFor(() => {
+      expect(saveStatus.textContent).toBe("保存失败");
+    });
+    expect(productName.value).toBe("失败后重试名称");
+
+    fireEvent.click(confirm);
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledTimes(2);
+      expect(saveStatus.textContent).toBe("已保存");
+    });
+    expect(onSave).toHaveBeenNthCalledWith(1, {
+      type: "set_sip_metadata",
+      material_code: "MAT-001",
+      material_name: "失败后重试名称",
+      drawing_number: "JS26032501",
+      material: "SUS304",
+      revision: "A1",
+    });
+    expect(onSave).toHaveBeenNthCalledWith(2, {
+      type: "set_sip_metadata",
+      material_code: "MAT-001",
+      material_name: "失败后重试名称",
+      drawing_number: "JS26032501",
+      material: "SUS304",
+      revision: "A1",
     });
   });
 
