@@ -12,6 +12,7 @@ import pymupdf
 from app.pdf.classification import PageSignals, classify_page
 from app.pdf.coordinates import BBox, PageTransform
 from app.pdf.schemas import PageInventory, TextObservation
+from app.pdf.visual_observations import build_page_visual_observations
 
 
 def _normalize(text: str) -> str:
@@ -93,7 +94,9 @@ def build_inventory(
     pdf_path: Path,
     render_scale: float = 2.0,
 ) -> tuple[PageInventory, ...]:
-    document = pymupdf.open(pdf_path)
+    source_path = Path(pdf_path)
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    document = pymupdf.open(source_path)
     try:
         pages: list[PageInventory] = []
         for page_index, page in enumerate(document):
@@ -152,13 +155,23 @@ def build_inventory(
                         native_span_count += 1
 
             page_area = transform.width * transform.height
+            drawings = page.get_drawings()
             signals = PageSignals(
                 native_char_count=native_char_count,
                 native_span_count=native_span_count,
                 max_image_coverage=_image_coverage(page, page_area),
-                vector_drawing_count=len(page.get_drawings()),
+                vector_drawing_count=len(drawings),
             )
             classification = classify_page(signals)
+            visual_observations, _visual_contexts = build_page_visual_observations(
+                page_index=page_index,
+                page_width=transform.width,
+                page_height=transform.height,
+                source_sha256=source_sha256,
+                native_observations=observations,
+                drawings=drawings,
+                transform=transform,
+            )
             pages.append(
                 PageInventory(
                     page_index=page_index,
@@ -176,6 +189,7 @@ def build_inventory(
                     pdf_to_render_matrix=transform.pdf_to_render_matrix,
                     render_to_pdf_matrix=transform.render_to_pdf_matrix,
                     observations=tuple(observations),
+                    visual_observations=visual_observations,
                 )
             )
         return tuple(pages)
