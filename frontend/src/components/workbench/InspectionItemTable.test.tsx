@@ -323,194 +323,34 @@ test("缺少真实页码时列表和详情保持空状态且不回填第 1 页",
     name: "检验方法：页码未知标注",
   }), { target: { value: "卡尺" } });
   expect(onDraftChange).toHaveBeenLastCalledWith(true);
-  fireEvent.click(screen.getByRole("button", { name: "取消 SIP 字段修改" }));
+  fireEvent.click(screen.getByRole("button", {
+    name: "取消当前检验项 SIP 修改",
+  }));
   expect(onDraftChange).toHaveBeenLastCalledWith(false);
 });
 
-test("切换检验项时保留尚未确认的 SIP 草稿和未保存状态", () => {
-  const onDraftChange = vi.fn();
-  const props = {
-    items: [
-      {
-        item_id: "draft-1",
-        raw_text: "标注一",
-        item_type: "thread" as const,
-        inspection_item: "项目一",
-        inspection_standard: "标准一",
-        inspection_method: "方法一",
-        key_dimension: "重点一",
-        inspection_role: "角色一",
-        source_page: 1,
-        active: true,
-      },
-      {
-        item_id: "draft-2",
-        raw_text: "标注二",
-        item_type: "thread" as const,
-        inspection_item: "项目二",
-        inspection_standard: "标准二",
-        inspection_method: "方法二",
-        key_dimension: "重点二",
-        inspection_role: "角色二",
-        source_page: 2,
-        active: true,
-      },
-    ],
-    balloons: [],
-    filter: "all" as const,
-    onSelectItem: vi.fn(),
-    onCommand: vi.fn(),
-    onDraftChange,
-  };
-  const { rerender } = render(
-    <InspectionItemTable {...props} selectedItemId="draft-1" />,
-  );
-
-  fireEvent.change(screen.getByRole("textbox", { name: "检验方法：标注一" }), {
-    target: { value: "更新方法" },
-  });
-  rerender(<InspectionItemTable {...props} selectedItemId="draft-2" />);
-  expect(onDraftChange).toHaveBeenLastCalledWith(true);
-
-  rerender(<InspectionItemTable {...props} selectedItemId="draft-1" />);
-  expect(
-    (screen.getByRole("textbox", { name: "检验方法：标注一" }) as HTMLInputElement)
-      .value,
-  ).toBe("更新方法");
-  expect(onDraftChange).toHaveBeenLastCalledWith(true);
-});
-
-test("备注作为可选字段随显式保存命令提交", async () => {
-  const onCommand = vi.fn();
-  const onDraftChange = vi.fn();
-  render(
+test("抽取后的 SIP 字段组暂时仍位于检验项列表 legacy location", () => {
+  const { container } = render(
     <InspectionItemTable
       items={[{
-        item_id: "remarks-item",
+        item_id: "legacy-sip-item",
         raw_text: "M6",
         item_type: "thread",
-        inspection_item: "螺纹检验",
-        inspection_standard: "GB/T 197",
-        inspection_method: "螺纹规",
-        key_dimension: "是",
-        inspection_role: "检验员",
-        source_page: 1,
-        remarks: "原始备注",
         active: true,
       }]}
       balloons={[]}
       filter="all"
-      selectedItemId="remarks-item"
+      selectedItemId="legacy-sip-item"
       onSelectItem={vi.fn()}
-      onCommand={onCommand}
-      onDraftChange={onDraftChange}
+      onCommand={vi.fn()}
     />,
   );
 
-  fireEvent.change(screen.getByRole("textbox", { name: "备注（可选）：M6" }), {
-    target: { value: "首件需复核" },
-  });
-  expect(onDraftChange).toHaveBeenLastCalledWith(true);
-  fireEvent.click(screen.getByRole("button", { name: "确认所选 SIP 字段" }));
-
-  await waitFor(() => {
-    expect(onCommand).toHaveBeenCalledWith({
-      type: "set_sip_detail_fields",
-      item_id: "remarks-item",
-      inspection_item: "螺纹检验",
-      inspection_standard: "GB/T 197",
-      inspection_method: "螺纹规",
-      key_dimension: "是",
-      inspection_role: "检验员",
-      source_page: 1,
-      remarks: "首件需复核",
-    });
-    expect(onDraftChange).toHaveBeenLastCalledWith(false);
-  });
-});
-
-test("SIP 字段保存失败时保留草稿和未保存状态", async () => {
-  const onCommand = vi.fn().mockResolvedValue(false);
-  const onDraftChange = vi.fn();
-  render(
-    <InspectionItemTable
-      items={[{
-        item_id: "sip-retry",
-        raw_text: "M10",
-        item_type: "thread",
-        inspection_item: "螺纹检验",
-        inspection_standard: "GB/T 197",
-        inspection_method: "螺纹规",
-        key_dimension: "是",
-        inspection_role: "检验员",
-        source_page: 1,
-        active: true,
-      }]}
-      balloons={[]}
-      filter="all"
-      selectedItemId="sip-retry"
-      onSelectItem={vi.fn()}
-      onCommand={onCommand}
-      onDraftChange={onDraftChange}
-    />,
-  );
-
-  const method = screen.getByRole("textbox", {
-    name: "检验方法：M10",
-  }) as HTMLInputElement;
-  fireEvent.change(method, { target: { value: "三针法复核" } });
-  expect(onDraftChange).toHaveBeenLastCalledWith(true);
-
-  fireEvent.click(screen.getByRole("button", { name: "确认所选 SIP 字段" }));
-
-  await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
-    type: "set_sip_detail_fields",
-    item_id: "sip-retry",
-    inspection_item: "螺纹检验",
-    inspection_standard: "GB/T 197",
-    inspection_method: "三针法复核",
-    key_dimension: "是",
-    inspection_role: "检验员",
-    source_page: 1,
-    remarks: "",
-  }));
-  expect(method.value).toBe("三针法复核");
-  expect(onDraftChange).toHaveBeenLastCalledWith(true);
-});
-
-test("取消 SIP 字段修改会恢复后端备注基线", () => {
-  const onCommand = vi.fn();
-  render(
-    <InspectionItemTable
-      items={[{
-        item_id: "remarks-cancel",
-        raw_text: "Ra 3.2",
-        item_type: "general_requirement",
-        inspection_item: "表面粗糙度",
-        inspection_standard: "图纸要求",
-        inspection_method: "粗糙度仪",
-        key_dimension: "否",
-        inspection_role: "检验员",
-        source_page: 1,
-        remarks: "保留原文",
-        active: true,
-      }]}
-      balloons={[]}
-      filter="all"
-      selectedItemId="remarks-cancel"
-      onSelectItem={vi.fn()}
-      onCommand={onCommand}
-    />,
-  );
-
-  const remarks = screen.getByRole("textbox", {
-    name: "备注（可选）：Ra 3.2",
-  }) as HTMLTextAreaElement;
-  fireEvent.change(remarks, { target: { value: "临时修改" } });
-  fireEvent.click(screen.getByRole("button", { name: "取消 SIP 字段修改" }));
-
-  expect(remarks.value).toBe("保留原文");
-  expect(onCommand).not.toHaveBeenCalled();
+  const tableSection = container.querySelector(".inspection-table-section");
+  expect(
+    within(tableSection as HTMLElement)
+      .getByRole("group", { name: "SIP 确认字段" }),
+  ).not.toBeNull();
 });
 
 test("待判定来源进入统一列表并产生显式 source review commands", () => {

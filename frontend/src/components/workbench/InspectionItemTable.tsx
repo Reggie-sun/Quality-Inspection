@@ -14,6 +14,7 @@ import {
 } from "./inspectionItemPresentation";
 import type { ItemStatus } from "./inspectionItemPresentation";
 import type { InspectionFilter } from "./RecognitionSummary";
+import { SelectedSipDetailFields } from "./SelectedSipDetailFields";
 
 
 type InspectionItemTableProps = {
@@ -40,16 +41,6 @@ export type PendingSourceReview = {
   rawText: string;
   coordinates: [number, number, number, number];
   pageIndex?: number;
-};
-
-type DetailDraft = {
-  inspectionItem: string;
-  inspectionStandard: string;
-  inspectionMethod: string;
-  keyDimension: string;
-  inspectionRole: string;
-  sourcePage: string;
-  remarks: string;
 };
 
 type SourceDraft = {
@@ -88,20 +79,6 @@ function tolerance(item: ReviewItem): string {
   return values.length === 0 ? zhCN.workbench.unknown : values.join(" / ");
 }
 
-
-function detailDraft(item?: ReviewItem, balloon?: BalloonOverlay): DetailDraft {
-  return {
-    inspectionItem: item?.inspection_item ?? "",
-    inspectionStandard: item?.inspection_standard ?? "",
-    inspectionMethod: item?.inspection_method ?? "",
-    keyDimension: item?.key_dimension ?? "",
-    inspectionRole: item?.inspection_role ?? "",
-    sourcePage: item === undefined
-      ? ""
-      : inspectionItemPresentation(item, balloon).page?.toString() ?? "",
-    remarks: item?.remarks ?? "",
-  };
-}
 
 function sourceDraft(source: PendingSourceReview): SourceDraft {
   return {
@@ -214,13 +191,7 @@ export function InspectionItemTable({
   const selectedBalloon = selected === undefined
     ? undefined
     : balloonByItem.get(selected.item_id);
-  const selectedBaseline = detailDraft(selected, selectedBalloon);
-  const [drafts, setDrafts] = useState<Record<string, DetailDraft>>(
-    () => selected === undefined
-      ? {}
-      : { [selected.item_id]: selectedBaseline },
-  );
-  const [dirtyItemIds, setDirtyItemIds] = useState<string[]>([]);
+  const [selectedSipDraftDirty, setSelectedSipDraftDirty] = useState(false);
   const selectedSourceBaseline = selectedSource && sourceDraft(selectedSource);
   const [sourceDrafts, setSourceDrafts] = useState<Record<string, SourceDraft>>(
     () => selectedSource === undefined ? {} : {
@@ -228,19 +199,9 @@ export function InspectionItemTable({
     },
   );
   const [dirtySourceIds, setDirtySourceIds] = useState<string[]>([]);
-  const draft = selected === undefined
-    ? selectedBaseline
-    : drafts[selected.item_id] ?? selectedBaseline;
   const selectedSourceDraft = selectedSource && (
     sourceDrafts[selectedSource.observationId] ?? selectedSourceBaseline);
 
-  useEffect(() => {
-    if (selected === undefined || dirtyItemIds.includes(selected.item_id)) return;
-    setDrafts((current) => ({
-      ...current,
-      [selected.item_id]: detailDraft(selected, selectedBalloon),
-    }));
-  }, [balloons, items, selectedItemId]);
   useEffect(() => {
     if (
       selectedSource === undefined
@@ -252,8 +213,8 @@ export function InspectionItemTable({
     }));
   }, [selectedSource?.observationId, selectedSource?.rawText, selectedSourceId]);
   useEffect(() => {
-    onDraftChange?.(dirtyItemIds.length > 0 || dirtySourceIds.length > 0);
-  }, [dirtyItemIds, dirtySourceIds, onDraftChange]);
+    onDraftChange?.(selectedSipDraftDirty || dirtySourceIds.length > 0);
+  }, [dirtySourceIds, onDraftChange, selectedSipDraftDirty]);
   useEffect(() => setPage(1), [filter, search, statusFilter]);
   useEffect(() => {
     if (selectedPage !== undefined) setPage(selectedPage);
@@ -265,27 +226,6 @@ export function InspectionItemTable({
     selectedSourceId,
     statusFilter,
   ]);
-  const updateDraft = (change: Partial<DetailDraft>) => {
-    if (selected === undefined) return;
-    setDrafts((current) => ({
-      ...current,
-      [selected.item_id]: {
-        ...(current[selected.item_id] ?? selectedBaseline),
-        ...change,
-      },
-    }));
-    setDirtyItemIds((current) =>
-      current.includes(selected.item_id)
-        ? current
-        : [...current, selected.item_id],
-    );
-  };
-  const clearSelectedDraft = () => {
-    if (selected === undefined) return;
-    setDirtyItemIds((current) =>
-      current.filter((candidate) => candidate !== selected.item_id),
-    );
-  };
   const updateSourceDraft = (change: Partial<SourceDraft>) => {
     if (selectedSource === undefined || selectedSourceBaseline === undefined) {
       return;
@@ -627,104 +567,13 @@ export function InspectionItemTable({
             </fieldset>
           )
       }
-      {
-        selectedSource !== undefined
-        || selected === undefined
-        || onCommand === undefined
-        || !selected.active
-          ? null
-          : (
-        <fieldset className="sip-detail-fields" disabled={disabled}>
-          <legend>{zhCN.inspection.selectedSip}</legend>
-          {(
-            [
-              ["inspectionItem", zhCN.inspection.inspectionItem],
-              ["inspectionStandard", zhCN.inspection.standard],
-              ["inspectionMethod", zhCN.inspection.method],
-              ["keyDimension", zhCN.inspection.keyDimension],
-              ["inspectionRole", zhCN.inspection.role],
-            ] as const
-          ).map(([key, label]) => (
-            <label key={key}>
-              {label}
-              <input
-                aria-label={`${label}：${selected.raw_text}`}
-                value={draft[key]}
-                onChange={(event) => {
-                  updateDraft({ [key]: event.target.value });
-                }}
-              />
-            </label>
-          ))}
-          <label>
-            {zhCN.inspection.page}
-            <input
-              aria-label={`${zhCN.inspection.page}：${selected.raw_text}`}
-              type="number"
-              min={1}
-              value={draft.sourcePage}
-              onChange={(event) => {
-                updateDraft({ sourcePage: event.target.value });
-              }}
-            />
-          </label>
-          <label>
-            {zhCN.inspection.remarks}
-            <textarea
-              aria-label={`${zhCN.inspection.remarks}：${selected.raw_text}`}
-              maxLength={2000}
-              rows={3}
-              value={draft.remarks}
-              onChange={(event) => {
-                updateDraft({ remarks: event.target.value });
-              }}
-            />
-          </label>
-          <div className="sip-detail-actions">
-            <button
-              type="button"
-              disabled={disabled || [
-                draft.inspectionItem,
-                draft.inspectionStandard,
-                draft.inspectionMethod,
-                draft.keyDimension,
-                draft.inspectionRole,
-                draft.sourcePage,
-              ].some((value) => value.trim() === "")}
-              onClick={async () => {
-                const succeeded = await commandSucceeded(onCommand, {
-                  type: "set_sip_detail_fields",
-                  item_id: selected.item_id,
-                  inspection_item: draft.inspectionItem,
-                  inspection_standard: draft.inspectionStandard,
-                  inspection_method: draft.inspectionMethod,
-                  key_dimension: draft.keyDimension,
-                  inspection_role: draft.inspectionRole,
-                  source_page: Number(draft.sourcePage),
-                  remarks: draft.remarks,
-                });
-                if (succeeded) clearSelectedDraft();
-              }}
-            >
-              {zhCN.inspection.confirmSip}
-            </button>
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => {
-                setDrafts((current) => ({
-                  ...current,
-                  [selected.item_id]: detailDraft(selected, selectedBalloon),
-                }));
-                clearSelectedDraft();
-              }}
-            >
-              {zhCN.inspection.cancelSip}
-            </button>
-          </div>
-        </fieldset>
-          )
-      }
+      <SelectedSipDetailFields
+        item={selectedSource === undefined ? selected : undefined}
+        balloon={selectedSource === undefined ? selectedBalloon : undefined}
+        disabled={disabled}
+        onCommand={onCommand ?? (() => false)}
+        onDraftChange={setSelectedSipDraftDirty}
+      />
     </section>
   );
 }
