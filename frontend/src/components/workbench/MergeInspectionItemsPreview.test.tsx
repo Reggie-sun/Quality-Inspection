@@ -151,6 +151,33 @@ test("disables every navigation and confirmation action while submitting", () =>
   expect(blankConfirm.disabled).toBe(true);
 });
 
+test("keeps navigation available when fewer than two valid items remain", () => {
+  const props = renderPreview({ items: [items[0]] });
+
+  const back = screen.getByRole(
+    "button",
+    { name: "返回修改" },
+  ) as HTMLButtonElement;
+  const cancel = screen.getByRole(
+    "button",
+    { name: "取消" },
+  ) as HTMLButtonElement;
+  const confirm = screen.getByRole(
+    "button",
+    { name: "确认合并 1 项" },
+  ) as HTMLButtonElement;
+
+  expect(back.disabled).toBe(false);
+  expect(cancel.disabled).toBe(false);
+  expect(confirm.disabled).toBe(true);
+
+  fireEvent.click(back);
+  fireEvent.click(cancel);
+  expect(props.onBack).toHaveBeenCalledOnce();
+  expect(props.onCancel).toHaveBeenCalledOnce();
+  expect(props.onConfirm).not.toHaveBeenCalled();
+});
+
 test("moves focus to the preview heading on mount", () => {
   renderPreview();
 

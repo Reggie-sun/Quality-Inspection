@@ -86,7 +86,11 @@ export function MergeInspectionItemsPreview({
         <button
           className="merge-inspection-preview__confirm"
           type="button"
-          disabled={submitting || draftRawText.trim().length === 0}
+          disabled={
+            submitting
+            || items.length < 2
+            || draftRawText.trim().length === 0
+          }
           onClick={onConfirm}
         >
           {copy.confirm(items.length)}

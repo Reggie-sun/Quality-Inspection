@@ -403,7 +403,7 @@ export function InspectionItemTable({
         <MergeInspectionItemsPreview
           items={selectedMergeItems}
           draftRawText={mergedRawText}
-          submitting={mergeSubmitting || selectedMergeItems.length < 2}
+          submitting={mergeSubmitting}
           onDraftRawTextChange={setMergedRawText}
           onBack={() => {
             setMergeError(false);
