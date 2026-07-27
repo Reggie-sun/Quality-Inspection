@@ -322,6 +322,52 @@ test("提交期间锁定当前 session，false 后保留草稿和选择", async 
   expect(screen.getByRole("status").textContent).toBe("已选择 2 项");
 });
 
+test("外部失效使预览不足两项时仍可返回或取消，但不可确认", () => {
+  const props = {
+    items: [mergeItems[0], mergeItems[50]],
+    balloons: [],
+    candidateNumbers: new Map([
+      [mergeItems[0].item_id, 1],
+      [mergeItems[50].item_id, 51],
+    ]),
+    filter: "all" as const,
+    onSelectItem: vi.fn(),
+    onBeginMerge: vi.fn(() => true),
+    onMergeItems: vi.fn().mockResolvedValue(true),
+  };
+  const { rerender } = render(<InspectionItemTable {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 51：±0.1 · 通用要求",
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+  rerender(<InspectionItemTable {...props} items={[mergeItems[0]]} />);
+
+  const back = screen.getByRole(
+    "button",
+    { name: "返回修改" },
+  ) as HTMLButtonElement;
+  const cancel = screen.getByRole(
+    "button",
+    { name: "取消" },
+  ) as HTMLButtonElement;
+  const confirm = screen.getByRole(
+    "button",
+    { name: "确认合并 1 项" },
+  ) as HTMLButtonElement;
+  expect(back.disabled).toBe(false);
+  expect(cancel.disabled).toBe(false);
+  expect(confirm.disabled).toBe(true);
+
+  fireEvent.click(cancel);
+  expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
+  expect(props.onMergeItems).not.toHaveBeenCalled();
+});
+
 test("提交 reject 时保留草稿并显示错误，且允许安全重试", async () => {
   let resolveRetry: (outcome: boolean) => void = () => undefined;
   const onMergeItems = vi.fn()
