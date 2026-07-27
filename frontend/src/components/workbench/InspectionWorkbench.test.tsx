@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import {
   cleanup,
   fireEvent,
@@ -9,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type { PostJson, ReviewCommand, ReviewItem } from "../../api/types";
+import type { PostJson } from "../../api/types";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 
 
@@ -21,15 +20,7 @@ function openAuxiliaryPanel(): void {
   }));
 }
 
-function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
-const mergeSourceItems = [
+const duplicateExampleItems = [
   {
     item_id: "item-1",
     item_type: "linear_dimension" as const,
@@ -44,79 +35,28 @@ const mergeSourceItems = [
   },
 ];
 
-function MergeRefreshHarness({
-  initialItems,
-  onSave,
-  refreshedItems,
-  saveCompletion,
-}: {
-  initialItems: ReviewItem[];
-  onSave: (command: ReviewCommand) => Promise<void> | void;
-  refreshedItems: ReviewItem[];
-  saveCompletion?: Promise<void>;
-}) {
-  const [items, setItems] = useState(initialItems);
-  return (
-    <InspectionWorkbench
-      pdfDocument={null}
-      candidates={[]}
-      sources={[]}
-      balloons={[]}
-      items={items}
-      onSave={async (command) => {
-        await onSave(command);
-        await Promise.resolve();
-        setItems(refreshedItems);
-        if (saveCompletion !== undefined) await saveCompletion;
-      }}
-    />
-  );
-}
-
-function DelayedMergeRefreshHarness({
-  initialItems,
-  onSave,
-  refreshedItems,
-  refreshCompletion,
-}: {
-  initialItems: ReviewItem[];
-  onSave: (command: ReviewCommand) => Promise<void>;
-  refreshedItems: ReviewItem[];
-  refreshCompletion: Promise<void>;
-}) {
-  const [items, setItems] = useState(initialItems);
-  useEffect(() => {
-    let active = true;
-    void refreshCompletion.then(() => {
-      if (active) setItems(refreshedItems);
-    });
-    return () => {
-      active = false;
-    };
-  }, [refreshCompletion, refreshedItems]);
-  return (
-    <InspectionWorkbench
-      pdfDocument={null}
-      candidates={[]}
-      sources={[]}
-      balloons={[]}
-      items={items}
-      onSave={onSave}
-    />
-  );
-}
-
-function openMergePreview(rawText = "  ⌀10 ±0.1  "): void {
-  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: /⌀10/ }));
-  fireEvent.click(screen.getByRole("checkbox", { name: /±0\.1/ }));
-  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
-  fireEvent.change(screen.getByRole("textbox", {
-    name: "合并后的原始标注",
-  }), { target: { value: rawText } });
-}
-
 describe("InspectionWorkbench", () => {
+  test("审核界面不向用户暴露重复项合并工具", () => {
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={duplicateExampleItems}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "合并重复项" })).toBeNull();
+    expect(screen.queryByText(
+      "仅用于同一检验要求被重复识别，或一条标注被拆成多项的情况。",
+    )).toBeNull();
+    expect(screen.queryAllByRole("checkbox", {
+      name: /选择检验项/,
+    })).toHaveLength(0);
+  });
+
   test("本地草稿立即显示未保存且只在修改保存时提交", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
@@ -204,342 +144,7 @@ describe("InspectionWorkbench", () => {
     ).getByRole("status").textContent).toBe("请先修改保存当前检验项");
   });
 
-  test("未保存的 ReviewPanel 编辑阻止进入合并且保留当前草稿", () => {
-    render(
-      <InspectionWorkbench
-        pdfDocument={null}
-        candidates={[]}
-        sources={[]}
-        balloons={[]}
-        items={mergeSourceItems}
-        onSave={vi.fn().mockResolvedValue(undefined)}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", {
-      name: "修改检验项：⌀10",
-    }));
-    const nominal = screen.getByRole("textbox", {
-      name: "基本尺寸：⌀10",
-    }) as HTMLInputElement;
-    fireEvent.change(nominal, { target: { value: "10" } });
-    fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
-
-    expect(screen.queryAllByRole("checkbox", {
-      name: /选择检验项/,
-    })).toHaveLength(0);
-    expect(within(
-      screen.getByRole("region", { name: "项目摘要" }),
-    ).getByRole("status").textContent).toBe("请先修改保存当前检验项");
-    expect(nominal.value).toBe("10");
-  });
-
-  test("合并确认期间重复点击只通过唯一提交路径保存一次", async () => {
-    const deferred = createDeferred<void>();
-    const onSave = vi.fn(() => deferred.promise);
-    render(
-      <InspectionWorkbench
-        pdfDocument={null}
-        candidates={[]}
-        sources={[]}
-        balloons={[]}
-        items={mergeSourceItems}
-        onSave={onSave}
-      />,
-    );
-
-    openMergePreview();
-    const confirm = screen.getByRole("button", { name: "确认合并 2 项" });
-    fireEvent.click(confirm);
-    fireEvent.click(confirm);
-
-    expect(onSave).toHaveBeenCalledOnce();
-    expect(onSave).toHaveBeenCalledWith({
-      type: "merge",
-      item_ids: ["item-1", "item-2"],
-      raw_text: "⌀10 ±0.1",
-    });
-
-    deferred.resolve();
-    await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
-    });
-  });
-
-  test("合并刷新后只选择唯一新增的 active 检验项", async () => {
-    const refreshedItems = [
-      { ...mergeSourceItems[0], active: false },
-      { ...mergeSourceItems[1], active: false },
-      {
-        item_id: "merged-1",
-        item_type: "linear_dimension" as const,
-        raw_text: "⌀10 ±0.1",
-        active: true,
-      },
-    ];
-    const onSave = vi.fn();
-    render(
-      <MergeRefreshHarness
-        initialItems={mergeSourceItems}
-        refreshedItems={refreshedItems}
-        onSave={onSave}
-      />,
-    );
-
-    openMergePreview();
-    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
-
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledOnce();
-      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
-        .toBe("merged-1");
-      expect(screen.getByRole("heading", {
-        name: "检验项 — · 线性尺寸",
-      })).not.toBeNull();
-      expect(screen.getByLabelText("识别原文：⌀10 ±0.1").textContent)
-        .toBe("⌀10 ±0.1");
-    });
-  });
-
-  test("合并成功但没有新增 active 检验项时清除失效选择且不猜测", async () => {
-    const refreshedItems = mergeSourceItems.map((item) => ({
-      ...item,
-      active: false,
-    }));
-    render(
-      <MergeRefreshHarness
-        initialItems={mergeSourceItems}
-        refreshedItems={refreshedItems}
-        onSave={vi.fn()}
-      />,
-    );
-
-    openMergePreview();
-    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
-
-    await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
-      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
-        .toBe("__no_selected_review_item__");
-      expect(screen.queryByRole("article", { name: /检验项/ })).toBeNull();
-      expect(screen.queryAllByRole("checkbox", {
-        name: /选择检验项/,
-      })).toHaveLength(0);
-    });
-  });
-
-  test("合并成功但有两个新增 active 检验项时保留仍合法的选择", async () => {
-    const initialItems = [
-      {
-        item_id: "item-1",
-        item_type: "thread" as const,
-        raw_text: "M6",
-        active: true,
-      },
-      {
-        item_id: "item-2",
-        item_type: "linear_dimension" as const,
-        raw_text: "⌀10",
-        active: true,
-      },
-      {
-        item_id: "item-3",
-        item_type: "general_requirement" as const,
-        raw_text: "±0.1",
-        active: true,
-      },
-    ];
-    const refreshedItems = [
-      initialItems[0],
-      { ...initialItems[1], active: false },
-      { ...initialItems[2], active: false },
-      {
-        item_id: "merged-a",
-        item_type: "linear_dimension" as const,
-        raw_text: "合并候选 A",
-        active: true,
-      },
-      {
-        item_id: "merged-b",
-        item_type: "linear_dimension" as const,
-        raw_text: "合并候选 B",
-        active: true,
-      },
-    ];
-    render(
-      <MergeRefreshHarness
-        initialItems={initialItems}
-        refreshedItems={refreshedItems}
-        onSave={vi.fn()}
-      />,
-    );
-
-    openMergePreview();
-    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
-
-    await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
-      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
-        .toBe("item-1");
-      expect(screen.getByRole("heading", {
-        name: "检验项 — · 螺纹",
-      })).not.toBeNull();
-      expect(screen.getByLabelText("识别原文：M6").textContent).toBe("M6");
-      expect(screen.queryByLabelText("识别原文：合并候选 A")).toBeNull();
-      expect(screen.queryByLabelText("识别原文：合并候选 B")).toBeNull();
-    });
-  });
-
-  test("合并刷新先 commit、保存后 resolve 时仍只选择唯一新增项", async () => {
-    const deferred = createDeferred<void>();
-    const refreshedItems = [
-      { ...mergeSourceItems[0], active: false },
-      { ...mergeSourceItems[1], active: false },
-      {
-        item_id: "merged-before-resolve",
-        item_type: "linear_dimension" as const,
-        raw_text: "先刷新后完成",
-        active: true,
-      },
-    ];
-    render(
-      <MergeRefreshHarness
-        initialItems={mergeSourceItems}
-        refreshedItems={refreshedItems}
-        onSave={vi.fn()}
-        saveCompletion={deferred.promise}
-      />,
-    );
-
-    openMergePreview();
-    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
-    await waitFor(() => {
-      expect(screen.getByTestId("summary-active-count").textContent).toBe("1");
-    });
-    deferred.resolve();
-
-    await waitFor(() => {
-      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
-        .toBe("merged-before-resolve");
-      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
-    });
-  });
-
-  test("合并成功后在 refresh commit 前阻止其他审核命令和第二次合并", async () => {
-    const refresh = createDeferred<void>();
-    const refreshedItems = [
-      { ...mergeSourceItems[0], active: false },
-      { ...mergeSourceItems[1], active: false },
-      {
-        item_id: "merged-after-delay",
-        item_type: "linear_dimension" as const,
-        raw_text: "延迟刷新后的合并项",
-        active: true,
-      },
-    ];
-    const onSave = vi.fn().mockResolvedValue(undefined);
-    render(
-      <DelayedMergeRefreshHarness
-        initialItems={mergeSourceItems}
-        refreshedItems={refreshedItems}
-        refreshCompletion={refresh.promise}
-        onSave={onSave}
-      />,
-    );
-
-    openMergePreview();
-    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledOnce();
-      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
-    });
-
-    const beginMerge = screen.getByRole(
-      "button",
-      { name: "合并重复项" },
-    ) as HTMLButtonElement;
-    expect(beginMerge.disabled).toBe(true);
-    fireEvent.click(beginMerge);
-    expect(screen.queryAllByRole("checkbox", {
-      name: /选择检验项/,
-    })).toHaveLength(0);
-
-    const keep = screen.getByRole(
-      "button",
-      { name: "保留检验项：⌀10" },
-    ) as HTMLButtonElement;
-    fireEvent.click(keep);
-    expect(onSave).toHaveBeenCalledOnce();
-    expect(keep.disabled).toBe(true);
-
-    refresh.resolve();
-    await waitFor(() => {
-      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
-        .toBe("merged-after-delay");
-      expect(beginMerge.disabled).toBe(false);
-      expect((screen.getByRole(
-        "button",
-        { name: "保留检验项：延迟刷新后的合并项" },
-      ) as HTMLButtonElement).disabled).toBe(false);
-    });
-  });
-
-  test("合并保存失败保留预览选择和草稿，重试相同命令后可成功", async () => {
-    const refreshedItems = [
-      { ...mergeSourceItems[0], active: false },
-      { ...mergeSourceItems[1], active: false },
-      {
-        item_id: "merged-after-retry",
-        item_type: "linear_dimension" as const,
-        raw_text: "保留的合并草稿",
-        active: true,
-      },
-    ];
-    const onSave = vi.fn()
-      .mockRejectedValueOnce(new Error("save failed"))
-      .mockResolvedValueOnce(undefined);
-    render(
-      <MergeRefreshHarness
-        initialItems={mergeSourceItems}
-        refreshedItems={refreshedItems}
-        onSave={onSave}
-      />,
-    );
-
-    openMergePreview("  保留的合并草稿  ");
-    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
-
-    await waitFor(() => {
-      expect(within(
-        screen.getByRole("region", { name: "项目摘要" }),
-      ).getByRole("status").textContent).toBe("保存失败");
-      expect(screen.getByRole("alert").textContent).toBe("合并失败，请重试");
-    });
-    expect((screen.getByRole("textbox", {
-      name: "合并后的原始标注",
-    }) as HTMLTextAreaElement).value).toBe("  保留的合并草稿  ");
-    expect(screen.getAllByText("⌀10").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("±0.1").length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledTimes(2);
-      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
-      expect(within(
-        screen.getByRole("region", { name: "项目摘要" }),
-      ).getByRole("status").textContent).toBe("已保存");
-      expect(screen.getByTestId("pdf-workspace").getAttribute("data-selected-id"))
-        .toBe("merged-after-retry");
-    });
-    expect(onSave.mock.calls[0]?.[0]).toEqual({
-      type: "merge",
-      item_ids: ["item-1", "item-2"],
-      raw_text: "保留的合并草稿",
-    });
-    expect(onSave.mock.calls[1]?.[0]).toEqual(onSave.mock.calls[0]?.[0]);
-  });
-
-  test("被阻止切换后保存失败优先显示失败并保留编辑草稿", async () => {
+   test("被阻止切换后保存失败优先显示失败并保留编辑草稿", async () => {
     let rejectSave!: (reason?: unknown) => void;
     const onSave = vi.fn(
       () =>

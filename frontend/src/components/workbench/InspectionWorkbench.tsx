@@ -77,12 +77,6 @@ type MetadataDraft = {
   revision: string;
 };
 
-type PendingMergeReconciliation = {
-  activeIdsBefore: Set<string>;
-  itemsGeneration: number;
-  selectedItemId?: string;
-};
-
 const NO_SELECTED_REVIEW_ITEM_ID = "__no_selected_review_item__";
 
 
@@ -127,7 +121,6 @@ export function InspectionWorkbench({
   const [saveState, setSaveState] = useState<string>(zhCN.workbench.saved);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
-  const committedItemsRef = useRef({ items, generation: 0 });
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(
     () => items.find((item) => item.active)?.item_id,
   );
@@ -142,13 +135,6 @@ export function InspectionWorkbench({
   const [sipDraftDirty, setSipDraftDirty] = useState(false);
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
   const [selectionBlocked, setSelectionBlocked] = useState(false);
-  const [
-    pendingMergeReconciliation,
-    setPendingMergeReconciliation,
-  ] = useState<PendingMergeReconciliation>();
-  const pendingMergeReconciliationRef = useRef<
-    PendingMergeReconciliation | undefined
-  >(undefined);
   useEffect(() => {
     setMetadata(metadataDraft(workingCopy));
     setMetadataDraftDirty(false);
@@ -156,60 +142,6 @@ export function InspectionWorkbench({
   useEffect(() => {
     if (!reviewDraftDirty) setSelectionBlocked(false);
   }, [reviewDraftDirty]);
-  useEffect(() => {
-    let committedItems = committedItemsRef.current;
-    if (committedItems.items !== items) {
-      committedItems = {
-        items,
-        generation: committedItems.generation + 1,
-      };
-      committedItemsRef.current = committedItems;
-    }
-    if (
-      pendingMergeReconciliation === undefined
-      || committedItems.generation
-        <= pendingMergeReconciliation.itemsGeneration
-    ) return;
-
-    const newActiveItems = committedItems.items.filter(
-      (item) =>
-        item.active
-        && !pendingMergeReconciliation.activeIdsBefore.has(item.item_id),
-    );
-    if (newActiveItems.length === 1) {
-      const mergedItem = newActiveItems[0];
-      const mergedBalloon = balloons.find(
-        (balloon) =>
-          balloon.status !== "deleted" && balloon.itemId === mergedItem.item_id,
-      );
-      setSelectionBlocked(false);
-      setSelectedItemId(mergedItem.item_id);
-      setSelectedSourceId(undefined);
-      setSelectedBalloonId(mergedBalloon?.id);
-      setPageIndex(
-        (current) =>
-          mergedItem.page_index ?? mergedBalloon?.pageIndex ?? current,
-      );
-    } else {
-      const selectionChangedSinceSubmit =
-        selectedItemId !== pendingMergeReconciliation.selectedItemId;
-      const selectionToValidate = selectionChangedSinceSubmit
-        ? selectedItemId
-        : pendingMergeReconciliation.selectedItemId;
-      if (
-        selectionToValidate !== undefined
-        && !committedItems.items.some(
-          (item) => item.active && item.item_id === selectionToValidate,
-        )
-      ) {
-        setSelectedItemId(undefined);
-        setSelectedBalloonId(undefined);
-        setSelectedSourceId(undefined);
-      }
-    }
-    pendingMergeReconciliationRef.current = undefined;
-    setPendingMergeReconciliation(undefined);
-  }, [balloons, items, pendingMergeReconciliation, selectedItemId]);
   const candidateNumbers = useMemo(() => {
     const lookup = new Map<string, number>();
     for (const candidate of candidates) {
@@ -266,14 +198,12 @@ export function InspectionWorkbench({
   const reviewCommandsDisabled =
     saving
     || busy
-    || reviewImmutable
-    || pendingMergeReconciliation !== undefined;
+    || reviewImmutable;
   const submitCommand = async (command: ReviewCommand): Promise<boolean> => {
     if (
       savingRef.current
       || busy
       || reviewImmutable
-      || pendingMergeReconciliationRef.current !== undefined
     ) return false;
     savingRef.current = true;
     setSaving(true);
@@ -338,42 +268,6 @@ export function InspectionWorkbench({
     setSelectedBalloonId(undefined);
     const source = sources.find((candidate) => candidate.id === sourceId);
     setPageIndex(source?.pageIndex ?? pageIndex);
-    return true;
-  };
-  const beginMerge = (): boolean => {
-    if (pendingMergeReconciliationRef.current !== undefined) return false;
-    if (reviewDraftDirty) {
-      setSelectionBlocked(true);
-      return false;
-    }
-    setSelectionBlocked(false);
-    return true;
-  };
-  const mergeItems = async (
-    itemIds: string[],
-    rawText: string,
-  ): Promise<boolean> => {
-    if (pendingMergeReconciliationRef.current !== undefined) return false;
-    const committedItems = committedItemsRef.current;
-    const activeIdsBefore = new Set(
-      committedItems.items
-        .filter((item) => item.active)
-        .map((item) => item.item_id),
-    );
-    const reconciliation = {
-      activeIdsBefore,
-      itemsGeneration: committedItems.generation,
-      selectedItemId,
-    };
-    const succeeded = await submitCommand({
-      type: "merge",
-      item_ids: itemIds,
-      raw_text: rawText,
-    });
-    if (!succeeded) return false;
-
-    pendingMergeReconciliationRef.current = reconciliation;
-    setPendingMergeReconciliation(reconciliation);
     return true;
   };
   const exportPanel = projectId === undefined || exportPost === undefined
@@ -623,8 +517,6 @@ export function InspectionWorkbench({
                 onSelectItem={selectItem}
                 onSelectSource={selectSource}
                 onCommand={submitCommand}
-                onBeginMerge={beginMerge}
-                onMergeItems={mergeItems}
                 onDraftChange={setSipDraftDirty}
               />
             </div>

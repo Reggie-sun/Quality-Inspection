@@ -1,5 +1,5 @@
 {
-  "contract_definition_hash": "42b4b24623173e6cf862c4f2626042810f5662a137c871d9150847b652007560",
+  "contract_definition_hash": "ff0b45ecaf4d25efa3f4c4171f60cd173d7a4c00ea74471e1aee4ae20f4b766a",
   "contracts": [
     {
       "blocking_level": "blocking",
@@ -1582,13 +1582,13 @@
       "global_contract_id": "REV-004",
       "implementation_only": false,
       "implementation_reason": "—",
-      "owner": "Review panel",
+      "owner": "Review UI",
       "p0_contract_id": "P0-UI-006",
       "related_global_contract_ids": [],
-      "stable_p0_requirement": "核心审核表单支持 keep/exclude/edit/add/merge/split/confirmation/balloon-required",
+      "stable_p0_requirement": "核心审核表单支持 keep/exclude/edit/add/split/confirmation/balloon-required；重复建议由识别阶段内部产生，不提供通用人工 merge 入口",
       "task_id": "D4-T3",
       "tier": "frontend",
-      "verification_selector": "npm --prefix frontend test -- --run src/components/review/ReviewPanel.test.tsx"
+      "verification_selector": "npm --prefix frontend test -- --run src/components/review/ReviewPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx"
     },
     {
       "blocking_level": "blocking",
