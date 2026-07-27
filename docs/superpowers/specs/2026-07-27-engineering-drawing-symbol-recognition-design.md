@@ -3,14 +3,15 @@
 ## Status
 
 - Date: `2026-07-27`
-- Status: `Draft for user review`
+- Status: `Approved semantic design`
 - Selected scope: 当前失败 PDF 闭环
 - Selected lane: `Heavy`
-- Implementation authorization: `not granted`
+- Execution authorization owner: unique current plan; this design does not authorize execution
+- Activation state: Task 0 complete at `994cbe4`; Option A clarification active
 
 本文只定义能力、Owner、数据合同、失败边界和验收口径。它不切换当前
-implementation plan，不授权 production code、runtime config、contract matrix
-或 Harness 变更。
+implementation plan，也不独立授权 production code、runtime config、contract
+matrix 或 Harness 变更；执行授权和顺序只来自唯一 current plan。
 
 ## Context
 
@@ -121,8 +122,11 @@ frontend display 都不能闭环该问题。
 - 不承诺完整 ISO、GB、ASME 或企业符号库。
 - 不支持当前 PDF 中不存在的 countersink、视觉 weld symbol、完整 datum
   reference graph 或完整 GD&T 语义解释。
-- 不把 standalone center mark、section label、revision triangle、dimension
-  arrow、leader、hatch 或零件轮廓变成检验项。
+- 不把 standalone center mark、section label、dimension arrow、leader、hatch 或
+  零件轮廓自动变成检验项；通过 local validator 的 `revision_marker` 初始状态固定为
+  `non_inspection`，Provider、validator、automatic processing 或 frontend inference
+  均不得自动为其创建 inspection item。既有 Quality Owner 显式
+  `promote_source` / `ignore_source` 人工命令不在此禁令内。
 - 不发现没有邻近 native line 的 standalone visual symbol；current source 的目标
   families 均有数值、datum letter 或 revision number 锚点。
 - 不对纯扫描 PDF 建立正式支持；现有 `scanned = unsupported` routing 保持不变。
@@ -151,23 +155,35 @@ frontend display 都不能闭环该问题。
 | `gdt_perpendicularity` | `⊥ 0.1 A` frame | 现有 `CoarseCandidate(coarse_type="geometric_tolerance")`；强制确认 |
 | `gdt_flatness` | flatness frame | 现有 `CoarseCandidate(coarse_type="geometric_tolerance")`；强制确认 |
 | `datum_reference` | boxed `A/B/C` 与 datum pointer | `reference_context`，不单独生成检验项 |
+| `revision_marker` | closed triangle 与内部 revision token | 初始 `non_inspection`、`candidate_id=null`；不自动生成检验项；强制确认 |
 
 视觉 weld symbol 不在 current source 中。技术要求中的“焊接”文本继续走现有
 technical-requirement path，不据此扩大视觉检测范围。
 
+以上恰好是九个 evaluation-positive recognition families。这里的
+evaluation-positive 只表示 live evaluation 要求识别命中，不表示生成 inspection
+item。`revision_marker` region 只有在下文既有 closed-triangle + inner revision-token
+validator 全部通过时才属于第九个 positive family；颜色不是 classifier。一个通过
+validator 的 `revision_marker` label 不得同时标为 `frozen_negative`。
+
 ### Frozen Negative Families
 
-live manifest 和脱敏 fixture 都必须标注以下负样本：
+live manifest 和脱敏 fixture 都必须标注以下恰好九个负样本家族：
 
-- 零件外轮廓、孔轮廓、圆弧和长直线；
-- 剖面线、中心线、center mark 和十字线；
-- dimension arrow、leader、extension line 和 section cutting line；
-- `A-A/B-B/C-C/IV/V` 等视图或剖面标签；
-- 红色 revision triangle 及 revision table；
-- datum symbol 被拆开的普通字母或表格单元格；
-- watermark、logo、title block 和签字栏；
-- isometric view 中的普通孔、槽和板边；
-- 普通数字、材料信息和技术要求正文。
+| `negative_family` | Frozen negative scope |
+| --- | --- |
+| `part_or_hole_geometry` | 零件外轮廓、孔轮廓、圆弧和长直线 |
+| `hatch_center_or_cross` | 剖面线、中心线、center mark 和十字线 |
+| `dimension_leader_or_section_line` | dimension arrow、leader、extension line 和 section cutting line |
+| `view_or_section_label` | `A-A/B-B/C-C/IV/V` 等视图或剖面标签 |
+| `revision_table_or_invalid_marker` | revision table grid/cells，以及未通过 closed-triangle + inner revision-token validator 的 triangle-like geometry |
+| `datum_like_letter_or_table_cell` | datum-like 普通字母或表格单元格 |
+| `watermark_logo_title_or_signoff` | watermark、logo、title block 和签字栏 |
+| `isometric_hole_slot_or_edge` | isometric view 中的普通孔、槽和板边 |
+| `ordinary_text_number_material_or_requirement` | 普通文本、数字、材料信息和技术要求正文 |
+
+`revision_table_or_invalid_marker` 不包含通过 validator 的 `revision_marker`；颜色同样
+不能把 region 移入或移出该 negative family。
 
 负样本可以进入确定性 `non_inspection`，也可以在证据不足时保持可复查
 `ambiguous`；它们不得形成 candidate。
@@ -267,7 +283,8 @@ deterministic text candidate snapshot              │
 
 `backend/app/candidates/advisor.py::CandidateAdvisor` 继续作为唯一 Vision
 integration Owner。它新增 `visual_symbol` route kind，但不新建第二个 Advisor、
-第二个 candidate writer 或并行 result path。
+第二个 automatic raw candidate writer 或并行 result path。既有 Review aggregate
+继续只拥有 Quality Owner 显式 working-copy commands。
 
 各角色固定如下：
 
@@ -276,7 +293,8 @@ integration Owner。它新增 `visual_symbol` route kind，但不新建第二个
 | PDF visual proposal builder | `Signal Provider` | 生成稳定 region fact、bbox、geometry hash 和邻近 text refs | 决定 symbol kind、candidate type 或 disposition |
 | Qwen adapter | `Advisor` | 对局部 crop 输出冻结 schema 的 allowlisted symbol suggestion | 写正式 candidate、coverage、review 或 business field |
 | Local symbol validator | `Validator` | 校验 schema、bbox、source association 和允许的 projection | 猜测缺失文本、孔/轴语义或标准规则 |
-| `CandidateAdvisor` | `Owner` | 在 validator 通过后执行唯一 candidate/coverage write | 绕过 validator 或保留第二个 visual path |
+| `CandidateAdvisor` | `Owner` | 在 validator 通过后执行唯一 automatic raw candidate/coverage write | 绕过 validator 或保留第二个 visual path |
+| Review aggregate | `Manual Command Owner` | 在 working copy 中执行 Quality Owner 显式 `promote_source` / `ignore_source` | 自动调用命令、模拟人工 override 或成为第二个 Vision Owner |
 | Coverage service | `Veto Gate` | 阻断缺 source、coordinates、disposition 或预算溢出的结果 | 创建替代 candidate |
 | Frontend | `Executor` | 展示 Owner 已提交的 source、normalized result 和 confirmation | 重新识别符号或生成正式语义 |
 
@@ -502,11 +520,18 @@ crop containment，再按固定映射投影：
 | `gdt_perpendicularity` | canonical `⊥`，其余同上 | 四字段 `CoarseCandidate`，`coarse_type="geometric_tolerance"` |
 | `gdt_flatness` | canonical `⏥`，其余同上 | 四字段 `CoarseCandidate`，`coarse_type="geometric_tolerance"` |
 | `datum_reference` | 必须关联 boxed datum letter；不提交 inspection item | `reference_context`，`requires_confirmation=false` |
-| `revision_marker` | 必须满足下述 closed-triangle + inner revision token validator | `non_inspection`，`requires_confirmation=true`，可人工恢复 |
+| `revision_marker` | 必须满足下述 closed-triangle + inner revision token validator | 初始 `non_inspection`、`candidate_id=null`、`requires_confirmation=true`；可由 Quality Owner 显式人工恢复 |
 
 Provider 的 detection 仍一律提交 `requires_confirmation=true`。只有本地 Owner 完成
 boxed-letter + datum geometry 校验并投影为非 item 的 `reference_context` 时，才按
 上表把 coverage confirmation 关闭；candidate projection 不允许 downgrade。
+
+qualifying `revision_marker` 的 automatic Owner decision 精确为
+`disposition="non_inspection"`、`candidate_id=null`、
+`requires_confirmation=true`。Provider、local validator、automatic processing 和
+frontend inference 都不能调用、伪造或模拟人工 override；只有 Quality Owner 显式
+提交现有 `promote_source` 命令并提供全部既有必填 manual fields 后，working copy
+才可创建一个 manual item。显式 `ignore_source` 只确认 non-inspection。
 
 payload 构造固定如下：
 
@@ -544,7 +569,9 @@ payload 构造固定如下：
   组成的 closed path：首尾距离 `<=0.5 PDF point`，bbox width/height 各在
   `[4,24] PDF points`，且恰有一个匹配 `[A-Z0-9]{1,3}` 的 associated native
   token，其 bbox center 位于 triangle 内或距 triangle bbox `<=2 PDF points`。
-  不满足任一条件时保持 ambiguous，不根据颜色或模型 confidence 判定。
+  只有全部条件通过时才是 `revision_marker`，automatic projection 只能提交上述
+  initial `non_inspection` decision，不能创建 inspection item；不满足任一条件时
+  保持 ambiguous，不根据颜色或模型 confidence 判定。
 
 同一 visual observation 的 primary projection 只接受以下 detection-kind sets：
 
@@ -642,8 +669,18 @@ observations 不允许这样处理。如果 visual batching 在单页仍需要�
 processing 必须以 `symbol_route_budget_exhausted` fail closed，不能截断后形成
 formal success。
 
-`ambiguous` visual observation 必须在 source review 中可见、可定位并可通过现有
-人工命令 promote 或 ignore。低置信度不能自动变成 `non_inspection`。
+source review 必须保留并区分两种 pending source：
+
+- `ambiguous + visual_no_detection`：没有 detection，初始无 item；Quality Owner 可用
+  既有 `promote_source` 补齐 manual fields 后创建 manual item，或用
+  `ignore_source` 解析为 non-inspection；
+- qualifying `revision_marker`：初始为
+  `non_inspection + candidate_id=null + requires_confirmation=true`，同样只允许
+  Quality Owner 通过显式 `promote_source` 做人工 override，或用显式
+  `ignore_source` 确认 non-inspection。
+
+低置信度、Provider、validator、automatic processing 和 frontend inference 都不能
+自动触发任一 command 或改变上述初始 disposition。
 
 ## UI Contract
 
@@ -659,19 +696,24 @@ formal success。
    `raw_text/coordinates/coarse_type/requires_confirmation`。
    visual coarse candidate 的 `raw_text` 在 UI 中标为“图形转写”，不得标成 native
    OCR 原文；roughness 图形标识只由 Owner 已提交的 `coarse_type` 驱动。
-4. ambiguous visual source 显示“图形符号待确认”、page、bbox 和局部 preview；
-   不显示 raw Provider response。
-5. reference context 和 non-inspection 不进入 active inspection item list。
+4. `ambiguous + visual_no_detection` 显示“图形符号待确认”；qualifying
+   `revision_marker` 显示“修订标记（非检验）待确认”。两者都显示 page、bbox 和
+   局部 preview，但不显示 raw Provider response。
+5. reference context 不进入 active inspection item list；qualifying
+   `revision_marker` 的 initial non-inspection state 也不进入，只有后续 Quality
+   Owner 显式 `promote_source` 才能创建 manual item。
 6. 前端不得根据 glyph、CSS icon 或字符串重新决定 item type。
 7. `projects/router.py::_project_pages()` 必须把 `visual_observations` 加入现有 source
    lookup，`raw_text` 固定投影为“图形符号待确认”；不得创建第二个 workbench
    endpoint。
-8. pending visual source 继续复用现有两个 commands：
+8. 两种 pending visual source 继续复用现有两个 Quality Owner commands：
    - `promote_source`：人工填写 non-blank `raw_text`、现有 `CandidateType`、scope、
-     balloon flag 和 page；成功后 disposition 变为 candidate；
+     balloon flag 和 page；成功后才把该 source 变为 candidate/manual item；
    - `ignore_source`：成功后 disposition 变为 non-inspection、
      `requires_confirmation=false`。
-   不新增 visual-only mutation API。
+   对 qualifying `revision_marker`，promote 是明确的人工作业 override，不改变 live
+   evaluation 的 initial Owner expectation。前端只能提交用户触发的命令，不能根据
+   symbol、copy、CSS 或模型输出自行调用；不新增 visual-only mutation API。
 
 该 UI delta 必须与
 `2026-07-27-inspection-item-information-hierarchy-design.md` 的“图纸原文 /
@@ -777,10 +819,12 @@ Harness mirror；Markdown Owner 必须先更新。
 | GD&T parallelism/perpendicularity/flatness | 3 |
 | datum reference | 2 |
 | revision marker | 2 |
-| frozen negative families | 12 |
+| frozen negative regions | 12 |
 
 fixture 必须以 vector paths 与 native text 组合生成，不能直接把 expected candidates
-写入 result。每个 positive/negative bbox 均由独立 manifest 指定。
+写入 result。每个 positive/negative bbox 均由独立 manifest 指定；12 个 frozen
+negative regions 必须共同覆盖上述九个 `negative_family` enum values，且每个家族
+至少一个 region。
 
 fixture tooling 固定为
 `backend/tests/helpers/symbol_fixture.py::build_symbol_fixture(tmp_path)`：
@@ -827,6 +871,16 @@ type VisualSymbolEvalManifest = {
         | "revision_marker"
         | "frozen_negative"
       >;
+      negative_family?:
+        | "part_or_hole_geometry"
+        | "hatch_center_or_cross"
+        | "dimension_leader_or_section_line"
+        | "view_or_section_label"
+        | "revision_table_or_invalid_marker"
+        | "datum_like_letter_or_table_cell"
+        | "watermark_logo_title_or_signoff"
+        | "isometric_hole_slot_or_edge"
+        | "ordinary_text_number_material_or_requirement";
       expected_disposition:
         | "candidate"
         | "reference_context"
@@ -844,17 +898,29 @@ type VisualSymbolEvalManifest = {
 };
 ```
 
-manifest schema 使用 `additionalProperties=false`。`label_id`、bbox 和数量由质量人员
-在 implementation plan 的第一个 live-preparation step 冻结；runner 必须在调用
-Provider 前校验 source hash、page count、bbox bounds、label ID 唯一性和每个
-current-scope family 至少一个 label。
+manifest schema 在 root、page 和 label 各层都使用
+`additionalProperties=false`。`negative_family` 的条件语义是 exact：
+
+- 当且仅当 `symbol_kinds` exact equal `["frozen_negative"]` 时，
+  `negative_family` 必填；
+- positive label 必须省略 `negative_family`，出现该字段即 schema failure；
+- 所有 frozen-negative labels 的 distinct `negative_family` set 必须 exact equal
+  上述完整九值 enum，且每个值至少有一个 label。
+
+`label_id` 与 bbox 由 Quality Owner 在 implementation plan 的第一个
+live-preparation step 标注，并随 approved manifest bytes 冻结；label 总数和
+per-family counts 一律由 runner 从这些 bytes 机械派生。runner 必须在调用 Provider
+前校验 source hash、page count、bbox bounds、label ID 唯一性、九个 positive
+families 各至少一个 label，以及完整九类 negative-family coverage。
 
 一个 label 表示一个完整 annotation group，因此同一 diameter + depth 或
 counterbore + diameter + depth 组合写入一个 `symbol_kinds` 数组，并只声明一个
 expected projection。数组必须非空、无重复并按本文 symbol-kind allowlist 顺序
 排序。`frozen_negative` 不得与其他 kind 共存；只有 frozen-negative label 允许
 `expected_disposition="ambiguous"`，current-scope positive label 必须声明
-candidate、reference context 或 non-inspection。
+candidate、reference context 或 non-inspection。`revision_marker` label 必须使用
+`symbol_kinds=["revision_marker"]`、`expected_disposition="non_inspection"` 和
+`expected_projection=null`，并且必须省略 `negative_family`。
 
 live result 的比较算法固定如下：
 
@@ -883,14 +949,18 @@ sealing mechanism 固定为：
 1. implementation plan 新增
    `.agent/harness/scripts/stage-symbol-eval.py`，只接受 source PDF 和 manifest
    input paths，不把 paths 写入 output。
-2. 脚本验证 source hash、2-page identity、schema、bbox、projection、family
-   completeness 和 negative-family coverage，然后把 manifest bytes 写入一个新的
-   immutable Harness run artifact。
-3. manifest SHA-256、label count、per-family counts 和 script/contract hashes 进入
-   run `input_identity`；seal 后修改任一 byte 都使 receipt stale。
-4. 质量人员在 200% page render 上完成第二遍 overlay 检查，必须声明
-   `unlabeled_target_count=0` 和 `negative_family_count=9`。声明进入独立 human
-   verdict，不写姓名或 PDF screenshot。
+2. 脚本验证 source hash、2-page identity、schema、bbox、projection、九类 positive
+   family completeness，并从 manifest 机械计算 distinct negative-family set 与
+   每个 negative family 的 label count。只有 set exact equal 完整九值 enum 且每个
+   count `>=1` 时才可写入新的 immutable Harness run artifact。
+3. manifest SHA-256、label count、per-positive-family counts、per-negative-family
+   counts 和 script/contract hashes 进入 run `input_identity`；脚本据此计算
+   `negative_family_count=9`，不接受人工或 CLI 输入的数字作为覆盖证明；seal 后修改
+   任一 byte 都使 receipt stale。
+4. Quality Owner 在 200% page render 上完成第二遍 overlay 检查，只人工确认
+   `overlay_scale_percent=200` 与 `unlabeled_target_count=0`。独立 human verdict
+   中的 `negative_family_count=9` 由脚本从已机械验证的 manifest 写入，不由人输入；
+   verdict 不写姓名、宿主机 path、PDF bytes 或 screenshot。
 5. runner 只接受 literal staging run ID，不接受 `latest` alias。production tests
    只读 sealed manifest，不读原 host label path。
 
@@ -905,8 +975,14 @@ sealing mechanism 固定为：
 2. sealed live manifest 中每个 `expected_disposition="candidate"` label 恰好匹配
    一个 candidate；不得漏检或一对多重复。
 3. 每个 `reference_context` label 恰好有一个 coverage entry，且不进入 active
-   inspection item list。
-4. frozen negative labels 产生的 candidate 数量为 0。
+   inspection item list；每个通过 validator 的 `revision_marker` label 恰好匹配
+   pre-manual-command Owner 的
+   `non_inspection + candidate_id=null + requires_confirmation=true` coverage entry，
+   automatic result 和初始 working copy 均无对应 item。live symbol evaluation 在
+   任何人工 source command 前完成比较；之后只有显式 Quality Owner
+   `promote_source` 才可创建 manual item，`ignore_source` 则无 item 收口。
+4. sealed manifest 的 distinct `negative_family` set 恰好等于完整九值 enum、每个
+   family 至少一个 label，且所有 frozen negative labels 产生的 candidate 数量为 0。
 5. `diameter` projection 的 `normalized_text` 包含 `Φ`，原 `raw_text` 不被覆盖，
    `feature_kind="unknown"` 且 `requires_confirmation=true`。
 6. `depth` projection 只有在 associated text 通过现有 typed parser 时成立；
@@ -935,7 +1011,8 @@ sealing mechanism 固定为：
     和 export regression 全部保持通过。
 18. frontend 同时显示“图纸原文”和不同的“识别结果”；补出的 `Φ/深/⌴/∥/⊥/⏥`
     在识别结果中可见。
-19. ambiguous visual source 可以从 UI 定位到正确 page/bbox，并可执行 promote 或
+19. UI 必须区分 ambiguous no-detection 与 qualifying revision-marker noninspection；
+    两者都可定位到正确 page/bbox，并只在 Quality Owner 显式操作后执行 promote 或
     ignore；模型 response 不对用户暴露。
 20. Provider call record、API response、logs、sealed receipt 和 committed fixture
     通过 secret/base64/private-path scan。
@@ -978,7 +1055,7 @@ allowlisted kind，但不得用一个宽泛 smoke 代替跨 layer 的独立断�
 | ADV-05 | `test_counterbore_maps_to_stable_composite` | composite sub-requirements 顺序稳定，normalized 显示 `⌴`，不新增 public enum |
 | ADV-06 | `test_surface_roughness_maps_to_four_field_coarse_candidate` | 只产生冻结四字段 `roughness` coarse payload，并需确认 |
 | ADV-07 | `test_gdt_kinds_map_to_four_field_coarse_candidate` | `parallelism/perpendicularity/flatness` 分别映射 `∥/⊥/⏥`，不提升 Provider 为语义 Owner |
-| ADV-08 | `test_reference_revision_and_no_detection_dispositions` | datum 仅在本地 validator 通过后为 reference；revision/no-detection 保持可恢复 source review |
+| ADV-08 | `test_reference_revision_and_no_detection_dispositions` | datum 仅在本地 validator 通过后为 reference；通过 closed-triangle + inner-token validator 的 revision marker 仅为 `non_inspection`，invalid marker 不能成为 `revision_marker`；no-detection 保持可恢复 source review |
 | ADV-09 | `test_unified_scheduler_is_deterministic_and_blocks_visual_overflow` | exact priority/tie-break 生效；visual calls `>16/page` 返回 `symbol_route_budget_exhausted` |
 | COV-01 | `test_visual_candidate_has_one_complete_coverage_entry` | candidate disposition 有 visual/text lineage 和完整 coordinates |
 | COV-02 | `test_visual_reference_noninspection_and_ambiguous_are_distinct` | 三种 disposition 不互相覆盖，confirmation 状态符合本 spec |
@@ -998,6 +1075,13 @@ allowlisted kind，但不得用一个宽泛 smoke 代替跨 layer 的独立断�
 | E2E-01 | `test_symbol_fixture_positive_flow` | fixture positives 完成 upload → automatic → review，匹配 manifest |
 | E2E-02 | `test_symbol_fixture_negative_regions_do_not_create_items` | 12 个 negative regions 不生成 candidate/reference/inspection item |
 | LIVE-01 | `test_sealed_current_pdf_symbol_manifest` | literal run ID 下 positives、non-inspection、reference、negative 和 exact-one matching 全部通过 |
+
+Task 5 还必须增加 supporting regression
+`test_revision_marker_stays_noninspection_until_explicit_promote_source`：automatic result
+和 initial working copy 必须保持 non-inspection coverage 且无 item，任何 automatic
+path 都不得 promote；显式 Quality Owner `promote_source` 可创建一个 manual item，
+显式 `ignore_source` 则无 item 收口。该 regression 不新增 logical ID，32 项表和
+count 保持不变。
 
 focused verification 的第一版命令必须由 implementation plan 精确绑定，但至少包括：
 
@@ -1062,7 +1146,7 @@ count 来掩盖差异；随后再运行 fixture E2E 和 sealed current-PDF live 
 | `backend/app/pdf/schemas.py` | 增加 `VisualObservation` 和 additive page field |
 | `backend/app/pdf/inventory.py` | 构建 deterministic visual proposals，不提交业务类型 |
 | `backend/app/pdf/visual_observations.py` | 新增纯 signal builder、path-item context、stable ID |
-| `backend/app/candidates/advisor.py` | 统一 text/visual routing、batch budget、唯一 final write |
+| `backend/app/candidates/advisor.py` | 统一 text/visual routing、batch budget、唯一 automatic raw final write |
 | `backend/app/processing/automatic_result.py` | 将 visual IDs 加入 expected coverage；不得另建 result path |
 | `backend/app/candidates/coverage.py` | visual disposition、budget blocker、完整性检查 |
 | `backend/app/providers/qwen_vl.py` | 解析新冻结 schema；adapter 仍不拥有 disposition |
@@ -1127,13 +1211,17 @@ support 或通用 accuracy benchmark。
   保持不变；本文不是 implementation plan，也不成为第二套 current plan。
 - Selection evidence: current first-PDF runtime、source code call chain、页面渲染和
   用户选择“当前图纸闭环”共同证明需要新 visual observation 能力。
-- Validation action: `replan`。用户批准本文后，必须先生成并批准唯一 implementation
-  plan 或 current-plan amendment，才能修改 contract/code/runtime。
-- Writer ownership and order: 本 spec turn 只有主线程写本文件。未来实现同一
-  backend file group 只有一个 writer，frontend 在 backend projection 冻结后顺序
-  开始，reviewer 保持只读。
-- Next verification: implementation plan 的第一项 RED 必须证明脱敏 vector symbol
-  fixture 当前不会生成 visual observation/candidate；不能先调用真实 Provider。
+- Activation evidence: Task 0 已由 commit `994cbe4` 把 subordinate proposal、
+  `SR-1 → SR-8` 顺序和全部执行边界激活到唯一 current plan；用户批准的 Option A
+  clarification 现已生效。
+- Validation action: `continue`；下一步是 current plan 的 `SR-1` contract/Harness
+  RED，不再请求 design/proposal approval，也不再运行 `writing-plans` 或重复 Task 0。
+- Writer ownership and order: 同一 backend file group 只有一个 writer，frontend 在
+  backend projection 冻结后顺序开始，reviewer 保持只读。
+- Next verification: `SR-1` 先运行
+  `test_symbol_eval_contract.py`、`test_contract_architecture.py` 和
+  `test_live_run_contract.py` 的 contract/Harness RED；不能先修改 production code
+  或调用真实 Provider。
 
 ## Risks
 
@@ -1141,17 +1229,19 @@ support 或通用 accuracy benchmark。
   projection validator 控制，不能依赖模型 confidence。
 - path-item context 过窄会切断 symbol 与 value。associated text IDs、batch crop 和 live
   manifest 必须同时验证。
-- current PDF 的 watermark、revision triangle 和 center marks 数量多，若
-  proposal priority 错误会耗尽预算。visual budget 必须按 observation batch 而不是
-  text reading order分配。
+- current PDF 的 watermark、revision-table/invalid-marker geometry、qualifying
+  revision markers 和 center marks 数量多，若 proposal priority 错误会耗尽预算。
+  visual budget 必须按 observation batch 而不是 text reading order 分配。
 - counterbore 完整工程语义超出当前 typed schema。本版只保留 canonical symbol、
   diameter/depth sub-requirements 和人工确认，不声称完成标准语义解析。
 - 展示 normalized text 可能被误认为原始 OCR。UI 必须明确区分“图纸原文”和
   “识别结果”。
 - 本能力只有 current-PDF closure，不得把该 live pass 外推为任意工程图准确率。
 
-## Review Gate
+## Active Execution Gate
 
-请用户先审阅并批准本 spec。批准后下一步只能调用
-`superpowers:writing-plans`，生成单一 implementation plan；在此之前不得修改
-production code、contract matrix、Harness 或 runtime config。
+本 semantic design 和 Option A clarification 已获批准；Task 0 activation commit
+`994cbe4` 已完成，唯一 current plan 继续拥有执行授权和顺序。下一步只能进入
+`SR-1` contract/Harness RED；不得再次请求 spec/plan approval、运行
+`superpowers:writing-plans`、创建第二份 current plan、先改 production code 或先调用
+真实 Provider。

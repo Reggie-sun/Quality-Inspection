@@ -15,8 +15,9 @@
 - Design source:
   `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`。
 - Design status: 用户已在 `2026-07-27` 批准继续写 implementation plan。
-- Plan status: **proposed for execution approval**。本文件当前不是第二份 current plan，
-  也不授权 production edit、live Provider call 或 plan switch。
+- Plan status: **approved subordinate implementation detail**。本文件不是第二份
+  current plan；task ordering、scope 和 execution authorization 仍只来自下述唯一
+  current plan。
 - Current implementation plan 仍是
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`。
 - Selected lane: `Heavy`，因为本变更修改 `PDF-007`、candidate recall/coverage、
@@ -24,23 +25,29 @@
 - Current ordering: 已验证的 D7-T2 manual-balloon residual 保持完成；本能力必须作为
   同一 current plan 的 D7-T2 in-place closure amendment，在 D7-T3 final receipt
   之前完成。
-- Activation gate: 用户明确批准本计划后，执行者先完成 Task 0，把 selection、
-  task order、allowed paths、rollback 和 focused gate 原地写入 current plan。
-  Task 0 commit 之前不得开始 Task 1。
-- Live-label gate: sealed live manifest 的 label count、bbox 和 quality-owner verdict
-  必须在任何 production GREEN 前冻结。允许先写 sanitized fixture RED；未 seal 时
-  必须停在 RED，不能通过猜测 label 或用 synthetic evidence 继续。
+- Activation gate: Task 0 已由 commit `994cbe4` 把 selection、task order、allowed
+  paths、rollback 和 focused gate 原地写入 current plan。用户于 `2026-07-27`
+  进一步批准的 Option A contract clarification 已激活；下一步是 Task 1 / `SR-1`，
+  不得重复 Task 0、先做 production edit 或先调用 live Provider。
+- Live-label gate: approved manifest bytes、bbox 和 quality-owner verdict 必须在任何
+  production GREEN 前冻结；label totals 和 per-family counts 由 staging 从 manifest
+  bytes 机械派生，Quality Owner 只确认 200% overlay 与
+  `unlabeled_target_count=0`。允许先写 sanitized fixture RED；未 seal 时必须停在
+  RED，不能通过猜测 label 或用 synthetic evidence 继续。
 - `.agent/EXECUTION_STATUS.md` 在本计划写作时不存在。执行者不得为绕过这一事实而
   发明 status；如后续由其他批准任务创建，只记录已经验证的结果。
-- 当前 worktree 有与本计划无关的未提交文件。每个 task 必须逐文件 stage，
-  不得使用 `git add .`，不得覆盖或清理用户改动。
+- 若执行时存在与本计划无关的未提交改动，必须保护这些改动并逐文件 stage around
+  them；不得使用 `git add .`，不得覆盖、清理或把它们带入 task commit。
 
 ## Problem Boundary
 
 ### Single Owner
 
 `backend/app/candidates/advisor.py::CandidateAdvisor` 是唯一 Vision integration
-Owner，也是唯一可在本地 validator 通过后修改 candidate/coverage 的组件。
+Owner，也是唯一可在本地 validator 通过后写 automatic raw candidate/coverage 的
+组件。既有 Review aggregate 仍只执行 Quality Owner 显式
+`promote_source` / `ignore_source` working-copy commands；该人工 override 不建立第二个
+automatic Vision Owner。
 
 `backend/app/candidates/symbol_review.py` 是纯 contract/validation/projection helper：
 它可以返回 immutable decisions，但不得持久化、创建 `AutomaticResult`、修改
@@ -75,6 +82,11 @@ working copy 或调用 Provider。该拆分用于避免已经约 700 行的 `adv
 - Coverage Ledger 仍是唯一 completeness Veto Gate。
 - `ReviewService.create_from_raw()`、existing promote/ignore commands、freeze、
   balloon、confirm 和 export 顺序不变。
+- qualifying `revision_marker` 的 automatic Owner decision 固定为
+  `non_inspection + candidate_id=null + requires_confirmation=true`。只有 Quality
+  Owner 显式执行既有 `promote_source` 并提供全部 manual fields 后才可创建 manual
+  item；`ignore_source` 确认 non-inspection。Provider、validator、automatic
+  processing 和 frontend inference 均不得调用或模拟该 override。
 - 已有 `AutomaticResult`、working copy 和 reviewed result 不原地补写；current source
   用新 project upload 产生新 result。
 - fixture tests 必须 `external_calls=0`；live Provider call 只能发生在已 seal 的
@@ -215,63 +227,18 @@ working copy 或调用 Provider。该拆分用于避免已经约 700 行的 `adv
 | Task 8 | LIVE-01 | 1 |
 | **Total** |  | **32** |
 
-## Task 0: Activate One Current Plan
+## Task 0: Activate One Current Plan — Completed At `994cbe4`
 
-**Files:**
+- [x] 用户已批准本 subordinate implementation proposal。
+- [x] commit `994cbe4` 已在唯一 current plan 中记录 problem boundary、single Owner、
+  old-path action、`SR-1 → SR-8` ordering、live-label/literal-run-ID gate、exact allowed
+  paths、rollback 和 focused verification。
+- [x] activation 保持 `D7-T3` 在 `SR-8` 之后，未改写 prior sealed receipts，也未创建
+  第二份 current plan、status registry、candidate/result path 或产品 Owner。
+- [x] Option A contract clarification 已激活为 `SR-1` 前置语义。
 
-- Modify:
-  `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
-
-### Step 1: Recheck execution state and ownership
-
-- [ ] Read current `AGENTS.md`、`.agent/rules/coding-rules.md`、
-  `.agent/rules/workflow-lanes.md`、`.agent/rules/ownership-convergence.md`、
-  current plan global constraints、D7-T2、D7-T3 和最新 amendment。
-- [ ] Run:
-
-```bash
-cd /home/reggie/vscode_folder/Quality_Inspection
-git status --short --branch
-git rev-parse --short HEAD
-```
-
-Expected: current branch and unrelated dirty files are visible; no assumption is made from
-the plan-writing HEAD. Check live agents before writing and keep one writer for the plan file.
-
-### Step 2: Write the in-place D7-T2 amendment
-
-- [ ] Append one section named
-  `D7-T2 engineering drawing symbol recognition closure amendment — 2026-07-27`.
-- [ ] Record exactly:
-  - problem boundary: vector symbols are absent before Qwen because inventory is text-only;
-  - single Owner: `CandidateAdvisor`;
-  - old path action: preserve text path, replace silent per-page route truncation;
-  - unchanged contracts listed above;
-  - internal sequence `SR-1 → SR-8`, all before D7-T3;
-  - live-label gate and literal staging run ID requirement;
-  - allowed paths equal the Final File Map;
-  - rollback order from Task 8;
-  - focused verification commands from Task 7;
-  - current plan remains the only ordering Owner; this proposal is subordinate detail.
-- [ ] Do not mark D7-T3 complete and do not rewrite prior sealed D7 receipts.
-
-### Step 3: Verify and commit activation
-
-```bash
-git diff --check -- \
-  docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md
-rg -n \
-  "D7-T2 engineering drawing symbol recognition closure|SR-1|SR-8|D7-T3|CandidateAdvisor|symbol_route_budget_exhausted" \
-  docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md
-```
-
-Expected: no whitespace error; one new amendment contains all required boundaries and leaves
-D7-T3 after SR-8.
-
-```bash
-git add docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md
-git commit -m "docs: activate symbol recognition closure"
-```
+Task 0 是历史完成记录，不得重跑、重新追加同名 amendment 或再次提交 activation
+commit。执行从 Task 1 / `SR-1` contract/Harness RED 继续。
 
 ## Task 1: Amend Contract Owners And Seal The Live Evaluation Input
 
@@ -304,6 +271,10 @@ git commit -m "docs: activate symbol recognition closure"
 - [ ] Add tests with these exact names:
   - `test_symbol_eval_schema_is_closed_and_current_source_bound`
   - `test_stage_symbol_eval_rejects_wrong_hash_bbox_or_family_set`
+  - `test_symbol_eval_revision_marker_is_positive_noninspection_only`
+  - `test_stage_symbol_eval_rejects_missing_or_duplicate_only_negative_family_coverage`
+  - `test_symbol_eval_rejects_negative_family_on_positive_label`
+  - `test_symbol_eval_requires_negative_family_on_frozen_negative_label`
   - `test_symbol_eval_artifacts_exclude_paths_pdf_bytes_and_screenshots`
   - `test_symbol_eval_loader_requires_literal_sealed_run_id`
   - `test_symbol_annotation_verdict_requires_exact_overlay_review`
@@ -313,7 +284,12 @@ The test bodies must use existing
 `backend/tests/contract/harness/harness_test_support.py` helpers, a synthetic two-page PDF
 with the wrong hash for negative cases, and a schema-valid manifest object. They must never
 read the real current source. The literal-run loader test must also prove registration executes
-no business selector、project mutation or Provider call.
+no business selector、project mutation or Provider call. The contract cases must distinguish a
+valid `symbol_kinds=["revision_marker"]`、`expected_disposition="non_inspection"` label from
+`symbol_kinds=["frozen_negative"]` with
+`negative_family="revision_table_or_invalid_marker"`; they must reject a missing negative family,
+nine labels that repeat only one negative family, `negative_family` on any positive label, and
+every frozen-negative label that omits `negative_family`.
 
 - [ ] Run RED:
 
@@ -364,13 +340,31 @@ loader do not exist.
   - sorted, unique `symbol_kinds` from the nine-kind allowlist plus
     `frozen_negative`;
   - exact disposition/projection enums from the design spec;
-  - `frozen_negative` cannot coexist with another kind.
+  - `revision_marker` is the ninth evaluation-positive family, requires
+    pre-manual-command `expected_disposition="non_inspection"` and
+    `expected_projection=null`, cannot coexist with `frozen_negative`, and is never
+    automatically projected as an inspection item; a later explicit Quality Owner
+    `promote_source` is outside live symbol evaluation;
+  - conditional `negative_family` enum in this exact order:
+    1. `part_or_hole_geometry`
+    2. `hatch_center_or_cross`
+    3. `dimension_leader_or_section_line`
+    4. `view_or_section_label`
+    5. `revision_table_or_invalid_marker`
+    6. `datum_like_letter_or_table_cell`
+    7. `watermark_logo_title_or_signoff`
+    8. `isometric_hole_slot_or_edge`
+    9. `ordinary_text_number_material_or_requirement`
+  - `frozen_negative` cannot coexist with another kind;
+  - `negative_family` is required when and only when
+    `symbol_kinds` exact equal `["frozen_negative"]`; every positive label must omit it;
+  - root、page and label objects keep `additionalProperties=false`.
 - [ ] Create `visual-symbol-annotation-verdict.schema.json` with a closed object requiring:
   `schema_version` const `visual-symbol-annotation-verdict/1`;
   `annotation_owner_role` const `quality_owner`;
   `overlay_scale_percent` const `200`;
   `unlabeled_target_count` const `0`;
-  `negative_family_count` const `9`;
+  script-derived `negative_family_count` const `9`;
   `manifest_sha256` matching `^[0-9a-f]{64}$`; and `recorded_at` using JSON Schema
   `format: date-time`.
 
@@ -392,11 +386,16 @@ loader do not exist.
   - source header、exact SHA-256、two-page count and page bbox;
   - JSON Schema plus unique labels、bbox bounds、kind order、projection/disposition
     compatibility;
-  - every current positive family appears at least once;
-  - frozen-negative coverage has exactly nine declared negative families;
+  - every one of the nine current positive families appears at least once;
+  - the distinct manifest `negative_family` set exact equals the complete nine-value enum and
+    every negative family has at least one label; missing-family or duplicate-family-only
+    coverage fails regardless of total negative-label count;
   - output canonical JSON has no path、PDF bytes、base64、credential or screenshot field.
-- [ ] Create the annotation verdict from fixed CLI-confirmed values
-  `200 / 0 / 9`; the script must not infer them from model output.
+- [ ] Create the annotation verdict from the Quality Owner's fixed CLI confirmations
+  `overlay_scale_percent=200` and `unlabeled_target_count=0`. Compute
+  `negative_family_count=9` and per-negative-family counts only from the mechanically validated
+  manifest; do not accept a human-entered or CLI-entered count as coverage proof and do not infer
+  any value from model output.
 - [ ] Extend `run-p0.py` with
   `register_live_input_artifacts(task_id="D7-T2", artifacts=...)`. It must reuse the existing
   Harness preflight、run schema、input identity、artifact validation、sealing and receipt
@@ -428,8 +427,10 @@ zero; selected Harness tests PASS.
 
 ### Step 6: Quality Owner seals the real manifest
 
-- [ ] Stop unless the quality owner supplies an approved manifest whose label IDs、counts and
-  bboxes were checked on a 200% render.
+- [ ] Stop unless the Quality Owner supplies an approved manifest and confirms only
+  `overlay_scale_percent=200` and `unlabeled_target_count=0` after the overlay review. Staging,
+  not the Quality Owner, validates label IDs and derives total/per-family counts from manifest
+  bytes.
 - [ ] The operator sets local shell variables to real files without writing their values into
   Git or the plan:
 
@@ -444,8 +445,9 @@ micromamba run -n qi-p0 python \
 ```
 
 Expected: output contains one literal `run_id`, exact source hash verification, total label
-count, per-family counts, `unlabeled_target_count=0`,
-`negative_family_count=9`, and a sealed verdict. It must not print either host path.
+count, per-positive-family counts, manifest-derived per-negative-family counts,
+`unlabeled_target_count=0`, script-derived `negative_family_count=9`, and a sealed verdict. It
+must not print either host path、screenshot data or PDF bytes.
 
 - [ ] Copy the emitted literal run ID into the activated current-plan amendment. Do not record
   `latest` or an environment-variable alias. Production GREEN is blocked until this edit is
@@ -506,6 +508,10 @@ git commit -m "test: seal symbol recognition acceptance"
 
 - [ ] Use PyMuPDF drawing primitives and `insert_text()`; target symbols、native text and
   negative geometry must use separate helper functions.
+- [ ] The 12 frozen negative regions collectively cover all nine exact `negative_family` enum
+  values at least once. A closed triangle with one valid inner revision token is a positive
+  `revision_marker/non_inspection`; revision-table cells and triangle-like geometry that fails
+  that validator use `revision_table_or_invalid_marker`. Color is not a classifier.
 - [ ] Return `(pdf_path, manifest)`; production code must never import this helper or read the
   manifest.
 - [ ] Bind fixture identity to helper SHA-256、`symbol-fixture/1` and PyMuPDF version.
@@ -1015,7 +1021,9 @@ class VisualReviewDecision:
   use the reconstructed canonical path items to require a three-straight-segment closed
   path、closure distance `<=0.5 pt`、bbox width/height in `[4,24] pt` and one
   `[A-Z0-9]{1,3}` token inside or within `2 pt`; disposition
-  `non_inspection`, confirmation true, no item.
+  `non_inspection`, `candidate_id=None`, confirmation true, and no automatic item. A later
+  explicit Quality Owner `promote_source` is a working-copy manual override, not a Provider or
+  local-projection output.
 - [ ] No detection:
   ambiguous、confirmation true、`visual_no_detection`.
 - [ ] Candidate coordinates are the exact union of visual and all participating text bboxes;
@@ -1122,7 +1130,7 @@ git commit -m "feat: project visual symbols through candidate owner"
 - Modify: `backend/tests/integration/test_review_operations.py`
 - Modify: `backend/tests/integration/test_error_records.py`
 
-### Step 1: Write all six integration RED tests
+### Step 1: Write all six logical integration RED tests plus one supporting regression
 
 - [ ] INT-01
   `test_vector_fixture_builds_visual_candidate_and_working_copy`:
@@ -1147,6 +1155,15 @@ git commit -m "feat: project visual symbols through candidate owner"
 - [ ] INT-06 `test_visual_processing_replay_is_idempotent`:
   second canonical logical task call returns the first result ref; raw/working counts remain
   one; Provider call count increment is zero; a late failure cannot overwrite the winner.
+- [ ] Supporting regression
+  `test_revision_marker_stays_noninspection_until_explicit_promote_source`:
+  assert the automatic result and initial working copy contain
+  `non_inspection + candidate_id=null + requires_confirmation=true` coverage and no item for a
+  qualifying revision marker; no Provider、validator、automatic processing or frontend-derived
+  path promotes it. On independent working-copy branches, an explicit Quality Owner
+  `promote_source` with all existing required manual fields creates exactly one manual item,
+  while explicit `ignore_source` resolves confirmation with no item. This supporting regression
+  is not a new logical ID; the Required Test Matrix remains exactly 32.
 
 ```bash
 micromamba run -n qi-p0 pytest \
@@ -1206,9 +1223,15 @@ cause_category=processing_defect
 - [ ] `ReviewService.create_from_raw()` continues to create items only from candidate envelopes.
 - [ ] It keeps visual/text `source_location_ids` and `normalized_text` in item payload.
 - [ ] `_review_coverage()` strips `advisor_review` before exposing the mutable working copy,
-  just as it does for text Advisor provenance.
-- [ ] Ambiguous visual coverage remains present with its source、bbox、disposition and
-  confirmation so existing source commands can act.
+  just as it does for text Advisor provenance, but retains the local Owner-committed
+  `symbol_kinds` needed to distinguish a qualifying revision marker from no-detection; it must
+  not derive that discriminator in the frontend.
+- [ ] Both source-review states remain present and distinct with source、bbox、disposition and
+  confirmation:
+  - no-detection is `ambiguous + visual_no_detection`;
+  - qualifying revision marker is
+    `non_inspection + candidate_id=null + requires_confirmation=true`.
+  Existing source commands may act only after an explicit Quality Owner command.
 - [ ] Existing raw result immutability tests add an assertion that creating/reviewing a new
   symbol result does not mutate an old text-only result.
 
@@ -1236,8 +1259,10 @@ micromamba run -n qi-p0 pytest \
   backend/tests/integration/test_processing_state.py -q
 ```
 
-Expected: INT-01～INT-06 PASS; existing canonical task、result-layer、review and error tests
-PASS; all fixture tests report no external call.
+Expected: INT-01～INT-06 and
+`test_revision_marker_stays_noninspection_until_explicit_promote_source` PASS; existing
+canonical task、result-layer、review and error tests PASS; all fixture tests report no external
+call. The supporting regression does not change the 32 logical-ID count.
 
 ### Step 7: Commit only Task 5
 
@@ -1321,10 +1346,12 @@ no source type.
   items; assert Owner-provided coarse type/canonical symbol and “需确认” are visible; unknown
   coarse type remains the existing safe empty-state label.
 - [ ] FE-03 in `PdfWorkspace.test.tsx`:
-  `locates_and_actions_visual_source`. Selecting a visual source moves to its page and bbox,
-  shows “图形符号待确认”, and emits only existing source selection; through
-  `InspectionWorkbench.test.tsx`, promote/ignore emit existing commands and no Provider
-  response is rendered.
+  `locates_and_actions_visual_source`. Parameterize an
+  `ambiguous + visual_no_detection` source and a qualifying
+  `revision_marker + non_inspection` source. Selection moves to the persisted page/bbox; the UI
+  respectively shows “图形符号待确认” and “修订标记（非检验）待确认”. Through
+  `InspectionWorkbench.test.tsx`, only explicit Quality Owner actions emit existing
+  promote/ignore commands, and no Provider response or frontend-inferred promotion is rendered.
 
 ```bash
 npm --prefix frontend test -- --run \
@@ -1345,7 +1372,8 @@ Expected: the three focused cases FAIL because TS types and UI distinctions are 
   `图形符号待确认`; it does not expose geometry/proposal/provider fields.
 - [ ] `_project_items()` continues to project only coverage entries requiring confirmation and
   without candidate IDs as pending sources. Reference contexts do not enter the list; revision
-  non-inspection with confirmation and ambiguous no-detection do.
+  non-inspection with confirmation and ambiguous no-detection do, retaining the backend
+  Owner-committed disposition and `symbol_kinds` so they remain distinguishable.
 - [ ] Do not add a second workbench endpoint or database query.
 
 ### Step 4: Extend frontend API types additively
@@ -1365,9 +1393,13 @@ Expected: the three focused cases FAIL because TS types and UI distinctions are 
   - do not include normalized text in edit command fields;
   - do not derive a symbol from CSS or string matching.
 - [ ] `InspectionItemTable`:
-  - visual pending source label is “图形符号待确认” instead of “原始来源”;
-  - the promote editor still requires non-blank operator text and existing `CandidateType`;
-  - reuse existing `promote_source` and `ignore_source`;
+  - ambiguous no-detection label is “图形符号待确认”; qualifying revision-marker label is
+    “修订标记（非检验）待确认”;
+  - the promote editor still requires explicit Quality Owner action、non-blank operator text
+    and existing `CandidateType`;
+  - reuse existing `promote_source` and `ignore_source`; a revision-marker promotion is a human
+    override from initial non-inspection, while ignore confirms non-inspection with no item;
+  - frontend copy、symbol matching、CSS or model output cannot invoke or simulate either command;
   - coarse visual items display only fields already committed by backend Owner.
 - [ ] `PdfWorkspace`:
   - continue using persisted bbox and page transform;
@@ -1398,8 +1430,9 @@ PASS.
 - [ ] Start the approved local/QA runtime without changing committed runtime config.
 - [ ] Use Chrome DevTools MCP to verify one fixture project at desktop viewport:
   - raw and recognized values are simultaneously visible;
-  - visual pending source selection locates the correct page/bbox;
-  - promote/ignore remain guarded by unsaved-draft behavior;
+  - ambiguous no-detection and qualifying revision-marker noninspection are visibly distinct,
+    and both source selections locate the correct page/bbox;
+  - promote/ignore remain explicit Quality Owner actions guarded by unsaved-draft behavior;
   - no Provider JSON appears in DOM、network response or console;
   - no new console error or failed request.
 - [ ] Save only sanitized textual observations; do not save current-source screenshot into Git.
@@ -1608,7 +1641,9 @@ directory.
   `test_symbol_eval_contract.py`. It uses a temporary sealed artifact and synthetic actual
   result objects to prove:
   - positive candidate exact-one matching;
-  - reference/non-inspection matching;
+  - reference/non-inspection matching against the pre-manual-command Owner result;
+  - a qualifying revision marker is exactly
+    `non_inspection + candidate_id=null + requires_confirmation=true`;
   - degree zero and degree greater than one fail;
   - detected kind set must equal label kind set;
   - projection must equal expected projection;
@@ -1654,7 +1689,8 @@ Expected: FAIL because the evaluator、live phase and artifact loader are absent
 - [ ] Add one selector
   `phase://live/symbol-recognition?input_set=current-four`.
 - [ ] Execute it for the first checkpoint source hash only, after automatic candidate/coverage
-  persistence and before quality-owner item-set acceptance.
+  persistence and before any `promote_source` / `ignore_source` command or quality-owner
+  item-set acceptance.
 - [ ] It loads the new project’s immutable raw result and inventory, calls only
   `symbol_eval.py`, stores a sanitized report, and blocks the run on any mismatch.
 - [ ] Add live evidence fields:
@@ -1719,7 +1755,7 @@ literal commit SHA for the run; do not execute the live selector against uncommi
   - source SHA exact match;
   - every positive label has exactly one edge;
   - every participating visual candidate has exactly one positive edge;
-  - reference and non-inspection labels match exactly;
+  - reference and pre-manual revision-marker non-inspection labels match exactly;
   - frozen-negative false positives zero;
   - no positive `visual_no_detection`;
   - no projection conflict、coverage blocking、crop oversize or budget exhaustion;
@@ -1810,10 +1846,14 @@ blocked. Rollback does not convert the original missing-symbol behavior into acc
 
 ## Completion Checklist
 
-- [ ] User approved this implementation plan.
-- [ ] Task 0 activated exactly one current plan.
+- [x] User approved this subordinate implementation proposal.
+- [x] Task 0 activated exactly one current plan at commit `994cbe4`; Option A clarification is
+  active and Task 0 must not be repeated.
 - [ ] Stable contract Owners were amended before production GREEN.
 - [ ] Quality Owner sealed exact live labels and 200% overlay verdict before production GREEN.
+- [ ] Staging mechanically proved all nine positive families and all nine distinct
+  `negative_family` values; `negative_family_count=9` was derived from the manifest rather than
+  entered by a human.
 - [ ] All 32 required logical tests exist and pass.
 - [ ] Existing text/OCR/parser/Advisor/result/frontend regression suites pass without relaxation.
 - [ ] Provider contract/cache/call records are schema-bound and redacted.
@@ -1829,11 +1869,13 @@ blocked. Rollback does not convert the original missing-symbol behavior into acc
 
 ## Execution Handoff
 
-After this proposal is approved, there are two implementation modes:
+Task 0 is complete at commit `994cbe4`, Option A clarification is active, and execution resumes
+at Task 1 / `SR-1` contract/Harness RED. Do not repeat Task 0 or append another activation
+amendment. The two implementation modes remain:
 
 1. `superpowers:subagent-driven-development` in this session, with one bounded writer at a time
    and mandatory read-only reviewer checkpoints.
 2. `superpowers:executing-plans` in a fresh isolated execution session.
 
-Repository ordering overrides both choices: Task 0 must first activate the in-place D7-T2
-amendment, and Task 1’s sealed live-label gate must be satisfied before any production GREEN.
+Repository ordering overrides both choices: start with Task 1 / `SR-1`; its sealed live-label
+gate must be satisfied before any production GREEN.

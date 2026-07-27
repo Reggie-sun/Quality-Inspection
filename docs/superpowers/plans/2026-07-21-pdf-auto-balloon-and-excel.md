@@ -174,6 +174,11 @@
 `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
 激活为同一 D7-T2 的 subordinate implementation detail，不创建第二份 current plan、
 status registry、candidate/result path 或产品 Owner，也不改写此前 sealed receipts。
+用户又于 2026-07-27 明确批准 Option A contract clarification；该批准只授权在
+`SR-1` 前消除 evaluation contract 内部矛盾，不改变本 amendment 的 task ordering、
+Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-run-ID
+边界。semantic detail 仍由 design spec 承载，subordinate implementation detail
+仍由已批准 proposal 承载，本文件继续是唯一 current plan。
 
 - Selected lane: `Heavy`。
 - Selected plan: 本文件仍是唯一 current implementation plan；已批准的
@@ -186,8 +191,9 @@ status registry、candidate/result path 或产品 Owner，也不改写此前 sea
   `backend/app/candidates/advisor.py::CandidateAdvisor` 无法发现从未 materialize
   为 observation 的 vector symbols。用户于 2026-07-27 批准继续，approved proposal
   commit 为 `1ea1868`。
-- Validation action: `amend` 后 `continue`；本 Task 0 docs commit 必须先完成，
-  随后才允许开始 `SR-1`。
+- Validation action: `amend` 后 `continue`；Task 0 docs activation 已完成，本次
+  Option A docs-only clarification commit 必须随后独立完成，之后才允许开始
+  `SR-1`。
 - Writer ownership and order: 每个 coupled file group 同时只有一个 writer；
   spec/code reviewers 严格只读。执行顺序固定为
   `SR-1 → SR-2 → SR-3 → SR-4 → SR-5 → SR-6 → SR-7 → SR-8`，全部位于
@@ -196,11 +202,22 @@ status registry、candidate/result path 或产品 Owner，也不改写此前 sea
   vector symbols，以及已批准的九类
   diameter、depth、counterbore、surface roughness、GD&T parallelism、
   GD&T perpendicularity、GD&T flatness、datum reference、revision marker。
+  `revision_marker` 是第九个 evaluation-positive recognition family，但只有通过
+  既有 closed-triangle + inner revision-token validator 才成立，business disposition
+  的 automatic initial Owner decision 固定为
+  `non_inspection + candidate_id=null + requires_confirmation=true`，不自动生成
+  inspection item；颜色不是 classifier。通过该 validator 的 label 不得同时是
+  `frozen_negative`。之后只有 Quality Owner 显式执行既有 `promote_source` 并提供
+  全部 manual fields 才可创建 manual item，`ignore_source` 只确认 non-inspection；
+  Provider、validator、automatic processing 和 frontend inference 均不得调用或模拟
+  该 override。
   不承诺 full-page Vision、standalone symbol，不新增第二 result path、endpoint、
   DB table，不重做 OCR，不增加 kind 或 configurable threshold。
 - Single Owner: `backend/app/candidates/advisor.py::CandidateAdvisor` 是唯一 Vision
-  integration Owner，也是 candidate 与 coverage 的唯一 final writer。
+  integration Owner，也是 automatic raw candidate 与 coverage 的唯一 final writer。
   `backend/app/candidates/symbol_review.py` 只是 pure helper，不是第二个 Owner。
+  既有 Review aggregate 只在 working copy 中执行 Quality Owner 显式
+  `promote_source` / `ignore_source`，不成为第二个 automatic Vision Owner。
 - Old path action: preserve deterministic text candidate path 与既有 text-review route；
   replace `_route_objects()` 的 silent per-page first-16 truncation 为一个 unified
   visual-first scheduler。禁止 bridge、shadow、dual-write、fallback、feature flag
@@ -218,8 +235,15 @@ status registry、candidate/result path 或产品 Owner，也不改写此前 sea
   被静默漏排。超过剩余 slots 的 text routes 保持原对象不变，不写 fake provenance。
 - Live-label gate: 任何 production GREEN 前，Quality Owner 必须 seal source SHA-256
   `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`
-  的 exact two-page manifest、200% overlay verdict、全部九个 positive families 与九个
-  frozen-negative families。activation 时尚未产生可记录的 literal sealed D7-T2
+  的 exact two-page manifest、200% overlay verdict、全部九个 positive families 与
+  全部九个 frozen-negative families。第五个 negative family 只包含 revision-table
+  grid/cells 和未通过 revision-marker validator 的 triangle-like geometry。manifest
+  的 `negative_family` 只在且必须在 `symbol_kinds=["frozen_negative"]` 时存在；
+  staging 必须机械证明 distinct values exact equal design spec 的完整九值 enum 且
+  每个家族至少一个 label，并从 manifest 计算 per-negative-family counts 与
+  `negative_family_count=9`。Quality Owner 只人工确认 200% overlay 和
+  `unlabeled_target_count=0`，人工填写的 family count 不能作为覆盖证明。
+  activation 时尚未产生可记录的 literal sealed D7-T2
   symbol-eval staging run ID；这不是占位值。`SR-1` 必须在 Quality Owner 提供并
   seal 真实 manifest 后，把实际 literal run ID 原地回填到本 amendment 并提交；
   回填前 production GREEN 保持 blocked。禁止 `latest`、glob、alias、synthetic
@@ -229,9 +253,13 @@ status registry、candidate/result path 或产品 Owner，也不改写此前 sea
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
   必须 `external_calls=0`；existing text/OCR/parser/Advisor/result/frontend regressions
   保持 strict；current-source visual calls 与 total Vision calls 均必须
-  `<=16/page`；live gate 要求每个 positive、reference、non-inspection exact-one
-  match，且 frozen-negative false positives 为零。live closure 前必须完成
-  independent review 与 `auto-feature-smoke-test`。
+  `<=16/page`；live gate 在任何 manual source command 前比较 Owner result，要求每个
+  positive、reference、non-inspection exact-one match，且 frozen-negative false
+  positives 为零。Task 5 另有 supporting regression
+  `test_revision_marker_stays_noninspection_until_explicit_promote_source`，证明 automatic
+  initial state 无 item、仅显式 Quality Owner command 可 override；它不新增 logical
+  ID，32 项 count 不变。live closure 前必须完成 independent review 与
+  `auto-feature-smoke-test`。
 - Rollback: 每个 `SR-1`～`SR-8` task 和本 activation 都必须记录实际 exact commit；
   rollback 时先把 symbol receipt 标记为 failed/stale，再用 `git revert` 按
   `SR-8 → SR-7 → SR-6 → SR-5 → SR-4 → SR-3 → SR-2` 逆序回退 code，最后才
@@ -240,19 +268,23 @@ status registry、candidate/result path 或产品 Owner，也不改写此前 sea
   禁止 reset 或 force push。
 - Closure boundary: 本 amendment 不把 `D7-T3` 标为 complete，也不重写既有 sealed
   receipts。只有 `SR-8` 成功后，才允许记录 D7-T2 symbol closure 并恢复 `D7-T3`。
-- Next verification: 本 Task 0 docs commit 后，`SR-1` 先运行 contract/Harness RED，
-  不先写 production code：
+- Next verification: 本次 Option A docs-only clarification commit 后，`SR-1` 先运行
+  contract/Harness RED，不先写 production code：
 
 ```bash
 micromamba run -n qi-p0 python -m pytest backend/tests/contract/harness/test_symbol_eval_contract.py backend/tests/contract/harness/test_contract_architecture.py backend/tests/contract/harness/test_live_run_contract.py -q
 ```
 
-预期 RED：symbol schemas、registration loader 与 staging artifact allowlist 尚不存在。
+预期 RED：symbol schemas、registration loader 与 staging artifact allowlist 尚不存在；
+planned contract cases 还必须覆盖 valid `revision_marker/non_inspection` 与
+`revision_table_or_invalid_marker` 的区分、缺失或重复单一家族不能满足九类 coverage、
+positive label 禁止 `negative_family`，以及 frozen-negative label 强制要求该字段。
 若真实 Quality Owner manifest 不可用，后续执行必须停在 live-label gate，不得产生
 production GREEN。
 
 `SR-1`～`SR-8` 的 allowed paths 只有以下精确集合；existing regression tests 仅可在
-直接需要时增加 assertions，不得放宽、skip 或删除 expectations。
+直接需要时增加 assertions，不得放宽、skip 或删除 expectations。本次 pre-SR-1
+docs-only clarification 不扩展以下集合。
 
 Create:
 
