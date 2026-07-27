@@ -20,6 +20,39 @@ function openAuxiliaryPanel(): void {
   }));
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+const mergeSourceItems = [
+  {
+    item_id: "item-1",
+    item_type: "linear_dimension" as const,
+    raw_text: "⌀10",
+    active: true,
+  },
+  {
+    item_id: "item-2",
+    item_type: "general_requirement" as const,
+    raw_text: "±0.1",
+    active: true,
+  },
+];
+
+function openMergePreview(rawText = "  ⌀10 ±0.1  "): void {
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: /⌀10/ }));
+  fireEvent.click(screen.getByRole("checkbox", { name: /±0\.1/ }));
+  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "合并后的原始标注",
+  }), { target: { value: rawText } });
+}
+
 describe("InspectionWorkbench", () => {
   test("本地草稿立即显示未保存且只在修改保存时提交", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
@@ -105,6 +138,289 @@ describe("InspectionWorkbench", () => {
     expect(within(
       screen.getByRole("region", { name: "项目摘要" }),
     ).getByRole("status").textContent).toBe("请先修改保存当前检验项");
+  });
+
+  test("未保存的 ReviewPanel 编辑阻止进入合并且保留当前草稿", () => {
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={mergeSourceItems}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：⌀10",
+    }));
+    const rawText = screen.getByRole("textbox", {
+      name: "原始标注：⌀10",
+    }) as HTMLInputElement;
+    fireEvent.change(rawText, { target: { value: "⌀10 H7" } });
+    fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+
+    expect(screen.queryAllByRole("checkbox", {
+      name: /选择检验项/,
+    })).toHaveLength(0);
+    expect(within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    ).getByRole("status").textContent).toBe("请先修改保存当前检验项");
+    expect(rawText.value).toBe("⌀10 H7");
+  });
+
+  test("合并确认期间重复点击只通过唯一提交路径保存一次", async () => {
+    const deferred = createDeferred<void>();
+    const onSave = vi.fn(() => deferred.promise);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={mergeSourceItems}
+        onSave={onSave}
+      />,
+    );
+
+    openMergePreview();
+    const confirm = screen.getByRole("button", { name: "确认合并 2 项" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(onSave).toHaveBeenCalledWith({
+      type: "merge",
+      item_ids: ["item-1", "item-2"],
+      raw_text: "⌀10 ±0.1",
+    });
+
+    deferred.resolve();
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
+    });
+  });
+
+  test("合并刷新后只选择唯一新增的 active 检验项", async () => {
+    const deferred = createDeferred<void>();
+    const refreshedItems = [
+      { ...mergeSourceItems[0], active: false },
+      { ...mergeSourceItems[1], active: false },
+      {
+        item_id: "merged-1",
+        item_type: "linear_dimension" as const,
+        raw_text: "⌀10 ±0.1",
+        active: true,
+      },
+    ];
+    let view!: ReturnType<typeof render>;
+    const onSave = vi.fn(async () => {
+      view.rerender(
+        <InspectionWorkbench
+          pdfDocument={null}
+          candidates={[]}
+          sources={[]}
+          balloons={[]}
+          items={refreshedItems}
+          onSave={onSave}
+        />,
+      );
+      await deferred.promise;
+    });
+    view = render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={mergeSourceItems}
+        onSave={onSave}
+      />,
+    );
+
+    openMergePreview();
+    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    deferred.resolve();
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", {
+        name: "检验项 — · 线性尺寸",
+      })).not.toBeNull();
+      expect(screen.getByRole("textbox", {
+        name: "原始标注：⌀10 ±0.1",
+      })).not.toBeNull();
+    });
+  });
+
+  test("合并成功但没有新增 active 检验项时清除失效选择且不猜测", async () => {
+    const refreshedItems = mergeSourceItems.map((item) => ({
+      ...item,
+      active: false,
+    }));
+    let view!: ReturnType<typeof render>;
+    const onSave = vi.fn(async () => {
+      view.rerender(
+        <InspectionWorkbench
+          pdfDocument={null}
+          candidates={[]}
+          sources={[]}
+          balloons={[]}
+          items={refreshedItems}
+          onSave={onSave}
+        />,
+      );
+    });
+    view = render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={mergeSourceItems}
+        onSave={onSave}
+      />,
+    );
+
+    openMergePreview();
+    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
+      expect(screen.queryByRole("article", { name: /检验项/ })).toBeNull();
+      expect(screen.queryAllByRole("checkbox", {
+        name: /选择检验项/,
+      })).toHaveLength(0);
+    });
+  });
+
+  test("合并成功但有两个新增 active 检验项时保留仍合法的选择", async () => {
+    const initialItems = [
+      {
+        item_id: "item-1",
+        item_type: "thread" as const,
+        raw_text: "M6",
+        active: true,
+      },
+      {
+        item_id: "item-2",
+        item_type: "linear_dimension" as const,
+        raw_text: "⌀10",
+        active: true,
+      },
+      {
+        item_id: "item-3",
+        item_type: "general_requirement" as const,
+        raw_text: "±0.1",
+        active: true,
+      },
+    ];
+    const refreshedItems = [
+      initialItems[0],
+      { ...initialItems[1], active: false },
+      { ...initialItems[2], active: false },
+      {
+        item_id: "merged-a",
+        item_type: "linear_dimension" as const,
+        raw_text: "合并候选 A",
+        active: true,
+      },
+      {
+        item_id: "merged-b",
+        item_type: "linear_dimension" as const,
+        raw_text: "合并候选 B",
+        active: true,
+      },
+    ];
+    let view!: ReturnType<typeof render>;
+    const onSave = vi.fn(async () => {
+      view.rerender(
+        <InspectionWorkbench
+          pdfDocument={null}
+          candidates={[]}
+          sources={[]}
+          balloons={[]}
+          items={refreshedItems}
+          onSave={onSave}
+        />,
+      );
+    });
+    view = render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={initialItems}
+        onSave={onSave}
+      />,
+    );
+
+    openMergePreview();
+    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
+      expect(screen.getByRole("heading", {
+        name: "检验项 — · 螺纹",
+      })).not.toBeNull();
+      expect(screen.getByRole("textbox", {
+        name: "原始标注：M6",
+      })).not.toBeNull();
+      expect(screen.queryByRole("textbox", {
+        name: "原始标注：合并候选 A",
+      })).toBeNull();
+      expect(screen.queryByRole("textbox", {
+        name: "原始标注：合并候选 B",
+      })).toBeNull();
+    });
+  });
+
+  test("合并保存失败保留预览选择和草稿，重试相同命令后可成功", async () => {
+    const onSave = vi.fn()
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockResolvedValueOnce(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={mergeSourceItems}
+        onSave={onSave}
+      />,
+    );
+
+    openMergePreview("  保留的合并草稿  ");
+    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+
+    await waitFor(() => {
+      expect(within(
+        screen.getByRole("region", { name: "项目摘要" }),
+      ).getByRole("status").textContent).toBe("保存失败");
+      expect(screen.getByRole("alert").textContent).toBe("合并失败，请重试");
+    });
+    expect((screen.getByRole("textbox", {
+      name: "合并后的原始标注",
+    }) as HTMLTextAreaElement).value).toBe("  保留的合并草稿  ");
+    expect(screen.getByText("⌀10")).not.toBeNull();
+    expect(screen.getByText("±0.1")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
+      expect(within(
+        screen.getByRole("region", { name: "项目摘要" }),
+      ).getByRole("status").textContent).toBe("已保存");
+    });
+    expect(onSave.mock.calls[0]?.[0]).toEqual({
+      type: "merge",
+      item_ids: ["item-1", "item-2"],
+      raw_text: "保留的合并草稿",
+    });
+    expect(onSave.mock.calls[1]?.[0]).toEqual(onSave.mock.calls[0]?.[0]);
   });
 
   test("被阻止切换后保存失败优先显示失败并保留编辑草稿", async () => {
