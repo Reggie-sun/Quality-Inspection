@@ -153,7 +153,7 @@ describe("ReviewPanel", () => {
     expect(screen.queryByRole("group", { name: "解析结果" })).toBeNull();
   });
 
-  test("P0-UI-006 exposes all eight review commands only on explicit actions", () => {
+  test("P0-UI-006 keeps merge out of details and exposes seven single-item command types", () => {
     const onCommand = vi.fn();
     const items: ReviewItem[] = [
       {
@@ -206,10 +206,10 @@ describe("ReviewPanel", () => {
     );
 
     expect(onCommand).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText("选择需要合并的检验项"));
-    fireEvent.click(screen.getByLabelText("选择检验项 1：M6"));
-    fireEvent.click(screen.getByLabelText("选择检验项 2：M6 通"));
-    fireEvent.click(screen.getByRole("button", { name: "合并所选检验项" }));
+    expect(screen.queryByText("选择需要合并的检验项")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "合并所选检验项" }),
+    ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "保留检验项：M6" }));
     fireEvent.click(screen.getByRole("button", { name: "排除检验项：M6" }));
     fireEvent.change(screen.getByLabelText("拆分内容：M6"), {
@@ -289,7 +289,6 @@ describe("ReviewPanel", () => {
         "exclude",
         "edit",
         "add",
-        "merge",
         "split",
         "resolve_confirmation",
         "set_balloon_required",

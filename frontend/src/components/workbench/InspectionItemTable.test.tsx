@@ -13,6 +13,278 @@ import { InspectionItemTable } from "./InspectionItemTable";
 
 afterEach(cleanup);
 
+const mergeItems = Array.from({ length: 52 }, (_, index) => ({
+  item_id: `merge-${index + 1}`,
+  raw_text: index === 0
+    ? " 48 "
+    : index === 1
+      ? "48"
+      : index === 50
+        ? "±0.1"
+        : `检验标注 ${index + 1}`,
+  item_type: index === 50 ? "general_requirement" as const : "linear_dimension" as const,
+  page_index: 0,
+  status: index === 1 ? "kept" : "pending",
+  active: index !== 51,
+}));
+
+function renderMergeTable(
+  overrides: Partial<Parameters<typeof InspectionItemTable>[0]> = {},
+) {
+  const props = {
+    items: mergeItems,
+    balloons: [],
+    candidateNumbers: new Map(mergeItems.map(
+      (item, index) => [item.item_id, index + 1],
+    )),
+    filter: "all" as const,
+    onSelectItem: vi.fn(),
+    onBeginMerge: vi.fn(() => true),
+    onMergeItems: vi.fn().mockResolvedValue(true),
+    ...overrides,
+  };
+
+  render(<InspectionItemTable {...props} />);
+  return props;
+}
+
+test("合并入口默认不显示复选框，且仅在 guard 返回 true 时进入选择模式", () => {
+  const onBeginMerge = vi.fn(() => false);
+  const { rerender } = render(
+    <InspectionItemTable
+      items={mergeItems.slice(0, 2)}
+      balloons={[]}
+      filter="all"
+      onSelectItem={vi.fn()}
+      onBeginMerge={onBeginMerge}
+    />,
+  );
+
+  expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  expect(screen.getByText(
+    "仅用于同一检验要求被重复识别，或一条标注被拆成多项的情况。",
+  )).not.toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+
+  expect(onBeginMerge).toHaveBeenCalledOnce();
+  expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+
+  const allowMerge = vi.fn(() => true);
+  rerender(
+    <InspectionItemTable
+      items={mergeItems.slice(0, 2)}
+      balloons={[]}
+      filter="all"
+      onSelectItem={vi.fn()}
+      onBeginMerge={allowMerge}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+
+  expect(allowMerge).toHaveBeenCalledOnce();
+  expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+  expect(screen.getAllByRole("checkbox", {
+    name: "选择检验项 —：48 · 线性尺寸",
+  })).toHaveLength(2);
+  expect(screen.getByRole("status").textContent).toBe("已选择 0 项");
+  expect(screen.getByRole("button", { name: "下一步" }).hasAttribute("disabled"))
+    .toBe(true);
+});
+
+test("选择模式只让有效检验项可选，并保留紧凑表格列数与行选择行为", () => {
+  const onSelectItem = vi.fn();
+  renderMergeTable({
+    compact: true,
+    items: [mergeItems[0], mergeItems[51]],
+    pendingSources: [{
+      observationId: "merge-source-observation",
+      sourceId: "merge-source",
+      rawText: "来源标注",
+      coordinates: [1, 2, 3, 4],
+      pageIndex: 0,
+    }],
+    onSelectItem,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+
+  const activeRow = screen.getByRole("row", { name: /48/ });
+  const inactiveRow = screen.getByRole("row", { name: /检验标注 52/ });
+  const sourceRow = screen.getByRole("row", { name: /来源标注/ });
+  const checkbox = within(activeRow).getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  });
+
+  expect(within(activeRow).getAllByRole("cell")).toHaveLength(3);
+  expect(within(inactiveRow).queryByRole("checkbox")).toBeNull();
+  expect(within(sourceRow).queryByRole("checkbox")).toBeNull();
+
+  fireEvent.click(checkbox);
+  expect(onSelectItem).not.toHaveBeenCalled();
+  expect(screen.getByRole("status").textContent).toBe("已选择 1 项");
+
+  fireEvent.keyDown(activeRow, { key: "Enter" });
+  expect(onSelectItem).toHaveBeenCalledWith("merge-1");
+});
+
+test("使用稳定 item_id 跨分页、搜索和状态筛选保留合并选择", () => {
+  renderMergeTable();
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 51：±0.1 · 通用要求",
+  }));
+  expect(screen.getByRole("status").textContent).toBe("已选择 2 项");
+
+  fireEvent.click(screen.getByRole("button", { name: "上一页" }));
+  expect((screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }) as HTMLInputElement).checked).toBe(true);
+
+  fireEvent.change(screen.getByRole("searchbox", { name: "搜索检验项" }), {
+    target: { value: "48" },
+  });
+  expect(screen.getByRole("status").textContent).toBe("已选择 2 项");
+  expect((screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }) as HTMLInputElement).checked).toBe(true);
+
+  fireEvent.change(screen.getByRole("combobox", { name: "筛选状态" }), {
+    target: { value: "confirmed" },
+  });
+  expect(screen.getByRole("status").textContent).toBe("已选择 2 项");
+});
+
+test("取消和 Escape 都退出合并模式并清空选择且不发命令", () => {
+  const onMergeItems = vi.fn();
+  renderMergeTable({ items: mergeItems.slice(0, 2), onMergeItems });
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "取消合并" }));
+
+  expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  expect(onMergeItems).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }));
+  fireEvent.keyDown(document, { key: "Escape" });
+
+  expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  expect(onMergeItems).not.toHaveBeenCalled();
+});
+
+test("下一步生成确定性预览，返回保留选择，失败保留已编辑草稿", async () => {
+  const onMergeItems = vi.fn().mockResolvedValue(false);
+  renderMergeTable({
+    items: [mergeItems[0], mergeItems[1], mergeItems[50]],
+    onMergeItems,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 2：48 · 线性尺寸",
+  }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 51：±0.1 · 通用要求",
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+  const draft = screen.getByRole("textbox", {
+    name: "合并后的原始标注",
+  }) as HTMLTextAreaElement;
+  expect(draft.value).toBe("48 ±0.1");
+
+  fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+  expect((screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }) as HTMLInputElement).checked).toBe(true);
+  expect(screen.getByRole("status").textContent).toBe("已选择 3 项");
+
+  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "合并后的原始标注",
+  }), { target: { value: "48 ±0.05" } });
+  fireEvent.click(screen.getByRole("button", { name: "确认合并 3 项" }));
+
+  await waitFor(() => expect(onMergeItems).toHaveBeenCalledOnce());
+  expect(onMergeItems).toHaveBeenCalledWith(
+    ["merge-1", "merge-2", "merge-51"],
+    "48 ±0.05",
+  );
+  expect((screen.getByRole("textbox", {
+    name: "合并后的原始标注",
+  }) as HTMLTextAreaElement).value).toBe("48 ±0.05");
+});
+
+test("缺少合并回调时确认保持预览、选择和草稿", () => {
+  renderMergeTable({
+    items: [mergeItems[0], mergeItems[50]],
+    onMergeItems: undefined,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 51：±0.1 · 通用要求",
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "合并后的原始标注",
+  }), { target: { value: "保留草稿" } });
+  fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+
+  expect(screen.getByRole("heading", { name: "合并预览" })).not.toBeNull();
+  expect((screen.getByRole("textbox", {
+    name: "合并后的原始标注",
+  }) as HTMLTextAreaElement).value).toBe("保留草稿");
+  fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+  expect(screen.getByRole("status").textContent).toBe("已选择 2 项");
+});
+
+test("合并成功后清空模式、选择和预览，确认期间阻止重复提交", async () => {
+  let resolveMerge: (outcome: boolean) => void = () => undefined;
+  const onMergeItems = vi.fn(() => new Promise<boolean>((resolve) => {
+    resolveMerge = resolve;
+  }));
+  renderMergeTable({
+    items: [mergeItems[0], mergeItems[50]],
+    onMergeItems,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 51：±0.1 · 通用要求",
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+
+  const confirm = screen.getByRole("button", { name: "确认合并 2 项" });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+  expect(onMergeItems).toHaveBeenCalledOnce();
+
+  resolveMerge(true);
+  await waitFor(() => {
+    expect(screen.queryByRole("heading", { name: "合并预览" })).toBeNull();
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  expect(screen.getByRole("status").textContent).toBe("已选择 0 项");
+});
+
 test("P0-UI-004 keeps the dense list and drawing selection on one item identity", () => {
   const onSelectItem = vi.fn();
   const props = {

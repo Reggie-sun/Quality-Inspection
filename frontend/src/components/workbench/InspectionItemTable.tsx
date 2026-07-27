@@ -13,6 +13,10 @@ import {
   inspectionItemPresentation,
 } from "./inspectionItemPresentation";
 import type { ItemStatus } from "./inspectionItemPresentation";
+import {
+  MergeInspectionItemsPreview,
+  suggestMergedRawText,
+} from "./MergeInspectionItemsPreview";
 import type { InspectionFilter } from "./RecognitionSummary";
 
 
@@ -31,6 +35,11 @@ type InspectionItemTableProps = {
   onCommand?: (
     command: ReviewCommand,
   ) => boolean | void | Promise<boolean | void>;
+  onBeginMerge?: () => boolean;
+  onMergeItems?: (
+    itemIds: string[],
+    rawText: string,
+  ) => Promise<boolean>;
   onDraftChange?: (dirty: boolean) => void;
 };
 
@@ -61,6 +70,7 @@ type SourceDraft = {
 type ListEntry =
   | { kind: "item"; key: string; item: ReviewItem }
   | { kind: "source"; key: string; source: PendingSourceReview };
+type MergeStep = "idle" | "select" | "preview";
 
 const PAGE_SIZE = 50;
 const EMPTY_CANDIDATE_NUMBERS: ReadonlyMap<string, number> = new Map();
@@ -126,11 +136,23 @@ export function InspectionItemTable({
   onSelectItem,
   onSelectSource,
   onCommand,
+  onBeginMerge,
+  onMergeItems,
   onDraftChange,
 }: InspectionItemTableProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ItemStatus | "all">("all");
   const [page, setPage] = useState(1);
+  const [mergeStep, setMergeStep] = useState<MergeStep>("idle");
+  const [mergeItemIds, setMergeItemIds] = useState<string[]>([]);
+  const [mergedRawText, setMergedRawText] = useState("");
+  const [mergeSubmitting, setMergeSubmitting] = useState(false);
+  const selectedMergeItems = useMemo(
+    () => items.filter(
+      (item) => item.active && mergeItemIds.includes(item.item_id),
+    ),
+    [items, mergeItemIds],
+  );
   const balloonByItem = useMemo(
     () => new Map(
       balloons
@@ -265,6 +287,50 @@ export function InspectionItemTable({
     selectedSourceId,
     statusFilter,
   ]);
+  useEffect(() => {
+    if (mergeStep === "idle") return;
+    const cancelOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMergeStep("idle");
+      setMergeItemIds([]);
+      setMergedRawText("");
+      setMergeSubmitting(false);
+    };
+    document.addEventListener("keydown", cancelOnEscape);
+    return () => document.removeEventListener("keydown", cancelOnEscape);
+  }, [mergeStep]);
+  const cancelMerge = () => {
+    setMergeStep("idle");
+    setMergeItemIds([]);
+    setMergedRawText("");
+    setMergeSubmitting(false);
+  };
+  const toggleMergeItem = (itemId: string) => {
+    if (!items.some((item) => item.item_id === itemId && item.active)) return;
+    setMergeItemIds((current) =>
+      current.includes(itemId)
+        ? current.filter((candidate) => candidate !== itemId)
+        : [...current, itemId],
+    );
+  };
+  const confirmMerge = async () => {
+    if (
+      mergeSubmitting
+      || selectedMergeItems.length < 2
+      || mergedRawText.trim() === ""
+      || onMergeItems === undefined
+    ) return;
+    setMergeSubmitting(true);
+    try {
+      const succeeded = await onMergeItems(
+        selectedMergeItems.map((item) => item.item_id),
+        mergedRawText,
+      );
+      if (succeeded === true) cancelMerge();
+    } finally {
+      setMergeSubmitting(false);
+    }
+  };
   const updateDraft = (change: Partial<DetailDraft>) => {
     if (selected === undefined) return;
     setDrafts((current) => ({
@@ -311,6 +377,28 @@ export function InspectionItemTable({
     );
   };
 
+  if (mergeStep === "preview") {
+    return (
+      <section
+        className={[
+          "inspection-table-section",
+          compact ? "inspection-table-section--compact" : "",
+        ].filter(Boolean).join(" ")}
+        aria-label={zhCN.inspection.region}
+      >
+        <MergeInspectionItemsPreview
+          items={selectedMergeItems}
+          draftRawText={mergedRawText}
+          submitting={mergeSubmitting || selectedMergeItems.length < 2}
+          onDraftRawTextChange={setMergedRawText}
+          onBack={() => setMergeStep("select")}
+          onCancel={cancelMerge}
+          onConfirm={confirmMerge}
+        />
+      </section>
+    );
+  }
+
   return (
     <section
       className={[
@@ -345,6 +433,45 @@ export function InspectionItemTable({
             ))}
           </select>
         </label>
+      </div>
+      <div className="inspection-merge-toolbar">
+        <p>{zhCN.inspection.mergeExplanation}</p>
+        {mergeStep === "idle" ? (
+          <button
+            type="button"
+            disabled={disabled || onBeginMerge === undefined}
+            onClick={() => {
+              if (onBeginMerge?.() !== true) return;
+              setMergeItemIds([]);
+              setMergedRawText("");
+              setMergeStep("select");
+            }}
+          >
+            {zhCN.inspection.beginMerge}
+          </button>
+        ) : (
+          <div className="inspection-merge-toolbar__actions">
+            <span role="status">
+              {zhCN.inspection.mergeSelectedCount(selectedMergeItems.length)}
+            </span>
+            <button
+              type="button"
+              disabled={disabled || selectedMergeItems.length < 2}
+              onClick={() => {
+                if (selectedMergeItems.length < 2) return;
+                setMergedRawText(suggestMergedRawText(
+                  selectedMergeItems.map((item) => item.raw_text),
+                ));
+                setMergeStep("preview");
+              }}
+            >
+              {zhCN.inspection.mergeNext}
+            </button>
+            <button type="button" onClick={cancelMerge}>
+              {zhCN.inspection.cancelMerge}
+            </button>
+          </div>
+        )}
       </div>
       <div
         className="inspection-table"
@@ -443,14 +570,40 @@ export function InspectionItemTable({
               >
                 <strong
                   role="cell"
-                  className={`inspection-number inspection-number--${presentation.numberKind}`}
+                  className={[
+                    "inspection-number",
+                    `inspection-number--${presentation.numberKind}`,
+                    mergeStep === "select" && item.active
+                      ? "inspection-number--selecting"
+                      : "",
+                  ].filter(Boolean).join(" ")}
                   aria-label={
-                    presentation.numberKind === "candidate"
+                    mergeStep !== "select"
+                    && presentation.numberKind === "candidate"
                       ? presentation.numberLabel
                       : undefined
                   }
                 >
-                  {presentation.displayNumber ?? zhCN.workbench.unknown}
+                  {mergeStep === "select" && item.active ? (
+                    <>
+                      <input
+                        type="checkbox"
+                        aria-label={zhCN.inspection.selectMergeItem(
+                          presentation.displayNumber ?? zhCN.workbench.unknown,
+                          item.raw_text.trim(),
+                          presentation.typeLabel,
+                        )}
+                        checked={mergeItemIds.includes(item.item_id)}
+                        disabled={disabled}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        onChange={() => toggleMergeItem(item.item_id)}
+                      />
+                      <span aria-hidden="true">
+                        {presentation.displayNumber ?? zhCN.workbench.unknown}
+                      </span>
+                    </>
+                  ) : presentation.displayNumber ?? zhCN.workbench.unknown}
                 </strong>
                 <span role="cell" className="inspection-item-copy">
                   <strong title={item.raw_text}>{item.raw_text}</strong>
