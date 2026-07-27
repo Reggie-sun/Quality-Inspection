@@ -217,6 +217,8 @@ export const zhCN = {
     noBalloon: "设为无需气泡",
     split: "拆分",
     merge: "合并所选检验项",
+    drawingSource: "图纸原文",
+    parsedResult: "解析结果",
     rawText: "原始标注",
     splitParts: "拆分内容",
     manualItem: "新增检验项",
