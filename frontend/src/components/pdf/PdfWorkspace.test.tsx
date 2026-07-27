@@ -374,4 +374,27 @@ describe("PdfWorkspace", () => {
     expect(screen.getByRole("list", { name: "图纸标注图例" }).textContent)
       .toContain("正式气泡候选项来源标注已排除");
   });
+
+  test("辅助区使用导出与处理文案并在收起后保持挂载", () => {
+    render(
+      <PdfWorkspace
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        auxiliaryPanel={<div data-testid="auxiliary-content">正式文件</div>}
+      />,
+    );
+
+    const open = screen.getByRole("button", { name: "展开导出与处理信息" });
+    expect(open.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(open);
+    expect(screen.getByRole("button", {
+      name: "收起导出与处理信息",
+    }).getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(screen.getByRole("button", {
+      name: "收起导出与处理信息",
+    }));
+    expect(screen.getByTestId("auxiliary-content")).not.toBeNull();
+  });
 });

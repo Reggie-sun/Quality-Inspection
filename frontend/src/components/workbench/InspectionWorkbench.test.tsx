@@ -16,7 +16,7 @@ afterEach(cleanup);
 
 function openAuxiliaryPanel(): void {
   fireEvent.click(screen.getByRole("button", {
-    name: "展开 SIP 与导出信息",
+    name: "展开导出与处理信息",
   }));
 }
 
@@ -601,7 +601,7 @@ describe("InspectionWorkbench", () => {
     expect(screen.queryByRole("complementary", { name: "导出与处理信息" }))
       .toBeNull();
     const workspaceButton = screen.getByRole("button", {
-      name: "展开 SIP 与导出信息",
+      name: "展开导出与处理信息",
     });
     expect(workspaceButton.getAttribute("aria-expanded")).toBe("false");
 
@@ -876,10 +876,10 @@ describe("InspectionWorkbench", () => {
     await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(3));
 
     fireEvent.click(screen.getByRole("button", {
-      name: "收起 SIP 与导出信息",
+      name: "收起导出与处理信息",
     }));
     fireEvent.click(screen.getByRole("button", {
-      name: "展开 SIP 与导出信息",
+      name: "展开导出与处理信息",
     }));
 
     expect(screen.getAllByRole("link")).toHaveLength(3);
@@ -908,10 +908,10 @@ describe("InspectionWorkbench", () => {
     openAuxiliaryPanel();
     fireEvent.click(screen.getByRole("button", { name: "生成正式文件" }));
     fireEvent.click(screen.getByRole("button", {
-      name: "收起 SIP 与导出信息",
+      name: "收起导出与处理信息",
     }));
     fireEvent.click(screen.getByRole("button", {
-      name: "展开 SIP 与导出信息",
+      name: "展开导出与处理信息",
     }));
 
     const exportButton = screen.getByRole("button", { name: "生成正式文件" });

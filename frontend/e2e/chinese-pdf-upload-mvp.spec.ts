@@ -119,7 +119,8 @@ async function processActiveItems(page: Page, activeCount: number): Promise<void
         await expect(requireBalloon).toBeDisabled();
       }
 
-      const sipDetails = page.locator("fieldset.sip-detail-fields");
+      const sip = page.getByRole("region", { name: "SIP 信息" });
+      const sipDetails = sip.getByRole("group", { name: "SIP 确认字段" });
       await expect(sipDetails).toBeVisible();
       const textInputs = sipDetails.locator("input:not([type='number'])");
       await expect(textInputs).toHaveCount(5);
@@ -141,7 +142,7 @@ async function processActiveItems(page: Page, activeCount: number): Promise<void
       await sourcePage.fill(currentPage.trim() || "1");
       await submitReviewAction(
         page,
-        sipDetails.getByRole("button", { name: "确认所选 SIP 字段" }),
+        sipDetails.getByRole("button", { name: "确认当前检验项 SIP" }),
       );
 
       processed += 1;
@@ -155,12 +156,10 @@ async function processActiveItems(page: Page, activeCount: number): Promise<void
 
 
 async function populateSipMetadata(page: Page): Promise<void> {
-  const openButton = page.getByRole("button", {
-    name: "展开 SIP 与导出信息",
-  });
-  if (await openButton.count() > 0) await openButton.click();
-  const metadata = page.getByRole("region", { name: "SIP基本信息" });
-  await metadata.locator("summary").filter({ hasText: "编辑 SIP 信息" }).click();
+  const sip = page.getByRole("region", { name: "SIP 信息" });
+  await sip.locator("summary")
+    .filter({ hasText: "编辑项目 SIP 信息" })
+    .click();
   const fields = [
     ["物料编码", "MVP-001"],
     ["产品名称", "自动化样件"],
@@ -169,11 +168,11 @@ async function populateSipMetadata(page: Page): Promise<void> {
     ["材质", "钢"],
   ] as const;
   for (const [label, value] of fields) {
-    await metadata.getByLabel(label, { exact: true }).fill(value);
+    await sip.getByLabel(label, { exact: true }).fill(value);
   }
   await submitReviewAction(
     page,
-    metadata.getByRole("button", { name: "确认 SIP 信息" }),
+    sip.getByRole("button", { name: "确认项目 SIP 信息" }),
   );
 }
 
@@ -475,13 +474,6 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   await resolveSourceOnlyCoverage(page);
   await processActiveItems(page, activeCount);
   await populateSipMetadata(page);
-  const collapseAuxiliary = page.getByRole("button", {
-    name: "收起 SIP 与导出信息",
-  });
-  await expect(collapseAuxiliary).toBeVisible();
-  await collapseAuxiliary.click();
-  await expect(page.getByRole("button", { name: "展开 SIP 与导出信息" }))
-    .toBeVisible();
   await clickAndRefresh(page, "冻结检验项", "/review/freeze");
   await clickAndRefresh(page, "生成气泡", "/balloons/generate");
   await expect(page.getByRole("button", { name: /^候选气泡 / })).toHaveCount(0);
@@ -554,7 +546,7 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   await clickAndRefresh(page, "确认审核结果", "/review/confirm");
 
   const openButton = page.getByRole("button", {
-    name: "展开 SIP 与导出信息",
+    name: "展开导出与处理信息",
   });
   if (await openButton.count() > 0) await openButton.click();
   const exportResponse = page.waitForResponse(
