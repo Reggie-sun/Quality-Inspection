@@ -132,6 +132,10 @@ function displayValue(value: unknown): string {
   return String(value);
 }
 
+function comparableText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function parseCoreValue(
   field: CoreField,
   value: string,
@@ -314,6 +318,26 @@ export function ReviewPanel({
   const selectedCoreFields = selectedItem === undefined
     ? []
     : coreFieldsFor(selectedItem.item_type);
+  const selectedRawText = selectedItem === undefined
+    ? ""
+    : rawTexts[selectedItem.item_id] ?? selectedItem.raw_text;
+  const rawTextMatchesParsedField =
+    selectedItem !== undefined
+    && selectedCoreFields.some((field) => {
+      if (field.key === "quantity") return false;
+      const parsedValue =
+        coreValues[selectedItem.item_id]?.[field.key]
+        ?? displayValue(selectedItem[field.key]);
+      return parsedValue.trim() !== ""
+        && comparableText(parsedValue) === comparableText(selectedRawText);
+    });
+  const showRawTextReference =
+    selectedItem !== undefined
+    && (
+      selectedItem.coarse_type !== undefined
+      || selectedItem.requires_confirmation === true
+      || !rawTextMatchesParsedField
+    );
   const selectedItemHeading = zhCN.review.itemHeading(
     selectedItemPresentation?.displayNumber,
     selectedItemPresentation?.typeLabel ?? zhCN.workbench.unknown,
@@ -558,30 +582,24 @@ export function ReviewPanel({
           </header>
           <div className="review-selected-item__workspace">
           <div className="review-selected-item__form">
+          {showRawTextReference ? (
           <fieldset
             className="review-field-group review-field-group--source"
             disabled={disabled}
           >
             <legend>{zhCN.review.drawingSource}</legend>
-            <label>
-              {zhCN.review.rawText}
-              <input
+            <div className="review-field-reference">
+              <span>{zhCN.review.recognizedText}</span>
+              <p
+                role="note"
                 aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.rawText,
-                  selectedItem.raw_text,
+                  zhCN.review.recognizedText,
+                  selectedRawText,
                 )}
-                disabled={disabled}
-                readOnly={!isEditingSelected}
-                value={rawTexts[selectedItem.item_id] ?? selectedItem.raw_text}
-                onFocus={beginEditingSelected}
-                onChange={(event) => {
-                  setRawTexts((current) => ({
-                    ...current,
-                    [selectedItem.item_id]: event.target.value,
-                  }));
-                }}
-              />
-            </label>
+              >
+                {selectedRawText}
+              </p>
+            </div>
             {selectedItem.coarse_type === undefined ? null : (
               <>
                 <label>
@@ -663,6 +681,7 @@ export function ReviewPanel({
               </>
             )}
           </fieldset>
+          ) : null}
           {selectedCoreFields.length === 0 ? null : (
             <fieldset
               className="review-field-group review-field-group--parsed"

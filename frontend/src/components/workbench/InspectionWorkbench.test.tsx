@@ -141,7 +141,7 @@ describe("InspectionWorkbench", () => {
     expect(saveStatus.textContent).toBe("已保存");
 
     fireEvent.click(screen.getByRole("button", { name: "修改检验项：M6" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "原始标注：M6" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "螺纹规格：M6" }), {
       target: { value: "M8" },
     });
 
@@ -155,7 +155,8 @@ describe("InspectionWorkbench", () => {
       type: "edit",
       item_id: "i1",
       fields: {
-        raw_text: "M8",
+        raw_text: "M6",
+        thread_spec: "M8",
       },
     }));
   });
@@ -188,16 +189,16 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(screen.getByRole("button", {
       name: "修改检验项：10",
     }));
-    const rawText = screen.getByRole("textbox", {
-      name: "原始标注：10",
+    const nominal = screen.getByRole("textbox", {
+      name: "基本尺寸：10",
     }) as HTMLInputElement;
-    fireEvent.change(rawText, { target: { value: "10.0" } });
+    fireEvent.change(nominal, { target: { value: "10.0" } });
 
     fireEvent.click(screen.getByRole("row", { name: /20/ }));
 
     expect(screen.queryByRole("region", { name: "所选检验项" })).toBeNull();
-    expect(screen.queryByRole("textbox", { name: "原始标注：20" })).toBeNull();
-    expect(rawText.value).toBe("10.0");
+    expect(screen.queryByRole("textbox", { name: "基本尺寸：20" })).toBeNull();
+    expect(nominal.value).toBe("10.0");
     expect(within(
       screen.getByRole("region", { name: "项目摘要" }),
     ).getByRole("status").textContent).toBe("请先修改保存当前检验项");
@@ -218,10 +219,10 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(screen.getByRole("button", {
       name: "修改检验项：⌀10",
     }));
-    const rawText = screen.getByRole("textbox", {
-      name: "原始标注：⌀10",
+    const nominal = screen.getByRole("textbox", {
+      name: "基本尺寸：⌀10",
     }) as HTMLInputElement;
-    fireEvent.change(rawText, { target: { value: "⌀10 H7" } });
+    fireEvent.change(nominal, { target: { value: "10" } });
     fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
 
     expect(screen.queryAllByRole("checkbox", {
@@ -230,7 +231,7 @@ describe("InspectionWorkbench", () => {
     expect(within(
       screen.getByRole("region", { name: "项目摘要" }),
     ).getByRole("status").textContent).toBe("请先修改保存当前检验项");
-    expect(rawText.value).toBe("⌀10 H7");
+    expect(nominal.value).toBe("10");
   });
 
   test("合并确认期间重复点击只通过唯一提交路径保存一次", async () => {
@@ -295,9 +296,8 @@ describe("InspectionWorkbench", () => {
       expect(screen.getByRole("heading", {
         name: "检验项 — · 线性尺寸",
       })).not.toBeNull();
-      expect(screen.getByRole("textbox", {
-        name: "原始标注：⌀10 ±0.1",
-      })).not.toBeNull();
+      expect(screen.getByLabelText("识别原文：⌀10 ±0.1").textContent)
+        .toBe("⌀10 ±0.1");
     });
   });
 
@@ -384,15 +384,9 @@ describe("InspectionWorkbench", () => {
       expect(screen.getByRole("heading", {
         name: "检验项 — · 螺纹",
       })).not.toBeNull();
-      expect(screen.getByRole("textbox", {
-        name: "原始标注：M6",
-      })).not.toBeNull();
-      expect(screen.queryByRole("textbox", {
-        name: "原始标注：合并候选 A",
-      })).toBeNull();
-      expect(screen.queryByRole("textbox", {
-        name: "原始标注：合并候选 B",
-      })).toBeNull();
+      expect(screen.getByLabelText("识别原文：M6").textContent).toBe("M6");
+      expect(screen.queryByLabelText("识别原文：合并候选 A")).toBeNull();
+      expect(screen.queryByLabelText("识别原文：合并候选 B")).toBeNull();
     });
   });
 
@@ -524,8 +518,8 @@ describe("InspectionWorkbench", () => {
     expect((screen.getByRole("textbox", {
       name: "合并后的原始标注",
     }) as HTMLTextAreaElement).value).toBe("  保留的合并草稿  ");
-    expect(screen.getByText("⌀10")).not.toBeNull();
-    expect(screen.getByText("±0.1")).not.toBeNull();
+    expect(screen.getAllByText("⌀10").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("±0.1").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
     await waitFor(() => {
@@ -580,10 +574,10 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(screen.getByRole("button", {
       name: "修改检验项：10",
     }));
-    const rawText = screen.getByRole("textbox", {
-      name: "原始标注：10",
+    const nominal = screen.getByRole("textbox", {
+      name: "基本尺寸：10",
     }) as HTMLInputElement;
-    fireEvent.change(rawText, { target: { value: "10.0" } });
+    fireEvent.change(nominal, { target: { value: "10.0" } });
     fireEvent.click(screen.getByRole("row", { name: /20/ }));
     fireEvent.click(screen.getByRole("button", {
       name: "修改保存检验项：10",
@@ -599,13 +593,14 @@ describe("InspectionWorkbench", () => {
         type: "edit",
         item_id: "item-10",
         fields: {
-          raw_text: "10.0",
+          raw_text: "10",
+          nominal: "10.0",
         },
       });
       expect(saveStatus.textContent).toBe("保存失败");
     });
-    expect(rawText.value).toBe("10.0");
-    expect(rawText.hasAttribute("disabled")).toBe(false);
+    expect(nominal.value).toBe("10.0");
+    expect(nominal.hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("button", {
       name: "修改保存检验项：10",
     }).hasAttribute("disabled")).toBe(false);
@@ -677,7 +672,7 @@ describe("InspectionWorkbench", () => {
       name: "修改检验项：10",
     }));
     fireEvent.change(screen.getByRole("textbox", {
-      name: "原始标注：10",
+      name: "基本尺寸：10",
     }), { target: { value: "10.0" } });
 
     const candidate = screen.getByTestId("candidate-number-candidate-20");
@@ -698,7 +693,8 @@ describe("InspectionWorkbench", () => {
         type: "edit",
         item_id: "item-10",
         fields: {
-          raw_text: "10.0",
+          raw_text: "10",
+          nominal: "10.0",
         },
       });
       expect(saveStatus.textContent).toBe("已保存");
@@ -776,7 +772,7 @@ describe("InspectionWorkbench", () => {
       name: "修改检验项：10",
     }));
     fireEvent.change(screen.getByRole("textbox", {
-      name: "原始标注：10",
+      name: "基本尺寸：10",
     }), { target: { value: "10.0" } });
 
     const source = screen.getByRole("row", { name: /来源待判定/ });
@@ -803,7 +799,8 @@ describe("InspectionWorkbench", () => {
         type: "edit",
         item_id: "item-10",
         fields: {
-          raw_text: "10.0",
+          raw_text: "10",
+          nominal: "10.0",
         },
       });
       expect(saveStatus.textContent).toBe("已保存");
@@ -1157,11 +1154,7 @@ describe("InspectionWorkbench", () => {
     expect(within(workspace).queryByRole("region", {
       name: "所选检验项",
     })).toBeNull();
-    expect(
-      (screen.getByRole("textbox", {
-        name: "原始标注：M8",
-      }) as HTMLInputElement).value,
-    ).toBe("M8");
+    expect(screen.getByLabelText("识别原文：M8").textContent).toBe("M8");
   });
 
   test("正式导出完成时紧凑显示 SIP 基本信息及三份真实下载", () => {

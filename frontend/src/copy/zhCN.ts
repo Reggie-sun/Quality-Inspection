@@ -240,6 +240,7 @@ export const zhCN = {
     drawingSource: "图纸原文",
     parsedResult: "解析结果",
     rawText: "原始标注",
+    recognizedText: "识别原文",
     splitParts: "拆分内容",
     manualItem: "新增检验项",
     coordinates: "坐标",

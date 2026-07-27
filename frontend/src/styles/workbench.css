@@ -1132,6 +1132,29 @@
   grid-column: 1 / -1;
 }
 
+.review-field-reference {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 5px;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.review-field-reference [role="note"] {
+  min-height: 36px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid #e4eaf1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--qi-text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .review-field-group__confirmation {
   display: flex;
   grid-column: 1 / -1;

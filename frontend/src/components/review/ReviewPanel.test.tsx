@@ -50,7 +50,7 @@ describe("ReviewPanel", () => {
     })).not.toBeNull();
     expect(screen.getByText("候选序号 2")).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "48" })).toBeNull();
-    expect(screen.getAllByDisplayValue("48")).toHaveLength(1);
+    expect(screen.getByLabelText("识别原文：48").textContent).toBe("48");
   });
 
   test("缺少 presentation 时不伪造所选检验项状态", () => {
@@ -74,7 +74,7 @@ describe("ReviewPanel", () => {
     expect(screen.queryByText("待审核")).toBeNull();
   });
 
-  test("将图纸原文与类型化解析结果放入独立语义分组", () => {
+  test("原文与基本尺寸相同时不重复显示图纸原文", () => {
     render(
       <ReviewPanel
         items={[{
@@ -91,17 +91,11 @@ describe("ReviewPanel", () => {
       />,
     );
 
-    const drawingSource = screen.getByRole("group", { name: "图纸原文" });
     const parsedResult = screen.getByRole("group", { name: "解析结果" });
 
-    const rawText = within(drawingSource).getByRole("textbox", {
+    expect(screen.queryByRole("group", { name: "图纸原文" })).toBeNull();
+    expect(screen.queryByRole("textbox", {
       name: "原始标注：48",
-    });
-    expect(rawText.closest("label")?.classList.contains(
-      "review-field-group__confirmation",
-    )).toBe(false);
-    expect(within(drawingSource).queryByRole("textbox", {
-      name: "基本尺寸：48",
     })).toBeNull();
     expect(within(parsedResult).getByRole("textbox", {
       name: "基本尺寸：48",
@@ -117,7 +111,55 @@ describe("ReviewPanel", () => {
     })).toBeNull();
   });
 
-  test("将复杂检验项的来源字段放入图纸原文且不渲染空解析分组", () => {
+  test("原文与解析结果不同时仅显示只读识别原文", () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "different-source-item",
+          item_type: "linear_dimension",
+          raw_text: "48 ±0.02",
+          nominal: "48",
+          upper_tolerance: "0.02",
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="different-source-item"
+      />,
+    );
+
+    const drawingSource = screen.getByRole("group", { name: "图纸原文" });
+    const sourceReference = within(drawingSource).getByLabelText(
+      "识别原文：48 ±0.02",
+    );
+
+    expect(sourceReference.textContent).toBe("48 ±0.02");
+    expect(within(drawingSource).queryByRole("textbox")).toBeNull();
+  });
+
+  test("待确认项目即使原文与解析结果相同也显示只读识别原文", () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "confirmation-source-item",
+          item_type: "linear_dimension",
+          raw_text: "48",
+          nominal: "48",
+          requires_confirmation: true,
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="confirmation-source-item"
+      />,
+    );
+
+    const drawingSource = screen.getByRole("group", { name: "图纸原文" });
+    expect(within(drawingSource).getByLabelText(
+      "识别原文：48",
+    ).textContent).toBe("48");
+    expect(within(drawingSource).queryByRole("textbox")).toBeNull();
+  });
+
+  test("复杂检验项只读展示识别原文且不渲染空解析分组", () => {
     render(
       <ReviewPanel
         items={[{
@@ -135,9 +177,12 @@ describe("ReviewPanel", () => {
 
     const drawingSource = screen.getByRole("group", { name: "图纸原文" });
 
-    expect(within(drawingSource).getByRole("textbox", {
+    expect(within(drawingSource).getByLabelText(
+      "识别原文：Ra 3.2",
+    ).textContent).toBe("Ra 3.2");
+    expect(within(drawingSource).queryByRole("textbox", {
       name: "原始标注：Ra 3.2",
-    })).not.toBeNull();
+    })).toBeNull();
     expect(within(drawingSource).getByRole("textbox", {
       name: "坐标：Ra 3.2",
     })).not.toBeNull();
@@ -231,9 +276,6 @@ describe("ReviewPanel", () => {
       <ReviewPanel items={items} onCommand={onCommand} selectedItemId="typed-1" />,
     );
     fireEvent.click(screen.getByRole("button", { name: "修改检验项：10 ±0.02" }));
-    fireEvent.change(screen.getByLabelText("原始标注：10 ±0.02"), {
-      target: { value: "12.50 +0.03" },
-    });
     fireEvent.change(screen.getByLabelText("基本尺寸：10 ±0.02"), {
       target: { value: "12.50" },
     });
@@ -248,9 +290,6 @@ describe("ReviewPanel", () => {
       <ReviewPanel items={items} onCommand={onCommand} selectedItemId="complex-1" />,
     );
     fireEvent.click(screen.getByRole("button", { name: "修改检验项：Ra 3.2" }));
-    fireEvent.change(screen.getByLabelText("原始标注：Ra 3.2"), {
-      target: { value: "Ra 1.6" },
-    });
     fireEvent.change(screen.getByLabelText("坐标：Ra 3.2"), {
       target: { value: "11,12,13,14" },
     });
@@ -306,7 +345,7 @@ describe("ReviewPanel", () => {
       ),
     ).toMatchObject({
       fields: {
-        raw_text: "12.50 +0.03",
+        raw_text: "10 ±0.02",
         nominal: "12.50",
         upper_tolerance: "0.03",
       },
@@ -319,7 +358,7 @@ describe("ReviewPanel", () => {
     }
     expect(complexEdit).toMatchObject({
       fields: {
-        raw_text: "Ra 1.6",
+        raw_text: "Ra 3.2",
         coordinates: [11, 12, 13, 14],
         coarse_type: "weld",
         requires_confirmation: false,
@@ -343,7 +382,7 @@ describe("ReviewPanel", () => {
     ).toEqual([false, true]);
   });
 
-  test("所选检验项默认只读，聚焦字段可进入修改且仅在草稿有差异时允许保存", async () => {
+  test("所选检验项仅通过解析字段进入修改且只在草稿有差异时允许保存", async () => {
     let resolveCommand: (outcome: boolean) => void = () => undefined;
     const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
       resolveCommand = resolve;
@@ -364,38 +403,37 @@ describe("ReviewPanel", () => {
       />,
     );
 
-    const rawText = screen.getByRole("textbox", { name: "原始标注：10" });
     const nominal = screen.getByRole("textbox", { name: "基本尺寸：10" });
     const save = screen.getByRole(
       "button",
       { name: "修改保存检验项：10" },
     );
 
-    expect(rawText.hasAttribute("disabled")).toBe(false);
-    expect(rawText.hasAttribute("readonly")).toBe(true);
+    expect(screen.queryByRole("textbox", {
+      name: "原始标注：10",
+    })).toBeNull();
     expect(nominal.hasAttribute("disabled")).toBe(false);
     expect(nominal.hasAttribute("readonly")).toBe(true);
     expect(save.hasAttribute("disabled")).toBe(true);
 
     fireEvent.focus(nominal);
-    expect(rawText.hasAttribute("readonly")).toBe(false);
     expect(nominal.hasAttribute("readonly")).toBe(false);
     expect(save.hasAttribute("disabled")).toBe(true);
 
-    fireEvent.change(rawText, { target: { value: "11" } });
+    fireEvent.change(nominal, { target: { value: "11" } });
     expect(save.hasAttribute("disabled")).toBe(false);
-    fireEvent.change(rawText, { target: { value: "10" } });
+    fireEvent.change(nominal, { target: { value: "10" } });
     expect(save.hasAttribute("disabled")).toBe(true);
 
-    fireEvent.change(rawText, { target: { value: "11" } });
+    fireEvent.change(nominal, { target: { value: "11" } });
     fireEvent.click(save);
 
     expect(onCommand).toHaveBeenCalledWith({
       type: "edit",
       item_id: "edit-item",
       fields: {
-        raw_text: "11",
-        nominal: "10",
+        raw_text: "10",
+        nominal: "11",
       },
     });
     rerender(
@@ -403,8 +441,8 @@ describe("ReviewPanel", () => {
         items={[{
           item_id: "edit-item",
           item_type: "linear_dimension",
-          raw_text: "11",
-          nominal: "10",
+          raw_text: "10",
+          nominal: "11",
           active: true,
         }]}
         onCommand={onCommand}
@@ -415,10 +453,10 @@ describe("ReviewPanel", () => {
     await act(async () => resolveCommand(true));
 
     await waitFor(() => {
-      expect(rawText.hasAttribute("readonly")).toBe(true);
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
-    expect((rawText as HTMLInputElement).value).toBe("11");
+    expect((nominal as HTMLInputElement).value).toBe("11");
     expect(save.hasAttribute("disabled")).toBe(true);
   });
 
@@ -674,13 +712,13 @@ describe("ReviewPanel", () => {
       resolveCommand = resolve;
     }));
     const onDraftChange = vi.fn();
-    const renderPanel = (rawText: string) => (
+    const renderPanel = (nominal: string) => (
       <ReviewPanel
         items={[{
           item_id: "later-server-update",
           item_type: "linear_dimension",
-          raw_text: rawText,
-          nominal: "10",
+          raw_text: "服务器原值",
+          nominal,
           active: true,
         }]}
         onCommand={onCommand}
@@ -688,11 +726,11 @@ describe("ReviewPanel", () => {
         selectedItemId="later-server-update"
       />
     );
-    const { rerender } = render(renderPanel("服务器原值"));
+    const { rerender } = render(renderPanel("10"));
 
-    const rawText = screen.getByRole(
+    const nominal = screen.getByRole(
       "textbox",
-      { name: "原始标注：服务器原值" },
+      { name: "基本尺寸：服务器原值" },
     );
     const save = screen.getByRole(
       "button",
@@ -701,22 +739,22 @@ describe("ReviewPanel", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "修改检验项：服务器原值" }),
     );
-    fireEvent.change(rawText, { target: { value: "保存后" } });
+    fireEvent.change(nominal, { target: { value: "11" } });
     fireEvent.click(save);
 
-    rerender(renderPanel("保存后"));
+    rerender(renderPanel("11"));
     await act(async () => resolveCommand(true));
     await waitFor(() => {
-      expect((rawText as HTMLInputElement).value).toBe("保存后");
-      expect(rawText.hasAttribute("readonly")).toBe(true);
+      expect((nominal as HTMLInputElement).value).toBe("11");
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
 
-    rerender(renderPanel("服务器后续更新"));
+    rerender(renderPanel("12"));
 
     await waitFor(() => {
-      expect((rawText as HTMLInputElement).value).toBe("服务器后续更新");
-      expect(rawText.hasAttribute("readonly")).toBe(true);
+      expect((nominal as HTMLInputElement).value).toBe("12");
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -742,37 +780,37 @@ describe("ReviewPanel", () => {
     );
     const { rerender } = render(renderPanel());
 
-    const rawText = screen.getByRole("textbox", { name: "原始标注：10" });
+    const nominal = screen.getByRole("textbox", { name: "基本尺寸：10" });
     const save = screen.getByRole(
       "button",
       { name: "修改保存检验项：10" },
     );
     fireEvent.click(screen.getByRole("button", { name: "修改检验项：10" }));
-    fireEvent.change(rawText, { target: { value: "11" } });
+    fireEvent.change(nominal, { target: { value: "11" } });
     expect(onDraftChange).toHaveBeenLastCalledWith(true);
 
     fireEvent.click(save);
 
     await waitFor(() => {
       expect(onCommand).toHaveBeenCalledTimes(1);
-      expect(rawText.hasAttribute("readonly")).toBe(true);
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
-    expect((rawText as HTMLInputElement).value).toBe("11");
+    expect((nominal as HTMLInputElement).value).toBe("11");
 
     rerender(renderPanel());
-    expect((rawText as HTMLInputElement).value).toBe("11");
+    expect((nominal as HTMLInputElement).value).toBe("11");
     expect(save.hasAttribute("disabled")).toBe(true);
     expect(onDraftChange).toHaveBeenLastCalledWith(false);
 
     fireEvent.click(screen.getByRole("button", { name: "修改检验项：10" }));
-    fireEvent.change(rawText, { target: { value: "10" } });
-    expect((rawText as HTMLInputElement).value).toBe("10");
+    fireEvent.change(nominal, { target: { value: "10" } });
+    expect((nominal as HTMLInputElement).value).toBe("10");
     expect(save.hasAttribute("disabled")).toBe(false);
     expect(onDraftChange).toHaveBeenLastCalledWith(true);
 
-    fireEvent.change(rawText, { target: { value: "11" } });
+    fireEvent.change(nominal, { target: { value: "11" } });
     expect(save.hasAttribute("disabled")).toBe(true);
     expect(onDraftChange).toHaveBeenLastCalledWith(false);
   });
@@ -805,7 +843,7 @@ describe("ReviewPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "修改检验项：A" }));
     expect(
-      screen.getByRole("textbox", { name: "原始标注：A" })
+      screen.getByRole("textbox", { name: "基本尺寸：A" })
         .hasAttribute("readonly"),
     ).toBe(false);
 
@@ -817,7 +855,7 @@ describe("ReviewPanel", () => {
       />,
     );
     expect(
-      screen.getByRole("textbox", { name: "原始标注：B" })
+      screen.getByRole("textbox", { name: "基本尺寸：B" })
         .hasAttribute("readonly"),
     ).toBe(true);
 
@@ -828,11 +866,11 @@ describe("ReviewPanel", () => {
         selectedItemId="item-a"
       />,
     );
-    const rawText = screen.getByRole("textbox", { name: "原始标注：A" });
-    expect(rawText.hasAttribute("readonly")).toBe(true);
+    const nominal = screen.getByRole("textbox", { name: "基本尺寸：A" });
+    expect(nominal.hasAttribute("readonly")).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "修改检验项：A" }));
-    expect(rawText.hasAttribute("readonly")).toBe(false);
+    expect(nominal.hasAttribute("readonly")).toBe(false);
   });
 
   test("修改命令显式失败时保留本地草稿和编辑模式", async () => {
@@ -851,18 +889,18 @@ describe("ReviewPanel", () => {
       />,
     );
 
-    const rawText = screen.getByRole("textbox", { name: "原始标注：10" });
+    const nominal = screen.getByRole("textbox", { name: "基本尺寸：10" });
     const save = screen.getByRole(
       "button",
       { name: "修改保存检验项：10" },
     );
     fireEvent.click(screen.getByRole("button", { name: "修改检验项：10" }));
-    fireEvent.change(rawText, { target: { value: "11" } });
+    fireEvent.change(nominal, { target: { value: "11" } });
     fireEvent.click(save);
 
     await waitFor(() => expect(onCommand).toHaveBeenCalledTimes(1));
-    expect((rawText as HTMLInputElement).value).toBe("11");
-    expect(rawText.hasAttribute("disabled")).toBe(false);
+    expect((nominal as HTMLInputElement).value).toBe("11");
+    expect(nominal.hasAttribute("disabled")).toBe(false);
     expect(save.hasAttribute("disabled")).toBe(false);
   });
 
@@ -936,9 +974,11 @@ describe("ReviewPanel", () => {
     );
 
     expect(screen.getAllByRole("article")).toHaveLength(1);
-    expect(screen.getByRole("article").textContent).not.toContain("尺寸 157");
-    expect(screen.getByDisplayValue("尺寸 157")).not.toBeNull();
-    expect(screen.getAllByLabelText(/^原始标注：/)).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 3 }).textContent)
+      .not.toContain("尺寸 157");
+    expect(screen.getByLabelText("识别原文：尺寸 157").textContent)
+      .toBe("尺寸 157");
+    expect(screen.queryAllByLabelText(/^原始标注：/)).toHaveLength(0);
 
     rerender(<ReviewPanel items={items} onCommand={vi.fn()} />);
     expect(screen.queryAllByRole("article")).toHaveLength(0);
@@ -984,8 +1024,10 @@ describe("ReviewPanel", () => {
       />,
     )).not.toThrow();
 
-    expect(screen.getByRole("article").textContent).not.toContain("新型标注");
-    expect(screen.getByDisplayValue("新型标注")).not.toBeNull();
+    expect(screen.getByRole("heading", { level: 3 }).textContent)
+      .not.toContain("新型标注");
+    expect(screen.getByLabelText("识别原文：新型标注").textContent)
+      .toBe("新型标注");
     expect(document.body.textContent).not.toContain("future_network_type");
     expect(screen.getByRole("button", { name: "保留检验项：新型标注" }))
       .not.toBeNull();
@@ -994,18 +1036,10 @@ describe("ReviewPanel", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "修改检验项：新型标注" }),
     );
-    fireEvent.change(screen.getByLabelText("原始标注：新型标注"), {
-      target: { value: "新型标注（修改）" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "修改保存检验项：新型标注" }),
-    );
-
-    expect(onCommand).toHaveBeenCalledWith({
-      type: "edit",
-      item_id: "future-item",
-      fields: { raw_text: "新型标注（修改）" },
-    });
+    expect(screen.getByRole("button", {
+      name: "修改保存检验项：新型标注",
+    }).hasAttribute("disabled")).toBe(true);
+    expect(onCommand).not.toHaveBeenCalled();
   });
 
   test("审核冻结后详情草稿字段不可继续编辑", () => {
@@ -1024,8 +1058,8 @@ describe("ReviewPanel", () => {
       />,
     );
 
-    expect(screen.getByRole("textbox", { name: "原始标注：10" })
-      .hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("textbox", { name: "原始标注：10" }))
+      .toBeNull();
     expect(screen.getByRole("textbox", { name: "基本尺寸：10" })
       .hasAttribute("disabled")).toBe(true);
   });
