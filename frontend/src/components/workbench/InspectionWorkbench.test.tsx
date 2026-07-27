@@ -99,11 +99,8 @@ describe("InspectionWorkbench", () => {
 
     fireEvent.click(screen.getByRole("row", { name: /20/ }));
 
-    const selectedSummary = screen.getByRole("region", {
-      name: "所选检验项",
-    });
-    expect(selectedSummary.textContent).toContain("10");
-    expect(selectedSummary.textContent).not.toContain("20");
+    expect(screen.queryByRole("region", { name: "所选检验项" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "原始标注：20" })).toBeNull();
     expect(rawText.value).toBe("10.0");
     expect(within(
       screen.getByRole("region", { name: "项目摘要" }),
@@ -247,7 +244,9 @@ describe("InspectionWorkbench", () => {
 
     const candidate = screen.getByTestId("candidate-number-candidate-20");
     fireEvent.click(candidate);
-    expect(screen.getByRole("article", { name: "10" })).not.toBeNull();
+    expect(screen.getByRole("article", {
+      name: "检验项 — · 线性尺寸",
+    })).not.toBeNull();
     expect(candidate.getAttribute("data-selected")).toBe("false");
 
     fireEvent.click(screen.getByRole("button", {
@@ -347,7 +346,9 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(source);
     fireEvent.click(balloon);
 
-    expect(screen.getByRole("article", { name: "10" })).not.toBeNull();
+    expect(screen.getByRole("article", {
+      name: "检验项 — · 线性尺寸",
+    })).not.toBeNull();
     expect(screen.getByTestId("source-pending-source").getAttribute("data-selected"))
       .toBe("false");
     expect(balloon.getAttribute("data-selected")).toBe("false");
@@ -373,10 +374,14 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(source);
     expect(screen.getByTestId("source-pending-source").getAttribute("data-selected"))
       .toBe("true");
-    expect(screen.queryByRole("article", { name: "10" })).toBeNull();
+    expect(screen.queryByRole("article", {
+      name: "检验项 — · 线性尺寸",
+    })).toBeNull();
 
     fireEvent.click(balloon);
-    expect(screen.getByRole("article", { name: "20" })).not.toBeNull();
+    expect(screen.getByRole("article", {
+      name: "检验项 2 · 线性尺寸",
+    })).not.toBeNull();
     expect(balloon.getAttribute("data-selected")).toBe("true");
   });
 
@@ -636,7 +641,18 @@ describe("InspectionWorkbench", () => {
     expect(table.closest(".inspection-table-section")?.classList.contains(
       "inspection-table-section--compact",
     )).toBe(true);
-    expect(within(workspace).getByRole("article", { name: "M6" })).not.toBeNull();
+    const detail = within(workspace).getByRole("article", {
+      name: "检验项 1 · 螺纹",
+    });
+    expect(within(detail).getByRole("heading", {
+      name: "检验项 1 · 螺纹",
+    })).not.toBeNull();
+    expect(within(detail).getByText("已确认")).not.toBeNull();
+    expect(within(detail).getByText("正式序号 1")).not.toBeNull();
+    expect(within(detail).getByText("第 1 页")).not.toBeNull();
+    expect(within(workspace).queryByRole("region", {
+      name: "所选检验项",
+    })).toBeNull();
     expect(document.querySelector(".candidate-editor")).toBeNull();
 
     const children = Array.from(reviewRegion.children);
@@ -645,7 +661,7 @@ describe("InspectionWorkbench", () => {
     expect(children.indexOf(workspace)).toBeLessThan(children.indexOf(toolbar));
   });
 
-  test("编辑所选检验项时持续显示真实编号、页码、状态和原始标注", () => {
+  test("编辑所选检验项时持续显示语义身份、真实编号、页码和状态", () => {
     render(
       <InspectionWorkbench
         pdfDocument={null}
@@ -687,13 +703,22 @@ describe("InspectionWorkbench", () => {
 
     fireEvent.click(screen.getByRole("row", { name: /M8/ }));
 
-    const selectedSummary = screen.getByRole("region", {
-      name: "所选检验项",
+    const workspace = screen.getByRole("group", {
+      name: "检验项列表与编辑",
     });
-    for (const value of ["17", "M8", "第 2 页", "已确认"]) {
-      expect(selectedSummary.textContent).toContain(value);
+    const detail = within(workspace).getByRole("article", {
+      name: "检验项 17 · 螺纹",
+    });
+    expect(within(detail).getByRole("heading", {
+      name: "检验项 17 · 螺纹",
+    })).not.toBeNull();
+    for (const value of ["正式序号 17", "第 2 页", "已确认"]) {
+      expect(detail.textContent).toContain(value);
     }
-    expect(selectedSummary.textContent).not.toContain("selected-hidden-uuid");
+    expect(detail.textContent).not.toContain("selected-hidden-uuid");
+    expect(within(workspace).queryByRole("region", {
+      name: "所选检验项",
+    })).toBeNull();
     expect(
       (screen.getByRole("textbox", {
         name: "原始标注：M8",
