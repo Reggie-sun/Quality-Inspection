@@ -440,6 +440,15 @@ describe("InspectionWorkbench", () => {
 
     const summary = screen.getByRole("region", { name: "项目摘要" });
     expect(within(summary).getByRole("status").textContent).toBe("审核修改已提交");
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    fireEvent.change(within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }), { target: { value: "未保存名称" } });
+    expect(within(summary).getByRole("status").textContent)
+      .toBe("有未保存修改");
     expect(screen.queryByRole("region", { name: "审核流程操作" })).toBeNull();
   });
 

@@ -190,7 +190,9 @@ export function InspectionWorkbench({
           ? zhCN.workbench.pending
           : zhCN.workbench.saved;
   const visibleSaveState =
-    selectionBlocked || saveState === zhCN.workbench.saveFailed
+    selectionBlocked
+    || saveState === zhCN.workbench.saveFailed
+    || localDraftDirty
     ? displayedSaveState
     : actionState ?? displayedSaveState;
   const reviewImmutable =

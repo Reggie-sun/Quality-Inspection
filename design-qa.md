@@ -675,3 +675,74 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - Remaining P1: 0.
 - Remaining P2: 0.
 - final result: passed
+
+## Unified SIP Information Panel — 2026-07-27
+
+### Scope And Visual Grounding
+
+本轮将参考图中左侧 `SIP基本信息` 与右侧 `所选检验项 SIP 确认` 收敛为右侧详情列中的唯一
+`SIP 信息` 面板。参考图用于确认原有工程软件视觉语言、字段密度和两类 SIP 信息的内容；
+批准设计明确要求改变信息架构，因此不把“仍然左右分栏”当作像素级匹配目标。
+
+- source visual truth: `/tmp/codex-clipboard-yhU57R.png`
+- source pixels / density: `654x630 / 1x`
+- rendered implementation: `/tmp/qi-unified-sip-1565x796-panel-top.png`
+- implementation pixels / density: `1565x796 / device scale 1`
+- implementation CSS viewport: `1565x796`
+- normalized comparison: `/tmp/qi-sip-reference-vs-implementation.png`
+- normalized comparison pixels: `2219x796`
+- normalization: 两张截图保持原始像素尺寸，参考图垂直居中补白到 `796px` 后横向并排；
+  未缩放字体、表格或控件。
+- state: 真实上传工程 PDF 的 Review Workbench；项目 metadata editor 收起，active 检验项
+  已选中，左侧导出与处理辅助浮层收起。
+
+### Full And Focused Comparison
+
+- Full-view evidence: 并排图显示参考图的项目 SIP 摘要位于左侧浮层、当前项 SIP 位于右侧；
+  实现将二者按“项目基本信息 / 当前检验项”层级置于同一右侧详情面板，并保留 PDF 为最大视觉
+  区域、检验项列表密度和既有浅灰/工程蓝视觉体系。
+- Focused evidence: `SIP 信息` 面板在 full-view 中字段标题、两列 metadata 摘要、折叠编辑入口
+  和当前项表单均可读，因此无需额外裁切；`390x844` 截图另外验证 metadata 摘要收敛为单列，
+  当前项表单自然续排且没有与“气泡操作”重叠。
+- Initial comparison: 未发现 P0、P1 或 P2；视觉 QA 没有触发第二轮样式修复。
+
+### Required Fidelity Surfaces
+
+- Fonts and typography: 沿用参考图和现有工作台的中文系统字体、紧凑字号与加粗分区标题；
+  `SIP 信息`、`项目基本信息`、`当前检验项` 层级清楚，长字段值使用既有截断和 title 行为。
+- Spacing and layout rhythm: 面板使用右侧详情列完整宽度；两类 SIP 信息以分区和细分隔线组织，
+  没有负 margin、固定截图坐标或页面级横向溢出。
+- Colors and visual tokens: 继续复用既有白色、浅灰、细边框和工程蓝 focus/action token；
+  没有新增渐变、阴影层级或与参考图不一致的装饰色。
+- Image quality and assets: 本次没有新增或替换 Logo、图标、插画和图片资产；PDF canvas 与气泡
+  overlay 保持原渲染路径。
+- Copy and content: `编辑项目 SIP 信息`、`确认项目 SIP 信息`、`确认当前检验项 SIP` 与
+  `展开导出与处理信息` 明确区分项目级、当前项和辅助导出职责；待判定来源显示明确空态。
+- Accessibility: 唯一外层 `region` 名称为 `SIP 信息`，两个分区使用 heading/region；
+  表单 accessible name 保留当前 item identity，空态不只依赖颜色或 disabled。
+- Responsiveness: `1565x796`、`1240x796`、`768x900`、`390x844` 均无页面级横向溢出；
+  `390px` 宽时 metadata 摘要从两列变为单列。
+
+### Interaction And Browser Evidence
+
+- 真实上传 PDF 后确认页面只有一个 `SIP 信息` region，且位于
+  `.inspection-review-workspace__detail`；旧左侧 SIP 卡片不存在。
+- 项目 metadata 与当前检验项 SIP 均验证修改、取消、成功保存、断网失败、草稿保留和联网重试。
+- 当前项 draft 在 item 切换后返回仍保留；选择待判定来源时项目基本信息继续显示，当前项分区
+  改为“当前选择的是待判定来源。”且不渲染可提交表单。
+- 浏览器发现外部成功文案会遮蔽后续本地 dirty 状态；已补充优先级修复与回归测试，修复后真实
+  浏览器在编辑时显示“有未保存修改”。
+- reviewed / frozen 的双 fieldset 禁用由 component tests 覆盖；当前真实 124 项项目无法在不改变
+  业务数据的情况下完成整条 freeze/export 流程，因此没有伪造 live reviewed/frozen evidence。
+- console error 检查在排除两次刻意断网失败后无未解释错误；正式导出生命周期未修改。
+
+### Findings And Comparison History
+
+- Remaining P0: 0.
+- Remaining P1: 0.
+- Remaining P2: 0.
+- P3 follow-up polish: none required for this scope.
+- P0/P1/P2 visual iterations: none；初次同图比较已通过。
+- focused test gap: 当前真实项目不具备可快速到达的 reviewed/frozen/export 完成态；这些状态由
+  component tests 和未修改的 export owner 覆盖。
+- final result: passed
