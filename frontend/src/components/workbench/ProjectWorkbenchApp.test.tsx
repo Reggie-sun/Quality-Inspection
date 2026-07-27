@@ -166,7 +166,7 @@ test("刷新后从只读 projection 恢复 reviewed result 和三项下载", asy
   );
 
   fireEvent.click(await screen.findByRole("button", {
-    name: "展开 SIP 与导出信息",
+    name: "展开导出与处理信息",
   }));
   await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(3));
   expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([

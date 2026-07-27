@@ -400,10 +400,10 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
       expect((await responsePromise).ok()).toBe(true);
     }
     await expect(page.getByRole("button", { name: "确认审核结果" })).toBeEnabled();
-    await page.getByRole("button", { name: "展开 SIP 与导出信息" }).click();
+    await page.getByRole("button", { name: "展开导出与处理信息" }).click();
     await expect(page.getByRole("button", { name: "生成正式文件" })).toBeDisabled();
     await expect(page.getByRole("navigation", { name: "正式文件下载" })).toHaveCount(0);
-    await page.getByRole("button", { name: "收起 SIP 与导出信息" }).click();
+    await page.getByRole("button", { name: "收起导出与处理信息" }).click();
 
     const finalSnapshot = await workbench(page, projectId);
     const balloons = activeBalloons(finalSnapshot);
@@ -473,7 +473,7 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
   const reviewedResponse = await confirmResponse;
   expect(reviewedResponse.ok()).toBe(true);
   const reviewed = await reviewedResponse.json();
-  await page.getByRole("button", { name: "展开 SIP 与导出信息" }).click();
+  await page.getByRole("button", { name: "展开导出与处理信息" }).click();
   await expect(page.getByRole("button", { name: "生成正式文件" })).toBeEnabled();
 
   const exportResponse = page.waitForResponse((response) => (
