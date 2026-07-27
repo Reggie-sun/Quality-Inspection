@@ -188,6 +188,17 @@ export const zhCN = {
     ignoreSource: "忽略，不作为检验项",
     selectItemType: "请选择检验类型",
     pagination: "检验项分页",
+    beginMerge: "合并重复项",
+    mergeExplanation:
+      "仅用于同一检验要求被重复识别，或一条标注被拆成多项的情况。",
+    mergeSelectedCount: (count: number) => `已选择 ${count} 项`,
+    mergeNext: "下一步",
+    cancelMerge: "取消合并",
+    selectMergeItem: (
+      number: number | string,
+      rawText: string,
+      type: string,
+    ) => `选择检验项 ${number}：${rawText} · ${type}`,
     types: {
       linear_dimension: "线性尺寸",
       diameter_dimension: "直径尺寸",
@@ -216,7 +227,6 @@ export const zhCN = {
     requireBalloon: "设为需要气泡",
     noBalloon: "设为无需气泡",
     split: "拆分",
-    merge: "合并所选检验项",
     mergePreview: {
       title: "合并预览",
       sources: "来源检验项",
@@ -284,8 +294,6 @@ export const zhCN = {
     itemHeading: (number: number | undefined, type: string) =>
       `检验项 ${number ?? zhCN.workbench.unknown} · ${type}`,
     formalBalloonNumber: (number: number) => `气泡 ${number}`,
-    selectItem: (index: number, rawText: string) =>
-      `选择检验项 ${index}：${rawText}`,
     fieldForItem: (field: string, rawText: string) => `${field}：${rawText}`,
     actionForItem: (action: string, rawText: string) =>
       `${action}检验项：${rawText}`,
@@ -296,7 +304,6 @@ export const zhCN = {
     manualType: "新增检验项类型",
     manualBalloonRequired: "新增检验项需要气泡",
     manualCoordinatesPlaceholder: "例如：10, 20, 30, 40",
-    mergeSelection: "选择需要合并的检验项",
     selectItemHint: "请先从检验项列表选择一项。",
   },
   balloon: {

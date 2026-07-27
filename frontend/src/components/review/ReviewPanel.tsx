@@ -182,7 +182,6 @@ export function ReviewPanel({
   pageIndex = 0,
   onDraftChange,
 }: ReviewPanelProps) {
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [rawTexts, setRawTexts] = useState<Record<string, string>>(() =>
     Object.fromEntries(items.map((item) => [item.item_id, item.raw_text])),
   );
@@ -394,14 +393,6 @@ export function ReviewPanel({
     rawTexts,
   ]);
 
-  const toggleSelected = (itemId: string) => {
-    setSelectedIds((current) =>
-      current.includes(itemId)
-        ? current.filter((candidate) => candidate !== itemId)
-        : [...current, itemId],
-    );
-  };
-
   const setCoreValue = (itemId: string, key: CoreFieldKey, value: string) => {
     setCoreValues((current) => ({
       ...current,
@@ -527,43 +518,9 @@ export function ReviewPanel({
     );
   };
 
-  const mergeSelected = () => {
-    const selected = activeItems.filter((item) => selectedIds.includes(item.item_id));
-    if (selected.length < 2) return;
-    onCommand({
-      type: "merge",
-      item_ids: selected.map((item) => item.item_id),
-      raw_text: selected.map((item) => item.raw_text).join(" "),
-    });
-  };
-
   return (
     <section className="review-panel" aria-label={zhCN.review.region}>
       <h2>{zhCN.review.title}</h2>
-      <details className="review-merge-selector">
-        <summary>{zhCN.review.mergeSelection}</summary>
-        <div className="review-merge-selector__items">
-          {activeItems.map((item, index) => (
-            <label key={item.item_id}>
-              <input
-                type="checkbox"
-                aria-label={zhCN.review.selectItem(index + 1, item.raw_text)}
-                checked={selectedIds.includes(item.item_id)}
-                onChange={() => toggleSelected(item.item_id)}
-              />
-              <span>{item.raw_text}</span>
-            </label>
-          ))}
-        </div>
-        <button
-          type="button"
-          aria-label={zhCN.review.merge}
-          disabled={disabled}
-          onClick={mergeSelected}
-        >
-          {zhCN.review.merge}
-        </button>
-      </details>
       {selectedItem === undefined ? (
         <p className="review-select-hint">{zhCN.review.selectItemHint}</p>
       ) : (
