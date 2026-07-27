@@ -147,11 +147,16 @@ export function InspectionItemTable({
   const [mergeItemIds, setMergeItemIds] = useState<string[]>([]);
   const [mergedRawText, setMergedRawText] = useState("");
   const [mergeSubmitting, setMergeSubmitting] = useState(false);
+  const [mergeError, setMergeError] = useState(false);
+  const mergeItemIdSet = useMemo(
+    () => new Set(mergeItemIds),
+    [mergeItemIds],
+  );
   const selectedMergeItems = useMemo(
     () => items.filter(
-      (item) => item.active && mergeItemIds.includes(item.item_id),
+      (item) => item.active && mergeItemIdSet.has(item.item_id),
     ),
-    [items, mergeItemIds],
+    [items, mergeItemIdSet],
   );
   const balloonByItem = useMemo(
     () => new Map(
@@ -290,20 +295,22 @@ export function InspectionItemTable({
   useEffect(() => {
     if (mergeStep === "idle") return;
     const cancelOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || mergeSubmitting) return;
       setMergeStep("idle");
       setMergeItemIds([]);
       setMergedRawText("");
       setMergeSubmitting(false);
+      setMergeError(false);
     };
     document.addEventListener("keydown", cancelOnEscape);
     return () => document.removeEventListener("keydown", cancelOnEscape);
-  }, [mergeStep]);
+  }, [mergeStep, mergeSubmitting]);
   const cancelMerge = () => {
     setMergeStep("idle");
     setMergeItemIds([]);
     setMergedRawText("");
     setMergeSubmitting(false);
+    setMergeError(false);
   };
   const toggleMergeItem = (itemId: string) => {
     if (!items.some((item) => item.item_id === itemId && item.active)) return;
@@ -320,13 +327,20 @@ export function InspectionItemTable({
       || mergedRawText.trim() === ""
       || onMergeItems === undefined
     ) return;
+    setMergeError(false);
     setMergeSubmitting(true);
     try {
       const succeeded = await onMergeItems(
         selectedMergeItems.map((item) => item.item_id),
         mergedRawText.trim(),
       );
-      if (succeeded === true) cancelMerge();
+      if (succeeded === true) {
+        cancelMerge();
+      } else {
+        setMergeError(true);
+      }
+    } catch {
+      setMergeError(true);
     } finally {
       setMergeSubmitting(false);
     }
@@ -391,10 +405,16 @@ export function InspectionItemTable({
           draftRawText={mergedRawText}
           submitting={mergeSubmitting || selectedMergeItems.length < 2}
           onDraftRawTextChange={setMergedRawText}
-          onBack={() => setMergeStep("select")}
+          onBack={() => {
+            setMergeError(false);
+            setMergeStep("select");
+          }}
           onCancel={cancelMerge}
           onConfirm={confirmMerge}
         />
+        {mergeError ? (
+          <p role="alert">{zhCN.inspection.mergeFailure}</p>
+        ) : null}
       </section>
     );
   }
@@ -439,11 +459,20 @@ export function InspectionItemTable({
         {mergeStep === "idle" ? (
           <button
             type="button"
-            disabled={disabled || onBeginMerge === undefined}
+            disabled={
+              disabled
+              || onBeginMerge === undefined
+              || onMergeItems === undefined
+            }
             onClick={() => {
-              if (onBeginMerge?.() !== true) return;
+              if (
+                onBeginMerge === undefined
+                || onMergeItems === undefined
+                || onBeginMerge() !== true
+              ) return;
               setMergeItemIds([]);
               setMergedRawText("");
+              setMergeError(false);
               setMergeStep("select");
             }}
           >
@@ -459,6 +488,7 @@ export function InspectionItemTable({
               disabled={disabled || selectedMergeItems.length < 2}
               onClick={() => {
                 if (selectedMergeItems.length < 2) return;
+                setMergeError(false);
                 setMergedRawText(suggestMergedRawText(
                   selectedMergeItems.map((item) => item.raw_text),
                 ));
@@ -593,7 +623,7 @@ export function InspectionItemTable({
                           item.raw_text.trim(),
                           presentation.typeLabel,
                         )}
-                        checked={mergeItemIds.includes(item.item_id)}
+                        checked={mergeItemIdSet.has(item.item_id)}
                         disabled={disabled}
                         onClick={(event) => event.stopPropagation()}
                         onKeyDown={(event) => event.stopPropagation()}

@@ -77,10 +77,10 @@ export function MergeInspectionItemsPreview({
       </label>
 
       <div className="merge-inspection-preview__actions">
-        <button type="button" onClick={onBack}>
+        <button type="button" disabled={submitting} onClick={onBack}>
           {copy.back}
         </button>
-        <button type="button" onClick={onCancel}>
+        <button type="button" disabled={submitting} onClick={onCancel}>
           {copy.cancel}
         </button>
         <button

@@ -50,6 +50,7 @@ function renderMergeTable(
 
 test("合并入口默认不显示复选框，且仅在 guard 返回 true 时进入选择模式", () => {
   const onBeginMerge = vi.fn(() => false);
+  const onMergeItems = vi.fn().mockResolvedValue(true);
   const { rerender } = render(
     <InspectionItemTable
       items={mergeItems.slice(0, 2)}
@@ -57,6 +58,7 @@ test("合并入口默认不显示复选框，且仅在 guard 返回 true 时进�
       filter="all"
       onSelectItem={vi.fn()}
       onBeginMerge={onBeginMerge}
+      onMergeItems={onMergeItems}
     />,
   );
 
@@ -78,6 +80,7 @@ test("合并入口默认不显示复选框，且仅在 guard 返回 true 时进�
       filter="all"
       onSelectItem={vi.fn()}
       onBeginMerge={allowMerge}
+      onMergeItems={onMergeItems}
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
@@ -90,6 +93,49 @@ test("合并入口默认不显示复选框，且仅在 guard 返回 true 时进�
   expect(screen.getByRole("status").textContent).toBe("已选择 0 项");
   expect(screen.getByRole("button", { name: "下一步" }).hasAttribute("disabled"))
     .toBe(true);
+});
+
+test("只有同时提供开始和提交 callback 才启用合并入口", () => {
+  const commonProps = {
+    items: mergeItems.slice(0, 2),
+    balloons: [],
+    filter: "all" as const,
+    onSelectItem: vi.fn(),
+  };
+  const { rerender } = render(
+    <InspectionItemTable
+      {...commonProps}
+      onBeginMerge={vi.fn(() => true)}
+    />,
+  );
+
+  expect((screen.getByRole(
+    "button",
+    { name: "合并重复项" },
+  ) as HTMLButtonElement).disabled).toBe(true);
+
+  rerender(
+    <InspectionItemTable
+      {...commonProps}
+      onMergeItems={vi.fn().mockResolvedValue(true)}
+    />,
+  );
+  expect((screen.getByRole(
+    "button",
+    { name: "合并重复项" },
+  ) as HTMLButtonElement).disabled).toBe(true);
+
+  rerender(
+    <InspectionItemTable
+      {...commonProps}
+      onBeginMerge={vi.fn(() => true)}
+      onMergeItems={vi.fn().mockResolvedValue(true)}
+    />,
+  );
+  expect((screen.getByRole(
+    "button",
+    { name: "合并重复项" },
+  ) as HTMLButtonElement).disabled).toBe(false);
 });
 
 test("选择模式只让有效检验项可选，并保留紧凑表格列数与行选择行为", () => {
@@ -224,12 +270,17 @@ test("下一步生成确定性预览，返回保留选择，失败保留已编�
   expect((screen.getByRole("textbox", {
     name: "合并后的原始标注",
   }) as HTMLTextAreaElement).value).toBe("  48 ±0.1  ");
+  expect(screen.getByRole("alert").textContent).toBe("合并失败，请重试");
 });
 
-test("缺少合并回调时确认保持预览、选择和草稿", () => {
+test("提交期间锁定当前 session，false 后保留草稿和选择", async () => {
+  let resolveMerge: (outcome: boolean) => void = () => undefined;
+  const onMergeItems = vi.fn(() => new Promise<boolean>((resolve) => {
+    resolveMerge = resolve;
+  }));
   renderMergeTable({
     items: [mergeItems[0], mergeItems[50]],
-    onMergeItems: undefined,
+    onMergeItems,
   });
   fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
   fireEvent.click(screen.getByRole("checkbox", {
@@ -241,15 +292,74 @@ test("缺少合并回调时确认保持预览、选择和草稿", () => {
   fireEvent.click(screen.getByRole("button", { name: "下一步" }));
   fireEvent.change(screen.getByRole("textbox", {
     name: "合并后的原始标注",
-  }), { target: { value: "保留草稿" } });
+  }), { target: { value: "待重试草稿" } });
   fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
 
+  const back = screen.getByRole("button", { name: "返回修改" });
+  const cancel = screen.getByRole("button", { name: "取消" });
+  expect((back as HTMLButtonElement).disabled).toBe(true);
+  expect((cancel as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(back);
+  fireEvent.click(cancel);
+
   expect(screen.getByRole("heading", { name: "合并预览" })).not.toBeNull();
+  expect(onMergeItems).toHaveBeenCalledOnce();
   expect((screen.getByRole("textbox", {
     name: "合并后的原始标注",
-  }) as HTMLTextAreaElement).value).toBe("保留草稿");
+  }) as HTMLTextAreaElement).value).toBe("待重试草稿");
+
+  resolveMerge(false);
+  await waitFor(() => {
+    expect(screen.getByRole("alert").textContent).toBe("合并失败，请重试");
+  });
+  expect(onMergeItems).toHaveBeenCalledOnce();
+  expect((screen.getByRole("textbox", {
+    name: "合并后的原始标注",
+  }) as HTMLTextAreaElement).value).toBe("待重试草稿");
+
   fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
   expect(screen.getByRole("status").textContent).toBe("已选择 2 项");
+});
+
+test("提交 reject 时保留草稿并显示错误，且允许安全重试", async () => {
+  let resolveRetry: (outcome: boolean) => void = () => undefined;
+  const onMergeItems = vi.fn()
+    .mockRejectedValueOnce(new Error("network"))
+    .mockImplementationOnce(() => new Promise<boolean>((resolve) => {
+      resolveRetry = resolve;
+    }));
+  renderMergeTable({
+    items: [mergeItems[0], mergeItems[50]],
+    onMergeItems,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  }));
+  fireEvent.click(screen.getByRole("checkbox", {
+    name: "选择检验项 51：±0.1 · 通用要求",
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "下一步" }));
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "合并后的原始标注",
+  }), { target: { value: "重试草稿" } });
+  fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+
+  await waitFor(() => {
+    expect(screen.getByRole("alert").textContent).toBe("合并失败，请重试");
+  });
+  expect((screen.getByRole("textbox", {
+    name: "合并后的原始标注",
+  }) as HTMLTextAreaElement).value).toBe("重试草稿");
+
+  fireEvent.click(screen.getByRole("button", { name: "确认合并 2 项" }));
+  expect(onMergeItems).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("alert")).toBeNull();
+  resolveRetry(false);
+  await waitFor(() => {
+    expect(screen.getByRole("alert").textContent).toBe("合并失败，请重试");
+  });
 });
 
 test("合并成功后清空模式、选择和预览，确认期间阻止重复提交", async () => {
