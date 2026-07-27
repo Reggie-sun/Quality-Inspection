@@ -103,7 +103,7 @@ test("confirms the current two-item merge only once per click", () => {
   expect(props.onConfirm).toHaveBeenCalledOnce();
 });
 
-test("disables confirmation while submitting or when the draft is blank", () => {
+test("disables every navigation and confirmation action while submitting", () => {
   const { rerender } = render(
     <MergeInspectionItemsPreview
       items={items}
@@ -120,6 +120,16 @@ test("disables confirmation while submitting or when the draft is blank", () => 
     "button",
     { name: "确认合并 2 项" },
   ) as HTMLButtonElement;
+  const submittingBack = screen.getByRole(
+    "button",
+    { name: "返回修改" },
+  ) as HTMLButtonElement;
+  const submittingCancel = screen.getByRole(
+    "button",
+    { name: "取消" },
+  ) as HTMLButtonElement;
+  expect(submittingBack.disabled).toBe(true);
+  expect(submittingCancel.disabled).toBe(true);
   expect(submittingConfirm.disabled).toBe(true);
 
   rerender(

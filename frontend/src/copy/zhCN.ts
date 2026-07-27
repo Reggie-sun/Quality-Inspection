@@ -194,6 +194,7 @@ export const zhCN = {
     mergeSelectedCount: (count: number) => `已选择 ${count} 项`,
     mergeNext: "下一步",
     cancelMerge: "取消合并",
+    mergeFailure: "合并失败，请重试",
     selectMergeItem: (
       number: number | string,
       rawText: string,
