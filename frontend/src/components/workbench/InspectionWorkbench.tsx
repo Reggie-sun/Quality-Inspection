@@ -121,6 +121,8 @@ export function InspectionWorkbench({
   const [saveState, setSaveState] = useState<string>(zhCN.workbench.saved);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const latestItemsRef = useRef(items);
+  latestItemsRef.current = items;
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(
     () => items.find((item) => item.active)?.item_id,
   );
@@ -260,6 +262,47 @@ export function InspectionWorkbench({
     setSelectedBalloonId(undefined);
     const source = sources.find((candidate) => candidate.id === sourceId);
     setPageIndex(source?.pageIndex ?? pageIndex);
+    return true;
+  };
+  const beginMerge = (): boolean => {
+    if (reviewDraftDirty) {
+      setSelectionBlocked(true);
+      return false;
+    }
+    setSelectionBlocked(false);
+    return true;
+  };
+  const mergeItems = async (
+    itemIds: string[],
+    rawText: string,
+  ): Promise<boolean> => {
+    const activeIdsBefore = new Set(
+      latestItemsRef.current
+        .filter((item) => item.active)
+        .map((item) => item.item_id),
+    );
+    const succeeded = await submitCommand({
+      type: "merge",
+      item_ids: itemIds,
+      raw_text: rawText,
+    });
+    if (!succeeded) return false;
+
+    const newActiveItems = latestItemsRef.current.filter(
+      (item) => item.active && !activeIdsBefore.has(item.item_id),
+    );
+    if (newActiveItems.length === 1) {
+      selectItem(newActiveItems[0].item_id);
+    } else if (
+      selectedItemId !== undefined
+      && !latestItemsRef.current.some(
+        (item) => item.active && item.item_id === selectedItemId,
+      )
+    ) {
+      setSelectedItemId(undefined);
+      setSelectedBalloonId(undefined);
+      setSelectedSourceId(undefined);
+    }
     return true;
   };
   const exportPanel = projectId === undefined || exportPost === undefined
@@ -509,6 +552,8 @@ export function InspectionWorkbench({
                 onSelectItem={selectItem}
                 onSelectSource={selectSource}
                 onCommand={submitCommand}
+                onBeginMerge={beginMerge}
+                onMergeItems={mergeItems}
                 onDraftChange={setSipDraftDirty}
               />
             </div>
