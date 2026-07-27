@@ -454,7 +454,7 @@ export function InspectionItemTable({
           </select>
         </label>
       </div>
-      <div className="inspection-merge-toolbar">
+      <div className="inspection-list-merge-toolbar">
         <p>{zhCN.inspection.mergeExplanation}</p>
         {mergeStep === "idle" ? (
           <button
@@ -479,8 +479,8 @@ export function InspectionItemTable({
             {zhCN.inspection.beginMerge}
           </button>
         ) : (
-          <div className="inspection-merge-toolbar__actions">
-            <span role="status">
+          <div>
+            <span className="inspection-list-merge-status" role="status">
               {zhCN.inspection.mergeSelectedCount(selectedMergeItems.length)}
             </span>
             <button
@@ -617,6 +617,7 @@ export function InspectionItemTable({
                   {mergeStep === "select" && item.active ? (
                     <>
                       <input
+                        className="inspection-merge-row-checkbox"
                         type="checkbox"
                         aria-label={zhCN.inspection.selectMergeItem(
                           presentation.displayNumber ?? zhCN.workbench.unknown,

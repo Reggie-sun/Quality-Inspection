@@ -95,6 +95,26 @@ test("合并入口默认不显示复选框，且仅在 guard 返回 true 时进�
     .toBe(true);
 });
 
+test("合并选择使用列表工具栏、可读计数和行复选框样式契约", () => {
+  renderMergeTable({ items: mergeItems.slice(0, 2) });
+
+  const explanation = screen.getByText(
+    "仅用于同一检验要求被重复识别，或一条标注被拆成多项的情况。",
+  );
+  expect(explanation.closest(".inspection-list-merge-toolbar")).not.toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "合并重复项" }));
+
+  const status = screen.getByRole("status");
+  expect(status.classList.contains("inspection-list-merge-status")).toBe(true);
+  expect(status.textContent).toBe("已选择 0 项");
+
+  const checkbox = screen.getAllByRole("checkbox", {
+    name: "选择检验项 1：48 · 线性尺寸",
+  })[0];
+  expect(checkbox.classList.contains("inspection-merge-row-checkbox")).toBe(true);
+});
+
 test("只有同时提供开始和提交 callback 才启用合并入口", () => {
   const commonProps = {
     items: mergeItems.slice(0, 2),
