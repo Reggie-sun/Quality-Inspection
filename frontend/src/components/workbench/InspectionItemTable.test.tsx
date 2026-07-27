@@ -213,17 +213,17 @@ test("下一步生成确定性预览，返回保留选择，失败保留已编�
   fireEvent.click(screen.getByRole("button", { name: "下一步" }));
   fireEvent.change(screen.getByRole("textbox", {
     name: "合并后的原始标注",
-  }), { target: { value: "48 ±0.05" } });
+  }), { target: { value: "  48 ±0.1  " } });
   fireEvent.click(screen.getByRole("button", { name: "确认合并 3 项" }));
 
   await waitFor(() => expect(onMergeItems).toHaveBeenCalledOnce());
   expect(onMergeItems).toHaveBeenCalledWith(
     ["merge-1", "merge-2", "merge-51"],
-    "48 ±0.05",
+    "48 ±0.1",
   );
   expect((screen.getByRole("textbox", {
     name: "合并后的原始标注",
-  }) as HTMLTextAreaElement).value).toBe("48 ±0.05");
+  }) as HTMLTextAreaElement).value).toBe("  48 ±0.1  ");
 });
 
 test("缺少合并回调时确认保持预览、选择和草稿", () => {

@@ -324,7 +324,7 @@ export function InspectionItemTable({
     try {
       const succeeded = await onMergeItems(
         selectedMergeItems.map((item) => item.item_id),
-        mergedRawText,
+        mergedRawText.trim(),
       );
       if (succeeded === true) cancelMerge();
     } finally {
