@@ -1,5 +1,5 @@
 {
-  "contract_definition_hash": "42b4b24623173e6cf862c4f2626042810f5662a137c871d9150847b652007560",
+  "contract_definition_hash": "c2f15cc07938acffebf81f907255a2eef47cfe5326726bb1a1645fb5539ba137",
   "contracts": [
     {
       "blocking_level": "blocking",
@@ -650,10 +650,10 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": null,
       "implementation_only": true,
-      "implementation_reason": "当前具体 Vision LLM、endpoint 与 request shape 是 adapter 实现选择；Advisor 边界与 schema 校验由相关 global contracts 拥有。",
+      "implementation_reason": "既有 passed text-candidate Provider proof 仍有效，但不能满足新增 visual-symbol schema、local validator 与 input-registration delta；`not_run` 是 Harness 对 pending visual proof 的既有状态。",
       "owner": "Vision Advisor adapter",
       "p0_contract_id": "P0-REC-005",
       "related_global_contract_ids": [
@@ -663,10 +663,10 @@
         "PROV-003",
         "SYS-003"
       ],
-      "stable_p0_requirement": "`qwen3-vl-plus` 只复核局部 candidate crop，输出必须通过冻结 JSON Schema；Provider 不拥有正式 disposition",
-      "task_id": "D2-T2",
+      "stable_p0_requirement": "`qwen3-vl-plus` 只复核局部 candidate 或 suspicious visual-observation crop，输出必须通过各自冻结 JSON Schema；Provider 不拥有正式 disposition",
+      "task_id": "D7-T2",
       "tier": "provider-contract",
-      "verification_selector": "pytest backend/tests/contract/test_qwen_vl_provider.py -q"
+      "verification_selector": "pytest backend/tests/contract/test_qwen_vl_provider.py backend/tests/contract/test_qwen_symbol_provider.py -q"
     },
     {
       "blocking_level": "blocking",
@@ -966,36 +966,36 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "CAND-005",
       "implementation_only": false,
-      "implementation_reason": "—",
+      "implementation_reason": "既有 passed text coverage proof 仍有效，但不能满足新增 visual observation identity、scheduling 与 completeness delta；`not_run` 是 Harness 对 pending visual proof 的既有状态。",
       "owner": "Coverage Owner",
       "p0_contract_id": "P0-REC-009",
       "related_global_contract_ids": [
         "CAND-002",
         "PDF-007"
       ],
-      "stable_p0_requirement": "Coverage Ledger 中每个疑似工程 observation 恰有一个 primary disposition、source 与 coordinates",
-      "task_id": "D3-T2",
+      "stable_p0_requirement": "Coverage Ledger 中每个疑似工程 text/visual observation 恰有一个 primary disposition、source 与 coordinates；未调度或预算溢出的 visual observation 为 blocking",
+      "task_id": "D7-T2",
       "tier": "unit",
-      "verification_selector": "pytest backend/tests/unit/candidates/test_coverage.py::test_every_suspicious_observation_has_complete_disposition -q"
+      "verification_selector": "pytest backend/tests/unit/candidates/test_coverage.py::test_every_suspicious_observation_has_complete_disposition backend/tests/unit/candidates/test_coverage.py::test_visual_candidate_has_one_complete_coverage_entry -q"
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "CAND-005",
       "implementation_only": false,
-      "implementation_reason": "—",
+      "implementation_reason": "既有 passed text ambiguity proof 仍有效，但不能满足新增 visual source-review 与 reference/non-inspection distinction delta；`not_run` 是 Harness 对 pending visual proof 的既有状态。",
       "owner": "Coverage Veto Gate",
       "p0_contract_id": "P0-REC-010",
       "related_global_contract_ids": [
         "CAND-006"
       ],
-      "stable_p0_requirement": "`ambiguous` 可进入审核；缺 disposition/source/coordinates 或冲突归属为 blocking",
-      "task_id": "D3-T2",
+      "stable_p0_requirement": "`ambiguous` text/visual source 可进入审核并保持可定位、promote/ignore；缺 disposition/source/coordinates 或冲突归属为 blocking",
+      "task_id": "D7-T2",
       "tier": "unit",
-      "verification_selector": "pytest backend/tests/unit/candidates/test_coverage.py::test_ambiguous_is_reviewable_but_incomplete_is_blocking -q"
+      "verification_selector": "pytest backend/tests/unit/candidates/test_coverage.py::test_ambiguous_is_reviewable_but_incomplete_is_blocking backend/tests/unit/candidates/test_coverage.py::test_visual_reference_noninspection_and_ambiguous_are_distinct -q"
     },
     {
       "blocking_level": "blocking",
@@ -1622,5 +1622,5 @@
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "p0-contracts/1",
   "source": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md",
-  "status_projection_hash": "237fb19faf232e5fa586cd6c207b040e8ad99094b00120a6ba78dfafc75cf8b1"
+  "status_projection_hash": "f018ccff01a789ee562ab570b11fb340a217b9aa259b7a3095fecb8c3d15a7b6"
 }

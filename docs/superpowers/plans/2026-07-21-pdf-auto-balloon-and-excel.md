@@ -248,6 +248,36 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
   seal 真实 manifest 后，把实际 literal run ID 原地回填到本 amendment 并提交；
   回填前 production GREEN 保持 blocked。禁止 `latest`、glob、alias、synthetic
   labels、old baseline 或 guessed ID，且本 gate 前不得发生 paid/Provider call。
+- SR-1 registration-only clarification: 用户在发现现有 D7-T2 task receipt 必须精确覆盖
+  该 task 全部 mirror rows、无法同时保持“只登记输入且不执行 business selectors”后，
+  明确选择方案 A。SR-1 的 symbol-eval staging 因此只创建一个
+  `mode=live`、`scope=task`、`task_id=D7-T2`、
+  `selected_contract_ids=[]` 的 sealed input-registration-only run，记录唯一
+  `phase://live/symbol-eval-registration`，且不得生成 `receipt.json`、
+  `contract-results.json`、task success 或 formal success。之后的 full-P0 run
+  必须以本 amendment 中回填的 literal run ID 装载并复核两份 exact artifact bytes；
+  `latest`、alias、路径或重新生成的等价 JSON 都不能替代。普通 task receipt
+  “selected/result IDs 精确覆盖 task 全部 mirror rows”的既有不变量保持不变。本条只在
+  SR-1 registration receipt wording 上 supersede subordinate implementation detail，
+  不修改其余 task ordering、Owner、scope、Provider、rollback 或 D7-T3 边界；真实
+  literal run ID 仍须由 staging 实际生成后回填，不写占位值。subordinate detail
+  所称 visual delta `pending` 在既有 Harness 状态枚举中精确落为
+  `current_status=not_run`，直到后续 SR proof；不得为此扩展稳定 result-state enum。
+- SR-1 sealed input registration: Quality Owner 批准的 exact overlays
+  `page-1-overlay-draft.png`
+  (`13305a1505525679a5b94603f0018400f32b01518b148f55d5baa4d4bd66db16`)
+  与 `page-2-overlay-draft.png`
+  (`99061a43f8043c1cd83cccb23a8367c4c90cb249b0b6fb3db8a1a17c7240405f`)
+  已机械转换并 seal 为 literal run
+  `20260727T085747865239Z-5aa3e8d3`。canonical manifest SHA-256 为
+  `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`，
+  共 56 个 positive groups、16 个 frozen-negative regions、72 个 labels；
+  staging 重新证明九个 positive families 全覆盖、distinct
+  `negative_family_count=9`、`overlay_scale_percent=200` 和
+  `unlabeled_target_count=0`。该 run 全树只读，只有 exact eval/verdict artifacts
+  与唯一 registration phase；没有 receipt、contract results、task/formal success
+  或 Provider call。此证据只关闭 SR-1 live-label input gate，不提前完成
+  production GREEN、D7-T2 symbol closure 或 D7-T3。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
@@ -723,6 +753,7 @@ live:
   max_retries_per_call: 2
   max_crop_expansions: 1
   max_ocr_calls_per_page: 16
+  max_vision_calls_per_page: 16
   max_vision_calls_per_candidate: 2
   max_total_estimated_cost_cny: 50
   budget_exceeded_result: blocked

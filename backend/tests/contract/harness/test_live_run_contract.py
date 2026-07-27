@@ -1707,7 +1707,7 @@ def test_chrome_identity_uses_the_resolved_binary_version_and_hash(
     }
 
 
-def test_all_nine_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
+def test_all_eleven_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
     checker = _load_module(
         "qi_contract_checker_schema_inventory",
         HARNESS / "scripts/check-contracts.py",
@@ -1726,6 +1726,50 @@ def test_all_nine_harness_schemas_are_checked_and_bound_to_code_identity() -> No
         "provider-fixture.schema.json",
         "receipt.schema.json",
         "run.schema.json",
+        "visual-symbol-annotation-verdict.schema.json",
+        "visual-symbol-eval.schema.json",
     }
     assert set(checker.EXPECTED_SCHEMA_FILES) == expected
     assert set(receipt.SCHEMA_FILES) == expected
+
+
+def test_live_policy_requires_visual_symbol_page_budget() -> None:
+    """P0-REC-005: live visual review stays within sixteen calls per page."""
+    runner = _load_module(
+        "qi_runner_visual_page_budget",
+        HARNESS / "scripts/run-p0.py",
+    )
+    provider_policy = {
+        "explicit_flag_required": True,
+        "max_retries_per_call": 2,
+        "max_crop_expansions": 1,
+        "max_ocr_calls_per_page": 16,
+        "max_vision_calls_per_candidate": 2,
+        "max_total_estimated_cost_cny": 50,
+        "budget_exceeded_result": "blocked",
+    }
+    with pytest.raises(ValueError, match="budget/retry"):
+        runner._validate_live_policy(
+            {"provider_call_policy": {"live": provider_policy}}
+        )
+
+    plan = (
+        ROOT
+        / "docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md"
+    ).read_text(encoding="utf-8")
+    provider_example = plan.split(
+        "# .agent/harness/policy/provider-call-policy.yaml",
+        1,
+    )[1].split("```", 1)[0]
+    assert "max_vision_calls_per_page: 16" in provider_example
+
+    provider_policy["max_vision_calls_per_page"] = 16
+    runner._validate_live_policy(
+        {"provider_call_policy": {"live": provider_policy}}
+    )
+
+    provider_policy["max_vision_calls_per_page"] = 17
+    with pytest.raises(ValueError, match="budget/retry"):
+        runner._validate_live_policy(
+            {"provider_call_policy": {"live": provider_policy}}
+        )

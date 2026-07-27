@@ -32,6 +32,8 @@ EXPECTED_SCHEMA_FILES = (
     "provider-fixture.schema.json",
     "receipt.schema.json",
     "run.schema.json",
+    "visual-symbol-annotation-verdict.schema.json",
+    "visual-symbol-eval.schema.json",
 )
 
 GLOBAL_ID_RE = re.compile(r"^[A-Z]+-[0-9]{3}$")

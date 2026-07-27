@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/visual-symbol-annotation-verdict.schema.json",
+  "title": "Quality Owner visual symbol annotation verdict",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "annotation_owner_role",
+    "overlay_scale_percent",
+    "unlabeled_target_count",
+    "negative_family_count",
+    "manifest_sha256",
+    "recorded_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "visual-symbol-annotation-verdict/1"
+    },
+    "annotation_owner_role": {
+      "const": "quality_owner"
+    },
+    "overlay_scale_percent": {
+      "const": 200
+    },
+    "unlabeled_target_count": {
+      "const": 0
+    },
+    "negative_family_count": {
+      "const": 9
+    },
+    "manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

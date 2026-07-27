@@ -1,0 +1,392 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/visual-symbol-eval.schema.json",
+  "title": "Sealed current-source visual symbol evaluation manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_sha256",
+    "annotation_owner_role",
+    "annotation_status",
+    "pages"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "visual-symbol-eval/1"
+    },
+    "source_sha256": {
+      "const": "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
+    },
+    "annotation_owner_role": {
+      "const": "quality_owner"
+    },
+    "annotation_status": {
+      "const": "approved"
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/page"
+      }
+    }
+  },
+  "$defs": {
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_index",
+        "labels"
+      ],
+      "properties": {
+        "page_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "labels": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/label"
+          }
+        }
+      }
+    },
+    "label": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label_id",
+        "bbox_pdf",
+        "symbol_kinds",
+        "expected_disposition",
+        "expected_projection"
+      ],
+      "properties": {
+        "label_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "bbox_pdf": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ]
+        },
+        "symbol_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "diameter",
+              "depth",
+              "counterbore",
+              "surface_roughness",
+              "gdt_parallelism",
+              "gdt_perpendicularity",
+              "gdt_flatness",
+              "datum_reference",
+              "revision_marker",
+              "frozen_negative"
+            ]
+          }
+        },
+        "negative_family": {
+          "enum": [
+            "part_or_hole_geometry",
+            "hatch_center_or_cross",
+            "dimension_leader_or_section_line",
+            "view_or_section_label",
+            "revision_table_or_invalid_marker",
+            "datum_like_letter_or_table_cell",
+            "watermark_logo_title_or_signoff",
+            "isometric_hole_slot_or_edge",
+            "ordinary_text_number_material_or_requirement"
+          ]
+        },
+        "expected_disposition": {
+          "enum": [
+            "candidate",
+            "reference_context",
+            "non_inspection",
+            "ambiguous"
+          ]
+        },
+        "expected_projection": {
+          "oneOf": [
+            {
+              "enum": [
+                "diameter_dimension",
+                "thread",
+                "composite",
+                "roughness",
+                "geometric_tolerance"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "diameter"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "candidate"
+                },
+                "expected_projection": {
+                  "const": "diameter_dimension"
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "depth"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "candidate"
+                },
+                "expected_projection": {
+                  "enum": [
+                    "diameter_dimension",
+                    "thread",
+                    "composite"
+                  ]
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "diameter",
+                    "depth"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "candidate"
+                },
+                "expected_projection": {
+                  "enum": [
+                    "diameter_dimension",
+                    "thread",
+                    "composite"
+                  ]
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "diameter",
+                    "depth",
+                    "counterbore"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "candidate"
+                },
+                "expected_projection": {
+                  "const": "composite"
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "surface_roughness"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "candidate"
+                },
+                "expected_projection": {
+                  "const": "roughness"
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "gdt_parallelism"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "candidate"
+                },
+                "expected_projection": {
+                  "const": "geometric_tolerance"
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "gdt_perpendicularity"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "candidate"
+                },
+                "expected_projection": {
+                  "const": "geometric_tolerance"
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "gdt_flatness"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "candidate"
+                },
+                "expected_projection": {
+                  "const": "geometric_tolerance"
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "datum_reference"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "reference_context"
+                },
+                "expected_projection": {
+                  "type": "null"
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "revision_marker"
+                  ]
+                },
+                "expected_disposition": {
+                  "const": "non_inspection"
+                },
+                "expected_projection": {
+                  "type": "null"
+                }
+              },
+              "not": {
+                "required": [
+                  "negative_family"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "symbol_kinds": {
+                  "const": [
+                    "frozen_negative"
+                  ]
+                },
+                "expected_disposition": {
+                  "enum": [
+                    "non_inspection",
+                    "ambiguous"
+                  ]
+                },
+                "expected_projection": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "negative_family"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

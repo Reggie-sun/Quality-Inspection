@@ -530,6 +530,50 @@ def test_receipt_freshness_recomputes_current_four_artifact_identity(
     ) == ["input_identity_changed"]
 
 
+def test_input_identity_binds_symbol_eval_pair_with_current_four() -> None:
+    """P0-REC-005: full-P0 identity can bind all three exact input artifacts."""
+    symbol_artifacts = {
+        RECEIPT.SYMBOL_EVAL_ARTIFACT: b'{"manifest":1}',
+        RECEIPT.SYMBOL_VERDICT_ARTIFACT: b'{"verdict":1}',
+    }
+    symbol_identity = RECEIPT.input_identity(
+        "live",
+        "task",
+        "D7-T2",
+        symbol_artifacts,
+    )
+    assert {
+        f"{RECEIPT.INPUT_ARTIFACT_PREFIX}{name}"
+        for name in symbol_artifacts
+    } <= set(symbol_identity["components"])
+
+    combined_identity = RECEIPT.input_identity(
+        "live",
+        "full-p0",
+        None,
+        {
+            RECEIPT.CURRENT_FOUR_ARTIFACT: b'{"current_four":1}',
+            **symbol_artifacts,
+        },
+    )
+    assert len(
+        [
+            component
+            for component in combined_identity["components"]
+            if component.startswith(RECEIPT.INPUT_ARTIFACT_PREFIX)
+        ]
+    ) == 3
+    assert combined_identity != symbol_identity
+
+    with pytest.raises(ValueError, match="artifact set"):
+        RECEIPT.input_identity(
+            "live",
+            "task",
+            "D7-T2",
+            {RECEIPT.SYMBOL_EVAL_ARTIFACT: b'{"manifest":1}'},
+        )
+
+
 @pytest.mark.parametrize(
     "artifact_name",
     (

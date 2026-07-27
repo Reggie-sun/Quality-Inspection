@@ -29,6 +29,11 @@ MIRROR_PATH = HARNESS / "contracts/p0-contracts.json"
 BINDINGS_PATH = HARNESS / "contracts/global-contract-bindings.json"
 RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$")
 CURRENT_FOUR_ARTIFACT = "artifacts/current-four-manifest.json"
+SYMBOL_EVAL_ARTIFACT = "artifacts/visual-symbol-eval.json"
+SYMBOL_VERDICT_ARTIFACT = "artifacts/visual-symbol-annotation-verdict.json"
+SYMBOL_EVAL_ARTIFACTS = frozenset(
+    {SYMBOL_EVAL_ARTIFACT, SYMBOL_VERDICT_ARTIFACT}
+)
 INPUT_ARTIFACT_PREFIX = "input-artifact:"
 PROVIDER_FIXTURE_PREFIX = "provider-fixture:"
 PROVIDER_FIXTURE_PATHS = (
@@ -72,6 +77,8 @@ SCHEMA_FILES = (
     "provider-fixture.schema.json",
     "receipt.schema.json",
     "run.schema.json",
+    "visual-symbol-annotation-verdict.schema.json",
+    "visual-symbol-eval.schema.json",
 )
 CODE_IDENTITY_SOURCE_GLOBS = (
     (".agent/harness/scripts", ("*.py",)),
@@ -322,9 +329,17 @@ def input_identity(
                     _read_repository_fixture(root, relative_path),
                 )
             )
-    for name, artifact in (input_artifacts or {}).items():
-        if name != CURRENT_FOUR_ARTIFACT or not isinstance(artifact, bytes):
-            raise ValueError("unsupported current-four-manifest input artifact")
+    artifacts = dict(input_artifacts or {})
+    artifact_names = set(artifacts)
+    if artifact_names and artifact_names not in (
+        {CURRENT_FOUR_ARTIFACT},
+        SYMBOL_EVAL_ARTIFACTS,
+        {CURRENT_FOUR_ARTIFACT, *SYMBOL_EVAL_ARTIFACTS},
+    ):
+        raise ValueError("unsupported input artifact set")
+    for name, artifact in artifacts.items():
+        if not isinstance(artifact, bytes):
+            raise ValueError("input artifact content must be bytes")
         pairs.append((f"{INPUT_ARTIFACT_PREFIX}{name}", artifact))
     return _identity_from_pairs(pairs)
 
@@ -363,8 +378,15 @@ def input_artifacts_from_run(
         for component in components
         if isinstance(component, str) and component.startswith(INPUT_ARTIFACT_PREFIX)
     ]
-    if any(name != CURRENT_FOUR_ARTIFACT for name in names):
-        raise ValueError("unsupported current-four-manifest input artifact")
+    name_set = set(names)
+    if name_set and name_set not in (
+        {CURRENT_FOUR_ARTIFACT},
+        SYMBOL_EVAL_ARTIFACTS,
+        {CURRENT_FOUR_ARTIFACT, *SYMBOL_EVAL_ARTIFACTS},
+    ):
+        raise ValueError("unsupported sealed input artifact set")
+    if len(names) != len(name_set):
+        raise ValueError("duplicate sealed input artifact identity component")
     artifacts: dict[str, bytes] = {}
     for name in names:
         artifact_path = run_dir / name

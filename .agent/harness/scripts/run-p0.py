@@ -35,6 +35,11 @@ TASK_RE = re.compile(r"^D[0-9]+-T[0-9]+$")
 RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$")
 SHELL_OPERATORS = {"&&", "||", ";", "|", ">", ">>", "<"}
 CURRENT_FOUR_ARTIFACT = "artifacts/current-four-manifest.json"
+SYMBOL_EVAL_ARTIFACT = "artifacts/visual-symbol-eval.json"
+SYMBOL_VERDICT_ARTIFACT = "artifacts/visual-symbol-annotation-verdict.json"
+SYMBOL_EVAL_ARTIFACTS = (SYMBOL_EVAL_ARTIFACT, SYMBOL_VERDICT_ARTIFACT)
+SYMBOL_REGISTRATION_REPORT = "reports/symbol-eval-registration.json"
+SYMBOL_REGISTRATION_SELECTOR = "phase://live/symbol-eval-registration"
 LIVE_EVIDENCE_ARTIFACT = "live-run-evidence.json"
 HUMAN_VERDICT_ARTIFACT = "artifacts/human-verdict.json"
 NO_SILENT_SUCCESS_SELECTOR = "phase://failure/no-silent-success"
@@ -594,11 +599,26 @@ def _validate_input_artifacts(
     input_artifacts: Mapping[str, bytes] | None,
 ) -> dict[str, bytes]:
     artifacts = dict(input_artifacts or {})
-    if set(artifacts) - {CURRENT_FOUR_ARTIFACT}:
-        raise ValueError("only artifacts/current-four-manifest.json is accepted")
+    artifact_names = set(artifacts)
+    if artifact_names and artifact_names not in (
+        {CURRENT_FOUR_ARTIFACT},
+        set(SYMBOL_EVAL_ARTIFACTS),
+        {CURRENT_FOUR_ARTIFACT, *SYMBOL_EVAL_ARTIFACTS},
+    ):
+        raise ValueError(
+            "input artifacts must be the exact current-four-manifest artifact or exact "
+            "visual-symbol eval/verdict pair"
+        )
     if any(not isinstance(content, bytes) for content in artifacts.values()):
-        raise TypeError("current-four-manifest input artifact must be bytes")
-    return artifacts
+        raise TypeError("input artifact content must be bytes")
+    return {
+        name: artifacts[name]
+        for name in (
+            CURRENT_FOUR_ARTIFACT,
+            *SYMBOL_EVAL_ARTIFACTS,
+        )
+        if name in artifacts
+    }
 
 
 def _is_sealed(path: Path) -> bool:
@@ -651,6 +671,219 @@ def _load_current_four_artifact(run_id: str) -> dict[str, bytes]:
             "current-four input identity does not match sealed manifest bytes"
         )
     return {CURRENT_FOUR_ARTIFACT: artifact}
+
+
+def _literal_symbol_run_id(run_id: str) -> str:
+    if not RUN_ID_RE.fullmatch(run_id) or run_id in {
+        "latest",
+        "latest-successful",
+    }:
+        raise ValueError("symbol eval requires one literal run ID")
+    return run_id
+
+
+def _symbol_registration_layout(run_dir: Path, *, sealed: bool) -> None:
+    root_names = {"run.json", "logs", "reports", "artifacts"}
+    if (
+        run_dir.is_symlink()
+        or not run_dir.is_dir()
+        or {path.name for path in run_dir.iterdir()} != root_names
+    ):
+        raise ValueError("symbol registration run members are not exact")
+    if any(
+        path.exists() or path.is_symlink()
+        for path in (
+            run_dir / "receipt.json",
+            run_dir / "contract-results.json",
+        )
+    ):
+        raise ValueError(
+            "symbol registration-only run cannot contain receipt or results"
+        )
+    expected_children = (
+        {
+            "logs": set(),
+            "reports": {Path(SYMBOL_REGISTRATION_REPORT).name},
+            "artifacts": {
+                Path(name).name for name in SYMBOL_EVAL_ARTIFACTS
+            },
+        }
+        if sealed
+        else {"logs": set(), "reports": set(), "artifacts": set()}
+    )
+    for directory, expected in expected_children.items():
+        path = run_dir / directory
+        if (
+            path.is_symlink()
+            or not path.is_dir()
+            or {child.name for child in path.iterdir()} != expected
+        ):
+            raise ValueError("symbol registration run members are not exact")
+    members = (run_dir, *tuple(run_dir.rglob("*")))
+    if any(path.is_symlink() for path in members):
+        raise ValueError("symbol registration run must not contain symlinks")
+    if any(_is_sealed(path) != sealed for path in members):
+        state = "sealed" if sealed else "open and writable"
+        raise ValueError(f"symbol registration run must be {state}")
+
+
+def _validate_symbol_run_identity(
+    run: Mapping[str, Any],
+    *,
+    run_id: str,
+    completed: bool,
+) -> None:
+    if (
+        run.get("run_id") != run_id
+        or run.get("mode") != "live"
+        or run.get("scope") != "task"
+        or run.get("task_id") != "D7-T2"
+        or run.get("selected_contract_ids") != []
+        or bool(run.get("completed_at")) is not completed
+    ):
+        state = "completed" if completed else "open"
+        raise ValueError(
+            f"symbol eval source is not a {state} D7-T2 registration-only run"
+        )
+
+
+def register_live_input_artifacts(
+    *,
+    task_id: str,
+    artifacts: Mapping[str, bytes],
+    run_id: str | None = None,
+) -> str:
+    if task_id != "D7-T2":
+        raise ValueError("symbol registration is limited to literal task D7-T2")
+    stage = _script_module(
+        "qi_symbol_eval_artifact_contract",
+        "stage-symbol-eval.py",
+    )
+    validated = stage.validate_artifacts(artifacts)
+    receipt = _receipt_module()
+    receipt.check_contract_authority(ROOT)
+    mirror = _load_json(MIRROR_PATH)
+    bindings = _load_json(BINDINGS_PATH)
+    policies = receipt.load_policies(ROOT)
+    _validate_live_policy(policies)
+    receipt.validate_schema(mirror, "p0-contracts.schema.json", ROOT)
+    receipt.validate_schema(
+        bindings,
+        "global-contract-bindings.schema.json",
+        ROOT,
+    )
+    identity_fields = {
+        "code_identity": receipt.code_identity(ROOT),
+        "config_identity": receipt.config_identity(
+            "live", "task", "D7-T2", ROOT
+        ),
+        "contract_definition_hash": mirror["contract_definition_hash"],
+        "status_projection_hash_at_start": mirror["status_projection_hash"],
+        "policy_versions": receipt.policy_versions(policies),
+    }
+
+    if run_id is None:
+        literal_run_id = _new_run_id()
+        run_dir = RUNS / literal_run_id
+        run: dict[str, Any] = {
+            "schema_version": "run/1",
+            "run_id": literal_run_id,
+            "mode": "live",
+            "scope": "task",
+            "task_id": "D7-T2",
+            **identity_fields,
+            "git_revision_at_start": _git_revision(),
+            "input_identity": receipt.input_identity(
+                "live", "task", "D7-T2", validated, root=ROOT
+            ),
+            "selected_contract_ids": [],
+            "started_at": _iso_now(),
+            "completed_at": None,
+        }
+        receipt.validate_schema(run, "run.schema.json", ROOT)
+        run_dir.mkdir(parents=True, exist_ok=False)
+        for name in ("logs", "reports", "artifacts"):
+            (run_dir / name).mkdir()
+    else:
+        literal_run_id = _literal_symbol_run_id(run_id)
+        run_dir = RUNS / literal_run_id
+        _symbol_registration_layout(run_dir, sealed=False)
+        run = _load_json(run_dir / "run.json")
+        receipt.validate_schema(run, "run.schema.json", ROOT)
+        _validate_symbol_run_identity(
+            run,
+            run_id=literal_run_id,
+            completed=False,
+        )
+        if any(run.get(name) != value for name, value in identity_fields.items()):
+            raise ValueError("open symbol registration run identity is stale")
+        if run.get("input_identity") != receipt.input_identity(
+            "live", "task", "D7-T2", root=ROOT
+        ):
+            raise ValueError("open symbol registration input identity is not empty")
+        run["input_identity"] = receipt.input_identity(
+            "live", "task", "D7-T2", validated, root=ROOT
+        )
+        receipt.validate_schema(run, "run.schema.json", ROOT)
+
+    _write_json(run_dir / "run.json", run)
+    for name, content in validated.items():
+        (run_dir / name).write_bytes(content)
+    run["completed_at"] = _iso_now()
+    receipt.validate_schema(run, "run.schema.json", ROOT)
+    _write_json(run_dir / "run.json", run)
+    report = {
+        "schema_version": "symbol-eval-registration/1",
+        "run_id": literal_run_id,
+        "selector": SYMBOL_REGISTRATION_SELECTOR,
+        "artifact_refs": list(SYMBOL_EVAL_ARTIFACTS),
+        "started_at": run["started_at"],
+        "completed_at": run["completed_at"],
+    }
+    _write_json(run_dir / SYMBOL_REGISTRATION_REPORT, report)
+    _seal_run(run_dir)
+    return literal_run_id
+
+
+def load_symbol_eval_artifacts(run_id: str) -> dict[str, bytes]:
+    literal_run_id = _literal_symbol_run_id(run_id)
+    run_dir = RUNS / literal_run_id
+    _symbol_registration_layout(run_dir, sealed=True)
+    run = _load_json(run_dir / "run.json")
+    receipt = _receipt_module()
+    receipt.validate_schema(run, "run.schema.json", ROOT)
+    _validate_symbol_run_identity(
+        run,
+        run_id=literal_run_id,
+        completed=True,
+    )
+    stage = _script_module(
+        "qi_symbol_eval_sealed_artifact_contract",
+        "stage-symbol-eval.py",
+    )
+    artifacts = stage.validate_artifacts(
+        {
+            name: (run_dir / name).read_bytes()
+            for name in SYMBOL_EVAL_ARTIFACTS
+        }
+    )
+    if run.get("input_identity") != receipt.input_identity(
+        "live", "task", "D7-T2", artifacts, root=ROOT
+    ):
+        raise ValueError(
+            "symbol eval input identity does not match exact artifact bytes"
+        )
+    expected_report = {
+        "schema_version": "symbol-eval-registration/1",
+        "run_id": literal_run_id,
+        "selector": SYMBOL_REGISTRATION_SELECTOR,
+        "artifact_refs": list(SYMBOL_EVAL_ARTIFACTS),
+        "started_at": run["started_at"],
+        "completed_at": run["completed_at"],
+    }
+    if _load_json(run_dir / SYMBOL_REGISTRATION_REPORT) != expected_report:
+        raise ValueError("symbol registration phase record is inconsistent")
+    return artifacts
 
 
 def _require_live_environment(environment: Mapping[str, str]) -> None:
@@ -715,6 +948,7 @@ def _validate_live_policy(policies: Mapping[str, Mapping[str, Any]]) -> None:
         "max_retries_per_call": 2,
         "max_crop_expansions": 1,
         "max_ocr_calls_per_page": 16,
+        "max_vision_calls_per_page": 16,
         "max_vision_calls_per_candidate": 2,
         "max_total_estimated_cost_cny": 50,
         "budget_exceeded_result": "blocked",
@@ -2727,7 +2961,11 @@ def run_task(
         raise ValueError("--task must be a literal Dn-Tn identifier")
 
     artifacts = _validate_input_artifacts(input_artifacts)
-    if artifacts and (mode not in {"fixture", "live"} or task_id != "D2-T1"):
+    if artifacts and (
+        set(artifacts) != {CURRENT_FOUR_ARTIFACT}
+        or mode not in {"fixture", "live"}
+        or task_id != "D2-T1"
+    ):
         raise ValueError(
             "current-four-manifest input is limited to fixture/live D2-T1 task runs"
         )
