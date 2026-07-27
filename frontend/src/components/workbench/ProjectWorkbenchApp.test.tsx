@@ -265,7 +265,7 @@ test("工作台加载完成后不保留过期识别状态", async () => {
 });
 
 
-test("无正式气泡时显示候选气泡并在所选检验项摘要复用候选序号", async () => {
+test("无正式气泡时显示候选气泡并在检验项详情复用候选序号", async () => {
   const snapshot = reviewedResponse();
   snapshot.project.state = "editing";
   snapshot.working_copy.items_frozen_at = null;
@@ -301,6 +301,6 @@ test("无正式气泡时显示候选气泡并在所选检验项摘要复用候�
   );
 
   expect(await screen.findByRole("button", { name: "候选气泡 1" })).not.toBeNull();
-  const selectedSummary = screen.getByRole("region", { name: "所选检验项" });
-  expect(selectedSummary.querySelector("[aria-label='候选序号 1']")).not.toBeNull();
+  const detail = screen.getByRole("article", { name: "检验项 1 · 螺纹" });
+  expect(within(detail).getByText("候选序号 1")).not.toBeNull();
 });
