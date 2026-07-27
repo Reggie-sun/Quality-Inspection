@@ -168,6 +168,162 @@
 - Next verification: 在隔离 runtime 用真实 `QI_MVP_E2E_PDF` 执行 `npm --prefix frontend run e2e -- e2e/chinese-pdf-upload-mvp.spec.ts`，预期先复现或证伪 manual-balloon refresh timeout，并保存精确 request/response/DOM 证据。
 - Closure evidence: current-HEAD RED 先证明旧 `heading[name="检验项目审核"]` 已被真实 `region[name="项目摘要"]` 取代；最小 selector 修正后，同一真实双页 PDF 的 final current-diff Playwright run 为 `1 passed (23.0m)`。运行中 275 个 active items 全部完成审核并 freeze，275 个 balloons 的 manual count 从 20 收敛到 0；全局重校验曾出现 `12 → 14` 的非单调变化，但当前 item 均按 identity 正确退出人工列表。最终 `balloon_blockers=[]`、project=`reviewed`、同一 reviewed result 的 export=`success` 且存在三个 artifacts。fresh frontend regression 为 108 passed，production build passed，仅保留既有 bundle-size warning。
 
+### D7-T2 engineering drawing symbol recognition closure amendment — 2026-07-27
+
+本节把用户于 2026-07-27 批准、commit `1ea1868` 中的
+`docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+激活为同一 D7-T2 的 subordinate implementation detail，不创建第二份 current plan、
+status registry、candidate/result path 或产品 Owner，也不改写此前 sealed receipts。
+
+- Selected lane: `Heavy`。
+- Selected plan: 本文件仍是唯一 current implementation plan；已批准的
+  `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+  只提供本 amendment 下的实现细节，不与本文件竞争 ordering ownership。
+- Selection evidence: activation 时的 current code truth 是 Qwen 之前只有 text。
+  `backend/app/pdf/inventory.py::build_inventory()` 只持久化 text observations，
+  `get_drawings()` 只用于 `vector_drawing_count`；runtime OCR 只扫描 embedded
+  images；automatic snapshot 仍为 text-only。因此现有
+  `backend/app/candidates/advisor.py::CandidateAdvisor` 无法发现从未 materialize
+  为 observation 的 vector symbols。用户于 2026-07-27 批准继续，approved proposal
+  commit 为 `1ea1868`。
+- Validation action: `amend` 后 `continue`；本 Task 0 docs commit 必须先完成，
+  随后才允许开始 `SR-1`。
+- Writer ownership and order: 每个 coupled file group 同时只有一个 writer；
+  spec/code reviewers 严格只读。执行顺序固定为
+  `SR-1 → SR-2 → SR-3 → SR-4 → SR-5 → SR-6 → SR-7 → SR-8`，全部位于
+  `D7-T3` 之前。
+- Problem boundary: 只处理 fixed first current-four PDF 中与 native text 相邻的
+  vector symbols，以及已批准的九类
+  diameter、depth、counterbore、surface roughness、GD&T parallelism、
+  GD&T perpendicularity、GD&T flatness、datum reference、revision marker。
+  不承诺 full-page Vision、standalone symbol，不新增第二 result path、endpoint、
+  DB table，不重做 OCR，不增加 kind 或 configurable threshold。
+- Single Owner: `backend/app/candidates/advisor.py::CandidateAdvisor` 是唯一 Vision
+  integration Owner，也是 candidate 与 coverage 的唯一 final writer。
+  `backend/app/candidates/symbol_review.py` 只是 pure helper，不是第二个 Owner。
+- Old path action: preserve deterministic text candidate path 与既有 text-review route；
+  replace `_route_objects()` 的 silent per-page first-16 truncation 为一个 unified
+  visual-first scheduler。禁止 bridge、shadow、dual-write、fallback、feature flag
+  与 Provider-owned disposition。
+- Unchanged contracts: 不新增 `CandidateType` / `CoarseType` symbol enum；source
+  `raw_text` 继续作为 source truth，识别出的 `Φ/深/⌴/∥/⊥/⏥` 只进入
+  normalized/coarse output；diameter 保持
+  `feature_kind=unknown + requires_confirmation`；Coverage Ledger 仍是 completeness
+  Veto Gate；既有 Review/working-copy/promote/ignore/freeze/balloon/export 顺序不变。
+  既有 `AutomaticResult`、working copy 和 reviewed result 保持 immutable，本 closure
+  必须使用新 project/result。
+- Failure boundary: `visual_crop_oversize`、`symbol_route_budget_exhausted`、
+  Provider/schema/cache failure 或 visual coverage blocking 均不得产生
+  `AutomaticResult`、working copy 或 formal success；任何 visual observation 都不得
+  被静默漏排。超过剩余 slots 的 text routes 保持原对象不变，不写 fake provenance。
+- Live-label gate: 任何 production GREEN 前，Quality Owner 必须 seal source SHA-256
+  `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`
+  的 exact two-page manifest、200% overlay verdict、全部九个 positive families 与九个
+  frozen-negative families。activation 时尚未产生可记录的 literal sealed D7-T2
+  symbol-eval staging run ID；这不是占位值。`SR-1` 必须在 Quality Owner 提供并
+  seal 真实 manifest 后，把实际 literal run ID 原地回填到本 amendment 并提交；
+  回填前 production GREEN 保持 blocked。禁止 `latest`、glob、alias、synthetic
+  labels、old baseline 或 guessed ID，且本 gate 前不得发生 paid/Provider call。
+- Focused gate: 必须恰好覆盖 32 个 logical IDs：
+  `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
+  `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
+  必须 `external_calls=0`；existing text/OCR/parser/Advisor/result/frontend regressions
+  保持 strict；current-source visual calls 与 total Vision calls 均必须
+  `<=16/page`；live gate 要求每个 positive、reference、non-inspection exact-one
+  match，且 frozen-negative false positives 为零。live closure 前必须完成
+  independent review 与 `auto-feature-smoke-test`。
+- Rollback: 每个 `SR-1`～`SR-8` task 和本 activation 都必须记录实际 exact commit；
+  rollback 时先把 symbol receipt 标记为 failed/stale，再用 `git revert` 按
+  `SR-8 → SR-7 → SR-6 → SR-5 → SR-4 → SR-3 → SR-2` 逆序回退 code，最后才
+  revert `SR-1` contract/Harness，保留 sealed runs、cache、audit 与 history，并在
+  最后 revert 本 activation。`D7-T3` 因 missing-symbol defect 保持 blocked；
+  禁止 reset 或 force push。
+- Closure boundary: 本 amendment 不把 `D7-T3` 标为 complete，也不重写既有 sealed
+  receipts。只有 `SR-8` 成功后，才允许记录 D7-T2 symbol closure 并恢复 `D7-T3`。
+- Next verification: 本 Task 0 docs commit 后，`SR-1` 先运行 contract/Harness RED，
+  不先写 production code：
+
+```bash
+micromamba run -n qi-p0 python -m pytest backend/tests/contract/harness/test_symbol_eval_contract.py backend/tests/contract/harness/test_contract_architecture.py backend/tests/contract/harness/test_live_run_contract.py -q
+```
+
+预期 RED：symbol schemas、registration loader 与 staging artifact allowlist 尚不存在。
+若真实 Quality Owner manifest 不可用，后续执行必须停在 live-label gate，不得产生
+production GREEN。
+
+`SR-1`～`SR-8` 的 allowed paths 只有以下精确集合；existing regression tests 仅可在
+直接需要时增加 assertions，不得放宽、skip 或删除 expectations。
+
+Create:
+
+- `backend/app/pdf/visual_observations.py`
+- `backend/app/candidates/symbol_review.py`
+- `backend/app/providers/visual_symbol_review.schema.json`
+- `backend/tests/helpers/__init__.py`
+- `backend/tests/helpers/symbol_fixture.py`
+- `backend/tests/unit/pdf/test_visual_observations.py`
+- `backend/tests/unit/candidates/test_symbol_advisor.py`
+- `backend/tests/contract/test_qwen_symbol_provider.py`
+- `backend/tests/integration/test_symbol_recognition_pipeline.py`
+- `backend/tests/e2e/test_symbol_recognition.py`
+- `.agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json`
+- `.agent/harness/schemas/visual-symbol-eval.schema.json`
+- `.agent/harness/schemas/visual-symbol-annotation-verdict.schema.json`
+- `.agent/harness/scripts/stage-symbol-eval.py`
+- `.agent/harness/scripts/symbol_eval.py`
+- `backend/tests/contract/harness/test_symbol_eval_contract.py`
+
+Modify:
+
+- `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
+- `docs/contracts/MAIN_CONTRACT_MATRIX.md`
+- `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md`
+- `.agent/harness/contracts/p0-contracts.json`（generated only）
+- `.agent/harness/contracts/global-contract-bindings.json`（generated only）
+- `.agent/harness/policy/provider-call-policy.yaml`
+- `.agent/harness/policy/p0-acceptance-policy.yaml`
+- `.agent/harness/schemas/live-run-evidence.schema.json`
+- `.agent/harness/scripts/check-contracts.py`
+- `.agent/harness/scripts/generate-receipt.py`
+- `.agent/harness/scripts/live_evidence_policy.py`
+- `.agent/harness/scripts/run-p0.py`
+- `.agent/harness/scripts/run-provider-contracts.py`
+- `backend/tests/contract/harness/test_contract_architecture.py`
+- `backend/tests/contract/harness/test_live_run_contract.py`
+- `backend/app/pdf/schemas.py`
+- `backend/app/pdf/inventory.py`
+- `backend/app/processing/automatic_result.py`
+- `backend/app/candidates/advisor.py`
+- `backend/app/candidates/coverage.py`
+- `backend/app/providers/base.py`
+- `backend/app/providers/qwen_vl.py`
+- `backend/app/processing/runtime_recognition.py`
+- `backend/app/processing/pipeline.py`
+- `backend/app/processing/tasks.py`
+- `backend/app/review/service.py`
+- `backend/app/projects/router.py`
+- `backend/tests/contract/test_provider_call_records.py`
+- `backend/tests/integration/test_error_records.py`
+- `backend/tests/integration/test_processing_entry_task.py`
+- `backend/tests/integration/test_project_workbench_api.py`
+- `backend/tests/integration/test_result_layers.py`
+- `backend/tests/integration/test_review_operations.py`
+- `backend/tests/integration/test_review_working_copy.py`
+- `backend/tests/integration/test_task_idempotency.py`
+- `frontend/src/api/types.ts`
+- `frontend/src/components/review/ReviewPanel.tsx`
+- `frontend/src/components/review/ReviewPanel.test.tsx`
+- `frontend/src/components/workbench/InspectionItemTable.tsx`
+- `frontend/src/components/workbench/InspectionItemTable.test.tsx`
+- `frontend/src/components/workbench/InspectionWorkbench.tsx`
+- `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- `frontend/src/components/workbench/ProjectWorkbenchApp.tsx`
+- `frontend/src/components/workbench/ProjectWorkbenchApp.test.tsx`
+- `frontend/src/components/pdf/PdfWorkspace.tsx`
+- `frontend/src/components/pdf/PdfWorkspace.test.tsx`
+- `frontend/src/copy/zhCN.ts`
+- `frontend/src/styles/workbench.css`
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：
