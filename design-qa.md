@@ -774,6 +774,8 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
   `.local/design-qa/review-layout-no-empty-space.png`
 - final confirmation-state implementation:
   `.local/design-qa/review-layout-no-empty-space-confirmation-final.png`
+- final no-source-reference implementation:
+  `.local/design-qa/review-no-recognized-original.png`
 - final pixels / CSS viewport: `1380x990 / 1380x990`
 - same-input comparison:
   `.local/design-qa/review-action-semantics-comparison.png`
@@ -799,6 +801,9 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - Second comparison: 扁平化后用户继续指出解析字段下方存在大面积空白。浏览器测量确认旧的
   两列 workspace 为 `127px + 166px`，字段内容约 `188px` 高、操作栏约 `460px` 高；
   CSS Grid 默认等高导致左列出现约 `272px` 的永久空白。
+- Final product correction: 用户确认审核详情不应出现“图纸原文 / 识别原文”。最终实现不再
+  根据原文与解析字段是否相等决定显示状态，所有普通、待确认和未来类型检验项均不渲染该
+  区域；复杂检验项只保留坐标、粗分类和人工确认等结构化字段。
 
 ### Required Fidelity Surfaces
 
@@ -812,7 +817,7 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - Image quality and assets: 本次没有新增 Logo、图标、插画或图片资产；PDF canvas 和气泡
   overlay 未修改。
 - Copy and content: 常驻文案准确区分“排除不进入 SIP”和“无需气泡仍进入 SIP”；确认文案
-  明确说明正式 SIP、图纸气泡与原始识别记录的后果。
+  明确说明正式 SIP、图纸气泡与原始识别记录的后果；审核详情不再向用户重复展示识别原文。
 - Accessibility: 三组操作通过 fieldset/legend 暴露可访问名称；确认块为 `alertdialog`，
   打开后焦点进入“取消排除”，取消后返回“排除”；不只依赖颜色表达危险。
 
@@ -828,6 +833,8 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
   `检验结论 / 内容调整 / 气泡标记` 仍通过标题和分隔线清楚区分。
 - 第二轮修复后的默认态中，解析字段从约 `127px` 扩展到 `293px`，字段与操作改为上下流；
   确认态中 alertdialog 横跨约 `269px` 操作区，左右两组不再产生同步撑高的空块。
+- 最终真实第 3 项 `500 ±0.2` 只显示数量、基本尺寸和上下公差，未出现“图纸原文”或
+  “识别原文”；底层 `raw_text` 与既有命令、审计数据合同保持不变。
 - console errors / warnings: `0 / 0`。
 
 ### Verification And Result
@@ -838,12 +845,13 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - production build: passed；仅保留既有 Vite large-chunk warning。
 - API verification: not applicable，本轮未修改 API 或 backend 行为。
 - Chrome smoke: persistent copy、confirmation open/cancel、no premature command、
-  focus return、responsive layout 和 console 检查 passed。
+  focus return、responsive layout、真实第 3 项无识别原文和 console 检查 passed。
 - Remaining P0: 0.
 - Remaining P1: 0.
 - Remaining P2: 0；重复卡片层级和解析字段下方永久空白均已修复。
 - P3 follow-up polish: none required for this scope.
 - comparison history: 初检通过 → 用户截图指出 P2 重复卡片层级 → 移除分组外框、白底和圆角，
   保留 fieldset/legend 与轻量分隔线 → 用户截图指出两列等高造成永久空白 → 字段与操作改为
-  上下流，确认块横跨操作区 → 默认态、确认态同输入对比和真实浏览器复测通过。
+  上下流，确认块横跨操作区 → 用户确认详情不应展示识别原文 → 移除可见原文区并保留复杂项
+  结构化字段 → 默认态、确认态和真实第 3 项浏览器复测通过。
 - final result: passed

@@ -50,7 +50,8 @@ describe("ReviewPanel", () => {
     })).not.toBeNull();
     expect(screen.getByText("候选序号 2")).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "48" })).toBeNull();
-    expect(screen.getByLabelText("识别原文：48").textContent).toBe("48");
+    expect(screen.queryByText("识别原文")).toBeNull();
+    expect(screen.queryByLabelText("识别原文：48")).toBeNull();
   });
 
   test("缺少 presentation 时不伪造所选检验项状态", () => {
@@ -74,7 +75,7 @@ describe("ReviewPanel", () => {
     expect(screen.queryByText("待审核")).toBeNull();
   });
 
-  test("原文与基本尺寸相同时不重复显示图纸原文", () => {
+  test("审核详情不展示原文分组", () => {
     render(
       <ReviewPanel
         items={[{
@@ -111,7 +112,7 @@ describe("ReviewPanel", () => {
     })).toBeNull();
   });
 
-  test("原文与解析结果不同时仅显示只读识别原文", () => {
+  test("原文与解析结果不同时也不展示识别原文", () => {
     render(
       <ReviewPanel
         items={[{
@@ -127,16 +128,12 @@ describe("ReviewPanel", () => {
       />,
     );
 
-    const drawingSource = screen.getByRole("group", { name: "图纸原文" });
-    const sourceReference = within(drawingSource).getByLabelText(
-      "识别原文：48 ±0.02",
-    );
-
-    expect(sourceReference.textContent).toBe("48 ±0.02");
-    expect(within(drawingSource).queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("group", { name: "图纸原文" })).toBeNull();
+    expect(screen.queryByText("识别原文")).toBeNull();
+    expect(screen.queryByLabelText("识别原文：48 ±0.02")).toBeNull();
   });
 
-  test("待确认项目即使原文与解析结果相同也显示只读识别原文", () => {
+  test("待确认项目也不展示识别原文", () => {
     render(
       <ReviewPanel
         items={[{
@@ -152,14 +149,12 @@ describe("ReviewPanel", () => {
       />,
     );
 
-    const drawingSource = screen.getByRole("group", { name: "图纸原文" });
-    expect(within(drawingSource).getByLabelText(
-      "识别原文：48",
-    ).textContent).toBe("48");
-    expect(within(drawingSource).queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("group", { name: "图纸原文" })).toBeNull();
+    expect(screen.queryByText("识别原文")).toBeNull();
+    expect(screen.queryByLabelText("识别原文：48")).toBeNull();
   });
 
-  test("复杂检验项只读展示识别原文且不渲染空解析分组", () => {
+  test("复杂检验项仅展示结构化信息且不渲染识别原文和空解析分组", () => {
     render(
       <ReviewPanel
         items={[{
@@ -175,21 +170,20 @@ describe("ReviewPanel", () => {
       />,
     );
 
-    const drawingSource = screen.getByRole("group", { name: "图纸原文" });
+    const complexDetails = screen.getByRole("group", { name: "复杂项信息" });
 
-    expect(within(drawingSource).getByLabelText(
-      "识别原文：Ra 3.2",
-    ).textContent).toBe("Ra 3.2");
-    expect(within(drawingSource).queryByRole("textbox", {
+    expect(screen.queryByText("识别原文")).toBeNull();
+    expect(screen.queryByLabelText("识别原文：Ra 3.2")).toBeNull();
+    expect(within(complexDetails).queryByRole("textbox", {
       name: "原始标注：Ra 3.2",
     })).toBeNull();
-    expect(within(drawingSource).getByRole("textbox", {
+    expect(within(complexDetails).getByRole("textbox", {
       name: "坐标：Ra 3.2",
     })).not.toBeNull();
-    expect(within(drawingSource).getByRole("combobox", {
+    expect(within(complexDetails).getByRole("combobox", {
       name: "粗分类：Ra 3.2",
     })).not.toBeNull();
-    const requiresConfirmation = within(drawingSource).getByRole("checkbox", {
+    const requiresConfirmation = within(complexDetails).getByRole("checkbox", {
       name: "需要人工确认：Ra 3.2",
     });
     expect(requiresConfirmation.closest("label")?.classList.contains(
@@ -1075,8 +1069,8 @@ describe("ReviewPanel", () => {
     expect(screen.getAllByRole("article")).toHaveLength(1);
     expect(screen.getByRole("heading", { level: 3 }).textContent)
       .not.toContain("尺寸 157");
-    expect(screen.getByLabelText("识别原文：尺寸 157").textContent)
-      .toBe("尺寸 157");
+    expect(screen.queryByText("识别原文")).toBeNull();
+    expect(screen.queryByLabelText("识别原文：尺寸 157")).toBeNull();
     expect(screen.queryAllByLabelText(/^原始标注：/)).toHaveLength(0);
 
     rerender(<ReviewPanel items={items} onCommand={vi.fn()} />);
@@ -1138,8 +1132,8 @@ describe("ReviewPanel", () => {
 
     expect(screen.getByRole("heading", { level: 3 }).textContent)
       .not.toContain("新型标注");
-    expect(screen.getByLabelText("识别原文：新型标注").textContent)
-      .toBe("新型标注");
+    expect(screen.queryByText("识别原文")).toBeNull();
+    expect(screen.queryByLabelText("识别原文：新型标注")).toBeNull();
     expect(document.body.textContent).not.toContain("future_network_type");
     expect(screen.getByRole("button", { name: "保留检验项：新型标注" }))
       .not.toBeNull();

@@ -776,7 +776,8 @@ describe("InspectionWorkbench", () => {
     expect(within(workspace).queryByRole("region", {
       name: "所选检验项",
     })).toBeNull();
-    expect(screen.getByLabelText("识别原文：M8").textContent).toBe("M8");
+    expect(screen.queryByText("识别原文")).toBeNull();
+    expect(screen.queryByLabelText("识别原文：M8")).toBeNull();
   });
 
   test("正式导出完成时辅助区只显示导出与处理信息", () => {
