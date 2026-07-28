@@ -33,7 +33,7 @@ from app.pdf.visual_observations import (
 SCHEMA_PATH = (
     Path(__file__).parents[1] / "providers/visual_symbol_review.schema.json"
 )
-VISUAL_PROMPT_VERSION = "visual-symbol-prompt/1"
+VISUAL_PROMPT_VERSION = "visual-symbol-prompt/2"
 VISUAL_SCHEMA_VERSION = "visual-symbol-review/1"
 VISUAL_ADAPTER_VERSION = "qwen-openai-compatible/1"
 VISUAL_CACHE_SCHEMA_VERSION = "visual-symbol-advisor-cache/1"
@@ -188,6 +188,7 @@ def visual_cache_key(**identity_arguments: Any) -> str:
 
 
 def visual_review_prompt(visual_observation_ids: Sequence[str]) -> str:
+    response_schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     return json.dumps(
         {
             "task": "review_local_engineering_drawing_symbol_contexts",
@@ -196,9 +197,11 @@ def visual_review_prompt(visual_observation_ids: Sequence[str]) -> str:
             "visual_observation_ids": list(visual_observation_ids),
             "constraints": [
                 "use_only_listed_visual_observation_ids",
-                "return_frozen_schema_only",
+                "match_response_schema_exactly",
                 "requires_confirmation_must_be_true",
+                "return_one_json_object_only",
             ],
+            "response_schema": response_schema,
         },
         sort_keys=True,
         separators=(",", ":"),

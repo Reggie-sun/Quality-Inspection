@@ -99,24 +99,30 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     private_marker = b"private-marker-%PDF"
     image = _png(text=b"review\x00" + private_marker)
     prompt = visual_review_prompt(("visual-001", "visual-002"))
-    assert json.loads(prompt) == {
+    response_schema = json.loads(
+        (
+            Path(__file__).parents[2]
+            / "app/providers/visual_symbol_review.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    expected_prompt = {
         "task": "review_local_engineering_drawing_symbol_contexts",
-        "prompt_version": "visual-symbol-prompt/1",
+        "prompt_version": "visual-symbol-prompt/2",
         "schema_version": "visual-symbol-review/1",
         "visual_observation_ids": ["visual-001", "visual-002"],
         "constraints": [
             "use_only_listed_visual_observation_ids",
-            "return_frozen_schema_only",
+            "match_response_schema_exactly",
             "requires_confirmation_must_be_true",
+            "return_one_json_object_only",
         ],
+        "response_schema": response_schema,
     }
-    assert prompt == (
-        '{"constraints":["use_only_listed_visual_observation_ids",'
-        '"return_frozen_schema_only","requires_confirmation_must_be_true"],'
-        '"prompt_version":"visual-symbol-prompt/1",'
-        '"schema_version":"visual-symbol-review/1",'
-        '"task":"review_local_engineering_drawing_symbol_contexts",'
-        '"visual_observation_ids":["visual-001","visual-002"]}'
+    assert json.loads(prompt) == expected_prompt
+    assert prompt == json.dumps(
+        expected_prompt,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     result = QwenVisionProvider(
         SimpleNamespace(chat=SimpleNamespace(completions=completions))
@@ -212,7 +218,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         "crop_bbox_pdf": (10.0, 20.0, 30.0, 41.0),
         "crop_sha256": "d" * 64,
         "model": "qwen3-vl-max",
-        "prompt_version": "visual-symbol-prompt/2",
+        "prompt_version": "visual-symbol-prompt/3",
         "schema_version": "visual-symbol-review/2",
         "adapter_version": "qwen-openai-compatible/2",
         "proposal_version": "visual-observation/1",

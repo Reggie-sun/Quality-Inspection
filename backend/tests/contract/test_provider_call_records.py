@@ -369,7 +369,7 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         elif case == "identity_version":
             cache_payload = json.loads(cache_path.read_text())
             cache_payload["identity"]["prompt_version"] = (
-                "visual-symbol-prompt/2"
+                "visual-symbol-prompt/3"
             )
             cache_path.write_text(json.dumps(cache_payload))
         elif case == "response_schema":
