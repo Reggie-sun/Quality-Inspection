@@ -787,6 +787,74 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     refinement 不宣称修复该 ambiguous label，也不授权读取 manifest 来选边。
     datum/revision/duplicate-source contract、allowed paths、verification、Provider
     禁令和 rollback 均沿用上一 amendment。
+- Task 8 Step 6 visual multi-kind request-contract recovery amendment —
+  2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: 对 fresh sealed run
+      `20260728T095023589634Z-740b6624` 的 sanitized automatic result、exact
+      79/124 observations 和 13/16 batches 进行 no-Provider attribution。56 个
+      positive labels 中仍有 23 个 kind empty/mismatch；它们命中的 50 个
+      `overlap >= 0.5` proposals 全部进入 exact batches 且具有唯一 coverage。
+      其中 14/50 没有可用 kind，36/50 返回 schema-valid 但错误的 allowlisted
+      kind；13 个相关 batches 中 10 个同时产生其他 exact-kind success，失败组
+      crop/context pixels 和 batch member count 也不小于成功组。现有证据排除 batch
+      漏调、全批 transport failure、明显 crop 太小和 local validator 改写 kind。
+    - Validation action: `amend` 后 `continue` canonical prompt-contract TDD；
+      不进入 subordinate Step 7/8，不创建或调用 Provider，不把静态 prompt test
+      报告为 LIVE-01 success。
+    - Writer ownership and order: parent sole writer；本 current-plan amendment
+      单独先提交，随后只修改下列 allowed production/test paths，禁止并行 writer。
+    - Next verification:
+      `backend/tests/contract/test_qwen_symbol_provider.py::
+      test_visual_prompt_requires_independent_exact_multikind_reporting`
+      必须先对现有 `visual-symbol-prompt/3` 形成 exact RED。
+  - Problem boundary, Owner and old path: raw candidate/coverage 的单一 business
+    Owner 仍是 `backend/app/candidates/advisor.py::CandidateAdvisor`；本 recovery
+    的唯一 production change surface 是
+    `backend/app/candidates/symbol_review.py::visual_review_prompt()`。旧 `/3`
+    request 只要求 inspect listed contexts 并提供简短 kind guide，没有显式要求
+    每个 context 独立判断、composite context 的每个可见 component 各输出一条
+    detection、同一 composite 的 detections 复用同一
+    `visual_observation_id`，也没有禁止用邻近 context 的 kind 替代当前 context。
+    该隐式语义直接替换为 `/4`；不保留 `/3` fallback/shadow prompt，不在 local
+    validator、projection、annotation manifest 或 evaluator 中猜测/重标 kind。
+  - Exact request-contract delta: `VISUAL_PROMPT_VERSION` 从
+    `visual-symbol-prompt/3` bump 为 `visual-symbol-prompt/4`，使旧 cache identity
+    safe miss。canonical JSON prompt 新增 exact
+    `detection_reporting_contract`，逐字要求：
+    - `Judge every visual context independently.`
+    - `For each visible component whose kind is in symbol_kind_guide, emit one
+      separate detection.`
+    - `If one context contains multiple components, emit multiple detections
+      and reuse that context's visual_observation_id for every component.`
+    - `Never substitute a kind seen only in a neighboring visual context.`
+    - `Emit zero detections for a context only when no allowlisted symbol
+      component is recognizable in that context.`
+    Existing context bbox、associated-text allowlist、kind guide、frozen response
+    schema、positive bbox、`requires_confirmation=true` 和 one-object constraints
+    保持。
+  - Allowed paths and commit boundary: prompt code commit 只允许
+    `backend/app/candidates/symbol_review.py`、
+    `backend/tests/contract/test_qwen_symbol_provider.py`、
+    `backend/tests/unit/candidates/test_advisor.py` 和
+    `backend/tests/e2e/test_symbol_recognition.py`。本 amendment 必须单独先提交。
+    不得修改 Provider adapter/transport/model/timeout/retry、response schema、
+    proposal rule/crops/DPI/packing/call cap、projection、LIVE-01 evaluator、sealed
+    manifest/verdict/run、automatic result、frontend、D7-T3 status 或 `main`。
+  - Unchanged contracts and verification: Provider 仍最多 `16/page`，response
+    仍为 `visual-symbol-review/1`，每个 visual ID 最多四条 schema-valid detections，
+    source IDs 必须属于同一 context allowlist；合法的 no-detection 继续允许，
+    local projection 继续只消费 exact returned kind set。RED/GREEN 后运行完整
+    Qwen symbol Provider contract、Advisor unit、symbol E2E、candidate/provider/
+    Task 8 focused suites、`ruff check`、`check-contracts.py`、privacy scan 和
+    independent review；Provider construction/calls 必须保持 0。静态通过只证明
+    request/cache contract，不证明 model accuracy；只有 proposal upstream gap
+    也经新 Quality Owner gate 关闭后，才允许另行 amendment 授权一次 fresh
+    literal full-P0 run。rollback 先 revert prompt code commit，再 revert 本
+    amendment，不删除或改写任何 sealed evidence。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
