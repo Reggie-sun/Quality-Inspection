@@ -11,7 +11,7 @@ dev-local-api:
 
 dev-local-frontend:
 	@fuser -k "$(LOCAL_FRONTEND_PORT)/tcp" >/dev/null 2>&1 || true
-	QI_API_PROXY_TARGET=http://127.0.0.1:$(LOCAL_API_PORT) npm --prefix frontend run dev -- --port $(LOCAL_FRONTEND_PORT) --strictPort
+	QI_API_PROXY_TARGET=http://127.0.0.1:$(LOCAL_API_PORT) npm --prefix frontend run dev -- --host 127.0.0.1 --port $(LOCAL_FRONTEND_PORT) --strictPort
 
 qa-dev-config:
 	$(QA_DEV_COMPOSE) config
