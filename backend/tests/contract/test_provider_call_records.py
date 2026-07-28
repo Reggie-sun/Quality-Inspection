@@ -199,12 +199,23 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
                 choices=[
                     SimpleNamespace(
                         message=SimpleNamespace(
-                            content=json.dumps(
-                                {
-                                    "schema_version": "visual-symbol-review/1",
-                                    "detections": [],
-                                }
-                            )
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    type="function",
+                                    function=SimpleNamespace(
+                                        name="submit_visual_symbol_review",
+                                        arguments=json.dumps(
+                                            {
+                                                "schema_version": (
+                                                    "visual-symbol-review/1"
+                                                ),
+                                                "detections": [],
+                                            }
+                                        ),
+                                    ),
+                                )
+                            ],
                         )
                     )
                 ],

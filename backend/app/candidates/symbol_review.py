@@ -35,7 +35,7 @@ SCHEMA_PATH = (
 )
 VISUAL_PROMPT_VERSION = "visual-symbol-prompt/3"
 VISUAL_SCHEMA_VERSION = "visual-symbol-review/1"
-VISUAL_ADAPTER_VERSION = "qwen-openai-compatible/1"
+VISUAL_ADAPTER_VERSION = "qwen-openai-compatible/2"
 VISUAL_CACHE_SCHEMA_VERSION = "visual-symbol-advisor-cache/1"
 VISUAL_REQUEST_SCHEMA_VERSION = "visual-symbol-call-request/1"
 VISUAL_CACHE_FIELDS = {

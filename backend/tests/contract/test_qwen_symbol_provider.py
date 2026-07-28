@@ -30,6 +30,9 @@ from app.providers.qwen_vl import (
 )
 
 
+_VISUAL_TOOL_NAME = "submit_visual_symbol_review"
+
+
 def _png_chunk(kind: bytes, content: bytes) -> bytes:
     return (
         len(content).to_bytes(4, "big")
@@ -106,6 +109,21 @@ def _visual_observation(
     )
 
 
+def _visual_tool_call(
+    arguments: object,
+    *,
+    name: str = _VISUAL_TOOL_NAME,
+    call_type: str = "function",
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        type=call_type,
+        function=SimpleNamespace(
+            name=name,
+            arguments=arguments,
+        ),
+    )
+
+
 def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     """PROV-01: the visual request and every cache identity dimension are frozen."""
     fixture = json.loads(
@@ -116,6 +134,11 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         ).read_text(encoding="utf-8")
     )
     qwen_symbol_fixture = fixture["payload"]
+    assert (
+        fixture["adapter_version"]
+        == VISUAL_ADAPTER_VERSION
+        == "qwen-openai-compatible/2"
+    )
 
     class FakeCompletions:
         def __init__(self) -> None:
@@ -128,7 +151,12 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                 choices=[
                     SimpleNamespace(
                         message=SimpleNamespace(
-                            content=qwen_symbol_fixture["content"]
+                            content=None,
+                            tool_calls=[
+                                _visual_tool_call(
+                                    qwen_symbol_fixture["arguments"]
+                                )
+                            ],
                         )
                     )
                 ],
@@ -292,7 +320,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                     "role": "system",
                     "content": (
                         "Review local engineering drawing symbol contexts. "
-                        "Output JSON only."
+                        "Call the reporting function exactly once."
                     ),
                 },
                 {
@@ -301,20 +329,37 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                         {"type": "image_url", "image_url": {"url": data_url}},
                         {
                             "type": "text",
-                            "text": prompt + "\nOutput in JSON format.",
+                            "text": prompt,
                         },
                     ],
                 },
             ],
-            "response_format": {"type": "json_object"},
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": _VISUAL_TOOL_NAME,
+                        "description": (
+                            "Return the frozen visual symbol review object "
+                            "for this crop."
+                        ),
+                        "parameters": response_schema,
+                    },
+                }
+            ],
+            "tool_choice": {
+                "type": "function",
+                "function": {"name": _VISUAL_TOOL_NAME},
+            },
+            "parallel_tool_calls": False,
             "extra_body": {"enable_thinking": False},
         }
     ]
     assert (
         completions.calls[0]["messages"][1]["content"][1]["text"]
-        == prompt + "\nOutput in JSON format."
+        == prompt
     )
-    assert result.payload == json.loads(qwen_symbol_fixture["content"])
+    assert result.payload == json.loads(qwen_symbol_fixture["arguments"])
     request_id, sdk_usage = validate_visual_request_metadata(
         "fixture-sdk-usage",
         CompletionUsage(
@@ -351,7 +396,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         "model": "qwen3-vl-max",
         "prompt_version": "visual-symbol-prompt/2",
         "schema_version": "visual-symbol-review/2",
-        "adapter_version": "qwen-openai-compatible/2",
+        "adapter_version": "qwen-openai-compatible/1",
         "proposal_version": "visual-observation/1",
         "pymupdf_version": "1.27.0",
     }
@@ -370,7 +415,12 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                 id="fixture-qwen-invalid-symbol",
                 choices=[
                     SimpleNamespace(
-                        message=SimpleNamespace(content=invalid_body)
+                        message=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                _visual_tool_call(invalid_body)
+                            ],
+                        )
                     )
                 ],
                 usage={"total_tokens": 4},
@@ -387,6 +437,75 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     assert raised.value.usage == {"total_tokens": 4}
     assert raised.value.__cause__ is None
     assert invalid_body not in str(raised.value)
+
+    invalid_tool_messages = (
+        SimpleNamespace(content=None, tool_calls=[]),
+        SimpleNamespace(
+            content=None,
+            tool_calls=[
+                _visual_tool_call(qwen_symbol_fixture["arguments"]),
+                _visual_tool_call(qwen_symbol_fixture["arguments"]),
+            ],
+        ),
+        SimpleNamespace(
+            content=None,
+            tool_calls=[
+                _visual_tool_call(
+                    qwen_symbol_fixture["arguments"],
+                    name="wrong_visual_tool",
+                )
+            ],
+        ),
+        SimpleNamespace(
+            content=None,
+            tool_calls=[
+                _visual_tool_call(
+                    qwen_symbol_fixture["arguments"],
+                    call_type="not-function",
+                )
+            ],
+        ),
+        SimpleNamespace(
+            content=None,
+            tool_calls=[SimpleNamespace(type="function")],
+        ),
+        SimpleNamespace(
+            content=None,
+            tool_calls=[_visual_tool_call({"not": "json text"})],
+        ),
+        SimpleNamespace(
+            content=qwen_symbol_fixture["arguments"],
+            tool_calls=[],
+        ),
+        SimpleNamespace(
+            content="unexpected explanation",
+            tool_calls=[
+                _visual_tool_call(qwen_symbol_fixture["arguments"])
+            ],
+        ),
+    )
+    for invalid_message in invalid_tool_messages:
+        class InvalidToolCompletions:
+            @staticmethod
+            def create(**_kwargs):
+                return SimpleNamespace(
+                    id="fixture-qwen-invalid-tool",
+                    choices=[SimpleNamespace(message=invalid_message)],
+                    usage={"total_tokens": 4},
+                )
+
+        invalid_tool_provider = QwenVisionProvider(
+            SimpleNamespace(
+                chat=SimpleNamespace(
+                    completions=InvalidToolCompletions()
+                )
+            )
+        )
+        with pytest.raises(VisualSymbolProviderError) as tool_error:
+            invalid_tool_provider.review_symbols(image, prompt)
+        assert tool_error.value.request_id == "fixture-qwen-invalid-tool"
+        assert tool_error.value.usage == {"total_tokens": 4}
+        assert tool_error.value.__cause__ is None
 
     class NeverCompletions:
         def __init__(self) -> None:
@@ -438,7 +557,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
             ).review_symbols(unsafe_image, prompt)
         assert never.calls == 0
 
-    valid_content = qwen_symbol_fixture["content"]
+    valid_content = qwen_symbol_fixture["arguments"]
 
     def metadata_provider(request_id: str, usage: dict) -> QwenVisionProvider:
         class MetadataCompletions:
@@ -448,7 +567,12 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                     id=request_id,
                     choices=[
                         SimpleNamespace(
-                            message=SimpleNamespace(content=valid_content)
+                            message=SimpleNamespace(
+                                content=None,
+                                tool_calls=[
+                                    _visual_tool_call(valid_content)
+                                ],
+                            )
                         )
                     ],
                     usage=usage,

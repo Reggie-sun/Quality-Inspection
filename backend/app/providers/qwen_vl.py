@@ -22,7 +22,12 @@ from app.candidates.symbol_review import (
 SCHEMA_PATH = Path(__file__).with_name("candidate_review.schema.json")
 SYSTEM_PROMPT = "Review one engineering annotation crop. Output JSON only."
 VISUAL_SYSTEM_PROMPT = (
-    "Review local engineering drawing symbol contexts. Output JSON only."
+    "Review local engineering drawing symbol contexts. "
+    "Call the reporting function exactly once."
+)
+VISUAL_TOOL_NAME = "submit_visual_symbol_review"
+VISUAL_SCHEMA_PATH = Path(__file__).with_name(
+    "visual_symbol_review.schema.json"
 )
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _MAX_VISUAL_PNG_SIDE = 1536
@@ -85,6 +90,22 @@ def _usage_dict(usage: Any) -> dict[str, int]:
         str(key): int(value)
         for key, value in raw.items()
         if isinstance(value, int) and not isinstance(value, bool)
+    }
+
+
+def _visual_symbol_tool() -> dict[str, Any]:
+    schema = json.loads(VISUAL_SCHEMA_PATH.read_text(encoding="utf-8"))
+    if not isinstance(schema, dict):
+        raise ValueError("visual symbol response schema must be one object")
+    return {
+        "type": "function",
+        "function": {
+            "name": VISUAL_TOOL_NAME,
+            "description": (
+                "Return the frozen visual symbol review object for this crop."
+            ),
+            "parameters": schema,
+        },
     }
 
 
@@ -312,12 +333,17 @@ class QwenVisionProvider:
                         {"type": "image_url", "image_url": {"url": data_url}},
                         {
                             "type": "text",
-                            "text": prompt + "\nOutput in JSON format.",
+                            "text": prompt,
                         },
                     ],
                 },
             ],
-            response_format={"type": "json_object"},
+            tools=[_visual_symbol_tool()],
+            tool_choice={
+                "type": "function",
+                "function": {"name": VISUAL_TOOL_NAME},
+            },
+            parallel_tool_calls=False,
             extra_body={"enable_thinking": False},
         )
         request_id, usage = validate_visual_request_metadata(
@@ -325,10 +351,24 @@ class QwenVisionProvider:
             getattr(completion, "usage", None),
         )
         try:
-            content = completion.choices[0].message.content
-            if not isinstance(content, str):
-                raise TypeError("content")
-            payload = parse_visual_symbol_json(content)
+            message = completion.choices[0].message
+            tool_calls = message.tool_calls
+            if (
+                message.content not in (None, "")
+                or not isinstance(tool_calls, (list, tuple))
+                or len(tool_calls) != 1
+            ):
+                raise TypeError("tool_calls")
+            tool_call = tool_calls[0]
+            function = tool_call.function
+            arguments = function.arguments
+            if (
+                tool_call.type != "function"
+                or function.name != VISUAL_TOOL_NAME
+                or not isinstance(arguments, str)
+            ):
+                raise TypeError("tool_call")
+            payload = parse_visual_symbol_json(arguments)
         except (
             AttributeError,
             IndexError,
