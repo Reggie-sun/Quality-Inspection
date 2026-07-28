@@ -124,6 +124,50 @@ def _visual_tool_call(
     )
 
 
+def test_visual_prompt_requires_independent_exact_multikind_reporting() -> None:
+    prompt = json.loads(
+        visual_review_prompt(
+            (
+                _visual_observation(
+                    "visual-composite-001",
+                    (20.0, 40.0, 60.0, 70.0),
+                    ("text-line-001",),
+                ),
+            ),
+            text_observations={
+                "text-line-001": _text_observation(
+                    "text-line-001",
+                    "⌴Φ20↧10",
+                    observation_level="line",
+                )
+            },
+            crop_bbox_pdf=(10.0, 20.0, 110.0, 120.0),
+        )
+    )
+
+    assert prompt["prompt_version"] == "visual-symbol-prompt/4"
+    assert prompt["detection_reporting_contract"] == [
+        "Judge every visual context independently.",
+        (
+            "For each visible component whose kind is in symbol_kind_guide, "
+            "emit one separate detection."
+        ),
+        (
+            "If one context contains multiple components, emit multiple "
+            "detections and reuse that context's visual_observation_id for "
+            "every component."
+        ),
+        (
+            "Never substitute a kind seen only in a neighboring visual "
+            "context."
+        ),
+        (
+            "Emit zero detections for a context only when no allowlisted "
+            "symbol component is recognizable in that context."
+        ),
+    ]
+
+
 def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     """PROV-01: the visual request and every cache identity dimension are frozen."""
     fixture = json.loads(
@@ -213,7 +257,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     )
     expected_prompt = {
         "task": "review_local_engineering_drawing_symbol_contexts",
-        "prompt_version": "visual-symbol-prompt/3",
+        "prompt_version": "visual-symbol-prompt/4",
         "schema_version": "visual-symbol-review/1",
         "visual_observation_ids": ["visual-001", "visual-002"],
         "visual_contexts": [
@@ -258,6 +302,26 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
             "datum_reference": "boxed datum letter with its datum pointer",
             "revision_marker": "closed triangle containing a revision token",
         },
+        "detection_reporting_contract": [
+            "Judge every visual context independently.",
+            (
+                "For each visible component whose kind is in "
+                "symbol_kind_guide, emit one separate detection."
+            ),
+            (
+                "If one context contains multiple components, emit multiple "
+                "detections and reuse that context's visual_observation_id "
+                "for every component."
+            ),
+            (
+                "Never substitute a kind seen only in a neighboring visual "
+                "context."
+            ),
+            (
+                "Emit zero detections for a context only when no allowlisted "
+                "symbol component is recognizable in that context."
+            ),
+        ],
         "constraints": [
             "inspect_each_listed_visual_context",
             "use_only_listed_visual_observation_ids",

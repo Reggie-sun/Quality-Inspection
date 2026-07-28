@@ -118,7 +118,7 @@ class VisualDiameterProvider(EchoVisionProvider):
         assert image.startswith(b"\x89PNG")
         request = json.loads(prompt)
         assert request["schema_version"] == "visual-symbol-review/1"
-        assert request["prompt_version"] == "visual-symbol-prompt/3"
+        assert request["prompt_version"] == "visual-symbol-prompt/4"
         assert len(request["visual_contexts"]) == 1
         context = request["visual_contexts"][0]
         assert context["visual_observation_id"] in request[

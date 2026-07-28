@@ -34,7 +34,7 @@ from app.pdf.visual_observations import (
 SCHEMA_PATH = (
     Path(__file__).parents[1] / "providers/visual_symbol_review.schema.json"
 )
-VISUAL_PROMPT_VERSION = "visual-symbol-prompt/3"
+VISUAL_PROMPT_VERSION = "visual-symbol-prompt/4"
 VISUAL_SCHEMA_VERSION = "visual-symbol-review/1"
 VISUAL_ADAPTER_VERSION = "qwen-openai-compatible/2"
 VISUAL_CACHE_SCHEMA_VERSION = "visual-symbol-advisor-cache/1"
@@ -302,6 +302,27 @@ def visual_review_prompt(
                     "closed triangle containing a revision token"
                 ),
             },
+            "detection_reporting_contract": [
+                "Judge every visual context independently.",
+                (
+                    "For each visible component whose kind is in "
+                    "symbol_kind_guide, emit one separate detection."
+                ),
+                (
+                    "If one context contains multiple components, emit "
+                    "multiple detections and reuse that context's "
+                    "visual_observation_id for every component."
+                ),
+                (
+                    "Never substitute a kind seen only in a neighboring "
+                    "visual context."
+                ),
+                (
+                    "Emit zero detections for a context only when no "
+                    "allowlisted symbol component is recognizable in that "
+                    "context."
+                ),
+            ],
             "constraints": [
                 "inspect_each_listed_visual_context",
                 "use_only_listed_visual_observation_ids",

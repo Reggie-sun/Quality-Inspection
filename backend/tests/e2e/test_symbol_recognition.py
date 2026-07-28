@@ -82,6 +82,7 @@ class FrozenSymbolProvider:
         request = json.loads(prompt)
         assert set(request) == {
             "constraints",
+            "detection_reporting_contract",
             "prompt_version",
             "response_schema",
             "schema_version",
@@ -90,7 +91,7 @@ class FrozenSymbolProvider:
             "visual_contexts",
             "visual_observation_ids",
         }
-        assert request["prompt_version"] == "visual-symbol-prompt/3"
+        assert request["prompt_version"] == "visual-symbol-prompt/4"
         contexts = {
             context["visual_observation_id"]: context
             for context in request["visual_contexts"]
