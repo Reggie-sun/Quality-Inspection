@@ -395,6 +395,33 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     SR-2B exact-rule/Quality Owner docs commit；然后才按既有历史回退
     `6920958` design、`8e0c625` capacity amendment 和更早 tasks。sealed runs、
     manifest、diagnostic evidence 与 Provider-call audit 保留。
+- Task 8 Step 6 current-four registration recovery amendment — 2026-07-28:
+  - User approval and blocker evidence: 用户在 Task 8 Step 5 gate commit
+    `47571c758163f0a5ffdaeecd612f65e64b271e02` 后明确批准继续解除 Step 6
+    blocker。historical current-four registration
+    `20260721T130805437356Z-e52457ee` 在 main checkout、当前
+    `symbol-recognition` worktree 与全部已登记 worktree 中均不存在；不得重建该旧
+    run ID、复制等价 JSON 或猜测替代 evidence。
+  - Replacement sealed evidence: 使用本计划已批准的 current-four source root，
+    现有 `stage-current-four.py` 重新机械验证 exact 四个 SHA-256、六页和物理页规格，
+    并创建 fresh/passed D2-T1 live registration
+    `20260728T073514713074Z-f32e6fae`。其 manifest SHA-256 为
+    `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`；
+    `generate-receipt.py --check-run` 返回 `receipt_valid=1`，production loader
+    exact 复核通过，全树只读且不含 PDF bytes、host source path 或 Provider call。
+  - Literal binding: Task 8 Step 6 当前唯一批准的 current-four literal run ID
+    是 `20260728T073514713074Z-f32e6fae`；symbol-eval literal run ID 保持
+    `20260727T085747865239Z-5aa3e8d3`。full-P0 live command 必须把两者直接写入
+    command，不得使用 alias、glob、command substitution 或 environment-variable
+    alias。
+  - Scope and next verification: 本 correction 只替换已丢失的 registration
+    evidence handle，不修改 current-four bytes、stable contract、Owner、schema、
+    Provider policy、Task 8 gate code、D7-T3 状态或其余 task ordering。本文件是唯一
+    allowed repository path；该 amendment 必须在任何 Provider call 前提交。随后先
+    重跑 exact receipt/loader preflight，再执行 subordinate Task 8 Step 6 literal
+    full-P0 live command。
+  - Rollback: live gate 若失败，保留两个 sealed input runs、失败 run、audit 与
+    Provider-call evidence；只 revert 本 docs amendment，不删除或改写 run history。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
