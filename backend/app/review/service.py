@@ -441,6 +441,35 @@ class ReviewService:
         coverage = copy.deepcopy(raw_coverage)
         for entry in coverage.get("entries", []):
             if isinstance(entry, dict):
+                advisor_review = entry.get("advisor_review")
+                if (
+                    isinstance(advisor_review, dict)
+                    and set(advisor_review)
+                    == {
+                        "route",
+                        "schema_version",
+                        "symbol_kinds",
+                        "rejection_code",
+                    }
+                    and advisor_review.get("route") == "visual_symbol"
+                    and advisor_review.get("schema_version")
+                    == "visual-symbol-review/1"
+                ):
+                    symbol_kinds = advisor_review.get("symbol_kinds")
+                    rejection_code = advisor_review.get("rejection_code")
+                    if (
+                        isinstance(symbol_kinds, list)
+                        and all(
+                            isinstance(symbol_kind, str)
+                            for symbol_kind in symbol_kinds
+                        )
+                    ):
+                        entry["symbol_kinds"] = list(symbol_kinds)
+                    if rejection_code is None or isinstance(
+                        rejection_code,
+                        str,
+                    ):
+                        entry["rejection_code"] = rejection_code
                 entry.pop("advisor_review", None)
         return coverage
 

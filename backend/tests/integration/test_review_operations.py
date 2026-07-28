@@ -200,6 +200,8 @@ def _set_source_only_coverage(
             "coordinates": [21, 22, 23, 24],
             "candidate_id": None,
             "requires_confirmation": True,
+            "symbol_kinds": [],
+            "rejection_code": "visual_no_detection",
         }
     ]
     coverage["review_required_count"] = 1
@@ -577,6 +579,8 @@ def test_promote_source_creates_item_and_resolves_coverage_atomically(
                 "coordinates": [21, 22, 23, 24],
                 "candidate_id": new_item_id,
                 "requires_confirmation": False,
+                "symbol_kinds": [],
+                "rejection_code": "visual_no_detection",
                 "confirmation_accepted": True,
             }
         ],
@@ -626,6 +630,8 @@ def test_ignore_source_resolves_coverage_without_changing_items_or_numbering(
                 "coordinates": [21, 22, 23, 24],
                 "candidate_id": None,
                 "requires_confirmation": False,
+                "symbol_kinds": [],
+                "rejection_code": "visual_no_detection",
                 "confirmation_accepted": False,
             }
         ],

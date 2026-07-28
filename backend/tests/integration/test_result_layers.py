@@ -149,6 +149,77 @@ def test_working_copy_is_versioned(
     )
 
 
+def test_new_symbol_result_does_not_mutate_existing_text_only_raw_result(
+    raw_result: AutomaticResult,
+    db_session: Session,
+) -> None:
+    """A new visual result and working copy cannot rewrite an older raw result."""
+    original_candidates = copy.deepcopy(raw_result.candidates)
+    original_coverage = copy.deepcopy(raw_result.coverage)
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    source_file = StoredFile(
+        resource_ref=f"asset://tests/{project.id}/source.pdf",
+        sha256="1" * 64,
+        size_bytes=1,
+        mime_type="application/pdf",
+    )
+    job = LogicalJob(
+        project_id=str(project.id),
+        logical_task_key="process:new-symbol-result",
+    )
+    db_session.add_all([project, source_file, job])
+    db_session.commit()
+    coverage = check_coverage(
+        [
+            CoverageEntry(
+                "visual-no-detection",
+                "ambiguous",
+                "visual-no-detection",
+                (10, 20, 30, 40),
+                requires_confirmation=True,
+                advisor_review={
+                    "route": "visual_symbol",
+                    "schema_version": "visual-symbol-review/1",
+                    "symbol_kinds": [],
+                    "rejection_code": "visual_no_detection",
+                },
+            )
+        ],
+        expected_observation_ids={"visual-no-detection"},
+        required_visual_observation_ids={"visual-no-detection"},
+    )
+    symbol_result = build_automatic_result(
+        db_session,
+        project_id=project.id,
+        source_file_id=source_file.id,
+        logical_job_id=job.id,
+        inventory_ref=f"asset://tests/{project.id}/inventory.json",
+        candidates=[],
+        coverage=coverage,
+        provider_call_ids=["fixture-symbol-request"],
+    )
+
+    working = ReviewService(db_session).create_from_raw(symbol_result.id)
+    persisted_old = db_session.get(AutomaticResult, raw_result.id)
+
+    assert persisted_old is not None
+    assert persisted_old.candidates == original_candidates
+    assert persisted_old.coverage == original_coverage
+    assert symbol_result.coverage["entries"][0]["advisor_review"] == {
+        "route": "visual_symbol",
+        "schema_version": "visual-symbol-review/1",
+        "symbol_kinds": [],
+        "rejection_code": "visual_no_detection",
+    }
+    assert working.items == []
+    assert working.coverage["entries"][0]["symbol_kinds"] == []
+    assert (
+        working.coverage["entries"][0]["rejection_code"]
+        == "visual_no_detection"
+    )
+    assert "advisor_review" not in working.coverage["entries"][0]
+
+
 def test_item_set_freeze_does_not_create_reviewed_result(
     raw_result: AutomaticResult,
     db_session: Session,

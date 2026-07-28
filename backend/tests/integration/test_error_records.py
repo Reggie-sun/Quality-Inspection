@@ -14,6 +14,7 @@ from app.config import Settings
 from app.db import SessionLocal
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
+from app.pdf.visual_observations import VisualObservationBlockingError
 from app.processing.pipeline import InventoryPipeline, UnsupportedInput
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.projects.models import Project
@@ -354,6 +355,79 @@ def test_invalid_source_ref_never_enters_the_error_envelope(
         assert error.location_ref is None
         assert error.cause_category == "processing_defect"
         assert host_path not in error.message
+        assert db_session.get(Project, project.id).state == ProjectState.PROCESSING_FAILED
+        assert job is not None
+        assert job.status == "failed"
+        assert job.result_ref is None
+    finally:
+        db_session.rollback()
+        db_session.execute(delete(ErrorRecord).where(ErrorRecord.project_id == project.id))
+        db_session.execute(delete(LogicalJob).where(LogicalJob.project_id == project_id))
+        db_session.execute(delete(Project).where(Project.id == project.id))
+        db_session.commit()
+
+
+@pytest.mark.parametrize(
+    "code",
+    (
+        "visual_crop_oversize",
+        "symbol_route_budget_exhausted",
+    ),
+)
+def test_visual_scheduling_failure_uses_sanitized_advisor_envelope(
+    db_session: Session,
+    tmp_path: Path,
+    code: str,
+) -> None:
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    project_id = str(project.id)
+    storage = LocalFileStorage(tmp_path)
+    source_payload = b"fixture-pdf"
+    source = storage.write_verified(
+        f"projects/{project.id}/source.pdf",
+        source_payload,
+        sha256(source_payload).hexdigest(),
+    )
+
+    def blocked_inventory(_source_path: Path) -> tuple[object, ...]:
+        raise VisualObservationBlockingError(code, page_index=0)
+
+    try:
+        db_session.add(project)
+        db_session.commit()
+
+        with pytest.raises(VisualObservationBlockingError):
+            InventoryPipeline(
+                db_session,
+                storage,
+                PassingPreflight(),
+                inventory_builder=blocked_inventory,
+            ).run(
+                project_id,
+                source.resource_ref,
+                f"product-process:{project.id}",
+            )
+
+        error = db_session.scalar(
+            select(ErrorRecord).where(ErrorRecord.project_id == project.id)
+        )
+        job = db_session.scalar(
+            select(LogicalJob).where(LogicalJob.project_id == project_id)
+        )
+        assert error is not None
+        assert {
+            "code": error.code,
+            "message": error.message,
+            "stage": error.stage,
+            "location_ref": error.location_ref,
+            "cause_category": error.cause_category,
+        } == {
+            "code": code,
+            "message": "Visual symbol scheduling failed",
+            "stage": "candidate_advisor",
+            "location_ref": None,
+            "cause_category": "processing_defect",
+        }
         assert db_session.get(Project, project.id).state == ProjectState.PROCESSING_FAILED
         assert job is not None
         assert job.status == "failed"
