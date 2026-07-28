@@ -49,6 +49,79 @@
 - 若执行时存在与本计划无关的未提交改动，必须保护这些改动并逐文件 stage around
   them；不得使用 `git add .`，不得覆盖、清理或把它们带入 task commit。
 
+## Proposal V3 Context-Compaction Recovery Amendment — 2026-07-28
+
+本节是同一 current plan Task 8 Step 6 的 subordinate detail，不建立第二份 current
+plan。historical SR-2B/SR-2C v2 design、approval、code 和 artifacts 保持
+immutable；本节只拥有最新 live evidence 暴露的三个 proposal-overlap gaps。
+
+- Selected lane: `Heavy`。
+- Selected plan:
+  `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`。
+- Single proposal Owner:
+  `backend/app/pdf/visual_observations.py::build_page_visual_observations()`。
+- Selection evidence: sealed run
+  `20260728T095023589634Z-740b6624` 的 source/manifest、79/124 observations 和
+  13/16 batches exact，但 `P1-P16`、`P2-P18`、`P2-P27` 的 proposal overlap
+  仅为 `0.156364 / 0.032575 / 0.368643`。no-write v3 calibration 得到
+  80/125 observations、13/16 official batches、56/56 positives `>=0.5`，
+  frozen-negative overlap 保持 `4 any / 3 >=0.5`。
+- Exact rule: 使用 accepted design 中 canonical
+  `visual-observation/3` / `visual-proposal-gate/2` bytes，SHA-256 必须 exact 为
+  `8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa`。
+  任何 byte、threshold、comparison、branch order 或 digest 不一致都 fail closed。
+- Old path action: retire v2 “所有 `12 pt` 邻域 selected items 总是共同决定 bbox”
+  和 “base context 超过 1% cap 时没有 compact proof path”这两个假设；preserve
+  original item selection、base branches、dedup/order、priority、stable
+  first-fit、crop limits、Coverage Veto 和 CandidateAdvisor ownership。不得保留
+  v2 fallback/shadow path。
+
+- [ ] **V3 Step 1: Commit only the frozen docs amendment**
+
+  只允许本 design、本 subordinate plan 和唯一 current plan。不得修改
+  `MAIN_CONTRACT_MATRIX.md`、production/test/frontend、sealed artifacts 或
+  `.agent/EXECUTION_STATUS.md`。
+
+- [ ] **V3 Step 2: Run the exact renderer twice without repository writes**
+
+  renderer 只能写入两个 `mktemp -d -p /tmp` 目录，不 import/construct/call
+  Provider。开始前 exact 验证 source SHA、sealed manifest SHA、rule bytes/digest、
+  clean index 和 expected repository dirty set。两轮各输出且只输出：
+
+  - `page-1-proposal-v3-overlay-200pct.png`
+  - `page-2-proposal-v3-overlay-200pct.png`
+  - `zoom-recovered-proposal-gaps.png`
+  - `zoom-core-symbol-representatives.png`
+  - `zoom-gdt-and-boxed-datum.png`
+  - `zoom-revision-and-n5.png`
+  - `zoom-frozen-negative-overlaps.png`
+  - `proposal-v3-gate-report.json`
+
+  八个文件必须逐 byte identical。report 必须记录 renderer SHA、source/manifest/
+  rule identity、148/244 raw contexts、132/203 base-area contexts、80/125 final
+  observations、13/16 official batches、每页 sorted-newline observation-ID digest、
+  ordered batch-membership digest、reason counts、56/56 positive exact overlap、
+  16 frozen-negative risks、exact-once、all crop/member/pixel/area limits、
+  repeatability 和 Provider construction/calls=0；不得包含 source path、raw text、
+  token、crop bytes 或 Provider payload。
+
+- [ ] **V3 Step 3: Stop for an exact Quality Owner visual verdict**
+
+  向用户提供两页完整 overlay、五张 zoom、report 和全部 SHA-256，并明确提示所有
+  retained frozen-negative overlaps。只有用户在看到本轮 exact artifacts 后明确
+  给出 approval，才允许写 canonical v3 verdict；overlap count、旧 v2 approval、
+  “继续”或测试通过均不等于本 gate verdict。
+
+- [ ] **V3 Step 4: After approval, close docs/contract and authorize TDD**
+
+  approval commit 才允许修改本 design、本 subordinate plan、唯一 current plan 和
+  `docs/contracts/MAIN_CONTRACT_MATRIX.md`，只绑定 exact verdict/artifact digests。
+  随后新的 proposal-only TDD/code commit 才可修改
+  `backend/app/pdf/visual_observations.py`、
+  `backend/tests/unit/pdf/test_visual_observations.py` 和直接 cache-version consumer
+  tests；不得修改 Provider、prompt v4、projection、evaluator、frontend 或 `main`。
+  fresh Provider/live run 仍需后续单独 amendment。
+
 ## SR-2C Cache Contract-Test Ownership Amendment — 2026-07-28
 
 - Selected lane: `Heavy`。

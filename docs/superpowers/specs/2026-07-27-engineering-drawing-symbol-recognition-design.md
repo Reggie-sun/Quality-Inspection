@@ -3,12 +3,13 @@
 ## Status
 
 - Date: `2026-07-28`
-- Status: `Hybrid proposal-gate approved; SR-2C pending`
+- Status: `v2 implemented; v3 context-compaction candidate frozen; Quality Owner gate pending`
 - Selected scope: 当前失败 PDF 闭环
 - Selected lane: `Heavy`
 - Execution authorization owner: unique current plan; this design does not authorize execution
-- Activation state: original Task 0 complete at `994cbe4`; SR-2B Quality Owner gate
-  closed on `2026-07-28`; execution paused before SR-2C
+- Activation state: original Task 0 complete at `994cbe4`; historical v2 SR-2B
+  Quality Owner gate closed on `2026-07-28`; latest live evidence requires a new
+  v3 Quality Owner gate before proposal production changes
 
 本文只定义能力、Owner、数据合同、失败边界和验收口径。它不切换当前
 implementation plan，也不独立授权 production code、runtime config、contract
@@ -689,6 +690,66 @@ limits、reason counts 和全部 `56` positive / `16` frozen-negative label refe
 均通过，Provider construction/calls=`0`。该 approval 只关闭 SR-2B proposal
 admission gate，不声称 production implementation、SR-2C、SR-4 Step 8、SR-5 或
 任意工程图通用准确率已经通过。
+
+#### V3 Context-Compaction Recovery Candidate — 2026-07-28
+
+historical v2 approval 和 artifacts 保持 immutable。fresh sealed run
+`20260728T095023589634Z-740b6624` 证明 v2 已满足 79/124 observations、
+13/16 batches 和 Provider budget，但 `P1-P16`、`P2-P18`、`P2-P27` 的最佳
+proposal overlap 分别只有 `0.156364`、`0.032575`、`0.368643`，低于 LIVE-01
+固定的 `intersection_area / min(area) >= 0.5`。perfect Provider kind 也不能弥补
+该 proposal geometry 缺口，因此旧 v2 verdict 不得被解释为本次 v3 approval。
+
+proposal admission 的唯一 Owner 仍是
+`backend/app/pdf/visual_observations.py::build_page_visual_observations()`。旧路径把
+`12 pt` 邻域内全部 `<=96 pt` path items 合并成一个 source union：一条远端宽线或
+高线会稀释真正 glyph bbox；同一局部 glyph 即使在 compact subset 中仍满足既有
+gate，也可能被 over-area precheck 丢弃。v3 直接替换这两处 context selection，
+不保留 v2 fallback/shadow Owner，不使用 source/page/label/absolute coordinate、
+approved bbox、candidate、Provider 或 evaluator result。
+
+base feature、snapping 和四个 v2 admission branches 全部保持。Owner 另计算
+`compact_items`：只保留每个 bbox width `<=60.000 pt` 且 height `<=42.000 pt`
+的已选 canonical path item。然后按以下 exact order 决定实际 context：
+
+1. base source union 超过 page area `1%` 时，只有 compact union 同时不超过该 page
+   cap、compact `context_area <=6000.000`、short token fullmatch、compact
+   `item_count >40`，且 compact decision exact 为 `short_token_rescue`，才以
+   compact context retain，reason 为 `dense_short_token_compact_rescue`；
+2. base source union 不超过 page cap，且 base decision exact 为
+   `geometry_wide_multi_item` 时，只有 compact union 也不超过 page cap 且 compact
+   decision exact 为 `geometry_compact`，才用 compact context 替换 base context，
+   reason 为 `wide_compact_replacement`；
+3. 其余 base-area-valid context 继续使用原 v2 decision/context；不满足上述条件的
+   over-area context 继续 fail closed。
+
+exact canonical rule JSON 为：
+
+```json
+{"base_branch_order":["geometry_compact","geometry_wide_multi_item","geometry_filled","short_token_rescue"],"compact_item_filter":{"max_item_height_max":"42.000","max_item_width_max":"60.000"},"context_transform_order":["dense_short_token_compact_rescue","wide_compact_replacement","base_admission"],"dense_short_token_compact_rescue":{"base_context_area_relation":"greater_than_page_area_cap","compact_context_area_max":"6000.000","compact_context_area_relation":"less_than_or_equal_to_page_area_cap","compact_item_count_min_exclusive":40,"compact_reason_required":"short_token_rescue"},"feature_quantum":"0.001","geometry_common":{"max_item_height_min_exclusive":"2.000","mean_item_height_max":"34.000"},"geometry_compact":{"context_area_max":"6000.000","fill_count_max":1,"max_item_width_max":"60.000"},"geometry_filled":{"context_area_min_exclusive":"5800.000","fill_count_min_exclusive":1,"max_item_height_max":"42.000"},"geometry_wide_multi_item":{"fill_count_max":1,"item_count_min_exclusive":3,"max_item_width_min_exclusive":"60.000"},"proposal_rule_version":"visual-observation/3","provisional_context":{"axis_gap_max":"12.000","item_extent_max":"96.000","page_area_ratio_max":"0.010"},"schema_version":"visual-proposal-gate/2","short_token_rescue":{"context_area_max":"6000.000","pattern":"[A-Z0-9]{1,3}"},"wide_compact_replacement":{"base_context_area_relation":"less_than_or_equal_to_page_area_cap","base_reason_required":"geometry_wide_multi_item","compact_context_area_relation":"less_than_or_equal_to_page_area_cap","compact_reason_required":"geometry_compact"}}
+```
+
+SHA-256 固定为
+`8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa`。
+rule/version 变化使全部 v3 observation IDs 和 cache identities safe miss；v2
+artifacts、cache、run 和 verdict 不修改、不删除。
+
+no-write calibration 枚举 page 0 / page 1 的 `148 / 244` raw adjacency contexts，
+其中 `132 / 203` 通过 base area cap；v3 最终得到 `80 / 125` observations 和
+`13 / 16` official priority batches。`56/56` positives 的最大 overlap 均
+`>=0.5`，16 个 frozen negatives 的 overlap 风险仍为 `4 any / 3 >=0.5`，与 v2
+相同。该表只冻结 candidate，不是 Quality Owner approval。
+
+production RED 前必须以 exact source SHA
+`58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`
+和 sealed manifest SHA
+`0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`
+运行 no-write/no-Provider renderer 两次，逐 byte 比较两页 200% full overlays、
+五张 zoom 和 canonical report。report 必须覆盖 56 positives、16 frozen
+negatives、exact rule/ID/batch digests、80/125 counts、13/16 batches、
+exact-once、all crop limits、repeatability 和 Provider construction/calls=0。
+Quality Owner 必须看到完整图片并明确批准 exact v3 evidence；overlap count、
+本节 calibration 或先前“可以”都不能代替该 verdict。
 
 #### Old Path Retirement And TDD Boundary
 

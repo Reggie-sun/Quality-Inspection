@@ -855,6 +855,61 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     也经新 Quality Owner gate 关闭后，才允许另行 amendment 授权一次 fresh
     literal full-P0 run。rollback 先 revert prompt code commit，再 revert 本
     amendment，不删除或改写任何 sealed evidence。
+- Task 8 Step 6 proposal-v3 context-compaction gate amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T095023589634Z-740b6624` exact 使用已批准 v2 的 79/124
+      observations、13/16 batches，但 LIVE-01 中 `P1-P16`、`P2-P18`、
+      `P2-P27` 的最佳 proposal overlap 只有
+      `0.156364 / 0.032575 / 0.368643`。no-write bounded calibration 的更窄
+      context-compaction candidate 得到 80/125 observations、13/16 official
+      batches、56/56 positives overlap `>=0.5`，frozen-negative overlap 保持
+      v2 的 `4 any / 3 >=0.5`。
+    - Validation action: 先提交 exact docs-only rule，再运行两次
+      no-write/no-Provider renderer 并停在新的 Quality Owner visual gate；不修改
+      production/test/contract matrix，不进入 Provider/live run。
+    - Writer ownership and order: parent sole writer；design、subordinate plan 和
+      本 current plan amendment first。renderer 只写两个 `/tmp` mktemp dirs。
+    - Next verification: exact canonical rule bytes SHA-256 必须为
+      `8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa`，
+      两轮八文件逐 byte identical，report exact 为 148/244 raw、132/203
+      base-area、80/125 final、13/16 batches、56/56 positives、16 negatives、
+      exact-once/all limits/repeatability true 和 Provider=0。
+  - Single Owner and old path action:
+    `backend/app/pdf/visual_observations.py::build_page_visual_observations()` 仍是
+    唯一 proposal Owner。retire v2 把 `12 pt` 邻域内全部 path items 永久绑定为
+    retained bbox、以及 over-1%-area context 没有 compact proof path 的两个假设；
+    不建立 v2 fallback、shadow filter 或第二 Owner。CandidateAdvisor、Provider、
+    evaluator 和 Coverage 仍只消费 Owner 输出。
+  - Exact v3 delta: base v2 snapped features/branches 全部保持；增加每个 item width
+    `<=60.000` 且 height `<=42.000` 的 compact subset。base area 超 cap 时，
+    只有 compact area 同时 `<=6000.000` 和 page cap、short-token rescue exact
+    命中且 compact `item_count >40`，才以 compact context retain；base area
+    未超 cap且 base reason 为 `geometry_wide_multi_item` 时，只有 compact reason
+    exact 为 `geometry_compact` 才以 compact context 替换。version/schema 为
+    `visual-observation/3` / `visual-proposal-gate/2`；完整 canonical JSON 及
+    comparison order 只由 accepted design 同名 amendment 拥有。
+  - Allowed paths and gate: 当前 docs-only commit 只允许
+    `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`、
+    `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+    和本文件。Quality Owner 明确批准本轮两页 200% overlays、五张 zoom 和 report
+    后，才允许 approval commit 最小增加
+    `docs/contracts/MAIN_CONTRACT_MATRIX.md` 并绑定 artifact/verdict digests；再之后
+    才能另行进入 proposal-only TDD。不得修改 Provider adapter/prompt v4/schema/
+    call policy、projection、LIVE-01 evaluator、sealed manifest/verdict/run、
+    automatic result、frontend、D7-T3 status 或 `main`。
+  - Unchanged contracts and stop boundary: source SHA
+    `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`
+    和 sealed manifest SHA
+    `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`
+    必须 exact；dedup/order、7.5% crop area、300 DPI、1536px、32 members、
+    16/page、visual-first、exact-kind/projection/0.5 overlap/exact-one、negative
+    false-positive 和 fail-closed semantics 不变。overlap count 不是 Quality
+    Owner approval；用户给出本轮 exact verdict 前不得生成 approved manifest、
+    canonical verdict 或正式 success status。fresh live run 仍未授权。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
