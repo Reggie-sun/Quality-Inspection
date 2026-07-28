@@ -15,8 +15,9 @@
 - Design source:
   `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`。
 - Design status: 用户已接受 commit `6920958` 中的
-  `2026-07-28 Hybrid Proposal-Gate Amendment`；该 acceptance 授权原地修订本
-  subordinate plan，但不绕过 exact rule、完整 overlay 或 Quality Owner gate。
+  `2026-07-28 Hybrid Proposal-Gate Amendment`；exact rule correction 已提交为
+  `09f70df`，完整 overlays/zooms 和 Quality Owner gate 已于 `2026-07-28`
+  按 exact evidence 关闭。
 - Plan status: **approved subordinate implementation detail**。本文件不是第二份
   current plan；task ordering、scope 和 execution authorization 仍只来自下述唯一
   current plan。
@@ -32,9 +33,11 @@
   `bb035bc`；SR-3 Provider contract commit 是 `90bfb43`。SR-4 Steps 1-7 已在当前
   七文件 working diff 中验证，但尚未 commit；Step 8 真实源 preflight 暴露
   `19/22 > 16/page` 后已 fail closed。SR-2A bounded feasibility 又以
-  `capacity_feasibility_unproven` 完成且没有 code commit。SR-2B Step 1 的 exact
-  rule reproduction correction 已完成；当前唯一 next step 是本文件下述
-  `SR-2B Step 2`；不得重复 SR-1～SR-3、执行已退休的 SR-2A
+  `capacity_feasibility_unproven` 完成且没有 code commit。SR-2B Step 1 exact
+  rule correction 已提交为 `09f70df`，Steps 2-4 的 evidence、Quality Owner
+  approval 和 stable-contract closure 已完成；当前唯一 next step 是本文件下述
+  `SR-2C Step 1`，但本 approval turn 在该 step 前停止。不得重复 SR-1～SR-3、
+  执行已退休的 SR-2A
   packing-only Steps 2-6、提交 SR-4、进入 SR-5 或调用 Provider。
 - Live-label gate: Quality Owner approved manifest 已 seal 于 literal run
   `20260727T085747865239Z-5aa3e8d3`，staging 从 bytes 机械验证 200% overlay、
@@ -150,10 +153,12 @@ branch 名为 `geometry_wide_multi_item`；canonical rule SHA-256 为
   construction/calls=`0`，sealed manifest、production/test files 和现有七文件
   dirty set 均未改。
 
-当前父 agent 是本次三份 docs-only correction 的唯一 writer。unchanged contract
-仍是 existing source/manifest identity、全部 crop/budget/coverage/fail-closed
-semantics 和 Quality Owner gate；Step 1 correction commit 后只执行 Step 2 两次
-renderer，并停在 Step 3 verdict 前。
+当前父 agent 是 SR-2B docs-only correction/approval closure 的唯一 writer。
+unchanged contract 仍是 existing source/manifest identity、全部
+crop/budget/coverage/fail-closed semantics 和 Quality Owner gate。Step 1
+correction commit `09f70df` 后已完成两次 Step 2 renderer；Quality Owner 在完整
+artifacts 和 retained-overlap 风险提示后明确批准，Step 4 只绑定 docs/stable
+contract。本 turn 不进入 SR-2C。
 
 ## Problem Boundary
 
@@ -1368,7 +1373,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   PY
   ```
 
-- [ ] **Step 2: Generate the complete 200% evidence set without repository writes**
+- [x] **Step 2: Generate the complete 200% evidence set without repository writes**
 
   创建一个 `/tmp` evidence directory。no-write calibration renderer 必须直接读取
   `QI_SYMBOL_SOURCE_PDF` 和 sealed manifest artifact，不得改写 run tree；它按 Step 1
@@ -2184,7 +2189,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
 
   任一 count、digest、limit、label coverage 或 Provider/write count 不一致即停止。
 
-- [ ] **Step 3: Obtain an explicit Quality Owner verdict**
+- [x] **Step 3: Obtain an explicit Quality Owner verdict**
 
   向 Quality Owner 提供 Step 2 的两页完整 overlay、五张 zoom 和 report。不得只提供
   缩略图或 overlap count。Quality Owner 必须逐项确认全部 56 positives、16 frozen
@@ -2207,6 +2212,20 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   }
   ```
 
+  Quality Owner 收到全部 artifacts、report 和
+  `FN-03/FN-04/FN-08/FN-11` retained-overlap 风险提示后明确回复“可以”。实际
+  compact、sorted-key canonical approval evidence 为：
+
+  ```json
+  {"annotation_status":"approved","manifest_sha256":"0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448","overlay_scale_percent":200,"overlay_sha256":{"page-1-proposal-gate-overlay-200pct.png":"da25c8e0f04c4468deb094bb6be9f8565fd9d855ad3b40c44bad8cb40da15202","page-2-proposal-gate-overlay-200pct.png":"8335c1e22ba02474ef9ddf7fdd111dd86cbd9ebc056cf8ce429155e62fda0ec7"},"proposal_gate_report_sha256":"13f73e1c790b277c6d317c016e1df5e41c52eb62a07d336b69b5f9d6df7152d9","proposal_rule_sha256":"ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7","proposal_rule_version":"visual-observation/2","reviewed_frozen_negative_region_count":16,"reviewed_positive_label_count":56,"schema_version":"visual-proposal-gate-verdict/1","unlabeled_target_count":0,"zoom_sha256":{"zoom-core-symbol-representatives.png":"a9773c5cab2caa24b83160dd0ce44a2cf51a2af037145affb62c9807f6fb3219","zoom-densest-region.png":"bcae9e7852bd78cee21ae5b5d5e66aaf482b375118593c8b21dde21f22dc2d0d","zoom-gdt-and-boxed-datum.png":"a0060d71ebbdd8ce2f6b594bdb4d08ab4c228cfa7a5490811cc83ce3fd55fdaa","zoom-n5-negative.png":"2a61789008b0b731378dcbf63f7c697df7710ae9a687c0a94e43381d8938ad4c","zoom-revision-positive.png":"941d8db1b45047993c1aa8bf436749f2897c6ccb37011133cd21511026293a9e"}}
+  ```
+
+  canonical verdict SHA-256 为
+  `9b7a6aa061315f7e8501c348e57b21219b597a2374fb8ffca976bedc978f50ef`。
+  `unlabeled_target_count=0` 从同一 sealed run 的
+  `visual-symbol-annotation-verdict.json` 机械读取；该 input verdict 绑定相同
+  manifest SHA 和 `overlay_scale_percent=200`。
+
   同一 object 还必须包含 `overlay_sha256` 的两个 exact file→digest entries 和
   `zoom_sha256` 的五个 exact file→digest entries，以及
   `proposal_gate_report_sha256`，其值必须 exact 等于 Step 2 输出的
@@ -2217,7 +2236,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   report 与 images 仍不得加入 Git。若 verdict 不是 exact approval，停止并回到
   design；不得修改 production/test code、stable contract 或 Provider policy。
 
-- [ ] **Step 4: Bind the approved rule to design and stable contract, then commit docs only**
+- [x] **Step 4: Bind the approved rule to design and stable contract, then commit docs only**
 
   只有 Step 3 approved 后才执行。将 Step 1 exact predicate/feature definitions、
   Step 2 actual counts、report/artifact digests 和 Step 3 verdict/digests 写回
@@ -2261,6 +2280,17 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
 
   Expected: contract checks PASS；cached paths exact equal the four docs；SR-4 七文件仍
   unstaged；sealed run bytes unchanged；Provider calls=`0`。
+
+  Actual closure binds page 0
+  `132 provisional / 79 retained / 13 batches` and page 1
+  `203 provisional / 124 retained / 16 batches`；final observation-ID digests are
+  `15f476cac29683c425b85b541ad528b38f1983fb5673871466626038ef1852f5` /
+  `4f082c0ce52fb649cd9c84c16b685ced29133dc12c3b37392df63767043a4e16`，
+  batch-membership digests are
+  `dc7b19187c7346e61f9344d63197f6e815ab3f85af1c6316e2e00888ed8bf0d8` /
+  `8a6f8ef3f3c50f85841de792f7bbc078062d4d8c1da75beaa17768b002a50ea2`。
+  两次 runs 的八个 artifacts 逐 byte 相同，Provider construction/calls=`0`；
+  images/report 继续只存在 `/tmp`，未加入 Git。
 
 ### SR-2C: Implement The Approved Proposal Owner With TDD
 
@@ -3880,9 +3910,9 @@ blocked. Rollback does not convert the original missing-symbol behavior into acc
 - [x] SR-2A bounded packing search ended
   `capacity_feasibility_unproven` without a production/code commit or Provider call.
 - [x] User accepted hybrid proposal-gate design commit `6920958`.
-- [ ] SR-2B Quality Owner approved the exact v2 rule after inspecting both 200% full overlays、
+- [x] SR-2B Quality Owner approved the exact v2 rule after inspecting both 200% full overlays、
   all required zooms、all 56 positives and all 16 frozen negatives.
-- [ ] SR-2B recorded exact rule/overlay/zoom digests while preserving the sealed manifest bytes.
+- [x] SR-2B recorded exact rule/overlay/zoom digests while preserving the sealed manifest bytes.
 - [ ] SR-2C proves `visual-observation/2` ID/reconstruction and cache-version single source.
 - [ ] Current-source production preflight repeats exact `79/124` observations、
   `13/16` batches、approved digests、all limits true and Provider calls `0`.
@@ -3904,13 +3934,13 @@ blocked. Rollback does not convert the original missing-symbol behavior into acc
 Task 0、SR-1、SR-2、SR-3 已分别完成于 `994cbe4`、`d3fac79`、`bb035bc`、
 `90bfb43`。SR-4 Steps 1-7 保留在当前七文件 working diff，Step 8 已按真实 sealed
 source fail closed。SR-2A 已完成为 `capacity_feasibility_unproven` 且没有 code
-commit。SR-2B Step 1 exact rule/digest correction 已完成；执行只从
-`SR-2B Step 2` 的两次 no-write/no-Provider renderer 继续，并停在 Step 3
-Quality Owner gate 前。不得重复 Task 0 或 SR-1～SR-3、执行退休的 packing-only
-steps、提交当前 SR-4、进入 SR-2C/SR-5、追加第二个 activation amendment 或调用
-Provider。
+commit。SR-2B Step 1 exact rule/digest correction 已提交为 `09f70df`；Steps 2-4
+的两次 renderer、Quality Owner approval、stable handles 和 `PDF-007` contract
+binding 已完成。下一 executable step 是 `SR-2C Step 1` PDF RED，但本 approval
+turn 在该 step 前停止。不得重复 Task 0 或 SR-1～SR-3、执行退休的 packing-only
+steps、提交当前 SR-4、进入 SR-5、追加第二个 activation amendment 或调用 Provider。
 
 当前父 agent 保持唯一 writer，read-only explorer/reviewer checkpoints 保持 mandatory。
-只有 SR-2B exact rule、两页 full overlays、全部 zooms 和 Quality Owner verdict
-全部通过并形成 docs-only commit，才进入 SR-2C RED。只有 SR-2C focused GREEN、
-exact current-source preflight 和 independent review 全部通过，才进入 SR-4 Step 8。
+SR-2B exact rule、两页 full overlays、全部 zooms 和 Quality Owner verdict 已全部
+通过并形成 docs-only closure。只有 SR-2C focused GREEN、exact current-source
+preflight 和 independent review 全部通过，才进入 SR-4 Step 8。

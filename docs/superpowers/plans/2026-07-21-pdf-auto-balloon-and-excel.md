@@ -318,11 +318,13 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     `capacity_feasibility_unproven`，Provider construction/calls=`0`。这不是数学
     不可行证明，但不足以授权 packing-only production change。只读 hybrid candidate
     产生 page 0 `79 observations / 13 batches`、page 1
-    `124 observations / 16 batches`；这些数值只是待完整视觉复核的 calibration
-    evidence，不是 formal success。
-  - Validation action: `continue` 只能从 subordinate `SR-2B Step 2` 开始。现有
-    SR-4 七文件 working diff 保留但不得提交；在 SR-2B Quality Owner gate 与 SR-2C
-    no-write preflight 全部通过前，不得进入 SR-4 Step 8、SR-5 或构造/调用 Provider。
+    `124 observations / 16 batches`；这些数值最初只作为 calibration evidence。
+    后续两次 exact renderer 已逐 byte 重复，Quality Owner 在完整 artifacts/report
+    和 frozen-negative overlap 风险提示后明确批准。
+  - Validation action: `pause before SR-2C`。SR-2B Steps 1-4 已关闭；现有 SR-4
+    七文件 working diff 保留但不得提交。本 approval turn 不执行 subordinate
+    `SR-2C Step 1`；SR-2C no-write preflight 全部通过前，不得进入 SR-4 Step 8、
+    SR-5 或构造/调用 Provider。
   - Exact-rule reproduction correction: 首次逐字运行 commit `e795744` 中的
     renderer 得到 page 0 / page 1 `62 / 105` retained observations 和
     `21/26 / 28/30` positive overlap，因此按 gate fail closed。历史 calibration
@@ -346,13 +348,26 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     `ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7`。
     observation-ID set digest 使用 lexicographically sorted IDs、单个 `\n`
     连接且无尾随换行的 bytes；batch-membership digest 使用 stable ordered nested
-    list 的 compact canonical JSON。
-    Quality Owner 可批准或拒绝该 exact candidate；拒绝即回到 design，不能先改
-    production。批准时 verdict 必须绑定 sealed manifest SHA-256
+    list 的 compact canonical JSON。Quality Owner 已批准该 exact candidate；
+    canonical verdict 绑定 sealed manifest SHA-256
     `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`、
     两页 200% 完整 overlay、全部要求的局部放大图、rule/overlay digests、
     `annotation_status=approved` 和 `unlabeled_target_count=0`。existing sealed
     manifest bytes 不修改、不重生成。
+  - Quality Owner closure evidence: actual compact、sorted-key canonical verdict 为：
+
+    ```json
+    {"annotation_status":"approved","manifest_sha256":"0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448","overlay_scale_percent":200,"overlay_sha256":{"page-1-proposal-gate-overlay-200pct.png":"da25c8e0f04c4468deb094bb6be9f8565fd9d855ad3b40c44bad8cb40da15202","page-2-proposal-gate-overlay-200pct.png":"8335c1e22ba02474ef9ddf7fdd111dd86cbd9ebc056cf8ce429155e62fda0ec7"},"proposal_gate_report_sha256":"13f73e1c790b277c6d317c016e1df5e41c52eb62a07d336b69b5f9d6df7152d9","proposal_rule_sha256":"ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7","proposal_rule_version":"visual-observation/2","reviewed_frozen_negative_region_count":16,"reviewed_positive_label_count":56,"schema_version":"visual-proposal-gate-verdict/1","unlabeled_target_count":0,"zoom_sha256":{"zoom-core-symbol-representatives.png":"a9773c5cab2caa24b83160dd0ce44a2cf51a2af037145affb62c9807f6fb3219","zoom-densest-region.png":"bcae9e7852bd78cee21ae5b5d5e66aaf482b375118593c8b21dde21f22dc2d0d","zoom-gdt-and-boxed-datum.png":"a0060d71ebbdd8ce2f6b594bdb4d08ab4c228cfa7a5490811cc83ce3fd55fdaa","zoom-n5-negative.png":"2a61789008b0b731378dcbf63f7c697df7710ae9a687c0a94e43381d8938ad4c","zoom-revision-positive.png":"941d8db1b45047993c1aa8bf436749f2897c6ccb37011133cd21511026293a9e"}}
+    ```
+
+    verdict SHA-256 为
+    `9b7a6aa061315f7e8501c348e57b21219b597a2374fb8ffca976bedc978f50ef`。
+    page 0 / page 1 final observation-ID digests 分别为
+    `15f476cac29683c425b85b541ad528b38f1983fb5673871466626038ef1852f5` /
+    `4f082c0ce52fb649cd9c84c16b685ced29133dc12c3b37392df63767043a4e16`；
+    batch-membership digests 分别为
+    `dc7b19187c7346e61f9344d63197f6e815ab3f85af1c6316e2e00888ed8bf0d8` /
+    `8a6f8ef3f3c50f85841de792f7bbc078062d4d8c1da75beaa17768b002a50ea2`。
   - Allowed paths and commit boundary:
     - `SR-2B Step 1` exact-rule correction commit 只允许 accepted design spec、
       本 subordinate plan 和本 current plan；
@@ -415,7 +430,7 @@ micromamba run -n qi-p0 python -m pytest backend/tests/contract/harness/test_sym
 positive label 禁止 `negative_family`，以及 frozen-negative label 强制要求该字段。
 该 historical gate 已完成，不再是 current next verification。当前 next
 verification 只来自上方 2026-07-28 hybrid proposal-gate correction amendment 的
-subordinate `SR-2B Step 2`。
+subordinate `SR-2C Step 1`；本 approval turn 在该 step 前停止。
 
 `SR-1`～`SR-8` 的 allowed paths 只有以下精确集合；existing regression tests 仅可在
 直接需要时增加 assertions，不得放宽、skip 或删除 expectations。本次 pre-SR-1

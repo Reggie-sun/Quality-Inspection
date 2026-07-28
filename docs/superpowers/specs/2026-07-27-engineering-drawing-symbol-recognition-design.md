@@ -3,12 +3,12 @@
 ## Status
 
 - Date: `2026-07-28`
-- Status: `Hybrid proposal-gate rule corrected and frozen; overlay gate pending`
+- Status: `Hybrid proposal-gate approved; SR-2C pending`
 - Selected scope: 当前失败 PDF 闭环
 - Selected lane: `Heavy`
 - Execution authorization owner: unique current plan; this design does not authorize execution
-- Activation state: original Task 0 complete at `994cbe4`; execution paused at the
-  current-source capacity correction
+- Activation state: original Task 0 complete at `994cbe4`; SR-2B Quality Owner gate
+  closed on `2026-07-28`; execution paused before SR-2C
 
 本文只定义能力、Owner、数据合同、失败边界和验收口径。它不切换当前
 implementation plan，也不独立授权 production code、runtime config、contract
@@ -660,6 +660,35 @@ Quality Owner approval 必须绑定：
 
 existing sealed manifest bytes 不修改、不重生成。Quality Owner 未明确批准以上 exact
 evidence 时，不得把 exploratory overlap 写成 formal success。
+
+#### Quality Owner Approval Evidence — 2026-07-28
+
+Quality Owner 收到两页 `200%` 完整 overlay、五张 zoom、完整 report、全部 exact
+digests，以及 `FN-03/FN-04/FN-08/FN-11` retained-overlap 风险提示后，明确回复
+“可以”。该人工 verdict 现按以下 compact、sorted-key canonical JSON 冻结：
+
+```json
+{"annotation_status":"approved","manifest_sha256":"0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448","overlay_scale_percent":200,"overlay_sha256":{"page-1-proposal-gate-overlay-200pct.png":"da25c8e0f04c4468deb094bb6be9f8565fd9d855ad3b40c44bad8cb40da15202","page-2-proposal-gate-overlay-200pct.png":"8335c1e22ba02474ef9ddf7fdd111dd86cbd9ebc056cf8ce429155e62fda0ec7"},"proposal_gate_report_sha256":"13f73e1c790b277c6d317c016e1df5e41c52eb62a07d336b69b5f9d6df7152d9","proposal_rule_sha256":"ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7","proposal_rule_version":"visual-observation/2","reviewed_frozen_negative_region_count":16,"reviewed_positive_label_count":56,"schema_version":"visual-proposal-gate-verdict/1","unlabeled_target_count":0,"zoom_sha256":{"zoom-core-symbol-representatives.png":"a9773c5cab2caa24b83160dd0ce44a2cf51a2af037145affb62c9807f6fb3219","zoom-densest-region.png":"bcae9e7852bd78cee21ae5b5d5e66aaf482b375118593c8b21dde21f22dc2d0d","zoom-gdt-and-boxed-datum.png":"a0060d71ebbdd8ce2f6b594bdb4d08ab4c228cfa7a5490811cc83ce3fd55fdaa","zoom-n5-negative.png":"2a61789008b0b731378dcbf63f7c697df7710ae9a687c0a94e43381d8938ad4c","zoom-revision-positive.png":"941d8db1b45047993c1aa8bf436749f2897c6ccb37011133cd21511026293a9e"}}
+```
+
+该 verdict JSON 的 SHA-256 为
+`9b7a6aa061315f7e8501c348e57b21219b597a2374fb8ffca976bedc978f50ef`。
+`unlabeled_target_count=0` 来自同一 sealed run、绑定相同 manifest SHA 和
+`overlay_scale_percent=200` 的
+`visual-symbol-annotation-verdict.json`；不是从 manifest 猜测或补写。
+
+Step 2 的 final stable handles 为：
+
+| Page | Provisional | Retained | Batches | Observation-ID SHA-256 | Batch-membership SHA-256 |
+| --- | ---: | ---: | ---: | --- | --- |
+| 0 | 132 | 79 | 13 | `15f476cac29683c425b85b541ad528b38f1983fb5673871466626038ef1852f5` | `dc7b19187c7346e61f9344d63197f6e815ab3f85af1c6316e2e00888ed8bf0d8` |
+| 1 | 203 | 124 | 16 | `4f082c0ce52fb649cd9c84c16b685ced29133dc12c3b37392df63767043a4e16` | `8a6f8ef3f3c50f85841de792f7bbc078062d4d8c1da75beaa17768b002a50ea2` |
+
+两次 renderer 的全部八个文件逐 byte 相同；exact-once、crop/member/pixel/area
+limits、reason counts 和全部 `56` positive / `16` frozen-negative label references
+均通过，Provider construction/calls=`0`。该 approval 只关闭 SR-2B proposal
+admission gate，不声称 production implementation、SR-2C、SR-4 Step 8、SR-5 或
+任意工程图通用准确率已经通过。
 
 #### Old Path Retirement And TDD Boundary
 
@@ -1485,15 +1514,14 @@ support 或通用 accuracy benchmark。
   batches，bounded feasibility 结果为 `capacity_feasibility_unproven`。用户现已批准
   hybrid proposal-gate design 和完整 Quality Owner 重核，旧的 packing-only
   continuation 不再拥有 production authorization。
-- Validation action: `pause production`。exact rule reproduction 已冻结；下一步
-  只能执行 subordinate `SR-2B Step 2` 的 no-write/no-Provider renderer。两次
-  evidence run、overlays、zooms 和 Quality Owner verdict 完成前不得授权
-  production RED，也不得创建第二套 current plan。
+- Validation action: `pause before SR-2C`。exact rule、两次 evidence run、
+  overlays、zooms 和 Quality Owner verdict 已冻结；本 approval turn 不执行
+  production RED，也不创建第二套 current plan。
 - Writer ownership and order: 同一 backend file group 只有一个 writer，frontend 在
   backend projection 冻结后顺序开始，reviewer 保持只读。
-- Next verification: 只运行 exact hybrid rule 的 no-write/no-Provider calibration、
-  两页 `200%` overlays、局部放大图和 digest/budget preflight；不能先修改
-  production code、提交当前 SR-4 worktree changes 或调用真实 Provider。
+- Next verification: subordinate `SR-2C Step 1` 的 proposal-owner PDF RED；本
+  approval turn 在该 step 前停止，不能提交当前 SR-4 worktree changes 或调用
+  Provider。
 
 ## Risks
 
@@ -1513,11 +1541,8 @@ support 或通用 accuracy benchmark。
 ## Active Execution Gate
 
 hybrid proposal-gate architecture、exact predicate、feature semantics、canonical
-rule JSON 和 rule digest 已冻结；两页 overlays、局部放大图和 Quality Owner
-verdict 尚未冻结。当前 execution gate 因此是 `quality-owner-review-pending`：
-不得修改 production、不得提交当前 SR-4 worktree changes、不得进入 SR-2C、
-SR-4 Step 8 或 SR-5、不得调用 Provider。
-
-下一步只执行 subordinate `SR-2B Step 2`：用 approved two-page source 运行两次
-no-write/no-Provider renderer，把完整 evidence set 交给 Quality Owner。不得把
-positive overlap、frozen-negative overlap 或机械 digest gate 当作人工批准。
+rule JSON、rule/report/artifact digests 和 Quality Owner verdict 均已冻结。当前
+execution gate 是 `proposal-gate-approved`，只授权按唯一 current plan 从
+subordinate `SR-2C Step 1` 进入 proposal-owner TDD；本 approval turn 不执行该
+step。仍不得提交当前 SR-4 worktree changes、进入 SR-4 Step 8 或 SR-5、调用
+Provider，或把该 current-PDF approval 外推为通用准确率。
