@@ -674,6 +674,78 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     `20260728T091811533049Z-a6a394a3`。若 fresh run 再失败，保留全部 immutable
     evidence 并停止盲跑；rollback 先 revert Harness recovery commit，再 revert 本
     amendment，不删除或改写任何 run history。
+- Task 8 Step 6 deterministic visual-projection recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T095023589634Z-740b6624`、project
+      `63602d00-8847-4798-abbb-208634e47911` 和 immutable automatic result
+      `62e83917-2cfd-4852-b0da-c40d8040d7ff`；其 `/2` lineage evidence 已通过，
+      但 LIVE-01 selector 以 `10/56` positive matches fail closed。
+    - Validation action: 先单独提交本 amendment，再继续 subordinate Task 8
+      Step 6 的 deterministic local projection TDD；不进入 Step 7/8，不创建或调用
+      Provider。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后只修改下列 allowed production/test paths，禁止并行 writer。
+    - Next verification: 在
+      `backend/tests/unit/candidates/test_symbol_advisor.py` 建立 visual depth、
+      line-built datum box、extra-line revision triangle 和 duplicate line/span 的
+      live-shaped exact RED。
+  - Problem boundary and sealed evidence: source、manifest、verdict、79/124
+    observation identities、13/16 visual batches、203/203 coverage entries、call
+    budgets 和 evaluator input 均 exact；`70` 个 visual observations 为
+    `visual_no_detection`、`49` 个为 `visual_local_parse_failed`、`44` 个为
+    `visual_projection_conflict`、`2` 个为 `visual_source_mismatch`，只有 `38`
+    个形成 candidate。56 个 positive labels 中，`10` 个 exact match；`20` 个已有
+    exact expected kind 但 local disposition 仍为 `ambiguous`，其中 7 个
+    datum/revision semantic labels 全部失败；另有 23 个 kind empty/mismatch 和
+    3 个 proposal overlap `<0.5` 的独立上游缺口。本 recovery 只处理 normalized
+    evidence 已能无 Provider 复现的 deterministic local subset，不声称同时修复
+    model kind 或 proposal geometry。
+  - Root cause, Owner and old path: automatic raw candidate/coverage 的单一 Owner
+    仍为 `backend/app/candidates/advisor.py::CandidateAdvisor`，确定性 helper 位于
+    `backend/app/candidates/symbol_review.py`。旧路径存在四个窄化假设：
+    `_typed_depth_projection()` 只解析已含 native depth token 的 text，没有按 frozen
+    design 为 visual depth glyph 构造 canonical `深` typed input；
+    `_valid_datum_geometry()` 只接受单个 `re` opcode，不接受四条 straight lines
+    组成的唯一闭合框；`_valid_revision_geometry()` 要求整个 context 恰好三条 line，
+    无法在邻近无关 line 中确定性选择唯一闭合三角；`_ordered_texts()` 没有执行
+    prompt 已冻结的 exact-duplicate line-over-span canonicalization。新路径必须在
+    同一 local validator 内 fail closed；旧窄化分支直接替换，不保留 fallback、
+    shadow Owner 或 annotation 注入。
+  - Allowed paths and commit boundary: 本 recovery code commit 只允许
+    `backend/app/candidates/symbol_review.py` 和
+    `backend/tests/unit/candidates/test_symbol_advisor.py`；只有 exact integration
+    failure 证明需要时，才最小增加
+    `backend/tests/integration/test_symbol_recognition_pipeline.py`。本 current plan
+    amendment 必须单独先提交。不得修改 Provider adapter/prompt/schema/call policy、
+    proposal rule、LIVE-01 evaluator、sealed manifest/verdict/run、automatic result、
+    frontend、D7-T3 状态或 `main`。
+  - Unchanged contracts: Provider detections 仍必须 schema-valid、source allowlisted
+    且 `requires_confirmation=true`；local projection 仍只接受 frozen kind sets、
+    parser-valid typed payload、唯一 boxed datum、唯一 closed-triangle revision 和
+    exact source identity。Depth 只能从同一 visual context 的 associated native
+    text 构造 canonical input；不得选择 nearest/max、补造单位/数量或把 plain
+    dimension 猜成 depth。Datum line box 必须形成唯一四边闭合轴对齐框并包含唯一
+    ASCII datum token；revision 必须在全部 line 中恰好选择一个满足既有
+    3-segment、closure、size、area 和 token-distance 条件的三角，开放 path、
+    N5、多框或多三角继续 fail closed。line/span canonicalization 只折叠同一 parent
+    且 normalized raw text exact 相同的 duplicate，不能合并不同 value。Evaluator
+    exact kind/projection/`0.5` overlap/exact-one、negative false-positive、Provider
+    budget、cache identity 和 Quality Owner boundary 均不变。
+  - Verification and rollback: RED/GREEN 必须覆盖 visual-only depth token insertion、
+    existing diameter/thread/composite enrichment、conflicting/two values、`re` 与
+    four-line datum、open/non-axis/multiple datum boxes、extra-line unique revision、
+    open/N5/multiple triangles，以及 exact duplicate 与 non-duplicate line/span。
+    随后运行完整 symbol advisor/provider/pipeline/Task 8 contract suites、
+    `ruff check`、`check-contracts.py`，并对 sealed normalized result 执行
+    no-Provider counterfactual projection replay；不得读取 raw Provider response 或
+    crop。independent review 通过后，只有 replay 证明 deterministic failures
+    收敛且剩余 gap 有明确边界时，才另行记录是否允许一次 fresh full-P0 run；本
+    amendment 本身不授权该 run。rollback 先 revert projection code commit，再
+    revert 本 amendment，不删除或改写任何 sealed evidence。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
