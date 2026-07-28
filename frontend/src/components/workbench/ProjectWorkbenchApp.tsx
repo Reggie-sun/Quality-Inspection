@@ -17,7 +17,10 @@ import {
 } from "../../features/review/api";
 import { saveWorkingCopy } from "../../features/review/saveWorkingCopy";
 import { apiErrorCopy, zhCN } from "../../copy/zhCN";
-import { deriveCandidateNumbers } from "./candidateNumbering";
+import {
+  candidateMarkerNumber,
+  deriveCandidateNumbers,
+} from "./candidateNumbering";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 import { WorkbenchWorkflowHeader } from "./WorkbenchWorkflowHeader";
 
@@ -230,13 +233,23 @@ export function ProjectWorkbenchApp({
       <InspectionWorkbench
         pdfDocument={pdfDocument}
         pageCount={snapshot.pages.length}
-        candidates={snapshot.candidates.map((candidate) => ({
-          id: candidate.id,
-          itemId: candidate.item_id,
-          pageIndex: candidate.page_index,
-          bbox: candidate.bbox_pdf,
-          candidateNumber: candidateNumbers.get(candidate.item_id),
-        }))}
+        candidates={snapshot.candidates.map((candidate) => {
+          const item = snapshot.working_copy.items.find(
+            (entry) => entry.item_id === candidate.item_id,
+          );
+          const candidateNumber = candidateNumbers.get(candidate.item_id);
+          return {
+            id: candidate.id,
+            itemId: candidate.item_id,
+            pageIndex: candidate.page_index,
+            bbox: candidate.bbox_pdf,
+            candidateNumber,
+            showCandidateMarker: candidateMarkerNumber(
+              item ?? {},
+              candidateNumber,
+            ) !== undefined,
+          };
+        })}
         sources={snapshot.sources.map((source) => ({
           id: source.id,
           itemIds: source.item_ids,

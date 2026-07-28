@@ -253,6 +253,7 @@ export function OverlayLayer({
     if (
       item.itemId === undefined
       || item.candidateNumber === undefined
+      || item.showCandidateMarker === false
       || activeBalloonItemIds.has(item.itemId)
       || candidateMarkerItemIds.has(item.itemId)
     ) {

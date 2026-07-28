@@ -654,24 +654,18 @@ export function ReviewPanel({
                 ))}
               </select>
             </label>
-            <label className="review-field-group__confirmation">
-              <input
-                type="checkbox"
+            {selectedItem.requires_confirmation === true ? (
+              <p
+                className="review-field-group__confirmation-status"
+                role="status"
                 aria-label={zhCN.review.fieldForItem(
                   zhCN.review.requiresConfirmation,
                   selectedItem.raw_text,
                 )}
-                disabled={disabled || !isEditingSelected}
-                checked={confirmationFields[selectedItem.item_id] ?? false}
-                onChange={(event) => {
-                  setConfirmationFields((current) => ({
-                    ...current,
-                    [selectedItem.item_id]: event.target.checked,
-                  }));
-                }}
-              />
-              {zhCN.review.requiresConfirmation}
-            </label>
+              >
+                {zhCN.review.confirmationPending}
+              </p>
+            ) : null}
           </fieldset>
           )}
           {selectedCoreFields.length === 0 ? null : (

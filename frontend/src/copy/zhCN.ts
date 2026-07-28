@@ -250,6 +250,7 @@ export const zhCN = {
     cancelManualItem: "取消新增检验项",
     balloonRequired: "需要气泡",
     requiresConfirmation: "需要人工确认",
+    confirmationPending: "待人工确认",
     complexFields: "复杂检验项字段",
     coarseType: "粗分类",
     unspecified: "未指定",

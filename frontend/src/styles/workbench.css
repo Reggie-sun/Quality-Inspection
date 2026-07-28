@@ -1010,11 +1010,16 @@
   grid-column: 1 / -1;
 }
 
-.review-field-group__confirmation {
-  display: flex;
+.review-field-group__confirmation-status {
   grid-column: 1 / -1;
-  gap: 7px;
-  align-items: center;
+  justify-self: start;
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fff7d6;
+  color: #8a5a00;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .review-selected-item__form input,

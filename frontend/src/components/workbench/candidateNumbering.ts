@@ -10,3 +10,11 @@ export function deriveCandidateNumbers(
   }
   return numbers;
 }
+
+
+export function candidateMarkerNumber(
+  item: Pick<ReviewItem, "balloon_required">,
+  candidateNumber?: number,
+): number | undefined {
+  return item.balloon_required === false ? undefined : candidateNumber;
+}

@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import type { ReviewItem } from "../../api/types";
-import { deriveCandidateNumbers } from "./candidateNumbering";
+import {
+  candidateMarkerNumber,
+  deriveCandidateNumbers,
+} from "./candidateNumbering";
 
 
 describe("deriveCandidateNumbers", () => {
@@ -16,5 +19,11 @@ describe("deriveCandidateNumbers", () => {
       ["item-third", 1],
       ["item-first", 2],
     ]);
+  });
+
+  test("无需气泡项保留候选序号但不向画布提供候选标记序号", () => {
+    expect(candidateMarkerNumber({ balloon_required: false }, 66)).toBeUndefined();
+    expect(candidateMarkerNumber({ balloon_required: true }, 66)).toBe(66);
+    expect(candidateMarkerNumber({}, 66)).toBe(66);
   });
 });

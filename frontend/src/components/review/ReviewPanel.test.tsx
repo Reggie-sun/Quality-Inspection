@@ -183,11 +183,12 @@ describe("ReviewPanel", () => {
     expect(within(complexDetails).getByRole("combobox", {
       name: "粗分类：Ra 3.2",
     })).not.toBeNull();
-    const requiresConfirmation = within(complexDetails).getByRole("checkbox", {
+    expect(within(complexDetails).queryByRole("checkbox", {
       name: "需要人工确认：Ra 3.2",
-    });
-    expect(requiresConfirmation.closest("label")?.classList.contains(
-      "review-field-group__confirmation",
+    })).toBeNull();
+    const confirmationStatus = within(complexDetails).getByText("待人工确认");
+    expect(confirmationStatus.classList.contains(
+      "review-field-group__confirmation-status",
     )).toBe(true);
     expect(screen.queryByRole("group", { name: "解析结果" })).toBeNull();
   });
@@ -291,7 +292,6 @@ describe("ReviewPanel", () => {
     fireEvent.change(screen.getByLabelText("粗分类：Ra 3.2"), {
       target: { value: "weld" },
     });
-    fireEvent.click(screen.getByLabelText("需要人工确认：Ra 3.2"));
     fireEvent.click(
       screen.getByRole("button", { name: "修改保存检验项：Ra 3.2" }),
     );
@@ -356,7 +356,7 @@ describe("ReviewPanel", () => {
         raw_text: "Ra 3.2",
         coordinates: [11, 12, 13, 14],
         coarse_type: "weld",
-        requires_confirmation: false,
+        requires_confirmation: true,
       },
     });
     expect(Object.keys(complexEdit.fields).sort()).toEqual([

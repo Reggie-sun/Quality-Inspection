@@ -340,6 +340,33 @@ describe("OverlayLayer", () => {
     expect(screen.queryByTestId("balloon-balloon-deleted")).toBeNull();
   });
 
+  test("无需气泡项保留候选定位框和序号数据但隐藏画布圆圈与引线", () => {
+    render(
+      <OverlayLayer
+        pageWidth={100}
+        pageHeight={100}
+        scale={1}
+        candidates={[{
+          id: "candidate-no-balloon",
+          itemId: "item-no-balloon",
+          bbox: [10, 20, 30, 40],
+          candidateNumber: 66,
+          showCandidateMarker: false,
+        }]}
+        sources={[]}
+        balloons={[]}
+      />,
+    );
+
+    expect(screen.getByTestId("candidate-candidate-no-balloon")).not.toBeNull();
+    expect(Boolean(document.querySelector(
+      "[data-testid='candidate-number-candidate-no-balloon']",
+    ))).toBe(false);
+    expect(Boolean(document.querySelector(
+      "[data-testid='candidate-leader-candidate-no-balloon']",
+    ))).toBe(false);
+  });
+
   test("非选中候选与来源提供可聚焦的密度层级 class", () => {
     render(
       <OverlayLayer
