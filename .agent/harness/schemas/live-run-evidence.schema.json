@@ -15,7 +15,7 @@
     "samples"
   ],
   "properties": {
-    "schema_version": { "const": "live-run-evidence/1" },
+    "schema_version": { "const": "live-run-evidence/2" },
     "run_id": {
       "type": "string",
       "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
@@ -413,11 +413,15 @@
                   "additionalProperties": false,
                   "required": [
                     "source_location_id",
+                    "source_type",
+                    "observation_level",
                     "coordinates",
-                    "disposition"
+                    "coverage"
                   ],
                   "properties": {
                     "source_location_id": { "type": "string", "minLength": 1 },
+                    "source_type": { "type": "string", "minLength": 1 },
+                    "observation_level": { "type": "string", "minLength": 1 },
                     "coordinates": {
                       "type": "array",
                       "prefixItems": [
@@ -429,7 +433,32 @@
                       "minItems": 4,
                       "maxItems": 4
                     },
-                    "disposition": { "const": "candidate" }
+                    "coverage": {
+                      "oneOf": [
+                        { "type": "null" },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["disposition", "candidate_id"],
+                          "properties": {
+                            "disposition": {
+                              "enum": [
+                                "candidate",
+                                "reference_context",
+                                "non_inspection",
+                                "ambiguous"
+                              ]
+                            },
+                            "candidate_id": {
+                              "oneOf": [
+                                { "type": "null" },
+                                { "type": "string", "minLength": 1 }
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    }
                   }
                 }
               }

@@ -317,25 +317,25 @@ def design_qa_evidence(
 
 
 def validate_candidate_evidence(order: int, candidates: Mapping[str, Any]) -> None:
-    candidate_ids = candidates.get("candidate_ids")
-    source_ids = candidates.get("source_location_ids")
+    candidate_ids = _unique_strings(candidates.get("candidate_ids"))
+    source_ids = _unique_strings(candidates.get("source_location_ids"))
     records = candidates.get("candidate_records")
     count = candidates.get("candidate_count")
+    coverage_count = candidates.get("coverage_disposition_count")
     if (
         not isinstance(count, int)
         or isinstance(count, bool)
         or count < 1
-        or not isinstance(candidate_ids, list)
+        or candidate_ids is None
         or len(candidate_ids) != count
-        or len(set(candidate_ids)) != count
-        or not isinstance(source_ids, list)
-        or not source_ids
+        or source_ids is None
         or not isinstance(records, list)
         or len(records) != count
         or candidates.get("coverage_checked") is not True
         or candidates.get("coverage_blocking_count") != 0
-        or not isinstance(candidates.get("coverage_disposition_count"), int)
-        or candidates["coverage_disposition_count"] < count
+        or not isinstance(coverage_count, int)
+        or isinstance(coverage_count, bool)
+        or coverage_count < count
     ):
         raise ValueError(f"sample {order} candidate coverage is incomplete")
     record_ids: list[str] = []
@@ -347,33 +347,106 @@ def validate_candidate_evidence(order: int, candidates: Mapping[str, Any]) -> No
             raise ValueError(f"sample {order} candidate coordinates are invalid")
         candidate_id = record.get("candidate_id")
         evidence = record.get("source_evidence")
-        expected_source_ids = record.get("source_location_ids")
+        expected_source_ids = _unique_strings(record.get("source_location_ids"))
         if (
             not isinstance(candidate_id, str)
+            or not candidate_id
             or not isinstance(evidence, list)
             or not evidence
-            or not isinstance(expected_source_ids, list)
-            or not expected_source_ids
+            or expected_source_ids is None
         ):
             raise ValueError(f"sample {order} candidate source evidence is missing")
         record_ids.append(candidate_id)
         record_source_ids: list[str] = []
+        has_primary_candidate_coverage = False
         for source in evidence:
             if (
                 not isinstance(source, Mapping)
-                or source.get("disposition") != "candidate"
+                or set(source)
+                != {
+                    "source_location_id",
+                    "source_type",
+                    "observation_level",
+                    "coordinates",
+                    "coverage",
+                }
                 or not isinstance(source.get("source_location_id"), str)
+                or not source["source_location_id"]
+                or not isinstance(source.get("source_type"), str)
+                or not source["source_type"]
+                or not isinstance(source.get("observation_level"), str)
+                or not source["observation_level"]
                 or not _valid_box(source.get("coordinates"))
             ):
                 raise ValueError(
                     f"sample {order} candidate source coordinates are invalid"
                 )
-            record_source_ids.append(source["source_location_id"])
-        if set(record_source_ids) != set(expected_source_ids):
+            source_id = source["source_location_id"]
+            coverage = source.get("coverage")
+            if coverage is not None and (
+                not isinstance(coverage, Mapping)
+                or set(coverage) != {"disposition", "candidate_id"}
+                or coverage.get("disposition")
+                not in {
+                    "candidate",
+                    "reference_context",
+                    "non_inspection",
+                    "ambiguous",
+                }
+                or (
+                    coverage.get("candidate_id") is not None
+                    and (
+                        not isinstance(coverage["candidate_id"], str)
+                        or not coverage["candidate_id"]
+                    )
+                )
+            ):
+                raise ValueError(
+                    f"sample {order} candidate source coverage is invalid"
+                )
+            if source["source_type"] == "visual":
+                if (
+                    source["observation_level"] != "annotation_context"
+                    or not isinstance(coverage, Mapping)
+                    or coverage.get("disposition") != "candidate"
+                    or coverage.get("candidate_id") != candidate_id
+                ):
+                    raise ValueError(
+                        f"sample {order} visual candidate coverage is missing"
+                    )
+                has_primary_candidate_coverage = True
+            elif coverage is None:
+                if (
+                    source["source_type"] != "native"
+                    or source["observation_level"] != "span"
+                ):
+                    raise ValueError(
+                        f"sample {order} candidate text coverage is invalid"
+                    )
+            elif coverage.get("disposition") == "candidate":
+                if coverage.get("candidate_id") != candidate_id:
+                    raise ValueError(
+                        f"sample {order} candidate text coverage is invalid"
+                    )
+                has_primary_candidate_coverage = True
+            elif (
+                coverage.get("disposition") != "ambiguous"
+                or coverage.get("candidate_id") is not None
+            ):
+                raise ValueError(
+                    f"sample {order} candidate text coverage is invalid"
+                )
+            record_source_ids.append(source_id)
+        if _unique_strings(record_source_ids) != expected_source_ids:
             raise ValueError(f"sample {order} candidate source IDs are spliced")
-        observed_source_ids.extend(record_source_ids)
-    if set(record_ids) != set(candidate_ids) or set(observed_source_ids) != set(
-        source_ids
+        if not has_primary_candidate_coverage:
+            raise ValueError(
+                f"sample {order} candidate primary coverage is missing"
+            )
+        observed_source_ids.extend(expected_source_ids)
+    if (
+        _unique_strings(record_ids) != candidate_ids
+        or sorted(set(observed_source_ids)) != source_ids
     ):
         raise ValueError(f"sample {order} candidate inventory is spliced")
 

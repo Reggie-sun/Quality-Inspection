@@ -45,6 +45,7 @@ SYMBOL_RECOGNITION_SELECTOR = (
     "phase://live/symbol-recognition?input_set=current-four"
 )
 LIVE_EVIDENCE_ARTIFACT = "live-run-evidence.json"
+LIVE_EVIDENCE_SCHEMA_VERSION = "live-run-evidence/2"
 HUMAN_VERDICT_ARTIFACT = "artifacts/human-verdict.json"
 NO_SILENT_SUCCESS_SELECTOR = "phase://failure/no-silent-success"
 NO_SILENT_SUCCESS_TEST = "backend/tests/e2e/test_no_silent_success.py"
@@ -1221,7 +1222,7 @@ def _open_live_run(preflight: LivePreflight) -> Path:
     _write_json(run_dir / "run.json", run)
     _attach_full_live_input_artifacts(run_dir, preflight.input_artifacts)
     live = {
-        "schema_version": "live-run-evidence/1",
+        "schema_version": LIVE_EVIDENCE_SCHEMA_VERSION,
         "run_id": run_id,
         "input_set": "current-four",
         "phases": list(LIVE_PHASES),
@@ -1294,6 +1295,142 @@ from app.review.models import ReviewWorkingCopy
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
+
+def project_candidate_evidence(candidates, pages, coverage_entries):
+    if not isinstance(candidates, list):
+        raise RuntimeError("automatic candidate inventory is invalid")
+    source_index = {}
+    for page in pages:
+        if not isinstance(page, dict):
+            raise RuntimeError("stored page inventory is invalid")
+        observations = page.get("observations")
+        visual_observations = page.get("visual_observations", [])
+        if not isinstance(observations, list) or not isinstance(
+            visual_observations,
+            list,
+        ):
+            raise RuntimeError("stored source inventory is invalid")
+        for source in [*observations, *visual_observations]:
+            if not isinstance(source, dict):
+                raise RuntimeError("stored source inventory is invalid")
+            source_id = source.get("observation_id")
+            source_type = source.get("source_type")
+            observation_level = source.get("observation_level")
+            coordinates = source.get("bbox_pdf")
+            if (
+                not isinstance(source_id, str)
+                or not source_id
+                or source_id in source_index
+                or not isinstance(source_type, str)
+                or not source_type
+                or not isinstance(observation_level, str)
+                or not observation_level
+                or not isinstance(coordinates, list)
+                or len(coordinates) != 4
+            ):
+                raise RuntimeError("stored source inventory is invalid")
+            source_index[source_id] = {
+                "source_location_id": source_id,
+                "source_type": source_type,
+                "observation_level": observation_level,
+                "coordinates": coordinates,
+            }
+
+    coverage_index = {}
+    for entry in coverage_entries:
+        if not isinstance(entry, dict):
+            raise RuntimeError("coverage evidence is invalid")
+        source_id = entry.get("source_location_id")
+        disposition = entry.get("disposition")
+        candidate_id = entry.get("candidate_id")
+        if (
+            not isinstance(source_id, str)
+            or not source_id
+            or source_id not in source_index
+            or source_id in coverage_index
+            or disposition
+            not in {
+                "candidate",
+                "reference_context",
+                "non_inspection",
+                "ambiguous",
+            }
+            or (
+                candidate_id is not None
+                and (not isinstance(candidate_id, str) or not candidate_id)
+            )
+        ):
+            raise RuntimeError("coverage evidence is invalid")
+        coverage_index[source_id] = {
+            "disposition": disposition,
+            "candidate_id": candidate_id,
+        }
+
+    candidate_ids = []
+    candidate_sources_by_id = {}
+    source_location_ids = set()
+    candidate_records = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            raise RuntimeError("automatic candidate identity is incomplete")
+        candidate_id = candidate.get("candidate_id")
+        sources = candidate.get("source_location_ids")
+        if (
+            not isinstance(candidate_id, str)
+            or not candidate_id
+            or not isinstance(sources, list)
+            or not sources
+            or candidate_id in candidate_sources_by_id
+            or any(
+                not isinstance(source_id, str)
+                or not source_id
+                or source_id not in source_index
+                for source_id in sources
+            )
+            or len(set(sources)) != len(sources)
+        ):
+            raise RuntimeError("automatic candidate source relation is incomplete")
+        payload = candidate.get("payload")
+        coordinates = (
+            payload.get("coordinates")
+            if isinstance(payload, dict)
+            else None
+        )
+        ordered_source_ids = sorted(sources)
+        candidate_ids.append(candidate_id)
+        candidate_sources_by_id[candidate_id] = set(ordered_source_ids)
+        source_location_ids.update(ordered_source_ids)
+        candidate_records.append({
+            "candidate_id": candidate_id,
+            "coordinates": coordinates,
+            "source_location_ids": ordered_source_ids,
+            "source_evidence": [
+                {
+                    **source_index[source_id],
+                    "coverage": coverage_index.get(source_id),
+                }
+                for source_id in ordered_source_ids
+            ],
+        })
+    for source_id, coverage in coverage_index.items():
+        if coverage["disposition"] != "candidate":
+            continue
+        candidate_id = coverage["candidate_id"]
+        if (
+            candidate_id not in candidate_sources_by_id
+            or source_id not in candidate_sources_by_id[candidate_id]
+        ):
+            raise RuntimeError("candidate coverage relation is invalid")
+    return {
+        "candidate_ids": sorted(candidate_ids),
+        "source_location_ids": sorted(source_location_ids),
+        "candidate_records": sorted(
+            candidate_records,
+            key=lambda entry: entry["candidate_id"],
+        ),
+    }
+
+
 payload = sys.stdin.buffer.read()
 expected = os.environ["QI_P0_SOURCE_SHA256"]
 if hashlib.sha256(payload).hexdigest() != expected:
@@ -1365,49 +1502,14 @@ try:
             raise RuntimeError(f"unsupported live page size: {width}x{height}")
         return matches[0]
 
-    candidate_ids = []
-    source_location_ids = set()
-    for candidate in raw.candidates:
-        candidate_id = candidate.get("candidate_id")
-        sources = candidate.get("source_location_ids")
-        if not isinstance(candidate_id, str) or not candidate_id:
-            raise RuntimeError("automatic candidate identity is incomplete")
-        if not isinstance(sources, list) or not sources:
-            raise RuntimeError("automatic candidate source relation is incomplete")
-        candidate_ids.append(candidate_id)
-        source_location_ids.update(str(value) for value in sources)
     coverage_entries = raw.coverage.get("entries")
     if not isinstance(coverage_entries, list):
         raise RuntimeError("coverage evidence is unavailable")
-    coverage_by_candidate = {}
-    for entry in coverage_entries:
-        if not isinstance(entry, dict):
-            continue
-        candidate_id = entry.get("candidate_id")
-        if isinstance(candidate_id, str) and candidate_id:
-            coverage_by_candidate.setdefault(candidate_id, []).append(entry)
-    candidate_records = []
-    for candidate in raw.candidates:
-        candidate_id = str(candidate["candidate_id"])
-        payload = candidate.get("payload")
-        coordinates = payload.get("coordinates") if isinstance(payload, dict) else None
-        source_evidence = [
-            {
-                "source_location_id": str(entry["source_location_id"]),
-                "coordinates": entry["coordinates"],
-                "disposition": entry["disposition"],
-            }
-            for entry in coverage_by_candidate.get(candidate_id, [])
-            if entry.get("disposition") == "candidate"
-        ]
-        candidate_records.append({
-            "candidate_id": candidate_id,
-            "coordinates": coordinates,
-            "source_location_ids": sorted(
-                str(value) for value in candidate.get("source_location_ids", [])
-            ),
-            "source_evidence": source_evidence,
-        })
+    candidate_evidence = project_candidate_evidence(
+        raw.candidates,
+        pages,
+        coverage_entries,
+    )
     print(json.dumps({
         "project_id": str(project_id),
         "working_copy_id": str(working.id),
@@ -1420,8 +1522,7 @@ try:
         },
         "candidates": {
             "candidate_count": len(raw.candidates),
-            "candidate_ids": sorted(candidate_ids),
-            "source_location_ids": sorted(source_location_ids),
+            **candidate_evidence,
             "coverage_checked": raw.coverage.get("coverage_checked") is True,
             "coverage_blocking_count": int(raw.coverage.get("blocking_count", -1)),
             "coverage_disposition_count": sum(
@@ -1429,10 +1530,6 @@ try:
                 and bool(entry["disposition"].strip())
                 for entry in coverage_entries
                 if isinstance(entry, dict)
-            ),
-            "candidate_records": sorted(
-                candidate_records,
-                key=lambda entry: entry["candidate_id"],
             ),
         },
     }, sort_keys=True))

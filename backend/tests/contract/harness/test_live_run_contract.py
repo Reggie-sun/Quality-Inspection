@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import hashlib
 import json
@@ -39,6 +40,21 @@ def _load_module(name: str, path: Path) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _embedded_function(program: str, name: str):
+    functions = [
+        node
+        for node in ast.parse(program).body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    ]
+    assert len(functions) == 1, f"missing embedded function: {name}"
+    module = ast.fix_missing_locations(
+        ast.Module(body=functions, type_ignores=[])
+    )
+    namespace: dict[str, object] = {}
+    exec(compile(module, "<embedded-program>", "exec"), namespace)
+    return namespace[name]
 
 
 def _schema(name: str) -> dict[str, object]:
@@ -225,8 +241,13 @@ def _sample_evidence(order: int) -> dict[str, object]:
                     "source_evidence": [
                         {
                             "source_location_id": f"source-{order}-{index}",
+                            "source_type": "native",
+                            "observation_level": "line",
                             "coordinates": [10 * index, 10, 10 * index + 5, 15],
-                            "disposition": "candidate",
+                            "coverage": {
+                                "disposition": "candidate",
+                                "candidate_id": candidate_id,
+                            },
                         }
                     ],
                 }
@@ -340,6 +361,290 @@ def _sample_evidence(order: int) -> dict[str, object]:
             "evidence_sha256": "3" * 64,
         },
     }
+
+
+def _visual_text_candidate_evidence() -> dict[str, object]:
+    candidate_id = "candidate-visual-text"
+    return {
+        "candidate_count": 1,
+        "candidate_ids": [candidate_id],
+        "source_location_ids": ["line-1", "span-1", "visual-1"],
+        "coverage_checked": True,
+        "coverage_blocking_count": 0,
+        "coverage_disposition_count": 2,
+        "candidate_records": [
+            {
+                "candidate_id": candidate_id,
+                "coordinates": [10, 10, 40, 40],
+                "source_location_ids": ["line-1", "span-1", "visual-1"],
+                "source_evidence": [
+                    {
+                        "source_location_id": "line-1",
+                        "source_type": "native",
+                        "observation_level": "line",
+                        "coordinates": [20, 20, 30, 30],
+                        "coverage": {
+                            "disposition": "ambiguous",
+                            "candidate_id": None,
+                        },
+                    },
+                    {
+                        "source_location_id": "span-1",
+                        "source_type": "native",
+                        "observation_level": "span",
+                        "coordinates": [30, 20, 40, 30],
+                        "coverage": None,
+                    },
+                    {
+                        "source_location_id": "visual-1",
+                        "source_type": "visual",
+                        "observation_level": "annotation_context",
+                        "coordinates": [10, 10, 20, 20],
+                        "coverage": {
+                            "disposition": "candidate",
+                            "candidate_id": candidate_id,
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+
+
+def test_live_prepare_projects_candidate_sources_from_inventory() -> None:
+    runner = _load_module(
+        "qi_run_p0_candidate_source_projection",
+        HARNESS / "scripts/run-p0.py",
+    )
+    project = _embedded_function(
+        runner._PREPARE_PROJECT_PROGRAM,
+        "project_candidate_evidence",
+    )
+    candidate_id = "candidate-visual-text"
+    projected = project(
+        [
+            {
+                "candidate_id": candidate_id,
+                "payload": {"coordinates": [10, 10, 40, 40]},
+                "source_location_ids": ["visual-1", "line-1", "span-1"],
+            }
+        ],
+        [
+            {
+                "observations": [
+                    {
+                        "observation_id": "line-1",
+                        "source_type": "native",
+                        "observation_level": "line",
+                        "bbox_pdf": [20, 20, 30, 30],
+                    },
+                    {
+                        "observation_id": "span-1",
+                        "source_type": "native",
+                        "observation_level": "span",
+                        "bbox_pdf": [30, 20, 40, 30],
+                    },
+                ],
+                "visual_observations": [
+                    {
+                        "observation_id": "visual-1",
+                        "source_type": "visual",
+                        "observation_level": "annotation_context",
+                        "bbox_pdf": [10, 10, 20, 20],
+                    }
+                ],
+            }
+        ],
+        [
+            {
+                "source_location_id": "visual-1",
+                "disposition": "candidate",
+                "candidate_id": candidate_id,
+            },
+            {
+                "source_location_id": "line-1",
+                "disposition": "ambiguous",
+                "candidate_id": None,
+            },
+        ],
+    )
+
+    assert projected == {
+        "candidate_ids": [candidate_id],
+        "source_location_ids": ["line-1", "span-1", "visual-1"],
+        "candidate_records": _visual_text_candidate_evidence()[
+            "candidate_records"
+        ],
+    }
+
+
+def test_live_prepare_rejects_candidate_source_outside_inventory() -> None:
+    runner = _load_module(
+        "qi_run_p0_candidate_source_rejection",
+        HARNESS / "scripts/run-p0.py",
+    )
+    project = _embedded_function(
+        runner._PREPARE_PROJECT_PROGRAM,
+        "project_candidate_evidence",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="automatic candidate source relation is incomplete",
+    ):
+        project(
+            [
+                {
+                    "candidate_id": "candidate-spliced",
+                    "payload": {"coordinates": [10, 10, 20, 20]},
+                    "source_location_ids": ["source-not-in-inventory"],
+                }
+            ],
+            [{"observations": [], "visual_observations": []}],
+            [],
+        )
+
+    with pytest.raises(
+        RuntimeError,
+        match="candidate coverage relation is invalid",
+    ):
+        project(
+            [
+                {
+                    "candidate_id": "candidate-1",
+                    "payload": {"coordinates": [10, 10, 20, 20]},
+                    "source_location_ids": ["source-1"],
+                }
+            ],
+            [
+                {
+                    "observations": [
+                        {
+                            "observation_id": source_id,
+                            "source_type": "native",
+                            "observation_level": "line",
+                            "bbox_pdf": [10 * index, 10, 10 * index + 5, 15],
+                        }
+                        for index, source_id in enumerate(
+                            ("source-1", "source-extra"),
+                            start=1,
+                        )
+                    ],
+                    "visual_observations": [],
+                }
+            ],
+            [
+                {
+                    "source_location_id": "source-extra",
+                    "disposition": "candidate",
+                    "candidate_id": "candidate-1",
+                }
+            ],
+        )
+
+
+def test_candidate_evidence_accepts_inventory_backed_visual_text_union() -> None:
+    policy = _load_module(
+        "qi_candidate_lineage_policy",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+
+    policy.validate_candidate_evidence(1, _visual_text_candidate_evidence())
+
+
+@pytest.mark.parametrize(
+    ("mutate", "error"),
+    [
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"].pop(),
+            "candidate source IDs are spliced",
+        ),
+        (
+            lambda value: value["candidate_records"][0][
+                "source_evidence"
+            ].append(
+                value["candidate_records"][0]["source_evidence"][0].copy()
+            ),
+            "candidate source IDs are spliced",
+        ),
+        (
+            lambda value: value["candidate_records"][0][
+                "source_evidence"
+            ].append(
+                {
+                    "source_location_id": "source-extra",
+                    "source_type": "native",
+                    "observation_level": "span",
+                    "coordinates": [40, 20, 50, 30],
+                    "coverage": None,
+                }
+            ),
+            "candidate source IDs are spliced",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][2].__setitem__(
+                "coordinates",
+                [10, 10, 10, 20],
+            ),
+            "candidate source coordinates are invalid",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][2].__setitem__(
+                "coverage",
+                None,
+            ),
+            "visual candidate coverage is missing",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][2][
+                "coverage"
+            ].__setitem__(
+                "candidate_id",
+                "candidate-spliced",
+            ),
+            "visual candidate coverage is missing",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][0].__setitem__(
+                "coverage",
+                None,
+            ),
+            "candidate text coverage is invalid",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][0][
+                "coverage"
+            ].update(
+                {
+                    "disposition": "candidate",
+                    "candidate_id": "candidate-spliced",
+                }
+            ),
+            "candidate text coverage is invalid",
+        ),
+        (
+            lambda value: value["source_location_ids"].pop(),
+            "candidate inventory is spliced",
+        ),
+        (
+            lambda value: value["source_location_ids"].append("source-extra"),
+            "candidate inventory is spliced",
+        ),
+    ],
+)
+def test_candidate_evidence_rejects_lineage_splices(
+    mutate,
+    error: str,
+) -> None:
+    policy = _load_module(
+        "qi_candidate_lineage_rejection_policy",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+    candidates = _visual_text_candidate_evidence()
+    mutate(candidates)
+
+    with pytest.raises(ValueError, match=error):
+        policy.validate_candidate_evidence(1, candidates)
 
 
 def _symbol_manifest() -> dict[str, object]:
@@ -497,7 +802,7 @@ def _symbol_evidence() -> dict[str, object]:
 
 def _live_evidence() -> dict[str, object]:
     return {
-        "schema_version": "live-run-evidence/1",
+        "schema_version": "live-run-evidence/2",
         "run_id": RUN_ID,
         "input_set": "current-four",
         "phases": PHASES,
@@ -867,7 +1172,12 @@ def test_full_p0_run_schema_adds_lifecycle_without_invalidating_task_runs() -> N
 
 
 def test_live_and_human_verdict_schemas_are_closed() -> None:
+    runner = _load_module(
+        "qi_run_p0_live_evidence_version",
+        HARNESS / "scripts/run-p0.py",
+    )
     live = _live_evidence()
+    assert runner.LIVE_EVIDENCE_SCHEMA_VERSION == live["schema_version"]
     _validate(live, "live-run-evidence.schema.json")
     with pytest.raises(jsonschema.ValidationError):
         _validate({**live, "unexpected": True}, "live-run-evidence.schema.json")
