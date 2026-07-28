@@ -763,6 +763,11 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - responsive focused implementation:
   `.local/design-qa/review-action-semantics-narrow-actions.png`
 - responsive pixels / CSS viewport: `800x790 / 800x790`
+- user-feedback visual:
+  `/tmp/codex-clipboard-lhyqqW.png`
+- post-feedback implementation:
+  `.local/design-qa/review-action-semantics-flat-viewport.png`
+- post-feedback pixels / CSS viewport: `1380x990 / 1380x990`
 - same-input comparison:
   `.local/design-qa/review-action-semantics-comparison.png`
 - comparison pixels: `1365x1571`
@@ -780,14 +785,17 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
   表单右侧，三组标题、按钮和两条说明均可读，内部与页面级均无横向溢出。
 - Intentional adaptation: 概念板为较宽的双列按钮；真实 rail 宽约 `166px`，因此沿用产品
   原有竖向按钮节奏，避免为匹配概念稿扩大右栏或压缩检验字段。
-- Initial comparison: 未发现 P0、P1 或 P2；未触发视觉修复迭代。
+- Initial comparison: 工具侧初检没有发现 P0/P1/P2；用户随后指出真实窄栏存在 P2
+  “卡片内再套三层卡片”的视觉层级过重问题。复核确认 rail 只有约 `166px`，父级已经提供
+  边界，三个 fieldset 再加白底、圆角和完整边框造成重复容器感。
 
 ### Required Fidelity Surfaces
 
 - Fonts and typography: 沿用现有中文系统字体、`11px` 操作文字和加粗 legend；说明使用
   `10px / 1.4`，在 `166px` rail 和 `800px` 窗口中仍可读。
-- Spacing and layout rhythm: 三个 fieldset 使用一致的 `7px` 内部 gap 与细边框；确认块在
-  “检验结论”内自然增高，不遮挡 SIP 面板、检验项列表或页面滚动。
+- Spacing and layout rhythm: 三个 fieldset 保留语义结构，但视觉改为透明无外框分区，以细
+  横线分隔；rail 水平 padding 从 `14px` 收紧为 `12px`，避免在 `166px` 窄栏中重复消耗
+  内容宽度。确认块仍在“检验结论”内自然增高，不遮挡其他区域。
 - Colors and visual tokens: 普通操作复用既有白色和工程蓝；危险按钮与确认块使用低饱和红棕
   边框/底色，未增加渐变、强阴影或新的全局 token。
 - Image quality and assets: 本次没有新增 Logo、图标、插画或图片资产；PDF canvas 和气泡
@@ -805,6 +813,8 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - focused unit tests 覆盖取消、Escape、失败保留、成功重试和现有 exclude payload；
   “设为无需气泡”继续一次点击发送既有 command。
 - 宽屏 `1317x643` 与窄屏 `800x790` 均无操作栏溢出。
+- 用户反馈后复测的 `1380x990` 真实页面中，三个分组已去掉白底、圆角和完整外框，
+  `检验结论 / 内容调整 / 气泡标记` 仍通过标题和分隔线清楚区分。
 - console errors / warnings: `0 / 0`。
 
 ### Verification And Result
@@ -818,7 +828,8 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
   focus return、responsive layout 和 console 检查 passed。
 - Remaining P0: 0.
 - Remaining P1: 0.
-- Remaining P2: 0.
+- Remaining P2: 0；用户反馈的重复卡片层级已修复。
 - P3 follow-up polish: none required for this scope.
-- comparison history: 初次同图比较通过，无 P0/P1/P2 修复迭代。
+- comparison history: 初检通过 → 用户截图指出 P2 重复卡片层级 → 移除分组外框、白底和圆角，
+  保留 fieldset/legend 与轻量分隔线 → 同输入对比和真实浏览器复测通过。
 - final result: passed

@@ -400,7 +400,11 @@ describe("ReviewPanel", () => {
 
     const decisionGroup = screen.getByRole("group", { name: "检验结论" });
     const balloonGroup = screen.getByRole("group", { name: "气泡标记" });
+    const commandRail = screen.getByRole("complementary", {
+      name: "检验项操作",
+    });
 
+    expect(commandRail.classList.contains("review-command-rail--flat")).toBe(true);
     expect(within(decisionGroup).getByText(
       "不进入 SIP，也不生成气泡",
     )).not.toBeNull();

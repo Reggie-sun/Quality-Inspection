@@ -793,7 +793,10 @@ export function ReviewPanel({
             </fieldset>
           )}
           </div>
-          <aside className="review-command-rail" aria-label="检验项操作">
+          <aside
+            className="review-command-rail review-command-rail--flat"
+            aria-label="检验项操作"
+          >
             <fieldset className="review-command-rail__group">
               <legend>{zhCN.review.decisionGroup}</legend>
               <button

@@ -1051,28 +1051,35 @@
 .review-command-rail {
   display: grid;
   grid-auto-rows: min-content;
-  gap: 10px;
+  gap: 12px;
   align-content: start;
-  padding: 14px;
+  padding: 14px 12px;
   border-left: 1px solid var(--qi-border);
   background: #f8fafc;
 }
 
-.review-command-rail__group {
+.review-command-rail--flat .review-command-rail__group {
   display: grid;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
   margin: 0;
-  padding: 9px;
-  border: 1px solid var(--qi-border);
-  border-radius: 8px;
-  background: #ffffff;
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--qi-border);
+  border-radius: 0;
+  background: transparent;
 }
 
-.review-command-rail__group legend {
-  padding: 0 4px;
-  color: #475467;
-  font-size: 11px;
+.review-command-rail--flat .review-command-rail__group:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.review-command-rail--flat .review-command-rail__group legend {
+  margin-bottom: 1px;
+  padding: 0;
+  color: #344054;
+  font-size: 12px;
   font-weight: 700;
 }
 
