@@ -610,6 +610,70 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     tool 或任一 tool arguments 仍 schema-invalid，保留全部 failure/audit evidence
     并停止；不得 fallback 到 content、增加 retry 或再次盲跑。rollback 先 revert
     transport code commit，再 revert 本 amendment，不删除或改写 run history。
+- Task 8 Step 6 candidate-lineage evidence recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T091811533049Z-a6a394a3`、project
+      `b04e50b8-8773-41e5-8383-7c175e3e76a4` 和 immutable automatic result
+      `77255948-b28f-4e2e-b6b5-7a2cebfb33e3`。
+    - Validation action: 先提交本 amendment，再继续 subordinate Task 8 Step 6
+      bounded Harness evidence TDD recovery；不进入 Step 7/8。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后只修改下列 allowed Harness code/schema/test paths，禁止并行 writer。
+    - Next verification: exact RED 证明 inventory-backed visual/text source union 被旧
+      candidate-coverage equality gate 错误拒绝。
+  - Problem boundary and sealed evidence: forced-tool `/2` endpoint 已在本 fresh run
+    接受全部 `29` 个 visual calls，形成 `29` 个 schema-valid caches、`279`
+    candidates、`coverage_checked=true` 和 `blocking_count=0`；不存在 Provider
+    transport/schema failure。Harness 随后在 sample 1 fail closed 为
+    `candidate source IDs are spliced`，并把 run 正确 seal 为 failed。`279`
+    candidates 的完整 lineage 有 `322` 个唯一 source IDs；其中 `311` 个有同
+    candidate 的 primary coverage，差集 `11` 全部是 immutable inventory 中真实的
+    native text：`8` 个非 selected `span` 没有 Coverage Ledger entry，`3` 个
+    selected `line` 保持合法 `ambiguous` disposition；没有 extra coverage source。
+  - Root cause, Owners and old path:
+    `.agent/harness/scripts/run-p0.py::_PREPARE_PROJECT_PROGRAM` 是 live evidence
+    projection Owner，却仍只从 `coverage_by_candidate` 生成 `source_evidence` 并丢弃
+    non-candidate disposition；随后
+    `.agent/harness/scripts/live_evidence_policy.py::validate_candidate_evidence()` 又把
+    该 coverage projection 与 candidate 的完整 `source_location_ids` 要求 exact
+    equal。这是 visual/text union 加入前的 text-only 假设。新路径必须从 immutable
+    `pages[].observations` 与 `pages[].visual_observations` 建唯一 source index，投影
+    source type、observation level、inventory bbox 和可空 coverage linkage；旧
+    “candidate coverage entries 等于全部 candidate sources”路径完整退休，不保留
+    fallback 或 shadow validator。
+  - Allowed paths and commit boundary: 本 recovery code commit 只允许
+    `.agent/harness/scripts/run-p0.py`、
+    `.agent/harness/scripts/live_evidence_policy.py`、
+    `.agent/harness/schemas/live-run-evidence.schema.json` 和
+    `backend/tests/contract/harness/test_live_run_contract.py`。只有现有 architecture
+    contract 的 exact RED 证明需要时，才额外允许
+    `backend/tests/contract/harness/test_contract_architecture.py`。本 current plan
+    amendment 必须单独先提交。不得修改 production candidate/coverage/Provider、
+    source inputs、sealed runs、automatic result、D7-T3 状态或 `main` frontend。
+  - Unchanged contracts: candidate 的 `source_location_ids` 继续 exact 包含参与
+    projection 的 visual/text IDs；每个 visual observation 继续只有一个 primary
+    coverage disposition；candidate evidence 仍必须 inventory-backed、complete、
+    unique、bbox-valid、anti-splice，且 global source union 必须 exact。每个 visual
+    candidate source 必须有同 candidate ID 的 `candidate` coverage；associated text
+    只允许同-candidate coverage、合法 `ambiguous` coverage，或 native non-selected
+    `span` 的无 coverage 状态。不得简单放宽为 subset、伪造 text coverage、把
+    overlap count 当 Quality Owner approval，或改变 source/manifest/verdict、
+    call budget、cache identity、fresh-project 和 literal two-run bindings。
+  - Verification and rollback: RED/GREEN 必须覆盖 inventory-backed visual/text
+    union、visual candidate coverage、ambiguous line、无 coverage native span、
+    missing/extra/duplicate source、invalid bbox、wrong candidate linkage 和 global
+    inventory splice；并直接验证 live prepare 从 inventory 投影而非从 candidate
+    coverage 猜测 source。随后运行完整 live-run/receipt/architecture Harness
+    contracts、`ruff check`、`check-contracts.py`、sealed failed sample 的只读
+    projection replay 和 independent review。全部通过并提交后，才允许以相同两个
+    literal sealed input IDs 创建一次 fresh full-P0 run；不得 resume/reuse
+    `20260728T091811533049Z-a6a394a3`。若 fresh run 再失败，保留全部 immutable
+    evidence 并停止盲跑；rollback 先 revert Harness recovery commit，再 revert 本
+    amendment，不删除或改写任何 run history。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
