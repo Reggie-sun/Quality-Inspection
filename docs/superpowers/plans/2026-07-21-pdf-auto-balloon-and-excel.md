@@ -422,6 +422,60 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     full-P0 live command。
   - Rollback: live gate 若失败，保留两个 sealed input runs、失败 run、audit 与
     Provider-call evidence；只 revert 本 docs amendment，不删除或改写 run history。
+- Task 8 Step 6 Provider live-start recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: sealed run
+      `20260728T080321805661Z-b59c87de` 的 13 个 page-0 schema-valid calls 与
+      page-1 first-crop exact `30.57s` timeout boundary。
+    - Validation action: 先提交本 amendment，再继续 subordinate Task 8 Step 6
+      two-file timeout TDD recovery；不进入 Step 7/8。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后仅 `runtime.py` 和其 exact contract test，禁止并行 writer。
+    - Next verification: runtime factory `30.0 → 60.0` exact RED/GREEN，同时
+      `max_retries=0` 保持不变。
+  - Problem boundary and sealed evidence: first fresh run
+    `20260728T074800085742Z-9d64ee0c` 在首个 visual call 以 sanitized
+    `visual_schema_invalid` fail closed。根因是
+    `visual_review_prompt()` 仅声明 `return_frozen_schema_only`，却未携带同一
+    `visual-symbol-review/1` frozen schema；严格 parser、failure redaction 和
+    Provider audit 均按设计工作。TDD fix commit
+    `9d9f99ec4f8eddb95cc6dcd5f0d28ec9854f796b` 只把 exact schema 加入 canonical
+    prompt、将 prompt identity 升至 `visual-symbol-prompt/2` 并更新对应 cache
+    mismatch expectations；schema、adapter、proposal 和 cache-envelope versions
+    均不变。focused + Task 8 suites 为 `171 passed`，independent spec review
+    `accept`、quality review `accept with concerns` 且无 blocker。
+  - Timeout root cause: second fresh run
+    `20260728T080321805661Z-b59c87de` 使用上述 commit 后，page 0 的 `13` 个
+    batches 全部返回 schema-valid `/2` responses，绑定的 observation counts 合计
+    exact `79`；第 `14` 个 crop 是 page 1 首批，写入时间
+    `2026-07-28T08:06:06.182Z`，run 于
+    `2026-07-28T08:06:36.753Z` fail closed。约 `30.57s` 边界与唯一 runtime
+    `OpenAI(timeout=30.0,max_retries=0)` exact 对齐；没有 schema-invalid envelope、
+    HTTP status audit 或成功 response 可用于其他归因。13 个成功 call duration
+    范围为 `4040..24892ms`，因此本地 `30s` multimodal timeout 缺少有界 headroom。
+  - Single Owner, old path and allowed paths:
+    `backend/app/providers/runtime.py::build_vision_provider()` 是 Qwen client timeout
+    唯一 Owner；以 `60.0s` 替换过紧的 `30.0s`，继续 pin
+    `max_retries=0`，不得启用 SDK 隐式 retry、放宽 schema 或改变 call budget。
+    本 recovery commit 只允许
+    `backend/app/providers/runtime.py`、
+    `backend/tests/contract/test_qwen_vl_provider.py`；本 current plan amendment
+    单独先提交。不得修改 Provider policy、Task 8 gate、sealed runs、input artifacts
+    或 D7-T3 状态。
+  - Unchanged contracts: `<=16/page` visual/total Vision call cap、
+    `max_retries_per_call:2` 上限、one bounded PNG、JSON-only transport、exact frozen
+    schema、local fail-closed validation、sanitized audit、cache identity、fresh-project
+    requirement、literal two-run binding 与 Quality Owner gate 均不变。timeout 增加
+    不是 retry，也不得把 page 0 的 13 个成功 responses 当作整体通过。
+  - Verification and rollback: RED 必须精确证明 runtime factory 仍为 `30.0`，
+    GREEN pin `60.0` 和 `max_retries=0`；随后运行 Qwen/provider/candidate/Task 8
+    suites、`ruff check`、`check-contracts.py`、独立 review，再以相同两个 literal
+    sealed input IDs 创建新 full-P0 run。失败时保留两次 sealed failure、crops、
+    caches 与 audits，先 revert timeout recovery commit，再按需 revert
+    `9d9f99e`；不得删除或改写 run history。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
