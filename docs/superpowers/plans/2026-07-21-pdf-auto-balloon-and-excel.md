@@ -746,6 +746,47 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     收敛且剩余 gap 有明确边界时，才另行记录是否允许一次 fresh full-P0 run；本
     amendment 本身不授权该 run。rollback 先 revert projection code commit，再
     revert 本 amendment，不删除或改写任何 sealed evidence。
+- Task 8 Step 6 depth-primary association refinement — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: 对上述 sealed normalized result 的进一步 no-Provider
+      subset replay；11/11 个 exact-depth ambiguous observations 均为
+      `line + span` exact duplicate 的 single-number source，且 allowlist 命中的
+      existing candidate 只是不带 depth 的 `linear_dimension`。
+    - Validation action: 先单独提交本 refinement，再把 depth RED 收敛为
+      unique/multiple typed-primary association；不创建或调用 Provider。
+    - Writer ownership and order: parent sole writer；refinement commit first，
+      随后仍只使用上一 amendment 的 allowed production/test paths。
+    - Next verification: exact RED 证明 unique strong same-page typed primary 被旧
+      source-ID-only association 漏掉，而 two strong primaries 必须 fail closed。
+  - Refined root cause and retired shortcut: standalone `深 N` 不是现有
+    `parse_annotation()` 支持的 typed candidate，且
+    `_enrich_existing_depth(linear_dimension, N)` 必须继续拒绝；因此上一
+    amendment 中“仅构造 canonical depth input”不足以关闭 live-shaped failure。
+    旧 `_associated_candidate_indexes()` 只看 Provider-selected source IDs，无法
+    关联 allowlist 外但与 visual annotation context 强 overlap 的既有
+    thread/diameter/composite primary。不得以 annotation manifest、nearest
+    candidate、普通 linear dimension promotion 或放宽 parser 代替正式 relation。
+  - Exact local relation rule: 先执行 exact-duplicate line-over-span
+    canonicalization；当且仅当 detection kind set 为 `{depth}`、当前 associated
+    source 没有唯一 typed primary，且同页 existing candidate 的 item type 为
+    `thread`、`diameter_dimension` 或 `composite`、其 source identities 全部
+    inventory-backed、其 coordinates 与 visual observation bbox 的
+    `intersection_area / min(area) >= 0.5` 时，才把它计为 geometry-associated
+    typed primary。恰好一个时以 visual single-number value 调用既有
+    `_enrich_existing_depth()`，保留 candidate ID/raw text，并只在
+    `normalized_text` 加 canonical `深`；0 个保持 local parse failed，2 个及以上
+    为 projection conflict。新 envelope 的 source union 必须包含 visual、value
+    text 和 existing primary sources。该规则不是 distance ranking，不允许用最高
+    overlap 打破多个 strong primaries。
+  - Live boundary: 该规则可安全覆盖 9 个唯一 strong-primary observations，并可用
+    `0.5` threshold 排除 1 个 `0.133` incidental overlap；另 1 个 observation
+    存在两个 overlap `1.0` 的不同 thread primaries，必须继续 `ambiguous`。本
+    refinement 不宣称修复该 ambiguous label，也不授权读取 manifest 来选边。
+    datum/revision/duplicate-source contract、allowed paths、verification、Provider
+    禁令和 rollback 均沿用上一 amendment。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
