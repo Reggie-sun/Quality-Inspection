@@ -49,6 +49,33 @@
 - 若执行时存在与本计划无关的未提交改动，必须保护这些改动并逐文件 stage around
   them；不得使用 `git add .`，不得覆盖、清理或把它们带入 task commit。
 
+## SR-2C Cache Contract-Test Ownership Amendment — 2026-07-28
+
+- Selected lane: `Heavy`。
+- Selected plan:
+  `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
+  仍是唯一 current plan；本文件仍是 approved subordinate implementation detail。
+- Selection evidence: SR-2C Step 4 按 approved single-source contract 删除
+  `symbol_review.py::VISUAL_PROPOSAL_VERSION` 后，Step 5 的 `128` 个 focused tests
+  通过，但既有
+  `backend/tests/contract/test_qwen_symbol_provider.py` 仍 import 该已退休 symbol，
+  导致独立 Step 7 review 的 collection probe 以 `ImportError`、`0 tests collected`
+  fail closed。恢复 alias 会直接违反 design 中的 single proposal Owner 和
+  `assert not hasattr(symbol_review, "VISUAL_PROPOSAL_VERSION")`。
+- Validation action: `amend`，不是 `replan`。目标、production Owner、stable cache
+  identity、Provider boundary 和 SR-4 七文件 ownership 全部不变；只把这个直接
+  cache consumer test 加入 SR-2C allowed paths、focused checks 和 proposal commit。
+  test 必须直接 import `PROPOSAL_RULE_VERSION`，baseline 使用 current v2，variation
+  使用 legacy v1，继续证明旧 cache bytes miss。
+- Writer ownership and order: 当前父 agent 是 plan、该 contract test 和所有现有
+  working diff 的唯一 writer；reviewer 保持只读且不得 nested delegation。先提交
+  本 docs-only amendment，再修 contract test、重跑 contract test 与 Step 5 matrix、
+  重新执行 Step 7 review，最后由 Step 8 精确提交三个 proposal-owned files。
+- Next verification:
+  `test_qwen_visual_symbol_schema_and_cache_identity` 必须从 collection RED 转 GREEN；
+  SR-2C Step 5 matrix 加 contract test 后全绿；index/dirty ownership、current-source
+  `79/124`、batch `13/16`、Provider construction/calls=`0` 均保持。
+
 ## Historical SR-4 Step 8 Capacity Closure Amendment — 2026-07-28
 
 用户批准过本次原地 amendment。它的 bounded feasibility 阶段已完成但没有取得
@@ -2921,6 +2948,11 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   `test_symbol_advisor.py` 转 GREEN，但这两个文件仍与其余 SR-4 changes 一起保留
   unstaged，直到 Task 4 Step 9。
 
+  在既有 `backend/tests/contract/test_qwen_symbol_provider.py` 中把退休 symbol 的
+  import 改为直接从 proposal Owner import `PROPOSAL_RULE_VERSION`；cache baseline
+  使用该 current v2，proposal-version variation 改为 legacy
+  `"visual-observation/1"`。不得恢复 alias 或建立第二个 version literal Owner。
+
 - [ ] **Step 5: Verify focused GREEN and existing PDF/Advisor behavior**
 
   ```bash
@@ -2933,11 +2965,13 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
     backend/tests/unit/candidates/test_symbol_advisor.py \
     backend/tests/unit/candidates/test_coverage.py \
     backend/tests/unit/candidates/test_advisor.py \
+    backend/tests/contract/test_qwen_symbol_provider.py \
     -p no:cacheprovider -q
   ```
 
   Expected: PDF-01～PDF-05、ADV-03～ADV-09、COV-01～COV-04 and supporting gate/cache
-  tests PASS；v1 cache bytes miss safely；Provider construction/calls=`0`。
+  tests plus PROV-01/PROV-02 PASS；v1 cache bytes miss safely；fixture-only Provider
+  contracts 保持 `external_calls=0`。
 
 - [ ] **Step 6: Reproduce the exact current-source result with production code**
 
@@ -3029,22 +3063,25 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   failure、SR-4 dirty ownership 和 Provider=`0` boundary。verdict 必须为
   `accept`、`accept with concerns` 或 `reject`；blocking issue 修复后重新 review。
 
-- [ ] **Step 8: Commit only the proposal Owner and PDF tests**
+- [ ] **Step 8: Commit only the proposal Owner and directly coupled tests**
 
   ```bash
   git add \
     backend/app/pdf/visual_observations.py \
-    backend/tests/unit/pdf/test_visual_observations.py
+    backend/tests/unit/pdf/test_visual_observations.py \
+    backend/tests/contract/test_qwen_symbol_provider.py
   git diff --cached --check
   test "$(git diff --cached --name-only | sort)" = \
     "$(printf '%s\n' \
       backend/app/pdf/visual_observations.py \
+      backend/tests/contract/test_qwen_symbol_provider.py \
       backend/tests/unit/pdf/test_visual_observations.py | sort)"
   git commit -m "fix: gate visual observation proposals"
   ```
 
-  Expected: proposal-only commit contains exactly two files。现有七个 SR-4 files—including
-  v2 cache single-source delta—继续 unstaged。完成后才进入下述 Task 4 Step 8。
+  Expected: proposal-only commit contains exactly three files。现有七个 SR-4
+  files—including v2 cache single-source delta—继续 unstaged。完成后才进入下述
+  Task 4 Step 8。
 
 ### Step 8: Prove the current two-page source fits the hard budget
 
