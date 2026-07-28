@@ -417,6 +417,46 @@ batch thresholds 核对 current source。结果为：
 RED 必须按本文最终算法重算 batch count，并证明两页各自 `V <= 16`；否则
 production GREEN 仍被 budget gate 阻断。
 
+### 2026-07-28 Current-Source Capacity Amendment
+
+SR-4 Step 8 已按 final algorithm、sealed source 和 current code 重算，当前 runtime
+truth 为：
+
+| Page | Native lines | Visual observations | Natural-order batches | Priority-order batches |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 174 | 132 | 17 | 19 |
+| 1 | 265 | 203 | 19 | 22 |
+
+该结果重复执行完全一致，Provider calls 为 `0`。因此上方 84/182、10/13 只能作为
+pre-freeze exploratory prose；Git history 中没有对应 executable script、artifact、
+tool identity 或 test，不能作为 acceptance/runtime evidence。当前实现没有显示
+first-fit guard、off-by-one 或 member-cap bug；主要 rejection surface 是
+`7.5%` crop area 和 `1536px` sides，priority order 只是额外放大器。
+
+用户批准先做 bounded capacity feasibility，不批准 silent filtering、threshold
+tuning、observation dropping、full-page Vision 或提高 Provider call budget。冻结
+边界如下：
+
+1. feasibility 阶段保留全部 `132/203` observation IDs 和现有 proposal、dedup、
+   padding、`7.5%` area、`300 DPI`、`1536px`、`32` members、`16/page` contracts；
+2. 每个 ID 必须在 certificate 中出现恰好一次，且独立 validator 必须重新计算每个
+   crop 的全部 limits；candidate search 与 validator 不共享 mutable state；
+3. search 顺序、fitness、state bound 和 tie-break 必须 deterministic；不得记录
+   sealed-source observation IDs、coordinates 或 membership 作为 production rule；
+4. bounded search 未找到 certificate 只证明
+   `capacity_feasibility_unproven`，不能宣称数学上不可行，也不能自动改变 contract；
+5. 只有两页都得到 `<=16` certificate，才允许先把新的 generic packing algorithm
+   精确写入本节，再按 TDD 替换 stable-first-fit；在 exact algorithm delta commit
+   前不得修改 production；
+6. certificate 不成立时，必须回到 contract Owner，在“容量/cost/privacy policy”
+   与“proposal/dedup semantics + 新正负样本证据”之间另行决策。
+
+OSS 对照只融合 license-safe 的算法思想：deterministic sort、best-fit fitness、
+bounded exact/heuristic search 和 independent solution checking。外部 rectangle
+packing 允许移动 items，而本 contract 保留 PDF 原坐标、以 padded union crop 判定，
+两者问题不同；因此不引入 `rectpack`、OR-Tools、PackingSolver 或其他 dependency，
+也不复制其实现。
+
 这些阈值是首版 current-PDF contract，不是用户配置。后续修改必须以新的负样本或
 漏检证据进入 amendment，不能为单一坐标写 exact-input 特判。
 

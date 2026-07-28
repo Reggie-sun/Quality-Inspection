@@ -191,9 +191,10 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
   `backend/app/candidates/advisor.py::CandidateAdvisor` 无法发现从未 materialize
   为 observation 的 vector symbols。用户于 2026-07-27 批准继续，approved proposal
   commit 为 `1ea1868`。
-- Validation action: `amend` 后 `continue`；Task 0 docs activation 已完成，本次
-  Option A docs-only clarification commit 必须随后独立完成，之后才允许开始
-  `SR-1`。
+- Historical activation action: Task 0 docs activation 已由 `994cbe4` 完成，
+  Option A docs-only clarification 已由 `3fc7bbb` 完成；SR-1、SR-2、SR-3 又分别由
+  `d3fac79`、`bb035bc`、`90bfb43` 完成。当前 validation action 由本节后附的
+  2026-07-28 SR-4 Step 8 capacity amendment 唯一拥有，不得回到初始 SR-1 next step。
 - Writer ownership and order: 每个 coupled file group 同时只有一个 writer；
   spec/code reviewers 严格只读。执行顺序固定为
   `SR-1 → SR-2 → SR-3 → SR-4 → SR-5 → SR-6 → SR-7 → SR-8`，全部位于
@@ -278,6 +279,39 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
   与唯一 registration phase；没有 receipt、contract results、task/formal success
   或 Provider call。此证据只关闭 SR-1 live-label input gate，不提前完成
   production GREEN、D7-T2 symbol closure 或 D7-T3。
+- SR-4 Step 8 capacity closure amendment — 2026-07-28:
+  - Selected lane: `Heavy`；Selected plan: 本文件仍是唯一 current plan。
+  - Selection evidence: sealed source 在冻结实现中产生 page 0
+    `132 observations / 19 priority batches`、page 1
+    `203 observations / 22 priority batches`，而 cap 是 `16/page`。natural order
+    仍为 `17/19`，所以 priority 不是唯一根因；area/side constraints 是主要 rejection
+    surface，member cap 没有命中。Provider calls=`0`。
+  - Validation action: `amend` 后停留在 SR-4 Step 8，先插入 `SR-2A` capacity
+    closure；不得提交当前 SR-4、进入 SR-5 或调用 Provider。
+  - Writer ownership and order: 当前父 agent 是唯一 writer；explorer/reviewer
+    严格只读。执行顺序改为
+    `SR-1 → SR-2 → SR-3 → SR-4 Steps 1-7 → SR-2A →
+    SR-4 Steps 8-9 → SR-5 → SR-6 → SR-7 → SR-8`。
+  - Old path action: feasibility 阶段 preserve 当前 proposal、dedup、priority、
+    stable-first-fit 和全部 crop limits。只有一个 generic deterministic algorithm
+    在不丢任何 ID、所有 limits 不变时为两页都产生 `<=16` certificate，才允许先在
+    semantic design 中把 stable-first-fit 精确标记为 replace，再进入 production TDD。
+  - Unchanged contract: `7.5%` area、`300 DPI`、`1536px`、`32` members、
+    `16/page`、visual-first、Coverage Veto、sealed manifest、九类 positive/negative
+    evaluation 和全部 fail-closed semantics 保持不变；不得 hard-code current-source
+    IDs/coordinates、静默过滤、调 threshold 或提高 call cap。
+  - Allowed paths: 第一 commit 只含三份 design/current-plan/subordinate-plan docs。
+    certificate 和 exact algorithm delta 成立后，code scope 最多为
+    `backend/app/pdf/visual_observations.py`,
+    `backend/tests/unit/pdf/test_visual_observations.py`；现有七个 SR-4 modified
+    files 的 coupled ownership 仍由父 agent 保留，SR-2A 保持现有 packer
+    signature，因此不把其中任何文件带入 corrective commit。
+  - Next verification: no-write/no-Provider bounded feasibility search，独立验证
+    `132/203` IDs exact-once、每 crop limits、repeated membership digest 和
+    `V<=16/page`。没有 certificate 时以 `capacity_feasibility_unproven` 停止，
+    不把 search exhaustion 当成不可行证明。
+  - Rollback: 先 revert SR-4，再 revert 独立 SR-2A code commit，最后 revert 本
+    docs amendment；sealed runs、manifest、diagnostic evidence 与 audit 保留。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
@@ -292,25 +326,26 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
   `auto-feature-smoke-test`。
 - Rollback: 每个 `SR-1`～`SR-8` task 和本 activation 都必须记录实际 exact commit；
   rollback 时先把 symbol receipt 标记为 failed/stale，再用 `git revert` 按
-  `SR-8 → SR-7 → SR-6 → SR-5 → SR-4 → SR-3 → SR-2` 逆序回退 code，最后才
-  revert `SR-1` contract/Harness，保留 sealed runs、cache、audit 与 history，并在
-  最后 revert 本 activation。`D7-T3` 因 missing-symbol defect 保持 blocked；
-  禁止 reset 或 force push。
+  `SR-8 → SR-7 → SR-6 → SR-5 → SR-4 → SR-2A code →
+  SR-2A exact-algorithm docs → SR-2A initial amendment docs → SR-3 → SR-2`
+  逆序回退，最后才 revert `SR-1` contract/Harness，保留 sealed runs、cache、
+  audit 与 history，并在最后 revert 本 activation。`D7-T3` 因 missing-symbol
+  defect 保持 blocked；禁止 reset 或 force push。
 - Closure boundary: 本 amendment 不把 `D7-T3` 标为 complete，也不重写既有 sealed
   receipts。只有 `SR-8` 成功后，才允许记录 D7-T2 symbol closure 并恢复 `D7-T3`。
-- Next verification: 本次 Option A docs-only clarification commit 后，`SR-1` 先运行
-  contract/Harness RED，不先写 production code：
+- Historical SR-1 verification (completed by `d3fac79`): Option A docs-only
+  clarification 后运行的初始 contract/Harness RED 为：
 
 ```bash
 micromamba run -n qi-p0 python -m pytest backend/tests/contract/harness/test_symbol_eval_contract.py backend/tests/contract/harness/test_contract_architecture.py backend/tests/contract/harness/test_live_run_contract.py -q
 ```
 
-预期 RED：symbol schemas、registration loader 与 staging artifact allowlist 尚不存在；
-planned contract cases 还必须覆盖 valid `revision_marker/non_inspection` 与
+当时的预期 RED 是 symbol schemas、registration loader 与 staging artifact allowlist
+尚不存在；planned contract cases 还必须覆盖 valid `revision_marker/non_inspection` 与
 `revision_table_or_invalid_marker` 的区分、缺失或重复单一家族不能满足九类 coverage、
 positive label 禁止 `negative_family`，以及 frozen-negative label 强制要求该字段。
-若真实 Quality Owner manifest 不可用，后续执行必须停在 live-label gate，不得产生
-production GREEN。
+该 historical gate 已完成，不再是 current next verification。当前 next
+verification 只来自上方 2026-07-28 capacity amendment。
 
 `SR-1`～`SR-8` 的 allowed paths 只有以下精确集合；existing regression tests 仅可在
 直接需要时增加 assertions，不得放宽、skip 或删除 expectations。本次 pre-SR-1

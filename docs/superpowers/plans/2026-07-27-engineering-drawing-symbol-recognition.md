@@ -25,19 +25,74 @@
 - Current ordering: 已验证的 D7-T2 manual-balloon residual 保持完成；本能力必须作为
   同一 current plan 的 D7-T2 in-place closure amendment，在 D7-T3 final receipt
   之前完成。
-- Activation gate: Task 0 已由 commit `994cbe4` 把 selection、task order、allowed
-  paths、rollback 和 focused gate 原地写入 current plan。用户于 `2026-07-27`
-  进一步批准的 Option A contract clarification 已激活；下一步是 Task 1 / `SR-1`，
-  不得重复 Task 0、先做 production edit 或先调用 live Provider。
-- Live-label gate: approved manifest bytes、bbox 和 quality-owner verdict 必须在任何
-  production GREEN 前冻结；label totals 和 per-family counts 由 staging 从 manifest
-  bytes 机械派生，Quality Owner 只确认 200% overlay 与
-  `unlabeled_target_count=0`。允许先写 sanitized fixture RED；未 seal 时必须停在
-  RED，不能通过猜测 label 或用 synthetic evidence 继续。
+- Execution progress: Task 0 activation commit 是 `994cbe4`；SR-1 sealed input
+  contract commit 是 `d3fac79`；SR-2 deterministic observations commit 是
+  `bb035bc`；SR-3 Provider contract commit 是 `90bfb43`。SR-4 Steps 1-7 已在当前
+  七文件 working diff 中验证，但尚未 commit；Step 8 真实源 preflight 暴露
+  `19/22 > 16/page` 后已 fail closed。当前唯一 next step 是本文件下述 SR-2A
+  bounded feasibility，不得重复 SR-1～SR-3、提交 SR-4、进入 SR-5 或调用 Provider。
+- Live-label gate: Quality Owner approved manifest 已 seal 于 literal run
+  `20260727T085747865239Z-5aa3e8d3`，staging 从 bytes 机械验证 200% overlay、
+  `unlabeled_target_count=0`、九类 positive families 与九类 negative families。
+  该 run 只关闭 input gate，不是 production GREEN、task receipt 或 Provider
+  authorization。
 - `.agent/EXECUTION_STATUS.md` 在本计划写作时不存在。执行者不得为绕过这一事实而
   发明 status；如后续由其他批准任务创建，只记录已经验证的结果。
 - 若执行时存在与本计划无关的未提交改动，必须保护这些改动并逐文件 stage around
   them；不得使用 `git add .`，不得覆盖、清理或把它们带入 task commit。
+
+## SR-4 Step 8 Capacity Closure Amendment — 2026-07-28
+
+用户已批准本次原地 amendment。它只修复 SR-4 Step 8 暴露的 current-source
+capacity mismatch，不创建第二份 current plan、第二个 Vision Owner、fallback、
+shadow path 或新的 Provider policy。
+
+- Selected lane: `Heavy`。当前第一阶段保持全部稳定 crop/proposal/call contracts
+  不变，但若 feasibility 证明需要替换 frozen stable-first-fit 算法，必须先在本
+  design/plan 中冻结新算法，再进入 production TDD。
+- Selected plan:
+  `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
+  仍是唯一 current plan；本文件仍只是 subordinate implementation detail。
+- Selection evidence: sealed run
+  `20260727T085747865239Z-5aa3e8d3` 的 exact source SHA-256
+  `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`
+  在当前冻结 proposal/crop/priority/first-fit 实现下产生：
+  - page 0: `132` observations，natural order `17` batches，priority order `19`;
+  - page 1: `203` observations，natural order `19` batches，priority order `22`.
+  两页都超过 `16/page`；完整 pack 重放可重复，Provider calls 为 `0`。merge
+  rejection 主要命中 `7.5%` area 与 `1536px` side，`32`-member cap 命中为 `0`。
+- Validation action: `amend` 后 `continue`。SR-4 保持停在 Task 4 Step 8；
+  不提交当前七个 SR-4 code files，不进入 SR-5，不构造或调用 Provider。
+- Writer ownership and order: 当前父 agent 是三份 amendment docs 与后续
+  feasibility/TDD 的唯一 writer。任何 explorer/reviewer 均只读、不得 nested
+  delegation。现有七个 SR-4 modified files 继续由父 agent 独占；不得让第二个
+  writer 修改 `symbol_review.py` 或其 coupled tests。
+- Old path action: 当前 stable-first-fit、priority、proposal、dedup、crop limits
+  先全部 preserve，作为 feasibility baseline。只有取得一个不丢 observation 的
+  deterministic `<=16/page` certificate 后，才允许在另一个 exact design delta
+  中把 stable-first-fit 标记为 replace；没有 certificate 时不得先改 production。
+- Unchanged contract: 全部 `132/203` observation IDs 必须各出现恰好一次；
+  `7.5%` page area、`300 DPI`、每边 `<=1536px`、每 crop `<=32`
+  observations、`16` calls/page、visual-first、Coverage Veto、九类 positive /
+  negative evaluation、sealed manifest 和 fail-closed errors 全部不变。
+- Allowed paths:
+  - docs phase:
+    `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`,
+    本文件，以及唯一 current plan；
+  - certificate 成立并先冻结 exact algorithm 后的 TDD phase:
+    `backend/app/pdf/visual_observations.py`,
+    `backend/tests/unit/pdf/test_visual_observations.py`。
+  其他 production、Provider、Harness、frontend 和 runtime config 均不在本
+  amendment writer scope。
+- Next verification: 先执行 no-write/no-Provider bounded feasibility search。
+  search 必须使用 stable input/tie-break、保留全部 IDs，并为每个候选 certificate
+  独立重算 crop area、pixel sides、member count、duplicate/drop 和 repeated digest。
+  只有两页都得到 `<=16` certificate 才进入下述 SR-2A RED；search 未找到
+  certificate 时立即停止，不能把 bounded-search exhaustion 写成“数学上不可行”，
+  也不能自动升 cap、调 threshold 或过滤 proposal。
+- Rollback: docs amendment 可用单一 `git revert` 回退；若后续产生独立 SR-2A
+  code commit，先 revert SR-4，再 revert SR-2A。sealed input run、manifest、
+  diagnostic evidence 和 Provider-call audit 保留。
 
 ## Problem Boundary
 
@@ -1083,6 +1138,116 @@ micromamba run -n qi-p0 pytest \
 Expected: ADV-03～ADV-09 and COV-01～COV-04 PASS; all existing text parsing、grouping、
 coarse fallback、dedupe and Advisor tests PASS.
 
+### SR-2A: Close Current-Source Visual Capacity Before Step 8
+
+本 corrective gate 在 Task 4 Step 7 GREEN 后、Step 8 重跑前执行。它不改变 logical
+test ID count，也不把 current-source bytes 放入 Git。
+
+- [ ] **Step 1: Produce a bounded no-write feasibility certificate**
+
+  使用 `PYTHONDONTWRITEBYTECODE=1` 和 sealed source，只导出 page index、observation
+  count、batch count、sorted observation-ID digest、batch-membership digest 与每
+  batch 的 area/pixel/member validation；不得输出 source path、text、crop 或
+  coordinates。候选算法可以比较 deterministic sort、best-fit、stable merge 和
+  bounded branch/beam search，但每个 tie-break 必须来自 priority key、bbox key、
+  observation ID 或 batch index，不能使用随机状态、wall-clock order 或 exact
+  source coordinates 的 hard-coded branch。
+
+  本轮 authoritative feasibility search 使用现有 priority-ordered input，并逐个
+  observation 分支到每个满足 `_batch_geometry()` 的既有 batch，或在当前 batch
+  count `<16` 时建立新 batch。state identity 是按 member observation IDs
+  canonicalize 后排序的 batch-membership tuple；同一 identity 只保留第一项。每层
+  successor 按
+  `(batch_count, total_padded_crop_area, max_padded_crop_area,
+  canonical_membership)` 升序排序，beam width 固定 `4096`，每页最多展开
+  `250000` 个 unique states。不得使用 wall-clock timeout 选择结果。完成全部 input
+  且不超过 16 batches 的第一项成为 candidate certificate，再由不共享 search
+  state 的 validator 复核。
+
+  Expected:
+
+  ```text
+  page=0 observations=132 batches<=16 exact_once=true limits=true repeatable=true
+  page=1 observations=203 batches<=16 exact_once=true limits=true repeatable=true
+  provider_calls=0
+  ```
+
+  若任一页没有在上述 deterministic state bound 内找到 certificate，停止并
+  报告 `capacity_feasibility_unproven`；不得继续 Step 2、不得修改 production。
+
+- [ ] **Step 2: Freeze the exact generic packing algorithm**
+
+  在本 plan 和 design 的 Vision Request Contract 中记录：
+
+  - complete input sort key；
+  - candidate batch fitness tuple；
+  - bounded search/termination rule；
+  - complete tie-break；
+  - output batch/member ordering；
+  - certificate validation 和 fail-closed semantics。
+
+  算法必须对任意 observation input 生效；不得登记 sealed-source membership、
+  observation IDs、page coordinates 或 label bboxes。此 docs delta 必须先独立
+  commit，再写 production RED。
+
+- [ ] **Step 3: Write RED tests before production edits**
+
+  在 `backend/tests/unit/pdf/test_visual_observations.py` 增加一个 synthetic
+  high-density regression：旧 stable-first-fit 需要 `>16` batches，而冻结的新
+  generic algorithm 在全部 IDs exact-once、全部 limits 不变时得到 `<=16`。
+  既有 ADV-09 继续作为 priority semantics、overflow fail-closed 和
+  Provider-construction count `0` 的 integration regression；本 gate 不编辑其
+  已属于 SR-4 的 test file。
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
+micromamba run -n qi-p0 pytest \
+  backend/tests/unit/pdf/test_visual_observations.py \
+  backend/tests/unit/candidates/test_symbol_advisor.py \
+  -p no:cacheprovider -q
+```
+
+  Expected RED: 新 synthetic capacity assertion 失败，且失败原因是 production
+  packer 仍使用旧 stable-first-fit；不是 fixture、import 或 source-path error。
+
+- [ ] **Step 4: Implement only the frozen algorithm**
+
+  只修改 `visual_observations.py` 的 batch planning primitive，并保持
+  `pack_visual_batches(page, ordered_observations)` signature 与
+  `VisualBatch` output contract 不变，使现有 `symbol_review.py` priority planner
+  无需修改。不修改 proposal、dedup、crop geometry、threshold、Provider schema、
+  projection 或 coverage semantics。
+
+- [ ] **Step 5: Verify GREEN, exact current source and no Provider**
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
+micromamba run -n qi-p0 pytest \
+  backend/tests/unit/pdf/test_visual_observations.py \
+  backend/tests/unit/candidates/test_symbol_advisor.py \
+  backend/tests/unit/candidates/test_coverage.py \
+  backend/tests/unit/candidates/test_advisor.py \
+  -p no:cacheprovider -q
+```
+
+  然后重跑 Step 1 的 independent certificate validator 和下述 Step 8 exact preflight。
+  Expected: focused tests PASS；两页全部 IDs exact-once、limits true、repeated digest
+  exact；`V<=16/page`；Provider calls `0`。
+
+- [ ] **Step 6: Commit only SR-2A**
+
+```bash
+git add \
+  backend/app/pdf/visual_observations.py \
+  backend/tests/unit/pdf/test_visual_observations.py
+git commit -m "fix: close visual batch capacity"
+```
+
+  三份 initial amendment docs 与 Step 2 exact algorithm delta 都已在各自
+  docs-only commit 中完成。这里只 stage 两个 SR-2A code/test files；现有
+  `symbol_review.py`、`test_symbol_advisor.py` 和其余 SR-4 changes 留给后续
+  SR-4 commit，不得混淆 task ownership 或使用 `git add .`。
+
 ### Step 8: Prove the current two-page source fits the hard budget
 
 This is a deterministic no-Provider preflight. It uses the exact source whose bytes were
@@ -1849,9 +2014,9 @@ blocked. Rollback does not convert the original missing-symbol behavior into acc
 - [x] User approved this subordinate implementation proposal.
 - [x] Task 0 activated exactly one current plan at commit `994cbe4`; Option A clarification is
   active and Task 0 must not be repeated.
-- [ ] Stable contract Owners were amended before production GREEN.
-- [ ] Quality Owner sealed exact live labels and 200% overlay verdict before production GREEN.
-- [ ] Staging mechanically proved all nine positive families and all nine distinct
+- [x] Stable contract Owners were amended before production GREEN.
+- [x] Quality Owner sealed exact live labels and 200% overlay verdict before production GREEN.
+- [x] Staging mechanically proved all nine positive families and all nine distinct
   `negative_family` values; `negative_family_count=9` was derived from the manifest rather than
   entered by a human.
 - [ ] All 32 required logical tests exist and pass.
@@ -1869,13 +2034,13 @@ blocked. Rollback does not convert the original missing-symbol behavior into acc
 
 ## Execution Handoff
 
-Task 0 is complete at commit `994cbe4`, Option A clarification is active, and execution resumes
-at Task 1 / `SR-1` contract/Harness RED. Do not repeat Task 0 or append another activation
-amendment. The two implementation modes remain:
+Task 0、SR-1、SR-2、SR-3 已分别完成于 `994cbe4`、`d3fac79`、`bb035bc`、
+`90bfb43`。SR-4 Steps 1-7 保留在当前七文件 working diff，Step 8 已按真实 sealed
+source fail closed。执行只从 `SR-2A Step 1` 的 no-write/no-Provider bounded
+feasibility 继续；不得重复 Task 0 或 SR-1～SR-3，不得提交当前 SR-4、进入 SR-5、
+追加第二个 activation amendment 或调用 Provider。
 
-1. `superpowers:subagent-driven-development` in this session, with one bounded writer at a time
-   and mandatory read-only reviewer checkpoints.
-2. `superpowers:executing-plans` in a fresh isolated execution session.
-
-Repository ordering overrides both choices: start with Task 1 / `SR-1`; its sealed live-label
-gate must be satisfied before any production GREEN.
+当前父 agent 保持唯一 writer，read-only explorer/reviewer checkpoints 保持 mandatory。
+只有 `SR-2A Step 1` 为两页都产生独立验证的 `<=16` certificate，才继续 Step 2
+exact algorithm docs-only commit 和 Step 3 RED；否则以
+`capacity_feasibility_unproven` 停止。
