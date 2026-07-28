@@ -47,6 +47,7 @@ class CandidateSnapshot:
     expected_observation_ids: tuple[str, ...]
     duplicate_relations: tuple[DuplicateRelation, ...]
     provider_call_ids: tuple[str, ...] = ()
+    required_visual_observation_ids: tuple[str, ...] = ()
 
 
 def _selected_observations(pages: Sequence[Any]) -> list[TextObservation]:
@@ -264,6 +265,10 @@ def candidate_snapshot_from_inventory(
         ),
         duplicate_relations=tuple(
             suggest_cross_view_duplicates(duplicate_inputs)
+        ),
+        required_visual_observation_ids=tuple(
+            observation.observation_id
+            for observation in visual_observations
         ),
     )
 

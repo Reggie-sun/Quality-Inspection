@@ -22,6 +22,8 @@ from app.candidates.schemas import stable_candidate_id
 from app.candidates.symbol_review import (
     VISUAL_PROMPT_VERSION,
     VISUAL_SCHEMA_VERSION,
+    ValidatedSymbolDetection,
+    VisualReviewDecision,
     build_visual_cache_envelope,
     build_visual_failure_envelope,
     build_visual_request_evidence,
@@ -29,6 +31,9 @@ from app.candidates.symbol_review import (
     parse_visual_cache_envelope,
     parse_visual_request_evidence,
     parse_visual_symbol_json,
+    plan_visual_batches,
+    project_visual_page,
+    validate_symbol_detections,
     visual_cache_identity,
     visual_cache_key,
     visual_review_prompt,
@@ -37,6 +42,7 @@ from app.capabilities.service import CapabilityUnavailable
 from app.config import Settings
 from app.pdf.coordinates import BBox
 from app.pdf.schemas import TextObservation
+from app.pdf.visual_observations import reconstruct_visual_geometry_contexts
 from app.processing.automatic_result import CandidateSnapshot, selected_observations
 from app.providers.base import VisionResult
 from app.providers.call_records import (
@@ -105,6 +111,7 @@ class RoutedObject:
     review_reason: str
     bbox_pdf: BBox
     candidate_index: int | None
+    candidate_id: str | None
     coverage_index: int
     requires_confirmation: bool
 
@@ -195,6 +202,19 @@ def _render_crop(page: pymupdf.Page, crop: pymupdf.Rect) -> bytes:
     return pixmap.tobytes("png")
 
 
+def _render_visual_crop(page: pymupdf.Page, bbox: BBox) -> bytes:
+    crop = pymupdf.Rect(bbox)
+    rendered = crop * page.rotation_matrix
+    pixmap = page.get_pixmap(
+        matrix=pymupdf.Matrix(300 / 72, 300 / 72),
+        clip=rendered,
+        alpha=False,
+    )
+    if pixmap.width <= 0 or pixmap.height <= 0:
+        raise CandidateAdvisorFailure("Visual symbol crop is unavailable")
+    return pixmap.tobytes("png")
+
+
 def _candidate_reason(
     payload: dict[str, Any],
     observations: Sequence[TextObservation],
@@ -216,6 +236,8 @@ def _candidate_reason(
 def _route_objects(
     pages: Sequence[Any],
     snapshot: CandidateSnapshot,
+    *,
+    max_calls_by_page: dict[int, int] | None = None,
 ) -> tuple[RoutedObject, ...]:
     observations = {
         observation.observation_id: observation
@@ -250,6 +272,7 @@ def _route_objects(
                 review_reason=review_reason,
                 bbox_pdf=_bbox_union(members),
                 candidate_index=candidate_index,
+                candidate_id=str(candidate["candidate_id"]),
                 coverage_index=coverage_indexes[source_ids[0]],
                 requires_confirmation=bool(
                     payload.get("requires_confirmation", False)
@@ -280,6 +303,7 @@ def _route_objects(
                 review_reason="parser_failed",
                 bbox_pdf=observation.bbox_pdf,
                 candidate_index=None,
+                candidate_id=None,
                 coverage_index=coverage_index,
                 requires_confirmation=True,
             )
@@ -296,7 +320,12 @@ def _route_objects(
     calls_per_page: dict[int, int] = defaultdict(int)
     bounded: list[RoutedObject] = []
     for route in routes:
-        if calls_per_page[route.page_index] >= MAX_CALLS_PER_PAGE:
+        page_cap = (
+            MAX_CALLS_PER_PAGE
+            if max_calls_by_page is None
+            else max_calls_by_page.get(route.page_index, MAX_CALLS_PER_PAGE)
+        )
+        if calls_per_page[route.page_index] >= page_cap:
             continue
         calls_per_page[route.page_index] += 1
         bounded.append(route)
@@ -865,10 +894,19 @@ class CandidateAdvisor:
         pages: Sequence[Any],
         snapshot: CandidateSnapshot,
     ) -> CandidateSnapshot:
-        routes = _route_objects(pages, snapshot)
-        if not routes:
-            return snapshot
-
+        visual_batches = plan_visual_batches(pages, snapshot)
+        visual_calls_by_page = {
+            page.page_index: len(visual_batches[index])
+            for index, page in enumerate(pages)
+        }
+        routes = _route_objects(
+            pages,
+            snapshot,
+            max_calls_by_page={
+                page_index: MAX_CALLS_PER_PAGE - count
+                for page_index, count in visual_calls_by_page.items()
+            },
+        )
         model = self._settings.qwen_model.strip()
         provider: object | None = None
         candidates = [dict(candidate) for candidate in snapshot.candidates]
@@ -878,10 +916,248 @@ class CandidateAdvisor:
             observation.observation_id: observation
             for observation in selected_observations(pages)
         }
-        promoted = False
+        all_text_observations = tuple(
+            observation
+            for page in pages
+            for observation in page.observations
+        )
+        visual_observations = {
+            observation.observation_id: observation
+            for page in pages
+            for observation in page.visual_observations
+        }
+        visual_coverage_indexes = {
+            entry.observation_id: index
+            for index, entry in enumerate(coverage_entries)
+            if entry.observation_id in visual_observations
+        }
+        contexts = {
+            item.observation_id: item
+            for item in (
+                reconstruct_visual_geometry_contexts(pdf_path, pages)
+                if any(visual_batches)
+                else ()
+            )
+        }
+        source_sha256 = (
+            hashlib.sha256(Path(pdf_path).read_bytes()).hexdigest()
+            if any(visual_batches)
+            else ""
+        )
+        candidates_changed = False
         document = pymupdf.open(pdf_path)
         try:
-            for route in routes:
+            accepted_by_page: list[list[ValidatedSymbolDetection]] = [
+                [] for _ in pages
+            ]
+            rejection_sets_by_page: list[dict[str, set[str]]] = [
+                {} for _ in pages
+            ]
+            for page_position, page_batches in enumerate(visual_batches):
+                page_inventory = pages[page_position]
+                page = document[page_inventory.page_index]
+                for batch in page_batches:
+                    crop_png = _render_visual_crop(
+                        page,
+                        batch.crop_bbox_pdf,
+                    )
+                    result, provider = self._visual_review_result(
+                        provider=provider,
+                        crop_png=crop_png,
+                        crop_bbox_pdf=batch.crop_bbox_pdf,
+                        source_sha256=source_sha256,
+                        visual_observation_ids=batch.observation_ids,
+                        model=model,
+                    )
+                    batch_observations = tuple(
+                        visual_observations[identity]
+                        for identity in batch.observation_ids
+                    )
+                    accepted, rejected = validate_symbol_detections(
+                        result.payload,
+                        visual_observation_ids=batch.observation_ids,
+                        text_allowlists={
+                            item.observation_id:
+                            item.associated_text_observation_ids
+                            for item in batch_observations
+                        },
+                        crop_bbox_pdf=batch.crop_bbox_pdf,
+                    )
+                    accepted_by_page[page_position].extend(accepted)
+                    rejection_sets = rejection_sets_by_page[page_position]
+                    for rejected_item in rejected:
+                        affected = (
+                            (rejected_item.visual_observation_id,)
+                            if rejected_item.visual_observation_id
+                            in batch.observation_ids
+                            else batch.observation_ids
+                        )
+                        for identity in affected:
+                            rejection_sets.setdefault(identity, set()).add(
+                                rejected_item.rejection_code
+                            )
+                    provider_call_ids.append(result.request_id)
+
+            base_candidates = tuple(candidates)
+            visual_decisions = []
+            for page_position, page in enumerate(pages):
+                visual_decisions.extend(
+                    project_visual_page(
+                        visual_observations=page.visual_observations,
+                        detections=tuple(
+                            accepted_by_page[page_position]
+                        ),
+                        rejection_codes={
+                            identity: sorted(codes)[0]
+                            for identity, codes in (
+                                rejection_sets_by_page[
+                                    page_position
+                                ].items()
+                            )
+                        },
+                        text_observations=all_text_observations,
+                        candidates=base_candidates,
+                        geometry_contexts=contexts,
+                    )
+                )
+
+            retirement_by_candidate: dict[str, VisualReviewDecision] = {}
+            replacement_by_candidate: dict[str, dict[str, Any]] = {}
+            appended_by_candidate: dict[str, dict[str, Any]] = {}
+            for decision in visual_decisions:
+                review: dict[str, object] = {
+                    "route": "visual_symbol",
+                    "schema_version": VISUAL_SCHEMA_VERSION,
+                    "symbol_kinds": list(decision.symbol_kinds),
+                    "rejection_code": decision.rejection_code,
+                }
+                if (
+                    decision.disposition == "candidate"
+                    and decision.candidate_envelope is not None
+                    and decision.candidate_id is not None
+                ):
+                    target = (
+                        replacement_by_candidate
+                        if decision.existing_candidate_index is not None
+                        else appended_by_candidate
+                    )
+                    target[decision.candidate_id] = (
+                        decision.candidate_envelope
+                    )
+                elif (
+                    decision.rejection_code is None
+                    and decision.disposition
+                    in {"reference_context", "non_inspection"}
+                    and decision.existing_candidate_index is not None
+                ):
+                    retired = base_candidates[
+                        decision.existing_candidate_index
+                    ]
+                    retirement_by_candidate[
+                        str(retired["candidate_id"])
+                    ] = decision
+
+                coverage_index = visual_coverage_indexes[
+                    decision.observation_id
+                ]
+                coverage_entries[coverage_index] = replace(
+                    coverage_entries[coverage_index],
+                    disposition=decision.disposition,
+                    source_location_id=decision.observation_id,
+                    coordinates=decision.coordinates,
+                    candidate_id=decision.candidate_id,
+                    requires_confirmation=(
+                        coverage_entries[
+                            coverage_index
+                        ].requires_confirmation
+                        or decision.requires_confirmation
+                    )
+                    if decision.disposition != "reference_context"
+                    else decision.requires_confirmation,
+                    advisor_review=review,
+                )
+
+            if replacement_by_candidate:
+                candidates = [
+                    replacement_by_candidate.get(
+                        str(candidate["candidate_id"]),
+                        candidate,
+                    )
+                    for candidate in candidates
+                ]
+            for candidate_id, envelope in appended_by_candidate.items():
+                if not any(
+                    str(candidate["candidate_id"]) == candidate_id
+                    for candidate in candidates
+                ):
+                    candidates.append(envelope)
+            if retirement_by_candidate:
+                candidates = [
+                    candidate
+                    for candidate in candidates
+                    if str(candidate["candidate_id"])
+                    not in retirement_by_candidate
+                ]
+                for index, entry in enumerate(coverage_entries):
+                    if (
+                        entry.candidate_id is None
+                        or entry.candidate_id
+                        not in retirement_by_candidate
+                    ):
+                        continue
+                    retirement = retirement_by_candidate[
+                        entry.candidate_id
+                    ]
+                    coverage_entries[index] = replace(
+                        entry,
+                        disposition=retirement.disposition,
+                        candidate_id=None,
+                        requires_confirmation=(
+                            retirement.requires_confirmation
+                        ),
+                        advisor_review={
+                            "route": "visual_symbol",
+                            "schema_version": VISUAL_SCHEMA_VERSION,
+                            "symbol_kinds": list(
+                                retirement.symbol_kinds
+                            ),
+                            "rejection_code": None,
+                        },
+                    )
+            candidates_changed = candidates != list(base_candidates)
+
+            if not routes and not any(visual_batches):
+                return snapshot
+
+            for frozen_route in routes:
+                if frozen_route.candidate_id is not None:
+                    current_indexes = [
+                        index
+                        for index, candidate in enumerate(candidates)
+                        if str(candidate.get("candidate_id"))
+                        == frozen_route.candidate_id
+                    ]
+                else:
+                    current_indexes = [
+                        index
+                        for index, candidate in enumerate(candidates)
+                        if set(frozen_route.source_ids).intersection(
+                            candidate.get("source_location_ids", ())
+                        )
+                    ]
+                if len(current_indexes) > 1:
+                    continue
+                if (
+                    frozen_route.candidate_id is not None
+                    and not current_indexes
+                ):
+                    continue
+                route = replace(
+                    frozen_route,
+                    candidate_index=(
+                        current_indexes[0] if current_indexes else None
+                    ),
+                )
                 page = document[route.page_index]
                 crop, padding = _crop_rect(page, route.bbox_pdf)
                 crop_png = _render_crop(page, crop)
@@ -980,6 +1256,8 @@ class CandidateAdvisor:
                 if route.candidate_index is not None:
                     candidate = dict(candidates[route.candidate_index])
                     if rejection_code is None and updated_payload is not None:
+                        if updated_payload != candidate.get("payload"):
+                            candidates_changed = True
                         candidate["payload"] = updated_payload
                     candidate["advisor_review"] = advisor_review
                     candidates[route.candidate_index] = candidate
@@ -993,7 +1271,7 @@ class CandidateAdvisor:
                         requires_confirmation=True,
                         advisor_review=advisor_review,
                     )
-                    promoted = True
+                    candidates_changed = True
                 else:
                     coverage_entries[route.coverage_index] = replace(
                         coverage_entries[route.coverage_index],
@@ -1004,7 +1282,7 @@ class CandidateAdvisor:
 
         duplicate_relations = (
             _duplicate_relations(candidates, observations)
-            if promoted
+            if candidates_changed
             else snapshot.duplicate_relations
         )
         return CandidateSnapshot(
@@ -1013,4 +1291,7 @@ class CandidateAdvisor:
             expected_observation_ids=snapshot.expected_observation_ids,
             duplicate_relations=duplicate_relations,
             provider_call_ids=tuple(provider_call_ids),
+            required_visual_observation_ids=(
+                snapshot.required_visual_observation_ids
+            ),
         )
