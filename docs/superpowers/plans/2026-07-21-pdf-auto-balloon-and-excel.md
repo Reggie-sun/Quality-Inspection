@@ -476,6 +476,67 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     sealed input IDs 创建新 full-P0 run。失败时保留两次 sealed failure、crops、
     caches 与 audits，先 revert timeout recovery commit，再按需 revert
     `9d9f99e`；不得删除或改写 run history。
+- Task 8 Step 6 visual-context prompt recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T081859991061Z-f8daa778` 的 immutable automatic result
+      `3ad9b559-2957-448d-882c-14c3b8091d53` 与 sanitized symbol-eval report。
+    - Validation action: 先提交本 amendment，再继续 subordinate Task 8 Step 6
+      bounded prompt/call-wiring TDD recovery；不进入 Step 7/8。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后只修改下列 allowed code/test paths，禁止并行 writer。
+    - Next verification: exact prompt contract RED，证明当前
+      `visual_review_prompt()` 未携带 per-observation crop-relative bbox 与
+      allowlisted nearby text。
+  - Problem boundary and live evidence: commit
+    `7620a28ddc78c1a1d9765dcb72519b5798c6a1df` 的 fresh run 已完成全部 `29`
+    visual calls，page 0 / page 1 分别为 `13/16` batches、`79/124`
+    observations；visual/total Vision calls 均为 `16/16`，coverage blocking 为
+    `0`。sealed evaluator 随后按设计 fail closed：`272` 个 final candidates
+    全部没有 visual source，`49` candidate labels 和 `7` semantic labels 无
+    exact match，negative false positives 为 `0`。immutable result 的 `203`
+    visual coverage entries 精确为 `127 visual_source_mismatch`、
+    `73 visual_no_detection`、`2 visual_bbox_invalid` 和
+    `1 visual_local_parse_failed`；只有后者保留一个 validated `diameter`
+    kind，但仍没有可投影的 associated text。
+  - Root cause, single Owner and old path:
+    accepted design 要求 Provider 只接收 bounded crop、当前 batch IDs、
+    allowlisted nearby text 和 frozen schema，且 response text IDs 必须是 prompt
+    allowlist 的子集。当前 `symbol_review.py::visual_review_prompt()` 只发送 opaque
+    visual IDs 与 schema；`advisor.py::_visual_review_result()` 也没有接收
+    per-observation crop-relative bbox 或 nearby-text allowlist。Provider 因而无法把
+    crop 中的位置绑定到 opaque visual ID，也无法合法回传 opaque text ID，而本地
+    `validate_symbol_detections()` 和 `_ordered_texts()` 正确地继续 fail closed。
+    旧 `/2` prompt path 由 canonical `/3` visual-context prompt 完整替换，不保留
+    fallback、shadow prompt 或第二个 Owner。
+  - Allowed paths and commit boundary: 本 recovery code commit 只允许
+    `backend/app/candidates/symbol_review.py`、
+    `backend/app/candidates/advisor.py`、
+    `backend/tests/contract/test_qwen_symbol_provider.py`、
+    `backend/tests/contract/test_provider_call_records.py` 和
+    `backend/tests/unit/candidates/test_advisor.py`。本 current plan amendment 必须
+    单独先提交。不得修改 frozen response schema、Provider adapter/policy、
+    proposal Owner、sealed manifest/evaluator、runtime timeout、call budget、
+    automatic result 或 D7-T3 状态。
+  - Unchanged contracts: source/manifest/verdict exact identities、`<=16/page`
+    visual/total Vision cap、`max_retries=0`、`60s` timeout、one bounded `300 DPI`
+    PNG、JSON-only transport、九类 symbol allowlist、strict local schema/bbox/source
+    validation、sanitized audit、cache identity dimensions、fresh-project requirement、
+    literal two-run binding 和 Quality Owner gate 均不变。prompt 只新增已由 accepted
+    design 允许的 current-batch visual spatial context 与 nearby-text allowlist；
+    不发送完整 PDF/page、host/project/operator identity 或 Provider explanation。
+  - Verification and rollback: RED/GREEN 必须 pin canonical `/3` prompt 的 exact
+    context shape、stable ordering、crop-relative bbox、text ID/raw text/observation
+    level allowlist 和 checked-in frozen response schema；Advisor unit test 必须证明
+    live call 使用该 batch context，cache mismatch test 必须证明 `/2` bytes 不可复用。
+    随后运行 Qwen/provider/candidate/Task 8 suites、`ruff check`、
+    `check-contracts.py` 和独立 review。全部通过后才允许以相同两个 literal sealed
+    input IDs 创建 fresh full-P0 run。失败时保留三个 sealed failure runs、crops、
+    caches 与 audits，先 revert prompt recovery commit，再 revert 本 amendment；
+    不删除或改写任何 run history。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
