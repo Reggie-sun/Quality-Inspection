@@ -338,6 +338,17 @@ export function ReviewPanel({
       setEditingItemId(selectedItem.item_id);
     }
   };
+  const cancelEditingSelected = () => {
+    if (selectedItem === undefined) return;
+    syncItemDraftFromPersisted(selectedItem);
+    setAcknowledgedItemDrafts((current) => {
+      if (current[selectedItem.item_id] === undefined) return current;
+      const next = { ...current };
+      delete next[selectedItem.item_id];
+      return next;
+    });
+    setEditingItemId(undefined);
+  };
 
   useEffect(() => {
     onDraftChange?.(
@@ -606,7 +617,6 @@ export function ReviewPanel({
                 disabled={disabled}
                 readOnly={!isEditingSelected}
                 value={complexCoordinates[selectedItem.item_id] ?? ""}
-                onFocus={beginEditingSelected}
                 onChange={(event) => {
                   setComplexCoordinates((current) => ({
                     ...current,
@@ -732,7 +742,6 @@ export function ReviewPanel({
                       min={field.kind === "integer" ? 1 : undefined}
                       step={field.kind === "integer" ? 1 : undefined}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
-                      onFocus={beginEditingSelected}
                       onChange={(event) =>
                         setCoreValue(
                           selectedItem.item_id,
@@ -885,15 +894,27 @@ export function ReviewPanel({
               <legend>{zhCN.review.contentGroup}</legend>
               <button
                 type="button"
-                className="review-command-rail__primary"
+                className={
+                  isEditingSelected
+                    ? "review-command-rail__secondary"
+                    : "review-command-rail__primary"
+                }
                 aria-label={zhCN.review.actionForItem(
-                  zhCN.review.edit,
+                  isEditingSelected
+                    ? zhCN.review.cancelEdit
+                    : zhCN.review.edit,
                   selectedItem.raw_text,
                 )}
-                disabled={disabled || isEditingSelected}
-                onClick={beginEditingSelected}
+                disabled={disabled}
+                onClick={
+                  isEditingSelected
+                    ? cancelEditingSelected
+                    : beginEditingSelected
+                }
               >
-                {zhCN.review.edit}
+                {isEditingSelected
+                  ? zhCN.review.cancelEdit
+                  : zhCN.review.edit}
               </button>
               <button
                 type="button"

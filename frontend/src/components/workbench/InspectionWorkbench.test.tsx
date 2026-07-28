@@ -57,7 +57,7 @@ describe("InspectionWorkbench", () => {
     })).toHaveLength(0);
   });
 
-  test("本地草稿立即显示未保存且只在修改保存时提交", async () => {
+  test("本地草稿立即显示未保存且只在保存修改时提交", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
       <InspectionWorkbench
@@ -80,7 +80,7 @@ describe("InspectionWorkbench", () => {
     ).getByRole("status");
     expect(saveStatus.textContent).toBe("已保存");
 
-    fireEvent.click(screen.getByRole("button", { name: "修改检验项：M6" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑内容检验项：M6" }));
     fireEvent.change(screen.getByRole("textbox", { name: "螺纹规格：M6" }), {
       target: { value: "M8" },
     });
@@ -89,7 +89,7 @@ describe("InspectionWorkbench", () => {
     expect(onSave).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", {
-      name: "修改保存检验项：M6",
+      name: "保存修改检验项：M6",
     }));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({
       type: "edit",
@@ -127,7 +127,7 @@ describe("InspectionWorkbench", () => {
     );
 
     fireEvent.click(screen.getByRole("button", {
-      name: "修改检验项：10",
+      name: "编辑内容检验项：10",
     }));
     const nominal = screen.getByRole("textbox", {
       name: "基本尺寸：10",
@@ -141,7 +141,7 @@ describe("InspectionWorkbench", () => {
     expect(nominal.value).toBe("10.0");
     expect(within(
       screen.getByRole("region", { name: "项目摘要" }),
-    ).getByRole("status").textContent).toBe("请先修改保存当前检验项");
+    ).getByRole("status").textContent).toBe("请先保存或取消当前检验项修改");
   });
 
    test("被阻止切换后保存失败优先显示失败并保留编辑草稿", async () => {
@@ -177,7 +177,7 @@ describe("InspectionWorkbench", () => {
     );
 
     fireEvent.click(screen.getByRole("button", {
-      name: "修改检验项：10",
+      name: "编辑内容检验项：10",
     }));
     const nominal = screen.getByRole("textbox", {
       name: "基本尺寸：10",
@@ -185,7 +185,7 @@ describe("InspectionWorkbench", () => {
     fireEvent.change(nominal, { target: { value: "10.0" } });
     fireEvent.click(screen.getByRole("row", { name: /20/ }));
     fireEvent.click(screen.getByRole("button", {
-      name: "修改保存检验项：10",
+      name: "保存修改检验项：10",
     }));
 
     const saveStatus = within(
@@ -207,7 +207,7 @@ describe("InspectionWorkbench", () => {
     expect(nominal.value).toBe("10.0");
     expect(nominal.hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("button", {
-      name: "修改保存检验项：10",
+      name: "保存修改检验项：10",
     }).hasAttribute("disabled")).toBe(false);
   });
 
@@ -274,7 +274,7 @@ describe("InspectionWorkbench", () => {
     );
 
     fireEvent.click(screen.getByRole("button", {
-      name: "修改检验项：10",
+      name: "编辑内容检验项：10",
     }));
     fireEvent.change(screen.getByRole("textbox", {
       name: "基本尺寸：10",
@@ -288,7 +288,7 @@ describe("InspectionWorkbench", () => {
     expect(candidate.getAttribute("data-selected")).toBe("false");
 
     fireEvent.click(screen.getByRole("button", {
-      name: "修改保存检验项：10",
+      name: "保存修改检验项：10",
     }));
     const saveStatus = within(
       screen.getByRole("region", { name: "项目摘要" }),
@@ -374,7 +374,7 @@ describe("InspectionWorkbench", () => {
     );
 
     fireEvent.click(screen.getByRole("button", {
-      name: "修改检验项：10",
+      name: "编辑内容检验项：10",
     }));
     fireEvent.change(screen.getByRole("textbox", {
       name: "基本尺寸：10",
@@ -394,10 +394,10 @@ describe("InspectionWorkbench", () => {
     const saveStatus = within(
       screen.getByRole("region", { name: "项目摘要" }),
     ).getByRole("status");
-    expect(saveStatus.textContent).toBe("请先修改保存当前检验项");
+    expect(saveStatus.textContent).toBe("请先保存或取消当前检验项修改");
 
     fireEvent.click(screen.getByRole("button", {
-      name: "修改保存检验项：10",
+      name: "保存修改检验项：10",
     }));
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith({

@@ -1033,6 +1033,13 @@
   background: #ffffff;
 }
 
+.review-selected-item__form input[readonly],
+.review-selected-item__form select:disabled {
+  background: #f3f6f9;
+  color: #667085;
+  cursor: not-allowed;
+}
+
 .review-command-rail {
   display: grid;
   grid-auto-rows: min-content;
