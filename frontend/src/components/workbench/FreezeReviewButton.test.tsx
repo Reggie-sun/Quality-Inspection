@@ -68,7 +68,13 @@ function response(version = 3): ProjectWorkbenchResponse {
     candidates: [
       { id: "candidate-i1", item_id: "i1", page_index: 0, bbox_pdf: [10, 20, 30, 40] },
     ],
-    sources: [{ id: "s1", item_ids: ["i1"], page_index: 0, bbox_pdf: [10, 20, 30, 40] }],
+    sources: [{
+      id: "s1",
+      item_ids: ["i1"],
+      page_index: 0,
+      bbox_pdf: [10, 20, 30, 40],
+      source_type: "text",
+    }],
     balloons: [],
     balloon_blockers: ["missing_balloon:i1"],
     source_pdf_url: "/api/v1/projects/project-real/source-pdf",

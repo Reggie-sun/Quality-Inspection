@@ -24,6 +24,7 @@ type InspectionItemTableProps = {
   items: ReviewItem[];
   balloons: BalloonOverlay[];
   pendingSources?: PendingSourceReview[];
+  visualSourceItemIds?: ReadonlySet<string>;
   candidateNumbers?: ReadonlyMap<string, number>;
   filter: InspectionFilter;
   selectedItemId?: string;
@@ -49,6 +50,10 @@ export type PendingSourceReview = {
   rawText: string;
   coordinates: [number, number, number, number];
   pageIndex?: number;
+  sourceType?: "text" | "visual";
+  disposition?: string;
+  symbolKinds?: string[];
+  rejectionCode?: string;
 };
 
 type DetailDraft = {
@@ -74,6 +79,7 @@ type MergeStep = "idle" | "select" | "preview";
 
 const PAGE_SIZE = 50;
 const EMPTY_CANDIDATE_NUMBERS: ReadonlyMap<string, number> = new Map();
+const EMPTY_VISUAL_SOURCE_ITEM_IDS: ReadonlySet<string> = new Set();
 const COLLISION_LABELS: Readonly<Record<string, string>> = {
   ...zhCN.inspection.collisions,
 };
@@ -115,11 +121,29 @@ function detailDraft(item?: ReviewItem, balloon?: BalloonOverlay): DetailDraft {
 
 function sourceDraft(source: PendingSourceReview): SourceDraft {
   return {
-    rawText: source.rawText,
+    rawText: source.sourceType === "visual" ? "" : source.rawText,
     itemType: "",
     scope: "local_feature",
     balloonRequired: true,
   };
+}
+
+function sourceDisplayText(source: PendingSourceReview): string {
+  if (source.sourceType !== "visual") return source.rawText;
+  if (
+    source.disposition === "non_inspection"
+    && source.symbolKinds?.length === 1
+    && source.symbolKinds[0] === "revision_marker"
+  ) {
+    return zhCN.inspection.revisionSourcePending;
+  }
+  if (
+    source.disposition === "ambiguous"
+    && source.rejectionCode === "visual_no_detection"
+  ) {
+    return zhCN.inspection.visualSourcePending;
+  }
+  return zhCN.inspection.visualSourcePending;
 }
 
 
@@ -127,6 +151,7 @@ export function InspectionItemTable({
   items,
   balloons,
   pendingSources = [],
+  visualSourceItemIds = EMPTY_VISUAL_SOURCE_ITEM_IDS,
   candidateNumbers = EMPTY_CANDIDATE_NUMBERS,
   filter,
   selectedItemId,
@@ -525,6 +550,7 @@ export function InspectionItemTable({
           ) : pageEntries.map((entry) => {
             if (entry.kind === "source") {
               const source = entry.source;
+              const displayText = sourceDisplayText(source);
               return (
                 <div
                   key={entry.key}
@@ -548,8 +574,14 @@ export function InspectionItemTable({
                     {zhCN.workbench.unknown}
                   </strong>
                   <span role="cell" className="inspection-item-copy">
-                    <strong title={source.rawText || zhCN.workbench.unknown}>{source.rawText || zhCN.workbench.unknown}</strong>
-                    <small>{zhCN.inspection.sourceType}</small>
+                    <strong title={displayText || zhCN.workbench.unknown}>
+                      {displayText || zhCN.workbench.unknown}
+                    </strong>
+                    <small>
+                      {source.sourceType === "visual"
+                        ? zhCN.inspection.visualTranscription
+                        : zhCN.inspection.sourceType}
+                    </small>
                   </span>
                   {compact
                     ? null
@@ -578,6 +610,12 @@ export function InspectionItemTable({
               balloon,
               candidateNumber,
             );
+            const typeLabel = (
+              item.coarse_type !== undefined
+              && visualSourceItemIds.has(item.item_id)
+            )
+              ? `${presentation.typeLabel} · ${zhCN.inspection.visualTranscription}`
+              : presentation.typeLabel;
             const collisions = balloon?.collisionFlags
               ?.map((flag) => COLLISION_LABELS[flag] ?? zhCN.workbench.unknown)
               .join("、");
@@ -642,7 +680,7 @@ export function InspectionItemTable({
                 </strong>
                 <span role="cell" className="inspection-item-copy">
                   <strong title={item.raw_text}>{item.raw_text}</strong>
-                  <small>{presentation.typeLabel}</small>
+                  <small>{typeLabel}</small>
                 </span>
                 {compact ? null : (
                   <span role="cell">
@@ -659,7 +697,11 @@ export function InspectionItemTable({
                   role="cell"
                   className={`geometry-state geometry-state--${presentation.status}`}
                 >
-                  <strong>{presentation.statusLabel}</strong>
+                  <strong>
+                    {item.requires_confirmation === true
+                      ? zhCN.inspection.confirmationRequired
+                      : presentation.statusLabel}
+                  </strong>
                   {collisions ? <small>{collisions}</small> : null}
                 </span>
               </div>

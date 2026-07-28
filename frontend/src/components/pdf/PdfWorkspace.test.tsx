@@ -256,6 +256,42 @@ describe("PdfWorkspace", () => {
     expect(onSelectSource).toHaveBeenCalledWith("source-only");
   });
 
+  test.each([
+    ["visual-no-detection", "图形符号待确认", 1, [10, 20, 30, 40]],
+    ["visual-revision", "修订标记（非检验）待确认", 0, [40, 50, 70, 80]],
+  ] as const)(
+    "locates_and_actions_visual_source %s",
+    async (id, label, pageIndex, bbox) => {
+      render(
+        <PdfWorkspace
+          pdfDocument={documentFixture()}
+          candidates={[]}
+          sources={[{
+            id,
+            pageIndex,
+            bbox: [...bbox],
+            rawText: label,
+            sourceType: "visual",
+          }]}
+          balloons={[]}
+          selectedSourceId={id}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("page-indicator").textContent)
+          .toBe(`${pageIndex + 1} / 2`);
+      });
+      const overlay = await screen.findByTestId(`source-${id}`);
+      expect(overlay.getAttribute("x")).toBe(String(bbox[0]));
+      expect(overlay.getAttribute("y")).toBe(String(bbox[1]));
+      expect(overlay.getAttribute("width"))
+        .toBe(String(bbox[2] - bbox[0]));
+      expect(overlay.getAttribute("height"))
+        .toBe(String(bbox[3] - bbox[1]));
+    },
+  );
+
   test("来源定位完成后仍允许手动切换 PDF 页面", async () => {
     render(
       <PdfWorkspace

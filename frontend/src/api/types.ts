@@ -14,6 +14,7 @@ export type OverlayBox = {
   pageIndex?: number;
   bbox: PdfCoordinates;
   rawText?: string;
+  sourceType?: "text" | "visual";
   candidateNumber?: number;
 };
 
@@ -69,6 +70,7 @@ export type CandidateType =
 export type ReviewItem = {
   item_id: string;
   raw_text: string;
+  normalized_text?: string;
   item_type?: CandidateType;
   coarse_type?: string;
   coordinates?: PdfCoordinates | null;
@@ -174,6 +176,8 @@ export type ReviewCoverageEntry = {
   disposition: string;
   coordinates: PdfCoordinates;
   requires_confirmation: boolean;
+  symbol_kinds?: string[];
+  rejection_code?: string;
 };
 
 export type ReviewCoverage = {
@@ -206,6 +210,7 @@ export type ProjectWorkbenchSource = {
   page_index: number;
   bbox_pdf: PdfCoordinates;
   raw_text?: string;
+  source_type: "text" | "visual";
 };
 
 export type BalloonRecord = {

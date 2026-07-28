@@ -243,6 +243,7 @@ export function ProjectWorkbenchApp({
           pageIndex: source.page_index,
           bbox: source.bbox_pdf,
           rawText: source.raw_text,
+          sourceType: source.source_type,
         }))}
         balloons={balloons}
         pageTransforms={snapshot.pages.map((page) => ({

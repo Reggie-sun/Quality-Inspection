@@ -200,6 +200,7 @@ def _workbench_payload(
             "page_index": relation["page_index"],
             "bbox_pdf": relation["bbox_pdf"],
             "raw_text": relation["raw_text"],
+            "source_type": relation["source_type"],
         }
         for source_id, relation in sorted(source_items.items())
     ]
@@ -295,6 +296,17 @@ def _project_pages(
                     "page_index": page_index,
                     "bbox_pdf": list(raw_observation["bbox_pdf"]),
                     "raw_text": raw_text if isinstance(raw_text, str) else "",
+                    "source_type": "text",
+                }
+            for raw_observation in page.get("visual_observations", []):
+                if not isinstance(raw_observation, dict):
+                    raise TypeError
+                source_id = str(raw_observation["observation_id"])
+                observations[source_id] = {
+                    "page_index": page_index,
+                    "bbox_pdf": list(raw_observation["bbox_pdf"]),
+                    "raw_text": "图形符号待确认",
+                    "source_type": "visual",
                 }
     except (KeyError, TypeError, ValueError) as error:
         raise ProjectWorkbenchUnavailable("project page inventory is invalid") from error
@@ -345,6 +357,7 @@ def _project_items(
                     "page_index": geometry["page_index"],
                     "bbox_pdf": geometry["bbox_pdf"],
                     "raw_text": geometry.get("raw_text", ""),
+                    "source_type": geometry.get("source_type", "text"),
                 },
             )
             relation["item_ids"].append(item_id)  # type: ignore[union-attr]
@@ -352,6 +365,10 @@ def _project_items(
         if not isinstance(raw_entry, dict):
             continue
         if raw_entry.get("requires_confirmation") is not True:
+            continue
+        if raw_entry.get("candidate_id") is not None:
+            continue
+        if raw_entry.get("disposition") == "reference_context":
             continue
         source_id = raw_entry.get("source_location_id")
         if not isinstance(source_id, str):
@@ -366,6 +383,7 @@ def _project_items(
                 "page_index": geometry["page_index"],
                 "bbox_pdf": geometry["bbox_pdf"],
                 "raw_text": geometry.get("raw_text", ""),
+                "source_type": geometry.get("source_type", "text"),
             },
         )
     return sorted(candidates, key=lambda value: str(value["id"])), sources

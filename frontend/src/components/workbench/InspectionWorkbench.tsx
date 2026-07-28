@@ -223,6 +223,14 @@ export function InspectionWorkbench({
     }
     return lookup;
   }, [candidates]);
+  const visualSourceItemIds = useMemo(
+    () => new Set(
+      sources
+        .filter((source) => source.sourceType === "visual")
+        .flatMap((source) => source.itemIds ?? []),
+    ),
+    [sources],
+  );
   const pendingSources = useMemo<PendingSourceReview[]>(() => {
     if (workingCopy === undefined) return [];
     return (workingCopy.coverage.entries ?? [])
@@ -241,6 +249,10 @@ export function InspectionWorkbench({
           rawText: source?.rawText?.trim() ?? "",
           coordinates: entry.coordinates,
           pageIndex: source?.pageIndex,
+          sourceType: source?.sourceType,
+          disposition: entry.disposition,
+          symbolKinds: entry.symbol_kinds,
+          rejectionCode: entry.rejection_code,
         };
       });
   }, [sources, workingCopy?.coverage.entries]);
@@ -615,6 +627,7 @@ export function InspectionWorkbench({
                 items={items}
                 balloons={balloons}
                 pendingSources={pendingSources}
+                visualSourceItemIds={visualSourceItemIds}
                 candidateNumbers={candidateNumbers}
                 filter={filter}
                 selectedItemId={selectedItemId}

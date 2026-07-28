@@ -708,11 +708,48 @@ test("未知后端枚举只显示安全中文占位，表头不使用 inline sty
 
   expect(document.body.textContent).not.toContain("future_backend_type");
   expect(document.body.textContent).not.toContain("future_backend_status");
+  expect(screen.getByRole("row", { name: /未知标注/ }).textContent)
+    .toContain("—");
   expect(document.body.textContent).not.toContain("future_collision_flag");
   expect(screen.getByRole("row", { name: /未知标注/ }).textContent).toContain("—");
   const header = document.querySelector(".inspection-table__head")!;
   expect(header.getAttribute("style")).toBeNull();
 });
+
+test.each([
+  ["roughness", "Ra 3.2", "粗糙度"],
+  ["geometric_tolerance", "∥ 0.1 A", "几何公差"],
+  ["geometric_tolerance", "⟂ 0.2 B", "几何公差"],
+  ["geometric_tolerance", "▱ 0.05", "几何公差"],
+])(
+  "renders_coarse_symbol_and_confirmation %s %s",
+  (coarseType, canonicalSymbol, coarseLabel) => {
+    const itemId = `coarse-${canonicalSymbol}`;
+    render(
+      <InspectionItemTable
+        items={[{
+          item_id: itemId,
+          raw_text: canonicalSymbol,
+          coarse_type: coarseType,
+          requires_confirmation: true,
+          active: true,
+        }]}
+        balloons={[]}
+        visualSourceItemIds={new Set([itemId])}
+        filter="all"
+        onSelectItem={vi.fn()}
+      />,
+    );
+
+    const row = screen.getByRole("row", {
+      name: new RegExp(canonicalSymbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    });
+    expect(row.textContent).toContain(canonicalSymbol);
+    expect(row.textContent).toContain(coarseLabel);
+    expect(row.textContent).toContain("图形转写");
+    expect(row.textContent).toContain("需确认");
+  },
+);
 
 test("候选序号使用蓝色圆标，且有效正式气泡编号优先", () => {
   render(

@@ -182,6 +182,74 @@ test("刷新后从只读 projection 恢复 reviewed result 和三项下载", asy
   expect(document.body.textContent).not.toContain("item-secret-uuid");
 });
 
+test("visual source type reaches owner-committed pending-source presentation", async () => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+    {} as CanvasRenderingContext2D,
+  );
+  const snapshot = reviewedResponse();
+  snapshot.project.state = "editing";
+  snapshot.working_copy.items_frozen_at = null;
+  snapshot.working_copy.items_frozen_by = null;
+  snapshot.working_copy.items_frozen_version = null;
+  snapshot.working_copy.coverage = {
+    blocking_count: 0,
+    review_required_count: 1,
+    entries: [{
+      observation_id: "visual-revision",
+      source_location_id: "visual-revision",
+      candidate_id: null,
+      disposition: "non_inspection",
+      coordinates: [40, 50, 70, 80],
+      requires_confirmation: true,
+      symbol_kinds: ["revision_marker"],
+    }],
+  };
+  snapshot.sources = [{
+    id: "visual-revision",
+    item_ids: [],
+    page_index: 0,
+    bbox_pdf: [40, 50, 70, 80],
+    raw_text: "图形符号待确认",
+    source_type: "visual",
+  }];
+  vi.stubGlobal("fetch", vi.fn(async (
+    path: RequestInfo | URL,
+  ) => new Response(JSON.stringify(
+    String(path).endsWith("/review/lock")
+      ? { operator_id: "operator-real" }
+      : snapshot,
+  ), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })));
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({
+        numPages: 1,
+        getPage: vi.fn(async () => ({
+          getViewport: ({ scale }: { scale: number }) => ({
+            width: 200 * scale,
+            height: 200 * scale,
+          }),
+          render: vi.fn(() => ({
+            promise: Promise.resolve(),
+            cancel: vi.fn(),
+          })),
+        })),
+      })}
+    />,
+  );
+
+  expect(await screen.findByRole("row", {
+    name: /修订标记（非检验）待确认/,
+  })).not.toBeNull();
+  expect(document.body.textContent).not.toContain("visual-symbol-review/1");
+  expect(document.body.textContent).not.toContain("provider_response");
+});
+
 test("就绪页头部横向组合纯文字品牌、真实阶段和重新处理入口", async () => {
   const snapshot = reviewedResponse();
   vi.stubGlobal("fetch", vi.fn(async (

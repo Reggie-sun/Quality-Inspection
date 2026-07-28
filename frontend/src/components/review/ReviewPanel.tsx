@@ -314,6 +314,10 @@ export function ReviewPanel({
   const selectedCoreFields = selectedItem === undefined
     ? []
     : coreFieldsFor(selectedItem.item_type);
+  const selectedNormalizedText = selectedItem?.normalized_text?.trim() ?? "";
+  const hasDistinctNormalizedText =
+    selectedNormalizedText !== ""
+    && selectedNormalizedText !== selectedItem?.raw_text.trim();
   const selectedItemHeading = zhCN.review.itemHeading(
     selectedItemPresentation?.displayNumber,
     selectedItemPresentation?.typeLabel ?? zhCN.workbench.unknown,
@@ -651,12 +655,25 @@ export function ReviewPanel({
               </>
             )}
           </fieldset>
-          {selectedCoreFields.length === 0 ? null : (
+          {selectedCoreFields.length === 0 && !hasDistinctNormalizedText ? null : (
             <fieldset
               className="review-field-group review-field-group--parsed"
               disabled={disabled || !isEditingSelected}
             >
               <legend>{zhCN.review.parsedResult}</legend>
+              {hasDistinctNormalizedText ? (
+                <label className="review-field-group__recognized">
+                  {zhCN.review.recognizedResult}
+                  <input
+                    aria-label={zhCN.review.fieldForItem(
+                      zhCN.review.recognizedResult,
+                      selectedItem.raw_text,
+                    )}
+                    readOnly
+                    value={selectedNormalizedText}
+                  />
+                </label>
+              ) : null}
               {selectedCoreFields.map((field) => (
                 <label key={field.key}>
                   {field.label}

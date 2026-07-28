@@ -117,6 +117,64 @@ describe("ReviewPanel", () => {
     })).toBeNull();
   });
 
+  test("shows raw_and_normalized_symbol_text_separately", async () => {
+    const onCommand = vi.fn();
+    const { rerender } = render(
+      <ReviewPanel
+        items={[{
+          item_id: "visual-diameter",
+          item_type: "diameter_dimension",
+          raw_text: "10",
+          normalized_text: "Φ10",
+          active: true,
+        }]}
+        onCommand={onCommand}
+        selectedItemId="visual-diameter"
+      />,
+    );
+
+    expect((screen.getByRole("textbox", {
+      name: "原始标注：10",
+    }) as HTMLInputElement).value).toBe("10");
+    const recognized = screen.getByRole("textbox", {
+      name: "识别结果：10",
+    }) as HTMLInputElement;
+    expect(recognized.value).toBe("Φ10");
+    expect(recognized.readOnly).toBe(true);
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10",
+    }));
+    fireEvent.change(screen.getByRole("textbox", {
+      name: "原始标注：10",
+    }), { target: { value: "10.0" } });
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改保存检验项：10",
+    }));
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
+      type: "edit",
+      item_id: "visual-diameter",
+      fields: { raw_text: "10.0" },
+    }));
+
+    rerender(
+      <ReviewPanel
+        items={[{
+          item_id: "same-symbol-text",
+          item_type: "diameter_dimension",
+          raw_text: "Φ10",
+          normalized_text: "Φ10",
+          active: true,
+        }]}
+        onCommand={onCommand}
+        selectedItemId="same-symbol-text"
+      />,
+    );
+
+    expect(screen.queryByRole("textbox", {
+      name: "识别结果：Φ10",
+    })).toBeNull();
+  });
+
   test("将复杂检验项的来源字段放入图纸原文且不渲染空解析分组", () => {
     render(
       <ReviewPanel

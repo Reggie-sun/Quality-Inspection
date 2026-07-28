@@ -1549,6 +1549,130 @@ describe("InspectionWorkbench", () => {
     });
   });
 
+  test("visual pending sources stay distinct and require explicit owner actions", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const visualCoarseItem: ReviewItem = {
+      item_id: "visual-roughness-item",
+      raw_text: "Ra 3.2",
+      coarse_type: "roughness",
+      requires_confirmation: true,
+      source_location_ids: ["visual-roughness"],
+      active: true,
+    };
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[
+          {
+            id: "visual-no-detection",
+            pageIndex: 0,
+            bbox: [10, 20, 30, 40],
+            rawText: "图形符号待确认",
+            sourceType: "visual",
+          },
+          {
+            id: "visual-revision",
+            pageIndex: 1,
+            bbox: [40, 50, 70, 80],
+            rawText: "图形符号待确认",
+            sourceType: "visual",
+          },
+          {
+            id: "visual-roughness",
+            itemIds: ["visual-roughness-item"],
+            pageIndex: 0,
+            bbox: [80, 90, 120, 110],
+            rawText: "图形符号待确认",
+            sourceType: "visual",
+          },
+        ]}
+        balloons={[]}
+        items={[visualCoarseItem]}
+        workingCopy={{
+          id: "visual-working",
+          project_id: "visual-project",
+          raw_result_id: "visual-result",
+          version: 1,
+          items: [visualCoarseItem],
+          coverage: {
+            blocking_count: 0,
+            review_required_count: 2,
+            entries: [
+              {
+                observation_id: "visual-no-detection",
+                source_location_id: "visual-no-detection",
+                candidate_id: null,
+                disposition: "ambiguous",
+                coordinates: [10, 20, 30, 40],
+                requires_confirmation: true,
+                symbol_kinds: [],
+                rejection_code: "visual_no_detection",
+              },
+              {
+                observation_id: "visual-revision",
+                source_location_id: "visual-revision",
+                candidate_id: null,
+                disposition: "non_inspection",
+                coordinates: [40, 50, 70, 80],
+                requires_confirmation: true,
+                symbol_kinds: ["revision_marker"],
+              },
+            ],
+          },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    expect(screen.getByRole("row", { name: /图形符号待确认/ })).not.toBeNull();
+    expect(screen.getByRole("row", {
+      name: /修订标记（非检验）待确认/,
+    })).not.toBeNull();
+    const coarseRow = screen.getByRole("row", { name: /Ra 3.2/ });
+    expect(coarseRow.textContent).toContain("粗糙度 · 图形转写");
+    expect(coarseRow.textContent).toContain("需确认");
+    expect(onSave).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain("visual-symbol-review/1");
+    expect(document.body.textContent).not.toContain("provider_response");
+
+    fireEvent.click(screen.getByRole("row", { name: /图形符号待确认/ }));
+    fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+      target: { value: "general_requirement" },
+    });
+    expect(screen.getByRole("button", { name: "添加为检验项" })
+      .hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", { name: "原始标注" }), {
+      target: { value: "人工确认的图形检验要求" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
+      type: "promote_source",
+      observation_id: "visual-no-detection",
+      raw_text: "人工确认的图形检验要求",
+      item_type: "general_requirement",
+      scope: "local_feature",
+      balloon_required: true,
+      page_index: 0,
+    }));
+
+    fireEvent.click(screen.getByRole("row", {
+      name: /修订标记（非检验）待确认/,
+    }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", {
+      name: "忽略，不作为检验项",
+    }));
+    await waitFor(() => expect(onSave).toHaveBeenLastCalledWith({
+      type: "ignore_source",
+      observation_id: "visual-revision",
+    }));
+  });
+
   test("来源 promote 保存失败后保留选择和草稿供重试", async () => {
     const onSave = vi.fn().mockRejectedValue(new Error("save failed"));
     const items = [{

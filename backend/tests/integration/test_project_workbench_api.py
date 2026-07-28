@@ -182,6 +182,30 @@ def test_project_workbench_projects_source_only_coverage_for_review(
             "confidence": None,
         }
     )
+    inventory["pages"][0]["visual_observations"] = [
+        {
+            "observation_id": "visual-observation-id",
+            "source_type": "visual",
+            "observation_level": "annotation_context",
+            "page_index": 0,
+            "bbox_pdf": [60.0, 70.0, 100.0, 90.0],
+            "bbox_normalized": [0.3, 0.35, 0.5, 0.45],
+            "proposal_kind": "text_adjacent_vector_context",
+            "geometry_sha256": "a" * 64,
+            "associated_text_observation_ids": ["source-only"],
+        },
+        {
+            "observation_id": "visual-revision-id",
+            "source_type": "visual",
+            "observation_level": "annotation_context",
+            "page_index": 0,
+            "bbox_pdf": [160.0, 70.0, 190.0, 100.0],
+            "bbox_normalized": [0.8, 0.35, 0.95, 0.5],
+            "proposal_kind": "text_adjacent_vector_context",
+            "geometry_sha256": "b" * 64,
+            "associated_text_observation_ids": [],
+        },
+    ]
     inventory_bytes = json.dumps(inventory).encode("utf-8")
     context.storage.write_verified(
         raw.inventory_ref.removeprefix("asset://"),
@@ -206,8 +230,27 @@ def test_project_workbench_projects_source_only_coverage_for_review(
             "coordinates": [20.0, 30.0, 50.0, 44.0],
             "requires_confirmation": False,
         },
+        {
+            "observation_id": "visual-observation-id",
+            "source_location_id": "visual-observation-id",
+            "candidate_id": None,
+            "disposition": "ambiguous",
+            "coordinates": [60.0, 70.0, 100.0, 90.0],
+            "requires_confirmation": True,
+            "symbol_kinds": [],
+            "rejection_code": "visual_no_detection",
+        },
+        {
+            "observation_id": "visual-revision-id",
+            "source_location_id": "visual-revision-id",
+            "candidate_id": None,
+            "disposition": "non_inspection",
+            "coordinates": [160.0, 70.0, 190.0, 100.0],
+            "requires_confirmation": True,
+            "symbol_kinds": ["revision_marker"],
+        },
     ]
-    coverage["review_required_count"] = 1
+    coverage["review_required_count"] = 3
     context.working_copy.coverage = coverage
     session.commit()
 
@@ -234,7 +277,46 @@ def test_project_workbench_projects_source_only_coverage_for_review(
             "page_index": 0,
             "bbox_pdf": [60.0, 70.0, 150.0, 84.0],
             "raw_text": "技术要求：去除毛刺",
+            "source_type": "text",
         }
+        visual_source = next(
+            item
+            for item in response.json()["sources"]
+            if item["id"] == "visual-observation-id"
+        )
+        assert visual_source == {
+            "id": "visual-observation-id",
+            "item_ids": [],
+            "page_index": 0,
+            "bbox_pdf": [60.0, 70.0, 100.0, 90.0],
+            "raw_text": "图形符号待确认",
+            "source_type": "visual",
+        }
+        visual_revision = next(
+            item
+            for item in response.json()["sources"]
+            if item["id"] == "visual-revision-id"
+        )
+        assert visual_revision == {
+            "id": "visual-revision-id",
+            "item_ids": [],
+            "page_index": 0,
+            "bbox_pdf": [160.0, 70.0, 190.0, 100.0],
+            "raw_text": "图形符号待确认",
+            "source_type": "visual",
+        }
+        projected_revision = next(
+            entry
+            for entry in response.json()["working_copy"]["coverage"]["entries"]
+            if entry["observation_id"] == "visual-revision-id"
+        )
+        assert projected_revision["disposition"] == "non_inspection"
+        assert projected_revision["symbol_kinds"] == ["revision_marker"]
+        serialized = json.dumps(response.json(), ensure_ascii=False)
+        assert "advisor_review" not in serialized
+        assert "geometry_sha256" not in serialized
+        assert "associated_text_observation_ids" not in serialized
+        assert "text_adjacent_vector_context" not in serialized
         assert all(
             item["id"] != "source-resolved"
             for item in response.json()["sources"]
