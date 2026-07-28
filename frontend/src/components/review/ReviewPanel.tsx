@@ -329,8 +329,6 @@ export function ReviewPanel({
           selectedItemPresentation.displayNumber,
         )
       : selectedItemPresentation?.numberLabel ?? zhCN.workbench.unknown;
-  const isEditingSelected =
-    selectedItem !== undefined && editingItemId === selectedItem.item_id;
   const isSelectedItemDirty =
     selectedItem !== undefined && dirtyItemIds.includes(selectedItem.item_id);
   const beginEditingSelected = () => {
@@ -615,8 +613,8 @@ export function ReviewPanel({
                   selectedItem.raw_text,
                 )}
                 disabled={disabled}
-                readOnly={!isEditingSelected}
                 value={complexCoordinates[selectedItem.item_id] ?? ""}
+                onFocus={beginEditingSelected}
                 onChange={(event) => {
                   setComplexCoordinates((current) => ({
                     ...current,
@@ -632,11 +630,12 @@ export function ReviewPanel({
                   zhCN.review.coarseType,
                   selectedItem.raw_text,
                 )}
-                disabled={disabled || !isEditingSelected}
+                disabled={disabled}
                 value={
                   coarseTypes[selectedItem.item_id]
                   ?? selectedItem.coarse_type
                 }
+                onFocus={beginEditingSelected}
                 onChange={(event) => {
                   setCoarseTypes((current) => ({
                     ...current,
@@ -693,8 +692,9 @@ export function ReviewPanel({
                         field.label,
                         selectedItem.raw_text,
                       )}
-                      disabled={disabled || !isEditingSelected}
+                      disabled={disabled}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
+                      onFocus={beginEditingSelected}
                       onChange={(event) =>
                         setCoreValue(
                           selectedItem.item_id,
@@ -713,8 +713,9 @@ export function ReviewPanel({
                         field.label,
                         selectedItem.raw_text,
                       )}
-                      disabled={disabled || !isEditingSelected}
+                      disabled={disabled}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
+                      onFocus={beginEditingSelected}
                       onChange={(event) =>
                         setCoreValue(
                           selectedItem.item_id,
@@ -736,12 +737,12 @@ export function ReviewPanel({
                         selectedItem.raw_text,
                       )}
                       disabled={disabled}
-                      readOnly={!isEditingSelected}
                       inputMode={field.kind === "decimal" ? "decimal" : undefined}
                       type={field.kind === "integer" ? "number" : "text"}
                       min={field.kind === "integer" ? 1 : undefined}
                       step={field.kind === "integer" ? 1 : undefined}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
+                      onFocus={beginEditingSelected}
                       onChange={(event) =>
                         setCoreValue(
                           selectedItem.item_id,
@@ -894,27 +895,15 @@ export function ReviewPanel({
               <legend>{zhCN.review.contentGroup}</legend>
               <button
                 type="button"
-                className={
-                  isEditingSelected
-                    ? "review-command-rail__secondary"
-                    : "review-command-rail__primary"
-                }
+                className="review-command-rail__secondary"
                 aria-label={zhCN.review.actionForItem(
-                  isEditingSelected
-                    ? zhCN.review.cancelEdit
-                    : zhCN.review.edit,
+                  zhCN.review.cancelEdit,
                   selectedItem.raw_text,
                 )}
-                disabled={disabled}
-                onClick={
-                  isEditingSelected
-                    ? cancelEditingSelected
-                    : beginEditingSelected
-                }
+                disabled={disabled || !isSelectedItemDirty}
+                onClick={cancelEditingSelected}
               >
-                {isEditingSelected
-                  ? zhCN.review.cancelEdit
-                  : zhCN.review.edit}
+                {zhCN.review.cancelEdit}
               </button>
               <button
                 type="button"
@@ -925,7 +914,6 @@ export function ReviewPanel({
                 )}
                 disabled={
                   disabled
-                  || !isEditingSelected
                   || !isSelectedItemDirty
                 }
                 onClick={() => editItem(selectedItem)}

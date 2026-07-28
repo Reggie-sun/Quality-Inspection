@@ -80,7 +80,6 @@ describe("InspectionWorkbench", () => {
     ).getByRole("status");
     expect(saveStatus.textContent).toBe("已保存");
 
-    fireEvent.click(screen.getByRole("button", { name: "编辑内容检验项：M6" }));
     fireEvent.change(screen.getByRole("textbox", { name: "螺纹规格：M6" }), {
       target: { value: "M8" },
     });
@@ -126,9 +125,6 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", {
-      name: "编辑内容检验项：10",
-    }));
     const nominal = screen.getByRole("textbox", {
       name: "基本尺寸：10",
     }) as HTMLInputElement;
@@ -176,9 +172,6 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", {
-      name: "编辑内容检验项：10",
-    }));
     const nominal = screen.getByRole("textbox", {
       name: "基本尺寸：10",
     }) as HTMLInputElement;
@@ -273,9 +266,6 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", {
-      name: "编辑内容检验项：10",
-    }));
     fireEvent.change(screen.getByRole("textbox", {
       name: "基本尺寸：10",
     }), { target: { value: "10.0" } });
@@ -373,9 +363,6 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", {
-      name: "编辑内容检验项：10",
-    }));
     fireEvent.change(screen.getByRole("textbox", {
       name: "基本尺寸：10",
     }), { target: { value: "10.0" } });
