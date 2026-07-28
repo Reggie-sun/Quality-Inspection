@@ -2,12 +2,13 @@
 
 ## Status
 
-- Date: `2026-07-27`
-- Status: `Approved semantic design`
+- Date: `2026-07-28`
+- Status: `Hybrid proposal-gate amendment approved; exact rule and overlay gate pending`
 - Selected scope: 当前失败 PDF 闭环
 - Selected lane: `Heavy`
 - Execution authorization owner: unique current plan; this design does not authorize execution
-- Activation state: Task 0 complete at `994cbe4`; Option A clarification active
+- Activation state: original Task 0 complete at `994cbe4`; execution paused at the
+  current-source capacity correction
 
 本文只定义能力、Owner、数据合同、失败边界和验收口径。它不切换当前
 implementation plan，也不独立授权 production code、runtime config、contract
@@ -353,6 +354,12 @@ visual_observations: tuple[VisualObservation, ...] = ()
 
 ## Deterministic Proposal Rules
 
+本节记录当前 runtime 的 `visual-observation/1` baseline。下方
+`2026-07-28 Hybrid Proposal-Gate Amendment` 已批准退休其中“不检查 line text”和
+“每个 geometry-qualified line 必定形成 observation”的 admission clauses；在 exact
+v2 rule table、overlay evidence 和 Quality Owner verdict 独立 commit 前，v1 仍只是
+实际运行基线，不能被报告为已完成的 v2 contract。
+
 vector geometry 的规范化固定如下：
 
 1. 每个 `page.get_drawings()` item 先转换到现有未旋转 CropBox 坐标。
@@ -459,6 +466,177 @@ packing 允许移动 items，而本 contract 保留 PDF 原坐标、以 padded u
 
 这些阈值是首版 current-PDF contract，不是用户配置。后续修改必须以新的负样本或
 漏检证据进入 amendment，不能为单一坐标写 exact-input 特判。
+
+### 2026-07-28 Hybrid Proposal-Gate Amendment
+
+上述 bounded feasibility search 已按冻结的 deterministic state bound 执行。page 0
+在 depth `76`、expanded states `248890`、frontier `4096` 时停止；page 1 在
+depth `72`、expanded states `249792`、frontier `4096` 时停止。两页均为
+`capacity_feasibility_unproven`，Provider calls 为 `0`。这不是数学不可行证明，
+但不足以授权 packing-only production change。Contract Owner 随后选择
+`proposal/dedup semantics + 新正负样本证据`，并批准使用 hybrid high-recall
+proposal gate 和完整 Quality Owner 复核。
+
+本 amendment 只设计 proposal correction；在下述 exact rule table、overlay 和
+Quality Owner gate 全部冻结前，不授权 production RED、production edit、SR-4
+Step 8 或 Provider call。
+
+#### Single Proposal Owner And Data Flow
+
+`backend/app/pdf/visual_observations.py::build_page_visual_observations()` 是 proposal
+admission 的唯一 Owner：
+
+```text
+native line/span + canonical path items
+→ provisional line context
+→ pure proposal features
+→ hybrid admission gate
+→ existing bbox/dedup/order
+→ VisualObservation v2
+→ PageInventory
+→ existing coverage / priority / packing / Provider / projection
+```
+
+`inventory.py` 只提供 native observations 和 drawings 并持久化 Owner 输出。
+`automatic_result.py`、`symbol_review.py` 和 `advisor.py` 只能消费 retained
+observations，不得再做第二次 proposal filter、merge、ranking 或 budget truncation。
+`CandidateAdvisor` 继续是唯一 automatic candidate/coverage write Owner。
+
+#### Hybrid Admission Contract
+
+Owner 先按现有 `96 pt` item extent、`12 pt` both-axis gap 和 `1%` context area
+构造 provisional line context，再计算一个 internal-only immutable feature record。
+允许的 feature 仅包括：
+
+- `normalized_text` 的形态，例如 digit presence、uppercase alphanumeric short token
+  和 token length；不得把原文或具体 token 值写入 feature record；
+- canonical path opcode/style 的 count 和 boolean facts，例如 close path、fill、
+  dash 和 distinct style；
+- path-item、line 和 provisional context 的 width、height、area、count、relative
+  gap 与 aggregate dimensions。
+
+禁止使用 page index、absolute position、source SHA、observation ID、label ID、
+approved label bbox、parser/candidate/Provider result、wall-clock order 或 runtime
+sample statistics。production runtime 不训练、拟合或自动选择阈值。
+
+最终 gate 是一张 static、explicit、versioned boolean rule table：
+
+- geometry admission branch 保留具有可解释 compact/frame/marker evidence 的
+  provisional context；
+- short technical-token rescue branch 防止 datum、revision 和紧凑 measurement
+  context 被 geometry branch 单独漏掉；
+- 每个 rejection 必须有稳定的 internal reason code，供 preflight overlay 使用；
+  reason code 不进入 API、DB、Provider prompt、coverage 或 formal result；
+- 不允许 top-k、score cutoff、random selection 或按剩余 call slots 静默丢弃；
+- retained observations 若仍需 `V > 16`，继续
+  `symbol_route_budget_exhausted`，不得把 rejected context 伪装成
+  `non_inspection` 或已覆盖。
+
+exact predicate、全部 snapped thresholds、branch order、tie-break 和 rule digest
+必须先写回本节并独立 commit，之后才可写 production RED。规则候选可以由 sealed
+labels 做 offline calibration，但 rule grammar 必须保持上述通用特征边界；manifest
+和 label facts 不得被 production import 或读取。
+
+#### Preserved Geometry, Dedup And Scheduling
+
+本轮保持以下合同不变：
+
+- retained bbox 仍是 associated native line 与当前入选 path items 的 clipped union；
+- geometry SHA、associated text IDs、public `VisualObservation` fields 和
+  `proposal_kind="text_adjacent_vector_context"` 的含义不变；
+- exact geometry 只在 associated text IDs 相同时去重，IoU `>=0.8` 仍要求相同
+  associated IDs；不做跨 text-owner coalescing；
+- priority、stable first-fit、padding、`7.5%` page area、`300 DPI`、`1536px`
+  side、`32` observations 和 `16/page` budget 不变；
+- 每个 retained visual ID 继续恰有一个 initial coverage entry，并进入
+  expected/required ID 集合。
+
+只读 current-source exploration 已证明，单独做 exact-geometry merge 或 IoU merge
+不能把 page 1 降到 `<=16` batches；按 local components 拆细还会增加 batch count。
+因此这两条路径不进入 implementation。
+
+#### Version, Reconstruction And Cache Identity
+
+proposal semantics 改变时：
+
+1. `PROPOSAL_RULE_VERSION` 必须从 `visual-observation/1` 升为
+   `visual-observation/2`，使 retained observation IDs 全部重新绑定 exact rule；
+2. `symbol_review.py` 不得继续维护独立硬编码的
+   `VISUAL_PROPOSAL_VERSION`；cache identity 必须复用 proposal Owner 的单一版本
+   常量；
+3. inventory observation 与 private `VisualGeometryContext` 必须保持一一对应；
+4. reconstruction 继续用相同 source bytes、PyMuPDF version、canonicalization 和
+   gate 重建 exact observations；missing、extra、order、ID 或 geometry mismatch
+   都在 Provider construction 前 blocking。
+
+本轮不改变为 multi-line context，因此不扩展 `VisualGeometryContext.line_bbox_pdf`，
+也不引入 keeper-bbox 与 associated-text union 的双重事实。
+
+#### Calibration Evidence And Quality Owner Gate
+
+一个只读、无坐标特判的 hybrid candidate 在当前 source 上得到：
+
+| Page | Current observations | Candidate observations | Candidate batches | Positive regions with visible overlap |
+| --- | ---: | ---: | ---: | ---: |
+| 0 | 132 | 79 | 13 | 26 / 26 |
+| 1 | 203 | 124 | 16 | 30 / 30 |
+
+该表只证明通用 feature space 存在 bounded candidate，不是 approved rule、formal
+overlap、release evidence 或 production expected count。它不得替代完整视觉复核。
+
+exact gate 冻结前必须重新生成：
+
+1. 两页 `200%` 完整 overlay，明确区分 retained 和 rejected provisional contexts；
+2. 六个带 token 的 positive `revision_marker`；
+3. 五个按 N5 处理的无 token 闭合三角 negative；
+4. 全部 GD&T frame 与独立 boxed datum；
+5. diameter、depth、counterbore、surface roughness 各至少一个代表区域；
+6. 标注最密集、最容易漏标或误框的区域；
+7. 全部 `56` positive labels 与 `16` frozen-negative regions 的 gate disposition。
+
+机械 preflight 还必须证明：
+
+- repeated observation-ID digest、rule digest 和 batch-membership digest 完全一致；
+- 每个 retained ID exact-once，全部 crop/member/pixel/area limits 为 true；
+- 两页各自 `V <= 16`；
+- rejected context count 和 reason-code counts 可复算；
+- Provider construction/calls 为 `0`。
+
+Quality Owner approval 必须绑定：
+
+- sealed manifest SHA-256
+  `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`；
+- `proposal_rule_version="visual-observation/2"`；
+- exact rule digest；
+- 两页完整 overlay 和全部局部放大图的 digests；
+- `annotation_status=approved` 与 `unlabeled_target_count=0`。
+
+existing sealed manifest bytes 不修改、不重生成。Quality Owner 未明确批准以上 exact
+evidence 时，不得把 exploratory overlap 写成 formal success。
+
+#### Old Path Retirement And TDD Boundary
+
+本 amendment 退休：
+
+- “proposal builder 不检查 line text”；
+- “每个 geometry-qualified native line 必定形成 visual observation”；
+- SR-2A 中只允许替换 packing primitive 的 production Step 3/4。
+
+`pack_visual_batches()` 本身继续保留 stable first-fit。新的 implementation plan
+必须先修改本 design 和 stable contract Owner rows，再按以下顺序执行：
+
+1. frozen rule table、overlay digests 和 Quality Owner verdict docs commit；
+2. PDF RED：两个 admission branches、noise rejection、threshold boundaries、
+   v2 ID/order repeatability 和 reconstruction tamper blocking；
+3. cache RED：proposal version single source 和 identity invalidation；
+4. minimum production implementation in proposal Owner；
+5. current-source no-write/no-Provider preflight；
+6. ADV-09 overflow/no-Provider、coverage exact-one 和 SR-4 focused regression；
+7. independent review 后才允许 SR-4 Step 8。
+
+任一 positive 漏失、frozen negative 误框、digest 不一致、reconstruction mismatch
+或 `V > 16` 都回到 design。不得通过放宽 crop/call cap、恢复 full-page Vision、
+silent filtering 或 Provider-side semantics 把 failure 改写为 success。
 
 ## Vision Request Contract
 
@@ -1251,17 +1429,20 @@ support 或通用 accuracy benchmark。
   保持不变；本文不是 implementation plan，也不成为第二套 current plan。
 - Selection evidence: current first-PDF runtime、source code call chain、页面渲染和
   用户选择“当前图纸闭环”共同证明需要新 visual observation 能力。
-- Activation evidence: Task 0 已由 commit `994cbe4` 把 subordinate proposal、
-  `SR-1 → SR-8` 顺序和全部执行边界激活到唯一 current plan；用户批准的 Option A
-  clarification 现已生效。
-- Validation action: `continue`；下一步是 current plan 的 `SR-1` contract/Harness
-  RED，不再请求 design/proposal approval，也不再运行 `writing-plans` 或重复 Task 0。
+- Activation evidence: original Task 0 已由 commit `994cbe4` 激活 subordinate
+  proposal；SR-4 exact preflight 随后证明现有 proposal 需要 `19/22` priority
+  batches，bounded feasibility 结果为 `capacity_feasibility_unproven`。用户现已批准
+  hybrid proposal-gate design 和完整 Quality Owner 重核，旧的 packing-only
+  continuation 不再拥有 production authorization。
+- Validation action: `pause production`。用户审阅本 design commit 后，才运行
+  `superpowers:writing-plans` 修改既有 subordinate/current plan；不得创建第二套
+  current plan。新 plan 必须先冻结 exact rule、overlays 和 Quality Owner verdict，
+  再授权 production RED。
 - Writer ownership and order: 同一 backend file group 只有一个 writer，frontend 在
   backend projection 冻结后顺序开始，reviewer 保持只读。
-- Next verification: `SR-1` 先运行
-  `test_symbol_eval_contract.py`、`test_contract_architecture.py` 和
-  `test_live_run_contract.py` 的 contract/Harness RED；不能先修改 production code
-  或调用真实 Provider。
+- Next verification: 只运行 exact hybrid rule 的 no-write/no-Provider calibration、
+  两页 `200%` overlays、局部放大图和 digest/budget preflight；不能先修改
+  production code、提交当前 SR-4 worktree changes 或调用真实 Provider。
 
 ## Risks
 
@@ -1280,8 +1461,11 @@ support 或通用 accuracy benchmark。
 
 ## Active Execution Gate
 
-本 semantic design 和 Option A clarification 已获批准；Task 0 activation commit
-`994cbe4` 已完成，唯一 current plan 继续拥有执行授权和顺序。下一步只能进入
-`SR-1` contract/Harness RED；不得再次请求 spec/plan approval、运行
-`superpowers:writing-plans`、创建第二份 current plan、先改 production code 或先调用
-真实 Provider。
+hybrid proposal-gate architecture 与完整重核方式已获批准，但 exact predicate、
+rule digest、两页 overlays、局部放大图和 Quality Owner verdict 尚未冻结。当前
+execution gate 因此是 `design-review-pending`：不得修改 production、不得提交当前
+SR-4 worktree changes、不得进入 SR-4 Step 8 或 SR-5、不得调用 Provider。
+
+用户审阅并接受本 committed spec 后，下一步是用 `superpowers:writing-plans`
+修订既有 subordinate/current plan，使 calibration、overlay approval、TDD 和
+regression 按本 amendment 的顺序成为唯一执行路径；不得创建第二份 current plan。
