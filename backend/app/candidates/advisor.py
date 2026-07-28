@@ -41,7 +41,7 @@ from app.candidates.symbol_review import (
 from app.capabilities.service import CapabilityUnavailable
 from app.config import Settings
 from app.pdf.coordinates import BBox
-from app.pdf.schemas import TextObservation
+from app.pdf.schemas import TextObservation, VisualObservation
 from app.pdf.visual_observations import reconstruct_visual_geometry_contexts
 from app.processing.automatic_result import CandidateSnapshot, selected_observations
 from app.providers.base import VisionResult
@@ -601,11 +601,16 @@ class CandidateAdvisor:
         crop_png: bytes,
         crop_bbox_pdf: BBox,
         source_sha256: str,
-        visual_observation_ids: Sequence[str],
+        visual_observations: Sequence[VisualObservation],
+        text_observations: dict[str, TextObservation],
         model: str,
     ) -> tuple[VisionResult, object | None]:
         canonical_crop_png = canonicalize_visual_png(crop_png)
         crop_sha256 = hashlib.sha256(canonical_crop_png).hexdigest()
+        visual_observation_ids = tuple(
+            observation.observation_id
+            for observation in visual_observations
+        )
         identity = visual_cache_identity(
             source_sha256=source_sha256,
             visual_observation_ids=visual_observation_ids,
@@ -657,7 +662,11 @@ class CandidateAdvisor:
         try:
             raw_result = provider.review_symbols(
                 canonical_crop_png,
-                visual_review_prompt(visual_observation_ids),
+                visual_review_prompt(
+                    visual_observations,
+                    text_observations=text_observations,
+                    crop_bbox_pdf=crop_bbox_pdf,
+                ),
             )
             response = parse_visual_symbol_json(raw_result.payload)
             request_id, usage = validate_visual_request_metadata(
@@ -921,6 +930,10 @@ class CandidateAdvisor:
             for page in pages
             for observation in page.observations
         )
+        text_observations_by_id = {
+            observation.observation_id: observation
+            for observation in all_text_observations
+        }
         visual_observations = {
             observation.observation_id: observation
             for page in pages
@@ -957,6 +970,10 @@ class CandidateAdvisor:
                 page_inventory = pages[page_position]
                 page = document[page_inventory.page_index]
                 for batch in page_batches:
+                    batch_observations = tuple(
+                        visual_observations[identity]
+                        for identity in batch.observation_ids
+                    )
                     crop_png = _render_visual_crop(
                         page,
                         batch.crop_bbox_pdf,
@@ -966,12 +983,9 @@ class CandidateAdvisor:
                         crop_png=crop_png,
                         crop_bbox_pdf=batch.crop_bbox_pdf,
                         source_sha256=source_sha256,
-                        visual_observation_ids=batch.observation_ids,
+                        visual_observations=batch_observations,
+                        text_observations=text_observations_by_id,
                         model=model,
-                    )
-                    batch_observations = tuple(
-                        visual_observations[identity]
-                        for identity in batch.observation_ids
                     )
                     accepted, rejected = validate_symbol_detections(
                         result.payload,

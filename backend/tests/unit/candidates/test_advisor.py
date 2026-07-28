@@ -110,15 +110,30 @@ class UnifiedRecordingProvider(EchoVisionProvider):
 
 
 class VisualDiameterProvider(EchoVisionProvider):
-    def __init__(self, visual_id: str, text_id: str) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.visual_id = visual_id
-        self.text_id = text_id
         self.call_order: list[str] = []
 
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
-        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/1"
+        request = json.loads(prompt)
+        assert request["schema_version"] == "visual-symbol-review/1"
+        assert request["prompt_version"] == "visual-symbol-prompt/3"
+        assert len(request["visual_contexts"]) == 1
+        context = request["visual_contexts"][0]
+        assert context["visual_observation_id"] in request[
+            "visual_observation_ids"
+        ]
+        assert all(
+            0.0 <= value <= 1.0
+            for value in context["context_bbox_normalized"]
+        )
+        line = next(
+            item
+            for item in context["associated_text_allowlist"]
+            if item["observation_level"] == "line"
+        )
+        assert line["raw_text"] == "10"
         self.call_order.append("visual")
         return VisionResult(
             request_id="fixture-visual-diameter-request",
@@ -126,10 +141,14 @@ class VisualDiameterProvider(EchoVisionProvider):
                 "schema_version": "visual-symbol-review/1",
                 "detections": [
                     {
-                        "visual_observation_id": self.visual_id,
+                        "visual_observation_id": context[
+                            "visual_observation_id"
+                        ],
                         "symbol_kind": "diameter",
                         "bbox_normalized": [0.1, 0.1, 0.4, 0.4],
-                        "associated_text_observation_ids": [self.text_id],
+                        "associated_text_observation_ids": [
+                            line["observation_id"]
+                        ],
                         "requires_confirmation": True,
                     }
                 ],
@@ -352,21 +371,7 @@ def test_visual_projection_does_not_create_same_review_text_route(
     tmp_path: Path,
 ) -> None:
     source, pages, snapshot = visual_diameter_fixture(tmp_path)
-    visual = pages[0].visual_observations[0]
-    candidate_source_ids = {
-        str(source_id)
-        for candidate in snapshot.candidates
-        for source_id in candidate["source_location_ids"]
-    }
-    text_id = next(
-        source_id
-        for source_id in visual.associated_text_observation_ids
-        if source_id in candidate_source_ids
-    )
-    provider = VisualDiameterProvider(
-        visual.observation_id,
-        text_id,
-    )
+    provider = VisualDiameterProvider()
 
     reviewed = candidate_advisor(tmp_path, provider).review(
         source,

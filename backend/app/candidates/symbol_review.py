@@ -33,7 +33,7 @@ from app.pdf.visual_observations import (
 SCHEMA_PATH = (
     Path(__file__).parents[1] / "providers/visual_symbol_review.schema.json"
 )
-VISUAL_PROMPT_VERSION = "visual-symbol-prompt/2"
+VISUAL_PROMPT_VERSION = "visual-symbol-prompt/3"
 VISUAL_SCHEMA_VERSION = "visual-symbol-review/1"
 VISUAL_ADAPTER_VERSION = "qwen-openai-compatible/1"
 VISUAL_CACHE_SCHEMA_VERSION = "visual-symbol-advisor-cache/1"
@@ -187,22 +187,138 @@ def visual_cache_key(**identity_arguments: Any) -> str:
     return hashlib.sha256(_json_bytes(identity)).hexdigest()
 
 
-def visual_review_prompt(visual_observation_ids: Sequence[str]) -> str:
+def _prompt_context_bbox(
+    bbox_pdf: BBox,
+    crop_bbox_pdf: BBox,
+) -> tuple[float, float, float, float]:
+    crop_width = crop_bbox_pdf[2] - crop_bbox_pdf[0]
+    crop_height = crop_bbox_pdf[3] - crop_bbox_pdf[1]
+    if (
+        crop_width <= 0
+        or crop_height <= 0
+        or bbox_pdf[2] <= bbox_pdf[0]
+        or bbox_pdf[3] <= bbox_pdf[1]
+        or not all(math.isfinite(value) for value in (*bbox_pdf, *crop_bbox_pdf))
+    ):
+        raise ValueError("visual symbol prompt context is invalid")
+    values = (
+        (bbox_pdf[0] - crop_bbox_pdf[0]) / crop_width,
+        (bbox_pdf[1] - crop_bbox_pdf[1]) / crop_height,
+        (bbox_pdf[2] - crop_bbox_pdf[0]) / crop_width,
+        (bbox_pdf[3] - crop_bbox_pdf[1]) / crop_height,
+    )
+    if (
+        values[0] < 0
+        or values[1] < 0
+        or values[2] > 1
+        or values[3] > 1
+    ):
+        raise ValueError("visual symbol prompt context is invalid")
+    return values
+
+
+def visual_review_prompt(
+    visual_observations: Sequence[VisualObservation],
+    *,
+    text_observations: Mapping[str, TextObservation],
+    crop_bbox_pdf: BBox,
+) -> str:
+    visual_ids = tuple(
+        observation.observation_id for observation in visual_observations
+    )
+    if (
+        not visual_ids
+        or len(set(visual_ids)) != len(visual_ids)
+        or any(not identity.strip() for identity in visual_ids)
+    ):
+        raise ValueError("visual symbol prompt context is invalid")
+    contexts: list[dict[str, Any]] = []
+    for observation in visual_observations:
+        associated_ids = observation.associated_text_observation_ids
+        if (
+            not associated_ids
+            or len(set(associated_ids)) != len(associated_ids)
+        ):
+            raise ValueError("visual symbol prompt context is invalid")
+        nearby_texts: list[dict[str, str]] = []
+        for identity in associated_ids:
+            text = text_observations.get(identity)
+            if (
+                text is None
+                or text.page_index != observation.page_index
+                or text.observation_level not in {"line", "span"}
+                or not isinstance(text.raw_text, str)
+                or not text.raw_text.strip()
+            ):
+                raise ValueError("visual symbol prompt context is invalid")
+            nearby_texts.append(
+                {
+                    "observation_id": text.observation_id,
+                    "observation_level": text.observation_level,
+                    "raw_text": text.raw_text,
+                }
+            )
+        contexts.append(
+            {
+                "visual_observation_id": observation.observation_id,
+                "context_bbox_normalized": list(
+                    _prompt_context_bbox(
+                        observation.bbox_pdf,
+                        crop_bbox_pdf,
+                    )
+                ),
+                "associated_text_allowlist": nearby_texts,
+            }
+        )
     response_schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     return json.dumps(
         {
             "task": "review_local_engineering_drawing_symbol_contexts",
             "prompt_version": VISUAL_PROMPT_VERSION,
             "schema_version": VISUAL_SCHEMA_VERSION,
-            "visual_observation_ids": list(visual_observation_ids),
+            "visual_observation_ids": list(visual_ids),
+            "visual_contexts": contexts,
+            "symbol_kind_guide": {
+                "diameter": "Φ/∅/⌀ beside a size value",
+                "depth": "depth symbol beside a depth value",
+                "counterbore": (
+                    "counterbore symbol used with diameter and depth"
+                ),
+                "surface_roughness": (
+                    "surface texture symbol beside a roughness value"
+                ),
+                "gdt_parallelism": (
+                    "parallelism symbol in a feature-control frame"
+                ),
+                "gdt_perpendicularity": (
+                    "perpendicularity symbol in a feature-control frame"
+                ),
+                "gdt_flatness": "flatness symbol in a feature-control frame",
+                "datum_reference": (
+                    "boxed datum letter with its datum pointer"
+                ),
+                "revision_marker": (
+                    "closed triangle containing a revision token"
+                ),
+            },
             "constraints": [
+                "inspect_each_listed_visual_context",
                 "use_only_listed_visual_observation_ids",
+                (
+                    "use_only_associated_text_observation_ids_from_the_"
+                    "matching_visual_context"
+                ),
+                "detection_bbox_normalized_is_relative_to_the_entire_crop",
+                "detection_bbox_must_have_positive_width_and_height",
+                "prefer_line_level_text_when_line_and_span_duplicate_raw_text",
+                "return_no_detection_for_unrecognized_or_absent_symbols",
                 "match_response_schema_exactly",
                 "requires_confirmation_must_be_true",
                 "return_one_json_object_only",
             ],
             "response_schema": response_schema,
         },
+        ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     )

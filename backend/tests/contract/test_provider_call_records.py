@@ -16,6 +16,7 @@ from app.providers.call_records import (
 )
 from app.candidates.advisor import CandidateAdvisor, CandidateAdvisorFailure
 from app.config import Settings
+from app.pdf.schemas import TextObservation, VisualObservation
 from app.providers.base import VisionResult
 from app.providers.qwen_vl import (
     QwenVisionProvider,
@@ -234,11 +235,48 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
     private_marker = b"private-marker-%PDF"
     image = _png(text=b"review\x00" + private_marker)
     canonical_image = canonicalize_visual_png(image)
+    text_observations = {
+        identity: TextObservation(
+            observation_id=identity,
+            source_type="native",
+            observation_level="line",
+            raw_text=raw_text,
+            normalized_text=raw_text,
+            page_index=0,
+            bbox_pdf=(2.0, 3.0, 8.0, 6.0),
+            bbox_normalized=(0.0, 0.0, 1.0, 1.0),
+            direction=(1.0, 0.0),
+            direction_angle_degrees=0.0,
+            confidence=None,
+        )
+        for identity, raw_text in (
+            ("text-001", "10"),
+            ("text-002", "20"),
+        )
+    }
+    visual_observations = tuple(
+        VisualObservation(
+            observation_id=visual_id,
+            source_type="visual",
+            observation_level="annotation_context",
+            page_index=0,
+            bbox_pdf=bbox_pdf,
+            bbox_normalized=(0.0, 0.0, 1.0, 1.0),
+            proposal_kind="text_adjacent_vector_context",
+            geometry_sha256=geometry_sha256,
+            associated_text_observation_ids=(text_id,),
+        )
+        for visual_id, text_id, bbox_pdf, geometry_sha256 in (
+            ("visual-001", "text-001", (2.0, 3.0, 8.0, 6.0), "b" * 64),
+            ("visual-002", "text-002", (10.0, 12.0, 18.0, 20.0), "c" * 64),
+        )
+    )
     common = {
         "crop_png": image,
         "crop_bbox_pdf": (1.0, 2.0, 30.0, 40.0),
         "source_sha256": "a" * 64,
-        "visual_observation_ids": ("visual-001", "visual-002"),
+        "visual_observations": visual_observations,
+        "text_observations": text_observations,
         "model": "qwen3-vl-plus",
     }
     result, _ = advisor._visual_review_result(
@@ -369,7 +407,7 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         elif case == "identity_version":
             cache_payload = json.loads(cache_path.read_text())
             cache_payload["identity"]["prompt_version"] = (
-                "visual-symbol-prompt/3"
+                "visual-symbol-prompt/2"
             )
             cache_path.write_text(json.dumps(cache_payload))
         elif case == "response_schema":

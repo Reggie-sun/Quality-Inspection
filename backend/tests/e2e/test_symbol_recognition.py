@@ -15,13 +15,11 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 from app.candidates.models import AutomaticResult
-from app.candidates.symbol_review import plan_visual_batches
 from app.config import Settings
 from app.db import engine
 from app.main import app
 from app.pdf.inventory import build_inventory
 from app.processing import tasks
-from app.processing.automatic_result import candidate_snapshot_from_inventory
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
 from app.projects.router import get_session, get_storage
@@ -74,18 +72,7 @@ class DispatchRecorder:
 
 
 class FrozenSymbolProvider:
-    def __init__(
-        self,
-        visual_inputs: dict[
-            str,
-            tuple[
-                tuple[str, ...],
-                tuple[str, ...],
-                tuple[float, float, float, float],
-            ],
-        ],
-    ) -> None:
-        self._visual_inputs = visual_inputs
+    def __init__(self) -> None:
         self.factory_calls = 0
         self.symbol_calls = 0
         self.text_calls = 0
@@ -96,23 +83,43 @@ class FrozenSymbolProvider:
         assert set(request) == {
             "constraints",
             "prompt_version",
+            "response_schema",
             "schema_version",
+            "symbol_kind_guide",
             "task",
+            "visual_contexts",
             "visual_observation_ids",
         }
+        assert request["prompt_version"] == "visual-symbol-prompt/3"
+        contexts = {
+            context["visual_observation_id"]: context
+            for context in request["visual_contexts"]
+        }
+        assert set(contexts) == set(request["visual_observation_ids"])
         self.symbol_calls += 1
         detections = []
         for visual_id in request["visual_observation_ids"]:
-            symbol_kinds, text_ids, normalized_bbox = self._visual_inputs[visual_id]
+            context = contexts[visual_id]
+            line_texts = tuple(
+                item["raw_text"]
+                for item in context["associated_text_allowlist"]
+                if item["observation_level"] == "line"
+            )
+            assert line_texts in _SYMBOL_KINDS_BY_TEXTS
+            prompt_text_ids = tuple(
+                item["observation_id"]
+                for item in context["associated_text_allowlist"]
+                if item["observation_level"] == "line"
+            )
             detections.extend(
                 {
                     "visual_observation_id": visual_id,
                     "symbol_kind": symbol_kind,
-                    "bbox_normalized": list(normalized_bbox),
-                    "associated_text_observation_ids": list(text_ids),
+                    "bbox_normalized": context["context_bbox_normalized"],
+                    "associated_text_observation_ids": list(prompt_text_ids),
                     "requires_confirmation": True,
                 }
-                for symbol_kind in symbol_kinds
+                for symbol_kind in _SYMBOL_KINDS_BY_TEXTS[line_texts]
             )
         return VisionResult(
             request_id=f"fixture-symbol-{self.symbol_calls}",
@@ -180,62 +187,30 @@ def task_session_factory(
 
 def _fixture_provider(source: Path) -> FrozenSymbolProvider:
     pages = tuple(build_inventory(source))
-    snapshot = candidate_snapshot_from_inventory(pages)
     text_by_id = {
         observation.observation_id: observation
         for page in pages
         for observation in page.observations
     }
-    visual_by_id = {
-        observation.observation_id: observation
-        for page in pages
-        for observation in page.visual_observations
-    }
-    visual_inputs: dict[
-        str,
-        tuple[
-            tuple[str, ...],
-            tuple[str, ...],
-            tuple[float, float, float, float],
-        ],
-    ] = {}
-    for page_batches in plan_visual_batches(pages, snapshot):
-        for batch in page_batches:
-            x0, y0, x1, y1 = batch.crop_bbox_pdf
-            width = x1 - x0
-            height = y1 - y0
-            for visual_id in batch.observation_ids:
-                visual = visual_by_id[visual_id]
-                lines = tuple(
-                    sorted(
-                        (
-                            text_by_id[text_id]
-                            for text_id in visual.associated_text_observation_ids
-                            if text_by_id[text_id].observation_level == "line"
-                        ),
-                        key=lambda item: (
-                            item.page_index,
-                            item.bbox_pdf[1],
-                            item.bbox_pdf[0],
-                            item.observation_id,
-                        ),
-                    )
-                )
-                line_ids = tuple(line.observation_id for line in lines)
-                line_texts = tuple(line.raw_text for line in lines)
-                assert line_texts in _SYMBOL_KINDS_BY_TEXTS
-                bbox = visual.bbox_pdf
-                visual_inputs[visual_id] = (
-                    _SYMBOL_KINDS_BY_TEXTS[line_texts],
-                    line_ids,
+    for page in pages:
+        for visual in page.visual_observations:
+            lines = tuple(
+                sorted(
                     (
-                        max(0.0, (bbox[0] - x0) / width),
-                        max(0.0, (bbox[1] - y0) / height),
-                        min(1.0, (bbox[2] - x0) / width),
-                        min(1.0, (bbox[3] - y0) / height),
+                        text_by_id[text_id]
+                        for text_id in visual.associated_text_observation_ids
+                        if text_by_id[text_id].observation_level == "line"
+                    ),
+                    key=lambda item: (
+                        item.page_index,
+                        item.bbox_pdf[1],
+                        item.bbox_pdf[0],
+                        item.observation_id,
                     ),
                 )
-    return FrozenSymbolProvider(visual_inputs)
+            )
+            assert tuple(line.raw_text for line in lines) in _SYMBOL_KINDS_BY_TEXTS
+    return FrozenSymbolProvider()
 
 
 def _configure_task(
