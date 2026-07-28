@@ -29,7 +29,8 @@ def _insert_native_text(
     point: tuple[float, float],
     text: str,
 ) -> None:
-    page.insert_text(point, text, fontsize=9.0, fontname="helv", color=(0, 0, 0))
+    fontname = "china-s" if any(ord(character) > 127 for character in text) else "helv"
+    page.insert_text(point, text, fontsize=9.0, fontname=fontname, color=(0, 0, 0))
 
 
 def _draw_target_symbol(
@@ -206,8 +207,8 @@ def _populate_page(
         positive_specs = (
             ("diameter", 60.0, "18", "diameter_dimension"),
             ("diameter", 110.0, "20", "diameter_dimension"),
-            ("depth", 160.0, "12", "thread"),
-            ("depth", 210.0, "8", "thread"),
+            ("depth", 160.0, "M6深12", "thread"),
+            ("depth", 210.0, "M8深8", "thread"),
             ("counterbore", 260.0, "22 6", "composite"),
             ("surface_roughness", 310.0, "3.2", "roughness"),
             ("surface_roughness", 360.0, "1.6", "roughness"),
@@ -229,7 +230,7 @@ def _populate_page(
                 "revision_table_or_invalid_marker",
                 "revision_table",
                 (320.0, 370.0, 550.0, 415.0),
-                "R1",
+                "REV",
             ),
             (
                 "datum_like_letter_or_table_cell",
@@ -242,7 +243,7 @@ def _populate_page(
         positive_specs = (
             ("diameter", 60.0, "40", "diameter_dimension"),
             ("diameter", 110.0, "100", "diameter_dimension"),
-            ("depth", 160.0, "16", "thread"),
+            ("depth", 160.0, "M10深16", "thread"),
             ("counterbore", 210.0, "30 10", "composite"),
             ("surface_roughness", 260.0, "6.3", "roughness"),
             ("gdt_perpendicularity", 310.0, "0.2 B", "geometric_tolerance"),

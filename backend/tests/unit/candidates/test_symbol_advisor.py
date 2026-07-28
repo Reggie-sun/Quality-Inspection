@@ -816,6 +816,41 @@ def test_counterbore_maps_to_stable_composite() -> None:
         "depth",
     ]
 
+    compact = _text("text-compact", "22 6", (20, 50, 44, 58))
+    compact_page = _page(
+        (compact,),
+        (_visual("visual-compact", (12, 48, 18, 58), ("text-compact",)),),
+    )
+    compact_decision = _decision(
+        compact_page,
+        ("counterbore", "diameter", "depth"),
+    )
+    compact_payload = compact_decision.candidate_envelope["payload"]  # type: ignore[index]
+    assert compact_payload["item_type"] == "composite"
+    assert compact_payload["normalized_text"] == "⌴22 6"
+    assert [
+        item.get("nominal", item.get("value"))
+        for item in compact_payload["sub_requirements"]
+    ] == ["22", "6"]
+
+    full_width = _text("text-full-width", "２２　   ６", (20, 60, 44, 68))
+    full_width_page = _page(
+        (full_width,),
+        (
+            _visual(
+                "visual-full-width",
+                (12, 58, 18, 68),
+                ("text-full-width",),
+            ),
+        ),
+    )
+    full_width_decision = _decision(
+        full_width_page,
+        ("counterbore", "diameter", "depth"),
+    )
+    full_width_payload = full_width_decision.candidate_envelope["payload"]  # type: ignore[index]
+    assert full_width_payload["normalized_text"] == "⌴22 6"
+
 
 def test_counterbore_existing_conflict_preserves_candidate() -> None:
     diameter = _text("primary", "10", (20, 20, 32, 28))

@@ -1592,13 +1592,32 @@ def project_visual_observation(
             if normalize_text(item.raw_text).startswith(("深", "↓"))
             and _decimal_token(item.raw_text) is not None
         ]
-        if len(diameter_texts) != 1 or len(depth_texts) != 1:
-            payload = None
-            if len(diameter_texts) > 1 or len(depth_texts) > 1:
-                projection_rejection_code = "visual_projection_conflict"
-        else:
+        diameter_value: str | None = None
+        depth_value: str | None = None
+        diameter_raw: str | None = None
+        depth_raw: str | None = None
+        if len(diameter_texts) == 1 and len(depth_texts) == 1:
             diameter_value = _decimal_token(diameter_texts[0].raw_text)
             depth_value = _decimal_token(depth_texts[0].raw_text)
+            diameter_raw = diameter_texts[0].raw_text
+            depth_raw = depth_texts[0].raw_text
+        elif len(texts) == 1:
+            compact = re.fullmatch(
+                rf"({NUMBER})\s+({NUMBER})",
+                normalize_text(texts[0].raw_text),
+            )
+            if compact is not None:
+                diameter_value, depth_value = compact.groups()
+                diameter_raw, depth_raw = compact.groups()
+        else:
+            if len(diameter_texts) > 1 or len(depth_texts) > 1:
+                projection_rejection_code = "visual_projection_conflict"
+        if (
+            diameter_value is not None
+            and depth_value is not None
+            and diameter_raw is not None
+            and depth_raw is not None
+        ):
             try:
                 diameter_candidate = parse_annotation(f"Φ{diameter_value}")
             except ValueError:
@@ -1617,14 +1636,14 @@ def project_visual_observation(
                         {
                             "order": 0,
                             "kind": "diameter_dimension",
-                            "raw_text": diameter_texts[0].raw_text,
+                            "raw_text": diameter_raw,
                             "nominal": str(diameter_candidate.nominal),
                             "feature_kind": "unknown",
                         },
                         {
                             "order": 1,
                             "kind": "depth",
-                            "raw_text": depth_texts[0].raw_text,
+                            "raw_text": depth_raw,
                             "value": depth_value,
                         },
                     ],
