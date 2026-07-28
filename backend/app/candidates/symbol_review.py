@@ -9,6 +9,7 @@ from collections import Counter
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from itertools import combinations
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -821,6 +822,24 @@ def _ordered_texts(
         if item.observation_id in allowlist
         and item.observation_id in detection_ids
     ]
+    selected_by_id = {
+        item.observation_id: item
+        for item in selected
+    }
+    selected = [
+        item
+        for item in selected
+        if not (
+            item.observation_level == "span"
+            and item.parent_region_id in selected_by_id
+            and selected_by_id[item.parent_region_id].observation_level
+            == "line"
+            and normalize_text(item.raw_text)
+            == normalize_text(
+                selected_by_id[item.parent_region_id].raw_text
+            )
+        )
+    ]
     return tuple(
         sorted(
             selected,
@@ -1018,9 +1037,13 @@ def _enrich_existing_depth(
             return None
         if depth_requirements:
             prior = depth_requirements[0].get("value")
-            if prior is not None and not _same_decimal(prior, value):
-                return None
-            depth_requirements[0]["value"] = value
+            if prior is not None:
+                if not _same_decimal(prior, value):
+                    return None
+            else:
+                depth_requirements[0]["value"] = value
+                if not _append_normalized_depth(payload, value):
+                    return None
         else:
             requirements.append(
                 {
@@ -1030,18 +1053,44 @@ def _enrich_existing_depth(
                     "value": value,
                 }
             )
+            if not _append_normalized_depth(payload, value):
+                return None
         payload["coordinates"] = coordinates
         payload["requires_confirmation"] = True
         return payload
     else:
         return None
     prior = payload.get(field)
-    if prior is not None and not _same_decimal(prior, value):
-        return None
-    payload[field] = value
+    if prior is not None:
+        if not _same_decimal(prior, value):
+            return None
+    else:
+        payload[field] = value
+        if not _append_normalized_depth(payload, value):
+            return None
     payload["coordinates"] = coordinates
     payload["requires_confirmation"] = True
     return payload
+
+
+def _append_normalized_depth(
+    payload: dict[str, Any],
+    value: str,
+) -> bool:
+    current = str(
+        payload.get("normalized_text") or payload.get("raw_text") or ""
+    )
+    if not current:
+        return True
+    existing_values = re.findall(
+        rf"(?:深|↓)\s*({NUMBER})(?![0-9.])",
+        normalize_text(current),
+    )
+    if existing_values:
+        return all(_same_decimal(existing, value) for existing in existing_values)
+    separator = "\n" if "\n" in current else " "
+    payload["normalized_text"] = f"{current}{separator}深 {value}"
+    return True
 
 
 def _existing_accepts_diameter(
@@ -1131,6 +1180,63 @@ def _associated_candidate_indexes(
     )
 
 
+def _candidate_bbox(candidate: Mapping[str, Any]) -> BBox | None:
+    payload = candidate.get("payload")
+    coordinates = (
+        payload.get("coordinates")
+        if isinstance(payload, Mapping)
+        else None
+    )
+    if (
+        not isinstance(coordinates, (list, tuple))
+        or len(coordinates) != 4
+    ):
+        return None
+    try:
+        bbox = cast(BBox, tuple(float(value) for value in coordinates))
+    except (TypeError, ValueError):
+        return None
+    if (
+        not all(math.isfinite(value) for value in bbox)
+        or bbox[2] <= bbox[0]
+        or bbox[3] <= bbox[1]
+    ):
+        return None
+    return bbox
+
+
+def _geometry_depth_primary_indexes(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    observation: VisualObservation,
+    text_by_id: Mapping[str, TextObservation],
+) -> tuple[int, ...]:
+    indexes: list[int] = []
+    for index, candidate in enumerate(candidates):
+        payload = candidate.get("payload")
+        source_ids = candidate.get("source_location_ids")
+        bbox = _candidate_bbox(candidate)
+        if (
+            not isinstance(payload, Mapping)
+            or payload.get("item_type")
+            not in {"thread", "diameter_dimension", "composite"}
+            or not isinstance(source_ids, (list, tuple))
+            or not source_ids
+            or bbox is None
+            or _overlap_fraction(bbox, observation.bbox_pdf) < 0.5
+            or any(
+                not isinstance(source_id, str)
+                or source_id not in text_by_id
+                or text_by_id[source_id].page_index
+                != observation.page_index
+                for source_id in source_ids
+            )
+        ):
+            continue
+        indexes.append(index)
+    return tuple(indexes)
+
+
 def _envelope(
     *,
     payload: dict[str, Any],
@@ -1196,32 +1302,315 @@ def _canonical_items(
     return tuple(parsed)
 
 
+def _line_segments(
+    items: Sequence[Mapping[str, Any]],
+) -> tuple[tuple[tuple[float, float], tuple[float, float]], ...] | None:
+    segments: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    for item in items:
+        if item.get("opcode") != "l":
+            continue
+        coordinates = item.get("coordinates")
+        if not isinstance(coordinates, list) or len(coordinates) != 2:
+            return None
+        try:
+            start = (
+                float(coordinates[0][0]),
+                float(coordinates[0][1]),
+            )
+            end = (
+                float(coordinates[1][0]),
+                float(coordinates[1][1]),
+            )
+        except (IndexError, TypeError, ValueError):
+            return None
+        if not all(math.isfinite(value) for value in (*start, *end)):
+            return None
+        segments.append((start, end))
+    return tuple(segments)
+
+
+def _cluster_vertices(
+    segments: Sequence[
+        tuple[tuple[float, float], tuple[float, float]]
+    ],
+) -> tuple[
+    tuple[tuple[float, float], ...],
+    tuple[tuple[int, int], ...],
+]:
+    vertices: list[tuple[float, float]] = []
+    edges: list[tuple[int, int]] = []
+    for segment in segments:
+        endpoints: list[int] = []
+        for endpoint in segment:
+            vertex_index = next(
+                (
+                    index
+                    for index, vertex in enumerate(vertices)
+                    if math.dist(endpoint, vertex) <= 0.5
+                ),
+                None,
+            )
+            if vertex_index is None:
+                vertices.append(endpoint)
+                vertex_index = len(vertices) - 1
+            endpoints.append(vertex_index)
+        edges.append(tuple(sorted(endpoints)))
+    return tuple(vertices), tuple(edges)
+
+
+def _rectangle_bbox(
+    segments: Sequence[
+        tuple[tuple[float, float], tuple[float, float]]
+    ],
+) -> BBox | None:
+    if len(segments) != 4 or any(
+        math.dist(start, end) <= 0.5
+        or (
+            not math.isclose(start[0], end[0], abs_tol=0.5)
+            and not math.isclose(start[1], end[1], abs_tol=0.5)
+        )
+        for start, end in segments
+    ):
+        return None
+    vertices, edges = _cluster_vertices(segments)
+    if (
+        len(vertices) != 4
+        or len(set(edges)) != 4
+        or any(left == right for left, right in edges)
+        or any(
+            sum(vertex in edge for edge in edges) != 2
+            for vertex in range(4)
+        )
+    ):
+        return None
+    bbox = (
+        min(point[0] for point in vertices),
+        min(point[1] for point in vertices),
+        max(point[0] for point in vertices),
+        max(point[1] for point in vertices),
+    )
+    if bbox[2] - bbox[0] <= 0.5 or bbox[3] - bbox[1] <= 0.5:
+        return None
+    corners = (
+        (bbox[0], bbox[1]),
+        (bbox[2], bbox[1]),
+        (bbox[2], bbox[3]),
+        (bbox[0], bbox[3]),
+    )
+    if any(
+        not any(math.dist(vertex, corner) <= 0.5 for vertex in vertices)
+        for corner in corners
+    ):
+        return None
+    return bbox
+
+
+def _triangle_segment_sets(
+    segments: Sequence[
+        tuple[tuple[float, float], tuple[float, float]]
+    ],
+) -> tuple[
+    tuple[
+        tuple[tuple[float, float], tuple[float, float]],
+        ...,
+    ],
+    ...,
+]:
+    vertices, edges = _cluster_vertices(segments)
+    edge_set = {
+        edge
+        for edge in edges
+        if edge[0] != edge[1]
+    }
+    neighbors: dict[int, set[int]] = {
+        index: set()
+        for index in range(len(vertices))
+    }
+    for left, right in edge_set:
+        neighbors[left].add(right)
+        neighbors[right].add(left)
+    cycles: set[tuple[tuple[int, int], ...]] = set()
+    for vertex, adjacent in neighbors.items():
+        for left, right in combinations(sorted(adjacent), 2):
+            closing = tuple(sorted((left, right)))
+            if closing not in edge_set:
+                continue
+            cycles.add(
+                tuple(
+                    sorted(
+                        (
+                            tuple(sorted((vertex, left))),
+                            tuple(sorted((vertex, right))),
+                            closing,
+                        )
+                    )
+                )
+            )
+    return tuple(
+        tuple((vertices[left], vertices[right]) for left, right in cycle)
+        for cycle in sorted(cycles)
+    )
+
+
+def _rectangle_segment_sets(
+    segments: Sequence[
+        tuple[tuple[float, float], tuple[float, float]]
+    ],
+) -> tuple[
+    tuple[
+        tuple[tuple[float, float], tuple[float, float]],
+        ...,
+    ],
+    ...,
+]:
+    vertices, edges = _cluster_vertices(segments)
+    edge_set = {
+        edge
+        for edge in edges
+        if edge[0] != edge[1]
+    }
+    neighbors: dict[int, set[int]] = {
+        index: set()
+        for index in range(len(vertices))
+    }
+    for left, right in edge_set:
+        neighbors[left].add(right)
+        neighbors[right].add(left)
+    cycles: set[tuple[tuple[int, int], ...]] = set()
+    for vertex, adjacent in neighbors.items():
+        for left, right in combinations(sorted(adjacent), 2):
+            for opposite in sorted(
+                neighbors[left].intersection(neighbors[right])
+            ):
+                if opposite == vertex:
+                    continue
+                cycles.add(
+                    tuple(
+                        sorted(
+                            (
+                                tuple(sorted((vertex, left))),
+                                tuple(sorted((left, opposite))),
+                                tuple(sorted((opposite, right))),
+                                tuple(sorted((right, vertex))),
+                            )
+                        )
+                    )
+                )
+    return tuple(
+        tuple((vertices[left], vertices[right]) for left, right in cycle)
+        for cycle in sorted(cycles)
+    )
+
+
+def _contains_token(box: BBox, token: TextObservation) -> bool:
+    return (
+        box[0] <= token.bbox_pdf[0] + 2
+        and box[1] <= token.bbox_pdf[1] + 2
+        and box[2] >= token.bbox_pdf[2] - 2
+        and box[3] >= token.bbox_pdf[3] - 2
+    )
+
+
 def _valid_datum_geometry(
     context: VisualGeometryContext | None,
     texts: Sequence[TextObservation],
 ) -> bool:
     tokens = [
-        normalize_text(item.raw_text)
+        item
         for item in texts
         if re.fullmatch(r"[A-Z]", normalize_text(item.raw_text))
     ]
-    if len(set(tokens)) != 1:
+    if len(tokens) != 1:
         return False
-    token = next(
-        (item for item in texts if normalize_text(item.raw_text) == tokens[0]),
-        None,
+    token = tokens[0]
+    items = _canonical_items(context)
+    lines = _line_segments(items)
+    if lines is None:
+        return False
+    boxes: set[tuple[float, float, float, float]] = set()
+    for item in items:
+        coordinates = item.get("coordinates")
+        if (
+            item.get("opcode") != "re"
+            or not isinstance(coordinates, list)
+            or len(coordinates) != 4
+        ):
+            continue
+        try:
+            box = cast(BBox, tuple(float(value) for value in coordinates))
+        except (TypeError, ValueError):
+            return False
+        if (
+            not all(math.isfinite(value) for value in box)
+            or box[2] <= box[0]
+            or box[3] <= box[1]
+        ):
+            return False
+        if _contains_token(box, token):
+            boxes.add(tuple(round(value, 3) for value in box))
+    for line_set in _rectangle_segment_sets(lines):
+        box = _rectangle_bbox(line_set)
+        if box is not None and _contains_token(box, token):
+            boxes.add(tuple(round(value, 3) for value in box))
+    return len(boxes) == 1
+
+
+def _revision_triangle(
+    segments: Sequence[
+        tuple[tuple[float, float], tuple[float, float]]
+    ],
+    token: TextObservation,
+) -> tuple[tuple[float, float], ...] | None:
+    if len(segments) != 3 or any(
+        math.dist(start, end) <= 0.5
+        for start, end in segments
+    ):
+        return None
+    vertices, edges = _cluster_vertices(segments)
+    if (
+        len(vertices) != 3
+        or len(set(edges)) != 3
+        or any(left == right for left, right in edges)
+        or any(
+            sum(vertex in edge for edge in edges) != 2
+            for vertex in range(3)
+        )
+    ):
+        return None
+    bbox = (
+        min(point[0] for point in vertices),
+        min(point[1] for point in vertices),
+        max(point[0] for point in vertices),
+        max(point[1] for point in vertices),
     )
-    if token is None:
-        return False
-    return any(
-        item.get("opcode") == "re"
-        and isinstance(item.get("coordinates"), list)
-        and len(item["coordinates"]) == 4
-        and float(item["coordinates"][0]) <= token.bbox_pdf[0] + 2
-        and float(item["coordinates"][1]) <= token.bbox_pdf[1] + 2
-        and float(item["coordinates"][2]) >= token.bbox_pdf[2] - 2
-        and float(item["coordinates"][3]) >= token.bbox_pdf[3] - 2
-        for item in _canonical_items(context)
+    width = bbox[2] - bbox[0]
+    height = bbox[3] - bbox[1]
+    triangle_area = abs(
+        vertices[0][0]
+        * (vertices[1][1] - vertices[2][1])
+        + vertices[1][0]
+        * (vertices[2][1] - vertices[0][1])
+        + vertices[2][0]
+        * (vertices[0][1] - vertices[1][1])
+    ) / 2
+    token_bbox = token.bbox_pdf
+    token_center = (
+        (token_bbox[0] + token_bbox[2]) / 2,
+        (token_bbox[1] + token_bbox[3]) / 2,
+    )
+    if not (
+        4 <= width <= 24
+        and 4 <= height <= 24
+        and triangle_area > 0.01
+        and bbox[0] - 2 <= token_center[0] <= bbox[2] + 2
+        and bbox[1] - 2 <= token_center[1] <= bbox[3] + 2
+    ):
+        return None
+    return tuple(
+        sorted(
+            (round(x, 3), round(y, 3))
+            for x, y in vertices
+        )
     )
 
 
@@ -1234,88 +1623,18 @@ def _valid_revision_geometry(
         for item in texts
         if re.fullmatch(r"[A-Z0-9]{1,3}", normalize_text(item.raw_text))
     ]
-    lines = [
-        item
-        for item in _canonical_items(context)
-        if item.get("opcode") == "l"
-        and isinstance(item.get("coordinates"), list)
-        and len(item["coordinates"]) == 2
-    ]
-    if len(lines) != 3 or len(tokens) != 1:
+    lines = _line_segments(_canonical_items(context))
+    if lines is None or len(tokens) != 1:
         return False
-    segments: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    try:
-        for item in lines:
-            points = item["coordinates"]
-            segments.append(
-                (
-                    (float(points[0][0]), float(points[0][1])),
-                    (float(points[1][0]), float(points[1][1])),
-                )
-            )
-    except (IndexError, TypeError, ValueError):
-        return False
-    if any(math.dist(start, end) <= 0.5 for start, end in segments):
-        return False
-    points = [point for segment in segments for point in segment]
-    bbox = (
-        min(point[0] for point in points),
-        min(point[1] for point in points),
-        max(point[0] for point in points),
-        max(point[1] for point in points),
-    )
-    width = bbox[2] - bbox[0]
-    height = bbox[3] - bbox[1]
-    vertices: list[tuple[float, float]] = []
-    endpoint_vertices: list[int] = []
-    for endpoint in points:
-        vertex_index = next(
-            (
-                index
-                for index, vertex in enumerate(vertices)
-                if math.dist(endpoint, vertex) <= 0.5
-            ),
-            None,
+    triangles = {
+        triangle
+        for line_set in _triangle_segment_sets(lines)
+        if (
+            triangle := _revision_triangle(line_set, tokens[0])
         )
-        if vertex_index is None:
-            vertices.append(endpoint)
-            vertex_index = len(vertices) - 1
-        endpoint_vertices.append(vertex_index)
-    if len(vertices) != 3:
-        return False
-    edges = {
-        tuple(sorted(endpoint_vertices[index : index + 2]))
-        for index in range(0, len(endpoint_vertices), 2)
+        is not None
     }
-    if (
-        len(edges) != 3
-        or any(left == right for left, right in edges)
-        or any(
-            sum(vertex in edge for edge in edges) != 2
-            for vertex in range(3)
-        )
-    ):
-        return False
-    triangle_area = abs(
-        vertices[0][0]
-        * (vertices[1][1] - vertices[2][1])
-        + vertices[1][0]
-        * (vertices[2][1] - vertices[0][1])
-        + vertices[2][0]
-        * (vertices[0][1] - vertices[1][1])
-    ) / 2
-    token_bbox = tokens[0].bbox_pdf
-    token_center = (
-        (token_bbox[0] + token_bbox[2]) / 2,
-        (token_bbox[1] + token_bbox[3]) / 2,
-    )
-    return (
-        4 <= width <= 24
-        and 4 <= height <= 24
-        and triangle_area > 0.01
-        and bbox[0] - 2 <= token_center[0] <= bbox[2] + 2
-        and bbox[1] - 2 <= token_center[1] <= bbox[3] + 2
-    )
+    return len(triangles) == 1
 
 
 def project_visual_observation(
@@ -1449,6 +1768,27 @@ def project_visual_observation(
         if source_id not in visual_ids
     )
     indexes = _associated_candidate_indexes(candidates, text_source_ids)
+    geometry_associated = False
+    depth_primary_associated = False
+    if kinds == ("depth",):
+        typed_indexes = tuple(
+            index
+            for index in indexes
+            if isinstance(candidates[index].get("payload"), Mapping)
+            and candidates[index]["payload"].get("item_type")
+            in {"thread", "diameter_dimension", "composite"}
+        )
+        if typed_indexes:
+            indexes = typed_indexes
+            depth_primary_associated = bool(indexes)
+        else:
+            indexes = _geometry_depth_primary_indexes(
+                candidates,
+                observation=observation,
+                text_by_id=text_by_id,
+            )
+            geometry_associated = bool(indexes)
+            depth_primary_associated = geometry_associated
     if len(indexes) > 1:
         return _ambiguous(
             observation,
@@ -1461,6 +1801,7 @@ def project_visual_observation(
     existing = (
         candidates[existing_index] if existing_index is not None else None
     )
+    existing_text_source_ids: set[str] = set()
     if existing is not None:
         existing_source_ids = {
             str(source_id)
@@ -1469,9 +1810,17 @@ def project_visual_observation(
         existing_text_source_ids = existing_source_ids.difference(
             visual_ids
         )
+        permitted_text_ids = {
+            *local_text_ids,
+            *(
+                existing_text_source_ids
+                if geometry_associated
+                else ()
+            ),
+        }
         if (
             not existing_source_ids.issubset(
-                {*visual_ids, *local_text_ids}
+                {*visual_ids, *permitted_text_ids}
             )
             or any(
                 source_id not in text_by_id
@@ -1670,7 +2019,14 @@ def project_visual_observation(
         explicit_depth_values = tuple(
             value
             for item in texts
-            if normalize_text(item.raw_text).startswith(("深", "↓"))
+            if (
+                (
+                    depth_primary_associated
+                    and item.observation_id
+                    not in existing_text_source_ids
+                )
+                or normalize_text(item.raw_text).startswith(("深", "↓"))
+            )
             if (value := _decimal_token(item.raw_text)) is not None
         )
         typed_projection = _typed_depth_projection(texts)

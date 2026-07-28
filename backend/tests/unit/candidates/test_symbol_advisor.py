@@ -513,6 +513,315 @@ def test_depth_uses_same_crop_typed_value_or_stays_ambiguous() -> None:
     assert combined.candidate_envelope["payload"]["depth"] == "8"
 
 
+def test_exact_duplicate_span_is_canonicalized_to_its_parent_line() -> None:
+    line = _text("line", "10", (20, 20, 32, 28))
+    span = replace(
+        _text("span", "10", (20, 20, 32, 28)),
+        observation_level="span",
+        parent_region_id="line",
+    )
+    visual = _visual(
+        "visual-1",
+        (12, 18, 18, 28),
+        ("line", "span"),
+    )
+
+    decision = _decision(
+        _page((line, span), (visual,)),
+        ("diameter",),
+    )
+
+    assert decision.disposition == "candidate"
+    assert decision.candidate_envelope is not None
+    assert decision.source_location_ids == ("visual-1", "line")
+    assert decision.candidate_envelope["payload"]["normalized_text"] == "Φ10"
+
+    distinct_span = replace(span, raw_text="11", normalized_text="11")
+    conflict = _decision(
+        _page((line, distinct_span), (visual,)),
+        ("diameter",),
+    )
+    assert conflict.disposition == "ambiguous"
+    assert conflict.rejection_code == "visual_projection_conflict"
+
+
+def test_visual_depth_enriches_only_one_strong_overlapping_typed_primary() -> None:
+    value_line = _text("value-line", "8", (30, 12, 38, 20))
+    value_span = replace(
+        _text("value-span", "8", (30, 12, 38, 20)),
+        observation_level="span",
+        parent_region_id="value-line",
+    )
+    primary = _text("thread-primary", "M6", (12, 12, 28, 20))
+    incidental = _text("thread-incidental", "M8", (48, 12, 60, 20))
+    foreign = replace(
+        _text("thread-foreign", "M10", (14, 12, 26, 20)),
+        page_index=1,
+    )
+    visual = _visual(
+        "visual-1",
+        (10, 10, 50, 30),
+        ("value-line", "value-span"),
+    )
+    candidates = (
+        {
+            "candidate_id": "thread-owner",
+            "payload": {
+                "candidate_id": "thread-owner",
+                "item_type": "thread",
+                "raw_text": "M6",
+                "normalized_text": "M6",
+                "coordinates": primary.bbox_pdf,
+                "scope": "local_feature",
+                "thread_spec": "M6",
+                "sub_requirements": [],
+                "balloon_required": True,
+                "requires_confirmation": False,
+            },
+            "source_location_ids": ["thread-primary"],
+        },
+        {
+            "candidate_id": "thread-incidental",
+            "payload": {
+                "candidate_id": "thread-incidental",
+                "item_type": "thread",
+                "raw_text": "M8",
+                "normalized_text": "M8",
+                "coordinates": incidental.bbox_pdf,
+                "scope": "local_feature",
+                "thread_spec": "M8",
+                "sub_requirements": [],
+                "balloon_required": True,
+                "requires_confirmation": False,
+            },
+            "source_location_ids": ["thread-incidental"],
+        },
+        {
+            "candidate_id": "thread-foreign",
+            "payload": {
+                "candidate_id": "thread-foreign",
+                "item_type": "thread",
+                "raw_text": "M10",
+                "normalized_text": "M10",
+                "coordinates": foreign.bbox_pdf,
+                "scope": "local_feature",
+                "thread_spec": "M10",
+                "sub_requirements": [],
+                "balloon_required": True,
+                "requires_confirmation": False,
+            },
+            "source_location_ids": ["thread-foreign"],
+        },
+    )
+    detection = {
+        "visual_observation_id": "visual-1",
+        "symbol_kind": "depth",
+        "bbox_pdf": (28, 12, 30, 20),
+        "associated_text_observation_ids": ("value-line", "value-span"),
+    }
+
+    decision = project_visual_observation(
+        observation=visual,
+        detections=(detection,),
+        text_observations=(
+            primary,
+            value_line,
+            value_span,
+            incidental,
+            foreign,
+        ),
+        candidates=candidates,
+        geometry_context=None,
+    )
+
+    assert decision.disposition == "candidate"
+    assert decision.candidate_id == "thread-owner"
+    assert decision.candidate_envelope is not None
+    payload = decision.candidate_envelope["payload"]
+    assert payload["raw_text"] == "M6"
+    assert payload["normalized_text"] == "M6 深 8"
+    assert payload["thread_depth"] == "8"
+    assert decision.source_location_ids == (
+        "visual-1",
+        "thread-primary",
+        "value-line",
+    )
+
+    second_strong = copy.deepcopy(candidates[1])
+    second_strong["payload"]["coordinates"] = (14, 12, 26, 20)
+    ambiguous = project_visual_observation(
+        observation=visual,
+        detections=(detection,),
+        text_observations=(
+            primary,
+            value_line,
+            value_span,
+            incidental,
+            foreign,
+        ),
+        candidates=(candidates[0], second_strong),
+        geometry_context=None,
+    )
+    assert ambiguous.disposition == "ambiguous"
+    assert ambiguous.rejection_code == "visual_projection_conflict"
+    assert ambiguous.candidate_envelope is None
+
+    threshold_primary = _text(
+        "threshold-primary",
+        "M6",
+        (0, 10, 20, 30),
+    )
+    exact_threshold = copy.deepcopy(candidates[0])
+    exact_threshold["payload"]["coordinates"] = threshold_primary.bbox_pdf
+    exact_threshold["source_location_ids"] = ["threshold-primary"]
+    accepted_at_threshold = project_visual_observation(
+        observation=visual,
+        detections=(detection,),
+        text_observations=(threshold_primary, value_line, value_span),
+        candidates=(exact_threshold,),
+        geometry_context=None,
+    )
+    assert accepted_at_threshold.disposition == "candidate"
+    assert accepted_at_threshold.candidate_id == "thread-owner"
+
+    missing_source = copy.deepcopy(candidates[0])
+    missing_source["source_location_ids"] = ["missing"]
+    rejected_missing_source = project_visual_observation(
+        observation=visual,
+        detections=(detection,),
+        text_observations=(primary, value_line, value_span),
+        candidates=(missing_source,),
+        geometry_context=None,
+    )
+    assert rejected_missing_source.disposition == "ambiguous"
+    assert (
+        rejected_missing_source.rejection_code
+        == "visual_local_parse_failed"
+    )
+
+
+@pytest.mark.parametrize(
+    ("item_type", "owner_text", "expected_field"),
+    (
+        ("thread", "M6", "thread_depth"),
+        ("diameter_dimension", "10", "depth"),
+        ("composite", "⌴10", None),
+    ),
+)
+def test_visual_only_depth_value_enriches_direct_unique_typed_primary(
+    item_type: str,
+    owner_text: str,
+    expected_field: str | None,
+) -> None:
+    owner = _text("owner", owner_text, (12, 12, 28, 20))
+    value = _text("value", "8", (30, 12, 38, 20))
+    visual = _visual("visual-1", (10, 10, 40, 30), ("owner", "value"))
+    payload: dict[str, object] = {
+        "candidate_id": "candidate-original",
+        "item_type": item_type,
+        "raw_text": owner_text,
+        "normalized_text": owner_text,
+        "coordinates": owner.bbox_pdf,
+        "scope": "local_feature",
+        "sub_requirements": [],
+        "balloon_required": True,
+        "requires_confirmation": False,
+    }
+    if item_type == "thread":
+        payload["thread_spec"] = "M6"
+    elif item_type == "diameter_dimension":
+        payload["nominal"] = "10"
+    else:
+        payload["sub_requirements"] = [
+            {
+                "order": 0,
+                "kind": "diameter_dimension",
+                "raw_text": "10",
+                "nominal": "10",
+            }
+        ]
+    existing = {
+        "candidate_id": "candidate-original",
+        "payload": payload,
+        "source_location_ids": ["owner"],
+    }
+    detection = {
+        "visual_observation_id": "visual-1",
+        "symbol_kind": "depth",
+        "bbox_pdf": visual.bbox_pdf,
+        "associated_text_observation_ids": ("owner", "value"),
+    }
+
+    decision = project_visual_observation(
+        observation=visual,
+        detections=(detection,),
+        text_observations=(owner, value),
+        candidates=(existing,),
+        geometry_context=None,
+    )
+
+    assert decision.disposition == "candidate"
+    assert decision.candidate_id == "candidate-original"
+    assert decision.candidate_envelope is not None
+    projected = decision.candidate_envelope["payload"]
+    assert projected["raw_text"] == owner_text
+    assert projected["normalized_text"] == f"{owner_text} 深 8"
+    if expected_field is not None:
+        assert projected[expected_field] == "8"
+    else:
+        assert projected["sub_requirements"][-1] == {
+            "order": 1,
+            "kind": "depth",
+            "raw_text": "深8",
+            "value": "8",
+        }
+
+
+def test_equivalent_existing_depth_is_not_duplicated_in_normalized_text() -> None:
+    owner = _text("owner", "M6", (12, 12, 28, 20))
+    value = _text("value", "8", (30, 12, 38, 20))
+    visual = _visual("visual-1", (10, 10, 40, 30), ("owner", "value"))
+    existing = {
+        "candidate_id": "candidate-original",
+        "payload": {
+            "candidate_id": "candidate-original",
+            "item_type": "thread",
+            "raw_text": "M6",
+            "normalized_text": "M6 深 8.0",
+            "coordinates": owner.bbox_pdf,
+            "scope": "local_feature",
+            "thread_spec": "M6",
+            "thread_depth": "8.0",
+            "sub_requirements": [],
+            "balloon_required": True,
+            "requires_confirmation": False,
+        },
+        "source_location_ids": ["owner"],
+    }
+
+    decision = project_visual_observation(
+        observation=visual,
+        detections=(
+            {
+                "visual_observation_id": "visual-1",
+                "symbol_kind": "depth",
+                "bbox_pdf": visual.bbox_pdf,
+                "associated_text_observation_ids": ("owner", "value"),
+            },
+        ),
+        text_observations=(owner, value),
+        candidates=(existing,),
+        geometry_context=None,
+    )
+
+    assert decision.disposition == "candidate"
+    assert decision.candidate_envelope is not None
+    assert (
+        decision.candidate_envelope["payload"]["normalized_text"]
+        == "M6 深 8.0"
+    )
+
+
 def test_multiline_diameter_depth_reuses_composite_for_new_and_existing() -> None:
     primary = _text("primary", "10", (20, 20, 36, 28))
     depth = _text("depth", "深 8", (20, 30, 36, 38))
@@ -1213,6 +1522,171 @@ def test_reference_revision_and_no_detection_dispositions() -> None:
     no_detection = _decision(revision_page, ())
     assert no_detection.disposition == "ambiguous"
     assert no_detection.rejection_code == "visual_no_detection"
+
+
+def test_datum_accepts_one_line_built_box_among_unrelated_lines() -> None:
+    token = _text("datum", "A", (20, 20, 26, 28))
+    visual = _visual("visual-1", (18, 18, 28, 30), ("datum",))
+    page = _page((token,), (visual,))
+    line_box = tuple(
+        (
+            '{"coordinates":[["%s","%s"],["%s","%s"]],'
+            '"opcode":"l","style":{}}' % values
+        ).encode()
+        for values in (
+            (18, 18, 28, 18),
+            (28, 18, 28, 30),
+            (28, 30, 18, 30),
+            (18, 30, 18, 18),
+            (30, 30, 36, 36),
+        )
+    )
+    context = VisualGeometryContext(
+        "visual-1",
+        0,
+        "a" * 64,
+        token.bbox_pdf,
+        ((18, 18, 28, 30),),
+        line_box,
+    )
+
+    decision = _decision(page, ("datum_reference",), context=context)
+
+    assert decision.disposition == "reference_context"
+    assert decision.requires_confirmation is False
+
+    second_box = tuple(
+        (
+            '{"coordinates":[["%s","%s"],["%s","%s"]],'
+            '"opcode":"l","style":{}}' % values
+        ).encode()
+        for values in (
+            (16, 16, 30, 16),
+            (30, 16, 30, 32),
+            (30, 32, 16, 32),
+            (16, 32, 16, 16),
+        )
+    )
+    ambiguous = _decision(
+        page,
+        ("datum_reference",),
+        context=replace(
+            context,
+            canonical_path_items=(*line_box, *second_box),
+        ),
+    )
+    assert ambiguous.disposition == "ambiguous"
+    assert ambiguous.rejection_code == "visual_local_parse_failed"
+
+    for invalid_box in (
+        line_box[:3],
+        tuple(
+            (
+                '{"coordinates":[["%s","%s"],["%s","%s"]],'
+                '"opcode":"l","style":{}}' % values
+            ).encode()
+            for values in (
+                (18, 24, 23, 18),
+                (23, 18, 28, 24),
+                (28, 24, 23, 30),
+                (23, 30, 18, 24),
+            )
+        ),
+    ):
+        rejected = _decision(
+            page,
+            ("datum_reference",),
+            context=replace(
+                context,
+                canonical_path_items=invalid_box,
+            ),
+        )
+        assert rejected.disposition == "ambiguous"
+        assert rejected.rejection_code == "visual_local_parse_failed"
+
+    duplicate = _text("datum-duplicate", "A", (21, 20, 27, 28))
+    duplicate_visual = replace(
+        visual,
+        associated_text_observation_ids=("datum", "datum-duplicate"),
+    )
+    duplicate_token = _decision(
+        _page((token, duplicate), (duplicate_visual,)),
+        ("datum_reference",),
+        context=context,
+    )
+    assert duplicate_token.disposition == "ambiguous"
+    assert duplicate_token.rejection_code == "visual_local_parse_failed"
+
+
+def test_revision_selects_one_triangle_among_unrelated_lines() -> None:
+    token = _text("token", "P1", (20, 20, 28, 28))
+    visual = _visual("visual-1", (12, 12, 28, 28), ("token",))
+    page = _page((token,), (visual,))
+    triangle = tuple(
+        (
+            '{"coordinates":[["%s","%s"],["%s","%s"]],'
+            '"opcode":"l","style":{}}' % values
+        ).encode()
+        for values in (
+            (12, 28, 20, 12),
+            (20, 12, 28, 28),
+            (28, 28, 12, 28),
+        )
+    )
+    unrelated = (
+        b'{"coordinates":[["40","40"],["48","48"]],"opcode":"l","style":{}}',
+    )
+    context = VisualGeometryContext(
+        "visual-1",
+        0,
+        "a" * 64,
+        token.bbox_pdf,
+        ((12, 12, 28, 28),),
+        (*triangle, *unrelated),
+    )
+
+    decision = _decision(page, ("revision_marker",), context=context)
+
+    assert decision.disposition == "non_inspection"
+    assert decision.requires_confirmation is True
+
+    second_triangle = tuple(
+        (
+            '{"coordinates":[["%s","%s"],["%s","%s"]],'
+            '"opcode":"l","style":{}}' % values
+        ).encode()
+        for values in (
+            (10, 30, 20, 10),
+            (20, 10, 30, 30),
+            (30, 30, 10, 30),
+        )
+    )
+    ambiguous = _decision(
+        page,
+        ("revision_marker",),
+        context=replace(
+            context,
+            canonical_path_items=(*triangle, *second_triangle),
+        ),
+    )
+    assert ambiguous.disposition == "ambiguous"
+    assert ambiguous.rejection_code == "visual_local_parse_failed"
+
+    n5 = _text("n5", "N5", (40, 40, 48, 48))
+    n5_visual = replace(
+        visual,
+        associated_text_observation_ids=("n5",),
+    )
+    n5_without_inner_token = _decision(
+        _page((n5,), (n5_visual,)),
+        ("revision_marker",),
+        context=context,
+    )
+    assert n5_without_inner_token.disposition == "ambiguous"
+    assert (
+        n5_without_inner_token.rejection_code
+        == "visual_local_parse_failed"
+    )
 
 
 def test_revision_uses_token_bbox_center_for_triangle_margin() -> None:
