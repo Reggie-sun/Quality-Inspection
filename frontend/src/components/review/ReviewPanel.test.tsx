@@ -257,6 +257,7 @@ describe("ReviewPanel", () => {
     ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "保留检验项：M6" }));
     fireEvent.click(screen.getByRole("button", { name: "排除检验项：M6" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认排除" }));
     fireEvent.change(screen.getByLabelText("拆分内容：M6"), {
       target: { value: "M6|深10" },
     });
@@ -380,6 +381,96 @@ describe("ReviewPanel", () => {
         .filter((command) => command.type === "set_balloon_required")
         .map((command) => command.balloon_required),
     ).toEqual([false, true]);
+  });
+
+  test("操作栏按业务语义分组并常驻解释排除与无需气泡的后果", () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "semantic-actions",
+          item_type: "linear_dimension",
+          raw_text: "20",
+          balloon_required: true,
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="semantic-actions"
+      />,
+    );
+
+    const decisionGroup = screen.getByRole("group", { name: "检验结论" });
+    const balloonGroup = screen.getByRole("group", { name: "气泡标记" });
+
+    expect(within(decisionGroup).getByText(
+      "不进入 SIP，也不生成气泡",
+    )).not.toBeNull();
+    expect(within(balloonGroup).getByText(
+      "仍进入 SIP，仅不生成图纸气泡",
+    )).not.toBeNull();
+    expect(within(decisionGroup).getByRole("button", {
+      name: "排除检验项：20",
+    })).not.toBeNull();
+    expect(within(balloonGroup).getByRole("button", {
+      name: "设为无需气泡：20",
+    })).not.toBeNull();
+  });
+
+  test("排除需要行内确认且取消、失败、重试与 Escape 不会误提交", async () => {
+    const onCommand = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const item: ReviewItem = {
+      item_id: "exclude-confirmation",
+      item_type: "linear_dimension",
+      raw_text: "25",
+      balloon_required: true,
+      active: true,
+    };
+
+    render(
+      <ReviewPanel
+        items={[item]}
+        onCommand={onCommand}
+        selectedItemId={item.item_id}
+      />,
+    );
+
+    const exclude = screen.getByRole("button", {
+      name: "排除检验项：25",
+    });
+
+    fireEvent.click(exclude);
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog", {
+      name: "确认排除这条检验项？",
+    })).not.toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "取消排除" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "取消排除" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(exclude);
+
+    fireEvent.click(exclude);
+    fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(exclude);
+
+    fireEvent.click(exclude);
+    fireEvent.click(screen.getByRole("button", { name: "确认排除" }));
+    await waitFor(() => expect(onCommand).toHaveBeenCalledTimes(1));
+    expect(onCommand).toHaveBeenLastCalledWith({
+      type: "exclude",
+      item_id: item.item_id,
+    });
+    expect(screen.getByRole("alertdialog")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认排除" }));
+    await waitFor(() => expect(onCommand).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
   test("所选检验项仅通过解析字段进入修改且只在草稿有差异时允许保存", async () => {

@@ -234,6 +234,10 @@ export function ReviewPanel({
   >("local_feature");
   const [manualType, setManualType] = useState<CandidateType>("thread");
   const [manualBalloonRequired, setManualBalloonRequired] = useState(true);
+  const [pendingExcludeItemId, setPendingExcludeItemId] = useState<string>();
+  const [excludeSubmitting, setExcludeSubmitting] = useState(false);
+  const excludeButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelExcludeButtonRef = useRef<HTMLButtonElement>(null);
   const activeItems = useMemo(() => items.filter((item) => item.active), [items]);
   const latestItemsSnapshotRef = useRef({ items, generation: 0 });
   if (latestItemsSnapshotRef.current.items !== items) {
@@ -367,7 +371,14 @@ export function ReviewPanel({
 
   useEffect(() => {
     setEditingItemId(undefined);
+    setPendingExcludeItemId(undefined);
   }, [selectedItemId]);
+
+  useEffect(() => {
+    if (pendingExcludeItemId !== undefined) {
+      cancelExcludeButtonRef.current?.focus();
+    }
+  }, [pendingExcludeItemId]);
 
   useEffect(() => {
     const nextPersistedSignatures = { ...persistedSignaturesRef.current };
@@ -545,6 +556,27 @@ export function ReviewPanel({
     setDirtySplitIds((current) =>
       current.filter((candidate) => candidate !== item.item_id),
     );
+  };
+  const cancelExclude = () => {
+    if (excludeSubmitting) return;
+    setPendingExcludeItemId(undefined);
+    excludeButtonRef.current?.focus();
+  };
+  const confirmExclude = async (item: ReviewItem) => {
+    if (excludeSubmitting) return;
+    setExcludeSubmitting(true);
+    try {
+      const outcome = await onCommand({
+        type: "exclude",
+        item_id: item.item_id,
+      });
+      if (outcome !== false) {
+        setPendingExcludeItemId(undefined);
+        excludeButtonRef.current?.focus();
+      }
+    } finally {
+      setExcludeSubmitting(false);
+    }
   };
 
   return (
@@ -762,134 +794,187 @@ export function ReviewPanel({
           )}
           </div>
           <aside className="review-command-rail" aria-label="检验项操作">
-            <button
-              type="button"
-              className="review-command-rail__secondary"
-              aria-label={zhCN.review.actionForItem(
-                zhCN.review.keep,
-                selectedItem.raw_text,
+            <fieldset className="review-command-rail__group">
+              <legend>{zhCN.review.decisionGroup}</legend>
+              <button
+                type="button"
+                className="review-command-rail__secondary"
+                aria-label={zhCN.review.actionForItem(
+                  zhCN.review.keep,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled}
+                onClick={() =>
+                  onCommand({ type: "keep", item_id: selectedItem.item_id })
+                }
+              >
+                {zhCN.review.keep}
+              </button>
+              <button
+                ref={excludeButtonRef}
+                type="button"
+                className="review-command-rail__secondary review-command-rail__danger"
+                aria-label={zhCN.review.actionForItem(
+                  zhCN.review.exclude,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled || excludeSubmitting}
+                onClick={() => setPendingExcludeItemId(selectedItem.item_id)}
+              >
+                {zhCN.review.exclude}
+              </button>
+              <p className="review-command-rail__helper">
+                {zhCN.review.excludeHelp}
+              </p>
+              {pendingExcludeItemId === selectedItem.item_id && (
+                <div
+                  className="review-command-rail__confirmation"
+                  role="alertdialog"
+                  aria-labelledby="exclude-confirmation-title"
+                  aria-describedby="exclude-confirmation-description"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") cancelExclude();
+                  }}
+                >
+                  <strong id="exclude-confirmation-title">
+                    {zhCN.review.excludeConfirmTitle}
+                  </strong>
+                  <p id="exclude-confirmation-description">
+                    {zhCN.review.excludeConfirmDescription}
+                  </p>
+                  <div className="review-command-rail__confirmation-actions">
+                    <button
+                      ref={cancelExcludeButtonRef}
+                      type="button"
+                      className="review-command-rail__secondary"
+                      aria-label={zhCN.review.cancelExclude}
+                      disabled={disabled || excludeSubmitting}
+                      onClick={cancelExclude}
+                    >
+                      {zhCN.review.cancelExclude}
+                    </button>
+                    <button
+                      type="button"
+                      className="review-command-rail__confirm-danger"
+                      aria-label={zhCN.review.confirmExclude}
+                      disabled={disabled || excludeSubmitting}
+                      onClick={() => confirmExclude(selectedItem)}
+                    >
+                      {zhCN.review.confirmExclude}
+                    </button>
+                  </div>
+                </div>
               )}
-              disabled={disabled}
-              onClick={() =>
-                onCommand({ type: "keep", item_id: selectedItem.item_id })
-              }
-            >
-              {zhCN.review.keep}
-            </button>
-            <button
-              type="button"
-              className="review-command-rail__secondary"
-              aria-label={zhCN.review.actionForItem(
-                zhCN.review.exclude,
-                selectedItem.raw_text,
-              )}
-              disabled={disabled}
-              onClick={() =>
-                onCommand({ type: "exclude", item_id: selectedItem.item_id })
-              }
-            >
-              {zhCN.review.exclude}
-            </button>
-            <button
-              type="button"
-              className="review-command-rail__primary"
-              aria-label={zhCN.review.actionForItem(
-                zhCN.review.edit,
-                selectedItem.raw_text,
-              )}
-              disabled={disabled || isEditingSelected}
-              onClick={beginEditingSelected}
-            >
-              {zhCN.review.edit}
-            </button>
-            <button
-              type="button"
-              className="review-command-rail__primary"
-              aria-label={zhCN.review.actionForItem(
-                zhCN.review.saveEdit,
-                selectedItem.raw_text,
-              )}
-              disabled={
-                disabled
-                || !isEditingSelected
-                || !isSelectedItemDirty
-              }
-              onClick={() => editItem(selectedItem)}
-            >
-              {zhCN.review.saveEdit}
-            </button>
-            <button
-              type="button"
-              className="review-command-rail__secondary"
-              aria-label={zhCN.review.fieldForItem(
-                zhCN.review.accept,
-                selectedItem.raw_text,
-              )}
-              disabled={disabled || !selectedItem.requires_confirmation}
-              onClick={() =>
-                onCommand({
-                  type: "resolve_confirmation",
-                  item_id: selectedItem.item_id,
-                  accepted: true,
-                })
-              }
-            >
-              {zhCN.review.accept}
-            </button>
-            <button
-              type="button"
-              className="review-command-rail__secondary"
-              aria-label={zhCN.review.fieldForItem(
-                zhCN.review.reject,
-                selectedItem.raw_text,
-              )}
-              disabled={disabled || !selectedItem.requires_confirmation}
-              onClick={() =>
-                onCommand({
-                  type: "resolve_confirmation",
-                  item_id: selectedItem.item_id,
-                  accepted: false,
-                })
-              }
-            >
-              {zhCN.review.reject}
-            </button>
-            <button
-              type="button"
-              className="review-command-rail__secondary"
-              aria-label={zhCN.review.fieldForItem(
-                zhCN.review.requireBalloon,
-                selectedItem.raw_text,
-              )}
-              disabled={disabled || selectedItem.balloon_required === true}
-              onClick={() =>
-                onCommand({
-                  type: "set_balloon_required",
-                  item_id: selectedItem.item_id,
-                  balloon_required: true,
-                })
-              }
-            >
-              {zhCN.review.requireBalloon}
-            </button>
-            <button
-              type="button"
-              className="review-command-rail__secondary"
-              aria-label={zhCN.review.fieldForItem(
-                zhCN.review.noBalloon,
-                selectedItem.raw_text,
-              )}
-              disabled={disabled || selectedItem.balloon_required === false}
-              onClick={() =>
-                onCommand({
-                  type: "set_balloon_required",
-                  item_id: selectedItem.item_id,
-                  balloon_required: false,
-                })
-              }
-            >
-              {zhCN.review.noBalloon}
-            </button>
+            </fieldset>
+            <fieldset className="review-command-rail__group">
+              <legend>{zhCN.review.contentGroup}</legend>
+              <button
+                type="button"
+                className="review-command-rail__primary"
+                aria-label={zhCN.review.actionForItem(
+                  zhCN.review.edit,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled || isEditingSelected}
+                onClick={beginEditingSelected}
+              >
+                {zhCN.review.edit}
+              </button>
+              <button
+                type="button"
+                className="review-command-rail__primary"
+                aria-label={zhCN.review.actionForItem(
+                  zhCN.review.saveEdit,
+                  selectedItem.raw_text,
+                )}
+                disabled={
+                  disabled
+                  || !isEditingSelected
+                  || !isSelectedItemDirty
+                }
+                onClick={() => editItem(selectedItem)}
+              >
+                {zhCN.review.saveEdit}
+              </button>
+              <button
+                type="button"
+                className="review-command-rail__secondary"
+                aria-label={zhCN.review.fieldForItem(
+                  zhCN.review.accept,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled || !selectedItem.requires_confirmation}
+                onClick={() =>
+                  onCommand({
+                    type: "resolve_confirmation",
+                    item_id: selectedItem.item_id,
+                    accepted: true,
+                  })
+                }
+              >
+                {zhCN.review.accept}
+              </button>
+              <button
+                type="button"
+                className="review-command-rail__secondary"
+                aria-label={zhCN.review.fieldForItem(
+                  zhCN.review.reject,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled || !selectedItem.requires_confirmation}
+                onClick={() =>
+                  onCommand({
+                    type: "resolve_confirmation",
+                    item_id: selectedItem.item_id,
+                    accepted: false,
+                  })
+                }
+              >
+                {zhCN.review.reject}
+              </button>
+            </fieldset>
+            <fieldset className="review-command-rail__group">
+              <legend>{zhCN.review.balloonGroup}</legend>
+              <button
+                type="button"
+                className="review-command-rail__secondary"
+                aria-label={zhCN.review.fieldForItem(
+                  zhCN.review.requireBalloon,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled || selectedItem.balloon_required === true}
+                onClick={() =>
+                  onCommand({
+                    type: "set_balloon_required",
+                    item_id: selectedItem.item_id,
+                    balloon_required: true,
+                  })
+                }
+              >
+                {zhCN.review.requireBalloon}
+              </button>
+              <button
+                type="button"
+                className="review-command-rail__secondary"
+                aria-label={zhCN.review.fieldForItem(
+                  zhCN.review.noBalloon,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled || selectedItem.balloon_required === false}
+                onClick={() =>
+                  onCommand({
+                    type: "set_balloon_required",
+                    item_id: selectedItem.item_id,
+                    balloon_required: false,
+                  })
+                }
+              >
+                {zhCN.review.noBalloon}
+              </button>
+              <p className="review-command-rail__helper">
+                {zhCN.review.noBalloonHelp}
+              </p>
+            </fieldset>
           </aside>
           </div>
           <div className="review-split-row">

@@ -3,7 +3,7 @@
 ## Status
 
 - Date: 2026-07-28
-- Status: Direction approved; written specification pending user review
+- Status: Approved and implemented
 - Selected approach: 方案 A，按业务语义分组并常驻显示后果说明；点击“排除”后使用
   行内确认避免误操作。
 - Scope: frontend presentation、local confirmation state、copy、focused tests。
@@ -173,13 +173,11 @@ npm run build
 ## Workflow Selection
 
 - Selected lane: `Lite`
-- Selected plan: 尚未创建；用户已批准方案 A，书面 spec 审阅后进入 implementation
-  plan。
+- Selected plan: 用户确认该 `Lite` 改动直接实现，不创建独立 implementation plan。
 - Selection evidence: 变更限于单个 frontend 操作栏及其 copy/style/test，不改变稳定
   API、schema、runtime configuration、权限或跨模块 data-integrity boundary。
 - Validation action: focused `ReviewPanel` tests、frontend build、真实 workbench browser
   smoke。
 - Writer ownership and order: 单一 frontend writer；先测试，再实现，再执行 focused
   review。现有已完成 reviewer agents 不拥有本任务文件。
-- Next verification: 用户审阅本 spec 后，为上述四个 frontend 文件创建 implementation
-  plan。
+- Next verification: focused tests、frontend build、真实 workbench browser smoke。

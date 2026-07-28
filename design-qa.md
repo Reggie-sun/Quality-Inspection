@@ -746,3 +746,79 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - focused test gap: 当前真实项目不具备可快速到达的 reviewed/frozen/export 完成态；这些状态由
   component tests 和未修改的 export owner 覆盖。
 - final result: passed
+
+## Review Action Semantics — 2026-07-28
+
+### Scope And Visual Grounding
+
+本轮将用户批准的方案 A 落到真实 `ReviewPanel` 操作栏：按“检验结论 / 内容调整 /
+气泡标记”分组，常驻解释“排除”和“无需气泡”的不同后果，并为“排除”增加行内确认。
+
+- source visual truth:
+  `.local/design-qa/review-action-semantics-source-options.png`
+- source pixels / density: `1380x990 / device scale 1`
+- rendered implementation:
+  `.local/design-qa/review-action-semantics-confirmation.png`
+- implementation pixels / density: `1317x643 / device scale 1`
+- responsive focused implementation:
+  `.local/design-qa/review-action-semantics-narrow-actions.png`
+- responsive pixels / CSS viewport: `800x790 / 800x790`
+- same-input comparison:
+  `.local/design-qa/review-action-semantics-comparison.png`
+- comparison pixels: `1365x1571`
+- state: 真实 editing project 的第一个 active 检验项；宽屏证据打开“排除”确认，窄屏
+  证据保持默认操作栏。
+- normalization: source 是三方案概念板，implementation 是真实 workbench，二者不是同一
+  页面构图；比较图按卡片等宽并排，判断范围限定为方案 A 的语义分组、常驻说明、危险确认
+  与窄屏可读性，不进行全页像素匹配。
+
+### Full And Focused Comparison
+
+- Full-view evidence: 同图对比确认真实实现保留方案 A 的三个关键决策：动作按语义分组、
+  “排除 / 无需气泡”后果常驻显示，以及“排除”确认块紧邻危险按钮。
+- Focused evidence: `800x790` 截图显示现有 responsive breakpoint 下 command rail 位于
+  表单右侧，三组标题、按钮和两条说明均可读，内部与页面级均无横向溢出。
+- Intentional adaptation: 概念板为较宽的双列按钮；真实 rail 宽约 `166px`，因此沿用产品
+  原有竖向按钮节奏，避免为匹配概念稿扩大右栏或压缩检验字段。
+- Initial comparison: 未发现 P0、P1 或 P2；未触发视觉修复迭代。
+
+### Required Fidelity Surfaces
+
+- Fonts and typography: 沿用现有中文系统字体、`11px` 操作文字和加粗 legend；说明使用
+  `10px / 1.4`，在 `166px` rail 和 `800px` 窗口中仍可读。
+- Spacing and layout rhythm: 三个 fieldset 使用一致的 `7px` 内部 gap 与细边框；确认块在
+  “检验结论”内自然增高，不遮挡 SIP 面板、检验项列表或页面滚动。
+- Colors and visual tokens: 普通操作复用既有白色和工程蓝；危险按钮与确认块使用低饱和红棕
+  边框/底色，未增加渐变、强阴影或新的全局 token。
+- Image quality and assets: 本次没有新增 Logo、图标、插画或图片资产；PDF canvas 和气泡
+  overlay 未修改。
+- Copy and content: 常驻文案准确区分“排除不进入 SIP”和“无需气泡仍进入 SIP”；确认文案
+  明确说明正式 SIP、图纸气泡与原始识别记录的后果。
+- Accessibility: 三组操作通过 fieldset/legend 暴露可访问名称；确认块为 `alertdialog`，
+  打开后焦点进入“取消排除”，取消后返回“排除”；不只依赖颜色表达危险。
+
+### Interaction And Browser Evidence
+
+- Chrome MCP 在真实 workbench 打开“排除”确认后，network inventory 没有
+  `/review/commands` 请求，证明首次点击不会立即提交。
+- 点击“取消排除”后确认块消失，焦点返回 `排除检验项：3.2`；没有改变项目数据。
+- focused unit tests 覆盖取消、Escape、失败保留、成功重试和现有 exclude payload；
+  “设为无需气泡”继续一次点击发送既有 command。
+- 宽屏 `1317x643` 与窄屏 `800x790` 均无操作栏溢出。
+- console errors / warnings: `0 / 0`。
+
+### Verification And Result
+
+- focused tests: `ReviewPanel.test.tsx` 与 `InspectionWorkbench.test.tsx`，
+  `49/49` passed。
+- full frontend tests: `19` files，`165/165` passed。
+- production build: passed；仅保留既有 Vite large-chunk warning。
+- API verification: not applicable，本轮未修改 API 或 backend 行为。
+- Chrome smoke: persistent copy、confirmation open/cancel、no premature command、
+  focus return、responsive layout 和 console 检查 passed。
+- Remaining P0: 0.
+- Remaining P1: 0.
+- Remaining P2: 0.
+- P3 follow-up polish: none required for this scope.
+- comparison history: 初次同图比较通过，无 P0/P1/P2 修复迭代。
+- final result: passed
