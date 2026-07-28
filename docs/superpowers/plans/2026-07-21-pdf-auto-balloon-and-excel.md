@@ -544,6 +544,72 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     input IDs 创建 fresh full-P0 run。失败时保留三个 sealed failure runs、crops、
     caches 与 audits，先 revert prompt recovery commit，再 revert 本 amendment；
     不删除或改写任何 run history。
+- Task 8 Step 6 forced-tool transport recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T085513128500Z-7451e72c`、其 project
+      `7948185d-a13a-441f-a629-03f99c9997db`，以及用户从 `main` UI 同时创建的
+      project `b58f634d-acc7-47c7-a1fe-43fa80af87ec`。
+    - Validation action: 先提交本 amendment，再继续 subordinate Task 8 Step 6
+      bounded visual Provider transport TDD recovery；不进入 Step 7/8。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后只修改下列 allowed code/test/fixture paths，禁止并行 writer。
+    - Next verification: exact Provider contract RED，证明当前
+      `QwenVisionProvider.review_symbols()` 仍使用 loose `json_object` content，
+      未把 checked-in frozen schema 绑定到一个 forced named tool。
+  - Problem boundary and live evidence: 两个 project 的 source SHA-256 均 exact 为
+    `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`。
+    两次独立执行都在 canonical `/3` prompt 下产生 `8` 条 sanitized visual call
+    records，其中前 `7` 条写入 schema-valid cache，第 `8` 条同一 cache identity
+    写入 `visual_schema_invalid` failure envelope；`retry_count=0`，project 均
+    fail closed，未创建 `AutomaticResult`。该失败 identity 精确对应 page 0 的第
+    `8` 个 batch：`3` observations、每项 `2` 条 allowlisted text、prompt
+    `3557` bytes，排除 call cap、timeout、oversized prompt、source drift 和
+    batch complexity 作为当前根因。
+  - Root cause, single Owner and old path: Alibaba Model Studio 的 current
+    OpenAI-compatible Chat Completions 文档只为 `response_format` 定义
+    `text/json_object`；`json_object` 保证 JSON syntax，不执行应用 frozen schema。
+    `qwen_vl.py::QwenVisionProvider.review_symbols()` 是 visual Provider transport
+    唯一 Owner，当前即使把 exact schema 放进 prompt，仍从 unconstrained
+    `message.content` 读取 payload。Qwen3-VL non-thinking mode 同一官方接口支持
+    Function Calling、valid JSON Schema `parameters` 和 forced named
+    `tool_choice`。选择以单一 forced tool 的 arguments 完整替换 visual-symbol
+    `json_object` content path；不得保留 content fallback、shadow call 或第二个
+    parser。tool arguments 仍必须经过既有 `parse_visual_symbol_json()` exact local
+    validation，因为官方文档明确要求调用方继续验证 function parameters。
+  - Allowed paths and commit boundary: 本 recovery code commit 只允许
+    `backend/app/providers/qwen_vl.py`、
+    `backend/app/candidates/symbol_review.py`、
+    `.agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json`、
+    `backend/tests/contract/test_qwen_symbol_provider.py` 和
+    `backend/tests/contract/test_provider_call_records.py`；最后一个 test path 只有
+    existing cache/call-record contract RED 证明需要时才修改。本 current plan
+    amendment 必须单独先提交。`VISUAL_ADAPTER_VERSION` 必须从
+    `qwen-openai-compatible/1` 升至 `/2`，使所有旧 transport cache bytes safe
+    miss；canonical prompt 继续是 `/3`，frozen response schema/version 不变。
+    不得修改 Advisor、proposal Owner、evaluator、runtime timeout、Provider policy、
+    call budget、sealed runs/input artifacts、automatic result 或 D7-T3 状态。
+  - Unchanged contracts: source/manifest/verdict exact identities、`<=16/page`
+    visual/total Vision cap、one request per crop、`max_retries=0`、`60s` timeout、
+    one bounded `300 DPI` PNG、JSON-only tool arguments、九类 symbol allowlist、
+    `/3` current-batch context、strict local schema/bbox/source validation、sanitized
+    audit、fresh-project requirement、literal two-run binding 和 Quality Owner gate
+    均不变。不得把 tool call 当成可执行外部 action；它只承载同一 frozen response
+    object，不执行第二次模型调用。
+  - Verification and rollback: RED/GREEN 必须 pin one exact tool、checked-in schema
+    bytes as `parameters`、forced exact tool name、non-thinking mode，以及拒绝
+    missing/multiple/wrong-name tool calls、non-string arguments、content fallback 和
+    schema-invalid arguments；fixture metadata 必须同步 adapter `/2`，旧 `/1`
+    cache identity 必须 safe miss。随后运行 Qwen/provider/candidate/Task 8 suites、
+    `ruff check`、`check-contracts.py`、no-Provider current-source `/3` repeatability
+    preflight 和 independent review。全部通过并提交后才允许重建 runtime，以相同
+    两个 literal sealed input IDs 创建一次 fresh full-P0 run。若 API 拒绝 forced
+    tool 或任一 tool arguments 仍 schema-invalid，保留全部 failure/audit evidence
+    并停止；不得 fallback 到 content、增加 retry 或再次盲跑。rollback 先 revert
+    transport code commit，再 revert 本 amendment，不删除或改写 run history。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
