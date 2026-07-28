@@ -518,9 +518,14 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     `backend/tests/contract/test_qwen_symbol_provider.py`、
     `backend/tests/contract/test_provider_call_records.py` 和
     `backend/tests/unit/candidates/test_advisor.py`。本 current plan amendment 必须
-    单独先提交。不得修改 frozen response schema、Provider adapter/policy、
-    proposal Owner、sealed manifest/evaluator、runtime timeout、call budget、
-    automatic result 或 D7-T3 状态。
+    单独先提交。focused GREEN 后的 DB-connected regression 进一步证明现有
+    `backend/tests/e2e/test_symbol_recognition.py::FrozenSymbolProvider` 仍冻结 `/1`
+    prompt 的旧五字段 exact key set；该 test double 在 production `/3` prompt 到达
+    后按预期 assertion-fail，14 个相邻 integration cases 已通过。因此再允许只更新
+    该一个 e2e test path，使其消费真实 `/3` context；不扩大 production path。
+    不得修改 frozen response schema、Provider adapter/policy、proposal Owner、
+    sealed manifest/evaluator、runtime timeout、call budget、automatic result 或
+    D7-T3 状态。
   - Unchanged contracts: source/manifest/verdict exact identities、`<=16/page`
     visual/total Vision cap、`max_retries=0`、`60s` timeout、one bounded `300 DPI`
     PNG、JSON-only transport、九类 symbol allowlist、strict local schema/bbox/source
@@ -532,6 +537,8 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     context shape、stable ordering、crop-relative bbox、text ID/raw text/observation
     level allowlist 和 checked-in frozen response schema；Advisor unit test 必须证明
     live call 使用该 batch context，cache mismatch test 必须证明 `/2` bytes 不可复用。
+    e2e fixture 必须从 prompt context 取得 visual/text IDs，不得继续把旧 exact key set
+    或私有 opaque-ID association 当作 production contract。
     随后运行 Qwen/provider/candidate/Task 8 suites、`ruff check`、
     `check-contracts.py` 和独立 review。全部通过后才允许以相同两个 literal sealed
     input IDs 创建 fresh full-P0 run。失败时保留三个 sealed failure runs、crops、
