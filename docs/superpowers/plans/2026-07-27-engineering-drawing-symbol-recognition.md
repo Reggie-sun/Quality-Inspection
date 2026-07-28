@@ -32,8 +32,9 @@
   `bb035bc`；SR-3 Provider contract commit 是 `90bfb43`。SR-4 Steps 1-7 已在当前
   七文件 working diff 中验证，但尚未 commit；Step 8 真实源 preflight 暴露
   `19/22 > 16/page` 后已 fail closed。SR-2A bounded feasibility 又以
-  `capacity_feasibility_unproven` 完成且没有 code commit。当前唯一 next step 是
-  本文件下述 `SR-2B Step 1`；不得重复 SR-1～SR-3、执行已退休的 SR-2A
+  `capacity_feasibility_unproven` 完成且没有 code commit。SR-2B Step 1 的 exact
+  rule reproduction correction 已完成；当前唯一 next step 是本文件下述
+  `SR-2B Step 2`；不得重复 SR-1～SR-3、执行已退休的 SR-2A
   packing-only Steps 2-6、提交 SR-4、进入 SR-5 或调用 Provider。
 - Live-label gate: Quality Owner approved manifest 已 seal 于 literal run
   `20260727T085747865239Z-5aa3e8d3`，staging 从 bytes 机械验证 200% overlay、
@@ -113,6 +114,46 @@ Provider policy。
   exact rule、full overlays、Quality Owner verdict、v2 TDD、current-source
   no-write preflight 与独立 review 全部通过前，不得开始 SR-4 Step 8 或任何 paid/live
   Provider action。
+
+### Exact Rule Reproduction Correction
+
+首次逐字执行 commit `e795744` 中的 SR-2B renderer 时，机械 gate 正确 fail
+closed：page 0 / page 1 只得到 `62 / 105` retained observations、
+`21/26 / 28/30` positive overlap，而不是冻结的 `79 / 124` 和
+`26/26 / 30/30`。root cause 是 plan transcription 的两处不一致：
+
+- 历史 calibration 使用 `sum(bool(style["dashes"]))`。PyMuPDF solid pattern
+  `"[] 0"` 也为 truthy；plan 后来把 feature 误写为排除 solid 的
+  `dash_count`，却沿用了历史 counts/digests。
+- 冻结 observation-ID digests 使用
+  `sha256("\n".join(sorted(ids)).encode("utf-8"))`；renderer 却改为 ordered
+  JSON-list digest。
+
+在原 wide branch 的其余全部前置条件内，历史 truthy-style count 与 selected
+canonical `item_count > 3` 的命中集合 exact 相同：page 0 均命中 `23`，page 1
+均命中 `39`；真正的 non-solid dash count 两页均命中 `0`。因此修正是对历史
+candidate 的 exact reproduction，不是按 labels 调 threshold。冻结后的 wide
+branch 名为 `geometry_wide_multi_item`；canonical rule SHA-256 为
+`ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7`。
+
+仅应用上述两项修正的 fresh no-write reproduction 已 exact 恢复：
+
+- page 0: `132 provisional / 79 retained / 13 batches`，
+  reason counts `21 compact / 23 wide-multi-item / 3 filled /
+  32 short-token / 53 rejected`；
+- page 1: `203 provisional / 124 retained / 16 batches`，
+  reason counts `18 compact / 39 wide-multi-item / 6 filled /
+  61 short-token / 79 rejected`；
+- positive overlap `26/26 / 30/30`，全部四个冻结 ID/batch digests、
+  repeatability、exact-once 和 limits 均通过；
+- frozen-negative overlap 仍只是一项人工复核风险，不是 approval；Provider
+  construction/calls=`0`，sealed manifest、production/test files 和现有七文件
+  dirty set 均未改。
+
+当前父 agent 是本次三份 docs-only correction 的唯一 writer。unchanged contract
+仍是 existing source/manifest identity、全部 crop/budget/coverage/fail-closed
+semantics 和 Quality Owner gate；Step 1 correction commit 后只执行 Step 2 两次
+renderer，并停在 Step 3 verdict 前。
 
 ## Problem Boundary
 
@@ -1213,7 +1254,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
 - Modify:
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
 
-- [ ] **Step 1: Freeze one candidate rule and its feature semantics**
+- [x] **Step 1: Freeze one candidate rule and its feature semantics**
 
   所有 numeric features 先以 `Decimal("0.001")` 和 `ROUND_HALF_EVEN` snap，再比较
   string-declared thresholds。feature definitions 固定为：
@@ -1223,8 +1264,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   - `max_item_width` / `max_item_height`: selected path-item bbox dimensions 的 maxima；
   - `mean_item_height`: selected path-item bbox height 的 arithmetic mean；
   - `fill_count`: canonical item style 中 `fill is not None` 的 item count；
-  - `dash_count`: canonical dash pattern 不是 `None`、empty 或 solid `[] 0` 的 item
-    count；
+  - `item_count`: 当前 selected canonical path items 的 exact count；
   - `normalized_text`: 先把 ASCII whitespace runs collapse 为单个空格、strip、
     uppercase，再计算是否 fullmatch ASCII `[A-Z0-9]{1,3}`；不删除 internal
     whitespace。feature record 只保存 boolean，不保存 token 或 raw text。
@@ -1248,9 +1288,9 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
           common
           and features.fill_count <= 1
           and features.max_item_width > Decimal("60.000")
-          and features.dash_count > 3
+          and features.item_count > 3
       ):
-          return _ProposalDecision(True, "geometry_dashed")
+          return _ProposalDecision(True, "geometry_wide_multi_item")
       if (
           common
           and features.fill_count > 1
@@ -1269,11 +1309,11 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   canonical rule JSON 必须逐 byte 等于：
 
   ```json
-  {"branch_order":["geometry_compact","geometry_dashed","geometry_filled","short_token_rescue"],"feature_quantum":"0.001","geometry_common":{"max_item_height_min_exclusive":"2.000","mean_item_height_max":"34.000"},"geometry_compact":{"context_area_max":"6000.000","fill_count_max":1,"max_item_width_max":"60.000"},"geometry_dashed":{"dash_count_min_exclusive":3,"fill_count_max":1,"max_item_width_min_exclusive":"60.000"},"geometry_filled":{"context_area_min_exclusive":"5800.000","fill_count_min_exclusive":1,"max_item_height_max":"42.000"},"proposal_rule_version":"visual-observation/2","schema_version":"visual-proposal-gate/1","short_token_rescue":{"context_area_max":"6000.000","pattern":"[A-Z0-9]{1,3}"}}
+  {"branch_order":["geometry_compact","geometry_wide_multi_item","geometry_filled","short_token_rescue"],"feature_quantum":"0.001","geometry_common":{"max_item_height_min_exclusive":"2.000","mean_item_height_max":"34.000"},"geometry_compact":{"context_area_max":"6000.000","fill_count_max":1,"max_item_width_max":"60.000"},"geometry_filled":{"context_area_min_exclusive":"5800.000","fill_count_min_exclusive":1,"max_item_height_max":"42.000"},"geometry_wide_multi_item":{"fill_count_max":1,"item_count_min_exclusive":3,"max_item_width_min_exclusive":"60.000"},"proposal_rule_version":"visual-observation/2","schema_version":"visual-proposal-gate/1","short_token_rescue":{"context_area_max":"6000.000","pattern":"[A-Z0-9]{1,3}"}}
   ```
 
   SHA-256 必须为
-  `e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50`。
+  `ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7`。
   如果重新计算不一致，停止；不得通过改 expected digest 继续。
 
   ```bash
@@ -1284,7 +1324,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   rule = {
       "branch_order": [
           "geometry_compact",
-          "geometry_dashed",
+          "geometry_wide_multi_item",
           "geometry_filled",
           "short_token_rescue",
       ],
@@ -1298,9 +1338,9 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
           "fill_count_max": 1,
           "max_item_width_max": "60.000",
       },
-      "geometry_dashed": {
-          "dash_count_min_exclusive": 3,
+      "geometry_wide_multi_item": {
           "fill_count_max": 1,
+          "item_count_min_exclusive": 3,
           "max_item_width_min_exclusive": "60.000",
       },
       "geometry_filled": {
@@ -1322,9 +1362,9 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
       separators=(",", ":"),
   ).encode("utf-8")
   assert hashlib.sha256(encoded).hexdigest() == (
-      "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50"
+      "ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7"
   )
-  print("proposal_rule_sha256=e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50")
+  print("proposal_rule_sha256=ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7")
   PY
   ```
 
@@ -1390,7 +1430,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
 
   SOURCE_SHA = "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
   MANIFEST_SHA = "0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448"
-  RULE_SHA = "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50"
+  RULE_SHA = "ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7"
   VERSION = "visual-observation/2"
   QUANTUM = Decimal("0.001")
   source = Path(sys.argv[1])
@@ -1487,15 +1527,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
           sum(heights, start=Decimal("0")) / Decimal(len(heights))
       )
       fill_count = sum(item["style"]["fill"] is not None for item in items)
-      dash_count = sum(
-          re.sub(
-              r"[ \t\n\r\f\v]+",
-              "",
-              item["style"]["dashes"] or "",
-          )
-          not in {"", "[]0"}
-          for item in items
-      )
+      item_count = len(items)
       normalized = re.sub(
           r"[ \t\n\r\f\v]+",
           " ",
@@ -1517,9 +1549,9 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
           common
           and fill_count <= 1
           and max(widths) > Decimal("60.000")
-          and dash_count > 3
+          and item_count > 3
       ):
-          return True, "geometry_dashed"
+          return True, "geometry_wide_multi_item"
       if (
           common
           and fill_count > 1
@@ -1728,7 +1760,9 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
               assert batch.pixel_height <= 1536
               assert len(batch.observation_ids) <= 32
           page_row["batch_count"] = len(batches)
-          page_row["observation_id_sha256"] = stable_digest(identities)
+          page_row["observation_id_sha256"] = hashlib.sha256(
+              "\n".join(sorted(identities)).encode("utf-8")
+          ).hexdigest()
           page_row["batch_membership_sha256"] = stable_digest(memberships)
           page_row["reason_counts"] = dict(
               sorted(
@@ -2129,7 +2163,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
 
   ```text
   manifest_sha256=0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448
-  rule_sha256=e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50
+  rule_sha256=ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7
   page=0 provisional=132 retained=79 batches=13 positive_labels_with_overlap=26/26
   page=1 provisional=203 retained=124 batches=16 positive_labels_with_overlap=30/30
   reviewed_positive_labels=56 reviewed_frozen_negative_regions=16
@@ -2164,7 +2198,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
     "annotation_status": "approved",
     "manifest_sha256": "0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448",
     "overlay_scale_percent": 200,
-    "proposal_rule_sha256": "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50",
+    "proposal_rule_sha256": "ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7",
     "proposal_rule_version": "visual-observation/2",
     "reviewed_frozen_negative_region_count": 16,
     "reviewed_positive_label_count": 56,
@@ -2278,7 +2312,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
           max_item_height=Decimal("10.000"),
           mean_item_height=Decimal("10.000"),
           fill_count=0,
-          dash_count=0,
+          item_count=1,
           short_token_fullmatch=False,
       )
       return replace(features, **changes)
@@ -2292,9 +2326,9 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
               _gate_features(
                   context_area=Decimal("7000.000"),
                   max_item_width=Decimal("60.001"),
-                  dash_count=4,
+                  item_count=4,
               ),
-              "geometry_dashed",
+              "geometry_wide_multi_item",
           ),
           (
               _gate_features(
@@ -2439,7 +2473,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
               _gate_features(
                   context_area=Decimal("7000.000"),
                   max_item_width=Decimal("60.000"),
-                  dash_count=4,
+                  item_count=4,
               ),
               False,
               "no_admission_branch",
@@ -2448,7 +2482,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
               _gate_features(
                   context_area=Decimal("7000.000"),
                   max_item_width=Decimal("60.001"),
-                  dash_count=3,
+                  item_count=3,
               ),
               False,
               "no_admission_branch",
@@ -2636,14 +2670,16 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   ```python
   PROPOSAL_RULE_VERSION = "visual-observation/2"
   PROPOSAL_RULE_CANONICAL_JSON = (
-      b'{"branch_order":["geometry_compact","geometry_dashed","geometry_filled",'
-      b'"short_token_rescue"],"feature_quantum":"0.001","geometry_common":'
+      b'{"branch_order":["geometry_compact","geometry_wide_multi_item",'
+      b'"geometry_filled","short_token_rescue"],"feature_quantum":"0.001",'
+      b'"geometry_common":'
       b'{"max_item_height_min_exclusive":"2.000","mean_item_height_max":"34.000"},'
       b'"geometry_compact":{"context_area_max":"6000.000","fill_count_max":1,'
-      b'"max_item_width_max":"60.000"},"geometry_dashed":{"dash_count_min_exclusive":3,'
-      b'"fill_count_max":1,"max_item_width_min_exclusive":"60.000"},'
-      b'"geometry_filled":{"context_area_min_exclusive":"5800.000",'
+      b'"max_item_width_max":"60.000"},"geometry_filled":'
+      b'{"context_area_min_exclusive":"5800.000",'
       b'"fill_count_min_exclusive":1,"max_item_height_max":"42.000"},'
+      b'"geometry_wide_multi_item":{"fill_count_max":1,'
+      b'"item_count_min_exclusive":3,"max_item_width_min_exclusive":"60.000"},'
       b'"proposal_rule_version":"visual-observation/2",'
       b'"schema_version":"visual-proposal-gate/1","short_token_rescue":'
       b'{"context_area_max":"6000.000","pattern":"[A-Z0-9]{1,3}"}}'
@@ -2652,7 +2688,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
       PROPOSAL_RULE_CANONICAL_JSON
   ).hexdigest()
   if PROPOSAL_RULE_SHA256 != (
-      "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50"
+      "ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7"
   ):
       raise RuntimeError("visual proposal rule digest mismatch")
 
@@ -2663,7 +2699,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
       max_item_height: Decimal
       mean_item_height: Decimal
       fill_count: int
-      dash_count: int
+      item_count: int
       short_token_fullmatch: bool
 
   @dataclass(frozen=True)
@@ -2671,7 +2707,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
       retained: bool
       reason_code: Literal[
           "geometry_compact",
-          "geometry_dashed",
+          "geometry_wide_multi_item",
           "geometry_filled",
           "short_token_rescue",
           "no_admission_branch",
@@ -2683,10 +2719,9 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
       bbox: BBox
       content: bytes
       has_fill: bool
-      has_dash: bool
   ```
 
-  用一个 constructor 保持 canonical bytes 与 feature flags 同源，并让现有
+  用一个 constructor 保持 canonical bytes 与 fill feature 同源，并让现有
   `_point_item()` 和 `re` branch 都调用它：
 
   ```python
@@ -2696,12 +2731,6 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
       payload: dict[str, Any],
       style: dict[str, Any],
   ) -> _CanonicalPathItem:
-      dashes = style["dashes"]
-      compact_dashes = (
-          ""
-          if dashes is None
-          else _ASCII_WHITESPACE.sub("", dashes)
-      )
       return _CanonicalPathItem(
           bbox=bbox,
           content=json.dumps(
@@ -2710,7 +2739,6 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
               separators=(",", ":"),
           ).encode("utf-8"),
           has_fill=style["fill"] is not None,
-          has_dash=compact_dashes not in {"", "[]0"},
       )
   ```
 
@@ -2774,7 +2802,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
           max_item_height=max(heights),
           mean_item_height=mean_height,
           fill_count=sum(item.has_fill for item in selected),
-          dash_count=sum(item.has_dash for item in selected),
+          item_count=len(selected),
           short_token_fullmatch=_short_token_fullmatch(raw_text),
       )
 
@@ -2797,9 +2825,9 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
           common
           and features.fill_count <= 1
           and features.max_item_width > Decimal("60.000")
-          and features.dash_count > 3
+          and features.item_count > 3
       ):
-          return _ProposalDecision(True, "geometry_dashed")
+          return _ProposalDecision(True, "geometry_wide_multi_item")
       if (
           common
           and features.fill_count > 1
@@ -2896,7 +2924,6 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
   micromamba run -n qi-p0 python - "$QI_SYMBOL_SOURCE_PDF" <<'PY'
   import hashlib
-  import json
   import sys
   from pathlib import Path
 
@@ -2913,16 +2940,12 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   )
   assert PROPOSAL_RULE_VERSION == "visual-observation/2"
   assert PROPOSAL_RULE_SHA256 == (
-      "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50"
+      "ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7"
   )
 
-  def digest(value: object) -> str:
+  def observation_id_digest(values: list[str]) -> str:
       return hashlib.sha256(
-          json.dumps(
-              value,
-              ensure_ascii=False,
-              separators=(",", ":"),
-          ).encode("utf-8")
+          "\n".join(sorted(values)).encode("utf-8")
       ).hexdigest()
 
   pages = build_inventory(source)
@@ -2930,7 +2953,7 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   assert len(contexts) == 203
   assert [len(page.visual_observations) for page in pages] == [79, 124]
   actual_digests = [
-      digest(
+      observation_id_digest(
           [
           item.observation_id for item in page.visual_observations
           ]
@@ -2949,9 +2972,10 @@ existing sealed manifest bytes，也不把 current source、overlay 或 zoom ima
   test "$QI_PROPOSAL_STATUS_BEFORE" = "$(git status --porcelain=v1)"
   ```
 
-  然后运行下述 Task 4 Step 8 exact batch preflight；digest 定义是对 stable ordered
-  ID list / batch-membership nested list 的 compact canonical JSON 做 SHA-256。两组
-  commands 合起来必须 exact：
+  然后运行下述 Task 4 Step 8 exact batch preflight。observation-ID set digest
+  使用 lexicographically sorted IDs、单个 `\n` 连接且无尾随换行的 bytes；
+  batch-membership digest 使用 stable ordered nested list 的 compact canonical
+  JSON。两组 commands 合起来必须 exact：
 
   ```text
   page=0 observations=79 batches=13
@@ -3026,10 +3050,17 @@ def digest(value: object) -> str:
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
+def observation_id_digest(values: list[str]) -> str:
+    return hashlib.sha256(
+        "\n".join(sorted(values)).encode("utf-8")
+    ).hexdigest()
+
 observation_counts = tuple(len(page.visual_observations) for page in pages)
 batch_counts = tuple(len(page_batches) for page_batches in planned)
 id_digests = tuple(
-    digest([item.observation_id for item in page.visual_observations])
+    observation_id_digest(
+        [item.observation_id for item in page.visual_observations]
+    )
     for page in pages
 )
 batch_digests = tuple(
@@ -3873,9 +3904,11 @@ blocked. Rollback does not convert the original missing-symbol behavior into acc
 Task 0、SR-1、SR-2、SR-3 已分别完成于 `994cbe4`、`d3fac79`、`bb035bc`、
 `90bfb43`。SR-4 Steps 1-7 保留在当前七文件 working diff，Step 8 已按真实 sealed
 source fail closed。SR-2A 已完成为 `capacity_feasibility_unproven` 且没有 code
-commit。执行只从 `SR-2B Step 1` 的 exact rule/digest check 继续；不得重复 Task 0
-或 SR-1～SR-3、执行退休的 packing-only steps、提交当前 SR-4、进入 SR-5、追加
-第二个 activation amendment 或调用 Provider。
+commit。SR-2B Step 1 exact rule/digest correction 已完成；执行只从
+`SR-2B Step 2` 的两次 no-write/no-Provider renderer 继续，并停在 Step 3
+Quality Owner gate 前。不得重复 Task 0 或 SR-1～SR-3、执行退休的 packing-only
+steps、提交当前 SR-4、进入 SR-2C/SR-5、追加第二个 activation amendment 或调用
+Provider。
 
 当前父 agent 保持唯一 writer，read-only explorer/reviewer checkpoints 保持 mandatory。
 只有 SR-2B exact rule、两页 full overlays、全部 zooms 和 Quality Owner verdict

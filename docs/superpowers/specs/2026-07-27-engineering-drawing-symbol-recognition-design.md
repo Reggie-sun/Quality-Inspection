@@ -3,7 +3,7 @@
 ## Status
 
 - Date: `2026-07-28`
-- Status: `Hybrid proposal-gate amendment approved; exact rule and overlay gate pending`
+- Status: `Hybrid proposal-gate rule corrected and frozen; overlay gate pending`
 - Selected scope: 当前失败 PDF 闭环
 - Selected lane: `Heavy`
 - Execution authorization owner: unique current plan; this design does not authorize execution
@@ -537,6 +537,53 @@ exact predicate、全部 snapped thresholds、branch order、tie-break 和 rule 
 labels 做 offline calibration，但 rule grammar 必须保持上述通用特征边界；manifest
 和 label facts 不得被 production import 或读取。
 
+#### Exact Rule Reproduction Correction — 2026-07-28
+
+首次逐字执行 commit `e795744` 中冻结的 no-write renderer 时，机械 gate 正确
+fail closed：page 0 / page 1 只得到 `62 / 105` retained observations、
+positive overlap `21/26 / 28/30`，而不是冻结的 `79 / 124` 和
+`26/26 / 30/30`。根因不是 source、manifest、PyMuPDF 或阈值漂移，而是 plan
+transcription 有两处不一致：
+
+1. 历史 calibration 计算的是
+   `sum(bool(style["dashes"]))`；PyMuPDF 的 solid pattern `"[] 0"` 也为 truthy。
+   plan 后来把该 feature 收紧并误写为“排除 solid 的 `dash_count`”，但仍沿用了
+   历史 counts 和 digests。
+2. 冻结 observation-ID digest 来自
+   `sha256("\n".join(sorted(ids)).encode("utf-8"))`；renderer 却改成了 ordered
+   JSON list digest。
+
+在原 wide branch 的全部其他前置条件内，历史 truthy-style count 与 selected
+canonical path-item count 的命中集合完全一致：page 0 均为 `23`，page 1 均为
+`39`；真正的 non-solid dash count 两页均命中 `0`。因此 exact reproduction
+冻结为通用 feature `item_count=len(selected canonical path items)`，不是根据
+label 重新拟合阈值。修正后的 branch 为：
+
+```python
+if (
+    common
+    and features.fill_count <= 1
+    and features.max_item_width > Decimal("60.000")
+    and features.item_count > 3
+):
+    return _ProposalDecision(True, "geometry_wide_multi_item")
+```
+
+其余 thresholds、branch order、quantization、bbox/dedup、priority 和 crop limits
+保持不变。exact canonical rule JSON 为：
+
+```json
+{"branch_order":["geometry_compact","geometry_wide_multi_item","geometry_filled","short_token_rescue"],"feature_quantum":"0.001","geometry_common":{"max_item_height_min_exclusive":"2.000","mean_item_height_max":"34.000"},"geometry_compact":{"context_area_max":"6000.000","fill_count_max":1,"max_item_width_max":"60.000"},"geometry_filled":{"context_area_min_exclusive":"5800.000","fill_count_min_exclusive":1,"max_item_height_max":"42.000"},"geometry_wide_multi_item":{"fill_count_max":1,"item_count_min_exclusive":3,"max_item_width_min_exclusive":"60.000"},"proposal_rule_version":"visual-observation/2","schema_version":"visual-proposal-gate/1","short_token_rescue":{"context_area_max":"6000.000","pattern":"[A-Z0-9]{1,3}"}}
+```
+
+SHA-256 固定为
+`ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7`。
+observation-ID set digest 固定使用 lexicographically sorted IDs、以单个 `\n`
+连接、无尾随换行的 bytes；batch-membership digest 继续使用 stable ordered nested
+list 的 compact canonical JSON。独立 no-write reproduction 已恢复 page 0
+`79 / 13`、page 1 `124 / 16` 及原冻结的四个 ID/batch digests；这只冻结 exact
+candidate，仍不构成 Quality Owner approval。
+
 #### Preserved Geometry, Dedup And Scheduling
 
 本轮保持以下合同不变：
@@ -623,10 +670,14 @@ evidence 时，不得把 exploratory overlap 写成 formal success。
 - SR-2A 中只允许替换 packing primitive 的 production Step 3/4。
 
 `pack_visual_batches()` 本身继续保留 stable first-fit。新的 implementation plan
-必须先修改本 design 和 stable contract Owner rows，再按以下顺序执行：
+必须按以下顺序执行；stable contract Owner rows 只能在 Quality Owner Step 3
+明确批准后由 SR-2B Step 4 修改：
 
-1. frozen rule table、overlay digests 和 Quality Owner verdict docs commit；
-2. PDF RED：两个 admission branches、noise rejection、threshold boundaries、
+1. exact rule correction 先只提交 accepted design、subordinate plan 和 current
+   plan；再生成 overlays/zooms 并取得 Quality Owner verdict，approved 后才由
+   Step 4 提交 artifact digests、verdict 和 stable contract Owner rows；
+2. PDF RED：三个 geometry admission branches、short-token rescue、noise
+   rejection、threshold boundaries、
    v2 ID/order repeatability 和 reconstruction tamper blocking；
 3. cache RED：proposal version single source 和 identity invalidation；
 4. minimum production implementation in proposal Owner；
@@ -1434,10 +1485,10 @@ support 或通用 accuracy benchmark。
   batches，bounded feasibility 结果为 `capacity_feasibility_unproven`。用户现已批准
   hybrid proposal-gate design 和完整 Quality Owner 重核，旧的 packing-only
   continuation 不再拥有 production authorization。
-- Validation action: `pause production`。用户审阅本 design commit 后，才运行
-  `superpowers:writing-plans` 修改既有 subordinate/current plan；不得创建第二套
-  current plan。新 plan 必须先冻结 exact rule、overlays 和 Quality Owner verdict，
-  再授权 production RED。
+- Validation action: `pause production`。exact rule reproduction 已冻结；下一步
+  只能执行 subordinate `SR-2B Step 2` 的 no-write/no-Provider renderer。两次
+  evidence run、overlays、zooms 和 Quality Owner verdict 完成前不得授权
+  production RED，也不得创建第二套 current plan。
 - Writer ownership and order: 同一 backend file group 只有一个 writer，frontend 在
   backend projection 冻结后顺序开始，reviewer 保持只读。
 - Next verification: 只运行 exact hybrid rule 的 no-write/no-Provider calibration、
@@ -1461,11 +1512,12 @@ support 或通用 accuracy benchmark。
 
 ## Active Execution Gate
 
-hybrid proposal-gate architecture 与完整重核方式已获批准，但 exact predicate、
-rule digest、两页 overlays、局部放大图和 Quality Owner verdict 尚未冻结。当前
-execution gate 因此是 `design-review-pending`：不得修改 production、不得提交当前
-SR-4 worktree changes、不得进入 SR-4 Step 8 或 SR-5、不得调用 Provider。
+hybrid proposal-gate architecture、exact predicate、feature semantics、canonical
+rule JSON 和 rule digest 已冻结；两页 overlays、局部放大图和 Quality Owner
+verdict 尚未冻结。当前 execution gate 因此是 `quality-owner-review-pending`：
+不得修改 production、不得提交当前 SR-4 worktree changes、不得进入 SR-2C、
+SR-4 Step 8 或 SR-5、不得调用 Provider。
 
-用户审阅并接受本 committed spec 后，下一步是用 `superpowers:writing-plans`
-修订既有 subordinate/current plan，使 calibration、overlay approval、TDD 和
-regression 按本 amendment 的顺序成为唯一执行路径；不得创建第二份 current plan。
+下一步只执行 subordinate `SR-2B Step 2`：用 approved two-page source 运行两次
+no-write/no-Provider renderer，把完整 evidence set 交给 Quality Owner。不得把
+positive overlap、frozen-negative overlap 或机械 digest gate 当作人工批准。

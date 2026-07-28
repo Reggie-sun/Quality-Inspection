@@ -320,9 +320,20 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     产生 page 0 `79 observations / 13 batches`、page 1
     `124 observations / 16 batches`；这些数值只是待完整视觉复核的 calibration
     evidence，不是 formal success。
-  - Validation action: `continue` 只能从 subordinate `SR-2B Step 1` 开始。现有
+  - Validation action: `continue` 只能从 subordinate `SR-2B Step 2` 开始。现有
     SR-4 七文件 working diff 保留但不得提交；在 SR-2B Quality Owner gate 与 SR-2C
     no-write preflight 全部通过前，不得进入 SR-4 Step 8、SR-5 或构造/调用 Provider。
+  - Exact-rule reproduction correction: 首次逐字运行 commit `e795744` 中的
+    renderer 得到 page 0 / page 1 `62 / 105` retained observations 和
+    `21/26 / 28/30` positive overlap，因此按 gate fail closed。历史 calibration
+    把 PyMuPDF solid `"[] 0"` 也计入 truthy dash-style count，而 plan 后来误写成
+    排除 solid 的 `dash_count`；同时 renderer 把冻结的 sorted-newline ID-set
+    digest 误写成 ordered JSON-list digest。wide branch 现以
+    `item_count > 3` / `geometry_wide_multi_item` 精确复原历史 candidate；在原
+    wide preconditions 内 page 0 / page 1 的命中集合与历史 truthy count 分别
+    exact 等于 `23 / 39`，不是重新拟合 threshold。修正后 no-write reproduction
+    恢复 `79/124` observations、`13/16` batches 及全部四个冻结 ID/batch digests。
+    sealed manifest、Provider、production/test files 和现有七文件 dirty set 均未改。
   - Single Owner and old path action:
     `backend/app/pdf/visual_observations.py::build_page_visual_observations()` 是
     proposal admission 唯一 Owner；retire “geometry-qualified line 必定形成
@@ -332,7 +343,10 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     `symbol_review.py`、`advisor.py` 只能消费 retained observations，不得二次过滤。
   - Exact candidate identity: candidate rule 使用
     `proposal_rule_version="visual-observation/2"`，canonical rule SHA-256 为
-    `e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50`。
+    `ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7`。
+    observation-ID set digest 使用 lexicographically sorted IDs、单个 `\n`
+    连接且无尾随换行的 bytes；batch-membership digest 使用 stable ordered nested
+    list 的 compact canonical JSON。
     Quality Owner 可批准或拒绝该 exact candidate；拒绝即回到 design，不能先改
     production。批准时 verdict 必须绑定 sealed manifest SHA-256
     `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`、
@@ -340,9 +354,10 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     `annotation_status=approved` 和 `unlabeled_target_count=0`。existing sealed
     manifest bytes 不修改、不重生成。
   - Allowed paths and commit boundary:
-    - `SR-2B` docs/Quality Owner commit 只允许
-      `docs/contracts/MAIN_CONTRACT_MATRIX.md`、accepted design spec、本 subordinate
-      plan 和本 current plan；
+    - `SR-2B Step 1` exact-rule correction commit 只允许 accepted design spec、
+      本 subordinate plan 和本 current plan；
+    - `SR-2B Step 4` Quality Owner approval commit 才允许再修改
+      `docs/contracts/MAIN_CONTRACT_MATRIX.md` 及上述三份 docs；
     - `SR-2C` proposal-only commit 只允许
       `backend/app/pdf/visual_observations.py` 与
       `backend/tests/unit/pdf/test_visual_observations.py`；
@@ -400,7 +415,7 @@ micromamba run -n qi-p0 python -m pytest backend/tests/contract/harness/test_sym
 positive label 禁止 `negative_family`，以及 frozen-negative label 强制要求该字段。
 该 historical gate 已完成，不再是 current next verification。当前 next
 verification 只来自上方 2026-07-28 hybrid proposal-gate correction amendment 的
-subordinate `SR-2B Step 1`。
+subordinate `SR-2B Step 2`。
 
 `SR-1`～`SR-8` 的 allowed paths 只有以下精确集合；existing regression tests 仅可在
 直接需要时增加 assertions，不得放宽、skip 或删除 expectations。本次 pre-SR-1
