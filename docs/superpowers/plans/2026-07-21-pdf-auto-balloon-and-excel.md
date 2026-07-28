@@ -193,12 +193,15 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
   commit 为 `1ea1868`。
 - Historical activation action: Task 0 docs activation 已由 `994cbe4` 完成，
   Option A docs-only clarification 已由 `3fc7bbb` 完成；SR-1、SR-2、SR-3 又分别由
-  `d3fac79`、`bb035bc`、`90bfb43` 完成。当前 validation action 由本节后附的
-  2026-07-28 SR-4 Step 8 capacity amendment 唯一拥有，不得回到初始 SR-1 next step。
+  `d3fac79`、`bb035bc`、`90bfb43` 完成。SR-2A bounded packing search 已以
+  `capacity_feasibility_unproven` 关闭且没有 code commit；当前 validation action
+  由本节后附的 2026-07-28 hybrid proposal-gate correction amendment 唯一拥有，
+  不得回到初始 SR-1 或已退休的 SR-2A packing-only next step。
 - Writer ownership and order: 每个 coupled file group 同时只有一个 writer；
   spec/code reviewers 严格只读。执行顺序固定为
-  `SR-1 → SR-2 → SR-3 → SR-4 → SR-5 → SR-6 → SR-7 → SR-8`，全部位于
-  `D7-T3` 之前。
+  `SR-1 → SR-2 → SR-3 → SR-4 Steps 1-7 → SR-2A completed-unproven →
+  SR-2B → SR-2C → SR-4 Steps 8-9 → SR-5 → SR-6 → SR-7 → SR-8`，
+  全部位于 `D7-T3` 之前。
 - Problem boundary: 只处理 fixed first current-four PDF 中与 native text 相邻的
   vector symbols，以及已批准的九类
   diameter、depth、counterbore、surface roughness、GD&T parallelism、
@@ -279,39 +282,89 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
   与唯一 registration phase；没有 receipt、contract results、task/formal success
   或 Provider call。此证据只关闭 SR-1 live-label input gate，不提前完成
   production GREEN、D7-T2 symbol closure 或 D7-T3。
-- SR-4 Step 8 capacity closure amendment — 2026-07-28:
+- Historical SR-4 Step 8 capacity closure amendment — 2026-07-28:
   - Selected lane: `Heavy`；Selected plan: 本文件仍是唯一 current plan。
   - Selection evidence: sealed source 在冻结实现中产生 page 0
     `132 observations / 19 priority batches`、page 1
     `203 observations / 22 priority batches`，而 cap 是 `16/page`。natural order
     仍为 `17/19`，所以 priority 不是唯一根因；area/side constraints 是主要 rejection
     surface，member cap 没有命中。Provider calls=`0`。
-  - Validation action: `amend` 后停留在 SR-4 Step 8，先插入 `SR-2A` capacity
-    closure；不得提交当前 SR-4、进入 SR-5 或调用 Provider。
+  - Validation action: SR-2A bounded search 已执行并在 page 0
+    `depth=76 / expanded=248890 / frontier=4096`、page 1
+    `depth=72 / expanded=249792 / frontier=4096` 返回
+    `capacity_feasibility_unproven`；Provider construction/calls=`0`。没有
+    certificate 或 code commit。
   - Writer ownership and order: 当前父 agent 是唯一 writer；explorer/reviewer
-    严格只读。执行顺序改为
-    `SR-1 → SR-2 → SR-3 → SR-4 Steps 1-7 → SR-2A →
-    SR-4 Steps 8-9 → SR-5 → SR-6 → SR-7 → SR-8`。
-  - Old path action: feasibility 阶段 preserve 当前 proposal、dedup、priority、
-    stable-first-fit 和全部 crop limits。只有一个 generic deterministic algorithm
-    在不丢任何 ID、所有 limits 不变时为两页都产生 `<=16` certificate，才允许先在
-    semantic design 中把 stable-first-fit 精确标记为 replace，再进入 production TDD。
+    严格只读。该 historical ordering 已结束；current ordering 只由下述 hybrid
+    proposal-gate amendment 拥有。
+  - Old path action: feasibility 阶段曾 preserve 当前 proposal、dedup、priority、
+    stable-first-fit 和全部 crop limits。由于未取得 certificate，packing-only
+    production path 已退休；stable-first-fit 继续保留。
   - Unchanged contract: `7.5%` area、`300 DPI`、`1536px`、`32` members、
     `16/page`、visual-first、Coverage Veto、sealed manifest、九类 positive/negative
     evaluation 和全部 fail-closed semantics 保持不变；不得 hard-code current-source
     IDs/coordinates、静默过滤、调 threshold 或提高 call cap。
-  - Allowed paths: 第一 commit 只含三份 design/current-plan/subordinate-plan docs。
-    certificate 和 exact algorithm delta 成立后，code scope 最多为
-    `backend/app/pdf/visual_observations.py`,
-    `backend/tests/unit/pdf/test_visual_observations.py`；现有七个 SR-4 modified
-    files 的 coupled ownership 仍由父 agent 保留，SR-2A 保持现有 packer
-    signature，因此不把其中任何文件带入 corrective commit。
-  - Next verification: no-write/no-Provider bounded feasibility search，独立验证
-    `132/203` IDs exact-once、每 crop limits、repeated membership digest 和
-    `V<=16/page`。没有 certificate 时以 `capacity_feasibility_unproven` 停止，
-    不把 search exhaustion 当成不可行证明。
-  - Rollback: 先 revert SR-4，再 revert 独立 SR-2A code commit，最后 revert 本
-    docs amendment；sealed runs、manifest、diagnostic evidence 与 audit 保留。
+  - Allowed paths and next verification: historical scope 已关闭；current allowed
+    paths 与 verification 只来自下述 SR-2B/SR-2C。
+  - Rollback: 本 amendment commit 为 `8e0c625`；没有 SR-2A code commit。sealed
+    runs、manifest、diagnostic evidence 与 audit 保留。
+- Hybrid proposal-gate correction amendment — 2026-07-28:
+  - Selected lane: `Heavy`；Selected plan: 本文件仍是唯一 current plan。用户已接受
+    commit `6920958` 中的 hybrid proposal-gate design；subordinate plan 只承载
+    SR-2B/SR-2C 文件级步骤。
+  - Selection evidence: SR-2A 的 deterministic beam search 在 page 0
+    `depth=76 / expanded=248890 / frontier=4096`、page 1
+    `depth=72 / expanded=249792 / frontier=4096` 时均返回
+    `capacity_feasibility_unproven`，Provider construction/calls=`0`。这不是数学
+    不可行证明，但不足以授权 packing-only production change。只读 hybrid candidate
+    产生 page 0 `79 observations / 13 batches`、page 1
+    `124 observations / 16 batches`；这些数值只是待完整视觉复核的 calibration
+    evidence，不是 formal success。
+  - Validation action: `continue` 只能从 subordinate `SR-2B Step 1` 开始。现有
+    SR-4 七文件 working diff 保留但不得提交；在 SR-2B Quality Owner gate 与 SR-2C
+    no-write preflight 全部通过前，不得进入 SR-4 Step 8、SR-5 或构造/调用 Provider。
+  - Single Owner and old path action:
+    `backend/app/pdf/visual_observations.py::build_page_visual_observations()` 是
+    proposal admission 唯一 Owner；retire “geometry-qualified line 必定形成
+    observation”以及 SR-2A packing-only production Steps 2-6。preserve 既有
+    bbox/dedup/order、stable first-fit、priority、crop limits、Coverage Veto 和
+    `CandidateAdvisor` 唯一 final-write ownership。`automatic_result.py`、
+    `symbol_review.py`、`advisor.py` 只能消费 retained observations，不得二次过滤。
+  - Exact candidate identity: candidate rule 使用
+    `proposal_rule_version="visual-observation/2"`，canonical rule SHA-256 为
+    `e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50`。
+    Quality Owner 可批准或拒绝该 exact candidate；拒绝即回到 design，不能先改
+    production。批准时 verdict 必须绑定 sealed manifest SHA-256
+    `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`、
+    两页 200% 完整 overlay、全部要求的局部放大图、rule/overlay digests、
+    `annotation_status=approved` 和 `unlabeled_target_count=0`。existing sealed
+    manifest bytes 不修改、不重生成。
+  - Allowed paths and commit boundary:
+    - `SR-2B` docs/Quality Owner commit 只允许
+      `docs/contracts/MAIN_CONTRACT_MATRIX.md`、accepted design spec、本 subordinate
+      plan 和本 current plan；
+    - `SR-2C` proposal-only commit 只允许
+      `backend/app/pdf/visual_observations.py` 与
+      `backend/tests/unit/pdf/test_visual_observations.py`；
+    - `backend/app/candidates/symbol_review.py` 和
+      `backend/tests/unit/candidates/test_symbol_advisor.py` 的 v2 cache single-source
+      delta 继续属于当前 SR-4 七文件 ownership，只在 SR-4 Step 9 与其余五文件一起
+      commit。不得使用 `git add .`。
+  - Verification boundary: SR-2B 必须覆盖全部 56 positives、16 frozen negatives、
+    六个带 token revision markers、五个 N5 无 token triangles、全部 GD&T/boxed
+    datum、四类代表符号和最密集区域。SR-2C 必须 TDD 证明四个 admission/rejection
+    branches、snapped thresholds、v2 ID/order/reconstruction、cache invalidation；
+    current-source no-write preflight 必须重复得到 `79/124` observations、
+    `13/16` batches、exact digests、all limits true、Provider construction/calls=`0`。
+  - Unchanged contract: `7.5%` area、`300 DPI`、`1536px`、`32` members、
+    `16/page`、visual-first、九类 positive/negative evaluation、sealed input identity、
+    immutable results 和全部 fail-closed semantics 不变。不得 hard-code source/page/
+    label/coordinates、提高 call cap、恢复 full-page Vision 或用 rejected context
+    伪装 coverage disposition。
+  - Rollback: 先 revert SR-4，再 revert SR-2C proposal code commit，再 revert
+    SR-2B exact-rule/Quality Owner docs commit；然后才按既有历史回退
+    `6920958` design、`8e0c625` capacity amendment 和更早 tasks。sealed runs、
+    manifest、diagnostic evidence 与 Provider-call audit 保留。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
@@ -326,8 +379,9 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
   `auto-feature-smoke-test`。
 - Rollback: 每个 `SR-1`～`SR-8` task 和本 activation 都必须记录实际 exact commit；
   rollback 时先把 symbol receipt 标记为 failed/stale，再用 `git revert` 按
-  `SR-8 → SR-7 → SR-6 → SR-5 → SR-4 → SR-2A code →
-  SR-2A exact-algorithm docs → SR-2A initial amendment docs → SR-3 → SR-2`
+  `SR-8 → SR-7 → SR-6 → SR-5 → SR-4 → SR-2C proposal code →
+  SR-2B exact-rule/Quality Owner docs → 6920958 hybrid design →
+  8e0c625 SR-2A initial amendment docs → SR-3 → SR-2`
   逆序回退，最后才 revert `SR-1` contract/Harness，保留 sealed runs、cache、
   audit 与 history，并在最后 revert 本 activation。`D7-T3` 因 missing-symbol
   defect 保持 blocked；禁止 reset 或 force push。
@@ -345,11 +399,13 @@ micromamba run -n qi-p0 python -m pytest backend/tests/contract/harness/test_sym
 `revision_table_or_invalid_marker` 的区分、缺失或重复单一家族不能满足九类 coverage、
 positive label 禁止 `negative_family`，以及 frozen-negative label 强制要求该字段。
 该 historical gate 已完成，不再是 current next verification。当前 next
-verification 只来自上方 2026-07-28 capacity amendment。
+verification 只来自上方 2026-07-28 hybrid proposal-gate correction amendment 的
+subordinate `SR-2B Step 1`。
 
 `SR-1`～`SR-8` 的 allowed paths 只有以下精确集合；existing regression tests 仅可在
 直接需要时增加 assertions，不得放宽、skip 或删除 expectations。本次 pre-SR-1
-docs-only clarification 不扩展以下集合。
+docs-only clarification 不扩展以下集合。2026-07-28 hybrid amendment 已把 accepted
+design spec 与 subordinate plan 明确加入同一集合，不建立第二套 plan。
 
 Create:
 
@@ -373,6 +429,8 @@ Create:
 Modify:
 
 - `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
+- `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+- `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`
 - `docs/contracts/MAIN_CONTRACT_MATRIX.md`
 - `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md`
 - `.agent/harness/contracts/p0-contracts.json`（generated only）

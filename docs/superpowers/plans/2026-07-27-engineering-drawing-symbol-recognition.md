@@ -14,7 +14,9 @@
 
 - Design source:
   `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`。
-- Design status: 用户已在 `2026-07-27` 批准继续写 implementation plan。
+- Design status: 用户已接受 commit `6920958` 中的
+  `2026-07-28 Hybrid Proposal-Gate Amendment`；该 acceptance 授权原地修订本
+  subordinate plan，但不绕过 exact rule、完整 overlay 或 Quality Owner gate。
 - Plan status: **approved subordinate implementation detail**。本文件不是第二份
   current plan；task ordering、scope 和 execution authorization 仍只来自下述唯一
   current plan。
@@ -29,8 +31,10 @@
   contract commit 是 `d3fac79`；SR-2 deterministic observations commit 是
   `bb035bc`；SR-3 Provider contract commit 是 `90bfb43`。SR-4 Steps 1-7 已在当前
   七文件 working diff 中验证，但尚未 commit；Step 8 真实源 preflight 暴露
-  `19/22 > 16/page` 后已 fail closed。当前唯一 next step 是本文件下述 SR-2A
-  bounded feasibility，不得重复 SR-1～SR-3、提交 SR-4、进入 SR-5 或调用 Provider。
+  `19/22 > 16/page` 后已 fail closed。SR-2A bounded feasibility 又以
+  `capacity_feasibility_unproven` 完成且没有 code commit。当前唯一 next step 是
+  本文件下述 `SR-2B Step 1`；不得重复 SR-1～SR-3、执行已退休的 SR-2A
+  packing-only Steps 2-6、提交 SR-4、进入 SR-5 或调用 Provider。
 - Live-label gate: Quality Owner approved manifest 已 seal 于 literal run
   `20260727T085747865239Z-5aa3e8d3`，staging 从 bytes 机械验证 200% overlay、
   `unlabeled_target_count=0`、九类 positive families 与九类 negative families。
@@ -41,11 +45,11 @@
 - 若执行时存在与本计划无关的未提交改动，必须保护这些改动并逐文件 stage around
   them；不得使用 `git add .`，不得覆盖、清理或把它们带入 task commit。
 
-## SR-4 Step 8 Capacity Closure Amendment — 2026-07-28
+## Historical SR-4 Step 8 Capacity Closure Amendment — 2026-07-28
 
-用户已批准本次原地 amendment。它只修复 SR-4 Step 8 暴露的 current-source
-capacity mismatch，不创建第二份 current plan、第二个 Vision Owner、fallback、
-shadow path 或新的 Provider policy。
+用户批准过本次原地 amendment。它的 bounded feasibility 阶段已完成但没有取得
+certificate；本节现只保留当时的 problem boundary 和执行证据，不再授权下述
+packing-only production change。
 
 - Selected lane: `Heavy`。当前第一阶段保持全部稳定 crop/proposal/call contracts
   不变，但若 feasibility 证明需要替换 frozen stable-first-fit 算法，必须先在本
@@ -61,38 +65,54 @@ shadow path 或新的 Provider policy。
   - page 1: `203` observations，natural order `19` batches，priority order `22`.
   两页都超过 `16/page`；完整 pack 重放可重复，Provider calls 为 `0`。merge
   rejection 主要命中 `7.5%` area 与 `1536px` side，`32`-member cap 命中为 `0`。
-- Validation action: `amend` 后 `continue`。SR-4 保持停在 Task 4 Step 8；
-  不提交当前七个 SR-4 code files，不进入 SR-5，不构造或调用 Provider。
+- Validation action: bounded search 已执行并 fail closed：
+  - page 0: `depth=76`、`expanded=248890`、`frontier=4096`；
+  - page 1: `depth=72`、`expanded=249792`、`frontier=4096`。
+  两页结果均为 `capacity_feasibility_unproven`，Provider construction/calls=`0`。
+  这不是数学不可行证明，但 packing-only Step 2～6 已退休。SR-4 仍停在 Task 4
+  Step 8；不提交当前七个 SR-4 code files，不进入 SR-5，不构造或调用 Provider。
 - Writer ownership and order: 当前父 agent 是三份 amendment docs 与后续
   feasibility/TDD 的唯一 writer。任何 explorer/reviewer 均只读、不得 nested
   delegation。现有七个 SR-4 modified files 继续由父 agent 独占；不得让第二个
   writer 修改 `symbol_review.py` 或其 coupled tests。
-- Old path action: 当前 stable-first-fit、priority、proposal、dedup、crop limits
-  先全部 preserve，作为 feasibility baseline。只有取得一个不丢 observation 的
-  deterministic `<=16/page` certificate 后，才允许在另一个 exact design delta
-  中把 stable-first-fit 标记为 replace；没有 certificate 时不得先改 production。
+- Old path action: stable-first-fit、priority、bbox/dedup 和 crop limits 保持不变。
+  “只替换 packing primitive”不再是 executable next step；proposal admission
+  correction 由下述 SR-2B/SR-2C 唯一拥有。
 - Unchanged contract: 全部 `132/203` observation IDs 必须各出现恰好一次；
   `7.5%` page area、`300 DPI`、每边 `<=1536px`、每 crop `<=32`
   observations、`16` calls/page、visual-first、Coverage Veto、九类 positive /
   negative evaluation、sealed manifest 和 fail-closed errors 全部不变。
-- Allowed paths:
-  - docs phase:
-    `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`,
-    本文件，以及唯一 current plan；
-  - certificate 成立并先冻结 exact algorithm 后的 TDD phase:
-    `backend/app/pdf/visual_observations.py`,
-    `backend/tests/unit/pdf/test_visual_observations.py`。
-  其他 production、Provider、Harness、frontend 和 runtime config 均不在本
-  amendment writer scope。
-- Next verification: 先执行 no-write/no-Provider bounded feasibility search。
-  search 必须使用 stable input/tie-break、保留全部 IDs，并为每个候选 certificate
-  独立重算 crop area、pixel sides、member count、duplicate/drop 和 repeated digest。
-  只有两页都得到 `<=16` certificate 才进入下述 SR-2A RED；search 未找到
-  certificate 时立即停止，不能把 bounded-search exhaustion 写成“数学上不可行”，
-  也不能自动升 cap、调 threshold 或过滤 proposal。
-- Rollback: docs amendment 可用单一 `git revert` 回退；若后续产生独立 SR-2A
-  code commit，先 revert SR-4，再 revert SR-2A。sealed input run、manifest、
-  diagnostic evidence 和 Provider-call audit 保留。
+- Allowed paths and next verification are superseded by SR-2B/SR-2C below。
+- Rollback: 本 historical amendment commit 是 `8e0c625`；没有 SR-2A code commit。
+  sealed input run、manifest、diagnostic evidence 和 Provider-call audit 保留。
+
+## Hybrid Proposal-Gate Correction Amendment — 2026-07-28
+
+本 amendment 落实 accepted design commit `6920958`。它不创建第二份 current plan、
+第二个 proposal Owner、第二个 candidate/result path、fallback、shadow path 或新的
+Provider policy。
+
+- Single proposal Owner:
+  `backend/app/pdf/visual_observations.py::build_page_visual_observations()`。
+  `inventory.py` 只持久化 Owner output；`automatic_result.py`、`symbol_review.py`
+  和 `advisor.py` 只能消费 retained observations，不得二次 filter、merge、rank
+  或按剩余 Provider slots truncate。
+- Old path action: retire “每个 geometry-qualified native line 都形成
+  `VisualObservation`”和本文件原 SR-2A packing-only Steps 2～6；preserve
+  provisional context extent/gap/area、retained bbox、dedup/order、stable
+  first-fit、priority、crop limits、Coverage Veto 和 `CandidateAdvisor` 唯一 final
+  write ownership。
+- Execution order:
+  `SR-4 Steps 1-7 → SR-2A completed-unproven → SR-2B → SR-2C →
+  SR-4 Steps 8-9`。SR-2B 是 docs/evidence gate；SR-2C 是 TDD/code gate。任一 gate
+  未通过都不得进入后一步。
+- Writer boundary: 当前父 agent 仍是唯一 writer。read-only explorer/reviewer
+  不得修改文件或 nested delegation。现有 SR-4 七文件继续由父 agent 独占并保留，
+  只在 SR-4 Step 9 一起 commit。
+- Provider boundary: SR-2B/SR-2C 全程 Provider construction/calls 必须为 `0`。
+  exact rule、full overlays、Quality Owner verdict、v2 TDD、current-source
+  no-write preflight 与独立 review 全部通过前，不得开始 SR-4 Step 8 或任何 paid/live
+  Provider action。
 
 ## Problem Boundary
 
@@ -281,6 +301,9 @@ working copy 或调用 Provider。该拆分用于避免已经约 700 行的 `adv
 | Task 7 | E2E-01～E2E-02 | 2 |
 | Task 8 | LIVE-01 | 1 |
 | **Total** |  | **32** |
+
+SR-2C 不新增 logical ID；它扩展 PDF-01/PDF-02/PDF-03 的 proposal semantics，并添加
+一个 supporting cache-version regression。required total 必须继续 exact `32`。
 
 ## Task 0: Activate One Current Plan — Completed At `994cbe4`
 
@@ -530,7 +553,13 @@ git add \
 git commit -m "test: seal symbol recognition acceptance"
 ```
 
-## Task 2: Build Deterministic Visual Observations
+## Task 2: Build Deterministic Visual Observations — Completed At `bb035bc`
+
+本 task 记录 v1 baseline。SR-2C 只 supersede 下述
+`PROPOSAL_RULE_VERSION="visual-observation/1"`、不检查 line text 和 unconditional
+admission；canonical geometry、public fields、bbox/dedup/order、reconstruction 和
+stable-first-fit 仍保持。不得重跑 Task 2 或把这些 historical v1 instructions 当成
+current next step。
 
 **Required test IDs:** PDF-01～PDF-05
 
@@ -626,6 +655,10 @@ Add `visual_observations: tuple[VisualObservation, ...] = ()` after the current
 that omit it must remain byte-for-byte equivalent after JSON conversion.
 
 ### Step 4: Implement canonical geometry and proposal rules
+
+下述 v1 rule 是 commit `bb035bc` 的 historical implementation record；SR-2C
+完成后，version、text-shape feature 和 admission condition 由 SR-2B/SR-2C exact
+rule 取代，其余 bullets 保持不变。
 
 - [ ] In `visual_observations.py`, freeze:
 
@@ -874,6 +907,10 @@ extra_body: {"enable_thinking": false}
 - [ ] It never accepts a full PDF or page image.
 
 ### Step 6: Add the visual cache/call-record envelope
+
+下述 `visual-observation/1` cache component 是 commit `90bfb43` 的 historical
+identity。SR-2C 必须将它改为从 proposal Owner 单一引用
+`PROPOSAL_RULE_VERSION="visual-observation/2"`；不得保留第二个 version literal。
 
 - [ ] Keep existing text cache bytes and `candidate-advisor-cache/1` untouched.
 - [ ] Use a separate path pattern
@@ -1138,130 +1175,1902 @@ micromamba run -n qi-p0 pytest \
 Expected: ADV-03～ADV-09 and COV-01～COV-04 PASS; all existing text parsing、grouping、
 coarse fallback、dedupe and Advisor tests PASS.
 
-### SR-2A: Close Current-Source Visual Capacity Before Step 8
+### SR-2A: Bounded Packing Feasibility — Completed Without Certificate
 
-本 corrective gate 在 Task 4 Step 7 GREEN 后、Step 8 重跑前执行。它不改变 logical
-test ID count，也不把 current-source bytes 放入 Git。
+本 gate 已执行完毕，只保留历史证据；不再包含可执行 production steps。
 
-- [ ] **Step 1: Produce a bounded no-write feasibility certificate**
+- [x] **Step 1: Run the frozen bounded no-write search**
 
-  使用 `PYTHONDONTWRITEBYTECODE=1` 和 sealed source，只导出 page index、observation
-  count、batch count、sorted observation-ID digest、batch-membership digest 与每
-  batch 的 area/pixel/member validation；不得输出 source path、text、crop 或
-  coordinates。候选算法可以比较 deterministic sort、best-fit、stable merge 和
-  bounded branch/beam search，但每个 tie-break 必须来自 priority key、bbox key、
-  observation ID 或 batch index，不能使用随机状态、wall-clock order 或 exact
-  source coordinates 的 hard-coded branch。
-
-  本轮 authoritative feasibility search 使用现有 priority-ordered input，并逐个
-  observation 分支到每个满足 `_batch_geometry()` 的既有 batch，或在当前 batch
-  count `<16` 时建立新 batch。state identity 是按 member observation IDs
-  canonicalize 后排序的 batch-membership tuple；同一 identity 只保留第一项。每层
-  successor 按
-  `(batch_count, total_padded_crop_area, max_padded_crop_area,
-  canonical_membership)` 升序排序，beam width 固定 `4096`，每页最多展开
-  `250000` 个 unique states。不得使用 wall-clock timeout 选择结果。完成全部 input
-  且不超过 16 batches 的第一项成为 candidate certificate，再由不共享 search
-  state 的 validator 复核。
-
-  Expected:
+  使用 priority-ordered input、canonical membership identity、beam width `4096`
+  和每页最多 `250000` unique states。实际结果：
 
   ```text
-  page=0 observations=132 batches<=16 exact_once=true limits=true repeatable=true
-  page=1 observations=203 batches<=16 exact_once=true limits=true repeatable=true
-  provider_calls=0
+  page=0 result=capacity_feasibility_unproven depth=76 expanded=248890 frontier=4096
+  page=1 result=capacity_feasibility_unproven depth=72 expanded=249792 frontier=4096
+  provider_construction=0 provider_calls=0
   ```
 
-  若任一页没有在上述 deterministic state bound 内找到 certificate，停止并
-  报告 `capacity_feasibility_unproven`；不得继续 Step 2、不得修改 production。
+  该结果不是数学不可行证明，但没有产生可授权 packing change 的
+  `V<=16/page` certificate。
 
-- [ ] **Step 2: Freeze the exact generic packing algorithm**
+- [x] **Step 2: Retire the packing-only production path**
 
-  在本 plan 和 design 的 Vision Request Contract 中记录：
+  原 SR-2A Steps 2～6（freeze alternative packer、packing RED、production
+  replacement、GREEN、code commit）均未执行且现已退休。没有 SR-2A code commit；
+  `pack_visual_batches()` 继续使用 stable first-fit。
 
-  - complete input sort key；
-  - candidate batch fitness tuple；
-  - bounded search/termination rule；
-  - complete tie-break；
-  - output batch/member ordering；
-  - certificate validation 和 fail-closed semantics。
+### SR-2B: Freeze The Exact Proposal Rule And Obtain Full Quality Owner Approval
 
-  算法必须对任意 observation input 生效；不得登记 sealed-source membership、
-  observation IDs、page coordinates 或 label bboxes。此 docs delta 必须先独立
-  commit，再写 production RED。
+SR-2B 是 docs/evidence gate。它不修改 production/test code，不构造 Provider，不改
+existing sealed manifest bytes，也不把 current source、overlay 或 zoom image 加入 Git。
 
-- [ ] **Step 3: Write RED tests before production edits**
+**Files:**
 
-  在 `backend/tests/unit/pdf/test_visual_observations.py` 增加一个 synthetic
-  high-density regression：旧 stable-first-fit 需要 `>16` batches，而冻结的新
-  generic algorithm 在全部 IDs exact-once、全部 limits 不变时得到 `<=16`。
-  既有 ADV-09 继续作为 priority semantics、overflow fail-closed 和
-  Provider-construction count `0` 的 integration regression；本 gate 不编辑其
-  已属于 SR-4 的 test file。
+- Modify:
+  `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`
+- Modify: `docs/contracts/MAIN_CONTRACT_MATRIX.md`
+- Modify: `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+- Modify:
+  `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
 
-```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
-micromamba run -n qi-p0 pytest \
-  backend/tests/unit/pdf/test_visual_observations.py \
-  backend/tests/unit/candidates/test_symbol_advisor.py \
-  -p no:cacheprovider -q
-```
+- [ ] **Step 1: Freeze one candidate rule and its feature semantics**
 
-  Expected RED: 新 synthetic capacity assertion 失败，且失败原因是 production
-  packer 仍使用旧 stable-first-fit；不是 fixture、import 或 source-path error。
+  所有 numeric features 先以 `Decimal("0.001")` 和 `ROUND_HALF_EVEN` snap，再比较
+  string-declared thresholds。feature definitions 固定为：
 
-- [ ] **Step 4: Implement only the frozen algorithm**
+  - `context_area`: associated line 与当前 selected path-item bboxes union 的 PDF
+    point-square area；
+  - `max_item_width` / `max_item_height`: selected path-item bbox dimensions 的 maxima；
+  - `mean_item_height`: selected path-item bbox height 的 arithmetic mean；
+  - `fill_count`: canonical item style 中 `fill is not None` 的 item count；
+  - `dash_count`: canonical dash pattern 不是 `None`、empty 或 solid `[] 0` 的 item
+    count；
+  - `normalized_text`: 先把 ASCII whitespace runs collapse 为单个空格、strip、
+    uppercase，再计算是否 fullmatch ASCII `[A-Z0-9]{1,3}`；不删除 internal
+    whitespace。feature record 只保存 boolean，不保存 token 或 raw text。
 
-  只修改 `visual_observations.py` 的 batch planning primitive，并保持
-  `pack_visual_batches(page, ordered_observations)` signature 与
-  `VisualBatch` output contract 不变，使现有 `symbol_review.py` priority planner
-  无需修改。不修改 proposal、dedup、crop geometry、threshold、Provider schema、
-  projection 或 coverage semantics。
+  exact branch order 和 inclusive/exclusive boundary 为：
 
-- [ ] **Step 5: Verify GREEN, exact current source and no Provider**
+  ```python
+  def decide(features: _ProposalFeatures) -> _ProposalDecision:
+      common = (
+          features.mean_item_height <= Decimal("34.000")
+          and features.max_item_height > Decimal("2.000")
+      )
+      if (
+          common
+          and features.fill_count <= 1
+          and features.max_item_width <= Decimal("60.000")
+          and features.context_area <= Decimal("6000.000")
+      ):
+          return _ProposalDecision(True, "geometry_compact")
+      if (
+          common
+          and features.fill_count <= 1
+          and features.max_item_width > Decimal("60.000")
+          and features.dash_count > 3
+      ):
+          return _ProposalDecision(True, "geometry_dashed")
+      if (
+          common
+          and features.fill_count > 1
+          and features.context_area > Decimal("5800.000")
+          and features.max_item_height <= Decimal("42.000")
+      ):
+          return _ProposalDecision(True, "geometry_filled")
+      if (
+          features.short_token_fullmatch
+          and features.context_area <= Decimal("6000.000")
+      ):
+          return _ProposalDecision(True, "short_token_rescue")
+      return _ProposalDecision(False, "no_admission_branch")
+  ```
 
-```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
-micromamba run -n qi-p0 pytest \
-  backend/tests/unit/pdf/test_visual_observations.py \
-  backend/tests/unit/candidates/test_symbol_advisor.py \
-  backend/tests/unit/candidates/test_coverage.py \
-  backend/tests/unit/candidates/test_advisor.py \
-  -p no:cacheprovider -q
-```
+  canonical rule JSON 必须逐 byte 等于：
 
-  然后重跑 Step 1 的 independent certificate validator 和下述 Step 8 exact preflight。
-  Expected: focused tests PASS；两页全部 IDs exact-once、limits true、repeated digest
-  exact；`V<=16/page`；Provider calls `0`。
+  ```json
+  {"branch_order":["geometry_compact","geometry_dashed","geometry_filled","short_token_rescue"],"feature_quantum":"0.001","geometry_common":{"max_item_height_min_exclusive":"2.000","mean_item_height_max":"34.000"},"geometry_compact":{"context_area_max":"6000.000","fill_count_max":1,"max_item_width_max":"60.000"},"geometry_dashed":{"dash_count_min_exclusive":3,"fill_count_max":1,"max_item_width_min_exclusive":"60.000"},"geometry_filled":{"context_area_min_exclusive":"5800.000","fill_count_min_exclusive":1,"max_item_height_max":"42.000"},"proposal_rule_version":"visual-observation/2","schema_version":"visual-proposal-gate/1","short_token_rescue":{"context_area_max":"6000.000","pattern":"[A-Z0-9]{1,3}"}}
+  ```
 
-- [ ] **Step 6: Commit only SR-2A**
+  SHA-256 必须为
+  `e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50`。
+  如果重新计算不一致，停止；不得通过改 expected digest 继续。
 
-```bash
-git add \
-  backend/app/pdf/visual_observations.py \
-  backend/tests/unit/pdf/test_visual_observations.py
-git commit -m "fix: close visual batch capacity"
-```
+  ```bash
+  PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python - <<'PY'
+  import hashlib
+  import json
 
-  三份 initial amendment docs 与 Step 2 exact algorithm delta 都已在各自
-  docs-only commit 中完成。这里只 stage 两个 SR-2A code/test files；现有
-  `symbol_review.py`、`test_symbol_advisor.py` 和其余 SR-4 changes 留给后续
-  SR-4 commit，不得混淆 task ownership 或使用 `git add .`。
+  rule = {
+      "branch_order": [
+          "geometry_compact",
+          "geometry_dashed",
+          "geometry_filled",
+          "short_token_rescue",
+      ],
+      "feature_quantum": "0.001",
+      "geometry_common": {
+          "max_item_height_min_exclusive": "2.000",
+          "mean_item_height_max": "34.000",
+      },
+      "geometry_compact": {
+          "context_area_max": "6000.000",
+          "fill_count_max": 1,
+          "max_item_width_max": "60.000",
+      },
+      "geometry_dashed": {
+          "dash_count_min_exclusive": 3,
+          "fill_count_max": 1,
+          "max_item_width_min_exclusive": "60.000",
+      },
+      "geometry_filled": {
+          "context_area_min_exclusive": "5800.000",
+          "fill_count_min_exclusive": 1,
+          "max_item_height_max": "42.000",
+      },
+      "proposal_rule_version": "visual-observation/2",
+      "schema_version": "visual-proposal-gate/1",
+      "short_token_rescue": {
+          "context_area_max": "6000.000",
+          "pattern": "[A-Z0-9]{1,3}",
+      },
+  }
+  encoded = json.dumps(
+      rule,
+      ensure_ascii=False,
+      sort_keys=True,
+      separators=(",", ":"),
+  ).encode("utf-8")
+  assert hashlib.sha256(encoded).hexdigest() == (
+      "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50"
+  )
+  print("proposal_rule_sha256=e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50")
+  PY
+  ```
+
+- [ ] **Step 2: Generate the complete 200% evidence set without repository writes**
+
+  创建一个 `/tmp` evidence directory。no-write calibration renderer 必须直接读取
+  `QI_SYMBOL_SOURCE_PDF` 和 sealed manifest artifact，不得改写 run tree；它按 Step 1
+  rule 计算 provisional contexts，在 200% raster 上用绿色实线标 retained、红色虚线
+  标 rejected、蓝色标 positive label、橙色标 frozen negative，并生成一份 canonical
+  `proposal-gate-report.json`。report 必须为每个 72 labels 记录 page、label ID、
+  positive/negative family、所有相交 context IDs、retained/rejected disposition 和
+  stable reason codes；不包含 source path、raw text、token、crop bytes 或坐标以外
+  private values。
+
+  ```bash
+  QI_PROPOSAL_EVIDENCE_DIR="$(mktemp -d -p /tmp qi-symbol-proposal-v2.XXXXXX)"
+  test -n "$QI_PROPOSAL_EVIDENCE_DIR"
+  test -n "${QI_SYMBOL_SOURCE_PDF:-}"
+  test "$(sha256sum \
+    .agent/harness/runs/20260727T085747865239Z-5aa3e8d3/artifacts/visual-symbol-eval.json \
+    | cut -d' ' -f1)" = \
+    "0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448"
+  QI_PROPOSAL_STATUS_BEFORE="$(git status --porcelain=v1)"
+  ```
+
+  使用以下完整 stdin renderer；它不 import Provider module、不写 repository：
+
+  ```bash
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
+  micromamba run -n qi-p0 python - \
+    "$QI_SYMBOL_SOURCE_PDF" \
+    ".agent/harness/runs/20260727T085747865239Z-5aa3e8d3/artifacts/visual-symbol-eval.json" \
+    "$QI_PROPOSAL_EVIDENCE_DIR" <<'PY'
+  from __future__ import annotations
+
+  import hashlib
+  import json
+  import re
+  import sys
+  from collections import Counter
+  from dataclasses import replace
+  from decimal import Decimal, ROUND_HALF_EVEN
+  from pathlib import Path
+
+  import pymupdf
+  from PIL import Image, ImageDraw, ImageFont
+
+  from app.candidates.symbol_review import plan_visual_batches
+  from app.pdf.coordinates import PageTransform
+  from app.pdf.inventory import build_inventory
+  from app.pdf.schemas import PageInventory
+  from app.processing.automatic_result import candidate_snapshot_from_inventory
+  from app.pdf.visual_observations import (
+      MAX_AXIS_GAP_PT,
+      MAX_CONTEXT_PAGE_AREA_RATIO,
+      MAX_PATH_ITEM_EXTENT_PT,
+      _area,
+      _axis_gaps,
+      _canonical_path_items,
+      _union_bboxes,
+      reconstruct_visual_geometry_contexts,
+  )
+
+  SOURCE_SHA = "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
+  MANIFEST_SHA = "0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448"
+  RULE_SHA = "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50"
+  VERSION = "visual-observation/2"
+  QUANTUM = Decimal("0.001")
+  source = Path(sys.argv[1])
+  manifest_path = Path(sys.argv[2])
+  output = Path(sys.argv[3])
+  output.mkdir(parents=True, exist_ok=True)
+  assert not any(output.iterdir())
+  source_bytes = source.read_bytes()
+  manifest_bytes = manifest_path.read_bytes()
+  assert hashlib.sha256(source_bytes).hexdigest() == SOURCE_SHA
+  assert hashlib.sha256(manifest_bytes).hexdigest() == MANIFEST_SHA
+  manifest = json.loads(manifest_bytes)
+
+
+  def quantized(value: int | float | Decimal) -> Decimal:
+      return Decimal(str(value)).quantize(
+          QUANTUM,
+          rounding=ROUND_HALF_EVEN,
+      )
+
+
+  def number_string(value: int | float | Decimal) -> str:
+      value = quantized(value)
+      if value == 0:
+          value = abs(value)
+      return format(value, "f")
+
+
+  def bbox_union(
+      bboxes: tuple[tuple[float, float, float, float], ...],
+  ) -> tuple[float, float, float, float]:
+      return (
+          min(item[0] for item in bboxes),
+          min(item[1] for item in bboxes),
+          max(item[2] for item in bboxes),
+          max(item[3] for item in bboxes),
+      )
+
+
+  def bbox_area(bbox: tuple[float, float, float, float]) -> Decimal:
+      return quantized(
+          max(0.0, bbox[2] - bbox[0])
+          * max(0.0, bbox[3] - bbox[1])
+      )
+
+
+  def intersects(
+      left: tuple[float, float, float, float],
+      right: tuple[float, float, float, float],
+  ) -> bool:
+      return (
+          max(left[0], right[0]) < min(left[2], right[2])
+          and max(left[1], right[1]) < min(left[3], right[3])
+      )
+
+
+  def stable_digest(value: object) -> str:
+      encoded = json.dumps(
+          value,
+          ensure_ascii=False,
+          separators=(",", ":"),
+      ).encode("utf-8")
+      return hashlib.sha256(encoded).hexdigest()
+
+
+  def observation_id(observation: object) -> str:
+      seed = json.dumps(
+          [
+              VERSION,
+              SOURCE_SHA,
+              observation.page_index,
+              observation.proposal_kind,
+              [number_string(value) for value in observation.bbox_pdf],
+              observation.geometry_sha256,
+              list(observation.associated_text_observation_ids),
+          ],
+          separators=(",", ":"),
+      ).encode("utf-8")
+      return hashlib.sha256(seed).hexdigest()[:24]
+
+
+  def decision(
+      *,
+      raw_text: str,
+      line_bbox: tuple[float, float, float, float],
+      path_bboxes: tuple[tuple[float, float, float, float], ...],
+      canonical_items: tuple[bytes, ...],
+  ) -> tuple[bool, str]:
+      items = [json.loads(item) for item in canonical_items]
+      widths = tuple(quantized(item[2] - item[0]) for item in path_bboxes)
+      heights = tuple(quantized(item[3] - item[1]) for item in path_bboxes)
+      context_area = bbox_area(bbox_union((line_bbox, *path_bboxes)))
+      mean_height = quantized(
+          sum(heights, start=Decimal("0")) / Decimal(len(heights))
+      )
+      fill_count = sum(item["style"]["fill"] is not None for item in items)
+      dash_count = sum(
+          re.sub(
+              r"[ \t\n\r\f\v]+",
+              "",
+              item["style"]["dashes"] or "",
+          )
+          not in {"", "[]0"}
+          for item in items
+      )
+      normalized = re.sub(
+          r"[ \t\n\r\f\v]+",
+          " ",
+          raw_text,
+      ).strip().upper()
+      short_token = re.fullmatch(r"[A-Z0-9]{1,3}", normalized) is not None
+      common = (
+          mean_height <= Decimal("34.000")
+          and max(heights) > Decimal("2.000")
+      )
+      if (
+          common
+          and fill_count <= 1
+          and max(widths) <= Decimal("60.000")
+          and context_area <= Decimal("6000.000")
+      ):
+          return True, "geometry_compact"
+      if (
+          common
+          and fill_count <= 1
+          and max(widths) > Decimal("60.000")
+          and dash_count > 3
+      ):
+          return True, "geometry_dashed"
+      if (
+          common
+          and fill_count > 1
+          and context_area > Decimal("5800.000")
+          and max(heights) <= Decimal("42.000")
+      ):
+          return True, "geometry_filled"
+      if short_token and context_area <= Decimal("6000.000"):
+          return True, "short_token_rescue"
+      return False, "no_admission_branch"
+
+
+  def assert_no_hidden_pre_dedup_contexts(
+      pages: tuple[PageInventory, ...],
+  ) -> None:
+      document = pymupdf.open(source)
+      try:
+          for page in pages:
+              source_page = document[page.page_index]
+              crop = source_page.cropbox
+              transform = PageTransform(
+                  width=float(crop.width),
+                  height=float(crop.height),
+                  rotation=int(source_page.rotation),
+                  scale=1.0,
+              )
+              path_items = _canonical_path_items(
+                  source_page.get_drawings(),
+                  page_index=page.page_index,
+              )
+              spans = [
+                  item
+                  for item in page.observations
+                  if item.source_type == "native"
+                  and item.observation_level == "span"
+              ]
+              raw_signatures = []
+              for line in page.observations:
+                  if (
+                      line.source_type != "native"
+                      or line.observation_level != "line"
+                      or not line.raw_text.strip()
+                  ):
+                      continue
+                  selected = []
+                  for item in path_items:
+                      width = item.bbox[2] - item.bbox[0]
+                      height = item.bbox[3] - item.bbox[1]
+                      if (
+                          width > MAX_PATH_ITEM_EXTENT_PT
+                          or height > MAX_PATH_ITEM_EXTENT_PT
+                      ):
+                          continue
+                      gap_x, gap_y = _axis_gaps(line.bbox_pdf, item.bbox)
+                      if (
+                          gap_x <= MAX_AXIS_GAP_PT
+                          and gap_y <= MAX_AXIS_GAP_PT
+                      ):
+                          selected.append(item)
+                  if not selected:
+                      continue
+                  source_union = _union_bboxes(
+                      (line.bbox_pdf, *(item.bbox for item in selected))
+                  )
+                  if (
+                      _area(source_union)
+                      > page.width
+                      * page.height
+                      * MAX_CONTEXT_PAGE_AREA_RATIO
+                  ):
+                      continue
+                  geometry_sha256 = hashlib.sha256(
+                      b"".join(item.content for item in selected)
+                  ).hexdigest()
+                  associated = tuple(
+                      sorted(
+                          (
+                              line.observation_id,
+                              *(
+                                  span.observation_id
+                                  for span in spans
+                                  if span.parent_region_id
+                                  == line.observation_id
+                              ),
+                          )
+                      )
+                  )
+                  raw_signatures.append(
+                      (
+                          tuple(
+                              number_string(value)
+                              for value in transform.clip_bbox(source_union)
+                          ),
+                          geometry_sha256,
+                          associated,
+                      )
+                  )
+              persisted_signatures = [
+                  (
+                      tuple(
+                          number_string(value)
+                          for value in item.bbox_pdf
+                      ),
+                      item.geometry_sha256,
+                      item.associated_text_observation_ids,
+                  )
+                  for item in page.visual_observations
+              ]
+              assert len(raw_signatures) == len(persisted_signatures)
+              assert sorted(raw_signatures) == sorted(persisted_signatures)
+      finally:
+          document.close()
+
+
+  def calculate() -> tuple[
+      tuple[PageInventory, ...],
+      list[dict[str, object]],
+  ]:
+      pages = build_inventory(source)
+      assert_no_hidden_pre_dedup_contexts(pages)
+      contexts = {
+          item.observation_id: item
+          for item in reconstruct_visual_geometry_contexts(source, pages)
+      }
+      page_rows: list[dict[str, object]] = []
+      v2_pages = []
+      for page in pages:
+          native = {
+              item.observation_id: item
+              for item in page.observations
+              if item.source_type == "native"
+          }
+          rows: list[dict[str, object]] = []
+          retained = []
+          for old in page.visual_observations:
+              context = contexts[old.observation_id]
+              lines = [
+                  native[item]
+                  for item in old.associated_text_observation_ids
+                  if native[item].observation_level == "line"
+              ]
+              assert len(lines) == 1
+              keep, reason = decision(
+                  raw_text=lines[0].raw_text,
+                  line_bbox=context.line_bbox_pdf,
+                  path_bboxes=context.path_bboxes,
+                  canonical_items=context.canonical_path_items,
+              )
+              identity = observation_id(old)
+              current = replace(old, observation_id=identity)
+              if keep:
+                  retained.append(current)
+              rows.append(
+                  {
+                      "bbox_pdf": list(old.bbox_pdf),
+                      "context_id": identity,
+                      "reason_code": reason,
+                      "retained": keep,
+                  }
+              )
+          retained.sort(
+              key=lambda item: (
+                  item.page_index,
+                  item.bbox_pdf[1],
+                  item.bbox_pdf[0],
+                  item.proposal_kind,
+                  item.observation_id,
+              )
+          )
+          page_rows.append(
+              {
+                  "page_index": page.page_index,
+                  "provisional_count": len(page.visual_observations),
+                  "retained_count": len(retained),
+                  "final_retained_context_ids": [
+                      item.observation_id for item in retained
+                  ],
+                  "contexts": rows,
+              }
+          )
+          v2_pages.append(replace(page, visual_observations=tuple(retained)))
+      v2_pages_tuple = tuple(v2_pages)
+      snapshot = candidate_snapshot_from_inventory(v2_pages_tuple)
+      planned = plan_visual_batches(v2_pages_tuple, snapshot)
+      for page_row, page, batches in zip(
+          page_rows,
+          v2_pages_tuple,
+          planned,
+          strict=True,
+      ):
+          identities = [
+              item.observation_id for item in page.visual_observations
+          ]
+          memberships = [list(batch.observation_ids) for batch in batches]
+          flattened = [item for batch in memberships for item in batch]
+          assert len(flattened) == len(set(flattened)) == len(identities)
+          assert set(flattened) == set(identities)
+          for batch in batches:
+              crop = batch.crop_bbox_pdf
+              crop_area = (
+                  max(0.0, crop[2] - crop[0])
+                  * max(0.0, crop[3] - crop[1])
+              )
+              assert crop_area <= page.width * page.height * 0.075
+              assert batch.pixel_width <= 1536
+              assert batch.pixel_height <= 1536
+              assert len(batch.observation_ids) <= 32
+          page_row["batch_count"] = len(batches)
+          page_row["observation_id_sha256"] = stable_digest(identities)
+          page_row["batch_membership_sha256"] = stable_digest(memberships)
+          page_row["reason_counts"] = dict(
+              sorted(
+                  Counter(
+                      row["reason_code"]
+                      for row in page_row["contexts"]
+                  ).items()
+              )
+          )
+      return v2_pages_tuple, page_rows
+
+
+  pages, page_rows = calculate()
+  repeated_pages, repeated_rows = calculate()
+  assert pages == repeated_pages
+  assert page_rows == repeated_rows
+  assert [
+      (row["provisional_count"], row["retained_count"], row["batch_count"])
+      for row in page_rows
+  ] == [(132, 79, 13), (203, 124, 16)]
+  assert [
+      row["observation_id_sha256"] for row in page_rows
+  ] == [
+      "15f476cac29683c425b85b541ad528b38f1983fb5673871466626038ef1852f5",
+      "4f082c0ce52fb649cd9c84c16b685ced29133dc12c3b37392df63767043a4e16",
+  ]
+  assert [
+      row["batch_membership_sha256"] for row in page_rows
+  ] == [
+      "dc7b19187c7346e61f9344d63197f6e815ab3f85af1c6316e2e00888ed8bf0d8",
+      "8a6f8ef3f3c50f85841de792f7bbc078062d4d8c1da75beaa17768b002a50ea2",
+  ]
+
+  labels_by_page = {
+      page["page_index"]: page["labels"]
+      for page in manifest["pages"]
+  }
+  labels_by_id = {
+      label["label_id"]: (page_index, label)
+      for page_index, labels in labels_by_page.items()
+      for label in labels
+  }
+  revision_ids = {
+      label_id
+      for label_id, (_page_index, label) in labels_by_id.items()
+      if label["symbol_kinds"] == ["revision_marker"]
+  }
+  assert revision_ids == {
+      "P1-P03", "P1-P04", "P1-P05", "P2-P08", "P2-P10", "P2-P15"
+  }
+  n5_ids = {"FN-12", "FN-13", "FN-14", "FN-15", "FN-16"}
+  assert all(
+      labels_by_id[label_id][1]["symbol_kinds"] == ["frozen_negative"]
+      and labels_by_id[label_id][1]["negative_family"]
+      == "revision_table_or_invalid_marker"
+      for label_id in n5_ids
+  )
+  gdt_and_datum_kinds = {
+      "gdt_parallelism",
+      "gdt_perpendicularity",
+      "gdt_flatness",
+      "datum_reference",
+  }
+  gdt_and_datum_ids = {
+      label_id
+      for label_id, (_page_index, label) in labels_by_id.items()
+      if set(label["symbol_kinds"]) <= gdt_and_datum_kinds
+      and set(label["symbol_kinds"])
+  }
+  assert gdt_and_datum_ids == {
+      "P1-P01", "P1-P07", "P1-P08", "P1-P09",
+      "P1-P14", "P1-P15", "P1-P22", "P1-P23",
+  }
+  representative_kinds = {
+      "P1-P16": "diameter",
+      "P1-P10": "depth",
+      "P2-P02": "counterbore",
+      "P1-P02": "surface_roughness",
+  }
+  assert all(
+      kind in labels_by_id[label_id][1]["symbol_kinds"]
+      for label_id, kind in representative_kinds.items()
+  )
+  label_rows = []
+  positive_overlap_counts = []
+  for page_row in page_rows:
+      page_index = page_row["page_index"]
+      positive_total = 0
+      positive_with_overlap = 0
+      for label in labels_by_page[page_index]:
+          label_bbox = tuple(label["bbox_pdf"])
+          matches = [
+              row
+              for row in page_row["contexts"]
+              if intersects(tuple(row["bbox_pdf"]), label_bbox)
+          ]
+          is_negative = label["symbol_kinds"] == ["frozen_negative"]
+          if not is_negative:
+              positive_total += 1
+              if any(row["retained"] for row in matches):
+                  positive_with_overlap += 1
+          label_rows.append(
+              {
+                  "expected_disposition": label["expected_disposition"],
+                  "label_id": label["label_id"],
+                  "negative_family": label.get("negative_family"),
+                  "page_index": page_index,
+                  "rejected_context_ids": [
+                      row["context_id"] for row in matches
+                      if not row["retained"]
+                  ],
+                  "retained_context_ids": [
+                      row["context_id"] for row in matches
+                      if row["retained"]
+                  ],
+                  "symbol_kinds": label["symbol_kinds"],
+              }
+          )
+      positive_overlap_counts.append(
+          (positive_with_overlap, positive_total)
+      )
+  assert positive_overlap_counts == [(26, 26), (30, 30)]
+  assert len(label_rows) == 72
+  assert sum(
+      row["symbol_kinds"] != ["frozen_negative"] for row in label_rows
+  ) == 56
+  assert sum(
+      row["symbol_kinds"] == ["frozen_negative"] for row in label_rows
+  ) == 16
+
+  document = pymupdf.open(source)
+  font = ImageFont.load_default()
+
+
+  def to_pixels(
+      bbox: tuple[float, float, float, float],
+      *,
+      page_index: int,
+      scale: float,
+  ) -> tuple[int, int, int, int]:
+      crop = document[page_index].cropbox
+      return tuple(
+          round(value * scale)
+          for value in (
+              bbox[0] - crop.x0,
+              bbox[1] - crop.y0,
+              bbox[2] - crop.x0,
+              bbox[3] - crop.y0,
+          )
+      )
+
+
+  def dashed_rectangle(
+      draw: ImageDraw.ImageDraw,
+      bbox: tuple[int, int, int, int],
+      *,
+      color: str,
+      width: int,
+  ) -> None:
+      x0, y0, x1, y1 = bbox
+      for start in range(x0, x1, 14):
+          draw.line((start, y0, min(start + 8, x1), y0), fill=color, width=width)
+          draw.line((start, y1, min(start + 8, x1), y1), fill=color, width=width)
+      for start in range(y0, y1, 14):
+          draw.line((x0, start, x0, min(start + 8, y1)), fill=color, width=width)
+          draw.line((x1, start, x1, min(start + 8, y1)), fill=color, width=width)
+
+
+  def overlay(page_index: int, scale: float) -> Image.Image:
+      page = document[page_index]
+      assert page.rotation == 0
+      image = page.get_pixmap(
+          matrix=pymupdf.Matrix(scale, scale),
+          clip=page.cropbox,
+          alpha=False,
+      ).pil_image().convert("RGB")
+      draw = ImageDraw.Draw(image)
+      for row in page_rows[page_index]["contexts"]:
+          bbox = to_pixels(
+              tuple(row["bbox_pdf"]),
+              page_index=page_index,
+              scale=scale,
+          )
+          if row["retained"]:
+              draw.rectangle(bbox, outline="#00a000", width=max(2, round(scale)))
+          else:
+              dashed_rectangle(
+                  draw,
+                  bbox,
+                  color="#d00000",
+                  width=max(2, round(scale)),
+              )
+      for label in labels_by_page[page_index]:
+          bbox = to_pixels(
+              tuple(label["bbox_pdf"]),
+              page_index=page_index,
+              scale=scale,
+          )
+          color = (
+              "#f08000"
+              if label["symbol_kinds"] == ["frozen_negative"]
+              else "#0040d0"
+          )
+          draw.rectangle(bbox, outline=color, width=max(3, round(scale * 1.5)))
+          draw.text((bbox[0] + 2, bbox[1] + 2), label["label_id"], fill=color, font=font)
+      return image
+
+
+  full_overlays = {
+      0: overlay(0, 2.0),
+      1: overlay(1, 2.0),
+  }
+  full_overlays[0].save(
+      output / "page-1-proposal-gate-overlay-200pct.png"
+  )
+  full_overlays[1].save(
+      output / "page-2-proposal-gate-overlay-200pct.png"
+  )
+  zoom_overlays = {
+      0: overlay(0, 4.0),
+      1: overlay(1, 4.0),
+  }
+
+
+  def label_card(label_id: str) -> Image.Image:
+      page_index, label = labels_by_id[label_id]
+      full = zoom_overlays[page_index]
+      bbox = tuple(label["bbox_pdf"])
+      margin = 14.0
+      crop = document[page_index].cropbox
+      expanded = (
+          max(crop.x0, bbox[0] - margin),
+          max(crop.y0, bbox[1] - margin),
+          min(crop.x1, bbox[2] + margin),
+          min(crop.y1, bbox[3] + margin),
+      )
+      pixels = to_pixels(expanded, page_index=page_index, scale=4.0)
+      content = full.crop(pixels)
+      card = Image.new("RGB", (content.width, content.height + 24), "white")
+      ImageDraw.Draw(card).text((4, 4), label_id, fill="black", font=font)
+      card.paste(content, (0, 24))
+      return card
+
+
+  def contact_sheet(label_ids: tuple[str, ...], filename: str) -> None:
+      cards = [label_card(label_id) for label_id in label_ids]
+      columns = min(3, len(cards))
+      rows = (len(cards) + columns - 1) // columns
+      cell_width = max(card.width for card in cards)
+      cell_height = max(card.height for card in cards)
+      sheet = Image.new(
+          "RGB",
+          (columns * cell_width, rows * cell_height),
+          "white",
+      )
+      for index, card in enumerate(cards):
+          x = (index % columns) * cell_width
+          y = (index // columns) * cell_height
+          sheet.paste(card, (x, y))
+      sheet.save(output / filename)
+
+
+  contact_sheet(
+      ("P1-P03", "P1-P04", "P1-P05", "P2-P08", "P2-P10", "P2-P15"),
+      "zoom-revision-positive.png",
+  )
+  contact_sheet(
+      ("FN-12", "FN-13", "FN-14", "FN-15", "FN-16"),
+      "zoom-n5-negative.png",
+  )
+  contact_sheet(
+      ("P1-P01", "P1-P07", "P1-P08", "P1-P09", "P1-P15", "P1-P22", "P1-P23", "P1-P14"),
+      "zoom-gdt-and-boxed-datum.png",
+  )
+  contact_sheet(
+      ("P1-P16", "P1-P10", "P2-P02", "P1-P02"),
+      "zoom-core-symbol-representatives.png",
+  )
+
+  dense_candidates = []
+  for page_index, labels in labels_by_page.items():
+      centers = [
+          (
+              (label["bbox_pdf"][0] + label["bbox_pdf"][2]) / 2,
+              (label["bbox_pdf"][1] + label["bbox_pdf"][3]) / 2,
+          )
+          for label in labels
+      ]
+      page = document[page_index]
+      x_starts = sorted(
+          {
+              max(page.cropbox.x0, min(x, page.cropbox.x1 - 200.0))
+              for center_x, _center_y in centers
+              for x in (center_x, center_x - 200.0)
+          }
+      )
+      y_starts = sorted(
+          {
+              max(page.cropbox.y0, min(y, page.cropbox.y1 - 200.0))
+              for _center_x, center_y in centers
+              for y in (center_y, center_y - 200.0)
+          }
+      )
+      for y0 in y_starts:
+          for x0 in x_starts:
+              count = sum(
+                  x0 <= center_x <= x0 + 200.0
+                  and y0 <= center_y <= y0 + 200.0
+                  for center_x, center_y in centers
+              )
+              dense_candidates.append((-count, page_index, y0, x0))
+  _negative_count, dense_page, dense_y0, dense_x0 = min(dense_candidates)
+  dense_full = zoom_overlays[dense_page]
+  dense_bbox = (dense_x0, dense_y0, dense_x0 + 200.0, dense_y0 + 200.0)
+  dense_full.crop(
+      to_pixels(dense_bbox, page_index=dense_page, scale=4.0)
+  ).save(output / "zoom-densest-region.png")
+  document.close()
+
+  artifact_names = (
+      "page-1-proposal-gate-overlay-200pct.png",
+      "page-2-proposal-gate-overlay-200pct.png",
+      "zoom-revision-positive.png",
+      "zoom-n5-negative.png",
+      "zoom-gdt-and-boxed-datum.png",
+      "zoom-core-symbol-representatives.png",
+      "zoom-densest-region.png",
+  )
+  report = {
+      "artifact_sha256": {
+          name: hashlib.sha256((output / name).read_bytes()).hexdigest()
+          for name in artifact_names
+      },
+      "labels": label_rows,
+      "manifest_sha256": MANIFEST_SHA,
+      "pages": page_rows,
+      "proposal_rule_sha256": RULE_SHA,
+      "proposal_rule_version": VERSION,
+      "provider_calls": 0,
+      "provider_construction": 0,
+      "reviewed_frozen_negative_region_count": 16,
+      "reviewed_positive_label_count": 56,
+      "schema_version": "visual-proposal-gate-report/1",
+  }
+  (output / "proposal-gate-report.json").write_text(
+      json.dumps(
+          report,
+          ensure_ascii=False,
+          sort_keys=True,
+          separators=(",", ":"),
+      )
+      + "\n",
+      encoding="utf-8",
+  )
+  print(
+      "page=0 provisional=132 retained=79 batches=13; "
+      "page=1 provisional=203 retained=124 batches=16; "
+      "positive_overlap=26/26,30/30; "
+      "provider_construction=0 provider_calls=0"
+  )
+  PY
+  test "$QI_PROPOSAL_STATUS_BEFORE" = "$(git status --porcelain=v1)"
+  QI_PROPOSAL_REPORT_SHA256="$(sha256sum \
+    "$QI_PROPOSAL_EVIDENCE_DIR/proposal-gate-report.json" | cut -d' ' -f1)"
+  test "${#QI_PROPOSAL_REPORT_SHA256}" -eq 64
+  printf 'proposal_gate_report_sha256=%s\n' \
+    "$QI_PROPOSAL_REPORT_SHA256"
+  ```
+
+  exact output filenames：
+
+  ```text
+  page-1-proposal-gate-overlay-200pct.png
+  page-2-proposal-gate-overlay-200pct.png
+  zoom-revision-positive.png
+  zoom-n5-negative.png
+  zoom-gdt-and-boxed-datum.png
+  zoom-core-symbol-representatives.png
+  zoom-densest-region.png
+  proposal-gate-report.json
+  ```
+
+  zoom membership 固定为：
+
+  - revision positive:
+    `P1-P03,P1-P04,P1-P05,P2-P08,P2-P10,P2-P15`；
+  - N5 no-token triangles: `FN-12,FN-13,FN-14,FN-15,FN-16`；
+  - all GD&T + boxed datum:
+    `P1-P01,P1-P07,P1-P08,P1-P09,P1-P15,P1-P22,P1-P23,P1-P14`；
+  - representatives:
+    diameter `P1-P16`、depth `P1-P10`、counterbore `P2-P02`、
+    surface roughness `P1-P02`；
+  - densest region: 对两页的全部 `200pt × 200pt` sliding-window candidates 计算
+    label-center count，输出唯一 global maximum；tie-break
+    `(page_index,y0,x0)`。
+
+  mechanical expected values：
+
+  ```text
+  manifest_sha256=0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448
+  rule_sha256=e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50
+  page=0 provisional=132 retained=79 batches=13 positive_labels_with_overlap=26/26
+  page=1 provisional=203 retained=124 batches=16 positive_labels_with_overlap=30/30
+  reviewed_positive_labels=56 reviewed_frozen_negative_regions=16
+  provider_construction=0 provider_calls=0 repository_write_count=0
+  ```
+
+  `positive_labels_with_overlap` 只作 calibration sanity check。它不能替代 Quality
+  Owner 的视觉判断；任一 frozen negative disposition、context boundary 或 dense
+  area 仍必须逐图核对。renderer 必须重复运行两次并证明：
+
+  ```text
+  page=0 observation_id_sha256=15f476cac29683c425b85b541ad528b38f1983fb5673871466626038ef1852f5
+  page=0 batch_membership_sha256=dc7b19187c7346e61f9344d63197f6e815ab3f85af1c6316e2e00888ed8bf0d8
+  page=1 observation_id_sha256=4f082c0ce52fb649cd9c84c16b685ced29133dc12c3b37392df63767043a4e16
+  page=1 batch_membership_sha256=8a6f8ef3f3c50f85841de792f7bbc078062d4d8c1da75beaa17768b002a50ea2
+  exact_once=true limits=true repeatable=true
+  ```
+
+  任一 count、digest、limit、label coverage 或 Provider/write count 不一致即停止。
+
+- [ ] **Step 3: Obtain an explicit Quality Owner verdict**
+
+  向 Quality Owner 提供 Step 2 的两页完整 overlay、五张 zoom 和 report。不得只提供
+  缩略图或 overlap count。Quality Owner 必须逐项确认全部 56 positives、16 frozen
+  negatives、六个 token revision markers、五个 N5 triangles、全部 GD&T/boxed
+  datum、四类 representatives 和 densest region。
+
+  approval evidence 必须是 canonical JSON，字段和值完整：
+
+  ```json
+  {
+    "annotation_status": "approved",
+    "manifest_sha256": "0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448",
+    "overlay_scale_percent": 200,
+    "proposal_rule_sha256": "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50",
+    "proposal_rule_version": "visual-observation/2",
+    "reviewed_frozen_negative_region_count": 16,
+    "reviewed_positive_label_count": 56,
+    "schema_version": "visual-proposal-gate-verdict/1",
+    "unlabeled_target_count": 0
+  }
+  ```
+
+  同一 object 还必须包含 `overlay_sha256` 的两个 exact file→digest entries 和
+  `zoom_sha256` 的五个 exact file→digest entries，以及
+  `proposal_gate_report_sha256`，其值必须 exact 等于 Step 2 输出的
+  `QI_PROPOSAL_REPORT_SHA256`。所有 digest 从实际 bytes 计算，不能在 plan 中预填或
+  猜测。Quality Owner approval 后，SR-2B Step 4 必须把 report SHA、两页 final
+  retained-ID digests、batch digests 和全部 artifact digests 写入 approved design/
+  plans；SR-2C 以这些 committed digests 为 stable handle，不依赖 `/tmp` path。
+  report 与 images 仍不得加入 Git。若 verdict 不是 exact approval，停止并回到
+  design；不得修改 production/test code、stable contract 或 Provider policy。
+
+- [ ] **Step 4: Bind the approved rule to design and stable contract, then commit docs only**
+
+  只有 Step 3 approved 后才执行。将 Step 1 exact predicate/feature definitions、
+  Step 2 actual counts、report/artifact digests 和 Step 3 verdict/digests 写回
+  accepted design；本 plan 与 current plan 记录 Quality Owner evidence 已关闭。将
+  `docs/contracts/MAIN_CONTRACT_MATRIX.md` 的 `PDF-007` stable requirement 改为：
+
+  ```text
+  Page inventory 保存区域、coverage、来源冲突和异常；当前固定范围内与 native text
+  相邻的 visual observation 还必须保存稳定 ID、PDF bbox、geometry hash 和 text
+  relations；proposal admission 必须由 Page inventory Owner 使用显式 versioned
+  deterministic rule，禁止 source/page/label/Provider 特判，rule 变化必须重新完成
+  Quality Owner 200% overlay 验证；低置信度区域不得直接导致已 retained 工程内容被排除。
+  ```
+
+  `PDF-007` 仍通过 existing `P0-REC-009` related-business binding 覆盖；不新增 logical
+  ID，required total 保持 `32`。运行：
+
+  ```bash
+  PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python \
+    .agent/harness/scripts/check-contracts.py
+  git diff --check -- \
+    docs/contracts/MAIN_CONTRACT_MATRIX.md \
+    docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md \
+    docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md \
+    docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md
+  git add \
+    docs/contracts/MAIN_CONTRACT_MATRIX.md \
+    docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md \
+    docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md \
+    docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md
+  git diff --cached --check
+  test "$(git diff --cached --name-only | sort)" = \
+    "$(printf '%s\n' \
+      docs/contracts/MAIN_CONTRACT_MATRIX.md \
+      docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md \
+      docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md \
+      docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md \
+      | sort)"
+  git commit -m "docs: freeze approved visual proposal gate"
+  ```
+
+  Expected: contract checks PASS；cached paths exact equal the four docs；SR-4 七文件仍
+  unstaged；sealed run bytes unchanged；Provider calls=`0`。
+
+### SR-2C: Implement The Approved Proposal Owner With TDD
+
+只有 SR-2B docs commit 存在且 Quality Owner verdict 为 exact approval 才能开始。
+本 task 扩展 existing PDF-01/PDF-02/PDF-03 semantics 和 supporting cache regression，
+不新增 logical test ID，32-count 不变。
+
+**Proposal-only commit files:**
+
+- Modify: `backend/app/pdf/visual_observations.py`
+- Modify: `backend/tests/unit/pdf/test_visual_observations.py`
+
+**Existing SR-4 working-diff files touched but not staged in SR-2C:**
+
+- Modify: `backend/app/candidates/symbol_review.py`
+- Modify: `backend/tests/unit/candidates/test_symbol_advisor.py`
+
+- [ ] **Step 1: Write PDF RED tests before production edits**
+
+  在 `backend/tests/unit/pdf/test_visual_observations.py` 增加或扩展以下 exact test
+  functions：
+
+  - `test_hybrid_proposal_gate_admits_each_geometry_branch`
+  - `test_hybrid_proposal_gate_rescues_short_technical_token`
+  - `test_hybrid_proposal_gate_rejects_noise_and_snaps_boundaries`
+  - `test_visual_observation_v2_reconstructs_or_blocks`
+
+  添加 `Decimal`、`PROPOSAL_RULE_VERSION`、`_ProposalFeatures`、
+  `_proposal_decision` 和 `_short_token_fullmatch` imports，并使用以下完整 test
+  content：
+
+  ```python
+  from decimal import Decimal
+
+  from app.pdf.visual_observations import (
+      PROPOSAL_RULE_VERSION,
+      _ProposalFeatures,
+      _proposal_decision,
+      _short_token_fullmatch,
+  )
+
+
+  def _gate_features(
+      **changes: object,
+  ) -> _ProposalFeatures:
+      features = _ProposalFeatures(
+          context_area=Decimal("5000.000"),
+          max_item_width=Decimal("50.000"),
+          max_item_height=Decimal("10.000"),
+          mean_item_height=Decimal("10.000"),
+          fill_count=0,
+          dash_count=0,
+          short_token_fullmatch=False,
+      )
+      return replace(features, **changes)
+
+
+  @pytest.mark.parametrize(
+      ("features", "reason_code"),
+      (
+          (_gate_features(), "geometry_compact"),
+          (
+              _gate_features(
+                  context_area=Decimal("7000.000"),
+                  max_item_width=Decimal("60.001"),
+                  dash_count=4,
+              ),
+              "geometry_dashed",
+          ),
+          (
+              _gate_features(
+                  context_area=Decimal("5800.001"),
+                  max_item_width=Decimal("70.000"),
+                  max_item_height=Decimal("42.000"),
+                  fill_count=2,
+              ),
+              "geometry_filled",
+          ),
+      ),
+  )
+  def test_hybrid_proposal_gate_admits_each_geometry_branch(
+      features: _ProposalFeatures,
+      reason_code: str,
+  ) -> None:
+      decision = _proposal_decision(features)
+      assert decision.retained is True
+      assert decision.reason_code == reason_code
+
+
+  def test_hybrid_proposal_gate_rescues_short_technical_token() -> None:
+      assert _short_token_fullmatch("a1") is True
+      assert _short_token_fullmatch(" A1 ") is True
+      for rejected in ("A 1", "A-1", "ABCD", "Φ"):
+          assert _short_token_fullmatch(rejected) is False
+
+      decision = _proposal_decision(
+          _gate_features(
+              context_area=Decimal("6000.000"),
+              max_item_height=Decimal("2.000"),
+              mean_item_height=Decimal("35.000"),
+              short_token_fullmatch=True,
+          )
+      )
+      assert decision.retained is True
+      assert decision.reason_code == "short_token_rescue"
+
+      transform = PageTransform(
+          width=200.0,
+          height=200.0,
+          rotation=0,
+          scale=1.0,
+      )
+      rescued_line = TextObservation(
+          observation_id="short-token-line",
+          source_type="native",
+          observation_level="line",
+          raw_text="a1",
+          normalized_text="a1",
+          page_index=0,
+          bbox_pdf=(20.0, 20.0, 30.0, 30.0),
+          bbox_normalized=(0.1, 0.1, 0.15, 0.15),
+          direction=(1.0, 0.0),
+          direction_angle_degrees=0.0,
+          confidence=None,
+      )
+      drawing = {
+          "items": [
+              (
+                  "l",
+                  pymupdf.Point(18.0, 18.0),
+                  pymupdf.Point(20.0, 20.0),
+              )
+          ],
+          "width": 1.0,
+          "dashes": "[] 0",
+          "lineCap": 0,
+          "lineJoin": 0,
+          "color": (0.0,),
+          "fill": None,
+          "closePath": False,
+      }
+      rescued, contexts = build_page_visual_observations(
+          page_index=0,
+          page_width=200.0,
+          page_height=200.0,
+          source_sha256="a" * 64,
+          native_observations=(rescued_line,),
+          drawings=(drawing,),
+          transform=transform,
+      )
+      rejected, rejected_contexts = build_page_visual_observations(
+          page_index=0,
+          page_width=200.0,
+          page_height=200.0,
+          source_sha256="a" * 64,
+          native_observations=(
+              replace(
+                  rescued_line,
+                  raw_text="ordinary",
+                  normalized_text="ordinary",
+              ),
+          ),
+          drawings=(drawing,),
+          transform=transform,
+      )
+      assert len(rescued) == len(contexts) == 1
+      assert rejected == ()
+      assert rejected_contexts == ()
+
+
+  @pytest.mark.parametrize(
+      ("features", "expected_retained", "expected_reason"),
+      (
+          (
+              _gate_features(mean_item_height=Decimal("34.000")),
+              True,
+              "geometry_compact",
+          ),
+          (
+              _gate_features(mean_item_height=Decimal("34.001")),
+              False,
+              "no_admission_branch",
+          ),
+          (
+              _gate_features(max_item_height=Decimal("2.000")),
+              False,
+              "no_admission_branch",
+          ),
+          (
+              _gate_features(max_item_height=Decimal("2.001")),
+              True,
+              "geometry_compact",
+          ),
+          (
+              _gate_features(max_item_width=Decimal("60.000")),
+              True,
+              "geometry_compact",
+          ),
+          (
+              _gate_features(context_area=Decimal("6000.000")),
+              True,
+              "geometry_compact",
+          ),
+          (
+              _gate_features(context_area=Decimal("6000.001")),
+              False,
+              "no_admission_branch",
+          ),
+          (
+              _gate_features(
+                  context_area=Decimal("7000.000"),
+                  max_item_width=Decimal("60.000"),
+                  dash_count=4,
+              ),
+              False,
+              "no_admission_branch",
+          ),
+          (
+              _gate_features(
+                  context_area=Decimal("7000.000"),
+                  max_item_width=Decimal("60.001"),
+                  dash_count=3,
+              ),
+              False,
+              "no_admission_branch",
+          ),
+          (
+              _gate_features(
+                  context_area=Decimal("5800.001"),
+                  max_item_width=Decimal("70.000"),
+                  fill_count=1,
+              ),
+              False,
+              "no_admission_branch",
+          ),
+          (
+              _gate_features(
+                  context_area=Decimal("5800.000"),
+                  max_item_width=Decimal("70.000"),
+                  fill_count=2,
+              ),
+              False,
+              "no_admission_branch",
+          ),
+          (
+              _gate_features(
+                  context_area=Decimal("5800.001"),
+                  max_item_width=Decimal("70.000"),
+                  max_item_height=Decimal("42.000"),
+                  fill_count=2,
+              ),
+              True,
+              "geometry_filled",
+          ),
+          (
+              _gate_features(
+                  context_area=Decimal("5800.001"),
+                  max_item_width=Decimal("70.000"),
+                  max_item_height=Decimal("42.001"),
+                  fill_count=2,
+              ),
+              False,
+              "no_admission_branch",
+          ),
+          (
+              _gate_features(
+                  context_area=Decimal("6000.001"),
+                  max_item_height=Decimal("2.000"),
+                  mean_item_height=Decimal("35.000"),
+                  short_token_fullmatch=True,
+              ),
+              False,
+              "no_admission_branch",
+          ),
+      ),
+  )
+  def test_hybrid_proposal_gate_rejects_noise_and_snaps_boundaries(
+      features: _ProposalFeatures,
+      expected_retained: bool,
+      expected_reason: str,
+  ) -> None:
+      decision = _proposal_decision(features)
+      assert decision.retained is expected_retained
+      assert decision.reason_code == expected_reason
+
+
+  def test_visual_observation_v2_reconstructs_or_blocks(
+      tmp_path: Path,
+  ) -> None:
+      pdf_path, _manifest = build_symbol_fixture(tmp_path)
+      pages = build_inventory(pdf_path)
+      assert PROPOSAL_RULE_VERSION == "visual-observation/2"
+      assert [len(page.visual_observations) for page in pages] == [10, 9]
+      first = reconstruct_visual_geometry_contexts(pdf_path, pages)
+      second = reconstruct_visual_geometry_contexts(pdf_path, pages)
+      assert first == second
+      assert len(first) == 19
+
+      original = pages[0].visual_observations
+      tampered_sets = (
+          original[1:],
+          (
+              *original,
+              replace(original[-1], observation_id="f" * 24),
+          ),
+          tuple(reversed(original)),
+          (
+              replace(original[0], observation_id="0" * 24),
+              *original[1:],
+          ),
+          (
+              replace(original[0], geometry_sha256="0" * 64),
+              *original[1:],
+          ),
+      )
+      for tampered in tampered_sets:
+          tampered_page = replace(
+              pages[0],
+              visual_observations=tampered,
+          )
+          with pytest.raises(VisualObservationBlockingError) as error:
+              reconstruct_visual_geometry_contexts(
+                  pdf_path,
+                  (tampered_page, pages[1]),
+              )
+          assert error.value.code == "visual_reconstruction_mismatch"
+  ```
+
+  v2 test 必须证明 repeated IDs/order exact、same geometry/different associated text 仍不
+  合并、missing/extra/order/ID/geometry tamper 继续
+  `visual_reconstruction_mismatch`。既有 synthetic fixtures 必须按 approved rule
+  明确构造 admission/noise facts，不得通过放宽 assertion 保留 v1 behavior。只读
+  fixture preflight 已证明 approved rule 保留 existing `[10,9]` observations，因此
+  不修改 `backend/tests/helpers/symbol_fixture.py` 或扩大 SR-2C file scope。
+
+  ```bash
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
+  micromamba run -n qi-p0 pytest \
+    backend/tests/unit/pdf/test_visual_observations.py \
+    -p no:cacheprovider -q
+  ```
+
+  Expected RED: new gate/version assertions FAIL because production 仍是
+  `visual-observation/1` 且没有 admission gate；existing unrelated assertions 仍 PASS。
+
+- [ ] **Step 2: Write cache single-source RED inside the existing SR-4 diff**
+
+  在 `backend/tests/unit/candidates/test_symbol_advisor.py` 增加
+  `test_visual_cache_identity_uses_proposal_owner_version`。它必须证明 cache identity
+  从 `app.pdf.visual_observations.PROPOSAL_RULE_VERSION` 读取
+  `visual-observation/2`，v1 bytes 不能命中 v2 cache；并用 source inspection 或 module
+  identity 证明 `symbol_review.py` 不再拥有第二个
+  `VISUAL_PROPOSAL_VERSION` string assignment。
+
+  添加 `import app.candidates.symbol_review as symbol_review`、
+  `visual_cache_identity`、`visual_cache_key` 和 `PROPOSAL_RULE_VERSION` imports，
+  再添加完整 test：
+
+  ```python
+  import app.candidates.symbol_review as symbol_review
+  from app.candidates.symbol_review import (
+      visual_cache_identity,
+      visual_cache_key,
+  )
+  from app.pdf.visual_observations import PROPOSAL_RULE_VERSION
+
+
+  def test_visual_cache_identity_uses_proposal_owner_version() -> None:
+      arguments = {
+          "source_sha256": "a" * 64,
+          "visual_observation_ids": ("visual-001",),
+          "crop_bbox_pdf": (1.0, 2.0, 10.0, 20.0),
+          "crop_sha256": "b" * 64,
+          "model": "qwen-vl-fixture",
+      }
+      current = visual_cache_identity(**arguments)
+      legacy = visual_cache_identity(
+          **arguments,
+          proposal_version="visual-observation/1",
+      )
+
+      assert PROPOSAL_RULE_VERSION == "visual-observation/2"
+      assert current["proposal_version"] == PROPOSAL_RULE_VERSION
+      assert legacy["proposal_version"] == "visual-observation/1"
+      assert visual_cache_key(**arguments) != visual_cache_key(
+          **arguments,
+          proposal_version="visual-observation/1",
+      )
+      assert not hasattr(symbol_review, "VISUAL_PROPOSAL_VERSION")
+  ```
+
+  ```bash
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
+  micromamba run -n qi-p0 pytest \
+    backend/tests/unit/candidates/test_symbol_advisor.py \
+    -p no:cacheprovider -q
+  ```
+
+  Expected RED: local duplicate v1 constant 仍存在，cache identity 未跟随 proposal
+  Owner。该 test file 已属于 SR-4 dirty ownership，RED 后仍不得 stage/commit。
+
+- [ ] **Step 3: Implement only the approved gate in the proposal Owner**
+
+  在 `backend/app/pdf/visual_observations.py` 的 typing import 加入 `Literal`，将
+  version/digest 和 internal types 定义为：
+
+  ```python
+  PROPOSAL_RULE_VERSION = "visual-observation/2"
+  PROPOSAL_RULE_CANONICAL_JSON = (
+      b'{"branch_order":["geometry_compact","geometry_dashed","geometry_filled",'
+      b'"short_token_rescue"],"feature_quantum":"0.001","geometry_common":'
+      b'{"max_item_height_min_exclusive":"2.000","mean_item_height_max":"34.000"},'
+      b'"geometry_compact":{"context_area_max":"6000.000","fill_count_max":1,'
+      b'"max_item_width_max":"60.000"},"geometry_dashed":{"dash_count_min_exclusive":3,'
+      b'"fill_count_max":1,"max_item_width_min_exclusive":"60.000"},'
+      b'"geometry_filled":{"context_area_min_exclusive":"5800.000",'
+      b'"fill_count_min_exclusive":1,"max_item_height_max":"42.000"},'
+      b'"proposal_rule_version":"visual-observation/2",'
+      b'"schema_version":"visual-proposal-gate/1","short_token_rescue":'
+      b'{"context_area_max":"6000.000","pattern":"[A-Z0-9]{1,3}"}}'
+  )
+  PROPOSAL_RULE_SHA256 = hashlib.sha256(
+      PROPOSAL_RULE_CANONICAL_JSON
+  ).hexdigest()
+  if PROPOSAL_RULE_SHA256 != (
+      "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50"
+  ):
+      raise RuntimeError("visual proposal rule digest mismatch")
+
+  @dataclass(frozen=True)
+  class _ProposalFeatures:
+      context_area: Decimal
+      max_item_width: Decimal
+      max_item_height: Decimal
+      mean_item_height: Decimal
+      fill_count: int
+      dash_count: int
+      short_token_fullmatch: bool
+
+  @dataclass(frozen=True)
+  class _ProposalDecision:
+      retained: bool
+      reason_code: Literal[
+          "geometry_compact",
+          "geometry_dashed",
+          "geometry_filled",
+          "short_token_rescue",
+          "no_admission_branch",
+      ]
+
+
+  @dataclass(frozen=True)
+  class _CanonicalPathItem:
+      bbox: BBox
+      content: bytes
+      has_fill: bool
+      has_dash: bool
+  ```
+
+  用一个 constructor 保持 canonical bytes 与 feature flags 同源，并让现有
+  `_point_item()` 和 `re` branch 都调用它：
+
+  ```python
+  def _canonical_path_item(
+      *,
+      bbox: BBox,
+      payload: dict[str, Any],
+      style: dict[str, Any],
+  ) -> _CanonicalPathItem:
+      dashes = style["dashes"]
+      compact_dashes = (
+          ""
+          if dashes is None
+          else _ASCII_WHITESPACE.sub("", dashes)
+      )
+      return _CanonicalPathItem(
+          bbox=bbox,
+          content=json.dumps(
+              payload,
+              sort_keys=True,
+              separators=(",", ":"),
+          ).encode("utf-8"),
+          has_fill=style["fill"] is not None,
+          has_dash=compact_dashes not in {"", "[]0"},
+      )
+  ```
+
+  `_point_item()` 的 return 改为：
+
+  ```python
+  return _canonical_path_item(
+      bbox=_union_bboxes(point_bboxes),
+      payload=payload,
+      style=style,
+  )
+  ```
+
+  `_canonical_item()` 的 `opcode == "re"` branch return 改为：
+
+  ```python
+  return _canonical_path_item(
+      bbox=bbox,
+      payload=payload,
+      style=style,
+  )
+  ```
+
+  在 `_area()` 后加入完整 pure feature/decision implementation：
+
+  ```python
+  _SHORT_TOKEN = re.compile(r"[A-Z0-9]{1,3}")
+
+
+  def _measure(value: int | float | Decimal, *, page_index: int) -> Decimal:
+      return Decimal(_number_string(value, page_index=page_index))
+
+
+  def _short_token_fullmatch(raw_text: str) -> bool:
+      normalized = _ASCII_WHITESPACE.sub(" ", raw_text).strip().upper()
+      return _SHORT_TOKEN.fullmatch(normalized) is not None
+
+
+  def _proposal_features(
+      *,
+      raw_text: str,
+      selected: Sequence[_CanonicalPathItem],
+      source_union: BBox,
+      page_index: int,
+  ) -> _ProposalFeatures:
+      widths = tuple(
+          _measure(item.bbox[2] - item.bbox[0], page_index=page_index)
+          for item in selected
+      )
+      heights = tuple(
+          _measure(item.bbox[3] - item.bbox[1], page_index=page_index)
+          for item in selected
+      )
+      mean_height = _measure(
+          sum(heights, start=Decimal("0")) / Decimal(len(heights)),
+          page_index=page_index,
+      )
+      return _ProposalFeatures(
+          context_area=_measure(_area(source_union), page_index=page_index),
+          max_item_width=max(widths),
+          max_item_height=max(heights),
+          mean_item_height=mean_height,
+          fill_count=sum(item.has_fill for item in selected),
+          dash_count=sum(item.has_dash for item in selected),
+          short_token_fullmatch=_short_token_fullmatch(raw_text),
+      )
+
+
+  def _proposal_decision(
+      features: _ProposalFeatures,
+  ) -> _ProposalDecision:
+      common = (
+          features.mean_item_height <= Decimal("34.000")
+          and features.max_item_height > Decimal("2.000")
+      )
+      if (
+          common
+          and features.fill_count <= 1
+          and features.max_item_width <= Decimal("60.000")
+          and features.context_area <= Decimal("6000.000")
+      ):
+          return _ProposalDecision(True, "geometry_compact")
+      if (
+          common
+          and features.fill_count <= 1
+          and features.max_item_width > Decimal("60.000")
+          and features.dash_count > 3
+      ):
+          return _ProposalDecision(True, "geometry_dashed")
+      if (
+          common
+          and features.fill_count > 1
+          and features.context_area > Decimal("5800.000")
+          and features.max_item_height <= Decimal("42.000")
+      ):
+          return _ProposalDecision(True, "geometry_filled")
+      if (
+          features.short_token_fullmatch
+          and features.context_area <= Decimal("6000.000")
+      ):
+          return _ProposalDecision(True, "short_token_rescue")
+      return _ProposalDecision(False, "no_admission_branch")
+  ```
+
+  在 `build_page_visual_observations()` 现有 `>1%` area guard 后、`bbox_pdf` /
+  observation-ID creation 前插入：
+
+  ```python
+  decision = _proposal_decision(
+      _proposal_features(
+          raw_text=line.raw_text,
+          selected=selected,
+          source_union=source_union,
+          page_index=page_index,
+      )
+  )
+  if not decision.retained:
+      continue
+  ```
+
+  其余 builder code 不改：retained bbox、geometry SHA、associated text IDs、
+  proposal kind、dedup 和 final sort 保持；v2 ID seed 只通过单一
+  `PROPOSAL_RULE_VERSION` 变化。rejection reason 不写 API、DB、Provider prompt、
+  coverage 或 persisted inventory。不修改 `pack_visual_batches()`、crop thresholds、
+  priority 或 Provider code。
+
+- [ ] **Step 4: Remove the duplicate cache version without widening SR-2C commit**
+
+  在现有 dirty `backend/app/candidates/symbol_review.py` 中删除本地
+  `VISUAL_PROPOSAL_VERSION`，改为：
+
+  ```python
+  from app.pdf.visual_observations import (
+      PROPOSAL_RULE_VERSION,
+      VisualBatch,
+      VisualGeometryContext,
+      VisualObservationBlockingError,
+      pack_visual_batches,
+  )
+  ```
+
+  删除 module-level `VISUAL_PROPOSAL_VERSION` assignment，并把
+  `visual_cache_identity()` 的 argument default 精确改为：
+
+  ```python
+  proposal_version: str = PROPOSAL_RULE_VERSION,
+  ```
+
+  cache identity/default 只引用 `PROPOSAL_RULE_VERSION`。对应 cache RED 在
+  `test_symbol_advisor.py` 转 GREEN，但这两个文件仍与其余 SR-4 changes 一起保留
+  unstaged，直到 Task 4 Step 9。
+
+- [ ] **Step 5: Verify focused GREEN and existing PDF/Advisor behavior**
+
+  ```bash
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
+  micromamba run -n qi-p0 pytest \
+    backend/tests/unit/pdf/test_visual_observations.py \
+    backend/tests/unit/pdf/test_inventory.py \
+    backend/tests/unit/pdf/test_coordinates.py \
+    backend/tests/unit/pdf/test_runtime_ocr.py \
+    backend/tests/unit/candidates/test_symbol_advisor.py \
+    backend/tests/unit/candidates/test_coverage.py \
+    backend/tests/unit/candidates/test_advisor.py \
+    -p no:cacheprovider -q
+  ```
+
+  Expected: PDF-01～PDF-05、ADV-03～ADV-09、COV-01～COV-04 and supporting gate/cache
+  tests PASS；v1 cache bytes miss safely；Provider construction/calls=`0`。
+
+- [ ] **Step 6: Reproduce the exact current-source result with production code**
+
+  不得在 v2 production 上重跑 pre-production renderer；该 renderer 的输入 inventory
+  故意是 v1 provisional set。Quality Owner verdict 和 SR-2B docs commit 已绑定
+  report SHA、exact `132/203` provisional contexts、source/rule digest 以及两页
+  final retained-ID digests。production Owner 直接重算并比较这些 committed
+  retained-ID digests；在相同 source/provisional/rule identity 下，这也机械固定
+  rejected complement，不依赖临时 report path。
+
+  ```bash
+  test -n "${QI_SYMBOL_SOURCE_PDF:-}"
+  QI_PROPOSAL_STATUS_BEFORE="$(git status --porcelain=v1)"
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
+  micromamba run -n qi-p0 python - "$QI_SYMBOL_SOURCE_PDF" <<'PY'
+  import hashlib
+  import json
+  import sys
+  from pathlib import Path
+
+  from app.pdf.inventory import build_inventory
+  from app.pdf.visual_observations import (
+      PROPOSAL_RULE_SHA256,
+      PROPOSAL_RULE_VERSION,
+      reconstruct_visual_geometry_contexts,
+  )
+
+  source = Path(sys.argv[1])
+  assert hashlib.sha256(source.read_bytes()).hexdigest() == (
+      "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
+  )
+  assert PROPOSAL_RULE_VERSION == "visual-observation/2"
+  assert PROPOSAL_RULE_SHA256 == (
+      "e88b784637ded7127882375ca94e6bb5fb314bb5b3c8f0b9131e07920c801e50"
+  )
+
+  def digest(value: object) -> str:
+      return hashlib.sha256(
+          json.dumps(
+              value,
+              ensure_ascii=False,
+              separators=(",", ":"),
+          ).encode("utf-8")
+      ).hexdigest()
+
+  pages = build_inventory(source)
+  contexts = reconstruct_visual_geometry_contexts(source, pages)
+  assert len(contexts) == 203
+  assert [len(page.visual_observations) for page in pages] == [79, 124]
+  actual_digests = [
+      digest(
+          [
+          item.observation_id for item in page.visual_observations
+          ]
+      )
+      for page in pages
+  ]
+  assert actual_digests == [
+      "15f476cac29683c425b85b541ad528b38f1983fb5673871466626038ef1852f5",
+      "4f082c0ce52fb649cd9c84c16b685ced29133dc12c3b37392df63767043a4e16",
+  ]
+  print(
+      "approved_retained_digest_match=true observations=79,124 "
+      "reconstruction=203 rule_version=visual-observation/2"
+  )
+  PY
+  test "$QI_PROPOSAL_STATUS_BEFORE" = "$(git status --porcelain=v1)"
+  ```
+
+  然后运行下述 Task 4 Step 8 exact batch preflight；digest 定义是对 stable ordered
+  ID list / batch-membership nested list 的 compact canonical JSON 做 SHA-256。两组
+  commands 合起来必须 exact：
+
+  ```text
+  page=0 observations=79 batches=13
+  observation_id_sha256=15f476cac29683c425b85b541ad528b38f1983fb5673871466626038ef1852f5
+  batch_membership_sha256=dc7b19187c7346e61f9344d63197f6e815ab3f85af1c6316e2e00888ed8bf0d8
+  page=1 observations=124 batches=16
+  observation_id_sha256=4f082c0ce52fb649cd9c84c16b685ced29133dc12c3b37392df63767043a4e16
+  batch_membership_sha256=8a6f8ef3f3c50f85841de792f7bbc078062d4d8c1da75beaa17768b002a50ea2
+  exact_once=true limits=true repeatable=true
+  provider_construction=0 provider_calls=0 repository_write_count=0
+  ```
+
+  任一 report hash、retained/rejected complement、positive/frozen-negative
+  disposition、reconstruction、batch digest 或 `V>16` mismatch 即回到 design，
+  不得 update golden。
+
+- [ ] **Step 7: Obtain independent read-only review**
+
+  reviewer 必须检查：single proposal Owner、rule/threshold exactness、no second
+  filter、v2 ID/cache single source、reconstruction blocking、tests 是否命中真实
+  failure、SR-4 dirty ownership 和 Provider=`0` boundary。verdict 必须为
+  `accept`、`accept with concerns` 或 `reject`；blocking issue 修复后重新 review。
+
+- [ ] **Step 8: Commit only the proposal Owner and PDF tests**
+
+  ```bash
+  git add \
+    backend/app/pdf/visual_observations.py \
+    backend/tests/unit/pdf/test_visual_observations.py
+  git diff --cached --check
+  test "$(git diff --cached --name-only | sort)" = \
+    "$(printf '%s\n' \
+      backend/app/pdf/visual_observations.py \
+      backend/tests/unit/pdf/test_visual_observations.py | sort)"
+  git commit -m "fix: gate visual observation proposals"
+  ```
+
+  Expected: proposal-only commit contains exactly two files。现有七个 SR-4 files—including
+  v2 cache single-source delta—继续 unstaged。完成后才进入下述 Task 4 Step 8。
 
 ### Step 8: Prove the current two-page source fits the hard budget
 
-This is a deterministic no-Provider preflight. It uses the exact source whose bytes were
-sealed in Task 1 and prints only batch counts, never its path or content.
+This is a deterministic no-write/no-Provider preflight. It uses the exact source whose bytes
+were sealed in Task 1 and prints only counts and digests, never its path、text、coordinates or
+content.
 
 ```bash
-PYTHONPATH=backend micromamba run -n qi-p0 python -c \
-  'import sys; from pathlib import Path; from app.pdf.inventory import build_inventory; from app.processing.automatic_result import candidate_snapshot_from_inventory; from app.candidates.symbol_review import plan_visual_batches; pages = build_inventory(Path(sys.argv[1])); snapshot = candidate_snapshot_from_inventory(pages); planned = plan_visual_batches(pages, snapshot); counts = tuple(len(page_batches) for page_batches in planned); assert len(counts) == 2 and all(count <= 16 for count in counts), counts; print("visual_batches_per_page=" + ",".join(map(str, counts)))' \
-  "$QI_SYMBOL_SOURCE_PDF"
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend \
+micromamba run -n qi-p0 python - "$QI_SYMBOL_SOURCE_PDF" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+from app.candidates.symbol_review import plan_visual_batches
+from app.pdf.inventory import build_inventory
+from app.processing.automatic_result import candidate_snapshot_from_inventory
+
+source = Path(sys.argv[1])
+assert hashlib.sha256(source.read_bytes()).hexdigest() == (
+    "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
+)
+pages = build_inventory(source)
+snapshot = candidate_snapshot_from_inventory(pages)
+planned = plan_visual_batches(pages, snapshot)
+
+def digest(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+observation_counts = tuple(len(page.visual_observations) for page in pages)
+batch_counts = tuple(len(page_batches) for page_batches in planned)
+id_digests = tuple(
+    digest([item.observation_id for item in page.visual_observations])
+    for page in pages
+)
+batch_digests = tuple(
+    digest([list(batch.observation_ids) for batch in page_batches])
+    for page_batches in planned
+)
+assert observation_counts == (79, 124), observation_counts
+assert batch_counts == (13, 16), batch_counts
+assert id_digests == (
+    "15f476cac29683c425b85b541ad528b38f1983fb5673871466626038ef1852f5",
+    "4f082c0ce52fb649cd9c84c16b685ced29133dc12c3b37392df63767043a4e16",
+), id_digests
+assert batch_digests == (
+    "dc7b19187c7346e61f9344d63197f6e815ab3f85af1c6316e2e00888ed8bf0d8",
+    "8a6f8ef3f3c50f85841de792f7bbc078062d4d8c1da75beaa17768b002a50ea2",
+), batch_digests
+for page, page_batches in zip(pages, planned, strict=True):
+    expected = [item.observation_id for item in page.visual_observations]
+    actual = [
+        observation_id
+        for batch in page_batches
+        for observation_id in batch.observation_ids
+    ]
+    assert len(actual) == len(set(actual)) == len(expected)
+    assert set(actual) == set(expected)
+    for batch in page_batches:
+        crop = batch.crop_bbox_pdf
+        crop_area = max(0.0, crop[2] - crop[0]) * max(0.0, crop[3] - crop[1])
+        assert crop_area <= page.width * page.height * 0.075
+        assert batch.pixel_width <= 1536 and batch.pixel_height <= 1536
+        assert len(batch.observation_ids) <= 32
+print(
+    "observations=79,124 batches=13,16 "
+    "exact_once=true limits=true provider_construction=0 provider_calls=0"
+)
+PY
 ```
 
-Expected: two comma-separated counts, each `<=16`. If this fails, stop with
-`symbol_route_budget_exhausted`; do not tune thresholds or silently drop observations to make
-the source pass.
+Expected: the exact final line above。连续执行两次，counts/digests 必须完全一致。如果
+任一 assertion 失败，停止并回到 SR-2C/design；不得调 rule、crop limits 或 expected
+digests 来让 source 通过。
 
 ### Step 9: Commit only Task 4
 
@@ -1274,8 +3083,22 @@ git add \
   backend/tests/unit/candidates/test_symbol_advisor.py \
   backend/tests/unit/candidates/test_coverage.py \
   backend/tests/unit/candidates/test_advisor.py
+git diff --cached --check
+test "$(git diff --cached --name-only | sort)" = \
+  "$(printf '%s\n' \
+    backend/app/candidates/advisor.py \
+    backend/app/candidates/coverage.py \
+    backend/app/candidates/symbol_review.py \
+    backend/app/processing/automatic_result.py \
+    backend/tests/unit/candidates/test_advisor.py \
+    backend/tests/unit/candidates/test_coverage.py \
+    backend/tests/unit/candidates/test_symbol_advisor.py | sort)"
 git commit -m "feat: project visual symbols through candidate owner"
 ```
+
+Expected: Task 4 commit contains exactly the seven long-lived SR-4 files，包括
+`symbol_review.py` 的 v2 cache single-source delta；SR-2C proposal files 已在前一
+commit，不得重复 stage。
 
 ## Task 5: Wire The Canonical Runtime, Failure Veto And Idempotent Result
 
@@ -1980,14 +3803,18 @@ Rollback is an explicit current-plan action, not silent fallback:
 
 1. Stop new uploads and do not delete sealed runs、cache or Provider call records.
 2. Mark the symbol receipt failed/stale and record the blocking code in the current plan.
-3. Revert Task 8 → Task 2 commits in reverse order with `git revert` and each exact commit hash
+3. Revert Task 8 → Task 5 commits in reverse order with `git revert` and each exact commit hash
    recorded during execution.
    Do not reset、force-push or overwrite unrelated dirty files.
-4. Revert Task 1 contract/Harness amendment only after the code commits are reverted; keep the
+4. Revert SR-4 Task 4 commit first，then SR-2C proposal-only commit，then SR-2B
+   exact-rule/Quality Owner docs commit。之后才可依次 revert `6920958` hybrid design、
+   `8e0c625` capacity amendment、`90bfb43` SR-3 和 `bb035bc` SR-2。SR-2A 没有
+   code commit，不得虚构一个 hash。
+5. Revert Task 1 contract/Harness amendment only after the code commits are reverted; keep the
    immutable historical evidence directories untouched.
-5. Revert Task 0 activation last, adding a note that D7-T3 remains blocked by the original
+6. Revert Task 0 activation last, adding a note that D7-T3 remains blocked by the original
    missing-symbol defect.
-6. Run the preserved text-path baseline:
+7. Run the preserved text-path baseline:
 
 ```bash
 micromamba run -n qi-p0 pytest \
@@ -2019,6 +3846,15 @@ blocked. Rollback does not convert the original missing-symbol behavior into acc
 - [x] Staging mechanically proved all nine positive families and all nine distinct
   `negative_family` values; `negative_family_count=9` was derived from the manifest rather than
   entered by a human.
+- [x] SR-2A bounded packing search ended
+  `capacity_feasibility_unproven` without a production/code commit or Provider call.
+- [x] User accepted hybrid proposal-gate design commit `6920958`.
+- [ ] SR-2B Quality Owner approved the exact v2 rule after inspecting both 200% full overlays、
+  all required zooms、all 56 positives and all 16 frozen negatives.
+- [ ] SR-2B recorded exact rule/overlay/zoom digests while preserving the sealed manifest bytes.
+- [ ] SR-2C proves `visual-observation/2` ID/reconstruction and cache-version single source.
+- [ ] Current-source production preflight repeats exact `79/124` observations、
+  `13/16` batches、approved digests、all limits true and Provider calls `0`.
 - [ ] All 32 required logical tests exist and pass.
 - [ ] Existing text/OCR/parser/Advisor/result/frontend regression suites pass without relaxation.
 - [ ] Provider contract/cache/call records are schema-bound and redacted.
@@ -2036,11 +3872,12 @@ blocked. Rollback does not convert the original missing-symbol behavior into acc
 
 Task 0、SR-1、SR-2、SR-3 已分别完成于 `994cbe4`、`d3fac79`、`bb035bc`、
 `90bfb43`。SR-4 Steps 1-7 保留在当前七文件 working diff，Step 8 已按真实 sealed
-source fail closed。执行只从 `SR-2A Step 1` 的 no-write/no-Provider bounded
-feasibility 继续；不得重复 Task 0 或 SR-1～SR-3，不得提交当前 SR-4、进入 SR-5、
-追加第二个 activation amendment 或调用 Provider。
+source fail closed。SR-2A 已完成为 `capacity_feasibility_unproven` 且没有 code
+commit。执行只从 `SR-2B Step 1` 的 exact rule/digest check 继续；不得重复 Task 0
+或 SR-1～SR-3、执行退休的 packing-only steps、提交当前 SR-4、进入 SR-5、追加
+第二个 activation amendment 或调用 Provider。
 
 当前父 agent 保持唯一 writer，read-only explorer/reviewer checkpoints 保持 mandatory。
-只有 `SR-2A Step 1` 为两页都产生独立验证的 `<=16` certificate，才继续 Step 2
-exact algorithm docs-only commit 和 Step 3 RED；否则以
-`capacity_feasibility_unproven` 停止。
+只有 SR-2B exact rule、两页 full overlays、全部 zooms 和 Quality Owner verdict
+全部通过并形成 docs-only commit，才进入 SR-2C RED。只有 SR-2C focused GREEN、
+exact current-source preflight 和 independent review 全部通过，才进入 SR-4 Step 8。
