@@ -790,6 +790,48 @@ export function ReviewPanel({
                 {zhCN.review.excludeHelp}
               </p>
             </fieldset>
+            <fieldset className="review-command-rail__group review-command-rail__group--balloon">
+              <legend>{zhCN.review.balloonGroup}</legend>
+              <button
+                type="button"
+                className="review-command-rail__secondary"
+                aria-label={zhCN.review.fieldForItem(
+                  zhCN.review.requireBalloon,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled || selectedItem.balloon_required === true}
+                onClick={() =>
+                  onCommand({
+                    type: "set_balloon_required",
+                    item_id: selectedItem.item_id,
+                    balloon_required: true,
+                  })
+                }
+              >
+                {zhCN.review.requireBalloon}
+              </button>
+              <button
+                type="button"
+                className="review-command-rail__secondary"
+                aria-label={zhCN.review.fieldForItem(
+                  zhCN.review.noBalloon,
+                  selectedItem.raw_text,
+                )}
+                disabled={disabled || selectedItem.balloon_required === false}
+                onClick={() =>
+                  onCommand({
+                    type: "set_balloon_required",
+                    item_id: selectedItem.item_id,
+                    balloon_required: false,
+                  })
+                }
+              >
+                {zhCN.review.noBalloon}
+              </button>
+              <p className="review-command-rail__helper">
+                {zhCN.review.noBalloonHelp}
+              </p>
+            </fieldset>
             {pendingExcludeItemId === selectedItem.item_id && (
               <div
                 className="review-command-rail__confirmation"
@@ -829,6 +871,22 @@ export function ReviewPanel({
                 </div>
               </div>
             )}
+            <details className="review-command-rail__guide">
+              <summary>{zhCN.review.actionGuideTitle}</summary>
+              <div className="review-command-rail__guide-body">
+                <p>{zhCN.review.actionGuideIntro}</p>
+                <dl>
+                  <div>
+                    <dt>{zhCN.review.noBalloon}</dt>
+                    <dd>{zhCN.review.noBalloonGuide}</dd>
+                  </div>
+                  <div>
+                    <dt>{zhCN.review.exclude}</dt>
+                    <dd>{zhCN.review.excludeGuide}</dd>
+                  </div>
+                </dl>
+              </div>
+            </details>
             <fieldset className="review-command-rail__group review-command-rail__group--content">
               <legend>{zhCN.review.contentGroup}</legend>
               <button
@@ -895,48 +953,6 @@ export function ReviewPanel({
               >
                 {zhCN.review.reject}
               </button>
-            </fieldset>
-            <fieldset className="review-command-rail__group review-command-rail__group--balloon">
-              <legend>{zhCN.review.balloonGroup}</legend>
-              <button
-                type="button"
-                className="review-command-rail__secondary"
-                aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.requireBalloon,
-                  selectedItem.raw_text,
-                )}
-                disabled={disabled || selectedItem.balloon_required === true}
-                onClick={() =>
-                  onCommand({
-                    type: "set_balloon_required",
-                    item_id: selectedItem.item_id,
-                    balloon_required: true,
-                  })
-                }
-              >
-                {zhCN.review.requireBalloon}
-              </button>
-              <button
-                type="button"
-                className="review-command-rail__secondary"
-                aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.noBalloon,
-                  selectedItem.raw_text,
-                )}
-                disabled={disabled || selectedItem.balloon_required === false}
-                onClick={() =>
-                  onCommand({
-                    type: "set_balloon_required",
-                    item_id: selectedItem.item_id,
-                    balloon_required: false,
-                  })
-                }
-              >
-                {zhCN.review.noBalloon}
-              </button>
-              <p className="review-command-rail__helper">
-                {zhCN.review.noBalloonHelp}
-              </p>
             </fieldset>
           </aside>
           </div>

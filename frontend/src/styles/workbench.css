@@ -1099,6 +1099,56 @@
   line-height: 1.4;
 }
 
+.review-command-rail__guide {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--qi-border);
+}
+
+.review-command-rail__guide summary {
+  color: var(--qi-blue);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.review-command-rail__guide[open] summary {
+  margin-bottom: 7px;
+}
+
+.review-command-rail__guide-body {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid #cbd9eb;
+  border-radius: 6px;
+  background: #f7faff;
+  color: #344054;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.review-command-rail__guide-body p,
+.review-command-rail__guide-body dl,
+.review-command-rail__guide-body dd {
+  margin: 0;
+}
+
+.review-command-rail__guide-body dl {
+  display: grid;
+  gap: 7px;
+}
+
+.review-command-rail__guide-body dt {
+  color: #1d2939;
+  font-weight: 700;
+}
+
+.review-command-rail__guide-body dd {
+  margin-top: 2px;
+}
+
 .review-command-rail__confirmation {
   display: grid;
   gap: 6px;

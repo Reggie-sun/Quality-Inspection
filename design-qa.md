@@ -776,6 +776,10 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
   `.local/design-qa/review-layout-no-empty-space-confirmation-final.png`
 - final no-source-reference implementation:
   `.local/design-qa/review-no-recognized-original.png`
+- final usage-guide closed implementation:
+  `.local/design-qa/review-action-usage-guide-closed.png`
+- final usage-guide open implementation:
+  `.local/design-qa/review-action-usage-guide-open.png`
 - final pixels / CSS viewport: `1380x990 / 1380x990`
 - same-input comparison:
   `.local/design-qa/review-action-semantics-comparison.png`
@@ -804,6 +808,9 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - Final product correction: 用户确认审核详情不应出现“图纸原文 / 识别原文”。最终实现不再
   根据原文与解析字段是否相等决定显示状态，所有普通、待确认和未来类型检验项均不渲染该
   区域；复杂检验项只保留坐标、粗分类和人工确认等结构化字段。
+- Usage guidance correction: 用户确认常驻后果文案仍不足以支持审核判断。最终在两组动作之后、
+  “内容调整”之前增加默认收起的“怎么选择？”，展开后用“是否仍是有效检验要求”作为唯一
+  主判断，并给出整体要求、通用标准、OCR 误识别和无效重复项等典型例子。
 
 ### Required Fidelity Surfaces
 
@@ -819,7 +826,8 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - Copy and content: 常驻文案准确区分“排除不进入 SIP”和“无需气泡仍进入 SIP”；确认文案
   明确说明正式 SIP、图纸气泡与原始识别记录的后果；审核详情不再向用户重复展示识别原文。
 - Accessibility: 三组操作通过 fieldset/legend 暴露可访问名称；确认块为 `alertdialog`，
-  打开后焦点进入“取消排除”，取消后返回“排除”；不只依赖颜色表达危险。
+  打开后焦点进入“取消排除”，取消后返回“排除”；使用说明采用原生 `details / summary`，
+  DOM 与读屏顺序为“检验结论 → 气泡标记 → 使用说明 → 内容调整”，不只依赖颜色表达。
 
 ### Interaction And Browser Evidence
 
@@ -835,17 +843,20 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
   确认态中 alertdialog 横跨约 `269px` 操作区，左右两组不再产生同步撑高的空块。
 - 最终真实第 3 项 `500 ±0.2` 只显示数量、基本尺寸和上下公差，未出现“图纸原文”或
   “识别原文”；底层 `raw_text` 与既有命令、审计数据合同保持不变。
+- 真实第 3 项中，“怎么选择？”关闭时只占一行；展开后完整显示两类判断和典型例子。
+  `293px` 操作栏与页面级横向溢出均为 `0`，展开、收起没有发送 review command。
 - console errors / warnings: `0 / 0`。
 
 ### Verification And Result
 
 - focused tests: `ReviewPanel.test.tsx` 与 `InspectionWorkbench.test.tsx`，
-  `49/49` passed。
-- full frontend tests: `19` files，`165/165` passed。
+  `50/50` passed。
+- full frontend tests: `19` files，`166/166` passed。
 - production build: passed；仅保留既有 Vite large-chunk warning。
 - API verification: not applicable，本轮未修改 API 或 backend 行为。
 - Chrome smoke: persistent copy、confirmation open/cancel、no premature command、
-  focus return、responsive layout、真实第 3 项无识别原文和 console 检查 passed。
+  focus return、responsive layout、真实第 3 项无识别原文、使用说明展开/收起、DOM 顺序、
+  零横向溢出和 console 检查 passed。
 - Remaining P0: 0.
 - Remaining P1: 0.
 - Remaining P2: 0；重复卡片层级和解析字段下方永久空白均已修复。
@@ -853,5 +864,6 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - comparison history: 初检通过 → 用户截图指出 P2 重复卡片层级 → 移除分组外框、白底和圆角，
   保留 fieldset/legend 与轻量分隔线 → 用户截图指出两列等高造成永久空白 → 字段与操作改为
   上下流，确认块横跨操作区 → 用户确认详情不应展示识别原文 → 移除可见原文区并保留复杂项
-  结构化字段 → 默认态、确认态和真实第 3 项浏览器复测通过。
+  结构化字段 → 用户要求补充审核使用说明 → 两列动作下增加默认收起的判断指南 → 默认态、
+  确认态、指南展开/收起和真实第 3 项浏览器复测通过。
 - final result: passed

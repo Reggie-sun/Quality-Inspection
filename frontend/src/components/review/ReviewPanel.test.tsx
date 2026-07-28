@@ -413,6 +413,50 @@ describe("ReviewPanel", () => {
     })).not.toBeNull();
   });
 
+  test("折叠说明解释无需气泡与排除的适用场景且不触发审核命令", () => {
+    const onCommand = vi.fn();
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "action-guide",
+          item_type: "general_requirement",
+          raw_text: "表面不得有毛刺",
+          balloon_required: false,
+          active: true,
+        }]}
+        onCommand={onCommand}
+        selectedItemId="action-guide"
+      />,
+    );
+
+    const summary = screen.getByText("怎么选择？");
+    const guide = summary.closest("details");
+    const commandRail = screen.getByRole("complementary", {
+      name: "检验项操作",
+    });
+    const balloonGroup = screen.getByRole("group", { name: "气泡标记" });
+    const contentGroup = screen.getByRole("group", { name: "内容调整" });
+    const railChildren = [...commandRail.children];
+
+    expect(guide?.hasAttribute("open")).toBe(false);
+    expect(railChildren.indexOf(balloonGroup))
+      .toBeLessThan(railChildren.indexOf(guide as HTMLElement));
+    expect(railChildren.indexOf(guide as HTMLElement))
+      .toBeLessThan(railChildren.indexOf(contentGroup));
+    fireEvent.click(summary);
+    expect(guide?.hasAttribute("open")).toBe(true);
+    expect(within(guide as HTMLElement).getByText(
+      "先判断这条内容是否仍是有效检验要求。",
+    )).not.toBeNull();
+    expect(within(guide as HTMLElement).getByText(
+      /整体要求、通用标准、材质或表面处理/,
+    )).not.toBeNull();
+    expect(within(guide as HTMLElement).getByText(
+      /OCR 误识别、图框或标题文字、无效重复项/,
+    )).not.toBeNull();
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
   test("排除需要行内确认且取消、失败、重试与 Escape 不会误提交", async () => {
     const onCommand = vi.fn()
       .mockResolvedValueOnce(false)

@@ -224,6 +224,12 @@ export const zhCN = {
     balloonGroup: "气泡标记",
     excludeHelp: "不进入 SIP，也不生成气泡",
     noBalloonHelp: "仍进入 SIP，仅不生成图纸气泡",
+    actionGuideTitle: "怎么选择？",
+    actionGuideIntro: "先判断这条内容是否仍是有效检验要求。",
+    noBalloonGuide:
+      "仍是有效检验要求，需要进入 SIP；仅不在图纸上生成气泡。常见于整体要求、通用标准、材质或表面处理等没有唯一标注位置的要求。",
+    excludeGuide:
+      "不是有效检验要求，不进入 SIP，也不生成气泡。常见于 OCR 误识别、图框或标题文字、无效重复项以及无需检验的内容。",
     excludeConfirmTitle: "确认排除这条检验项？",
     excludeConfirmDescription:
       "排除后不会进入正式 SIP，也不会生成图纸气泡。原始识别记录仍保留。",
