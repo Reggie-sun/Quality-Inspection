@@ -14,11 +14,11 @@ from PIL import Image
 from app.candidates.symbol_review import (
     VISUAL_ADAPTER_VERSION,
     VISUAL_PROMPT_VERSION,
-    VISUAL_PROPOSAL_VERSION,
     VISUAL_SCHEMA_VERSION,
     visual_cache_key,
     visual_review_prompt,
 )
+from app.pdf.visual_observations import PROPOSAL_RULE_VERSION
 from app.providers.qwen_vl import (
     QwenVisionProvider,
     VisualSymbolInputError,
@@ -202,7 +202,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         "prompt_version": VISUAL_PROMPT_VERSION,
         "schema_version": VISUAL_SCHEMA_VERSION,
         "adapter_version": VISUAL_ADAPTER_VERSION,
-        "proposal_version": VISUAL_PROPOSAL_VERSION,
+        "proposal_version": PROPOSAL_RULE_VERSION,
         "pymupdf_version": "1.26.0",
     }
     first = visual_cache_key(**baseline)
@@ -215,7 +215,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         "prompt_version": "visual-symbol-prompt/2",
         "schema_version": "visual-symbol-review/2",
         "adapter_version": "qwen-openai-compatible/2",
-        "proposal_version": "visual-observation/2",
+        "proposal_version": "visual-observation/1",
         "pymupdf_version": "1.27.0",
     }
     assert len(first) == 64

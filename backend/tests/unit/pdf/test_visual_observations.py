@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 from dataclasses import replace
+from decimal import Decimal
 from pathlib import Path
 
 import pymupdf
@@ -16,7 +17,11 @@ from app.pdf.visual_observations import (
     MAX_AXIS_GAP_PT,
     MAX_CONTEXT_PAGE_AREA_RATIO,
     MAX_PATH_ITEM_EXTENT_PT,
+    PROPOSAL_RULE_VERSION,
     VisualObservationBlockingError,
+    _ProposalFeatures,
+    _proposal_decision,
+    _short_token_fullmatch,
     build_page_visual_observations,
     pack_visual_batches,
     reconstruct_visual_geometry_contexts,
@@ -59,6 +64,292 @@ def _gap(
         max(0.0, left[0] - right[2], right[0] - left[2]),
         max(0.0, left[1] - right[3], right[1] - left[3]),
     )
+
+
+def _gate_features(
+    **changes: object,
+) -> _ProposalFeatures:
+    features = _ProposalFeatures(
+        context_area=Decimal("5000.000"),
+        max_item_width=Decimal("50.000"),
+        max_item_height=Decimal("10.000"),
+        mean_item_height=Decimal("10.000"),
+        fill_count=0,
+        item_count=1,
+        short_token_fullmatch=False,
+    )
+    return replace(features, **changes)
+
+
+@pytest.mark.parametrize(
+    ("features", "reason_code"),
+    (
+        (_gate_features(), "geometry_compact"),
+        (
+            _gate_features(
+                context_area=Decimal("7000.000"),
+                max_item_width=Decimal("60.001"),
+                item_count=4,
+            ),
+            "geometry_wide_multi_item",
+        ),
+        (
+            _gate_features(
+                context_area=Decimal("5800.001"),
+                max_item_width=Decimal("70.000"),
+                max_item_height=Decimal("42.000"),
+                fill_count=2,
+            ),
+            "geometry_filled",
+        ),
+    ),
+)
+def test_hybrid_proposal_gate_admits_each_geometry_branch(
+    features: _ProposalFeatures,
+    reason_code: str,
+) -> None:
+    decision = _proposal_decision(features)
+    assert decision.retained is True
+    assert decision.reason_code == reason_code
+
+
+def test_hybrid_proposal_gate_rescues_short_technical_token() -> None:
+    assert _short_token_fullmatch("a1") is True
+    assert _short_token_fullmatch(" A1 ") is True
+    for rejected in ("A 1", "A-1", "ABCD", "Φ"):
+        assert _short_token_fullmatch(rejected) is False
+
+    decision = _proposal_decision(
+        _gate_features(
+            context_area=Decimal("6000.000"),
+            max_item_height=Decimal("2.000"),
+            mean_item_height=Decimal("35.000"),
+            short_token_fullmatch=True,
+        )
+    )
+    assert decision.retained is True
+    assert decision.reason_code == "short_token_rescue"
+
+    transform = PageTransform(
+        width=200.0,
+        height=200.0,
+        rotation=0,
+        scale=1.0,
+    )
+    rescued_line = TextObservation(
+        observation_id="short-token-line",
+        source_type="native",
+        observation_level="line",
+        raw_text="a1",
+        normalized_text="a1",
+        page_index=0,
+        bbox_pdf=(20.0, 20.0, 30.0, 30.0),
+        bbox_normalized=(0.1, 0.1, 0.15, 0.15),
+        direction=(1.0, 0.0),
+        direction_angle_degrees=0.0,
+        confidence=None,
+    )
+    drawing = {
+        "items": [
+            (
+                "l",
+                pymupdf.Point(18.0, 18.0),
+                pymupdf.Point(20.0, 20.0),
+            )
+        ],
+        "width": 1.0,
+        "dashes": "[] 0",
+        "lineCap": 0,
+        "lineJoin": 0,
+        "color": (0.0,),
+        "fill": None,
+        "closePath": False,
+    }
+    rescued, contexts = build_page_visual_observations(
+        page_index=0,
+        page_width=200.0,
+        page_height=200.0,
+        source_sha256="a" * 64,
+        native_observations=(rescued_line,),
+        drawings=(drawing,),
+        transform=transform,
+    )
+    rejected, rejected_contexts = build_page_visual_observations(
+        page_index=0,
+        page_width=200.0,
+        page_height=200.0,
+        source_sha256="a" * 64,
+        native_observations=(
+            replace(
+                rescued_line,
+                raw_text="ordinary",
+                normalized_text="ordinary",
+            ),
+        ),
+        drawings=(drawing,),
+        transform=transform,
+    )
+    assert len(rescued) == len(contexts) == 1
+    assert rejected == ()
+    assert rejected_contexts == ()
+
+
+@pytest.mark.parametrize(
+    ("features", "expected_retained", "expected_reason"),
+    (
+        (
+            _gate_features(mean_item_height=Decimal("34.000")),
+            True,
+            "geometry_compact",
+        ),
+        (
+            _gate_features(mean_item_height=Decimal("34.001")),
+            False,
+            "no_admission_branch",
+        ),
+        (
+            _gate_features(max_item_height=Decimal("2.000")),
+            False,
+            "no_admission_branch",
+        ),
+        (
+            _gate_features(max_item_height=Decimal("2.001")),
+            True,
+            "geometry_compact",
+        ),
+        (
+            _gate_features(max_item_width=Decimal("60.000")),
+            True,
+            "geometry_compact",
+        ),
+        (
+            _gate_features(context_area=Decimal("6000.000")),
+            True,
+            "geometry_compact",
+        ),
+        (
+            _gate_features(context_area=Decimal("6000.001")),
+            False,
+            "no_admission_branch",
+        ),
+        (
+            _gate_features(
+                context_area=Decimal("7000.000"),
+                max_item_width=Decimal("60.000"),
+                item_count=4,
+            ),
+            False,
+            "no_admission_branch",
+        ),
+        (
+            _gate_features(
+                context_area=Decimal("7000.000"),
+                max_item_width=Decimal("60.001"),
+                item_count=3,
+            ),
+            False,
+            "no_admission_branch",
+        ),
+        (
+            _gate_features(
+                context_area=Decimal("5800.001"),
+                max_item_width=Decimal("70.000"),
+                fill_count=1,
+            ),
+            False,
+            "no_admission_branch",
+        ),
+        (
+            _gate_features(
+                context_area=Decimal("5800.000"),
+                max_item_width=Decimal("70.000"),
+                fill_count=2,
+            ),
+            False,
+            "no_admission_branch",
+        ),
+        (
+            _gate_features(
+                context_area=Decimal("5800.001"),
+                max_item_width=Decimal("70.000"),
+                max_item_height=Decimal("42.000"),
+                fill_count=2,
+            ),
+            True,
+            "geometry_filled",
+        ),
+        (
+            _gate_features(
+                context_area=Decimal("5800.001"),
+                max_item_width=Decimal("70.000"),
+                max_item_height=Decimal("42.001"),
+                fill_count=2,
+            ),
+            False,
+            "no_admission_branch",
+        ),
+        (
+            _gate_features(
+                context_area=Decimal("6000.001"),
+                max_item_height=Decimal("2.000"),
+                mean_item_height=Decimal("35.000"),
+                short_token_fullmatch=True,
+            ),
+            False,
+            "no_admission_branch",
+        ),
+    ),
+)
+def test_hybrid_proposal_gate_rejects_noise_and_snaps_boundaries(
+    features: _ProposalFeatures,
+    expected_retained: bool,
+    expected_reason: str,
+) -> None:
+    decision = _proposal_decision(features)
+    assert decision.retained is expected_retained
+    assert decision.reason_code == expected_reason
+
+
+def test_visual_observation_v2_reconstructs_or_blocks(
+    tmp_path: Path,
+) -> None:
+    pdf_path, _manifest = build_symbol_fixture(tmp_path)
+    pages = build_inventory(pdf_path)
+    assert PROPOSAL_RULE_VERSION == "visual-observation/2"
+    assert [len(page.visual_observations) for page in pages] == [10, 9]
+    first = reconstruct_visual_geometry_contexts(pdf_path, pages)
+    second = reconstruct_visual_geometry_contexts(pdf_path, pages)
+    assert first == second
+    assert len(first) == 19
+
+    original = pages[0].visual_observations
+    tampered_sets = (
+        original[1:],
+        (
+            *original,
+            replace(original[-1], observation_id="f" * 24),
+        ),
+        tuple(reversed(original)),
+        (
+            replace(original[0], observation_id="0" * 24),
+            *original[1:],
+        ),
+        (
+            replace(original[0], geometry_sha256="0" * 64),
+            *original[1:],
+        ),
+    )
+    for tampered in tampered_sets:
+        tampered_page = replace(
+            pages[0],
+            visual_observations=tampered,
+        )
+        with pytest.raises(VisualObservationBlockingError) as error:
+            reconstruct_visual_geometry_contexts(
+                pdf_path,
+                (tampered_page, pages[1]),
+            )
+        assert error.value.code == "visual_reconstruction_mismatch"
 
 
 def test_visual_observation_id_and_order_are_stable(tmp_path: Path) -> None:

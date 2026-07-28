@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 import pymupdf
 
@@ -15,7 +15,30 @@ from app.pdf.coordinates import BBox, PageTransform
 from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
 
 
-PROPOSAL_RULE_VERSION = "visual-observation/1"
+PROPOSAL_RULE_VERSION = "visual-observation/2"
+PROPOSAL_RULE_CANONICAL_JSON = (
+    b'{"branch_order":["geometry_compact","geometry_wide_multi_item",'
+    b'"geometry_filled","short_token_rescue"],"feature_quantum":"0.001",'
+    b'"geometry_common":'
+    b'{"max_item_height_min_exclusive":"2.000","mean_item_height_max":"34.000"},'
+    b'"geometry_compact":{"context_area_max":"6000.000","fill_count_max":1,'
+    b'"max_item_width_max":"60.000"},"geometry_filled":'
+    b'{"context_area_min_exclusive":"5800.000",'
+    b'"fill_count_min_exclusive":1,"max_item_height_max":"42.000"},'
+    b'"geometry_wide_multi_item":{"fill_count_max":1,'
+    b'"item_count_min_exclusive":3,"max_item_width_min_exclusive":"60.000"},'
+    b'"proposal_rule_version":"visual-observation/2",'
+    b'"schema_version":"visual-proposal-gate/1","short_token_rescue":'
+    b'{"context_area_max":"6000.000","pattern":"[A-Z0-9]{1,3}"}}'
+)
+PROPOSAL_RULE_SHA256 = hashlib.sha256(
+    PROPOSAL_RULE_CANONICAL_JSON
+).hexdigest()
+if PROPOSAL_RULE_SHA256 != (
+    "ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7"
+):
+    raise RuntimeError("visual proposal rule digest mismatch")
+
 MAX_PATH_ITEM_EXTENT_PT = 96.0
 MAX_AXIS_GAP_PT = 12.0
 MAX_CONTEXT_PAGE_AREA_RATIO = 0.01
@@ -59,9 +82,33 @@ class VisualBatch:
 
 
 @dataclass(frozen=True)
+class _ProposalFeatures:
+    context_area: Decimal
+    max_item_width: Decimal
+    max_item_height: Decimal
+    mean_item_height: Decimal
+    fill_count: int
+    item_count: int
+    short_token_fullmatch: bool
+
+
+@dataclass(frozen=True)
+class _ProposalDecision:
+    retained: bool
+    reason_code: Literal[
+        "geometry_compact",
+        "geometry_wide_multi_item",
+        "geometry_filled",
+        "short_token_rescue",
+        "no_admission_branch",
+    ]
+
+
+@dataclass(frozen=True)
 class _CanonicalPathItem:
     bbox: BBox
     content: bytes
+    has_fill: bool
 
 
 @dataclass(frozen=True)
@@ -216,6 +263,23 @@ def _union_bboxes(bboxes: Sequence[BBox]) -> BBox:
     )
 
 
+def _canonical_path_item(
+    *,
+    bbox: BBox,
+    payload: dict[str, Any],
+    style: dict[str, Any],
+) -> _CanonicalPathItem:
+    return _CanonicalPathItem(
+        bbox=bbox,
+        content=json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8"),
+        has_fill=style["fill"] is not None,
+    )
+
+
 def _point_item(
     opcode: str,
     values: Sequence[Any],
@@ -234,13 +298,10 @@ def _point_item(
         "opcode": opcode,
         "style": style,
     }
-    return _CanonicalPathItem(
+    return _canonical_path_item(
         bbox=_union_bboxes(point_bboxes),
-        content=json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8"),
+        payload=payload,
+        style=style,
     )
 
 
@@ -282,13 +343,10 @@ def _canonical_item(
             "orientation": orientation,
             "style": style,
         }
-        return _CanonicalPathItem(
+        return _canonical_path_item(
             bbox=bbox,
-            content=json.dumps(
-                payload,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8"),
+            payload=payload,
+            style=style,
         )
     if opcode == "qu" and len(raw_item) == 2:
         quad = raw_item[1]
@@ -347,6 +405,84 @@ def _axis_gaps(left: BBox, right: BBox) -> tuple[float, float]:
 
 def _area(bbox: BBox) -> float:
     return max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])
+
+
+_SHORT_TOKEN = re.compile(r"[A-Z0-9]{1,3}")
+
+
+def _measure(value: int | float | Decimal, *, page_index: int) -> Decimal:
+    return Decimal(_number_string(value, page_index=page_index))
+
+
+def _short_token_fullmatch(raw_text: str) -> bool:
+    normalized = _ASCII_WHITESPACE.sub(" ", raw_text).strip().upper()
+    return _SHORT_TOKEN.fullmatch(normalized) is not None
+
+
+def _proposal_features(
+    *,
+    raw_text: str,
+    selected: Sequence[_CanonicalPathItem],
+    source_union: BBox,
+    page_index: int,
+) -> _ProposalFeatures:
+    widths = tuple(
+        _measure(item.bbox[2] - item.bbox[0], page_index=page_index)
+        for item in selected
+    )
+    heights = tuple(
+        _measure(item.bbox[3] - item.bbox[1], page_index=page_index)
+        for item in selected
+    )
+    mean_height = _measure(
+        sum(heights, start=Decimal("0")) / Decimal(len(heights)),
+        page_index=page_index,
+    )
+    return _ProposalFeatures(
+        context_area=_measure(_area(source_union), page_index=page_index),
+        max_item_width=max(widths),
+        max_item_height=max(heights),
+        mean_item_height=mean_height,
+        fill_count=sum(item.has_fill for item in selected),
+        item_count=len(selected),
+        short_token_fullmatch=_short_token_fullmatch(raw_text),
+    )
+
+
+def _proposal_decision(
+    features: _ProposalFeatures,
+) -> _ProposalDecision:
+    common = (
+        features.mean_item_height <= Decimal("34.000")
+        and features.max_item_height > Decimal("2.000")
+    )
+    if (
+        common
+        and features.fill_count <= 1
+        and features.max_item_width <= Decimal("60.000")
+        and features.context_area <= Decimal("6000.000")
+    ):
+        return _ProposalDecision(True, "geometry_compact")
+    if (
+        common
+        and features.fill_count <= 1
+        and features.max_item_width > Decimal("60.000")
+        and features.item_count > 3
+    ):
+        return _ProposalDecision(True, "geometry_wide_multi_item")
+    if (
+        common
+        and features.fill_count > 1
+        and features.context_area > Decimal("5800.000")
+        and features.max_item_height <= Decimal("42.000")
+    ):
+        return _ProposalDecision(True, "geometry_filled")
+    if (
+        features.short_token_fullmatch
+        and features.context_area <= Decimal("6000.000")
+    ):
+        return _ProposalDecision(True, "short_token_rescue")
+    return _ProposalDecision(False, "no_admission_branch")
 
 
 def _quantized_bbox(bbox: BBox, *, page_index: int) -> list[str]:
@@ -440,6 +576,16 @@ def build_page_visual_observations(
             _area(source_union)
             > page_width * page_height * MAX_CONTEXT_PAGE_AREA_RATIO
         ):
+            continue
+        decision = _proposal_decision(
+            _proposal_features(
+                raw_text=line.raw_text,
+                selected=selected,
+                source_union=source_union,
+                page_index=page_index,
+            )
+        )
+        if not decision.retained:
             continue
         bbox_pdf = transform.clip_bbox(source_union)
         selected = sorted(
