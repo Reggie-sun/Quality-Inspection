@@ -445,9 +445,13 @@ describe("ReviewPanel", () => {
 
     fireEvent.click(exclude);
     expect(onCommand).not.toHaveBeenCalled();
-    expect(screen.getByRole("alertdialog", {
+    const excludeDialog = screen.getByRole("alertdialog", {
       name: "确认排除这条检验项？",
-    })).not.toBeNull();
+    });
+    expect(excludeDialog.parentElement?.classList.contains(
+      "review-command-rail",
+    )).toBe(true);
+    expect(excludeDialog.closest(".review-command-rail__group")).toBeNull();
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "取消排除" }),
     );
@@ -1080,7 +1084,7 @@ describe("ReviewPanel", () => {
     expect(screen.getByText("请先从检验项列表选择一项。")).not.toBeNull();
   });
 
-  test("所选检验项将字段、操作和拆分区分成独立工作区", () => {
+  test("所选检验项将字段与操作上下分区且操作组保留稳定布局身份", () => {
     render(
       <ReviewPanel
         items={[{
@@ -1096,9 +1100,22 @@ describe("ReviewPanel", () => {
     );
 
     const item = screen.getByRole("article");
+    const workspace = item.querySelector(".review-selected-item__workspace");
     expect(item.querySelector(".review-selected-item__form")).not.toBeNull();
     expect(item.querySelector(".review-command-rail")).not.toBeNull();
     expect(item.querySelector(".review-split-row")).not.toBeNull();
+    expect(workspace?.classList.contains(
+      "review-selected-item__workspace--stacked",
+    )).toBe(true);
+    expect(screen.getByRole("group", {
+      name: "检验结论",
+    }).classList.contains("review-command-rail__group--decision")).toBe(true);
+    expect(screen.getByRole("group", {
+      name: "内容调整",
+    }).classList.contains("review-command-rail__group--content")).toBe(true);
+    expect(screen.getByRole("group", {
+      name: "气泡标记",
+    }).classList.contains("review-command-rail__group--balloon")).toBe(true);
   });
 
   test("未来 item_type 安全降级且审核命令仍可用", () => {

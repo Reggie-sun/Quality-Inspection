@@ -768,6 +768,13 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - post-feedback implementation:
   `.local/design-qa/review-action-semantics-flat-viewport.png`
 - post-feedback pixels / CSS viewport: `1380x990 / 1380x990`
+- second user-feedback visual:
+  `/tmp/codex-clipboard-fpMmuV.png`
+- final default-state implementation:
+  `.local/design-qa/review-layout-no-empty-space.png`
+- final confirmation-state implementation:
+  `.local/design-qa/review-layout-no-empty-space-confirmation-final.png`
+- final pixels / CSS viewport: `1380x990 / 1380x990`
 - same-input comparison:
   `.local/design-qa/review-action-semantics-comparison.png`
 - comparison pixels: `1365x1571`
@@ -781,21 +788,25 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 
 - Full-view evidence: 同图对比确认真实实现保留方案 A 的三个关键决策：动作按语义分组、
   “排除 / 无需气泡”后果常驻显示，以及“排除”确认块紧邻危险按钮。
-- Focused evidence: `800x790` 截图显示现有 responsive breakpoint 下 command rail 位于
-  表单右侧，三组标题、按钮和两条说明均可读，内部与页面级均无横向溢出。
-- Intentional adaptation: 概念板为较宽的双列按钮；真实 rail 宽约 `166px`，因此沿用产品
-  原有竖向按钮节奏，避免为匹配概念稿扩大右栏或压缩检验字段。
+- Focused evidence: 最终 `1380x990` 真实页面中详情内容宽约 `293px`；解析字段占满整行，
+  操作区位于字段下方。“检验结论 / 气泡标记”并排，“内容调整”使用 2×2 按钮布局，
+  三组标题、按钮和两条说明均可读，内部与页面级均无横向溢出。
+- Intentional adaptation: 概念板为较宽的双列按钮；真实详情内容仅约 `293px`，因此采用
+  “字段在上、操作在下”的纵向信息流，避免固定 `166px` 操作列压缩字段并制造等高空白。
 - Initial comparison: 工具侧初检没有发现 P0/P1/P2；用户随后指出真实窄栏存在 P2
   “卡片内再套三层卡片”的视觉层级过重问题。复核确认 rail 只有约 `166px`，父级已经提供
   边界，三个 fieldset 再加白底、圆角和完整边框造成重复容器感。
+- Second comparison: 扁平化后用户继续指出解析字段下方存在大面积空白。浏览器测量确认旧的
+  两列 workspace 为 `127px + 166px`，字段内容约 `188px` 高、操作栏约 `460px` 高；
+  CSS Grid 默认等高导致左列出现约 `272px` 的永久空白。
 
 ### Required Fidelity Surfaces
 
 - Fonts and typography: 沿用现有中文系统字体、`11px` 操作文字和加粗 legend；说明使用
-  `10px / 1.4`，在 `166px` rail 和 `800px` 窗口中仍可读。
+  `10px / 1.4`，在约 `129px` 的半宽操作组中仍可读。
 - Spacing and layout rhythm: 三个 fieldset 保留语义结构，但视觉改为透明无外框分区，以细
-  横线分隔；rail 水平 padding 从 `14px` 收紧为 `12px`，避免在 `166px` 窄栏中重复消耗
-  内容宽度。确认块仍在“检验结论”内自然增高，不遮挡其他区域。
+  分隔线组织；解析字段不再与更高的操作列并排。确认块横跨整个操作区，不再只撑高
+  “检验结论”半列，也不遮挡其他区域。
 - Colors and visual tokens: 普通操作复用既有白色和工程蓝；危险按钮与确认块使用低饱和红棕
   边框/底色，未增加渐变、强阴影或新的全局 token。
 - Image quality and assets: 本次没有新增 Logo、图标、插画或图片资产；PDF canvas 和气泡
@@ -815,6 +826,8 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - 宽屏 `1317x643` 与窄屏 `800x790` 均无操作栏溢出。
 - 用户反馈后复测的 `1380x990` 真实页面中，三个分组已去掉白底、圆角和完整外框，
   `检验结论 / 内容调整 / 气泡标记` 仍通过标题和分隔线清楚区分。
+- 第二轮修复后的默认态中，解析字段从约 `127px` 扩展到 `293px`，字段与操作改为上下流；
+  确认态中 alertdialog 横跨约 `269px` 操作区，左右两组不再产生同步撑高的空块。
 - console errors / warnings: `0 / 0`。
 
 ### Verification And Result
@@ -828,8 +841,9 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
   focus return、responsive layout 和 console 检查 passed。
 - Remaining P0: 0.
 - Remaining P1: 0.
-- Remaining P2: 0；用户反馈的重复卡片层级已修复。
+- Remaining P2: 0；重复卡片层级和解析字段下方永久空白均已修复。
 - P3 follow-up polish: none required for this scope.
 - comparison history: 初检通过 → 用户截图指出 P2 重复卡片层级 → 移除分组外框、白底和圆角，
-  保留 fieldset/legend 与轻量分隔线 → 同输入对比和真实浏览器复测通过。
+  保留 fieldset/legend 与轻量分隔线 → 用户截图指出两列等高造成永久空白 → 字段与操作改为
+  上下流，确认块横跨操作区 → 默认态、确认态同输入对比和真实浏览器复测通过。
 - final result: passed

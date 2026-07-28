@@ -612,7 +612,7 @@ export function ReviewPanel({
               </span>
             )}
           </header>
-          <div className="review-selected-item__workspace">
+          <div className="review-selected-item__workspace review-selected-item__workspace--stacked">
           <div className="review-selected-item__form">
           {showRawTextReference ? (
           <fieldset
@@ -797,7 +797,7 @@ export function ReviewPanel({
             className="review-command-rail review-command-rail--flat"
             aria-label="检验项操作"
           >
-            <fieldset className="review-command-rail__group">
+            <fieldset className="review-command-rail__group review-command-rail__group--decision">
               <legend>{zhCN.review.decisionGroup}</legend>
               <button
                 type="button"
@@ -829,47 +829,47 @@ export function ReviewPanel({
               <p className="review-command-rail__helper">
                 {zhCN.review.excludeHelp}
               </p>
-              {pendingExcludeItemId === selectedItem.item_id && (
-                <div
-                  className="review-command-rail__confirmation"
-                  role="alertdialog"
-                  aria-labelledby="exclude-confirmation-title"
-                  aria-describedby="exclude-confirmation-description"
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") cancelExclude();
-                  }}
-                >
-                  <strong id="exclude-confirmation-title">
-                    {zhCN.review.excludeConfirmTitle}
-                  </strong>
-                  <p id="exclude-confirmation-description">
-                    {zhCN.review.excludeConfirmDescription}
-                  </p>
-                  <div className="review-command-rail__confirmation-actions">
-                    <button
-                      ref={cancelExcludeButtonRef}
-                      type="button"
-                      className="review-command-rail__secondary"
-                      aria-label={zhCN.review.cancelExclude}
-                      disabled={disabled || excludeSubmitting}
-                      onClick={cancelExclude}
-                    >
-                      {zhCN.review.cancelExclude}
-                    </button>
-                    <button
-                      type="button"
-                      className="review-command-rail__confirm-danger"
-                      aria-label={zhCN.review.confirmExclude}
-                      disabled={disabled || excludeSubmitting}
-                      onClick={() => confirmExclude(selectedItem)}
-                    >
-                      {zhCN.review.confirmExclude}
-                    </button>
-                  </div>
-                </div>
-              )}
             </fieldset>
-            <fieldset className="review-command-rail__group">
+            {pendingExcludeItemId === selectedItem.item_id && (
+              <div
+                className="review-command-rail__confirmation"
+                role="alertdialog"
+                aria-labelledby="exclude-confirmation-title"
+                aria-describedby="exclude-confirmation-description"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") cancelExclude();
+                }}
+              >
+                <strong id="exclude-confirmation-title">
+                  {zhCN.review.excludeConfirmTitle}
+                </strong>
+                <p id="exclude-confirmation-description">
+                  {zhCN.review.excludeConfirmDescription}
+                </p>
+                <div className="review-command-rail__confirmation-actions">
+                  <button
+                    ref={cancelExcludeButtonRef}
+                    type="button"
+                    className="review-command-rail__secondary"
+                    aria-label={zhCN.review.cancelExclude}
+                    disabled={disabled || excludeSubmitting}
+                    onClick={cancelExclude}
+                  >
+                    {zhCN.review.cancelExclude}
+                  </button>
+                  <button
+                    type="button"
+                    className="review-command-rail__confirm-danger"
+                    aria-label={zhCN.review.confirmExclude}
+                    disabled={disabled || excludeSubmitting}
+                    onClick={() => confirmExclude(selectedItem)}
+                  >
+                    {zhCN.review.confirmExclude}
+                  </button>
+                </div>
+              </div>
+            )}
+            <fieldset className="review-command-rail__group review-command-rail__group--content">
               <legend>{zhCN.review.contentGroup}</legend>
               <button
                 type="button"
@@ -936,7 +936,7 @@ export function ReviewPanel({
                 {zhCN.review.reject}
               </button>
             </fieldset>
-            <fieldset className="review-command-rail__group">
+            <fieldset className="review-command-rail__group review-command-rail__group--balloon">
               <legend>{zhCN.review.balloonGroup}</legend>
               <button
                 type="button"
