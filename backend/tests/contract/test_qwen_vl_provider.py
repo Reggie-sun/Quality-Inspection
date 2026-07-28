@@ -148,7 +148,7 @@ def test_runtime_factory_builds_beijing_workspace_client(monkeypatch) -> None:
             "https://ws-test-123.cn-beijing.maas.aliyuncs.com/"
             "compatible-mode/v1"
         ),
-        "timeout": 30.0,
+        "timeout": 60.0,
         "max_retries": 0,
     }
 

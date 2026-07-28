@@ -52,7 +52,7 @@ def build_vision_provider(settings: Settings) -> VisionLlmProvider:
             f"https://{workspace_id}.cn-beijing.maas.aliyuncs.com/"
             "compatible-mode/v1"
         ),
-        timeout=30.0,
+        timeout=60.0,
         max_retries=0,
     )
     return QwenVisionProvider(client, model=model)
