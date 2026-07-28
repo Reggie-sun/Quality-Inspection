@@ -342,6 +342,159 @@ def _sample_evidence(order: int) -> dict[str, object]:
     }
 
 
+def _symbol_manifest() -> dict[str, object]:
+    positive = [
+        {
+            "label_id": "positive-diameter",
+            "bbox_pdf": [10, 10, 30, 30],
+            "symbol_kinds": ["diameter"],
+            "expected_disposition": "candidate",
+            "expected_projection": "diameter_dimension",
+        },
+        {
+            "label_id": "positive-depth",
+            "bbox_pdf": [40, 10, 70, 30],
+            "symbol_kinds": ["diameter", "depth"],
+            "expected_disposition": "candidate",
+            "expected_projection": "composite",
+        },
+        {
+            "label_id": "positive-counterbore",
+            "bbox_pdf": [80, 10, 120, 30],
+            "symbol_kinds": ["diameter", "depth", "counterbore"],
+            "expected_disposition": "candidate",
+            "expected_projection": "composite",
+        },
+        {
+            "label_id": "positive-roughness",
+            "bbox_pdf": [130, 10, 160, 30],
+            "symbol_kinds": ["surface_roughness"],
+            "expected_disposition": "candidate",
+            "expected_projection": "roughness",
+        },
+        {
+            "label_id": "positive-gdt-parallelism",
+            "bbox_pdf": [170, 10, 210, 30],
+            "symbol_kinds": ["gdt_parallelism"],
+            "expected_disposition": "candidate",
+            "expected_projection": "geometric_tolerance",
+        },
+        {
+            "label_id": "positive-gdt-perpendicularity",
+            "bbox_pdf": [220, 10, 260, 30],
+            "symbol_kinds": ["gdt_perpendicularity"],
+            "expected_disposition": "candidate",
+            "expected_projection": "geometric_tolerance",
+        },
+        {
+            "label_id": "positive-gdt-flatness",
+            "bbox_pdf": [270, 10, 310, 30],
+            "symbol_kinds": ["gdt_flatness"],
+            "expected_disposition": "candidate",
+            "expected_projection": "geometric_tolerance",
+        },
+        {
+            "label_id": "positive-datum",
+            "bbox_pdf": [320, 10, 340, 30],
+            "symbol_kinds": ["datum_reference"],
+            "expected_disposition": "reference_context",
+            "expected_projection": None,
+        },
+        {
+            "label_id": "positive-revision",
+            "bbox_pdf": [350, 10, 370, 30],
+            "symbol_kinds": ["revision_marker"],
+            "expected_disposition": "non_inspection",
+            "expected_projection": None,
+        },
+    ]
+    families = [
+        "part_or_hole_geometry",
+        "hatch_center_or_cross",
+        "dimension_leader_or_section_line",
+        "view_or_section_label",
+        "revision_table_or_invalid_marker",
+        "datum_like_letter_or_table_cell",
+        "watermark_logo_title_or_signoff",
+        "isometric_hole_slot_or_edge",
+        "ordinary_text_number_material_or_requirement",
+    ]
+    negative = [
+        {
+            "label_id": f"negative-{index}",
+            "bbox_pdf": [10 + index * 30, 50, 30 + index * 30, 70],
+            "symbol_kinds": ["frozen_negative"],
+            "negative_family": family,
+            "expected_disposition": "ambiguous",
+            "expected_projection": None,
+        }
+        for index, family in enumerate(families)
+    ]
+    return {
+        "schema_version": "visual-symbol-eval/1",
+        "source_sha256": _manifest()["entries"][0]["sha256"],
+        "annotation_owner_role": "quality_owner",
+        "annotation_status": "approved",
+        "pages": [
+            {"page_index": 0, "labels": positive[:5] + negative[:4]},
+            {"page_index": 1, "labels": positive[5:] + negative[4:]},
+        ],
+    }
+
+
+def _symbol_evidence() -> dict[str, object]:
+    return {
+        "selector": "phase://live/symbol-recognition?input_set=current-four",
+        "passed": True,
+        "order": 1,
+        "project_id": "project-1",
+        "automatic_result_id": "automatic-1",
+        "source_sha256": _manifest()["entries"][0]["sha256"],
+        "manifest_sha256": "a" * 64,
+        "annotation_verdict_sha256": "b" * 64,
+        "label_count": 18,
+        "positive_label_count": 9,
+        "negative_label_count": 9,
+        "positive_family_counts": {
+            "diameter": 3,
+            "depth": 2,
+            "counterbore": 1,
+            "surface_roughness": 1,
+            "gdt_parallelism": 1,
+            "gdt_perpendicularity": 1,
+            "gdt_flatness": 1,
+            "datum_reference": 1,
+            "revision_marker": 1,
+        },
+        "negative_family_counts": {
+            "part_or_hole_geometry": 1,
+            "hatch_center_or_cross": 1,
+            "dimension_leader_or_section_line": 1,
+            "view_or_section_label": 1,
+            "revision_table_or_invalid_marker": 1,
+            "datum_like_letter_or_table_cell": 1,
+            "watermark_logo_title_or_signoff": 1,
+            "isometric_hole_slot_or_edge": 1,
+            "ordinary_text_number_material_or_requirement": 1,
+        },
+        "visual_calls_by_page": [
+            {"page_index": 0, "count": 13},
+            {"page_index": 1, "count": 16},
+        ],
+        "total_vision_calls_by_page": [
+            {"page_index": 0, "count": 16},
+            {"page_index": 1, "count": 16},
+        ],
+        "candidate_match_count": 7,
+        "reference_match_count": 1,
+        "non_inspection_match_count": 1,
+        "negative_false_positive_count": 0,
+        "source_command_count": 0,
+        "report_ref": "reports/symbol-recognition.json",
+        "report_sha256": "c" * 64,
+    }
+
+
 def _live_evidence() -> dict[str, object]:
     return {
         "schema_version": "live-run-evidence/1",
@@ -349,6 +502,7 @@ def _live_evidence() -> dict[str, object]:
         "input_set": "current-four",
         "phases": PHASES,
         "child_run_ids": [],
+        "symbol_recognition": _symbol_evidence(),
         "design_qa": {
             "ref": "design-qa.md",
             "sha256": "6" * 64,
@@ -409,6 +563,75 @@ def _materialize_bound_live_evidence(
     (run_dir / "artifacts/human-verdict.json").write_bytes(_json_bytes(verdict))
 
     live = _live_evidence()
+    symbol_manifest_bytes = _json_bytes(_symbol_manifest())
+    symbol_manifest_sha256 = _write_hashed(
+        run_dir / "artifacts/visual-symbol-eval.json",
+        symbol_manifest_bytes,
+    )
+    symbol_verdict = {
+        "schema_version": "visual-symbol-annotation-verdict/1",
+        "annotation_owner_role": "quality_owner",
+        "overlay_scale_percent": 200,
+        "unlabeled_target_count": 0,
+        "negative_family_count": 9,
+        "manifest_sha256": symbol_manifest_sha256,
+        "recorded_at": "2026-07-27T00:00:00Z",
+    }
+    symbol_verdict_sha256 = _write_hashed(
+        run_dir / "artifacts/visual-symbol-annotation-verdict.json",
+        _json_bytes(symbol_verdict),
+    )
+    symbol_evidence = live["symbol_recognition"]
+    assert isinstance(symbol_evidence, dict)
+    symbol_evidence["manifest_sha256"] = symbol_manifest_sha256
+    symbol_evidence["annotation_verdict_sha256"] = symbol_verdict_sha256
+    symbol_report = {
+        "schema_version": "symbol-recognition-live-report/1",
+        "selector": symbol_evidence["selector"],
+        "run_id": RUN_ID,
+        "order": 1,
+        "project_id": symbol_evidence["project_id"],
+        "automatic_result_id": symbol_evidence["automatic_result_id"],
+        "source_sha256": symbol_evidence["source_sha256"],
+        "manifest_sha256": symbol_manifest_sha256,
+        "annotation_verdict_sha256": symbol_verdict_sha256,
+        "visual_calls_by_page": symbol_evidence["visual_calls_by_page"],
+        "total_vision_calls_by_page": symbol_evidence[
+            "total_vision_calls_by_page"
+        ],
+        "source_command_count": 0,
+        "evaluation": {
+            "schema_version": "symbol-eval-report/1",
+            "passed": True,
+            "overlap_threshold": 0.5,
+            "counts": {
+                "positive_label_count": 9,
+                "candidate_label_count": 7,
+                "participating_candidate_count": 7,
+                "candidate_match_count": 7,
+                "reference_match_count": 1,
+                "non_inspection_match_count": 1,
+                "negative_label_count": 9,
+                "negative_false_positive_count": 0,
+                "excluded_candidate_count": 0,
+            },
+            "positive_family_counts": symbol_evidence[
+                "positive_family_counts"
+            ],
+            "negative_family_counts": symbol_evidence[
+                "negative_family_counts"
+            ],
+            "label_matches": [],
+            "excluded_candidate_ids": [],
+            "failures": [],
+        },
+        "failures": [],
+        "passed": True,
+    }
+    symbol_evidence["report_sha256"] = _write_hashed(
+        run_dir / "reports/symbol-recognition.json",
+        _json_bytes(symbol_report),
+    )
     implementation_digest = _write_hashed(
         run_dir / "reports/design-qa-implementation.png",
         PNG_BYTES,
@@ -917,6 +1140,117 @@ def test_live_cli_rejects_missing_server_credentials_before_run_creation(
     assert not runs.exists()
 
 
+def test_full_live_symbol_eval_run_is_literal_and_binds_sealed_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LIVE-01 binds both sealed Quality Owner artifacts before live work."""
+    runner = _load_module(
+        "qi_run_p0_live_symbol_binding",
+        HARNESS / "scripts/run-p0.py",
+    )
+    current_four_run = "20260727T010101000000Z-11111111"
+    symbol_eval_run = "20260727T020202000000Z-22222222"
+    full_run_id = "20260727T030303000000Z-33333333"
+    current_four_bytes = json.dumps(_manifest(), sort_keys=True).encode()
+    manifest_bytes = b'{"schema_version":"visual-symbol-eval/1"}'
+    verdict_bytes = (
+        b'{"schema_version":"visual-symbol-annotation-verdict/1"}'
+    )
+    expected_artifacts = {
+        "artifacts/current-four-manifest.json": current_four_bytes,
+        "artifacts/visual-symbol-eval.json": manifest_bytes,
+        "artifacts/visual-symbol-annotation-verdict.json": verdict_bytes,
+    }
+    starts: list[dict[str, bytes]] = []
+
+    def load_current(run_id: str) -> dict[str, bytes]:
+        if run_id != current_four_run:
+            raise ValueError("--current-four-run requires one literal registration run ID")
+        return {"artifacts/current-four-manifest.json": current_four_bytes}
+
+    def load_symbol(run_id: str) -> dict[str, bytes]:
+        if run_id != symbol_eval_run:
+            raise ValueError("--symbol-eval-run requires one literal sealed staging run ID")
+        return {
+            "artifacts/visual-symbol-eval.json": manifest_bytes,
+            "artifacts/visual-symbol-annotation-verdict.json": verdict_bytes,
+        }
+
+    monkeypatch.setattr(runner, "_load_current_four_artifact", load_current)
+    monkeypatch.setattr(runner, "load_symbol_eval_artifacts", load_symbol)
+
+    def preflight(
+        *,
+        input_set: str,
+        source_root: str | None,
+        current_four_run: str,
+        symbol_eval_run: str,
+    ) -> dict[str, dict[str, bytes]]:
+        assert input_set == "current-four"
+        assert source_root is None
+        return {
+            "input_artifacts": runner._load_full_live_input_artifacts(
+                current_four_run=current_four_run,
+                symbol_eval_run=symbol_eval_run,
+            )
+        }
+
+    def start(preflight_result: dict[str, dict[str, bytes]]) -> str:
+        artifacts = preflight_result["input_artifacts"]
+        starts.append(artifacts)
+        run_dir = tmp_path / full_run_id
+        (run_dir / "artifacts").mkdir(parents=True)
+        runner._attach_full_live_input_artifacts(run_dir, artifacts)
+        for name, expected in expected_artifacts.items():
+            assert (run_dir / name).read_bytes() == expected
+        return full_run_id
+
+    monkeypatch.setattr(runner, "preflight_full_p0_live", preflight)
+    monkeypatch.setattr(runner, "start_live_run", start)
+
+    for alias in ("latest", "../" + symbol_eval_run):
+        result = runner.main(
+            [
+                "live",
+                "--scope",
+                "full-p0",
+                "--input-set",
+                "current-four",
+                "--current-four-run",
+                current_four_run,
+                "--symbol-eval-run",
+                alias,
+                "--pause-after",
+                "first-pdf-balloons",
+                "--print-run-id-only",
+            ]
+        )
+        assert result == 2
+    assert starts == []
+
+    assert (
+        runner.main(
+            [
+                "live",
+                "--scope",
+                "full-p0",
+                "--input-set",
+                "current-four",
+                "--current-four-run",
+                current_four_run,
+                "--symbol-eval-run",
+                symbol_eval_run,
+                "--pause-after",
+                "first-pdf-balloons",
+                "--print-run-id-only",
+            ]
+        )
+        == 0
+    )
+    assert starts == [expected_artifacts]
+
+
 def test_full_p0_live_reuses_failure_proof_inside_the_same_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1009,6 +1343,13 @@ def test_resume_loads_the_paused_live_evidence_before_continuing(
         source_root=tmp_path,
         source_paths=tuple(tmp_path / f"source-{order}.pdf" for order in range(1, 5)),
         manifest_bytes=_json_bytes(_manifest()),
+        input_artifacts={
+            "artifacts/current-four-manifest.json": _json_bytes(_manifest()),
+            "artifacts/visual-symbol-eval.json": _json_bytes(
+                _symbol_manifest()
+            ),
+            "artifacts/visual-symbol-annotation-verdict.json": b"{}",
+        },
         mirror={},
         bindings={},
         policies={},

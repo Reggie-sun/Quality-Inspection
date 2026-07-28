@@ -79,6 +79,12 @@ def _receipt_module() -> Any:
     )
 
 
+def _evaluator_module() -> Any:
+    path = HARNESS / "scripts/symbol_eval.py"
+    assert path.is_file(), "missing LIVE-01 post-result evaluator"
+    return _load_module("test_sealed_symbol_eval", path)
+
+
 def _positive(
     label_id: str,
     bbox_pdf: list[float],
@@ -230,6 +236,249 @@ def _manifest_labels(document: dict[str, Any]) -> list[dict[str, Any]]:
         for page in document["pages"]
         for label in page["labels"]
     ]
+
+
+def _synthetic_actuals(
+    manifest: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    visuals: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    coverage: list[dict[str, Any]] = []
+    for page in manifest["pages"]:
+        for label in page["labels"]:
+            if label["symbol_kinds"] == ["frozen_negative"]:
+                continue
+            label_id = label["label_id"]
+            visual_id = f"visual-{label_id}"
+            candidate_id = (
+                f"candidate-{label_id}"
+                if label["expected_disposition"] == "candidate"
+                else None
+            )
+            visuals.append(
+                {
+                    "observation_id": visual_id,
+                    "page_index": page["page_index"],
+                    "bbox_pdf": label["bbox_pdf"],
+                }
+            )
+            coverage.append(
+                {
+                    "observation_id": visual_id,
+                    "disposition": label["expected_disposition"],
+                    "candidate_id": candidate_id,
+                    "requires_confirmation": (
+                        label["symbol_kinds"] == ["revision_marker"]
+                    ),
+                    "advisor_review": {
+                        "symbol_kinds": label["symbol_kinds"],
+                    },
+                }
+            )
+            if candidate_id is None:
+                continue
+            projection = label["expected_projection"]
+            payload = (
+                {"coarse_type": projection}
+                if projection in {"roughness", "geometric_tolerance"}
+                else {"item_type": projection}
+            )
+            candidates.append(
+                {
+                    "candidate_id": candidate_id,
+                    "payload": payload,
+                    "source_location_ids": [visual_id, f"text-{label_id}"],
+                }
+            )
+    candidates.append(
+        {
+            "candidate_id": "candidate-text-only",
+            "payload": {"item_type": "linear_dimension"},
+            "source_location_ids": ["text-only"],
+        }
+    )
+    return visuals, candidates, coverage
+
+
+def _failure_reasons(report: dict[str, Any]) -> set[str]:
+    return {str(item["reason"]) for item in report["failures"]}
+
+
+def test_sealed_current_pdf_symbol_manifest(tmp_path: Path) -> None:
+    """LIVE-01 compares only immutable labels with post-result Owner objects."""
+    evaluator = _evaluator_module()
+    manifest = _manifest()
+    artifact = tmp_path / "visual-symbol-eval.json"
+    artifact.write_bytes(_canonical_bytes(manifest))
+    artifact.chmod(stat.S_IRUSR)
+    parsed_manifest = json.loads(artifact.read_bytes())
+    visuals, candidates, coverage = _synthetic_actuals(parsed_manifest)
+
+    def evaluate(
+        *,
+        current_visuals: list[dict[str, Any]] | None = None,
+        current_candidates: list[dict[str, Any]] | None = None,
+        current_coverage: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        return evaluator.evaluate_symbol_result(
+            manifest=parsed_manifest,
+            visual_observations=(
+                visuals if current_visuals is None else current_visuals
+            ),
+            raw_candidates=(
+                candidates if current_candidates is None else current_candidates
+            ),
+            raw_coverage=coverage if current_coverage is None else current_coverage,
+        )
+
+    passed = evaluate()
+    assert passed["passed"] is True
+    assert passed["counts"] == {
+        "positive_label_count": 9,
+        "candidate_label_count": 7,
+        "participating_candidate_count": 7,
+        "candidate_match_count": 7,
+        "reference_match_count": 1,
+        "non_inspection_match_count": 1,
+        "negative_label_count": 9,
+        "negative_false_positive_count": 0,
+        "excluded_candidate_count": 1,
+    }
+    assert passed["excluded_candidate_ids"] == ["candidate-text-only"]
+    assert {
+        (item["label_id"], item["disposition"])
+        for item in passed["label_matches"]
+    } == {
+        (
+            label["label_id"],
+            label["expected_disposition"],
+        )
+        for label in _manifest_labels(parsed_manifest)
+        if label["symbol_kinds"] != ["frozen_negative"]
+    }
+    assert all(item["overlap_ratio"] >= 0.5 for item in passed["label_matches"])
+    serialized = json.dumps(passed, sort_keys=True)
+    assert "raw_text" not in serialized
+    assert "provider" not in serialized.lower()
+    assert str(tmp_path) not in serialized
+
+    missing = copy.deepcopy(candidates)
+    missing.pop(0)
+    degree_zero = evaluate(current_candidates=missing)
+    assert degree_zero["passed"] is False
+    assert "positive_label_degree_not_one" in _failure_reasons(degree_zero)
+
+    duplicate = copy.deepcopy(candidates)
+    duplicate_candidate = copy.deepcopy(duplicate[0])
+    duplicate_candidate["candidate_id"] += "-duplicate"
+    duplicate.append(duplicate_candidate)
+    degree_two = evaluate(current_candidates=duplicate)
+    assert degree_two["passed"] is False
+    assert "positive_label_degree_not_one" in _failure_reasons(degree_two)
+
+    wrong_kinds = copy.deepcopy(coverage)
+    wrong_kinds[0]["advisor_review"]["symbol_kinds"] = ["depth"]
+    kinds_report = evaluate(current_coverage=wrong_kinds)
+    assert kinds_report["passed"] is False
+    assert "positive_label_degree_not_one" in _failure_reasons(kinds_report)
+
+    wrong_projection = copy.deepcopy(candidates)
+    wrong_projection[0]["payload"]["item_type"] = "composite"
+    projection_report = evaluate(current_candidates=wrong_projection)
+    assert projection_report["passed"] is False
+    assert "positive_label_degree_not_one" in _failure_reasons(
+        projection_report
+    )
+
+    min_area_visuals = copy.deepcopy(visuals)
+    min_area_visuals[0]["bbox_pdf"] = [10.0, 10.0, 50.0, 30.0]
+    min_area_report = evaluate(current_visuals=min_area_visuals)
+    assert min_area_report["passed"] is True
+    diameter_match = next(
+        item
+        for item in min_area_report["label_matches"]
+        if item["label_id"] == "positive-diameter"
+    )
+    assert diameter_match["overlap_ratio"] == 1.0
+
+    negative_label = next(
+        label
+        for label in _manifest_labels(parsed_manifest)
+        if label["symbol_kinds"] == ["frozen_negative"]
+    )
+    negative_visuals = copy.deepcopy(visuals)
+    negative_visuals.append(
+        {
+            "observation_id": "visual-negative-overlap",
+            "page_index": 0,
+            "bbox_pdf": negative_label["bbox_pdf"],
+        }
+    )
+    negative_candidates = copy.deepcopy(candidates)
+    negative_candidates[0]["source_location_ids"].append(
+        "visual-negative-overlap"
+    )
+    negative_report = evaluate(
+        current_visuals=negative_visuals,
+        current_candidates=negative_candidates,
+    )
+    assert negative_report["passed"] is False
+    assert negative_report["counts"]["negative_false_positive_count"] == 1
+    assert "negative_candidate_overlap" in _failure_reasons(negative_report)
+
+    unmatched_visuals = copy.deepcopy(visuals)
+    unmatched_visuals.append(
+        {
+            "observation_id": "visual-unmatched",
+            "page_index": 1,
+            "bbox_pdf": [900.0, 700.0, 910.0, 710.0],
+        }
+    )
+    unmatched_candidates = copy.deepcopy(candidates)
+    unmatched_candidates.append(
+        {
+            "candidate_id": "candidate-unmatched",
+            "payload": {"item_type": "diameter_dimension"},
+            "source_location_ids": ["visual-unmatched"],
+        }
+    )
+    unmatched_coverage = copy.deepcopy(coverage)
+    unmatched_coverage.append(
+        {
+            "observation_id": "visual-unmatched",
+            "disposition": "candidate",
+            "candidate_id": "candidate-unmatched",
+            "requires_confirmation": True,
+            "advisor_review": {"symbol_kinds": ["diameter"]},
+        }
+    )
+    unmatched_report = evaluate(
+        current_visuals=unmatched_visuals,
+        current_candidates=unmatched_candidates,
+        current_coverage=unmatched_coverage,
+    )
+    assert unmatched_report["passed"] is False
+    assert "visual_candidate_degree_not_one" in _failure_reasons(
+        unmatched_report
+    )
+
+    revision_index = next(
+        index
+        for index, item in enumerate(coverage)
+        if item["advisor_review"]["symbol_kinds"] == ["revision_marker"]
+    )
+    for field, value in (
+        ("disposition", "candidate"),
+        ("candidate_id", "candidate-forbidden"),
+        ("requires_confirmation", False),
+    ):
+        invalid_revision = copy.deepcopy(coverage)
+        invalid_revision[revision_index][field] = value
+        revision_report = evaluate(current_coverage=invalid_revision)
+        assert revision_report["passed"] is False
+        assert "semantic_label_match_not_one" in _failure_reasons(
+            revision_report
+        )
 
 
 def test_symbol_eval_schema_is_closed_and_current_source_bound() -> None:

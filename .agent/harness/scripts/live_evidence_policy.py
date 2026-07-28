@@ -15,6 +15,12 @@ from urllib.parse import quote
 
 
 CURRENT_FOUR_ARTIFACT = "artifacts/current-four-manifest.json"
+SYMBOL_EVAL_ARTIFACT = "artifacts/visual-symbol-eval.json"
+SYMBOL_VERDICT_ARTIFACT = "artifacts/visual-symbol-annotation-verdict.json"
+SYMBOL_RECOGNITION_REPORT = "reports/symbol-recognition.json"
+SYMBOL_RECOGNITION_SELECTOR = (
+    "phase://live/symbol-recognition?input_set=current-four"
+)
 HUMAN_VERDICT_ARTIFACT = "artifacts/human-verdict.json"
 LIVE_EVIDENCE_ARTIFACT = "live-run-evidence.json"
 LIVE_PHASES = ("process", "candidates", "review", "balloons", "export", "consistency")
@@ -999,6 +1005,188 @@ def _validate_formal_sample(
         raise ValueError(f"sample {order} item-number projections differ")
 
 
+def validate_symbol_recognition_evidence(
+    root: Path,
+    run: Mapping[str, Any],
+    current_four: Mapping[str, Any],
+    live: Mapping[str, Any],
+    *,
+    schema_validator: SchemaValidator,
+    run_dir: Path,
+) -> None:
+    evidence = live.get("symbol_recognition")
+    if not isinstance(evidence, Mapping):
+        raise ValueError("symbol recognition evidence is missing")
+    symbol_path = run_artifact_path(
+        root,
+        run,
+        SYMBOL_EVAL_ARTIFACT,
+        run_dir=run_dir,
+    )
+    verdict_path = run_artifact_path(
+        root,
+        run,
+        SYMBOL_VERDICT_ARTIFACT,
+        run_dir=run_dir,
+    )
+    symbol_bytes = symbol_path.read_bytes()
+    verdict_bytes = verdict_path.read_bytes()
+    try:
+        symbol_manifest = json.loads(symbol_bytes)
+        annotation_verdict = json.loads(verdict_bytes)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("sealed symbol input is not JSON") from exc
+    schema_validator(
+        symbol_manifest,
+        "visual-symbol-eval.schema.json",
+        root,
+    )
+    schema_validator(
+        annotation_verdict,
+        "visual-symbol-annotation-verdict.schema.json",
+        root,
+    )
+    manifest_sha256 = hashlib.sha256(symbol_bytes).hexdigest()
+    verdict_sha256 = hashlib.sha256(verdict_bytes).hexdigest()
+    entries = current_four.get("entries")
+    samples = live.get("samples")
+    if (
+        not isinstance(entries, list)
+        or not entries
+        or not isinstance(samples, list)
+        or not samples
+        or symbol_manifest.get("source_sha256") != entries[0].get("sha256")
+        or annotation_verdict.get("manifest_sha256") != manifest_sha256
+        or evidence.get("source_sha256") != entries[0].get("sha256")
+        or evidence.get("manifest_sha256") != manifest_sha256
+        or evidence.get("annotation_verdict_sha256") != verdict_sha256
+        or evidence.get("order") != 1
+        or evidence.get("project_id") != samples[0].get("project_id")
+        or evidence.get("automatic_result_id")
+        != samples[0].get("process", {}).get("automatic_result_id")
+    ):
+        raise ValueError("symbol recognition input/result identity is inconsistent")
+
+    labels = [
+        label
+        for page in symbol_manifest.get("pages", [])
+        for label in page.get("labels", [])
+    ]
+    positives = [
+        label
+        for label in labels
+        if label.get("symbol_kinds") != ["frozen_negative"]
+    ]
+    negatives = [
+        label
+        for label in labels
+        if label.get("symbol_kinds") == ["frozen_negative"]
+    ]
+    positive_counts: dict[str, int] = {}
+    for label in positives:
+        for kind in label.get("symbol_kinds", []):
+            positive_counts[str(kind)] = positive_counts.get(str(kind), 0) + 1
+    negative_counts: dict[str, int] = {}
+    for label in negatives:
+        family = str(label.get("negative_family"))
+        negative_counts[family] = negative_counts.get(family, 0) + 1
+    if (
+        evidence.get("passed") is not True
+        or evidence.get("selector") != SYMBOL_RECOGNITION_SELECTOR
+        or evidence.get("label_count") != len(labels)
+        or evidence.get("positive_label_count") != len(positives)
+        or evidence.get("negative_label_count") != len(negatives)
+        or evidence.get("positive_family_counts") != positive_counts
+        or evidence.get("negative_family_counts") != negative_counts
+        or evidence.get("negative_false_positive_count") != 0
+        or evidence.get("source_command_count") != 0
+    ):
+        raise ValueError("symbol recognition counts or verdict are inconsistent")
+
+    visual_calls = evidence.get("visual_calls_by_page")
+    total_calls = evidence.get("total_vision_calls_by_page")
+    if (
+        not isinstance(visual_calls, list)
+        or not isinstance(total_calls, list)
+        or len(visual_calls) != 2
+        or len(total_calls) != 2
+        or any(
+            visual.get("page_index") != total.get("page_index")
+            or not isinstance(visual.get("count"), int)
+            or not isinstance(total.get("count"), int)
+            or visual["count"] < 0
+            or total["count"] < visual["count"]
+            or visual["count"] > 16
+            or total["count"] > 16
+            for visual, total in zip(visual_calls, total_calls, strict=True)
+            if isinstance(visual, Mapping) and isinstance(total, Mapping)
+        )
+        or any(
+            not isinstance(item, Mapping)
+            for item in (*visual_calls, *total_calls)
+        )
+    ):
+        raise ValueError("symbol recognition Vision call counts are invalid")
+
+    _, report = _verified_hashed_artifact(
+        root,
+        run,
+        evidence.get("report_ref"),
+        evidence.get("report_sha256"),
+        run_dir=run_dir,
+        expect_json=True,
+    )
+    expected_report_fields = {
+        "schema_version",
+        "selector",
+        "run_id",
+        "order",
+        "project_id",
+        "automatic_result_id",
+        "source_sha256",
+        "manifest_sha256",
+        "annotation_verdict_sha256",
+        "visual_calls_by_page",
+        "total_vision_calls_by_page",
+        "source_command_count",
+        "evaluation",
+        "failures",
+        "passed",
+    }
+    evaluation = report.get("evaluation")
+    if (
+        set(report) != expected_report_fields
+        or report.get("schema_version") != "symbol-recognition-live-report/1"
+        or report.get("selector") != SYMBOL_RECOGNITION_SELECTOR
+        or report.get("run_id") != run.get("run_id")
+        or report.get("order") != 1
+        or report.get("project_id") != evidence.get("project_id")
+        or report.get("automatic_result_id")
+        != evidence.get("automatic_result_id")
+        or report.get("source_sha256") != evidence.get("source_sha256")
+        or report.get("manifest_sha256") != manifest_sha256
+        or report.get("annotation_verdict_sha256") != verdict_sha256
+        or report.get("visual_calls_by_page") != visual_calls
+        or report.get("total_vision_calls_by_page") != total_calls
+        or report.get("source_command_count") != 0
+        or report.get("failures") != []
+        or report.get("passed") is not True
+        or not isinstance(evaluation, Mapping)
+        or evaluation.get("schema_version") != "symbol-eval-report/1"
+        or evaluation.get("passed") is not True
+        or evaluation.get("failures") != []
+        or evaluation.get("counts", {}).get("candidate_match_count")
+        != evidence.get("candidate_match_count")
+        or evaluation.get("counts", {}).get("reference_match_count")
+        != evidence.get("reference_match_count")
+        or evaluation.get("counts", {}).get("non_inspection_match_count")
+        != evidence.get("non_inspection_match_count")
+        or evaluation.get("counts", {}).get("negative_false_positive_count")
+        != 0
+    ):
+        raise ValueError("symbol recognition report is stale or incomplete")
+
+
 def validate_live_evidence(
     root: Path,
     run: Mapping[str, Any],
@@ -1059,6 +1247,14 @@ def validate_live_evidence(
         for key in ("order", "basename", "sha256", "opaque_ref")
     }:
         raise ValueError("current-four first checkpoint is inconsistent")
+    validate_symbol_recognition_evidence(
+        root,
+        run,
+        manifest,
+        live,
+        schema_validator=schema_validator,
+        run_dir=evidence_dir,
+    )
 
     entry_by_order = {int(entry["order"]): entry for entry in entries}
     sample_by_order = {int(sample["order"]): sample for sample in samples}
@@ -1180,6 +1376,15 @@ def validate_final_p0_release(
             run_dir=run_dir,
         )
     )
+    if (
+        policies["p0_acceptance_policy"].get(
+            "required_symbol_recognition_selector"
+        )
+        != SYMBOL_RECOGNITION_SELECTOR
+        or (live.get("symbol_recognition") or {}).get("selector")
+        != SYMBOL_RECOGNITION_SELECTOR
+    ):
+        raise ValueError("formal release is missing the controlled symbol selector")
     validate_live_evidence(
         root,
         run,

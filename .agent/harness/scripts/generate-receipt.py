@@ -41,6 +41,9 @@ PROVIDER_FIXTURE_PATHS = (
     ".agent/harness/fixtures/providers/qwen-vl/candidate-review-v1.json",
     ".agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json",
 )
+CONTROLLED_LIVE_SELECTORS = (
+    "phase://live/symbol-recognition?input_set=current-four",
+)
 
 POLICY_FILES = {
     "harness_policy": "harness-policy.yaml",
@@ -236,6 +239,13 @@ def code_identity(root: Path = ROOT) -> dict[str, Any]:
         (str(path.relative_to(root)), path.read_bytes())
         for path in candidates
     ]
+    pairs.extend(
+        (
+            f"live-selector:{selector}",
+            selector.encode("utf-8"),
+        )
+        for selector in CONTROLLED_LIVE_SELECTORS
+    )
     return _identity_from_pairs(pairs)
 
 

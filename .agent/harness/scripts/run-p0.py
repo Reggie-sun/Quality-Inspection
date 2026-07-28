@@ -40,6 +40,10 @@ SYMBOL_VERDICT_ARTIFACT = "artifacts/visual-symbol-annotation-verdict.json"
 SYMBOL_EVAL_ARTIFACTS = (SYMBOL_EVAL_ARTIFACT, SYMBOL_VERDICT_ARTIFACT)
 SYMBOL_REGISTRATION_REPORT = "reports/symbol-eval-registration.json"
 SYMBOL_REGISTRATION_SELECTOR = "phase://live/symbol-eval-registration"
+SYMBOL_RECOGNITION_REPORT = "reports/symbol-recognition.json"
+SYMBOL_RECOGNITION_SELECTOR = (
+    "phase://live/symbol-recognition?input_set=current-four"
+)
 LIVE_EVIDENCE_ARTIFACT = "live-run-evidence.json"
 HUMAN_VERDICT_ARTIFACT = "artifacts/human-verdict.json"
 NO_SILENT_SUCCESS_SELECTOR = "phase://failure/no-silent-success"
@@ -132,6 +136,7 @@ class LivePreflight(NamedTuple):
     source_root: Path
     source_paths: tuple[Path, ...]
     manifest_bytes: bytes
+    input_artifacts: dict[str, bytes]
     mirror: dict[str, Any]
     bindings: dict[str, Any]
     policies: dict[str, dict[str, Any]]
@@ -886,6 +891,49 @@ def load_symbol_eval_artifacts(run_id: str) -> dict[str, bytes]:
     return artifacts
 
 
+def _load_full_live_input_artifacts(
+    *,
+    current_four_run: str,
+    symbol_eval_run: str,
+) -> dict[str, bytes]:
+    artifacts = {
+        **_load_current_four_artifact(current_four_run),
+        **load_symbol_eval_artifacts(symbol_eval_run),
+    }
+    expected = {
+        CURRENT_FOUR_ARTIFACT,
+        *SYMBOL_EVAL_ARTIFACTS,
+    }
+    if set(artifacts) != expected:
+        raise ValueError("full live input artifacts are incomplete")
+    return _validate_input_artifacts(artifacts)
+
+
+def _attach_full_live_input_artifacts(
+    run_dir: Path,
+    artifacts: Mapping[str, bytes],
+) -> None:
+    validated = _validate_input_artifacts(artifacts)
+    expected = {
+        CURRENT_FOUR_ARTIFACT,
+        *SYMBOL_EVAL_ARTIFACTS,
+    }
+    if set(validated) != expected:
+        raise ValueError("full live input artifacts are incomplete")
+    if run_dir.is_symlink() or not run_dir.is_dir():
+        raise ValueError("full live run directory is unavailable")
+    for name, content in validated.items():
+        path = run_dir / name
+        if (
+            path.parent.is_symlink()
+            or not path.parent.is_dir()
+            or path.exists()
+            or path.is_symlink()
+        ):
+            raise ValueError("full live input artifact destination is invalid")
+        path.write_bytes(content)
+
+
 def _require_live_environment(environment: Mapping[str, str]) -> None:
     missing = [
         key
@@ -1017,6 +1065,9 @@ def preflight_full_p0_live(
     *,
     input_set: str,
     source_root: str | None,
+    current_four_run: str | None = None,
+    symbol_eval_run: str | None = None,
+    input_artifacts: Mapping[str, bytes] | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> LivePreflight:
     if input_set != "current-four":
@@ -1057,8 +1108,43 @@ def preflight_full_p0_live(
     )
     sources = stage_module._resolve_sources(None, source_root)
     stage_module._verify_sources(sources)
-    manifest_bytes = stage_module._manifest_bytes(stage_module.FROZEN_DOCUMENTS)
-    artifacts = {CURRENT_FOUR_ARTIFACT: manifest_bytes}
+    if input_artifacts is None:
+        if current_four_run is None or symbol_eval_run is None:
+            raise ValueError(
+                "full-p0 live preflight requires both literal registration runs"
+            )
+        artifacts = _load_full_live_input_artifacts(
+            current_four_run=current_four_run,
+            symbol_eval_run=symbol_eval_run,
+        )
+    else:
+        if current_four_run is not None or symbol_eval_run is not None:
+            raise ValueError(
+                "bound live input bytes cannot be mixed with registration run IDs"
+            )
+        artifacts = _validate_input_artifacts(input_artifacts)
+        if set(artifacts) != {
+            CURRENT_FOUR_ARTIFACT,
+            *SYMBOL_EVAL_ARTIFACTS,
+        }:
+            raise ValueError("bound live input artifacts are incomplete")
+    manifest_bytes = artifacts[CURRENT_FOUR_ARTIFACT]
+    expected_manifest_bytes = stage_module._manifest_bytes(
+        stage_module.FROZEN_DOCUMENTS
+    )
+    if manifest_bytes != expected_manifest_bytes:
+        raise ValueError(
+            "sealed current-four registration differs from current source identity"
+        )
+    current_four_manifest = json.loads(manifest_bytes)
+    symbol_manifest = json.loads(artifacts[SYMBOL_EVAL_ARTIFACT])
+    if (
+        symbol_manifest.get("source_sha256")
+        != current_four_manifest.get("first_checkpoint", {}).get("sha256")
+    ):
+        raise ValueError(
+            "sealed symbol manifest does not bind the first current-four source"
+        )
 
     _validate_export_assets()
     return LivePreflight(
@@ -1068,6 +1154,7 @@ def preflight_full_p0_live(
             for document in stage_module.FROZEN_DOCUMENTS
         ),
         manifest_bytes=manifest_bytes,
+        input_artifacts=artifacts,
         mirror=mirror,
         bindings=bindings,
         policies=policies,
@@ -1132,17 +1219,14 @@ def _open_live_run(preflight: LivePreflight) -> Path:
     for name in ("logs", "reports", "artifacts"):
         (run_dir / name).mkdir()
     _write_json(run_dir / "run.json", run)
-    stage_module = _script_module(
-        "qi_stage_current_four_for_open_live_run",
-        "stage-current-four.py",
-    )
-    stage_module.attach_manifest(run_dir, preflight.manifest_bytes)
+    _attach_full_live_input_artifacts(run_dir, preflight.input_artifacts)
     live = {
         "schema_version": "live-run-evidence/1",
         "run_id": run_id,
         "input_set": "current-four",
         "phases": list(LIVE_PHASES),
         "child_run_ids": [],
+        "symbol_recognition": None,
         "design_qa": None,
         "samples": [],
     }
@@ -1351,6 +1435,188 @@ try:
                 key=lambda entry: entry["candidate_id"],
             ),
         },
+    }, sort_keys=True))
+finally:
+    session.close()
+"""
+
+
+_SYMBOL_RESULT_PROGRAM = r"""
+import json
+import os
+import uuid
+from pathlib import Path
+
+from sqlalchemy import select
+
+from app.audit.operations import OperationRecord
+from app.candidates.models import AutomaticResult
+from app.config import get_settings
+from app.db import SessionLocal
+from app.storage.local import LocalFileStorage
+
+project_id = uuid.UUID(os.environ["QI_P0_PROJECT_ID"])
+session = SessionLocal()
+storage = LocalFileStorage(get_settings().storage_root)
+try:
+    raw = session.scalar(
+        select(AutomaticResult).where(AutomaticResult.project_id == project_id)
+    )
+    if raw is None:
+        raise RuntimeError("automatic result is unavailable")
+    inventory = json.loads(storage.read_bytes(raw.inventory_ref))
+    pages = inventory.get("pages")
+    if not isinstance(pages, list) or not pages:
+        raise RuntimeError("stored page inventory is unavailable")
+    coverage = raw.coverage.get("entries")
+    if not isinstance(coverage, list):
+        raise RuntimeError("raw coverage is unavailable")
+
+    visuals = []
+    visual_page = {}
+    page_indexes = []
+    for page in pages:
+        page_index = page.get("page_index")
+        visual_observations = page.get("visual_observations")
+        if not isinstance(page_index, int) or not isinstance(
+            visual_observations,
+            list,
+        ):
+            raise RuntimeError("visual inventory is invalid")
+        page_indexes.append(page_index)
+        for observation in visual_observations:
+            observation_id = observation.get("observation_id")
+            bbox_pdf = observation.get("bbox_pdf")
+            if (
+                not isinstance(observation_id, str)
+                or not observation_id
+                or not isinstance(bbox_pdf, list)
+                or len(bbox_pdf) != 4
+                or observation_id in visual_page
+            ):
+                raise RuntimeError("visual observation is invalid")
+            visual_page[observation_id] = page_index
+            visuals.append({
+                "observation_id": observation_id,
+                "page_index": page_index,
+                "bbox_pdf": bbox_pdf,
+            })
+
+    project_root = storage.root / "projects" / str(project_id)
+
+    def exact_json_files(relative):
+        directory = project_root / relative
+        if not directory.exists():
+            return []
+        if directory.is_symlink() or not directory.is_dir():
+            raise RuntimeError("Provider evidence directory is invalid")
+        files = sorted(directory.glob("*.json"))
+        if any(path.is_symlink() or not path.is_file() for path in files):
+            raise RuntimeError("Provider evidence file is invalid")
+        return files
+
+    def paired_cache(relative):
+        cache_files = exact_json_files(f"provider-cache/{relative}")
+        audit_files = exact_json_files(f"provider-calls/{relative}")
+        if {path.name for path in cache_files} != {
+            path.name for path in audit_files
+        }:
+            raise RuntimeError("Provider cache/call evidence differs")
+        pairs = []
+        for cache_path in cache_files:
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+            audit = json.loads(
+                (project_root / "provider-calls" / relative / cache_path.name)
+                .read_text(encoding="utf-8")
+            )
+            if (
+                not isinstance(cache, dict)
+                or not isinstance(audit, dict)
+                or cache.get("request_id") != audit.get("request_id")
+                or audit.get("logical_task_reused") is not False
+            ):
+                raise RuntimeError("Provider cache/call identity is invalid")
+            pairs.append(cache)
+        return pairs
+
+    visual_counts = {page_index: 0 for page_index in page_indexes}
+    for cache in paired_cache("qwen-symbol"):
+        identity = cache.get("identity")
+        visual_ids = (
+            identity.get("visual_observation_ids")
+            if isinstance(identity, dict)
+            else None
+        )
+        if not isinstance(visual_ids, list) or not visual_ids:
+            raise RuntimeError("visual Provider identity is unavailable")
+        call_pages = {
+            visual_page.get(visual_id)
+            for visual_id in visual_ids
+            if isinstance(visual_id, str)
+        }
+        if None in call_pages or len(call_pages) != 1:
+            raise RuntimeError("visual Provider page identity is ambiguous")
+        visual_counts[next(iter(call_pages))] += 1
+
+    text_pages_by_crop = {}
+    for candidate in raw.candidates:
+        review = candidate.get("advisor_review")
+        if not isinstance(review, dict):
+            continue
+        crop_sha256 = review.get("crop_sha256")
+        page_index = review.get("page_index")
+        if (
+            review.get("provider_role") == "advisor"
+            and isinstance(crop_sha256, str)
+            and isinstance(page_index, int)
+        ):
+            text_pages_by_crop.setdefault(crop_sha256, set()).add(page_index)
+    for entry in coverage:
+        review = entry.get("advisor_review") if isinstance(entry, dict) else None
+        if not isinstance(review, dict):
+            continue
+        crop_sha256 = review.get("crop_sha256")
+        page_index = review.get("page_index")
+        if (
+            review.get("provider_role") == "advisor"
+            and isinstance(crop_sha256, str)
+            and isinstance(page_index, int)
+        ):
+            text_pages_by_crop.setdefault(crop_sha256, set()).add(page_index)
+
+    text_counts = {page_index: 0 for page_index in page_indexes}
+    for cache in paired_cache("qwen"):
+        crop_sha256 = cache.get("crop_sha256")
+        call_pages = text_pages_by_crop.get(crop_sha256, set())
+        if len(call_pages) != 1:
+            raise RuntimeError("text Provider page identity is ambiguous")
+        text_counts[next(iter(call_pages))] += 1
+
+    source_commands = list(
+        session.scalars(
+            select(OperationRecord).where(
+                OperationRecord.project_id == project_id,
+                OperationRecord.command.in_(("promote_source", "ignore_source")),
+            )
+        )
+    )
+    print(json.dumps({
+        "automatic_result_id": str(raw.id),
+        "visual_observations": visuals,
+        "raw_candidates": raw.candidates,
+        "raw_coverage": coverage,
+        "visual_calls_by_page": [
+            {"page_index": page_index, "count": visual_counts[page_index]}
+            for page_index in sorted(page_indexes)
+        ],
+        "total_vision_calls_by_page": [
+            {
+                "page_index": page_index,
+                "count": visual_counts[page_index] + text_counts[page_index],
+            }
+            for page_index in sorted(page_indexes)
+        ],
+        "source_command_count": len(source_commands),
     }, sort_keys=True))
 finally:
     session.close()
@@ -1771,6 +2037,230 @@ def _prepare_live_project(
         raise RuntimeError(f"sample {order} process evidence is incomplete")
     process["prepare_log_sha256"] = hashlib.sha256(output).hexdigest()
     return document
+
+
+def _collect_symbol_result(
+    *,
+    project_id: str,
+    automatic_result_id: str,
+) -> dict[str, Any]:
+    command = [
+        "docker",
+        "compose",
+        "exec",
+        "-T",
+        "-e",
+        f"QI_P0_PROJECT_ID={project_id}",
+        "api",
+        "python",
+        "-c",
+        _SYMBOL_RESULT_PROGRAM,
+    ]
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("post-result symbol evidence collection failed")
+    try:
+        document = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("post-result symbol evidence is invalid") from exc
+    expected_fields = {
+        "automatic_result_id",
+        "visual_observations",
+        "raw_candidates",
+        "raw_coverage",
+        "visual_calls_by_page",
+        "total_vision_calls_by_page",
+        "source_command_count",
+    }
+    if (
+        not isinstance(document, dict)
+        or set(document) != expected_fields
+        or document.get("automatic_result_id") != automatic_result_id
+    ):
+        raise RuntimeError("post-result symbol evidence identity is incomplete")
+    return document
+
+
+def _call_counts(
+    value: Any,
+    *,
+    field: str,
+) -> list[dict[str, int]]:
+    if not isinstance(value, list) or len(value) != 2:
+        raise RuntimeError(f"{field} must cover both current-source pages")
+    normalized: list[dict[str, int]] = []
+    for entry in value:
+        if (
+            not isinstance(entry, Mapping)
+            or set(entry) != {"page_index", "count"}
+            or not isinstance(entry.get("page_index"), int)
+            or not isinstance(entry.get("count"), int)
+            or isinstance(entry.get("count"), bool)
+            or int(entry["count"]) < 0
+        ):
+            raise RuntimeError(f"{field} contains an invalid count")
+        normalized.append(
+            {
+                "page_index": int(entry["page_index"]),
+                "count": int(entry["count"]),
+            }
+        )
+    normalized.sort(key=lambda entry: entry["page_index"])
+    if [entry["page_index"] for entry in normalized] != [0, 1]:
+        raise RuntimeError(f"{field} page identity is incomplete")
+    return normalized
+
+
+def _record_symbol_recognition_evidence(
+    run_dir: Path,
+    evidence: Mapping[str, Any],
+) -> None:
+    path = run_dir / LIVE_EVIDENCE_ARTIFACT
+    live = _load_json(path)
+    if live.get("symbol_recognition") is not None:
+        raise RuntimeError("symbol recognition evidence is already recorded")
+    live["symbol_recognition"] = dict(evidence)
+    _receipt_module().validate_schema(
+        live,
+        "live-run-evidence.schema.json",
+        ROOT,
+    )
+    _atomic_write_json(path, live)
+
+
+def _run_symbol_recognition_gate(
+    run_dir: Path,
+    sample: Mapping[str, Any],
+) -> dict[str, Any]:
+    artifact_paths = {
+        name: run_dir / name
+        for name in SYMBOL_EVAL_ARTIFACTS
+    }
+    if any(
+        path.is_symlink() or not path.is_file()
+        for path in artifact_paths.values()
+    ):
+        raise RuntimeError("sealed symbol input copies are unavailable")
+    artifacts = {
+        name: path.read_bytes()
+        for name, path in artifact_paths.items()
+    }
+    validated = _script_module(
+        "qi_live_symbol_artifact_contract",
+        "stage-symbol-eval.py",
+    ).validate_artifacts(artifacts)
+    manifest_bytes = validated[SYMBOL_EVAL_ARTIFACT]
+    verdict_bytes = validated[SYMBOL_VERDICT_ARTIFACT]
+    manifest = json.loads(manifest_bytes)
+    verdict = json.loads(verdict_bytes)
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    process = sample.get("process")
+    if (
+        sample.get("order") != 1
+        or not isinstance(process, Mapping)
+        or process.get("source_sha256") != manifest.get("source_sha256")
+        or verdict.get("manifest_sha256") != manifest_sha256
+    ):
+        raise RuntimeError("symbol gate does not bind the first raw result")
+    project_id = str(sample.get("project_id"))
+    automatic_result_id = str(process.get("automatic_result_id"))
+    actual = _collect_symbol_result(
+        project_id=project_id,
+        automatic_result_id=automatic_result_id,
+    )
+    evaluation = _script_module(
+        "qi_live_symbol_evaluator",
+        "symbol_eval.py",
+    ).evaluate_symbol_result(
+        manifest=manifest,
+        visual_observations=actual["visual_observations"],
+        raw_candidates=actual["raw_candidates"],
+        raw_coverage=actual["raw_coverage"],
+    )
+    visual_calls = _call_counts(
+        actual["visual_calls_by_page"],
+        field="visual_calls_by_page",
+    )
+    total_calls = _call_counts(
+        actual["total_vision_calls_by_page"],
+        field="total_vision_calls_by_page",
+    )
+    failures = list(evaluation.get("failures", []))
+    if any(entry["count"] > 16 for entry in visual_calls):
+        failures.append({"reason": "visual_call_budget_exceeded"})
+    if any(entry["count"] > 16 for entry in total_calls):
+        failures.append({"reason": "total_vision_call_budget_exceeded"})
+    if any(
+        total["count"] < visual["count"]
+        for visual, total in zip(visual_calls, total_calls, strict=True)
+    ):
+        failures.append({"reason": "vision_call_counts_inconsistent"})
+    if actual.get("source_command_count") != 0:
+        failures.append({"reason": "pre_manual_source_command_detected"})
+    passed = evaluation.get("passed") is True and not failures
+    report = {
+        "schema_version": "symbol-recognition-live-report/1",
+        "selector": SYMBOL_RECOGNITION_SELECTOR,
+        "run_id": run_dir.name,
+        "order": 1,
+        "project_id": project_id,
+        "automatic_result_id": automatic_result_id,
+        "source_sha256": process["source_sha256"],
+        "manifest_sha256": manifest_sha256,
+        "annotation_verdict_sha256": hashlib.sha256(verdict_bytes).hexdigest(),
+        "visual_calls_by_page": visual_calls,
+        "total_vision_calls_by_page": total_calls,
+        "source_command_count": int(actual["source_command_count"]),
+        "evaluation": evaluation,
+        "failures": failures,
+        "passed": passed,
+    }
+    _write_json(run_dir / SYMBOL_RECOGNITION_REPORT, report)
+    report_sha256 = hashlib.sha256(
+        (run_dir / SYMBOL_RECOGNITION_REPORT).read_bytes()
+    ).hexdigest()
+    counts = evaluation.get("counts")
+    if not isinstance(counts, Mapping):
+        raise RuntimeError("symbol evaluation counts are unavailable")
+    evidence = {
+        "selector": SYMBOL_RECOGNITION_SELECTOR,
+        "passed": passed,
+        "order": 1,
+        "project_id": project_id,
+        "automatic_result_id": automatic_result_id,
+        "source_sha256": process["source_sha256"],
+        "manifest_sha256": manifest_sha256,
+        "annotation_verdict_sha256": hashlib.sha256(verdict_bytes).hexdigest(),
+        "label_count": int(counts["positive_label_count"])
+        + int(counts["negative_label_count"]),
+        "positive_label_count": int(counts["positive_label_count"]),
+        "negative_label_count": int(counts["negative_label_count"]),
+        "positive_family_counts": evaluation["positive_family_counts"],
+        "negative_family_counts": evaluation["negative_family_counts"],
+        "visual_calls_by_page": visual_calls,
+        "total_vision_calls_by_page": total_calls,
+        "candidate_match_count": int(counts["candidate_match_count"]),
+        "reference_match_count": int(counts["reference_match_count"]),
+        "non_inspection_match_count": int(
+            counts["non_inspection_match_count"]
+        ),
+        "negative_false_positive_count": int(
+            counts["negative_false_positive_count"]
+        ),
+        "source_command_count": int(actual["source_command_count"]),
+        "report_ref": SYMBOL_RECOGNITION_REPORT,
+        "report_sha256": report_sha256,
+    }
+    _record_symbol_recognition_evidence(run_dir, evidence)
+    if not passed:
+        raise RuntimeError("sealed symbol recognition gate failed")
+    return evidence
 
 
 def _review_item_set_ready(
@@ -2423,6 +2913,16 @@ def start_live_run(preflight: LivePreflight) -> str:
             operator_id=operator_id,
         )
         _write_live_sample(run_dir, sample)
+        symbol_outcome = _execute_selector_in_run(
+            SYMBOL_RECOGNITION_SELECTOR,
+            "live",
+            run_dir,
+        )
+        if (
+            symbol_outcome.get("exit_code") != 0
+            or symbol_outcome.get("result_state") != "passed"
+        ):
+            raise RuntimeError("sealed symbol recognition selector blocked")
         project_id = str(sample["project_id"])
         frontend = str(_current_live_identity()["frontend_base"])
         print(
@@ -2483,9 +2983,26 @@ def _resume_identity_preflight(run_dir: Path) -> LivePreflight:
     run = _load_json(run_dir / "run.json")
     if not can_resume_live_run(run_dir):
         raise ValueError("run is not one resumable visual-QA pause")
+    artifact_paths = {
+        name: run_dir / name
+        for name in (
+            CURRENT_FOUR_ARTIFACT,
+            *SYMBOL_EVAL_ARTIFACTS,
+        )
+    }
+    if any(
+        path.is_symlink() or not path.is_file()
+        for path in artifact_paths.values()
+    ):
+        raise ValueError("paused live input artifacts are unavailable")
+    artifacts = {
+        name: path.read_bytes()
+        for name, path in artifact_paths.items()
+    }
     preflight = preflight_full_p0_live(
         input_set="current-four",
         source_root=os.environ.get(LIVE_SOURCE_ROOT_ENV),
+        input_artifacts=artifacts,
     )
     current = {
         "code_identity": preflight.code_identity,
@@ -2496,9 +3013,8 @@ def _resume_identity_preflight(run_dir: Path) -> LivePreflight:
     }
     if run.get("pause_identity") != current:
         raise ValueError("paused live identity changed; resume is forbidden")
-    artifact = (run_dir / CURRENT_FOUR_ARTIFACT).read_bytes()
-    if artifact != preflight.manifest_bytes:
-        raise ValueError("paused current-four manifest changed")
+    if artifacts != preflight.input_artifacts:
+        raise ValueError("paused full live input artifacts changed")
     return preflight
 
 
@@ -2693,6 +3209,64 @@ def _live_phase_outcome(
     selector: str,
     run_dir: Path,
 ) -> tuple[int | None, str, str, list[str]]:
+    if selector == SYMBOL_RECOGNITION_SELECTOR:
+        try:
+            live = _load_json(run_dir / LIVE_EVIDENCE_ARTIFACT)
+            samples = live.get("samples")
+            if (
+                not isinstance(samples, list)
+                or len(samples) != 1
+                or not isinstance(samples[0], Mapping)
+            ):
+                raise ValueError(
+                    "symbol selector requires exactly the first raw result"
+                )
+            if live.get("symbol_recognition") is None:
+                _run_symbol_recognition_gate(run_dir, samples[0])
+                live = _load_json(run_dir / LIVE_EVIDENCE_ARTIFACT)
+            run = _load_json(run_dir / "run.json")
+            current_four = _load_json(run_dir / CURRENT_FOUR_ARTIFACT)
+            _live_evidence_policy_module().validate_symbol_recognition_evidence(
+                ROOT,
+                run,
+                current_four,
+                live,
+                schema_validator=_receipt_module().validate_schema,
+                run_dir=run_dir,
+            )
+        except (
+            OSError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            json.JSONDecodeError,
+        ) as exc:
+            return (
+                None,
+                "blocked",
+                f"symbol recognition evidence failed: {exc}",
+                [
+                    ref
+                    for ref in (SYMBOL_RECOGNITION_REPORT,)
+                    if (run_dir / ref).is_file()
+                ],
+            )
+        return (
+            0,
+            "passed",
+            json.dumps(
+                {"selector": selector, "passed": True},
+                sort_keys=True,
+            ),
+            [
+                LIVE_EVIDENCE_ARTIFACT,
+                CURRENT_FOUR_ARTIFACT,
+                *SYMBOL_EVAL_ARTIFACTS,
+                SYMBOL_RECOGNITION_REPORT,
+                str(samples[0]["process"]["prepare_log_ref"]),
+            ],
+        )
     phase = urlsplit(selector).path.lstrip("/")
     if phase not in LIVE_PHASES:
         return None, "blocked", f"unknown live phase: {phase}", []
@@ -2735,6 +3309,8 @@ def _live_phase_outcome(
             LIVE_EVIDENCE_ARTIFACT,
             HUMAN_VERDICT_ARTIFACT,
             CURRENT_FOUR_ARTIFACT,
+            *SYMBOL_EVAL_ARTIFACTS,
+            SYMBOL_RECOGNITION_REPORT,
         ]
         for sample in samples:
             process = sample["process"]
@@ -3089,6 +3665,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scope", required=True, choices=("task", "full-p0"))
     parser.add_argument("--task")
     parser.add_argument("--current-four-run", metavar="RUN_ID")
+    parser.add_argument("--symbol-eval-run", metavar="RUN_ID")
     parser.add_argument("--input-set", choices=("current-four",))
     parser.add_argument("--pause-after", choices=(LIVE_PAUSE_BARRIER,))
     parser.add_argument("--print-run-id-only", action="store_true")
@@ -3104,6 +3681,8 @@ def main(argv: list[str] | None = None) -> int:
                 or args.scope != "full-p0"
                 or args.resume_run
                 or args.task
+                or args.current_four_run
+                or args.symbol_eval_run
                 or not args.reason
             ):
                 raise ValueError(
@@ -3118,6 +3697,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.mode != "live"
                 or args.scope != "full-p0"
                 or args.task
+                or args.current_four_run
+                or args.symbol_eval_run
                 or not args.design_qa
             ):
                 raise ValueError(
@@ -3136,17 +3717,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "live" and args.scope == "full-p0":
             if (
                 args.task
-                or args.current_four_run
+                or not args.current_four_run
+                or not args.symbol_eval_run
                 or args.input_set != "current-four"
                 or args.pause_after != LIVE_PAUSE_BARRIER
             ):
                 raise ValueError(
-                    "full-p0 live start requires current-four, the first-PDF "
-                    "balloon pause, and no task/registration run"
+                    "full-p0 live start requires literal current-four and symbol "
+                    "registration runs, current-four input, the first-PDF "
+                    "balloon pause, and no task"
                 )
             preflight = preflight_full_p0_live(
                 input_set=args.input_set,
                 source_root=os.environ.get(LIVE_SOURCE_ROOT_ENV),
+                current_four_run=args.current_four_run,
+                symbol_eval_run=args.symbol_eval_run,
             )
             run_id = start_live_run(preflight)
             print(run_id if args.print_run_id_only else (
@@ -3162,6 +3747,7 @@ def main(argv: list[str] | None = None) -> int:
             for value in (
                 args.input_set,
                 args.pause_after,
+                args.symbol_eval_run,
                 args.design_qa,
                 args.reason,
             )

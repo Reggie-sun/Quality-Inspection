@@ -2,6 +2,7 @@ schema_version: p0-acceptance-policy/1
 required_input_set: current-four
 required_sample_count: 4
 required_contract_count: 111
+required_symbol_recognition_selector: phase://live/symbol-recognition?input_set=current-four
 allowed_overall_verdicts: [passed, failed, blocked]
 task_scope:
   formal_p0_verdict_allowed: false
