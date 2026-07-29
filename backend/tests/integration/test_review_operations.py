@@ -17,7 +17,7 @@ from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.review.locks import acquire_lock
 from app.review.models import ReviewWorkingCopy
-from app.review.service import ReviewNotFound, ReviewService
+from app.review.service import ReviewNotFound, ReviewService, manual_review_count
 from app.storage.models import StoredFile
 
 
@@ -230,6 +230,73 @@ def _set_confidence_state(
     return decision
 
 
+def _set_linked_review_state(
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+    item_ids: list[str],
+) -> None:
+    target_ids = set(item_ids)
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = item["item_id"] in target_ids
+        if item["item_id"] in target_ids:
+            item["status"] = "pending"
+            item["requires_confirmation"] = True
+            item["acceptance_source"] = None
+    working_copy.items = items
+    working_copy.coverage = {
+        "blocking_count": 0,
+        "review_required_count": len(item_ids),
+        "coverage_checked": True,
+        "blocking_observation_ids": [],
+        "entries": [
+            {
+                "observation_id": f"coverage-{item_id}",
+                "disposition": "candidate",
+                "source_location_id": f"source-{item_id}",
+                "coordinates": [1, 2, 3, 4],
+                "candidate_id": item_id,
+                "requires_confirmation": True,
+            }
+            for item_id in item_ids
+        ],
+        "relations": [],
+    }
+    db_session.commit()
+    db_session.refresh(working_copy)
+
+
+def _freeze_blockers_with_completed_sip(
+    working_copy: ReviewWorkingCopy,
+) -> list[str]:
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        if not item.get("active", True):
+            continue
+        item.update(
+            {
+                "inspection_item": "confirmed item",
+                "inspection_standard": "confirmed standard",
+                "inspection_method": "confirmed method",
+                "key_dimension": "yes",
+                "inspection_role": "IPQC",
+                "source_page": 1,
+                "sip_detail_fields_confirmed": True,
+            }
+        )
+    return ReviewService.freeze_blockers(
+        items,
+        working_copy.coverage,
+        {
+            "material_code": "MAT-001",
+            "material_name": "fixture",
+            "drawing_number": "DRAWING-001",
+            "material": "steel",
+            "revision": "A",
+        },
+    )
+
+
 def _set_source_only_coverage(
     working_copy: ReviewWorkingCopy,
     db_session: Session,
@@ -302,6 +369,95 @@ def test_keep_review_required_candidate_is_manual_override_and_complete(
     assert kept["requires_confirmation"] is False
     assert kept["acceptance_source"] == "manual_override"
     assert kept["confidence_decision"] == decision
+
+
+@pytest.mark.parametrize(
+    ("item_ids", "command", "accepted", "source_status"),
+    [
+        (
+            ["i1"],
+            {"type": "keep", "item_id": "i1"},
+            True,
+            "kept",
+        ),
+        (
+            ["i1"],
+            {
+                "type": "edit",
+                "item_id": "i1",
+                "fields": {"raw_text": "M6 通"},
+            },
+            True,
+            "kept",
+        ),
+        (
+            ["i1"],
+            {
+                "type": "set_balloon_required",
+                "item_id": "i1",
+                "balloon_required": False,
+            },
+            True,
+            "kept",
+        ),
+        (
+            ["i1"],
+            {"type": "exclude", "item_id": "i1"},
+            False,
+            "excluded",
+        ),
+        (
+            ["i1", "i2"],
+            {
+                "type": "merge",
+                "item_ids": ["i1", "i2"],
+                "raw_text": "M6 通",
+            },
+            True,
+            "superseded",
+        ),
+        (
+            ["composite-1"],
+            {
+                "type": "split",
+                "item_id": "composite-1",
+                "parts": [{"raw_text": "Φ10"}, {"raw_text": "深20"}],
+            },
+            True,
+            "superseded",
+        ),
+    ],
+    ids=["keep", "edit", "toggle", "exclude", "merge", "split"],
+)
+def test_semantic_completion_resolves_candidate_linked_coverage_atomically(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+    item_ids: list[str],
+    command: dict[str, object],
+    accepted: bool,
+    source_status: str,
+) -> None:
+    _set_linked_review_state(working_copy, db_session, item_ids)
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command=command,
+    )
+
+    assert all(
+        entry["requires_confirmation"] is False
+        and entry["confirmation_accepted"] is accepted
+        for entry in saved.coverage["entries"]
+    )
+    assert saved.coverage["review_required_count"] == 0
+    assert manual_review_count(saved.items, saved.coverage) == 0
+    assert all(_item(saved, item_id)["status"] == source_status for item_id in item_ids)
+    assert "unresolved_confirmation" not in _freeze_blockers_with_completed_sip(
+        saved
+    )
 
 
 def test_exclude_candidate_without_deleting_original(
@@ -409,6 +565,31 @@ def test_sip_only_update_does_not_override_auto_disposition(
     assert item["status"] == "auto_accepted"
     assert item["acceptance_source"] == "confidence_policy"
     assert item["confidence_decision"] == decision
+
+
+def test_historical_malformed_decision_uses_ordinary_manual_provenance(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    item = next(value for value in items if value["item_id"] == "i1")
+    item["confidence_decision"] = {"band": "high"}
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={"type": "keep", "item_id": "i1"},
+    )
+
+    kept = _item(saved, "i1")
+    assert kept["status"] == "kept"
+    assert kept["acceptance_source"] == "manual"
+    assert "confidence_decision" not in kept
 
 
 def test_edit_raw_text(
@@ -725,6 +906,7 @@ def test_resolve_confirmation_records_explicit_outcome(
         "complex-1",
         "low",
     )
+    before_version = working_copy.version
     saved = review_service.apply(
         working_copy.id,
         expected_version=working_copy.version,
@@ -739,13 +921,26 @@ def test_resolve_confirmation_records_explicit_outcome(
     resolved = _item(saved, "complex-1")
     assert resolved["requires_confirmation"] is False
     assert resolved["confirmation_accepted"] is False
-    assert resolved["status"] == "kept"
+    assert resolved["status"] == "excluded"
+    assert resolved["active"] is False
     assert resolved["acceptance_source"] == "manual_override"
     assert resolved["confidence_decision"] == decision
     assert saved.coverage["entries"][0]["candidate_id"] == "complex-1"
     assert saved.coverage["entries"][0]["requires_confirmation"] is False
     assert saved.coverage["entries"][0]["confirmation_accepted"] is False
     assert saved.coverage["review_required_count"] == 0
+    assert saved.version == before_version + 1
+    records = list(
+        db_session.scalars(
+            select(OperationRecord).where(
+                OperationRecord.project_id == working_copy.project_id
+            )
+        )
+    )
+    assert len(records) == 1
+    assert records[0].command == "resolve_confirmation"
+    assert records[0].before_version == before_version
+    assert records[0].after_version == before_version + 1
 
 
 def test_promote_source_creates_item_and_resolves_coverage_atomically(

@@ -80,17 +80,19 @@ _SIP_DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
 
 
 def manual_review_count(
-    items: list[dict[str, Any]],
-    coverage: dict[str, Any],
+    items: object,
+    coverage: object,
 ) -> int:
+    item_values = items if isinstance(items, list) else []
     review_item_ids = {
         item.get("item_id")
-        for item in items
-        if item.get("active", True)
+        for item in item_values
+        if isinstance(item, dict)
+        and item.get("active", True)
         and item.get("requires_confirmation") is True
         and isinstance(item.get("item_id"), str)
     }
-    entries = coverage.get("entries", [])
+    entries = coverage.get("entries", []) if isinstance(coverage, dict) else []
     source_only_ids = {
         entry.get("observation_id")
         for entry in entries
@@ -550,19 +552,17 @@ class ReviewService:
     ) -> tuple[list[str], bool]:
         if isinstance(command, Keep):
             item = self._active_item(items, command.item_id)
-            self._mark_manual_acceptance(item)
+            self._complete_manual_item(item, coverage, accepted=True)
             return [command.item_id], numbering_stale
         if isinstance(command, Exclude):
             item = self._active_item(items, command.item_id)
-            self._mark_manual_acceptance(item)
-            item["status"] = "excluded"
-            item["active"] = False
+            self._complete_manual_item(item, coverage, accepted=False)
             return [command.item_id], True
         if isinstance(command, Edit):
             item = self._active_item(items, command.item_id)
             self._edit_item(item, command.fields)
             self._clear_sip_detail_fields(item)
-            self._mark_manual_acceptance(item)
+            self._complete_manual_item(item, coverage, accepted=True)
             return [command.item_id], numbering_stale or "coordinates" in command.fields
         if isinstance(command, Add):
             item_id = str(uuid.uuid4())
@@ -610,6 +610,7 @@ class ReviewService:
                     "source_type": "manual",
                     "status": "kept",
                     "requires_confirmation": False,
+                    "confirmation_accepted": True,
                     "acceptance_source": "manual_override",
                     "active": True,
                     "merged_from_item_ids": list(command.item_ids),
@@ -617,7 +618,7 @@ class ReviewService:
             )
             merged.pop("confidence_decision", None)
             for source in source_items:
-                self._mark_manual_acceptance(source)
+                self._complete_manual_item(source, coverage, accepted=True)
                 source["status"] = "superseded"
                 source["active"] = False
             items.append(merged)
@@ -626,7 +627,7 @@ class ReviewService:
             source = self._active_item(items, command.item_id)
             if "item_type" not in source:
                 raise ValueError("split is limited to simple items")
-            self._mark_manual_acceptance(source)
+            self._complete_manual_item(source, coverage, accepted=True)
             source["status"] = "superseded"
             source["active"] = False
             split_ids: list[str] = []
@@ -644,6 +645,7 @@ class ReviewService:
                         "source_type": "manual",
                         "status": "kept",
                         "requires_confirmation": False,
+                        "confirmation_accepted": True,
                         "acceptance_source": "manual_override",
                         "active": True,
                         "split_from_item_id": command.item_id,
@@ -745,11 +747,11 @@ class ReviewService:
                 command.item_id,
                 command.accepted,
             )
-            return [command.item_id], numbering_stale
+            return [command.item_id], numbering_stale or not command.accepted
         if isinstance(command, SetBalloonRequired):
             item = self._active_item(items, command.item_id)
             item["balloon_required"] = command.balloon_required
-            self._mark_manual_acceptance(item)
+            self._complete_manual_item(item, coverage, accepted=True)
             return [command.item_id], True
         if isinstance(command, SetSipDetailFields):
             item = self._active_item(items, command.item_id)
@@ -779,7 +781,11 @@ class ReviewService:
 
     @staticmethod
     def _mark_manual_acceptance(item: dict[str, Any]) -> None:
-        if "confidence_decision" in item:
+        try:
+            validate_confidence_decision(item.get("confidence_decision"))
+        except ConfidenceDecisionContractError:
+            item.pop("confidence_decision", None)
+        else:
             ReviewService._mark_manual_override(item)
             return
         item["status"] = "kept"
@@ -791,6 +797,25 @@ class ReviewService:
         item["status"] = "kept"
         item["requires_confirmation"] = False
         item["acceptance_source"] = "manual_override"
+
+    @staticmethod
+    def _complete_manual_item(
+        item: dict[str, Any],
+        coverage: dict[str, Any],
+        *,
+        accepted: bool,
+    ) -> None:
+        ReviewService._mark_manual_acceptance(item)
+        item["confirmation_accepted"] = accepted
+        if not accepted:
+            item["status"] = "excluded"
+            item["active"] = False
+        item_id = item["item_id"]
+        for entry in ReviewService._coverage_entries(coverage):
+            if entry.get("candidate_id") == item_id:
+                entry["requires_confirmation"] = False
+                entry["confirmation_accepted"] = accepted
+        ReviewService._refresh_review_required_count(coverage)
 
     @staticmethod
     def _edit_item(item: dict[str, Any], fields: dict[str, Any]) -> None:
@@ -883,21 +908,12 @@ class ReviewService:
         item_id: str,
         accepted: bool,
     ) -> None:
-        resolved = False
-        for item in items:
-            if item["item_id"] == item_id and item.get("active", True):
-                item["requires_confirmation"] = False
-                item["confirmation_accepted"] = accepted
-                ReviewService._mark_manual_acceptance(item)
-                resolved = True
-        for entry in ReviewService._coverage_entries(coverage):
-            if entry.get("candidate_id") == item_id:
-                entry["requires_confirmation"] = False
-                entry["confirmation_accepted"] = accepted
-                resolved = True
-        if not resolved:
-            raise ReviewNotFound(f"confirmation target {item_id} was not found")
-        ReviewService._refresh_review_required_count(coverage)
+        item = ReviewService._active_item(items, item_id)
+        ReviewService._complete_manual_item(
+            item,
+            coverage,
+            accepted=accepted,
+        )
 
     @staticmethod
     def _pending_source_entry(

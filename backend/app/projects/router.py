@@ -14,6 +14,10 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.balloons.models import Balloon
 from app.balloons.service import BalloonService
+from app.candidates.confidence import (
+    ConfidenceDecisionContractError,
+    validate_confidence_decision,
+)
 from app.candidates.models import AutomaticResult
 from app.config import get_settings
 from app.db import SessionLocal
@@ -335,18 +339,26 @@ def _project_items(
             page_index = source["page_index"]
         coordinates = item.get("coordinates")
         if isinstance(page_index, int) and _is_bbox(coordinates):
-            confidence_decision = item.get("confidence_decision")
-            if not isinstance(confidence_decision, dict):
-                confidence_decision = {}
+            confidence_decision = None
+            try:
+                confidence_decision = validate_confidence_decision(
+                    item.get("confidence_decision")
+                )
+            except ConfidenceDecisionContractError:
+                pass
             candidates.append(
                 {
                     "id": f"candidate-{item_id}",
                     "item_id": item_id,
                     "page_index": page_index,
                     "bbox_pdf": list(coordinates),
-                    "confidence_band": confidence_decision.get("band"),
-                    "review_disposition": confidence_decision.get(
-                        "review_disposition"
+                    "confidence_band": (
+                        confidence_decision.band if confidence_decision else None
+                    ),
+                    "review_disposition": (
+                        confidence_decision.review_disposition
+                        if confidence_decision
+                        else None
                     ),
                     "status": item.get("status"),
                 }

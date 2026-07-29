@@ -407,6 +407,22 @@ def test_manual_review_count_deduplicates_candidate_linked_coverage() -> None:
     assert manual_review_count(items, coverage) == 2
 
 
+def test_manual_review_count_skips_malformed_historical_values() -> None:
+    assert manual_review_count(
+        [
+            None,
+            "malformed",
+            {
+                "item_id": "review",
+                "active": True,
+                "requires_confirmation": True,
+            },
+        ],
+        None,
+    ) == 1
+    assert manual_review_count([], {"entries": [None, "malformed"]}) == 0
+
+
 def test_visual_coverage_exposes_only_owner_committed_discriminator() -> None:
     diagnostics = (
         {

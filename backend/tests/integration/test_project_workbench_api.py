@@ -402,6 +402,42 @@ def test_project_candidate_projection_exposes_backend_confidence_status() -> Non
     ]
 
 
+def test_project_projection_fails_closed_for_historical_malformed_decision() -> None:
+    items = [
+        {
+            "item_id": "malformed",
+            "active": True,
+            "page_index": 0,
+            "coordinates": [1, 2, 3, 4],
+            "source_location_ids": ["source-malformed"],
+            "status": "pending",
+            "confidence_decision": {
+                "band": "high",
+                "review_disposition": "auto_accepted",
+                "policy_version": "candidate-confidence/999",
+                "evidence_codes": [],
+            },
+        }
+    ]
+
+    candidates, _ = _project_items(
+        items,
+        {"entries": []},
+        {
+            "source-malformed": {
+                "page_index": 0,
+                "bbox_pdf": [1, 2, 3, 4],
+                "raw_text": "M6",
+                "source_type": "text",
+            }
+        },
+    )
+
+    assert candidates[0]["confidence_band"] is None
+    assert candidates[0]["review_disposition"] is None
+    assert candidates[0]["status"] == "pending"
+
+
 @pytest.mark.parametrize(
     ("schema_version", "top_level_decision"),
     [

@@ -326,6 +326,55 @@ def test_review_remarks_persist_without_mutating_raw_or_export_contract(
     assert raw.candidates[0]["payload"].get("remarks") is None
 
 
+def test_rejected_confirmation_never_enters_reviewed_export_source(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    context = make_balloon_context(db_session, tmp_path, frozen=False)
+    before_version = context.working_copy.version
+
+    rejected = context.review_service.apply(
+        context.working_copy.id,
+        expected_version=before_version,
+        operator_id="quality-1",
+        command={
+            "type": "resolve_confirmation",
+            "item_id": "i1",
+            "accepted": False,
+        },
+    )
+
+    assert rejected.version == before_version + 1
+    assert rejected.numbering_stale is True
+    rejected_item = next(
+        item for item in rejected.items if item["item_id"] == "i1"
+    )
+    assert rejected_item["status"] == "excluded"
+    assert rejected_item["active"] is False
+
+    frozen = context.review_service.freeze_items(
+        rejected.id,
+        expected_version=rejected.version,
+        operator_id="quality-1",
+    )
+    generated = context.balloon_service.generate_formal(
+        frozen.project_id,
+        expected_version=frozen.version,
+        operator_id="quality-1",
+    )
+    reviewed = context.review_service.confirm(
+        frozen.id,
+        expected_version=frozen.version,
+        operator_id="quality-1",
+    )
+
+    assert [item["item_id"] for item in reviewed.items] == ["i2"]
+    assert [balloon.inspection_item_id for balloon in generated] == ["i2"]
+    assert [
+        balloon["inspection_item_id"] for balloon in reviewed.balloons
+    ] == ["i2"]
+
+
 @pytest.fixture
 def completed_balloon_review(
     db_session: Session,
