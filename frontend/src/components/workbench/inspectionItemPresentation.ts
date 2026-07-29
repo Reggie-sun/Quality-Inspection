@@ -1,6 +1,7 @@
 import type {
   BalloonOverlay,
   CandidateType,
+  ProjectWorkbenchCandidate,
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
@@ -92,10 +93,23 @@ function inspectionItemStatus(
 }
 
 export function isAutoAcceptedItem(item: ReviewItem): boolean {
-  return item.status === "auto_accepted"
+  return item.active === true
+    && item.status === "auto_accepted"
+    && item.requires_confirmation === false
+    && item.acceptance_source === "confidence_policy"
     && item.confidence_decision?.band === "high"
     && item.confidence_decision.review_disposition === "auto_accepted"
     && item.confidence_decision.policy_version === "candidate-confidence/1";
+}
+
+export function isAutoAcceptedCandidateProjection(
+  item: ReviewItem,
+  candidate: ProjectWorkbenchCandidate,
+): boolean {
+  return isAutoAcceptedItem(item)
+    && candidate.confidence_band === "high"
+    && candidate.review_disposition === "auto_accepted"
+    && candidate.status === "auto_accepted";
 }
 
 export function isReviewRequiredItem(item: ReviewItem): boolean {
@@ -137,7 +151,7 @@ export function inspectionItemPresentation(
       ? zhCN.inspection.formalNumber(balloon.number)
       : candidateNumber !== undefined
         ? autoAccepted
-          ? zhCN.inspection.autoAcceptedCandidateNumber
+          ? zhCN.inspection.autoAcceptedCandidateNumber(candidateNumber)
           : zhCN.inspection.candidateNumber(candidateNumber)
         : zhCN.inspection.noNumber,
     typeLabel: inspectionItemTypeLabel(item),

@@ -1748,6 +1748,8 @@ describe("InspectionWorkbench", () => {
         raw_text: "10",
         nominal: "10",
         status: "auto_accepted",
+        requires_confirmation: false,
+        acceptance_source: "confidence_policy" as const,
         confidence_decision: {
           band: "high" as const,
           review_disposition: "auto_accepted" as const,
@@ -1813,6 +1815,8 @@ describe("InspectionWorkbench", () => {
       raw_text: "30",
       nominal: "30",
       status: "auto_accepted",
+      requires_confirmation: false,
+      acceptance_source: "confidence_policy" as const,
       confidence_decision: {
         band: "high" as const,
         review_disposition: "auto_accepted" as const,

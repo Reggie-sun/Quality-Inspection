@@ -448,13 +448,11 @@
 .drawing-legend i[data-color="balloon"] {
   border-radius: 50%;
   border-color: #c23b3b;
-  background: #c23b3b;
 }
 
 .drawing-legend i[data-color="auto-accepted"] {
   border-radius: 50%;
   border-color: #c23b3b;
-  background: transparent;
 }
 
 .drawing-legend i[data-color="candidate"] {

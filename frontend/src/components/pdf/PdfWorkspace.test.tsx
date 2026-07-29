@@ -375,7 +375,7 @@ describe("PdfWorkspace", () => {
       .toContain("正式气泡候选项来源标注已排除");
   });
 
-  test("图例以同一红色色相区分自动通过空心气泡与正式实心气泡", () => {
+  test("图例以同一红色色相区分自动通过实心气泡与正式空心气泡", () => {
     render(
       <PdfWorkspace
         pdfDocument={null}
@@ -388,12 +388,12 @@ describe("PdfWorkspace", () => {
     const legend = screen.getByRole("list", { name: "图纸标注图例" });
     expect(legend.textContent).toContain("自动通过，待统一编号");
     expect(legend.textContent).toContain("正式气泡");
-    expect(
-      legend.querySelector("[data-color='auto-accepted']"),
-    ).not.toBeNull();
-    expect(
-      legend.querySelector("[data-color='balloon']"),
-    ).not.toBeNull();
+    const provisional = legend.querySelector<HTMLElement>(
+      "[data-color='auto-accepted']",
+    );
+    const formal = legend.querySelector<HTMLElement>("[data-color='balloon']");
+    expect(provisional?.style.backgroundColor).toBe("rgb(194, 59, 59)");
+    expect(formal?.style.backgroundColor).toBe("transparent");
   });
 
   test("辅助区使用导出与处理文案并在收起后保持挂载", () => {

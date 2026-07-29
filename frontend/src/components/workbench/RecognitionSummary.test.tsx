@@ -115,6 +115,8 @@ test("自动通过、人工审核、放置人工处理与碰撞计数彼此独�
           item_id: "auto",
           raw_text: "10",
           status: "auto_accepted",
+          requires_confirmation: false,
+          acceptance_source: "confidence_policy",
           confidence_decision: {
             band: "high",
             review_disposition: "auto_accepted",

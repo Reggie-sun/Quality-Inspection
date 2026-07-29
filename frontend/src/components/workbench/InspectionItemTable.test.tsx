@@ -856,6 +856,8 @@ test("review_required 默认队列包含中低与未知项但不包含自动通�
       item_id: "auto-item",
       raw_text: "自动项",
       status: "auto_accepted",
+      requires_confirmation: false,
+      acceptance_source: "confidence_policy" as const,
       confidence_decision: {
         band: "high" as const,
         review_disposition: "auto_accepted" as const,
@@ -935,6 +937,8 @@ test("全部筛选保留自动通过项的选择身份", () => {
         item_id: "auto-editable",
         raw_text: "自动通过可编辑",
         status: "auto_accepted",
+        requires_confirmation: false,
+        acceptance_source: "confidence_policy",
         confidence_decision: {
           band: "high",
           review_disposition: "auto_accepted",
@@ -944,6 +948,7 @@ test("全部筛选保留自动通过项的选择身份", () => {
         active: true,
       }]}
       balloons={[]}
+      candidateNumbers={new Map([["auto-editable", 7]])}
       filter="all"
       selectedItemId="auto-editable"
       onSelectItem={onSelectItem}
@@ -952,6 +957,8 @@ test("全部筛选保留自动通过项的选择身份", () => {
 
   const row = screen.getByRole("row", { name: /自动通过可编辑/ });
   expect(row.getAttribute("data-selected")).toBe("true");
+  expect(screen.getByLabelText("自动通过气泡 7，待统一编号"))
+    .not.toBeNull();
   fireEvent.click(row);
   expect(onSelectItem).toHaveBeenCalledWith("auto-editable");
 });

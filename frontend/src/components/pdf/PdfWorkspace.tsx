@@ -432,10 +432,16 @@ export function PdfWorkspace({
       </div>
       <ul className="drawing-legend" aria-label={zhCN.pdf.legend}>
         <li>
-          <i data-color="auto-accepted" />
+          <i
+            data-color="auto-accepted"
+            style={{ backgroundColor: "#c23b3b" }}
+          />
           {zhCN.pdf.autoAcceptedPendingNumber}
         </li>
-        <li><i data-color="balloon" />{zhCN.pdf.formalBalloon}</li>
+        <li>
+          <i data-color="balloon" style={{ backgroundColor: "transparent" }} />
+          {zhCN.pdf.formalBalloon}
+        </li>
         <li><i data-color="candidate" />{zhCN.pdf.candidate}</li>
         <li><i data-color="source" />{zhCN.pdf.source}</li>
         <li><i data-color="excluded" />{zhCN.pdf.excluded}</li>

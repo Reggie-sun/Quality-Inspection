@@ -29,6 +29,7 @@ export type OverlayBox = {
   confidenceBand?: ConfidenceBand | null;
   reviewDisposition?: ReviewDisposition | null;
   status?: string | null;
+  autoAccepted?: boolean;
 };
 
 export type BalloonOverlay = {

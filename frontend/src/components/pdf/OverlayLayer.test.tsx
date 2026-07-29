@@ -136,9 +136,9 @@ describe("OverlayLayer", () => {
       .getAttribute("tabindex")).toBe("-1");
     expect(screen.getByRole("button", { name: "候选气泡 2" })
       .getAttribute("tabindex")).toBe("0");
-    expect(screen.getByRole("button", { name: "气泡 3" })
+    expect(screen.getByRole("button", { name: "正式气泡 3" })
       .getAttribute("tabindex")).toBe("0");
-    expect(screen.getByRole("button", { name: "气泡 4" })
+    expect(screen.getByRole("button", { name: "正式气泡 4" })
       .getAttribute("tabindex")).toBe("-1");
   });
 
@@ -163,7 +163,7 @@ describe("OverlayLayer", () => {
       />,
     );
 
-    const balloon = screen.getByRole("button", { name: "气泡 1" });
+    const balloon = screen.getByRole("button", { name: "正式气泡 1" });
     expect(balloon.style.cursor).toBe("pointer");
     expect(balloon.getAttribute("data-read-only")).toBe("true");
   });
@@ -314,7 +314,7 @@ describe("OverlayLayer", () => {
     );
 
     expect(screen.queryByRole("button", { name: "候选气泡 1" })).toBeNull();
-    expect(screen.getByRole("button", { name: "气泡 7" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "正式气泡 7" })).not.toBeNull();
 
     rerender(
       <OverlayLayer
@@ -410,6 +410,7 @@ describe("OverlayLayer", () => {
         confidenceBand: "high" as const,
         reviewDisposition: "auto_accepted" as const,
         status: "auto_accepted",
+        autoAccepted: true,
       },
       {
         id: "unknown-candidate",
@@ -493,7 +494,7 @@ describe("OverlayLayer", () => {
       />,
     );
 
-    const formal = screen.getByRole("button", { name: "气泡 7" });
+    const formal = screen.getByRole("button", { name: "正式气泡 7" });
     expect(formal.getAttribute("data-testid")).toBe("balloon-formal-balloon");
     expect(formal.querySelector("circle")?.getAttribute("stroke")).toBe("#dc2626");
   });

@@ -392,10 +392,7 @@ export function OverlayLayer({
           { itemId, itemIds: item.itemIds },
           selected,
         );
-        const isAutoAccepted =
-          item.confidenceBand === "high"
-          && item.reviewDisposition === "auto_accepted"
-          && item.status === "auto_accepted";
+        const isAutoAccepted = item.autoAccepted === true;
         const selectCandidate = () => {
           const selectedItem = selectRelationItem(
             { itemId, itemIds: item.itemIds },

@@ -13,6 +13,30 @@ import { BalloonToolbar } from "./BalloonToolbar";
 afterEach(cleanup);
 
 describe("BalloonOverlay", () => {
+  test("正式气泡 aria-label 包含正式前缀、编号与阻断后缀", () => {
+    render(
+      <svg aria-label="test overlay">
+        <BalloonOverlay
+          balloon={{
+            id: "formal-accessible-balloon",
+            itemId: "formal-item",
+            center: [50, 60],
+            number: 12,
+            status: "active",
+            placementStatus: "manual_required",
+          }}
+          renderToPdfMatrix={[1, 0, 0, 1, 0, 0]}
+          selected={false}
+          onSelect={vi.fn()}
+        />
+      </svg>,
+    );
+
+    expect(screen.getByRole("button", {
+      name: "正式气泡 12，需人工处理",
+    })).not.toBeNull();
+  });
+
   test("P0-BAL-006 uses the approved DejaVu Sans digit metrics", () => {
     const [x0, y0, x1, y1] = balloonGlyphBBox(272, [100, 100]);
 

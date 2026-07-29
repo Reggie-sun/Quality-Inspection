@@ -33,6 +33,8 @@ describe("deriveCandidateNumbers", () => {
         item_id: "auto-item",
         raw_text: "10",
         status: "auto_accepted",
+        requires_confirmation: false,
+        acceptance_source: "confidence_policy" as const,
         confidence_decision: {
           band: "high" as const,
           review_disposition: "auto_accepted" as const,

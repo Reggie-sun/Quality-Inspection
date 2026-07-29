@@ -21,6 +21,9 @@ import {
   candidateMarkerNumber,
   deriveCandidateNumbers,
 } from "./candidateNumbering";
+import {
+  isAutoAcceptedCandidateProjection,
+} from "./inspectionItemPresentation";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 import { WorkbenchWorkflowHeader } from "./WorkbenchWorkflowHeader";
 
@@ -247,6 +250,8 @@ export function ProjectWorkbenchApp({
             confidenceBand: candidate.confidence_band,
             reviewDisposition: candidate.review_disposition,
             status: candidate.status,
+            autoAccepted: item !== undefined
+              && isAutoAcceptedCandidateProjection(item, candidate),
             showCandidateMarker: candidateMarkerNumber(
               item ?? {},
               candidateNumber,

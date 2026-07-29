@@ -361,3 +361,90 @@ test("后端 auto_accepted status/disposition 原样投影为红色 provisional 
   });
   expect(marker.querySelector("circle")?.getAttribute("stroke")).toBe("#c23b3b");
 });
+
+test("candidate 单边自动投影不得绕过 working item 完整合同", async () => {
+  const snapshot = reviewedResponse();
+  const validDecision = {
+    band: "high" as const,
+    review_disposition: "auto_accepted" as const,
+    policy_version: "candidate-confidence/1" as const,
+    evidence_codes: ["typed_schema_complete"],
+  };
+  snapshot.project.state = "editing";
+  snapshot.working_copy.items_frozen_at = null;
+  snapshot.working_copy.items_frozen_by = null;
+  snapshot.working_copy.items_frozen_version = null;
+  snapshot.working_copy.manual_review_count = 3;
+  snapshot.working_copy.items = [
+    {
+      ...snapshot.working_copy.items[0],
+      item_id: "requires-confirmation",
+      raw_text: "10",
+      status: "auto_accepted",
+      requires_confirmation: true,
+      acceptance_source: "confidence_policy",
+      confidence_decision: validDecision,
+    },
+    {
+      ...snapshot.working_copy.items[0],
+      item_id: "missing-acceptance-source",
+      raw_text: "20",
+      status: "auto_accepted",
+      requires_confirmation: false,
+      acceptance_source: undefined,
+      confidence_decision: validDecision,
+    },
+    {
+      ...snapshot.working_copy.items[0],
+      item_id: "mismatched-policy",
+      raw_text: "30",
+      status: "auto_accepted",
+      requires_confirmation: false,
+      acceptance_source: "confidence_policy",
+      confidence_decision: {
+        ...validDecision,
+        policy_version: "future-policy",
+      } as never,
+    },
+  ];
+  snapshot.candidates = snapshot.working_copy.items.map((item, index) => ({
+    id: `candidate-${item.item_id}`,
+    item_id: item.item_id,
+    page_index: 0,
+    bbox_pdf: [10 + index * 40, 20, 30 + index * 40, 40],
+    confidence_band: "high",
+    review_disposition: "auto_accepted",
+    status: "auto_accepted",
+  }));
+  snapshot.balloons = [];
+  snapshot.reviewed_result_id = null;
+  snapshot.latest_export = null;
+  vi.stubGlobal("fetch", vi.fn(async (
+    path: RequestInfo | URL,
+  ) => new Response(JSON.stringify(
+    String(path).endsWith("/review/lock")
+      ? { operator_id: "operator-real" }
+      : snapshot,
+  ), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })));
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+    />,
+  );
+
+  for (const [number, rawText] of [[1, "10"], [2, "20"], [3, "30"]] as const) {
+    expect(await screen.findByRole("button", {
+      name: `候选气泡 ${number}`,
+    })).not.toBeNull();
+    expect(screen.queryByRole("button", {
+      name: `自动通过气泡 ${number}，待统一编号`,
+    })).toBeNull();
+    expect(screen.getByRole("row", { name: new RegExp(rawText) })).not.toBeNull();
+  }
+});

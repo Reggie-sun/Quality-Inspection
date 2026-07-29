@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import { zhCN } from "../../copy/zhCN";
-import { inspectionItemPresentation } from "./inspectionItemPresentation";
+import {
+  inspectionItemPresentation,
+  isReviewRequiredItem,
+} from "./inspectionItemPresentation";
 
 
 describe("inspectionItemPresentation", () => {
@@ -58,6 +61,8 @@ describe("inspectionItemPresentation", () => {
         item_id: "auto-item",
         raw_text: "10",
         status: "auto_accepted",
+        requires_confirmation: false,
+        acceptance_source: "confidence_policy",
         confidence_decision: {
           band: "high",
           review_disposition: "auto_accepted",
@@ -72,8 +77,55 @@ describe("inspectionItemPresentation", () => {
       status: "auto_accepted",
       statusLabel: "自动通过",
       numberKind: "candidate",
-      numberLabel: "自动通过，待统一编号",
+      numberLabel: "自动通过气泡 3，待统一编号",
     });
+  });
+
+  test.each([
+    {
+      name: "requires_confirmation 为 true",
+      requires_confirmation: true,
+      acceptance_source: "confidence_policy",
+    },
+    {
+      name: "requires_confirmation 缺失",
+      requires_confirmation: undefined,
+      acceptance_source: "confidence_policy",
+    },
+    {
+      name: "acceptance_source 缺失",
+      requires_confirmation: false,
+      acceptance_source: undefined,
+    },
+    {
+      name: "acceptance_source 与自动策略矛盾",
+      requires_confirmation: false,
+      acceptance_source: "manual",
+    },
+  ])("$name 时不得自动通过或退出人工队列", ({
+    requires_confirmation,
+    acceptance_source,
+  }) => {
+    const item = {
+      item_id: "contradictory-auto-item",
+      raw_text: "10",
+      status: "auto_accepted",
+      requires_confirmation,
+      acceptance_source,
+      confidence_decision: {
+        band: "high",
+        review_disposition: "auto_accepted",
+        policy_version: "candidate-confidence/1",
+        evidence_codes: ["typed_schema_complete"],
+      },
+      active: true,
+    } as const;
+
+    expect(inspectionItemPresentation(item as never)).toMatchObject({
+      status: "pending",
+      statusLabel: "待人工审核",
+    });
+    expect(isReviewRequiredItem(item as never)).toBe(true);
   });
 
   test("未知 confidence/status fail closed 为待人工审核", () => {

@@ -181,7 +181,8 @@ export const zhCN = {
     confidenceHigh: "高置信度",
     confidenceMedium: "中置信度",
     confidenceLow: "低置信度",
-    autoAcceptedCandidateNumber: "自动通过，待统一编号",
+    autoAcceptedCandidateNumber: (number: number) =>
+      `自动通过气泡 ${number}，待统一编号`,
     statusConfirmed: "已确认",
     statusCandidate: "候选项",
     statusExcluded: "已排除",
@@ -336,7 +337,7 @@ export const zhCN = {
     confirm: "确认审核结果",
     finalization: "审核定稿操作",
     marker: (number: number, blocked: boolean) =>
-      `气泡 ${number}${blocked ? "，需人工处理" : ""}`,
+      `正式气泡 ${number}${blocked ? "，需人工处理" : ""}`,
   },
   pdf: {
     workspace: "PDF 审核工作区",
