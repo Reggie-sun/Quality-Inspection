@@ -301,6 +301,8 @@ test("无正式气泡时显示候选气泡并在检验项详情复用候选序�
   );
 
   expect(await screen.findByRole("button", { name: "候选气泡 1" })).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
+  fireEvent.click(screen.getByRole("row", { name: /M6/ }));
   const detail = screen.getByRole("article", { name: "检验项 1 · 螺纹" });
   expect(within(detail).getByText("候选序号 1")).not.toBeNull();
 });

@@ -121,10 +121,7 @@ export function InspectionWorkbench({
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(
-    () => (
-      items.find(isReviewRequiredItem)
-      ?? items.find((item) => item.active)
-    )?.item_id,
+    () => items.find(isReviewRequiredItem)?.item_id,
   );
   const [selectedBalloonId, setSelectedBalloonId] = useState<string>();
   const [selectedSourceId, setSelectedSourceId] = useState<string>();

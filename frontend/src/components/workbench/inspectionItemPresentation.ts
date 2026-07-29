@@ -88,9 +88,7 @@ function inspectionItemStatus(
   if (item.status === "kept" || item.sip_detail_fields_confirmed === true) {
     return "confirmed";
   }
-  return balloon === undefined && item.balloon_required === true
-    ? "candidate"
-    : "pending";
+  return "pending";
 }
 
 export function isAutoAcceptedItem(item: ReviewItem): boolean {

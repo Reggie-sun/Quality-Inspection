@@ -668,6 +668,9 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
+    fireEvent.click(screen.getByRole("row", { name: /M6/ }));
+
     const reviewRegion = screen.getByRole("region", { name: "检验项审核" });
     const recognitionSummary = screen.getByRole("region", { name: "识别汇总" });
     const workspace = screen.getByRole("group", {
@@ -1801,5 +1804,64 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(screen.getByRole("row", { name: /10/ }));
     expect(screen.getByRole("textbox", { name: "基本尺寸：10" })).not.toBeNull();
     expect(screen.getAllByText("高置信度")).toHaveLength(2);
+  });
+
+  test("全自动通过结果在默认人工队列中不预选详情，切到全部后才可选择编辑", () => {
+    const items = [{
+      item_id: "only-auto-item",
+      item_type: "linear_dimension" as const,
+      raw_text: "30",
+      nominal: "30",
+      status: "auto_accepted",
+      confidence_decision: {
+        band: "high" as const,
+        review_disposition: "auto_accepted" as const,
+        policy_version: "candidate-confidence/1" as const,
+        evidence_codes: ["typed_schema_complete"],
+      },
+      balloon_required: true,
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "all-high-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          manual_review_count: 0,
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "筛选待人工审核" })
+      .getAttribute("data-active")).toBe("true");
+    expect(screen.getByText("没有符合条件的检验项。")).not.toBeNull();
+    expect(screen.queryByRole("article", {
+      name: /检验项/,
+    })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "基本尺寸：30" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
+    const row = screen.getByRole("row", { name: /30/ });
+    expect(row.getAttribute("data-selected")).toBe("false");
+    fireEvent.click(row);
+
+    expect(screen.getByRole("textbox", { name: "基本尺寸：30" })).not.toBeNull();
+    expect(screen.getByRole("article", {
+      name: "检验项 — · 线性尺寸",
+    })).not.toBeNull();
   });
 });

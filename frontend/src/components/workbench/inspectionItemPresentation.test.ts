@@ -94,6 +94,66 @@ describe("inspectionItemPresentation", () => {
     });
   });
 
+  test.each([
+    {
+      name: "缺少 status 与 decision",
+      item: {},
+    },
+    {
+      name: "未知 status",
+      item: {
+        status: "future_status",
+        confidence_decision: {
+          band: "high",
+          review_disposition: "auto_accepted",
+          policy_version: "candidate-confidence/1",
+          evidence_codes: ["typed_schema_complete"],
+        },
+      },
+    },
+    {
+      name: "未知 band",
+      item: {
+        status: "auto_accepted",
+        confidence_decision: {
+          band: "future_band",
+          review_disposition: "auto_accepted",
+          policy_version: "candidate-confidence/1",
+          evidence_codes: ["typed_schema_complete"],
+        },
+      },
+    },
+    {
+      name: "未知 disposition",
+      item: {
+        status: "auto_accepted",
+        confidence_decision: {
+          band: "high",
+          review_disposition: "future_disposition",
+          policy_version: "candidate-confidence/1",
+          evidence_codes: ["typed_schema_complete"],
+        },
+      },
+    },
+  ])("$name 且需要气泡时仍显示待人工审核", ({ item }) => {
+    expect(inspectionItemPresentation(
+      {
+        item_id: "fail-closed-item",
+        raw_text: "10",
+        balloon_required: true,
+        active: true,
+        ...item,
+      } as never,
+      undefined,
+      8,
+    )).toMatchObject({
+      displayNumber: 8,
+      numberKind: "candidate",
+      status: "pending",
+      statusLabel: "待人工审核",
+    });
+  });
+
   test("没有正式气泡时使用候选编号，完全无编号时不按数组索引回填", () => {
     expect(inspectionItemPresentation(
       {
@@ -219,10 +279,10 @@ describe("inspectionItemPresentation", () => {
       expected: "confirmed",
     },
     {
-      name: "需要气泡但尚无气泡映射为 candidate",
+      name: "需要气泡但没有明确后端状态仍 fail closed",
       item: { active: true, balloon_required: true },
       balloon: undefined,
-      expected: "candidate",
+      expected: "pending",
     },
     {
       name: "其他有效项映射为 pending",
