@@ -2,14 +2,14 @@
 
 ## Status
 
-- Date: `2026-07-28`
-- Status: `v2 implemented; v3 context-compaction candidate frozen; Quality Owner gate pending`
+- Date: `2026-07-29`
+- Status: `v2 implemented; v3 context-compaction approved; production TDD authorized`
 - Selected scope: 当前失败 PDF 闭环
 - Selected lane: `Heavy`
 - Execution authorization owner: unique current plan; this design does not authorize execution
 - Activation state: original Task 0 complete at `994cbe4`; historical v2 SR-2B
-  Quality Owner gate closed on `2026-07-28`; latest live evidence requires a new
-  v3 Quality Owner gate before proposal production changes
+  Quality Owner gate closed on `2026-07-28`; v3 Quality Owner gate closed on
+  `2026-07-29`, authorizing only the proposal-only TDD boundary below
 
 本文只定义能力、Owner、数据合同、失败边界和验收口径。它不切换当前
 implementation plan，也不独立授权 production code、runtime config、contract
@@ -750,6 +750,35 @@ negatives、exact rule/ID/batch digests、80/125 counts、13/16 batches、
 exact-once、all crop limits、repeatability 和 Provider construction/calls=0。
 Quality Owner 必须看到完整图片并明确批准 exact v3 evidence；overlap count、
 本节 calibration 或先前“可以”都不能代替该 verdict。
+
+#### V3 Quality Owner Approval Evidence — 2026-07-29
+
+Quality Owner 收到两页 `200%` 完整 overlay、五张 zoom、完整 report、全部 exact
+SHA-256，以及 `FN-03/FN-04/FN-08/FN-11` retained-overlap 风险提示后，明确回复
+“批准”。两次 renderer 各自只生成八个文件且逐 byte identical；report 机械验证
+`148/244` raw contexts、`132/203` base-area contexts、`80/125` final
+observations、`13/16` official batches、`56/56` positives、`16` frozen
+negatives、exact-once、全部 crop/member/pixel/area limits、repeatability 和
+Provider construction/calls=`0`。
+
+该人工 verdict 按以下 compact、sorted-key canonical JSON 冻结：
+
+```json
+{"annotation_status":"approved","manifest_sha256":"0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448","overlay_scale_percent":200,"overlay_sha256":{"page-1-proposal-v3-overlay-200pct.png":"354f61573dd684a7e9883aa66a0fa183750f82e735e30a88eb17994632070e39","page-2-proposal-v3-overlay-200pct.png":"570383d0f500eac266a23a8215f792934070b5cc9d08ddb8c69c03f767534b3d"},"proposal_gate_report_sha256":"95292be8fc086f0ae44487a6ebc460158be5c198abb0c0ed9c8bc21d954eb919","proposal_rule_sha256":"8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa","proposal_rule_version":"visual-observation/3","reviewed_frozen_negative_region_count":16,"reviewed_positive_label_count":56,"schema_version":"visual-proposal-gate-verdict/1","unlabeled_target_count":0,"zoom_sha256":{"zoom-core-symbol-representatives.png":"1c247a0e64a26c94075e4b6b791da9d5d5799b206157664441eca1379283b706","zoom-frozen-negative-overlaps.png":"fe53df50630ac85f1293c5a8113f96519b3de995ad6f6e9b75a8e6ab27883540","zoom-gdt-and-boxed-datum.png":"7dfd248718a69604216ccb12f968c22bfddf74bbdcc15a2bc9b140efb36e0b98","zoom-recovered-proposal-gaps.png":"659a066e3e239febea08cb8a947cb99c545af006e1a106b942ef8e6f1d8605ec","zoom-revision-and-n5.png":"f186cb19fdc6a4f49e7670723971f27fbcf6236f016f56d368f890b07b552138"}}
+```
+
+canonical verdict SHA-256 为
+`05a6e3ac42d5b172e119631940c7df4890950f026ba074f8eda7fa4c539e8e80`。
+page 0 / page 1 的 observation-ID SHA-256 分别为
+`83d905ec82987c4719f755a1e7a31af246c210a3d4a12113334460c7b9c3a203` /
+`a0cc85f52868487d56f108f08e1b6c42eb4b54584759987b32c9bdeef733ffdd`，
+ordered batch-membership SHA-256 分别为
+`7dcbf89d4903dbe5c90633bef6d7cb6ddecd0317d5280b1c619dca848a8944ca` /
+`925a0bc1016be66b5368b284ab8fe81bf7815fab22a597ba87970acf11d9e055`。
+
+该 approval 只关闭 v3 proposal admission visual gate 并授权 proposal-only TDD；
+它不声称 production implementation、fresh Provider/live run、frontend、D7-T3
+或任意工程图通用准确率已经通过。
 
 #### Old Path Retirement And TDD Boundary
 

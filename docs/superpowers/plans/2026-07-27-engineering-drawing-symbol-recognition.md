@@ -76,13 +76,13 @@ immutable；本节只拥有最新 live evidence 暴露的三个 proposal-overlap
   first-fit、crop limits、Coverage Veto 和 CandidateAdvisor ownership。不得保留
   v2 fallback/shadow path。
 
-- [ ] **V3 Step 1: Commit only the frozen docs amendment**
+- [x] **V3 Step 1: Commit only the frozen docs amendment**
 
   只允许本 design、本 subordinate plan 和唯一 current plan。不得修改
   `MAIN_CONTRACT_MATRIX.md`、production/test/frontend、sealed artifacts 或
   `.agent/EXECUTION_STATUS.md`。
 
-- [ ] **V3 Step 2: Run the exact renderer twice without repository writes**
+- [x] **V3 Step 2: Run the exact renderer twice without repository writes**
 
   renderer 只能写入两个 `mktemp -d -p /tmp` 目录，不 import/construct/call
   Provider。开始前 exact 验证 source SHA、sealed manifest SHA、rule bytes/digest、
@@ -105,14 +105,14 @@ immutable；本节只拥有最新 live evidence 暴露的三个 proposal-overlap
   repeatability 和 Provider construction/calls=0；不得包含 source path、raw text、
   token、crop bytes 或 Provider payload。
 
-- [ ] **V3 Step 3: Stop for an exact Quality Owner visual verdict**
+- [x] **V3 Step 3: Stop for an exact Quality Owner visual verdict**
 
   向用户提供两页完整 overlay、五张 zoom、report 和全部 SHA-256，并明确提示所有
   retained frozen-negative overlaps。只有用户在看到本轮 exact artifacts 后明确
   给出 approval，才允许写 canonical v3 verdict；overlap count、旧 v2 approval、
   “继续”或测试通过均不等于本 gate verdict。
 
-- [ ] **V3 Step 4: After approval, close docs/contract and authorize TDD**
+- [x] **V3 Step 4: After approval, close docs/contract and authorize TDD**
 
   approval commit 才允许修改本 design、本 subordinate plan、唯一 current plan 和
   `docs/contracts/MAIN_CONTRACT_MATRIX.md`，只绑定 exact verdict/artifact digests。
@@ -121,6 +121,17 @@ immutable；本节只拥有最新 live evidence 暴露的三个 proposal-overlap
   `backend/tests/unit/pdf/test_visual_observations.py` 和直接 cache-version consumer
   tests；不得修改 Provider、prompt v4、projection、evaluator、frontend 或 `main`。
   fresh Provider/live run 仍需后续单独 amendment。
+
+  Quality Owner 于 `2026-07-29` 在收到两页完整 overlay、五张 zoom、report、全部
+  SHA-256 和 `FN-03/FN-04/FN-08/FN-11` 风险提示后明确回复“批准”。canonical
+  verdict SHA-256 为
+  `05a6e3ac42d5b172e119631940c7df4890950f026ba074f8eda7fa4c539e8e80`；
+  report SHA-256 为
+  `95292be8fc086f0ae44487a6ebc460158be5c198abb0c0ed9c8bc21d954eb919`。
+  两页 overlay 和五张 zoom 的 exact filename→SHA-256 mapping 由 accepted design
+  同名 approval evidence 拥有；本 plan 不建立第二份 positional mapping。
+  当前唯一 next verification 是 proposal-owner PDF/cache RED；本 approval closure
+  不授权 Provider construction/calls。
 
 ## SR-2C Cache Contract-Test Ownership Amendment — 2026-07-28
 

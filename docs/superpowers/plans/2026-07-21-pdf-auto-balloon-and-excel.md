@@ -910,6 +910,30 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     false-positive 和 fail-closed semantics 不变。overlap count 不是 Quality
     Owner approval；用户给出本轮 exact verdict 前不得生成 approved manifest、
     canonical verdict 或正式 success status。fresh live run 仍未授权。
+  - Quality Owner closure — 2026-07-29:
+    - 用户在收到两页完整 `200%` overlays、五张 zoom、完整 report、全部 SHA-256
+      及 `FN-03/FN-04/FN-08/FN-11` retained-overlap 风险提示后明确回复“批准”。
+    - canonical verdict SHA-256 为
+      `05a6e3ac42d5b172e119631940c7df4890950f026ba074f8eda7fa4c539e8e80`；
+      report SHA-256 为
+      `95292be8fc086f0ae44487a6ebc460158be5c198abb0c0ed9c8bc21d954eb919`；
+      rule SHA-256 保持
+      `8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa`。
+    - `page-1-proposal-v3-overlay-200pct.png` /
+      `page-2-proposal-v3-overlay-200pct.png` artifact SHA-256 为
+      `354f61573dd684a7e9883aa66a0fa183750f82e735e30a88eb17994632070e39` /
+      `570383d0f500eac266a23a8215f792934070b5cc9d08ddb8c69c03f767534b3d`；
+      五张 zoom 的 exact digests 与 canonical verdict 绑定，由 accepted design
+      同名 approval evidence 拥有。
+    - Validation action: 进入 proposal-only PDF/cache RED→GREEN；Provider adapter、
+      prompt v4、projection、evaluator、frontend、sealed artifacts 与 `main`
+      保持不变。fresh Provider/live run 仍需后续单独 amendment。
+    - Writer ownership and order: approval docs/contract commit 先行；之后 proposal
+      code/test commit 只允许 proposal Owner、其 unit tests 和直接 cache-version
+      consumer tests。
+    - Next verification: exact PDF/cache RED，必须证明 v3 canonical bytes/digest、
+      compact transform order、old-path retirement、ID/reconstruction repeatability
+      和 cache safe miss。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
