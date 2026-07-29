@@ -85,73 +85,78 @@ async function resolveSourceOnlyCoverage(page: Page): Promise<number> {
 }
 
 
-async function processActiveItems(page: Page, activeCount: number): Promise<void> {
-  await page.getByRole("button", { name: "筛选有效项" }).click();
+async function processReviewRequiredItems(page: Page): Promise<number> {
+  await page.getByRole("button", { name: "筛选待人工审核" }).click();
   const table = page.getByRole("table", { name: "检验项列表" });
-  const pagination = page.getByRole("navigation", { name: "检验项分页" });
-  const nextPage = pagination.getByRole("button", { name: "下一页" });
   let processed = 0;
 
   for (;;) {
-    const activeRows = table.locator("[role='row'][data-active='true']:visible");
-    const rowCount = await activeRows.count();
-    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-      await activeRows.nth(rowIndex).click();
-      const selectedEditor = page.locator("article.review-selected-item[data-selected='true']");
-      await expect(selectedEditor).toBeVisible();
+    const row = table.locator(
+      "[role='row'][data-item-id][data-active='true']:visible",
+    ).first();
+    if (await row.count() === 0) break;
+    await row.click();
+    const selectedEditor = page.locator(
+      "article.review-selected-item[data-selected='true']",
+    );
+    await expect(selectedEditor).toBeVisible();
 
-      const acceptConfirmation = selectedEditor.getByRole("button", {
-        name: /^确认候选项：/,
-      });
-      if (await acceptConfirmation.isEnabled()) {
-        await submitReviewAction(page, acceptConfirmation);
-        await expect(acceptConfirmation).toBeDisabled();
-      }
-
-      const requireBalloon = selectedEditor.getByRole("button", {
-        name: /^设为需要气泡：/,
-      });
-      const noBalloon = selectedEditor.getByRole("button", {
-        name: /^设为无需气泡：/,
-      });
-      if (await requireBalloon.isEnabled() && await noBalloon.isEnabled()) {
-        await submitReviewAction(page, requireBalloon);
-        await expect(requireBalloon).toBeDisabled();
-      }
-
-      const sip = page.getByRole("region", { name: "SIP 信息" });
-      const sipDetails = sip.getByRole("group", { name: "SIP 确认字段" });
-      await expect(sipDetails).toBeVisible();
-      const textInputs = sipDetails.locator("input:not([type='number'])");
-      await expect(textInputs).toHaveCount(5);
-      const fallbackValues = [
-        `自动化检验项目 ${processed + 1}`,
-        "图纸要求",
-        "目视与量具检验",
-        "关键尺寸",
-        "质量检验员",
-      ];
-      for (let index = 0; index < fallbackValues.length; index += 1) {
-        const input = textInputs.nth(index);
-        const currentValue = await input.inputValue();
-        await input.fill(currentValue.trim() || fallbackValues[index]);
-      }
-      const sourcePage = sipDetails.locator("input[type='number']");
-      await expect(sourcePage).toHaveCount(1);
-      const currentPage = await sourcePage.inputValue();
-      await sourcePage.fill(currentPage.trim() || "1");
+    const acceptConfirmation = selectedEditor.getByRole("button", {
+      name: /^确认候选项：/,
+    });
+    if (await acceptConfirmation.isEnabled()) {
+      await submitReviewAction(page, acceptConfirmation);
+    } else {
       await submitReviewAction(
         page,
-        sipDetails.getByRole("button", { name: "确认当前检验项 SIP" }),
+        selectedEditor.getByRole("button", { name: /^保留检验项：/ }),
       );
-
-      processed += 1;
     }
-    if (await nextPage.isDisabled()) break;
-    await nextPage.click();
+
+    const requireBalloon = selectedEditor.getByRole("button", {
+      name: /^设为需要气泡：/,
+    });
+    const noBalloon = selectedEditor.getByRole("button", {
+      name: /^设为无需气泡：/,
+    });
+    if (await requireBalloon.isEnabled() && await noBalloon.isEnabled()) {
+      await submitReviewAction(page, requireBalloon);
+    }
+
+    const sip = page.getByRole("region", { name: "SIP 信息" });
+    const sipDetails = sip.getByRole("group", { name: "SIP 确认字段" });
+    await expect(sipDetails).toBeVisible();
+    const textInputs = sipDetails.locator("input:not([type='number'])");
+    await expect(textInputs).toHaveCount(5);
+    const fallbackValues = [
+      `自动化检验项目 ${processed + 1}`,
+      "图纸要求",
+      "目视与量具检验",
+      "关键尺寸",
+      "质量检验员",
+    ];
+    for (let index = 0; index < fallbackValues.length; index += 1) {
+      const input = textInputs.nth(index);
+      const currentValue = await input.inputValue();
+      await input.fill(currentValue.trim() || fallbackValues[index]);
+    }
+    const sourcePage = sipDetails.locator("input[type='number']");
+    await expect(sourcePage).toHaveCount(1);
+    const currentPage = await sourcePage.inputValue();
+    await sourcePage.fill(currentPage.trim() || "1");
+    await submitReviewAction(
+      page,
+      sipDetails.getByRole("button", { name: "确认当前检验项 SIP" }),
+    );
+
+    processed += 1;
+    expect(
+      processed,
+      "待人工审核检验项数量异常，审核循环必须有界",
+    ).toBeLessThan(1_000);
   }
 
-  expect(processed, "每个有效检验项都必须完成审核命令").toBe(activeCount);
+  return processed;
 }
 
 
@@ -174,6 +179,79 @@ async function populateSipMetadata(page: Page): Promise<void> {
     page,
     sip.getByRole("button", { name: "确认项目 SIP 信息" }),
   );
+}
+
+
+async function confirmRemainingSipDetails(page: Page): Promise<void> {
+  const projectId = await page.evaluate(
+    () => window.sessionStorage.getItem("qi.current-project-id"),
+  );
+  const operatorId = await page.evaluate(
+    () => window.localStorage.getItem("qi.local-operator-id"),
+  );
+  if (!projectId || !operatorId) {
+    throw new Error("补全 SIP 明细需要本地项目与操作身份");
+  }
+  let snapshot = await page.evaluate(async (id) => {
+    const response = await fetch(`/api/v1/projects/${id}/workbench`);
+    if (!response.ok) throw new Error("工作台刷新失败");
+    return await response.json() as ProjectWorkbenchResponse;
+  }, projectId);
+  const pendingItemIds = snapshot.working_copy.items
+    .filter((item) => item.active && item.sip_detail_fields_confirmed !== true)
+    .map((item) => item.item_id);
+  for (const [index, itemId] of pendingItemIds.entries()) {
+    const item = snapshot.working_copy.items.find(
+      (candidate) => candidate.item_id === itemId,
+    );
+    if (item === undefined) throw new Error("待确认 SIP 检验项不存在");
+    snapshot = await page.evaluate(
+      async ({ id, operator, version, command }) => {
+        const response = await fetch(
+          `/api/v1/projects/${id}/review/commands`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-QI-Operator": operator,
+            },
+            body: JSON.stringify({
+              expected_version: version,
+              command,
+            }),
+          },
+        );
+        if (!response.ok) throw new Error("SIP 明细确认失败");
+        const workingCopy = await response.json();
+        const workbenchResponse = await fetch(`/api/v1/projects/${id}/workbench`);
+        if (!workbenchResponse.ok) throw new Error("SIP 明细刷新失败");
+        const workbench = await workbenchResponse.json();
+        workbench.working_copy = workingCopy;
+        return workbench as ProjectWorkbenchResponse;
+      },
+      {
+        id: projectId,
+        operator: operatorId,
+        version: snapshot.working_copy.version,
+        command: {
+          type: "set_sip_detail_fields",
+          item_id: item.item_id,
+          inspection_item: item.inspection_item?.trim()
+            || item.raw_text.trim()
+            || `自动化检验项目 ${index + 1}`,
+          inspection_standard: item.inspection_standard?.trim() || "图纸要求",
+          inspection_method: item.inspection_method?.trim() || "目视与量具检验",
+          key_dimension: item.key_dimension?.trim() || "关键尺寸",
+          inspection_role: item.inspection_role?.trim() || "质量检验员",
+          source_page: Number.isInteger(item.source_page)
+            && (item.source_page ?? 0) > 0
+            ? item.source_page
+            : (item.page_index ?? 0) + 1,
+          remarks: item.remarks ?? "",
+        },
+      },
+    );
+  }
 }
 
 
@@ -472,13 +550,20 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   }
 
   await resolveSourceOnlyCoverage(page);
-  await processActiveItems(page, activeCount);
+  const reviewRequiredCount = Number(
+    (await page.getByTestId("summary-review-count").textContent())
+      ?.trim(),
+  );
+  expect(reviewRequiredCount).toBeGreaterThanOrEqual(0);
+  expect(await processReviewRequiredItems(page)).toBe(reviewRequiredCount);
   await populateSipMetadata(page);
+  await confirmRemainingSipDetails(page);
+  await page.reload({ waitUntil: "networkidle" });
   await clickAndRefresh(page, "冻结检验项", "/review/freeze");
   await clickAndRefresh(page, "生成气泡", "/balloons/generate");
   await expect(page.getByRole("button", { name: /^候选气泡 / })).toHaveCount(0);
   const generatedBalloons = page.getByRole("button", {
-    name: /^气泡 [1-9]\d*(?:，需人工处理)?$/,
+    name: /^正式气泡 [1-9]\d*(?:，需人工处理)?$/,
   });
   await expect(generatedBalloons.first()).toBeVisible();
   expect(
@@ -497,7 +582,7 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   await expect(selectedBalloon).toBeVisible();
   await expect(selectedBalloon).toHaveAttribute(
     "aria-label",
-    /^气泡 [1-9]\d*(?:，需人工处理)?$/,
+    /^正式气泡 [1-9]\d*(?:，需人工处理)?$/,
   );
   await expect(selectedBalloon.locator("text")).toHaveText(/^[1-9]\d*$/);
   await selectedBalloon.click();

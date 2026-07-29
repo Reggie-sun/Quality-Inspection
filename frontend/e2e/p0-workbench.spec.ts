@@ -373,7 +373,7 @@ test("P0 current-four workbench gates formal publication behind per-sample evide
     );
     await row.click();
     const firstBalloon = page.getByRole("button", {
-      name: new RegExp(`^气泡 ${firstNumber}(?:，|$)`),
+      name: new RegExp(`^正式气泡 ${firstNumber}(?:，|$)`),
     });
     await expect(firstBalloon).toHaveAttribute("data-selected", "true");
     await firstBalloon.click();
