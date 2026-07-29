@@ -3,7 +3,7 @@
 ## Status
 
 - Date: `2026-07-29`
-- Status: `approved direction; durable spec awaiting user review`
+- Status: `approved`
 - Selected lane: `Heavy`
 - Validation action: `replan`
 - Execution authorization: 本文不授权 production implementation；用户批准本文后才创建唯一 successor implementation plan
