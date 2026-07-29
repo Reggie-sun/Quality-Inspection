@@ -526,6 +526,89 @@ def test_qwen_native_integer_bbox_is_normalized_before_strict_schema() -> None:
     ).payload == canonical
 
 
+def test_qwen_missing_structural_schema_version_is_normalized() -> None:
+    canonical = {
+        "schema_version": "visual-symbol-review/1",
+        "detections": [],
+    }
+    qwen_native = {"detections": []}
+
+    class FixedCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                id="fixture-qwen-missing-schema-version",
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                _visual_tool_call(json.dumps(qwen_native))
+                            ],
+                        )
+                    )
+                ],
+                usage={"total_tokens": 4},
+            )
+
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=FixedCompletions())
+        )
+    )
+
+    assert provider.review_symbols(
+        _png(text=None),
+        "safe prompt",
+    ).payload == canonical
+
+
+@pytest.mark.parametrize(
+    "qwen_native",
+    (
+        {"schema_version": None, "detections": []},
+        {"schema_version": "visual-symbol-review/2", "detections": []},
+        {"schema_version": "visual-symbol-review/1"},
+        {"schema_version": "visual-symbol-review/1", "detections": {}},
+        {
+            "schema_version": "visual-symbol-review/1",
+            "detections": [],
+            "unexpected": True,
+        },
+    ),
+)
+def test_qwen_structural_normalization_preserves_other_schema_failures(
+    qwen_native: dict[str, object],
+) -> None:
+    class InvalidCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                id="fixture-qwen-invalid-structural-field",
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                _visual_tool_call(json.dumps(qwen_native))
+                            ],
+                        )
+                    )
+                ],
+                usage={"total_tokens": 4},
+            )
+
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=InvalidCompletions())
+        )
+    )
+    with pytest.raises(VisualSymbolProviderError) as raised:
+        provider.review_symbols(_png(text=None), "safe prompt")
+
+    assert raised.value.failure_stage == "tool_arguments_schema_invalid"
+
+
 @pytest.mark.parametrize(
     "bbox",
     (
@@ -641,7 +724,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     assert (
         fixture["adapter_version"]
         == VISUAL_ADAPTER_VERSION
-        == "qwen-openai-compatible/4"
+        == "qwen-openai-compatible/5"
     )
 
     class FakeCompletions:

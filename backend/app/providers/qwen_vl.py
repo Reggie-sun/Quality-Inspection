@@ -15,6 +15,7 @@ from PIL import Image, UnidentifiedImageError
 
 from app.providers.base import VisionResult
 from app.candidates.symbol_review import (
+    VISUAL_SCHEMA_VERSION,
     VISUAL_SYMBOL_FAILURE_STAGES,
     VisualSymbolFailureStage,
     VisualSymbolSchemaError,
@@ -183,6 +184,8 @@ def _normalize_qwen_native_visual_payload(
     detections = payload.get("detections")
     if not isinstance(detections, list):
         return payload
+    if "schema_version" not in payload:
+        payload["schema_version"] = VISUAL_SCHEMA_VERSION
     for detection in detections:
         if not isinstance(detection, dict):
             continue
