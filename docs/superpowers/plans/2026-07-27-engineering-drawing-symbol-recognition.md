@@ -891,6 +891,7 @@ then `git revert <task-commit>`. Never revert the migration file before downgrad
 **Files:**
 
 - Modify: `backend/app/candidates/symbol_routing.py`
+- Create: `backend/app/candidates/symbol_escalation_contracts.py`
 - Create: `backend/app/candidates/symbol_escalation_planner.py`
 - Modify: `backend/app/config.py`
 - Modify: `backend/app/projects/models.py`
@@ -966,10 +967,13 @@ exists only as a Harness entry. `shadow_uncertainty` runs the legacy route as th
 only semantic/final-write path and records only pure uncertainty decisions against
 the same observations; it makes no extra Provider call and performs no second
 candidate/coverage/result write.
-`symbol_escalation_planner.py` owns `plan_symbol_escalation_batches()` and its
-immutable proposal、batch、budget and denial records; `symbol_routing.py` retains
-only pre-VLM decision and recognition mode/router-version contracts. The planner
-exposes `max_in_flight=2` as a named production budget and proves that
+`symbol_escalation_contracts.py` owns the immutable batch/budget records,
+canonical content/lineage/budget digests and fail-closed record validation.
+`symbol_escalation_planner.py` remains the only owner of escalation-request
+admission、dedup/merge planning and budget reservation state transitions;
+`symbol_routing.py` retains only pre-VLM decision and recognition
+mode/router-version contracts. The planner exposes `max_in_flight=2` as a named
+production budget and proves that
 window sizes `1` and `2` generate the same stable escalation-group plan. Actual
 bounded execution、completion-order equivalence and attempt accounting close in
 `PRT-3`, where the Provider execution seam exists.
@@ -983,6 +987,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/integration/test_processing_entry_task.py -q
 git diff --check
 git add backend/app/candidates/symbol_routing.py \
+  backend/app/candidates/symbol_escalation_contracts.py \
   backend/app/candidates/symbol_escalation_planner.py backend/app/config.py \
   backend/app/projects/models.py backend/app/projects/service.py \
   backend/app/projects/router.py backend/app/processing/tasks.py \
@@ -1069,6 +1074,9 @@ family projection logic into the resolver. Keep actual attempts counted in the
 single `_visual_review_result()` execution seam. The bounded executor submits at
 most two compatible batches, checks projected page/project/unified budgets before
 submission and merges completed results by stable escalation-group order.
+It imports `MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE` from the escalation contract Owner,
+retires the legacy advisor-local `16/page` constant and carries the exact
+observation-member and primary/retry identities into attempt accounting.
 
 - [ ] **Step 3: Verify and commit**
 
