@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import hashlib
 import json
@@ -13,6 +14,14 @@ from urllib.parse import urlsplit
 
 import jsonschema
 import pytest
+
+from app.candidates.symbol_review import (
+    build_visual_failure_envelope,
+    build_visual_request_evidence,
+    parse_visual_request_evidence,
+)
+from app.providers.call_records import ProviderCallRecord, serialize_call_record
+from app.storage.local import LocalFileStorage
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -39,6 +48,28 @@ def _load_module(name: str, path: Path) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _embedded_function(
+    program: str,
+    name: str,
+    namespace: dict[str, object] | None = None,
+):
+    functions = [
+        node
+        for node in ast.parse(program).body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    ]
+    assert len(functions) == 1, f"missing embedded function: {name}"
+    module = ast.fix_missing_locations(
+        ast.Module(body=functions, type_ignores=[])
+    )
+    execution_namespace = {} if namespace is None else dict(namespace)
+    exec(
+        compile(module, "<embedded-program>", "exec"),
+        execution_namespace,
+    )
+    return execution_namespace[name]
 
 
 def _schema(name: str) -> dict[str, object]:
@@ -225,8 +256,13 @@ def _sample_evidence(order: int) -> dict[str, object]:
                     "source_evidence": [
                         {
                             "source_location_id": f"source-{order}-{index}",
+                            "source_type": "native",
+                            "observation_level": "line",
                             "coordinates": [10 * index, 10, 10 * index + 5, 15],
-                            "disposition": "candidate",
+                            "coverage": {
+                                "disposition": "candidate",
+                                "candidate_id": candidate_id,
+                            },
                         }
                     ],
                 }
@@ -342,13 +378,451 @@ def _sample_evidence(order: int) -> dict[str, object]:
     }
 
 
+def _visual_text_candidate_evidence() -> dict[str, object]:
+    candidate_id = "candidate-visual-text"
+    return {
+        "candidate_count": 1,
+        "candidate_ids": [candidate_id],
+        "source_location_ids": ["line-1", "span-1", "visual-1"],
+        "coverage_checked": True,
+        "coverage_blocking_count": 0,
+        "coverage_disposition_count": 2,
+        "candidate_records": [
+            {
+                "candidate_id": candidate_id,
+                "coordinates": [10, 10, 40, 40],
+                "source_location_ids": ["line-1", "span-1", "visual-1"],
+                "source_evidence": [
+                    {
+                        "source_location_id": "line-1",
+                        "source_type": "native",
+                        "observation_level": "line",
+                        "coordinates": [20, 20, 30, 30],
+                        "coverage": {
+                            "disposition": "ambiguous",
+                            "candidate_id": None,
+                        },
+                    },
+                    {
+                        "source_location_id": "span-1",
+                        "source_type": "native",
+                        "observation_level": "span",
+                        "coordinates": [30, 20, 40, 30],
+                        "coverage": None,
+                    },
+                    {
+                        "source_location_id": "visual-1",
+                        "source_type": "visual",
+                        "observation_level": "annotation_context",
+                        "coordinates": [10, 10, 20, 20],
+                        "coverage": {
+                            "disposition": "candidate",
+                            "candidate_id": candidate_id,
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+
+
+def test_live_prepare_projects_candidate_sources_from_inventory() -> None:
+    runner = _load_module(
+        "qi_run_p0_candidate_source_projection",
+        HARNESS / "scripts/run-p0.py",
+    )
+    project = _embedded_function(
+        runner._PREPARE_PROJECT_PROGRAM,
+        "project_candidate_evidence",
+    )
+    candidate_id = "candidate-visual-text"
+    projected = project(
+        [
+            {
+                "candidate_id": candidate_id,
+                "payload": {"coordinates": [10, 10, 40, 40]},
+                "source_location_ids": ["visual-1", "line-1", "span-1"],
+            }
+        ],
+        [
+            {
+                "observations": [
+                    {
+                        "observation_id": "line-1",
+                        "source_type": "native",
+                        "observation_level": "line",
+                        "bbox_pdf": [20, 20, 30, 30],
+                    },
+                    {
+                        "observation_id": "span-1",
+                        "source_type": "native",
+                        "observation_level": "span",
+                        "bbox_pdf": [30, 20, 40, 30],
+                    },
+                ],
+                "visual_observations": [
+                    {
+                        "observation_id": "visual-1",
+                        "source_type": "visual",
+                        "observation_level": "annotation_context",
+                        "bbox_pdf": [10, 10, 20, 20],
+                    }
+                ],
+            }
+        ],
+        [
+            {
+                "source_location_id": "visual-1",
+                "disposition": "candidate",
+                "candidate_id": candidate_id,
+            },
+            {
+                "source_location_id": "line-1",
+                "disposition": "ambiguous",
+                "candidate_id": None,
+            },
+        ],
+    )
+
+    assert projected == {
+        "candidate_ids": [candidate_id],
+        "source_location_ids": ["line-1", "span-1", "visual-1"],
+        "candidate_records": _visual_text_candidate_evidence()[
+            "candidate_records"
+        ],
+    }
+
+
+def test_live_prepare_rejects_candidate_source_outside_inventory() -> None:
+    runner = _load_module(
+        "qi_run_p0_candidate_source_rejection",
+        HARNESS / "scripts/run-p0.py",
+    )
+    project = _embedded_function(
+        runner._PREPARE_PROJECT_PROGRAM,
+        "project_candidate_evidence",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="automatic candidate source relation is incomplete",
+    ):
+        project(
+            [
+                {
+                    "candidate_id": "candidate-spliced",
+                    "payload": {"coordinates": [10, 10, 20, 20]},
+                    "source_location_ids": ["source-not-in-inventory"],
+                }
+            ],
+            [{"observations": [], "visual_observations": []}],
+            [],
+        )
+
+    with pytest.raises(
+        RuntimeError,
+        match="candidate coverage relation is invalid",
+    ):
+        project(
+            [
+                {
+                    "candidate_id": "candidate-1",
+                    "payload": {"coordinates": [10, 10, 20, 20]},
+                    "source_location_ids": ["source-1"],
+                }
+            ],
+            [
+                {
+                    "observations": [
+                        {
+                            "observation_id": source_id,
+                            "source_type": "native",
+                            "observation_level": "line",
+                            "bbox_pdf": [10 * index, 10, 10 * index + 5, 15],
+                        }
+                        for index, source_id in enumerate(
+                            ("source-1", "source-extra"),
+                            start=1,
+                        )
+                    ],
+                    "visual_observations": [],
+                }
+            ],
+            [
+                {
+                    "source_location_id": "source-extra",
+                    "disposition": "candidate",
+                    "candidate_id": "candidate-1",
+                }
+            ],
+        )
+
+
+def test_candidate_evidence_accepts_inventory_backed_visual_text_union() -> None:
+    policy = _load_module(
+        "qi_candidate_lineage_policy",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+
+    policy.validate_candidate_evidence(1, _visual_text_candidate_evidence())
+
+
+@pytest.mark.parametrize(
+    ("mutate", "error"),
+    [
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"].pop(),
+            "candidate source IDs are spliced",
+        ),
+        (
+            lambda value: value["candidate_records"][0][
+                "source_evidence"
+            ].append(
+                value["candidate_records"][0]["source_evidence"][0].copy()
+            ),
+            "candidate source IDs are spliced",
+        ),
+        (
+            lambda value: value["candidate_records"][0][
+                "source_evidence"
+            ].append(
+                {
+                    "source_location_id": "source-extra",
+                    "source_type": "native",
+                    "observation_level": "span",
+                    "coordinates": [40, 20, 50, 30],
+                    "coverage": None,
+                }
+            ),
+            "candidate source IDs are spliced",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][2].__setitem__(
+                "coordinates",
+                [10, 10, 10, 20],
+            ),
+            "candidate source coordinates are invalid",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][2].__setitem__(
+                "coverage",
+                None,
+            ),
+            "visual candidate coverage is missing",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][2][
+                "coverage"
+            ].__setitem__(
+                "candidate_id",
+                "candidate-spliced",
+            ),
+            "visual candidate coverage is missing",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][0].__setitem__(
+                "coverage",
+                None,
+            ),
+            "candidate text coverage is invalid",
+        ),
+        (
+            lambda value: value["candidate_records"][0]["source_evidence"][0][
+                "coverage"
+            ].update(
+                {
+                    "disposition": "candidate",
+                    "candidate_id": "candidate-spliced",
+                }
+            ),
+            "candidate text coverage is invalid",
+        ),
+        (
+            lambda value: value["source_location_ids"].pop(),
+            "candidate inventory is spliced",
+        ),
+        (
+            lambda value: value["source_location_ids"].append("source-extra"),
+            "candidate inventory is spliced",
+        ),
+    ],
+)
+def test_candidate_evidence_rejects_lineage_splices(
+    mutate,
+    error: str,
+) -> None:
+    policy = _load_module(
+        "qi_candidate_lineage_rejection_policy",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+    candidates = _visual_text_candidate_evidence()
+    mutate(candidates)
+
+    with pytest.raises(ValueError, match=error):
+        policy.validate_candidate_evidence(1, candidates)
+
+
+def _symbol_manifest() -> dict[str, object]:
+    positive = [
+        {
+            "label_id": "positive-diameter",
+            "bbox_pdf": [10, 10, 30, 30],
+            "symbol_kinds": ["diameter"],
+            "expected_disposition": "candidate",
+            "expected_projection": "diameter_dimension",
+        },
+        {
+            "label_id": "positive-depth",
+            "bbox_pdf": [40, 10, 70, 30],
+            "symbol_kinds": ["diameter", "depth"],
+            "expected_disposition": "candidate",
+            "expected_projection": "composite",
+        },
+        {
+            "label_id": "positive-counterbore",
+            "bbox_pdf": [80, 10, 120, 30],
+            "symbol_kinds": ["diameter", "depth", "counterbore"],
+            "expected_disposition": "candidate",
+            "expected_projection": "composite",
+        },
+        {
+            "label_id": "positive-roughness",
+            "bbox_pdf": [130, 10, 160, 30],
+            "symbol_kinds": ["surface_roughness"],
+            "expected_disposition": "candidate",
+            "expected_projection": "roughness",
+        },
+        {
+            "label_id": "positive-gdt-parallelism",
+            "bbox_pdf": [170, 10, 210, 30],
+            "symbol_kinds": ["gdt_parallelism"],
+            "expected_disposition": "candidate",
+            "expected_projection": "geometric_tolerance",
+        },
+        {
+            "label_id": "positive-gdt-perpendicularity",
+            "bbox_pdf": [220, 10, 260, 30],
+            "symbol_kinds": ["gdt_perpendicularity"],
+            "expected_disposition": "candidate",
+            "expected_projection": "geometric_tolerance",
+        },
+        {
+            "label_id": "positive-gdt-flatness",
+            "bbox_pdf": [270, 10, 310, 30],
+            "symbol_kinds": ["gdt_flatness"],
+            "expected_disposition": "candidate",
+            "expected_projection": "geometric_tolerance",
+        },
+        {
+            "label_id": "positive-datum",
+            "bbox_pdf": [320, 10, 340, 30],
+            "symbol_kinds": ["datum_reference"],
+            "expected_disposition": "reference_context",
+            "expected_projection": None,
+        },
+        {
+            "label_id": "positive-revision",
+            "bbox_pdf": [350, 10, 370, 30],
+            "symbol_kinds": ["revision_marker"],
+            "expected_disposition": "non_inspection",
+            "expected_projection": None,
+        },
+    ]
+    families = [
+        "part_or_hole_geometry",
+        "hatch_center_or_cross",
+        "dimension_leader_or_section_line",
+        "view_or_section_label",
+        "revision_table_or_invalid_marker",
+        "datum_like_letter_or_table_cell",
+        "watermark_logo_title_or_signoff",
+        "isometric_hole_slot_or_edge",
+        "ordinary_text_number_material_or_requirement",
+    ]
+    negative = [
+        {
+            "label_id": f"negative-{index}",
+            "bbox_pdf": [10 + index * 30, 50, 30 + index * 30, 70],
+            "symbol_kinds": ["frozen_negative"],
+            "negative_family": family,
+            "expected_disposition": "ambiguous",
+            "expected_projection": None,
+        }
+        for index, family in enumerate(families)
+    ]
+    return {
+        "schema_version": "visual-symbol-eval/1",
+        "source_sha256": _manifest()["entries"][0]["sha256"],
+        "annotation_owner_role": "quality_owner",
+        "annotation_status": "approved",
+        "pages": [
+            {"page_index": 0, "labels": positive[:5] + negative[:4]},
+            {"page_index": 1, "labels": positive[5:] + negative[4:]},
+        ],
+    }
+
+
+def _symbol_evidence() -> dict[str, object]:
+    return {
+        "selector": "phase://live/symbol-recognition?input_set=current-four",
+        "passed": True,
+        "order": 1,
+        "project_id": "project-1",
+        "automatic_result_id": "automatic-1",
+        "source_sha256": _manifest()["entries"][0]["sha256"],
+        "manifest_sha256": "a" * 64,
+        "annotation_verdict_sha256": "b" * 64,
+        "label_count": 18,
+        "positive_label_count": 9,
+        "negative_label_count": 9,
+        "positive_family_counts": {
+            "diameter": 3,
+            "depth": 2,
+            "counterbore": 1,
+            "surface_roughness": 1,
+            "gdt_parallelism": 1,
+            "gdt_perpendicularity": 1,
+            "gdt_flatness": 1,
+            "datum_reference": 1,
+            "revision_marker": 1,
+        },
+        "negative_family_counts": {
+            "part_or_hole_geometry": 1,
+            "hatch_center_or_cross": 1,
+            "dimension_leader_or_section_line": 1,
+            "view_or_section_label": 1,
+            "revision_table_or_invalid_marker": 1,
+            "datum_like_letter_or_table_cell": 1,
+            "watermark_logo_title_or_signoff": 1,
+            "isometric_hole_slot_or_edge": 1,
+            "ordinary_text_number_material_or_requirement": 1,
+        },
+        "visual_calls_by_page": [
+            {"page_index": 0, "count": 13},
+            {"page_index": 1, "count": 16},
+        ],
+        "total_vision_calls_by_page": [
+            {"page_index": 0, "count": 16},
+            {"page_index": 1, "count": 16},
+        ],
+        "candidate_match_count": 7,
+        "reference_match_count": 1,
+        "non_inspection_match_count": 1,
+        "negative_false_positive_count": 0,
+        "source_command_count": 0,
+        "report_ref": "reports/symbol-recognition.json",
+        "report_sha256": "c" * 64,
+    }
+
+
 def _live_evidence() -> dict[str, object]:
     return {
-        "schema_version": "live-run-evidence/1",
+        "schema_version": "live-run-evidence/2",
         "run_id": RUN_ID,
         "input_set": "current-four",
         "phases": PHASES,
         "child_run_ids": [],
+        "symbol_recognition": _symbol_evidence(),
         "design_qa": {
             "ref": "design-qa.md",
             "sha256": "6" * 64,
@@ -409,6 +883,75 @@ def _materialize_bound_live_evidence(
     (run_dir / "artifacts/human-verdict.json").write_bytes(_json_bytes(verdict))
 
     live = _live_evidence()
+    symbol_manifest_bytes = _json_bytes(_symbol_manifest())
+    symbol_manifest_sha256 = _write_hashed(
+        run_dir / "artifacts/visual-symbol-eval.json",
+        symbol_manifest_bytes,
+    )
+    symbol_verdict = {
+        "schema_version": "visual-symbol-annotation-verdict/1",
+        "annotation_owner_role": "quality_owner",
+        "overlay_scale_percent": 200,
+        "unlabeled_target_count": 0,
+        "negative_family_count": 9,
+        "manifest_sha256": symbol_manifest_sha256,
+        "recorded_at": "2026-07-27T00:00:00Z",
+    }
+    symbol_verdict_sha256 = _write_hashed(
+        run_dir / "artifacts/visual-symbol-annotation-verdict.json",
+        _json_bytes(symbol_verdict),
+    )
+    symbol_evidence = live["symbol_recognition"]
+    assert isinstance(symbol_evidence, dict)
+    symbol_evidence["manifest_sha256"] = symbol_manifest_sha256
+    symbol_evidence["annotation_verdict_sha256"] = symbol_verdict_sha256
+    symbol_report = {
+        "schema_version": "symbol-recognition-live-report/1",
+        "selector": symbol_evidence["selector"],
+        "run_id": RUN_ID,
+        "order": 1,
+        "project_id": symbol_evidence["project_id"],
+        "automatic_result_id": symbol_evidence["automatic_result_id"],
+        "source_sha256": symbol_evidence["source_sha256"],
+        "manifest_sha256": symbol_manifest_sha256,
+        "annotation_verdict_sha256": symbol_verdict_sha256,
+        "visual_calls_by_page": symbol_evidence["visual_calls_by_page"],
+        "total_vision_calls_by_page": symbol_evidence[
+            "total_vision_calls_by_page"
+        ],
+        "source_command_count": 0,
+        "evaluation": {
+            "schema_version": "symbol-eval-report/1",
+            "passed": True,
+            "overlap_threshold": 0.5,
+            "counts": {
+                "positive_label_count": 9,
+                "candidate_label_count": 7,
+                "participating_candidate_count": 7,
+                "candidate_match_count": 7,
+                "reference_match_count": 1,
+                "non_inspection_match_count": 1,
+                "negative_label_count": 9,
+                "negative_false_positive_count": 0,
+                "excluded_candidate_count": 0,
+            },
+            "positive_family_counts": symbol_evidence[
+                "positive_family_counts"
+            ],
+            "negative_family_counts": symbol_evidence[
+                "negative_family_counts"
+            ],
+            "label_matches": [],
+            "excluded_candidate_ids": [],
+            "failures": [],
+        },
+        "failures": [],
+        "passed": True,
+    }
+    symbol_evidence["report_sha256"] = _write_hashed(
+        run_dir / "reports/symbol-recognition.json",
+        _json_bytes(symbol_report),
+    )
     implementation_digest = _write_hashed(
         run_dir / "reports/design-qa-implementation.png",
         PNG_BYTES,
@@ -644,7 +1187,12 @@ def test_full_p0_run_schema_adds_lifecycle_without_invalidating_task_runs() -> N
 
 
 def test_live_and_human_verdict_schemas_are_closed() -> None:
+    runner = _load_module(
+        "qi_run_p0_live_evidence_version",
+        HARNESS / "scripts/run-p0.py",
+    )
     live = _live_evidence()
+    assert runner.LIVE_EVIDENCE_SCHEMA_VERSION == live["schema_version"]
     _validate(live, "live-run-evidence.schema.json")
     with pytest.raises(jsonschema.ValidationError):
         _validate({**live, "unexpected": True}, "live-run-evidence.schema.json")
@@ -917,6 +1465,117 @@ def test_live_cli_rejects_missing_server_credentials_before_run_creation(
     assert not runs.exists()
 
 
+def test_full_live_symbol_eval_run_is_literal_and_binds_sealed_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LIVE-01 binds both sealed Quality Owner artifacts before live work."""
+    runner = _load_module(
+        "qi_run_p0_live_symbol_binding",
+        HARNESS / "scripts/run-p0.py",
+    )
+    current_four_run = "20260727T010101000000Z-11111111"
+    symbol_eval_run = "20260727T020202000000Z-22222222"
+    full_run_id = "20260727T030303000000Z-33333333"
+    current_four_bytes = json.dumps(_manifest(), sort_keys=True).encode()
+    manifest_bytes = b'{"schema_version":"visual-symbol-eval/1"}'
+    verdict_bytes = (
+        b'{"schema_version":"visual-symbol-annotation-verdict/1"}'
+    )
+    expected_artifacts = {
+        "artifacts/current-four-manifest.json": current_four_bytes,
+        "artifacts/visual-symbol-eval.json": manifest_bytes,
+        "artifacts/visual-symbol-annotation-verdict.json": verdict_bytes,
+    }
+    starts: list[dict[str, bytes]] = []
+
+    def load_current(run_id: str) -> dict[str, bytes]:
+        if run_id != current_four_run:
+            raise ValueError("--current-four-run requires one literal registration run ID")
+        return {"artifacts/current-four-manifest.json": current_four_bytes}
+
+    def load_symbol(run_id: str) -> dict[str, bytes]:
+        if run_id != symbol_eval_run:
+            raise ValueError("--symbol-eval-run requires one literal sealed staging run ID")
+        return {
+            "artifacts/visual-symbol-eval.json": manifest_bytes,
+            "artifacts/visual-symbol-annotation-verdict.json": verdict_bytes,
+        }
+
+    monkeypatch.setattr(runner, "_load_current_four_artifact", load_current)
+    monkeypatch.setattr(runner, "load_symbol_eval_artifacts", load_symbol)
+
+    def preflight(
+        *,
+        input_set: str,
+        source_root: str | None,
+        current_four_run: str,
+        symbol_eval_run: str,
+    ) -> dict[str, dict[str, bytes]]:
+        assert input_set == "current-four"
+        assert source_root is None
+        return {
+            "input_artifacts": runner._load_full_live_input_artifacts(
+                current_four_run=current_four_run,
+                symbol_eval_run=symbol_eval_run,
+            )
+        }
+
+    def start(preflight_result: dict[str, dict[str, bytes]]) -> str:
+        artifacts = preflight_result["input_artifacts"]
+        starts.append(artifacts)
+        run_dir = tmp_path / full_run_id
+        (run_dir / "artifacts").mkdir(parents=True)
+        runner._attach_full_live_input_artifacts(run_dir, artifacts)
+        for name, expected in expected_artifacts.items():
+            assert (run_dir / name).read_bytes() == expected
+        return full_run_id
+
+    monkeypatch.setattr(runner, "preflight_full_p0_live", preflight)
+    monkeypatch.setattr(runner, "start_live_run", start)
+
+    for alias in ("latest", "../" + symbol_eval_run):
+        result = runner.main(
+            [
+                "live",
+                "--scope",
+                "full-p0",
+                "--input-set",
+                "current-four",
+                "--current-four-run",
+                current_four_run,
+                "--symbol-eval-run",
+                alias,
+                "--pause-after",
+                "first-pdf-balloons",
+                "--print-run-id-only",
+            ]
+        )
+        assert result == 2
+    assert starts == []
+
+    assert (
+        runner.main(
+            [
+                "live",
+                "--scope",
+                "full-p0",
+                "--input-set",
+                "current-four",
+                "--current-four-run",
+                current_four_run,
+                "--symbol-eval-run",
+                symbol_eval_run,
+                "--pause-after",
+                "first-pdf-balloons",
+                "--print-run-id-only",
+            ]
+        )
+        == 0
+    )
+    assert starts == [expected_artifacts]
+
+
 def test_full_p0_live_reuses_failure_proof_inside_the_same_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1009,6 +1668,13 @@ def test_resume_loads_the_paused_live_evidence_before_continuing(
         source_root=tmp_path,
         source_paths=tuple(tmp_path / f"source-{order}.pdf" for order in range(1, 5)),
         manifest_bytes=_json_bytes(_manifest()),
+        input_artifacts={
+            "artifacts/current-four-manifest.json": _json_bytes(_manifest()),
+            "artifacts/visual-symbol-eval.json": _json_bytes(
+                _symbol_manifest()
+            ),
+            "artifacts/visual-symbol-annotation-verdict.json": b"{}",
+        },
         mirror={},
         bindings={},
         policies={},
@@ -1707,7 +2373,7 @@ def test_chrome_identity_uses_the_resolved_binary_version_and_hash(
     }
 
 
-def test_all_nine_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
+def test_all_eleven_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
     checker = _load_module(
         "qi_contract_checker_schema_inventory",
         HARNESS / "scripts/check-contracts.py",
@@ -1726,6 +2392,478 @@ def test_all_nine_harness_schemas_are_checked_and_bound_to_code_identity() -> No
         "provider-fixture.schema.json",
         "receipt.schema.json",
         "run.schema.json",
+        "visual-symbol-annotation-verdict.schema.json",
+        "visual-symbol-eval.schema.json",
     }
     assert set(checker.EXPECTED_SCHEMA_FILES) == expected
     assert set(receipt.SCHEMA_FILES) == expected
+
+
+def test_live_policy_requires_visual_symbol_page_budget() -> None:
+    """P0-REC-005: live visual review stays within sixteen calls per page."""
+    runner = _load_module(
+        "qi_runner_visual_page_budget",
+        HARNESS / "scripts/run-p0.py",
+    )
+    provider_policy = {
+        "explicit_flag_required": True,
+        "max_retries_per_call": 2,
+        "max_crop_expansions": 1,
+        "max_ocr_calls_per_page": 16,
+        "max_vision_calls_per_candidate": 2,
+        "max_total_estimated_cost_cny": 50,
+        "budget_exceeded_result": "blocked",
+    }
+    with pytest.raises(ValueError, match="budget/retry"):
+        runner._validate_live_policy(
+            {"provider_call_policy": {"live": provider_policy}}
+        )
+
+    plan = (
+        ROOT
+        / "docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md"
+    ).read_text(encoding="utf-8")
+    provider_example = plan.split(
+        "# .agent/harness/policy/provider-call-policy.yaml",
+        1,
+    )[1].split("```", 1)[0]
+    assert "max_vision_calls_per_page: 16" in provider_example
+
+    provider_policy["max_vision_calls_per_page"] = 16
+    runner._validate_live_policy(
+        {"provider_call_policy": {"live": provider_policy}}
+    )
+
+    provider_policy["max_vision_calls_per_page"] = 17
+    with pytest.raises(ValueError, match="budget/retry"):
+        runner._validate_live_policy(
+            {"provider_call_policy": {"live": provider_policy}}
+        )
+
+
+def _materialize_visual_retry_chain(
+    tmp_path: Path,
+) -> tuple[
+    object,
+    Path,
+    LocalFileStorage,
+    str,
+    dict[str, Path],
+    dict[str, object],
+]:
+    runner = _load_module(
+        f"qi_runner_retry_chain_{tmp_path.name}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    attempt_count = _embedded_function(
+        runner._SYMBOL_RESULT_PROGRAM,
+        "visual_attempt_count",
+    )
+    paired_cache = _embedded_function(
+        runner._SYMBOL_RESULT_PROGRAM,
+        "paired_cache",
+        {
+            "build_visual_failure_envelope": build_visual_failure_envelope,
+            "hashlib": hashlib,
+            "json": json,
+            "parse_visual_request_evidence": parse_visual_request_evidence,
+            "serialize_call_record": serialize_call_record,
+            "visual_attempt_count": attempt_count,
+        },
+    )
+    storage = LocalFileStorage(tmp_path / "storage")
+    project_id = "project-retry"
+    project_root = storage.root / "projects" / project_id
+    cache_key = hashlib.sha256(b"retry-cache").hexdigest()
+    crop_content = b"canonical-visual-crop"
+    crop_sha256 = hashlib.sha256(crop_content).hexdigest()
+    filename = f"{cache_key}.attempt-1.json"
+    identity = {
+        "crop_sha256": crop_sha256,
+        "model": "qwen3-vl-plus",
+        "prompt_version": "visual-symbol-prompt/4",
+        "schema_version": "visual-symbol-review/1",
+        "visual_observation_ids": ["visual-1"],
+    }
+    cache = {
+        "request_id": "fixture-final-request",
+        "identity": identity,
+    }
+    relatives = {
+        "cache": (
+            f"projects/{project_id}/provider-cache/qwen-symbol/"
+            f"{cache_key}.json"
+        ),
+        "final_audit": (
+            f"projects/{project_id}/provider-calls/qwen-symbol/"
+            f"{cache_key}.json"
+        ),
+        "retry_audit": (
+            f"projects/{project_id}/provider-calls/"
+            f"qwen-symbol-retries/{filename}"
+        ),
+        "retry_request": (
+            f"projects/{project_id}/provider-requests/"
+            f"qwen-symbol-retries/{filename}"
+        ),
+        "retry_response": (
+            f"projects/{project_id}/provider-responses/"
+            f"qwen-symbol-retries/{filename}"
+        ),
+        "crop": (
+            f"projects/{project_id}/provider-inputs/qwen-symbol/"
+            f"{crop_sha256}.png"
+        ),
+    }
+
+    def compact(document: object) -> bytes:
+        return json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    def write(relative: str, content: bytes) -> Path:
+        return storage.write_verified(
+            relative,
+            content,
+            hashlib.sha256(content).hexdigest(),
+        ).path
+
+    paths = {
+        "cache": write(relatives["cache"], compact(cache)),
+        "final_audit": write(
+            relatives["final_audit"],
+            serialize_call_record(
+                ProviderCallRecord(
+                    provider="qwen-vl",
+                    request_id="fixture-final-request",
+                    model="qwen3-vl-plus",
+                    prompt_version="visual-symbol-prompt/4",
+                    schema_version="visual-symbol-review/1",
+                    duration_ms=2,
+                    retry_count=1,
+                    input_image_count=1,
+                    estimated_cost=None,
+                    logical_task_reused=False,
+                    request_ref=(
+                        f"asset://projects/{project_id}/provider-requests/"
+                        f"qwen-symbol/{cache_key}.json"
+                    ),
+                    response_ref=(
+                        f"asset://projects/{project_id}/provider-responses/"
+                        f"qwen-symbol/final.json"
+                    ),
+                )
+            ),
+        ),
+        "crop": write(relatives["crop"], crop_content),
+    }
+    retry_request = build_visual_request_evidence(
+        crop_ref=f"asset://{relatives['crop']}",
+        crop_sha256=crop_sha256,
+        usage={"total_tokens": 11},
+    )
+    retry_response = build_visual_failure_envelope(
+        "tool_arguments_schema_invalid"
+    )
+    paths["retry_request"] = write(
+        relatives["retry_request"],
+        compact(retry_request),
+    )
+    paths["retry_response"] = write(
+        relatives["retry_response"],
+        compact(retry_response),
+    )
+    paths["retry_audit"] = write(
+        relatives["retry_audit"],
+        serialize_call_record(
+            ProviderCallRecord(
+                provider="qwen-vl",
+                request_id="fixture-first-request",
+                model="qwen3-vl-plus",
+                prompt_version="visual-symbol-prompt/4",
+                schema_version="visual-symbol-review/1",
+                duration_ms=1,
+                retry_count=0,
+                input_image_count=1,
+                estimated_cost=None,
+                logical_task_reused=False,
+                request_ref=f"asset://{relatives['retry_request']}",
+                response_ref=f"asset://{relatives['retry_response']}",
+            )
+        ),
+    )
+    return paired_cache, project_root, storage, project_id, paths, cache
+
+
+def test_live_symbol_retry_chain_is_canonical_and_identity_bound(
+    tmp_path: Path,
+) -> None:
+    """P0-REC-005: Harness counts only one exact, canonical retry chain."""
+    (
+        paired_cache,
+        project_root,
+        storage,
+        project_id,
+        _paths,
+        cache,
+    ) = _materialize_visual_retry_chain(tmp_path)
+
+    assert paired_cache(
+        project_root,
+        storage,
+        project_id,
+        "qwen-symbol",
+    ) == [(cache, 2)]
+
+
+def test_live_symbol_retry_chain_rejects_second_document_retry(
+    tmp_path: Path,
+) -> None:
+    """P0-REC-005: Harness rejects two valid retry chains in one document."""
+    (
+        paired_cache,
+        project_root,
+        storage,
+        project_id,
+        paths,
+        cache,
+    ) = _materialize_visual_retry_chain(tmp_path)
+    second_key = hashlib.sha256(b"second-retry-cache").hexdigest()
+    second_filename = f"{second_key}.attempt-1.json"
+
+    def write(relative: str, content: bytes) -> None:
+        storage.write_verified(
+            relative,
+            content,
+            hashlib.sha256(content).hexdigest(),
+        )
+
+    second_cache = {
+        **cache,
+        "request_id": "fixture-second-final-request",
+    }
+    write(
+        f"projects/{project_id}/provider-cache/qwen-symbol/"
+        f"{second_key}.json",
+        json.dumps(
+            second_cache,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8"),
+    )
+    final_audit = json.loads(
+        paths["final_audit"].read_text(encoding="utf-8")
+    )
+    final_audit.update(
+        {
+            "request_id": "fixture-second-final-request",
+            "request_ref": (
+                f"asset://projects/{project_id}/provider-requests/"
+                f"qwen-symbol/{second_key}.json"
+            ),
+            "response_ref": (
+                f"asset://projects/{project_id}/provider-responses/"
+                "qwen-symbol/second-final.json"
+            ),
+        }
+    )
+    write(
+        f"projects/{project_id}/provider-calls/qwen-symbol/"
+        f"{second_key}.json",
+        serialize_call_record(final_audit),
+    )
+    write(
+        f"projects/{project_id}/provider-requests/qwen-symbol-retries/"
+        f"{second_filename}",
+        paths["retry_request"].read_bytes(),
+    )
+    write(
+        f"projects/{project_id}/provider-responses/qwen-symbol-retries/"
+        f"{second_filename}",
+        paths["retry_response"].read_bytes(),
+    )
+    retry_audit = json.loads(
+        paths["retry_audit"].read_text(encoding="utf-8")
+    )
+    retry_audit.update(
+        {
+            "request_id": "fixture-second-first-request",
+            "request_ref": (
+                f"asset://projects/{project_id}/provider-requests/"
+                f"qwen-symbol-retries/{second_filename}"
+            ),
+            "response_ref": (
+                f"asset://projects/{project_id}/provider-responses/"
+                f"qwen-symbol-retries/{second_filename}"
+            ),
+        }
+    )
+    write(
+        f"projects/{project_id}/provider-calls/qwen-symbol-retries/"
+        f"{second_filename}",
+        serialize_call_record(retry_audit),
+    )
+
+    with pytest.raises(RuntimeError, match="retry evidence"):
+        paired_cache(
+            project_root,
+            storage,
+            project_id,
+            "qwen-symbol",
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "orphan_request",
+        "missing_response",
+        "unrelated_request_ref",
+        "noncanonical_request",
+        "crop_mismatch",
+        "response_stage_tampered",
+    ),
+)
+def test_live_symbol_retry_chain_rejects_orphan_or_tampered_evidence(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    """P0-REC-005: retry evidence cannot be orphaned or rebound."""
+    (
+        paired_cache,
+        project_root,
+        storage,
+        project_id,
+        paths,
+        _cache,
+    ) = _materialize_visual_retry_chain(tmp_path)
+
+    if mutation == "orphan_request":
+        orphan_name = f"{'c' * 64}.attempt-1.json"
+        orphan = (
+            project_root
+            / "provider-requests/qwen-symbol-retries"
+            / orphan_name
+        )
+        orphan.write_bytes(paths["retry_request"].read_bytes())
+    elif mutation == "missing_response":
+        paths["retry_response"].unlink()
+    elif mutation == "unrelated_request_ref":
+        unrelated = (
+            project_root
+            / "provider-requests/qwen-symbol/unrelated.json"
+        )
+        unrelated.parent.mkdir(parents=True, exist_ok=True)
+        unrelated.write_bytes(paths["retry_request"].read_bytes())
+        audit = json.loads(paths["retry_audit"].read_text(encoding="utf-8"))
+        audit["request_ref"] = (
+            f"asset://projects/{project_id}/provider-requests/"
+            "qwen-symbol/unrelated.json"
+        )
+        paths["retry_audit"].write_bytes(serialize_call_record(audit))
+    elif mutation == "noncanonical_request":
+        paths["retry_request"].write_bytes(
+            paths["retry_request"].read_bytes() + b"\n"
+        )
+    elif mutation == "crop_mismatch":
+        request = json.loads(
+            paths["retry_request"].read_text(encoding="utf-8")
+        )
+        request["crop_sha256"] = "d" * 64
+        paths["retry_request"].write_text(
+            json.dumps(
+                request,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+    else:
+        response = build_visual_failure_envelope(
+            "tool_arguments_json_invalid"
+        )
+        paths["retry_response"].write_text(
+            json.dumps(
+                response,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+
+    with pytest.raises(RuntimeError, match="retry evidence"):
+        paired_cache(
+            project_root,
+            storage,
+            project_id,
+            "qwen-symbol",
+        )
+
+
+def test_live_symbol_retry_attempt_counts_are_bounded_and_audited() -> None:
+    """P0-REC-005: one explicit schema retry counts as one actual Vision call."""
+    runner = _load_module(
+        "qi_runner_visual_retry_budget",
+        HARNESS / "scripts/run-p0.py",
+    )
+    attempt_count = _embedded_function(
+        runner._SYMBOL_RESULT_PROGRAM,
+        "visual_attempt_count",
+    )
+    canonical = {
+        "request_id": "fixture-final-request",
+        "retry_count": 1,
+    }
+    retry = {
+        "request_id": "fixture-first-request",
+        "retry_count": 0,
+        "failure_stage": "tool_arguments_schema_invalid",
+    }
+
+    assert attempt_count(canonical, [retry]) == 2
+    assert attempt_count(
+        {"request_id": "fixture-no-retry", "retry_count": 0},
+        [],
+    ) == 1
+
+    invalid_cases = (
+        (canonical, []),
+        ({**canonical, "retry_count": 2}, [retry, retry]),
+        (canonical, [{**retry, "retry_count": 1}]),
+        (
+            canonical,
+            [{**retry, "failure_stage": "tool_arguments_json_invalid"}],
+        ),
+        (canonical, [{**retry, "request_id": "fixture-final-request"}]),
+    )
+    for audit, retries in invalid_cases:
+        with pytest.raises(RuntimeError, match="retry evidence"):
+            attempt_count(audit, retries)
+
+
+def test_live_symbol_retry_derived_seventeenth_call_is_blocked() -> None:
+    """P0-REC-005: a retry-derived seventeenth Vision call blocks the gate."""
+    runner = _load_module(
+        "qi_runner_visual_retry_budget_exceeded",
+        HARNESS / "scripts/run-p0.py",
+    )
+
+    assert runner._vision_call_budget_failures(
+        [
+            {"page_index": 0, "count": 17},
+            {"page_index": 1, "count": 16},
+        ],
+        [
+            {"page_index": 0, "count": 17},
+            {"page_index": 1, "count": 16},
+        ],
+    ) == [
+        {"reason": "visual_call_budget_exceeded"},
+        {"reason": "total_vision_call_budget_exceeded"},
+    ]

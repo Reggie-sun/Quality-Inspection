@@ -24,6 +24,7 @@ from app.jobs.idempotency import (
     successful_result_ref,
 )
 from app.pdf.inventory import build_inventory
+from app.pdf.visual_observations import VisualObservationBlockingError
 from app.processing.automatic_result import (
     CandidateSnapshot,
     CoverageBlocking,
@@ -230,6 +231,7 @@ class InventoryPipeline:
             return existing
         safe_source_ref: str | None = None
         inventory_ref: str | None = None
+        candidate_advisor_started = False
         try:
             set_processing_stage(
                 self._session,
@@ -269,10 +271,14 @@ class InventoryPipeline:
             )
             if source_file is None:
                 raise ValueError("source file metadata does not exist")
+            candidate_advisor_started = True
             snapshot = self._candidate_snapshot_builder(pages)
             coverage = check_coverage(
                 snapshot.coverage_entries,
                 expected_observation_ids=snapshot.expected_observation_ids,
+                required_visual_observation_ids=(
+                    snapshot.required_visual_observation_ids
+                ),
             )
             automatic_result = build_automatic_result(
                 self._session,
@@ -318,7 +324,52 @@ class InventoryPipeline:
             if existing is not None:
                 return existing
             raise
+        except VisualObservationBlockingError as exc:
+            if exc.code not in {
+                "symbol_route_budget_exhausted",
+                "visual_crop_oversize",
+            }:
+                existing = self._record_failure(
+                    project,
+                    job,
+                    state=ProjectState.PROCESSING_FAILED,
+                    code="inventory_processing_failed",
+                    message="Page inventory processing failed",
+                    stage="page_inventory",
+                    location_ref=safe_source_ref,
+                    cause_category="processing_defect",
+                )
+                if existing is not None:
+                    return existing
+                raise
+            existing = self._record_failure(
+                project,
+                job,
+                state=ProjectState.PROCESSING_FAILED,
+                code=exc.code,
+                message="Visual symbol scheduling failed",
+                stage="candidate_advisor",
+                location_ref=None,
+                cause_category="processing_defect",
+            )
+            if existing is not None:
+                return existing
+            raise
         except CapabilityUnavailable as exc:
+            if candidate_advisor_started:
+                existing = self._record_failure(
+                    project,
+                    job,
+                    state=ProjectState.PROCESSING_FAILED,
+                    code="vision_provider_call_failed",
+                    message="Vision candidate Advisor call failed",
+                    stage="candidate_advisor",
+                    location_ref=None,
+                    cause_category="transient_provider_failure",
+                )
+                if existing is not None:
+                    return existing
+                raise
             existing = self._record_failure(
                 project,
                 job,

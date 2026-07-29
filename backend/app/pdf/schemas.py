@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Literal
 
 from app.pdf.coordinates import BBox, Matrix
 
@@ -24,6 +24,19 @@ class TextObservation:
 
 
 @dataclass(frozen=True)
+class VisualObservation:
+    observation_id: str
+    source_type: Literal["visual"]
+    observation_level: Literal["annotation_context"]
+    page_index: int
+    bbox_pdf: BBox
+    bbox_normalized: BBox
+    proposal_kind: Literal["text_adjacent_vector_context"]
+    geometry_sha256: str
+    associated_text_observation_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PageInventory:
     page_index: int
     width: float
@@ -40,6 +53,10 @@ class PageInventory:
     pdf_to_render_matrix: Matrix
     render_to_pdf_matrix: Matrix
     observations: tuple[TextObservation, ...]
+    visual_observations: tuple[VisualObservation, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        if not self.visual_observations:
+            payload.pop("visual_observations")
+        return payload

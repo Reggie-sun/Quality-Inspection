@@ -10,11 +10,12 @@
     "input_set",
     "phases",
     "child_run_ids",
+    "symbol_recognition",
     "design_qa",
     "samples"
   ],
   "properties": {
-    "schema_version": { "const": "live-run-evidence/1" },
+    "schema_version": { "const": "live-run-evidence/2" },
     "run_id": {
       "type": "string",
       "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
@@ -34,6 +35,12 @@
       "maxItems": 6
     },
     "child_run_ids": { "type": "array", "maxItems": 0 },
+    "symbol_recognition": {
+      "oneOf": [
+        { "$ref": "#/$defs/symbol_recognition_evidence" },
+        { "type": "null" }
+      ]
+    },
     "design_qa": {
       "oneOf": [
         { "$ref": "#/$defs/design_qa" },
@@ -70,6 +77,140 @@
         "p0": { "const": 0 },
         "p1": { "const": 0 },
         "p2": { "const": 0 }
+      }
+    },
+    "symbol_family_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diameter",
+        "depth",
+        "counterbore",
+        "surface_roughness",
+        "gdt_parallelism",
+        "gdt_perpendicularity",
+        "gdt_flatness",
+        "datum_reference",
+        "revision_marker"
+      ],
+      "properties": {
+        "diameter": { "type": "integer", "minimum": 1 },
+        "depth": { "type": "integer", "minimum": 1 },
+        "counterbore": { "type": "integer", "minimum": 1 },
+        "surface_roughness": { "type": "integer", "minimum": 1 },
+        "gdt_parallelism": { "type": "integer", "minimum": 1 },
+        "gdt_perpendicularity": { "type": "integer", "minimum": 1 },
+        "gdt_flatness": { "type": "integer", "minimum": 1 },
+        "datum_reference": { "type": "integer", "minimum": 1 },
+        "revision_marker": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "negative_family_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "part_or_hole_geometry",
+        "hatch_center_or_cross",
+        "dimension_leader_or_section_line",
+        "view_or_section_label",
+        "revision_table_or_invalid_marker",
+        "datum_like_letter_or_table_cell",
+        "watermark_logo_title_or_signoff",
+        "isometric_hole_slot_or_edge",
+        "ordinary_text_number_material_or_requirement"
+      ],
+      "properties": {
+        "part_or_hole_geometry": { "type": "integer", "minimum": 1 },
+        "hatch_center_or_cross": { "type": "integer", "minimum": 1 },
+        "dimension_leader_or_section_line": { "type": "integer", "minimum": 1 },
+        "view_or_section_label": { "type": "integer", "minimum": 1 },
+        "revision_table_or_invalid_marker": { "type": "integer", "minimum": 1 },
+        "datum_like_letter_or_table_cell": { "type": "integer", "minimum": 1 },
+        "watermark_logo_title_or_signoff": { "type": "integer", "minimum": 1 },
+        "isometric_hole_slot_or_edge": { "type": "integer", "minimum": 1 },
+        "ordinary_text_number_material_or_requirement": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "vision_call_counts": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["page_index", "count"],
+          "properties": {
+            "page_index": { "const": 0 },
+            "count": { "type": "integer", "minimum": 0, "maximum": 16 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["page_index", "count"],
+          "properties": {
+            "page_index": { "const": 1 },
+            "count": { "type": "integer", "minimum": 0, "maximum": 16 }
+          }
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "symbol_recognition_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selector",
+        "passed",
+        "order",
+        "project_id",
+        "automatic_result_id",
+        "source_sha256",
+        "manifest_sha256",
+        "annotation_verdict_sha256",
+        "label_count",
+        "positive_label_count",
+        "negative_label_count",
+        "positive_family_counts",
+        "negative_family_counts",
+        "visual_calls_by_page",
+        "total_vision_calls_by_page",
+        "candidate_match_count",
+        "reference_match_count",
+        "non_inspection_match_count",
+        "negative_false_positive_count",
+        "source_command_count",
+        "report_ref",
+        "report_sha256"
+      ],
+      "properties": {
+        "selector": {
+          "const": "phase://live/symbol-recognition?input_set=current-four"
+        },
+        "passed": { "const": true },
+        "order": { "const": 1 },
+        "project_id": { "type": "string", "minLength": 1 },
+        "automatic_result_id": { "type": "string", "minLength": 1 },
+        "source_sha256": { "$ref": "#/$defs/sha256" },
+        "manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "annotation_verdict_sha256": { "$ref": "#/$defs/sha256" },
+        "label_count": { "type": "integer", "minimum": 1 },
+        "positive_label_count": { "type": "integer", "minimum": 1 },
+        "negative_label_count": { "type": "integer", "minimum": 1 },
+        "positive_family_counts": { "$ref": "#/$defs/symbol_family_counts" },
+        "negative_family_counts": { "$ref": "#/$defs/negative_family_counts" },
+        "visual_calls_by_page": { "$ref": "#/$defs/vision_call_counts" },
+        "total_vision_calls_by_page": { "$ref": "#/$defs/vision_call_counts" },
+        "candidate_match_count": { "type": "integer", "minimum": 1 },
+        "reference_match_count": { "type": "integer", "minimum": 1 },
+        "non_inspection_match_count": { "type": "integer", "minimum": 1 },
+        "negative_false_positive_count": { "const": 0 },
+        "source_command_count": { "const": 0 },
+        "report_ref": { "const": "reports/symbol-recognition.json" },
+        "report_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "design_qa": {
@@ -272,11 +413,15 @@
                   "additionalProperties": false,
                   "required": [
                     "source_location_id",
+                    "source_type",
+                    "observation_level",
                     "coordinates",
-                    "disposition"
+                    "coverage"
                   ],
                   "properties": {
                     "source_location_id": { "type": "string", "minLength": 1 },
+                    "source_type": { "type": "string", "minLength": 1 },
+                    "observation_level": { "type": "string", "minLength": 1 },
                     "coordinates": {
                       "type": "array",
                       "prefixItems": [
@@ -288,7 +433,32 @@
                       "minItems": 4,
                       "maxItems": 4
                     },
-                    "disposition": { "const": "candidate" }
+                    "coverage": {
+                      "oneOf": [
+                        { "type": "null" },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["disposition", "candidate_id"],
+                          "properties": {
+                            "disposition": {
+                              "enum": [
+                                "candidate",
+                                "reference_context",
+                                "non_inspection",
+                                "ambiguous"
+                              ]
+                            },
+                            "candidate_id": {
+                              "oneOf": [
+                                { "type": "null" },
+                                { "type": "string", "minLength": 1 }
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    }
                   }
                 }
               }

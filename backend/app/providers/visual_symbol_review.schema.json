@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/visual_symbol_review.schema.json",
+  "title": "Visual symbol review response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "detections"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "visual-symbol-review/1"
+    },
+    "detections": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "visual_observation_id",
+          "symbol_kind",
+          "bbox_normalized",
+          "associated_text_observation_ids",
+          "requires_confirmation"
+        ],
+        "properties": {
+          "visual_observation_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*"
+          },
+          "symbol_kind": {
+            "enum": [
+              "diameter",
+              "depth",
+              "counterbore",
+              "surface_roughness",
+              "gdt_parallelism",
+              "gdt_perpendicularity",
+              "gdt_flatness",
+              "datum_reference",
+              "revision_marker"
+            ]
+          },
+          "bbox_normalized": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "associated_text_observation_ids": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "requires_confirmation": {
+            "const": true
+          }
+        }
+      }
+    }
+  }
+}

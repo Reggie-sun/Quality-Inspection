@@ -134,3 +134,400 @@ def test_confirmation_is_reviewable_without_becoming_blocking() -> None:
     assert report.review_required_count == 1
     assert report.blocking_count == 0
     assert report.coverage_checked is True
+
+
+def _visual_review(
+    *,
+    rejection_code: str | None = None,
+    symbol_kinds: tuple[str, ...] = ("diameter",),
+) -> dict[str, object]:
+    return {
+        "route": "visual_symbol",
+        "schema_version": "visual-symbol-review/1",
+        "symbol_kinds": list(symbol_kinds),
+        "rejection_code": rejection_code,
+    }
+
+
+def test_visual_candidate_has_one_complete_coverage_entry() -> None:
+    """COV-01: one visual source owns one complete candidate disposition."""
+    entry = CoverageEntry(
+        "visual-1",
+        "candidate",
+        "visual-1",
+        (1, 2, 3, 4),
+        candidate_id="candidate-1",
+        requires_confirmation=True,
+        advisor_review=_visual_review(),
+    )
+    report = check_coverage(
+        [entry],
+        expected_observation_ids={"visual-1"},
+        required_visual_observation_ids={"visual-1"},
+    )
+    assert report.blocking_count == 0
+    assert report.review_required_count == 1
+    assert report.entries == (entry,)
+
+
+def test_visual_reference_noninspection_and_ambiguous_are_distinct() -> None:
+    """COV-02: each noncandidate visual disposition remains distinct."""
+    entries = (
+        CoverageEntry(
+            "visual-reference",
+            "reference_context",
+            "visual-reference",
+            (1, 2, 3, 4),
+            requires_confirmation=False,
+            advisor_review=_visual_review(symbol_kinds=("datum_reference",)),
+        ),
+        CoverageEntry(
+            "visual-revision",
+            "non_inspection",
+            "visual-revision",
+            (5, 6, 7, 8),
+            requires_confirmation=True,
+            advisor_review=_visual_review(symbol_kinds=("revision_marker",)),
+        ),
+        CoverageEntry(
+            "visual-ambiguous",
+            "ambiguous",
+            "visual-ambiguous",
+            (9, 10, 11, 12),
+            requires_confirmation=True,
+            advisor_review=_visual_review(
+                rejection_code="visual_no_detection",
+                symbol_kinds=(),
+            ),
+        ),
+    )
+    report = check_coverage(
+        entries,
+        required_visual_observation_ids={
+            "visual-reference",
+            "visual-revision",
+            "visual-ambiguous",
+        },
+    )
+    assert report.blocking_count == 0
+    assert report.review_required_count == 2
+    assert tuple(entry.disposition for entry in report.entries) == (
+        "reference_context",
+        "non_inspection",
+        "ambiguous",
+    )
+
+
+@pytest.mark.parametrize(
+    "entry",
+    (
+        CoverageEntry(
+            "visual-1",
+            "candidate",
+            None,
+            (1, 2, 3, 4),
+            candidate_id="candidate-1",
+            advisor_review=_visual_review(),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "candidate",
+            "visual-1",
+            None,
+            candidate_id="candidate-1",
+            advisor_review=_visual_review(),
+        ),
+        CoverageEntry(
+            "visual-1",
+            None,
+            "visual-1",
+            (1, 2, 3, 4),
+            advisor_review=_visual_review(),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "ambiguous",
+            "visual-1",
+            (1, 2, 3, 4),
+            advisor_review=None,
+        ),
+        CoverageEntry(
+            "visual-1",
+            "ambiguous",
+            "visual-1",
+            (1, 2, 3, 4),
+            advisor_review=_visual_review(
+                rejection_code="visual_projection_conflict",
+            ),
+        ),
+    ),
+)
+def test_visual_missing_source_coordinates_or_conflict_blocks(
+    entry: CoverageEntry,
+) -> None:
+    """COV-03: incomplete or unexecuted visual ownership blocks coverage."""
+    entries = [entry]
+    if entry.advisor_review is not None and entry.advisor_review.get(
+        "rejection_code"
+    ) == "visual_projection_conflict":
+        entries.append(entry)
+    report = check_coverage(
+        entries,
+        required_visual_observation_ids={"visual-1"},
+    )
+    assert report.blocking_count == 1
+    assert report.coverage_checked is False
+
+
+def test_visual_confirmation_cannot_be_downgraded() -> None:
+    """COV-04: only a locally validated datum reference can clear review."""
+    downgraded = CoverageEntry(
+        "visual-1",
+        "candidate",
+        "visual-1",
+        (1, 2, 3, 4),
+        candidate_id="candidate-1",
+        requires_confirmation=False,
+        advisor_review=_visual_review(),
+    )
+    datum = CoverageEntry(
+        "visual-2",
+        "reference_context",
+        "visual-2",
+        (5, 6, 7, 8),
+        requires_confirmation=False,
+        advisor_review=_visual_review(symbol_kinds=("datum_reference",)),
+    )
+    report = check_coverage(
+        [downgraded, datum],
+        required_visual_observation_ids={"visual-1", "visual-2"},
+    )
+    assert report.blocking_observation_ids == ("visual-1",)
+
+
+@pytest.mark.parametrize(
+    "advisor_review",
+    (
+        None,
+        _visual_review(symbol_kinds=("depth", "diameter")),
+        _visual_review(symbol_kinds=("diameter", "diameter")),
+        _visual_review(symbol_kinds=("unknown",)),
+        {
+            "route": "visual_symbol",
+            "schema_version": "visual-symbol-review/1",
+            "symbol_kinds": "datum_reference",
+            "rejection_code": None,
+        },
+    ),
+)
+def test_malformed_visual_symbol_review_blocks_without_crashing(
+    advisor_review: dict[str, object] | None,
+) -> None:
+    entry = CoverageEntry(
+        "visual-1",
+        "reference_context",
+        "visual-1",
+        (1, 2, 3, 4),
+        requires_confirmation=False,
+        advisor_review=advisor_review,
+    )
+    report = check_coverage(
+        [entry],
+        required_visual_observation_ids={"visual-1"},
+    )
+    assert report.blocking_observation_ids == ("visual-1",)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    (
+        CoverageEntry(
+            "visual-1",
+            "candidate",
+            "visual-1",
+            (1, 2, 3, 4),
+            candidate_id="candidate-1",
+            requires_confirmation=True,
+            advisor_review=_visual_review(
+                symbol_kinds=("datum_reference",),
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "candidate",
+            "visual-1",
+            (1, 2, 3, 4),
+            candidate_id="candidate-1",
+            requires_confirmation=True,
+            advisor_review=_visual_review(
+                rejection_code="visual_projection_conflict",
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "reference_context",
+            "visual-1",
+            (1, 2, 3, 4),
+            candidate_id="candidate-1",
+            requires_confirmation=False,
+            advisor_review=_visual_review(
+                symbol_kinds=("datum_reference",),
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "reference_context",
+            "visual-1",
+            (1, 2, 3, 4),
+            requires_confirmation=True,
+            advisor_review=_visual_review(
+                symbol_kinds=("datum_reference",),
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "non_inspection",
+            "visual-1",
+            (1, 2, 3, 4),
+            requires_confirmation=False,
+            advisor_review=_visual_review(
+                symbol_kinds=("revision_marker",),
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "ambiguous",
+            "visual-1",
+            (1, 2, 3, 4),
+            requires_confirmation=True,
+            advisor_review=_visual_review(rejection_code=None),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "ambiguous",
+            "visual-1",
+            (1, 2, 3, 4),
+            requires_confirmation=True,
+            advisor_review=_visual_review(
+                rejection_code="visual_no_detection",
+                symbol_kinds=("diameter",),
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "candidate",
+            "other-source",
+            (1, 2, 3, 4),
+            candidate_id="candidate-1",
+            requires_confirmation=True,
+            advisor_review=_visual_review(),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "candidate",
+            "visual-1",
+            (1, 2, 1, 4),
+            candidate_id="candidate-1",
+            requires_confirmation=True,
+            advisor_review=_visual_review(),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "candidate",
+            "visual-1",
+            (1, 2, float("nan"), 4),
+            candidate_id="candidate-1",
+            requires_confirmation=True,
+            advisor_review=_visual_review(),
+        ),
+    ),
+)
+def test_illegal_visual_semantic_matrix_combination_blocks(
+    entry: CoverageEntry,
+) -> None:
+    report = check_coverage(
+        [entry],
+        required_visual_observation_ids={"visual-1"},
+    )
+
+    assert report.blocking_observation_ids == ("visual-1",)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    (
+        CoverageEntry(
+            "visual-1",
+            "candidate",
+            "visual-1",
+            (1, 2, 3, 4),
+            candidate_id="candidate-1",
+            requires_confirmation=True,
+            advisor_review=_visual_review(),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "reference_context",
+            "visual-1",
+            (1, 2, 3, 4),
+            requires_confirmation=False,
+            advisor_review=_visual_review(
+                symbol_kinds=("datum_reference",),
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "non_inspection",
+            "visual-1",
+            (1, 2, 3, 4),
+            requires_confirmation=True,
+            advisor_review=_visual_review(
+                symbol_kinds=("revision_marker",),
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "ambiguous",
+            "visual-1",
+            (1, 2, 3, 4),
+            requires_confirmation=True,
+            advisor_review=_visual_review(
+                rejection_code="visual_projection_conflict",
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "ambiguous",
+            "visual-1",
+            (1, 2, 3, 4),
+            requires_confirmation=True,
+            advisor_review=_visual_review(
+                rejection_code="visual_no_detection",
+                symbol_kinds=(),
+            ),
+        ),
+        CoverageEntry(
+            "visual-1",
+            "ambiguous",
+            "visual-1",
+            (1, 2, 3, 4),
+            requires_confirmation=True,
+            advisor_review=_visual_review(
+                rejection_code="visual_bbox_invalid",
+                symbol_kinds=(),
+            ),
+        ),
+    ),
+)
+def test_valid_visual_semantic_matrix_is_reviewable_not_blocking(
+    entry: CoverageEntry,
+) -> None:
+    report = check_coverage(
+        [entry],
+        required_visual_observation_ids={"visual-1"},
+    )
+
+    assert report.blocking_count == 0
+    assert report.review_required_count == int(
+        entry.disposition == "ambiguous" or entry.requires_confirmation
+    )

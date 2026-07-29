@@ -168,6 +168,1719 @@
 - Next verification: 在隔离 runtime 用真实 `QI_MVP_E2E_PDF` 执行 `npm --prefix frontend run e2e -- e2e/chinese-pdf-upload-mvp.spec.ts`，预期先复现或证伪 manual-balloon refresh timeout，并保存精确 request/response/DOM 证据。
 - Closure evidence: current-HEAD RED 先证明旧 `heading[name="检验项目审核"]` 已被真实 `region[name="项目摘要"]` 取代；最小 selector 修正后，同一真实双页 PDF 的 final current-diff Playwright run 为 `1 passed (23.0m)`。运行中 275 个 active items 全部完成审核并 freeze，275 个 balloons 的 manual count 从 20 收敛到 0；全局重校验曾出现 `12 → 14` 的非单调变化，但当前 item 均按 identity 正确退出人工列表。最终 `balloon_blockers=[]`、project=`reviewed`、同一 reviewed result 的 export=`success` 且存在三个 artifacts。fresh frontend regression 为 108 passed，production build passed，仅保留既有 bundle-size warning。
 
+### D7-T2 engineering drawing symbol recognition closure amendment — 2026-07-27
+
+本节把用户于 2026-07-27 批准、commit `1ea1868` 中的
+`docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+激活为同一 D7-T2 的 subordinate implementation detail，不创建第二份 current plan、
+status registry、candidate/result path 或产品 Owner，也不改写此前 sealed receipts。
+用户又于 2026-07-27 明确批准 Option A contract clarification；该批准只授权在
+`SR-1` 前消除 evaluation contract 内部矛盾，不改变本 amendment 的 task ordering、
+Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-run-ID
+边界。semantic detail 仍由 design spec 承载，subordinate implementation detail
+仍由已批准 proposal 承载，本文件继续是唯一 current plan。
+
+- Selected lane: `Heavy`。
+- Selected plan: 本文件仍是唯一 current implementation plan；已批准的
+  `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+  只提供本 amendment 下的实现细节，不与本文件竞争 ordering ownership。
+- Selection evidence: activation 时的 current code truth 是 Qwen 之前只有 text。
+  `backend/app/pdf/inventory.py::build_inventory()` 只持久化 text observations，
+  `get_drawings()` 只用于 `vector_drawing_count`；runtime OCR 只扫描 embedded
+  images；automatic snapshot 仍为 text-only。因此现有
+  `backend/app/candidates/advisor.py::CandidateAdvisor` 无法发现从未 materialize
+  为 observation 的 vector symbols。用户于 2026-07-27 批准继续，approved proposal
+  commit 为 `1ea1868`。
+- Historical activation action: Task 0 docs activation 已由 `994cbe4` 完成，
+  Option A docs-only clarification 已由 `3fc7bbb` 完成；SR-1、SR-2、SR-3 又分别由
+  `d3fac79`、`bb035bc`、`90bfb43` 完成。SR-2A bounded packing search 已以
+  `capacity_feasibility_unproven` 关闭且没有 code commit；当前 validation action
+  由本节后附的 2026-07-28 hybrid proposal-gate correction amendment 唯一拥有，
+  不得回到初始 SR-1 或已退休的 SR-2A packing-only next step。
+- Writer ownership and order: 每个 coupled file group 同时只有一个 writer；
+  spec/code reviewers 严格只读。执行顺序固定为
+  `SR-1 → SR-2 → SR-3 → SR-4 Steps 1-7 → SR-2A completed-unproven →
+  SR-2B → SR-2C → SR-4 Steps 8-9 → SR-5 → SR-6 → SR-7 → SR-8`，
+  全部位于 `D7-T3` 之前。
+- Problem boundary: 只处理 fixed first current-four PDF 中与 native text 相邻的
+  vector symbols，以及已批准的九类
+  diameter、depth、counterbore、surface roughness、GD&T parallelism、
+  GD&T perpendicularity、GD&T flatness、datum reference、revision marker。
+  `revision_marker` 是第九个 evaluation-positive recognition family，但只有通过
+  既有 closed-triangle + inner revision-token validator 才成立，business disposition
+  的 automatic initial Owner decision 固定为
+  `non_inspection + candidate_id=null + requires_confirmation=true`，不自动生成
+  inspection item；颜色不是 classifier。通过该 validator 的 label 不得同时是
+  `frozen_negative`。之后只有 Quality Owner 显式执行既有 `promote_source` 并提供
+  全部 manual fields 才可创建 manual item，`ignore_source` 只确认 non-inspection；
+  Provider、validator、automatic processing 和 frontend inference 均不得调用或模拟
+  该 override。
+  不承诺 full-page Vision、standalone symbol，不新增第二 result path、endpoint、
+  DB table，不重做 OCR，不增加 kind 或 configurable threshold。
+- Single Owner: `backend/app/candidates/advisor.py::CandidateAdvisor` 是唯一 Vision
+  integration Owner，也是 automatic raw candidate 与 coverage 的唯一 final writer。
+  `backend/app/candidates/symbol_review.py` 只是 pure helper，不是第二个 Owner。
+  既有 Review aggregate 只在 working copy 中执行 Quality Owner 显式
+  `promote_source` / `ignore_source`，不成为第二个 automatic Vision Owner。
+- Old path action: preserve deterministic text candidate path 与既有 text-review route；
+  replace `_route_objects()` 的 silent per-page first-16 truncation 为一个 unified
+  visual-first scheduler。禁止 bridge、shadow、dual-write、fallback、feature flag
+  与 Provider-owned disposition。
+- Unchanged contracts: 不新增 `CandidateType` / `CoarseType` symbol enum；source
+  `raw_text` 继续作为 source truth，识别出的 `Φ/深/⌴/∥/⊥/⏥` 只进入
+  normalized/coarse output；diameter 保持
+  `feature_kind=unknown + requires_confirmation`；Coverage Ledger 仍是 completeness
+  Veto Gate；既有 Review/working-copy/promote/ignore/freeze/balloon/export 顺序不变。
+  既有 `AutomaticResult`、working copy 和 reviewed result 保持 immutable，本 closure
+  必须使用新 project/result。
+- Failure boundary: `visual_crop_oversize`、`symbol_route_budget_exhausted`、
+  Provider/schema/cache failure 或 visual coverage blocking 均不得产生
+  `AutomaticResult`、working copy 或 formal success；任何 visual observation 都不得
+  被静默漏排。超过剩余 slots 的 text routes 保持原对象不变，不写 fake provenance。
+- Live-label gate: 任何 production GREEN 前，Quality Owner 必须 seal source SHA-256
+  `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`
+  的 exact two-page manifest、200% overlay verdict、全部九个 positive families 与
+  全部九个 frozen-negative families。第五个 negative family 只包含 revision-table
+  grid/cells 和未通过 revision-marker validator 的 triangle-like geometry。manifest
+  的 `negative_family` 只在且必须在 `symbol_kinds=["frozen_negative"]` 时存在；
+  staging 必须机械证明 distinct values exact equal design spec 的完整九值 enum 且
+  每个家族至少一个 label，并从 manifest 计算 per-negative-family counts 与
+  `negative_family_count=9`。Quality Owner 只人工确认 200% overlay 和
+  `unlabeled_target_count=0`，人工填写的 family count 不能作为覆盖证明。
+  activation 时尚未产生可记录的 literal sealed D7-T2
+  symbol-eval staging run ID；这不是占位值。`SR-1` 必须在 Quality Owner 提供并
+  seal 真实 manifest 后，把实际 literal run ID 原地回填到本 amendment 并提交；
+  回填前 production GREEN 保持 blocked。禁止 `latest`、glob、alias、synthetic
+  labels、old baseline 或 guessed ID，且本 gate 前不得发生 paid/Provider call。
+- SR-1 registration-only clarification: 用户在发现现有 D7-T2 task receipt 必须精确覆盖
+  该 task 全部 mirror rows、无法同时保持“只登记输入且不执行 business selectors”后，
+  明确选择方案 A。SR-1 的 symbol-eval staging 因此只创建一个
+  `mode=live`、`scope=task`、`task_id=D7-T2`、
+  `selected_contract_ids=[]` 的 sealed input-registration-only run，记录唯一
+  `phase://live/symbol-eval-registration`，且不得生成 `receipt.json`、
+  `contract-results.json`、task success 或 formal success。之后的 full-P0 run
+  必须以本 amendment 中回填的 literal run ID 装载并复核两份 exact artifact bytes；
+  `latest`、alias、路径或重新生成的等价 JSON 都不能替代。普通 task receipt
+  “selected/result IDs 精确覆盖 task 全部 mirror rows”的既有不变量保持不变。本条只在
+  SR-1 registration receipt wording 上 supersede subordinate implementation detail，
+  不修改其余 task ordering、Owner、scope、Provider、rollback 或 D7-T3 边界；真实
+  literal run ID 仍须由 staging 实际生成后回填，不写占位值。subordinate detail
+  所称 visual delta `pending` 在既有 Harness 状态枚举中精确落为
+  `current_status=not_run`，直到后续 SR proof；不得为此扩展稳定 result-state enum。
+- SR-1 sealed input registration: Quality Owner 批准的 exact overlays
+  `page-1-overlay-draft.png`
+  (`13305a1505525679a5b94603f0018400f32b01518b148f55d5baa4d4bd66db16`)
+  与 `page-2-overlay-draft.png`
+  (`99061a43f8043c1cd83cccb23a8367c4c90cb249b0b6fb3db8a1a17c7240405f`)
+  已机械转换并 seal 为 literal run
+  `20260727T085747865239Z-5aa3e8d3`。canonical manifest SHA-256 为
+  `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`，
+  共 56 个 positive groups、16 个 frozen-negative regions、72 个 labels；
+  staging 重新证明九个 positive families 全覆盖、distinct
+  `negative_family_count=9`、`overlay_scale_percent=200` 和
+  `unlabeled_target_count=0`。该 run 全树只读，只有 exact eval/verdict artifacts
+  与唯一 registration phase；没有 receipt、contract results、task/formal success
+  或 Provider call。此证据只关闭 SR-1 live-label input gate，不提前完成
+  production GREEN、D7-T2 symbol closure 或 D7-T3。
+- Historical SR-4 Step 8 capacity closure amendment — 2026-07-28:
+  - Selected lane: `Heavy`；Selected plan: 本文件仍是唯一 current plan。
+  - Selection evidence: sealed source 在冻结实现中产生 page 0
+    `132 observations / 19 priority batches`、page 1
+    `203 observations / 22 priority batches`，而 cap 是 `16/page`。natural order
+    仍为 `17/19`，所以 priority 不是唯一根因；area/side constraints 是主要 rejection
+    surface，member cap 没有命中。Provider calls=`0`。
+  - Validation action: SR-2A bounded search 已执行并在 page 0
+    `depth=76 / expanded=248890 / frontier=4096`、page 1
+    `depth=72 / expanded=249792 / frontier=4096` 返回
+    `capacity_feasibility_unproven`；Provider construction/calls=`0`。没有
+    certificate 或 code commit。
+  - Writer ownership and order: 当前父 agent 是唯一 writer；explorer/reviewer
+    严格只读。该 historical ordering 已结束；current ordering 只由下述 hybrid
+    proposal-gate amendment 拥有。
+  - Old path action: feasibility 阶段曾 preserve 当前 proposal、dedup、priority、
+    stable-first-fit 和全部 crop limits。由于未取得 certificate，packing-only
+    production path 已退休；stable-first-fit 继续保留。
+  - Unchanged contract: `7.5%` area、`300 DPI`、`1536px`、`32` members、
+    `16/page`、visual-first、Coverage Veto、sealed manifest、九类 positive/negative
+    evaluation 和全部 fail-closed semantics 保持不变；不得 hard-code current-source
+    IDs/coordinates、静默过滤、调 threshold 或提高 call cap。
+  - Allowed paths and next verification: historical scope 已关闭；current allowed
+    paths 与 verification 只来自下述 SR-2B/SR-2C。
+  - Rollback: 本 amendment commit 为 `8e0c625`；没有 SR-2A code commit。sealed
+    runs、manifest、diagnostic evidence 与 audit 保留。
+- Hybrid proposal-gate correction amendment — 2026-07-28:
+  - Selected lane: `Heavy`；Selected plan: 本文件仍是唯一 current plan。用户已接受
+    commit `6920958` 中的 hybrid proposal-gate design；subordinate plan 只承载
+    SR-2B/SR-2C 文件级步骤。
+  - Selection evidence: SR-2A 的 deterministic beam search 在 page 0
+    `depth=76 / expanded=248890 / frontier=4096`、page 1
+    `depth=72 / expanded=249792 / frontier=4096` 时均返回
+    `capacity_feasibility_unproven`，Provider construction/calls=`0`。这不是数学
+    不可行证明，但不足以授权 packing-only production change。只读 hybrid candidate
+    产生 page 0 `79 observations / 13 batches`、page 1
+    `124 observations / 16 batches`；这些数值最初只作为 calibration evidence。
+    后续两次 exact renderer 已逐 byte 重复，Quality Owner 在完整 artifacts/report
+    和 frozen-negative overlap 风险提示后明确批准。
+  - Validation action: `pause before SR-2C`。SR-2B Steps 1-4 已关闭；现有 SR-4
+    七文件 working diff 保留但不得提交。本 approval turn 不执行 subordinate
+    `SR-2C Step 1`；SR-2C no-write preflight 全部通过前，不得进入 SR-4 Step 8、
+    SR-5 或构造/调用 Provider。
+  - Exact-rule reproduction correction: 首次逐字运行 commit `e795744` 中的
+    renderer 得到 page 0 / page 1 `62 / 105` retained observations 和
+    `21/26 / 28/30` positive overlap，因此按 gate fail closed。历史 calibration
+    把 PyMuPDF solid `"[] 0"` 也计入 truthy dash-style count，而 plan 后来误写成
+    排除 solid 的 `dash_count`；同时 renderer 把冻结的 sorted-newline ID-set
+    digest 误写成 ordered JSON-list digest。wide branch 现以
+    `item_count > 3` / `geometry_wide_multi_item` 精确复原历史 candidate；在原
+    wide preconditions 内 page 0 / page 1 的命中集合与历史 truthy count 分别
+    exact 等于 `23 / 39`，不是重新拟合 threshold。修正后 no-write reproduction
+    恢复 `79/124` observations、`13/16` batches 及全部四个冻结 ID/batch digests。
+    sealed manifest、Provider、production/test files 和现有七文件 dirty set 均未改。
+  - Single Owner and old path action:
+    `backend/app/pdf/visual_observations.py::build_page_visual_observations()` 是
+    proposal admission 唯一 Owner；retire “geometry-qualified line 必定形成
+    observation”以及 SR-2A packing-only production Steps 2-6。preserve 既有
+    bbox/dedup/order、stable first-fit、priority、crop limits、Coverage Veto 和
+    `CandidateAdvisor` 唯一 final-write ownership。`automatic_result.py`、
+    `symbol_review.py`、`advisor.py` 只能消费 retained observations，不得二次过滤。
+  - Exact candidate identity: candidate rule 使用
+    `proposal_rule_version="visual-observation/2"`，canonical rule SHA-256 为
+    `ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7`。
+    observation-ID set digest 使用 lexicographically sorted IDs、单个 `\n`
+    连接且无尾随换行的 bytes；batch-membership digest 使用 stable ordered nested
+    list 的 compact canonical JSON。Quality Owner 已批准该 exact candidate；
+    canonical verdict 绑定 sealed manifest SHA-256
+    `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`、
+    两页 200% 完整 overlay、全部要求的局部放大图、rule/overlay digests、
+    `annotation_status=approved` 和 `unlabeled_target_count=0`。existing sealed
+    manifest bytes 不修改、不重生成。
+  - Quality Owner closure evidence: actual compact、sorted-key canonical verdict 为：
+
+    ```json
+    {"annotation_status":"approved","manifest_sha256":"0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448","overlay_scale_percent":200,"overlay_sha256":{"page-1-proposal-gate-overlay-200pct.png":"da25c8e0f04c4468deb094bb6be9f8565fd9d855ad3b40c44bad8cb40da15202","page-2-proposal-gate-overlay-200pct.png":"8335c1e22ba02474ef9ddf7fdd111dd86cbd9ebc056cf8ce429155e62fda0ec7"},"proposal_gate_report_sha256":"13f73e1c790b277c6d317c016e1df5e41c52eb62a07d336b69b5f9d6df7152d9","proposal_rule_sha256":"ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7","proposal_rule_version":"visual-observation/2","reviewed_frozen_negative_region_count":16,"reviewed_positive_label_count":56,"schema_version":"visual-proposal-gate-verdict/1","unlabeled_target_count":0,"zoom_sha256":{"zoom-core-symbol-representatives.png":"a9773c5cab2caa24b83160dd0ce44a2cf51a2af037145affb62c9807f6fb3219","zoom-densest-region.png":"bcae9e7852bd78cee21ae5b5d5e66aaf482b375118593c8b21dde21f22dc2d0d","zoom-gdt-and-boxed-datum.png":"a0060d71ebbdd8ce2f6b594bdb4d08ab4c228cfa7a5490811cc83ce3fd55fdaa","zoom-n5-negative.png":"2a61789008b0b731378dcbf63f7c697df7710ae9a687c0a94e43381d8938ad4c","zoom-revision-positive.png":"941d8db1b45047993c1aa8bf436749f2897c6ccb37011133cd21511026293a9e"}}
+    ```
+
+    verdict SHA-256 为
+    `9b7a6aa061315f7e8501c348e57b21219b597a2374fb8ffca976bedc978f50ef`。
+    page 0 / page 1 final observation-ID digests 分别为
+    `15f476cac29683c425b85b541ad528b38f1983fb5673871466626038ef1852f5` /
+    `4f082c0ce52fb649cd9c84c16b685ced29133dc12c3b37392df63767043a4e16`；
+    batch-membership digests 分别为
+    `dc7b19187c7346e61f9344d63197f6e815ab3f85af1c6316e2e00888ed8bf0d8` /
+    `8a6f8ef3f3c50f85841de792f7bbc078062d4d8c1da75beaa17768b002a50ea2`。
+  - Allowed paths and commit boundary:
+    - `SR-2B Step 1` exact-rule correction commit 只允许 accepted design spec、
+      本 subordinate plan 和本 current plan；
+    - `SR-2B Step 4` Quality Owner approval commit 才允许再修改
+      `docs/contracts/MAIN_CONTRACT_MATRIX.md` 及上述三份 docs；
+    - `SR-2C` proposal-only commit 只允许
+      `backend/app/pdf/visual_observations.py` 与
+      `backend/tests/unit/pdf/test_visual_observations.py`；
+    - `backend/app/candidates/symbol_review.py` 和
+      `backend/tests/unit/candidates/test_symbol_advisor.py` 的 v2 cache single-source
+      delta 继续属于当前 SR-4 七文件 ownership，只在 SR-4 Step 9 与其余五文件一起
+      commit。不得使用 `git add .`。
+  - Verification boundary: SR-2B 必须覆盖全部 56 positives、16 frozen negatives、
+    六个带 token revision markers、五个 N5 无 token triangles、全部 GD&T/boxed
+    datum、四类代表符号和最密集区域。SR-2C 必须 TDD 证明四个 admission/rejection
+    branches、snapped thresholds、v2 ID/order/reconstruction、cache invalidation；
+    current-source no-write preflight 必须重复得到 `79/124` observations、
+    `13/16` batches、exact digests、all limits true、Provider construction/calls=`0`。
+  - Unchanged contract: `7.5%` area、`300 DPI`、`1536px`、`32` members、
+    `16/page`、visual-first、九类 positive/negative evaluation、sealed input identity、
+    immutable results 和全部 fail-closed semantics 不变。不得 hard-code source/page/
+    label/coordinates、提高 call cap、恢复 full-page Vision 或用 rejected context
+    伪装 coverage disposition。
+  - Rollback: 先 revert SR-4，再 revert SR-2C proposal code commit，再 revert
+    SR-2B exact-rule/Quality Owner docs commit；然后才按既有历史回退
+    `6920958` design、`8e0c625` capacity amendment 和更早 tasks。sealed runs、
+    manifest、diagnostic evidence 与 Provider-call audit 保留。
+- Task 8 Step 6 current-four registration recovery amendment — 2026-07-28:
+  - User approval and blocker evidence: 用户在 Task 8 Step 5 gate commit
+    `47571c758163f0a5ffdaeecd612f65e64b271e02` 后明确批准继续解除 Step 6
+    blocker。historical current-four registration
+    `20260721T130805437356Z-e52457ee` 在 main checkout、当前
+    `symbol-recognition` worktree 与全部已登记 worktree 中均不存在；不得重建该旧
+    run ID、复制等价 JSON 或猜测替代 evidence。
+  - Replacement sealed evidence: 使用本计划已批准的 current-four source root，
+    现有 `stage-current-four.py` 重新机械验证 exact 四个 SHA-256、六页和物理页规格，
+    并创建 fresh/passed D2-T1 live registration
+    `20260728T073514713074Z-f32e6fae`。其 manifest SHA-256 为
+    `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`；
+    `generate-receipt.py --check-run` 返回 `receipt_valid=1`，production loader
+    exact 复核通过，全树只读且不含 PDF bytes、host source path 或 Provider call。
+  - Literal binding: Task 8 Step 6 当前唯一批准的 current-four literal run ID
+    是 `20260728T073514713074Z-f32e6fae`；symbol-eval literal run ID 保持
+    `20260727T085747865239Z-5aa3e8d3`。full-P0 live command 必须把两者直接写入
+    command，不得使用 alias、glob、command substitution 或 environment-variable
+    alias。
+  - Scope and next verification: 本 correction 只替换已丢失的 registration
+    evidence handle，不修改 current-four bytes、stable contract、Owner、schema、
+    Provider policy、Task 8 gate code、D7-T3 状态或其余 task ordering。本文件是唯一
+    allowed repository path；该 amendment 必须在任何 Provider call 前提交。随后先
+    重跑 exact receipt/loader preflight，再执行 subordinate Task 8 Step 6 literal
+    full-P0 live command。
+  - Rollback: live gate 若失败，保留两个 sealed input runs、失败 run、audit 与
+    Provider-call evidence；只 revert 本 docs amendment，不删除或改写 run history。
+- Task 8 Step 6 Provider live-start recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: sealed run
+      `20260728T080321805661Z-b59c87de` 的 13 个 page-0 schema-valid calls 与
+      page-1 first-crop exact `30.57s` timeout boundary。
+    - Validation action: 先提交本 amendment，再继续 subordinate Task 8 Step 6
+      two-file timeout TDD recovery；不进入 Step 7/8。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后仅 `runtime.py` 和其 exact contract test，禁止并行 writer。
+    - Next verification: runtime factory `30.0 → 60.0` exact RED/GREEN，同时
+      `max_retries=0` 保持不变。
+  - Problem boundary and sealed evidence: first fresh run
+    `20260728T074800085742Z-9d64ee0c` 在首个 visual call 以 sanitized
+    `visual_schema_invalid` fail closed。根因是
+    `visual_review_prompt()` 仅声明 `return_frozen_schema_only`，却未携带同一
+    `visual-symbol-review/1` frozen schema；严格 parser、failure redaction 和
+    Provider audit 均按设计工作。TDD fix commit
+    `9d9f99ec4f8eddb95cc6dcd5f0d28ec9854f796b` 只把 exact schema 加入 canonical
+    prompt、将 prompt identity 升至 `visual-symbol-prompt/2` 并更新对应 cache
+    mismatch expectations；schema、adapter、proposal 和 cache-envelope versions
+    均不变。focused + Task 8 suites 为 `171 passed`，independent spec review
+    `accept`、quality review `accept with concerns` 且无 blocker。
+  - Timeout root cause: second fresh run
+    `20260728T080321805661Z-b59c87de` 使用上述 commit 后，page 0 的 `13` 个
+    batches 全部返回 schema-valid `/2` responses，绑定的 observation counts 合计
+    exact `79`；第 `14` 个 crop 是 page 1 首批，写入时间
+    `2026-07-28T08:06:06.182Z`，run 于
+    `2026-07-28T08:06:36.753Z` fail closed。约 `30.57s` 边界与唯一 runtime
+    `OpenAI(timeout=30.0,max_retries=0)` exact 对齐；没有 schema-invalid envelope、
+    HTTP status audit 或成功 response 可用于其他归因。13 个成功 call duration
+    范围为 `4040..24892ms`，因此本地 `30s` multimodal timeout 缺少有界 headroom。
+  - Single Owner, old path and allowed paths:
+    `backend/app/providers/runtime.py::build_vision_provider()` 是 Qwen client timeout
+    唯一 Owner；以 `60.0s` 替换过紧的 `30.0s`，继续 pin
+    `max_retries=0`，不得启用 SDK 隐式 retry、放宽 schema 或改变 call budget。
+    本 recovery commit 只允许
+    `backend/app/providers/runtime.py`、
+    `backend/tests/contract/test_qwen_vl_provider.py`；本 current plan amendment
+    单独先提交。不得修改 Provider policy、Task 8 gate、sealed runs、input artifacts
+    或 D7-T3 状态。
+  - Unchanged contracts: `<=16/page` visual/total Vision call cap、
+    `max_retries_per_call:2` 上限、one bounded PNG、JSON-only transport、exact frozen
+    schema、local fail-closed validation、sanitized audit、cache identity、fresh-project
+    requirement、literal two-run binding 与 Quality Owner gate 均不变。timeout 增加
+    不是 retry，也不得把 page 0 的 13 个成功 responses 当作整体通过。
+  - Verification and rollback: RED 必须精确证明 runtime factory 仍为 `30.0`，
+    GREEN pin `60.0` 和 `max_retries=0`；随后运行 Qwen/provider/candidate/Task 8
+    suites、`ruff check`、`check-contracts.py`、独立 review，再以相同两个 literal
+    sealed input IDs 创建新 full-P0 run。失败时保留两次 sealed failure、crops、
+    caches 与 audits，先 revert timeout recovery commit，再按需 revert
+    `9d9f99e`；不得删除或改写 run history。
+- Task 8 Step 6 visual-context prompt recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T081859991061Z-f8daa778` 的 immutable automatic result
+      `3ad9b559-2957-448d-882c-14c3b8091d53` 与 sanitized symbol-eval report。
+    - Validation action: 先提交本 amendment，再继续 subordinate Task 8 Step 6
+      bounded prompt/call-wiring TDD recovery；不进入 Step 7/8。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后只修改下列 allowed code/test paths，禁止并行 writer。
+    - Next verification: exact prompt contract RED，证明当前
+      `visual_review_prompt()` 未携带 per-observation crop-relative bbox 与
+      allowlisted nearby text。
+  - Problem boundary and live evidence: commit
+    `7620a28ddc78c1a1d9765dcb72519b5798c6a1df` 的 fresh run 已完成全部 `29`
+    visual calls，page 0 / page 1 分别为 `13/16` batches、`79/124`
+    observations；visual/total Vision calls 均为 `16/16`，coverage blocking 为
+    `0`。sealed evaluator 随后按设计 fail closed：`272` 个 final candidates
+    全部没有 visual source，`49` candidate labels 和 `7` semantic labels 无
+    exact match，negative false positives 为 `0`。immutable result 的 `203`
+    visual coverage entries 精确为 `127 visual_source_mismatch`、
+    `73 visual_no_detection`、`2 visual_bbox_invalid` 和
+    `1 visual_local_parse_failed`；只有后者保留一个 validated `diameter`
+    kind，但仍没有可投影的 associated text。
+  - Root cause, single Owner and old path:
+    accepted design 要求 Provider 只接收 bounded crop、当前 batch IDs、
+    allowlisted nearby text 和 frozen schema，且 response text IDs 必须是 prompt
+    allowlist 的子集。当前 `symbol_review.py::visual_review_prompt()` 只发送 opaque
+    visual IDs 与 schema；`advisor.py::_visual_review_result()` 也没有接收
+    per-observation crop-relative bbox 或 nearby-text allowlist。Provider 因而无法把
+    crop 中的位置绑定到 opaque visual ID，也无法合法回传 opaque text ID，而本地
+    `validate_symbol_detections()` 和 `_ordered_texts()` 正确地继续 fail closed。
+    旧 `/2` prompt path 由 canonical `/3` visual-context prompt 完整替换，不保留
+    fallback、shadow prompt 或第二个 Owner。
+  - Allowed paths and commit boundary: 本 recovery code commit 只允许
+    `backend/app/candidates/symbol_review.py`、
+    `backend/app/candidates/advisor.py`、
+    `backend/tests/contract/test_qwen_symbol_provider.py`、
+    `backend/tests/contract/test_provider_call_records.py` 和
+    `backend/tests/unit/candidates/test_advisor.py`。本 current plan amendment 必须
+    单独先提交。focused GREEN 后的 DB-connected regression 进一步证明现有
+    `backend/tests/e2e/test_symbol_recognition.py::FrozenSymbolProvider` 仍冻结 `/1`
+    prompt 的旧五字段 exact key set；该 test double 在 production `/3` prompt 到达
+    后按预期 assertion-fail，14 个相邻 integration cases 已通过。因此再允许只更新
+    该一个 e2e test path，使其消费真实 `/3` context；不扩大 production path。
+    不得修改 frozen response schema、Provider adapter/policy、proposal Owner、
+    sealed manifest/evaluator、runtime timeout、call budget、automatic result 或
+    D7-T3 状态。
+  - Unchanged contracts: source/manifest/verdict exact identities、`<=16/page`
+    visual/total Vision cap、`max_retries=0`、`60s` timeout、one bounded `300 DPI`
+    PNG、JSON-only transport、九类 symbol allowlist、strict local schema/bbox/source
+    validation、sanitized audit、cache identity dimensions、fresh-project requirement、
+    literal two-run binding 和 Quality Owner gate 均不变。prompt 只新增已由 accepted
+    design 允许的 current-batch visual spatial context 与 nearby-text allowlist；
+    不发送完整 PDF/page、host/project/operator identity 或 Provider explanation。
+  - Verification and rollback: RED/GREEN 必须 pin canonical `/3` prompt 的 exact
+    context shape、stable ordering、crop-relative bbox、text ID/raw text/observation
+    level allowlist 和 checked-in frozen response schema；Advisor unit test 必须证明
+    live call 使用该 batch context，cache mismatch test 必须证明 `/2` bytes 不可复用。
+    e2e fixture 必须从 prompt context 取得 visual/text IDs，不得继续把旧 exact key set
+    或私有 opaque-ID association 当作 production contract。
+    随后运行 Qwen/provider/candidate/Task 8 suites、`ruff check`、
+    `check-contracts.py` 和独立 review。全部通过后才允许以相同两个 literal sealed
+    input IDs 创建 fresh full-P0 run。失败时保留三个 sealed failure runs、crops、
+    caches 与 audits，先 revert prompt recovery commit，再 revert 本 amendment；
+    不删除或改写任何 run history。
+- Task 8 Step 6 forced-tool transport recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T085513128500Z-7451e72c`、其 project
+      `7948185d-a13a-441f-a629-03f99c9997db`，以及用户从 `main` UI 同时创建的
+      project `b58f634d-acc7-47c7-a1fe-43fa80af87ec`。
+    - Validation action: 先提交本 amendment，再继续 subordinate Task 8 Step 6
+      bounded visual Provider transport TDD recovery；不进入 Step 7/8。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后只修改下列 allowed code/test/fixture paths，禁止并行 writer。
+    - Next verification: exact Provider contract RED，证明当前
+      `QwenVisionProvider.review_symbols()` 仍使用 loose `json_object` content，
+      未把 checked-in frozen schema 绑定到一个 forced named tool。
+  - Problem boundary and live evidence: 两个 project 的 source SHA-256 均 exact 为
+    `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`。
+    两次独立执行都在 canonical `/3` prompt 下产生 `8` 条 sanitized visual call
+    records，其中前 `7` 条写入 schema-valid cache，第 `8` 条同一 cache identity
+    写入 `visual_schema_invalid` failure envelope；`retry_count=0`，project 均
+    fail closed，未创建 `AutomaticResult`。该失败 identity 精确对应 page 0 的第
+    `8` 个 batch：`3` observations、每项 `2` 条 allowlisted text、prompt
+    `3557` bytes，排除 call cap、timeout、oversized prompt、source drift 和
+    batch complexity 作为当前根因。
+  - Root cause, single Owner and old path: Alibaba Model Studio 的 current
+    OpenAI-compatible Chat Completions 文档只为 `response_format` 定义
+    `text/json_object`；`json_object` 保证 JSON syntax，不执行应用 frozen schema。
+    `qwen_vl.py::QwenVisionProvider.review_symbols()` 是 visual Provider transport
+    唯一 Owner，当前即使把 exact schema 放进 prompt，仍从 unconstrained
+    `message.content` 读取 payload。Qwen3-VL non-thinking mode 同一官方接口支持
+    Function Calling、valid JSON Schema `parameters` 和 forced named
+    `tool_choice`。选择以单一 forced tool 的 arguments 完整替换 visual-symbol
+    `json_object` content path；不得保留 content fallback、shadow call 或第二个
+    parser。tool arguments 仍必须经过既有 `parse_visual_symbol_json()` exact local
+    validation，因为官方文档明确要求调用方继续验证 function parameters。
+  - Allowed paths and commit boundary: 本 recovery code commit 只允许
+    `backend/app/providers/qwen_vl.py`、
+    `backend/app/candidates/symbol_review.py`、
+    `.agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json`、
+    `backend/tests/contract/test_qwen_symbol_provider.py` 和
+    `backend/tests/contract/test_provider_call_records.py`；最后一个 test path 只有
+    existing cache/call-record contract RED 证明需要时才修改。本 current plan
+    amendment 必须单独先提交。`VISUAL_ADAPTER_VERSION` 必须从
+    `qwen-openai-compatible/1` 升至 `/2`，使所有旧 transport cache bytes safe
+    miss；canonical prompt 继续是 `/3`，frozen response schema/version 不变。
+    不得修改 Advisor、proposal Owner、evaluator、runtime timeout、Provider policy、
+    call budget、sealed runs/input artifacts、automatic result 或 D7-T3 状态。
+  - Unchanged contracts: source/manifest/verdict exact identities、`<=16/page`
+    visual/total Vision cap、one request per crop、`max_retries=0`、`60s` timeout、
+    one bounded `300 DPI` PNG、JSON-only tool arguments、九类 symbol allowlist、
+    `/3` current-batch context、strict local schema/bbox/source validation、sanitized
+    audit、fresh-project requirement、literal two-run binding 和 Quality Owner gate
+    均不变。不得把 tool call 当成可执行外部 action；它只承载同一 frozen response
+    object，不执行第二次模型调用。
+  - Verification and rollback: RED/GREEN 必须 pin one exact tool、checked-in schema
+    bytes as `parameters`、forced exact tool name、non-thinking mode，以及拒绝
+    missing/multiple/wrong-name tool calls、non-string arguments、content fallback 和
+    schema-invalid arguments；fixture metadata 必须同步 adapter `/2`，旧 `/1`
+    cache identity 必须 safe miss。随后运行 Qwen/provider/candidate/Task 8 suites、
+    `ruff check`、`check-contracts.py`、no-Provider current-source `/3` repeatability
+    preflight 和 independent review。全部通过并提交后才允许重建 runtime，以相同
+    两个 literal sealed input IDs 创建一次 fresh full-P0 run。若 API 拒绝 forced
+    tool 或任一 tool arguments 仍 schema-invalid，保留全部 failure/audit evidence
+    并停止；不得 fallback 到 content、增加 retry 或再次盲跑。rollback 先 revert
+    transport code commit，再 revert 本 amendment，不删除或改写 run history。
+- Task 8 Step 6 candidate-lineage evidence recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T091811533049Z-a6a394a3`、project
+      `b04e50b8-8773-41e5-8383-7c175e3e76a4` 和 immutable automatic result
+      `77255948-b28f-4e2e-b6b5-7a2cebfb33e3`。
+    - Validation action: 先提交本 amendment，再继续 subordinate Task 8 Step 6
+      bounded Harness evidence TDD recovery；不进入 Step 7/8。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后只修改下列 allowed Harness code/schema/test paths，禁止并行 writer。
+    - Next verification: exact RED 证明 inventory-backed visual/text source union 被旧
+      candidate-coverage equality gate 错误拒绝。
+  - Problem boundary and sealed evidence: forced-tool `/2` endpoint 已在本 fresh run
+    接受全部 `29` 个 visual calls，形成 `29` 个 schema-valid caches、`279`
+    candidates、`coverage_checked=true` 和 `blocking_count=0`；不存在 Provider
+    transport/schema failure。Harness 随后在 sample 1 fail closed 为
+    `candidate source IDs are spliced`，并把 run 正确 seal 为 failed。`279`
+    candidates 的完整 lineage 有 `322` 个唯一 source IDs；其中 `311` 个有同
+    candidate 的 primary coverage，差集 `11` 全部是 immutable inventory 中真实的
+    native text：`8` 个非 selected `span` 没有 Coverage Ledger entry，`3` 个
+    selected `line` 保持合法 `ambiguous` disposition；没有 extra coverage source。
+  - Root cause, Owners and old path:
+    `.agent/harness/scripts/run-p0.py::_PREPARE_PROJECT_PROGRAM` 是 live evidence
+    projection Owner，却仍只从 `coverage_by_candidate` 生成 `source_evidence` 并丢弃
+    non-candidate disposition；随后
+    `.agent/harness/scripts/live_evidence_policy.py::validate_candidate_evidence()` 又把
+    该 coverage projection 与 candidate 的完整 `source_location_ids` 要求 exact
+    equal。这是 visual/text union 加入前的 text-only 假设。新路径必须从 immutable
+    `pages[].observations` 与 `pages[].visual_observations` 建唯一 source index，投影
+    source type、observation level、inventory bbox 和可空 coverage linkage；旧
+    “candidate coverage entries 等于全部 candidate sources”路径完整退休，不保留
+    fallback 或 shadow validator。
+  - Allowed paths and commit boundary: 本 recovery code commit 只允许
+    `.agent/harness/scripts/run-p0.py`、
+    `.agent/harness/scripts/live_evidence_policy.py`、
+    `.agent/harness/schemas/live-run-evidence.schema.json` 和
+    `backend/tests/contract/harness/test_live_run_contract.py`。只有现有 architecture
+    contract 的 exact RED 证明需要时，才额外允许
+    `backend/tests/contract/harness/test_contract_architecture.py`。本 current plan
+    amendment 必须单独先提交。不得修改 production candidate/coverage/Provider、
+    source inputs、sealed runs、automatic result、D7-T3 状态或 `main` frontend。
+  - Unchanged contracts: candidate 的 `source_location_ids` 继续 exact 包含参与
+    projection 的 visual/text IDs；每个 visual observation 继续只有一个 primary
+    coverage disposition；candidate evidence 仍必须 inventory-backed、complete、
+    unique、bbox-valid、anti-splice，且 global source union 必须 exact。每个 visual
+    candidate source 必须有同 candidate ID 的 `candidate` coverage；associated text
+    只允许同-candidate coverage、合法 `ambiguous` coverage，或 native non-selected
+    `span` 的无 coverage 状态。不得简单放宽为 subset、伪造 text coverage、把
+    overlap count 当 Quality Owner approval，或改变 source/manifest/verdict、
+    call budget、cache identity、fresh-project 和 literal two-run bindings。
+  - Verification and rollback: RED/GREEN 必须覆盖 inventory-backed visual/text
+    union、visual candidate coverage、ambiguous line、无 coverage native span、
+    missing/extra/duplicate source、invalid bbox、wrong candidate linkage 和 global
+    inventory splice；并直接验证 live prepare 从 inventory 投影而非从 candidate
+    coverage 猜测 source。随后运行完整 live-run/receipt/architecture Harness
+    contracts、`ruff check`、`check-contracts.py`、sealed failed sample 的只读
+    projection replay 和 independent review。全部通过并提交后，才允许以相同两个
+    literal sealed input IDs 创建一次 fresh full-P0 run；不得 resume/reuse
+    `20260728T091811533049Z-a6a394a3`。若 fresh run 再失败，保留全部 immutable
+    evidence 并停止盲跑；rollback 先 revert Harness recovery commit，再 revert 本
+    amendment，不删除或改写任何 run history。
+- Task 8 Step 6 deterministic visual-projection recovery amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T095023589634Z-740b6624`、project
+      `63602d00-8847-4798-abbb-208634e47911` 和 immutable automatic result
+      `62e83917-2cfd-4852-b0da-c40d8040d7ff`；其 `/2` lineage evidence 已通过，
+      但 LIVE-01 selector 以 `10/56` positive matches fail closed。
+    - Validation action: 先单独提交本 amendment，再继续 subordinate Task 8
+      Step 6 的 deterministic local projection TDD；不进入 Step 7/8，不创建或调用
+      Provider。
+    - Writer ownership and order: parent sole writer；current-plan amendment
+      first，随后只修改下列 allowed production/test paths，禁止并行 writer。
+    - Next verification: 在
+      `backend/tests/unit/candidates/test_symbol_advisor.py` 建立 visual depth、
+      line-built datum box、extra-line revision triangle 和 duplicate line/span 的
+      live-shaped exact RED。
+  - Problem boundary and sealed evidence: source、manifest、verdict、79/124
+    observation identities、13/16 visual batches、203/203 coverage entries、call
+    budgets 和 evaluator input 均 exact；`70` 个 visual observations 为
+    `visual_no_detection`、`49` 个为 `visual_local_parse_failed`、`44` 个为
+    `visual_projection_conflict`、`2` 个为 `visual_source_mismatch`，只有 `38`
+    个形成 candidate。56 个 positive labels 中，`10` 个 exact match；`20` 个已有
+    exact expected kind 但 local disposition 仍为 `ambiguous`，其中 7 个
+    datum/revision semantic labels 全部失败；另有 23 个 kind empty/mismatch 和
+    3 个 proposal overlap `<0.5` 的独立上游缺口。本 recovery 只处理 normalized
+    evidence 已能无 Provider 复现的 deterministic local subset，不声称同时修复
+    model kind 或 proposal geometry。
+  - Root cause, Owner and old path: automatic raw candidate/coverage 的单一 Owner
+    仍为 `backend/app/candidates/advisor.py::CandidateAdvisor`，确定性 helper 位于
+    `backend/app/candidates/symbol_review.py`。旧路径存在四个窄化假设：
+    `_typed_depth_projection()` 只解析已含 native depth token 的 text，没有按 frozen
+    design 为 visual depth glyph 构造 canonical `深` typed input；
+    `_valid_datum_geometry()` 只接受单个 `re` opcode，不接受四条 straight lines
+    组成的唯一闭合框；`_valid_revision_geometry()` 要求整个 context 恰好三条 line，
+    无法在邻近无关 line 中确定性选择唯一闭合三角；`_ordered_texts()` 没有执行
+    prompt 已冻结的 exact-duplicate line-over-span canonicalization。新路径必须在
+    同一 local validator 内 fail closed；旧窄化分支直接替换，不保留 fallback、
+    shadow Owner 或 annotation 注入。
+  - Allowed paths and commit boundary: 本 recovery code commit 只允许
+    `backend/app/candidates/symbol_review.py` 和
+    `backend/tests/unit/candidates/test_symbol_advisor.py`；只有 exact integration
+    failure 证明需要时，才最小增加
+    `backend/tests/integration/test_symbol_recognition_pipeline.py`。本 current plan
+    amendment 必须单独先提交。不得修改 Provider adapter/prompt/schema/call policy、
+    proposal rule、LIVE-01 evaluator、sealed manifest/verdict/run、automatic result、
+    frontend、D7-T3 状态或 `main`。
+  - Unchanged contracts: Provider detections 仍必须 schema-valid、source allowlisted
+    且 `requires_confirmation=true`；local projection 仍只接受 frozen kind sets、
+    parser-valid typed payload、唯一 boxed datum、唯一 closed-triangle revision 和
+    exact source identity。Depth 只能从同一 visual context 的 associated native
+    text 构造 canonical input；不得选择 nearest/max、补造单位/数量或把 plain
+    dimension 猜成 depth。Datum line box 必须形成唯一四边闭合轴对齐框并包含唯一
+    ASCII datum token；revision 必须在全部 line 中恰好选择一个满足既有
+    3-segment、closure、size、area 和 token-distance 条件的三角，开放 path、
+    N5、多框或多三角继续 fail closed。line/span canonicalization 只折叠同一 parent
+    且 normalized raw text exact 相同的 duplicate，不能合并不同 value。Evaluator
+    exact kind/projection/`0.5` overlap/exact-one、negative false-positive、Provider
+    budget、cache identity 和 Quality Owner boundary 均不变。
+  - Verification and rollback: RED/GREEN 必须覆盖 visual-only depth token insertion、
+    existing diameter/thread/composite enrichment、conflicting/two values、`re` 与
+    four-line datum、open/non-axis/multiple datum boxes、extra-line unique revision、
+    open/N5/multiple triangles，以及 exact duplicate 与 non-duplicate line/span。
+    随后运行完整 symbol advisor/provider/pipeline/Task 8 contract suites、
+    `ruff check`、`check-contracts.py`，并对 sealed normalized result 执行
+    no-Provider counterfactual projection replay；不得读取 raw Provider response 或
+    crop。independent review 通过后，只有 replay 证明 deterministic failures
+    收敛且剩余 gap 有明确边界时，才另行记录是否允许一次 fresh full-P0 run；本
+    amendment 本身不授权该 run。rollback 先 revert projection code commit，再
+    revert 本 amendment，不删除或改写任何 sealed evidence。
+- Task 8 Step 6 depth-primary association refinement — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: 对上述 sealed normalized result 的进一步 no-Provider
+      subset replay；11/11 个 exact-depth ambiguous observations 均为
+      `line + span` exact duplicate 的 single-number source，且 allowlist 命中的
+      existing candidate 只是不带 depth 的 `linear_dimension`。
+    - Validation action: 先单独提交本 refinement，再把 depth RED 收敛为
+      unique/multiple typed-primary association；不创建或调用 Provider。
+    - Writer ownership and order: parent sole writer；refinement commit first，
+      随后仍只使用上一 amendment 的 allowed production/test paths。
+    - Next verification: exact RED 证明 unique strong same-page typed primary 被旧
+      source-ID-only association 漏掉，而 two strong primaries 必须 fail closed。
+  - Refined root cause and retired shortcut: standalone `深 N` 不是现有
+    `parse_annotation()` 支持的 typed candidate，且
+    `_enrich_existing_depth(linear_dimension, N)` 必须继续拒绝；因此上一
+    amendment 中“仅构造 canonical depth input”不足以关闭 live-shaped failure。
+    旧 `_associated_candidate_indexes()` 只看 Provider-selected source IDs，无法
+    关联 allowlist 外但与 visual annotation context 强 overlap 的既有
+    thread/diameter/composite primary。不得以 annotation manifest、nearest
+    candidate、普通 linear dimension promotion 或放宽 parser 代替正式 relation。
+  - Exact local relation rule: 先执行 exact-duplicate line-over-span
+    canonicalization；当且仅当 detection kind set 为 `{depth}`、当前 associated
+    source 没有唯一 typed primary，且同页 existing candidate 的 item type 为
+    `thread`、`diameter_dimension` 或 `composite`、其 source identities 全部
+    inventory-backed、其 coordinates 与 visual observation bbox 的
+    `intersection_area / min(area) >= 0.5` 时，才把它计为 geometry-associated
+    typed primary。恰好一个时以 visual single-number value 调用既有
+    `_enrich_existing_depth()`，保留 candidate ID/raw text，并只在
+    `normalized_text` 加 canonical `深`；0 个保持 local parse failed，2 个及以上
+    为 projection conflict。新 envelope 的 source union 必须包含 visual、value
+    text 和 existing primary sources。该规则不是 distance ranking，不允许用最高
+    overlap 打破多个 strong primaries。
+  - Live boundary: 该规则可安全覆盖 9 个唯一 strong-primary observations，并可用
+    `0.5` threshold 排除 1 个 `0.133` incidental overlap；另 1 个 observation
+    存在两个 overlap `1.0` 的不同 thread primaries，必须继续 `ambiguous`。本
+    refinement 不宣称修复该 ambiguous label，也不授权读取 manifest 来选边。
+    datum/revision/duplicate-source contract、allowed paths、verification、Provider
+    禁令和 rollback 均沿用上一 amendment。
+- Task 8 Step 6 visual multi-kind request-contract recovery amendment —
+  2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: 对 fresh sealed run
+      `20260728T095023589634Z-740b6624` 的 sanitized automatic result、exact
+      79/124 observations 和 13/16 batches 进行 no-Provider attribution。56 个
+      positive labels 中仍有 23 个 kind empty/mismatch；它们命中的 50 个
+      `overlap >= 0.5` proposals 全部进入 exact batches 且具有唯一 coverage。
+      其中 14/50 没有可用 kind，36/50 返回 schema-valid 但错误的 allowlisted
+      kind；13 个相关 batches 中 10 个同时产生其他 exact-kind success，失败组
+      crop/context pixels 和 batch member count 也不小于成功组。现有证据排除 batch
+      漏调、全批 transport failure、明显 crop 太小和 local validator 改写 kind。
+    - Validation action: `amend` 后 `continue` canonical prompt-contract TDD；
+      不进入 subordinate Step 7/8，不创建或调用 Provider，不把静态 prompt test
+      报告为 LIVE-01 success。
+    - Writer ownership and order: parent sole writer；本 current-plan amendment
+      单独先提交，随后只修改下列 allowed production/test paths，禁止并行 writer。
+    - Next verification:
+      `backend/tests/contract/test_qwen_symbol_provider.py::
+      test_visual_prompt_requires_independent_exact_multikind_reporting`
+      必须先对现有 `visual-symbol-prompt/3` 形成 exact RED。
+  - Problem boundary, Owner and old path: raw candidate/coverage 的单一 business
+    Owner 仍是 `backend/app/candidates/advisor.py::CandidateAdvisor`；本 recovery
+    的唯一 production change surface 是
+    `backend/app/candidates/symbol_review.py::visual_review_prompt()`。旧 `/3`
+    request 只要求 inspect listed contexts 并提供简短 kind guide，没有显式要求
+    每个 context 独立判断、composite context 的每个可见 component 各输出一条
+    detection、同一 composite 的 detections 复用同一
+    `visual_observation_id`，也没有禁止用邻近 context 的 kind 替代当前 context。
+    该隐式语义直接替换为 `/4`；不保留 `/3` fallback/shadow prompt，不在 local
+    validator、projection、annotation manifest 或 evaluator 中猜测/重标 kind。
+  - Exact request-contract delta: `VISUAL_PROMPT_VERSION` 从
+    `visual-symbol-prompt/3` bump 为 `visual-symbol-prompt/4`，使旧 cache identity
+    safe miss。canonical JSON prompt 新增 exact
+    `detection_reporting_contract`，逐字要求：
+    - `Judge every visual context independently.`
+    - `For each visible component whose kind is in symbol_kind_guide, emit one
+      separate detection.`
+    - `If one context contains multiple components, emit multiple detections
+      and reuse that context's visual_observation_id for every component.`
+    - `Never substitute a kind seen only in a neighboring visual context.`
+    - `Emit zero detections for a context only when no allowlisted symbol
+      component is recognizable in that context.`
+    Existing context bbox、associated-text allowlist、kind guide、frozen response
+    schema、positive bbox、`requires_confirmation=true` 和 one-object constraints
+    保持。
+  - Allowed paths and commit boundary: prompt code commit 只允许
+    `backend/app/candidates/symbol_review.py`、
+    `backend/tests/contract/test_qwen_symbol_provider.py`、
+    `backend/tests/unit/candidates/test_advisor.py` 和
+    `backend/tests/e2e/test_symbol_recognition.py`。本 amendment 必须单独先提交。
+    不得修改 Provider adapter/transport/model/timeout/retry、response schema、
+    proposal rule/crops/DPI/packing/call cap、projection、LIVE-01 evaluator、sealed
+    manifest/verdict/run、automatic result、frontend、D7-T3 status 或 `main`。
+  - Unchanged contracts and verification: Provider 仍最多 `16/page`，response
+    仍为 `visual-symbol-review/1`，每个 visual ID 最多四条 schema-valid detections，
+    source IDs 必须属于同一 context allowlist；合法的 no-detection 继续允许，
+    local projection 继续只消费 exact returned kind set。RED/GREEN 后运行完整
+    Qwen symbol Provider contract、Advisor unit、symbol E2E、candidate/provider/
+    Task 8 focused suites、`ruff check`、`check-contracts.py`、privacy scan 和
+    independent review；Provider construction/calls 必须保持 0。静态通过只证明
+    request/cache contract，不证明 model accuracy；只有 proposal upstream gap
+    也经新 Quality Owner gate 关闭后，才允许另行 amendment 授权一次 fresh
+    literal full-P0 run。rollback 先 revert prompt code commit，再 revert 本
+    amendment，不删除或改写任何 sealed evidence。
+- Task 8 Step 6 proposal-v3 context-compaction gate amendment — 2026-07-28:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: fresh sealed run
+      `20260728T095023589634Z-740b6624` exact 使用已批准 v2 的 79/124
+      observations、13/16 batches，但 LIVE-01 中 `P1-P16`、`P2-P18`、
+      `P2-P27` 的最佳 proposal overlap 只有
+      `0.156364 / 0.032575 / 0.368643`。no-write bounded calibration 的更窄
+      context-compaction candidate 得到 80/125 observations、13/16 official
+      batches、56/56 positives overlap `>=0.5`，frozen-negative overlap 保持
+      v2 的 `4 any / 3 >=0.5`。
+    - Validation action: 先提交 exact docs-only rule，再运行两次
+      no-write/no-Provider renderer 并停在新的 Quality Owner visual gate；不修改
+      production/test/contract matrix，不进入 Provider/live run。
+    - Writer ownership and order: parent sole writer；design、subordinate plan 和
+      本 current plan amendment first。renderer 只写两个 `/tmp` mktemp dirs。
+    - Next verification: exact canonical rule bytes SHA-256 必须为
+      `8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa`，
+      两轮八文件逐 byte identical，report exact 为 148/244 raw、132/203
+      base-area、80/125 final、13/16 batches、56/56 positives、16 negatives、
+      exact-once/all limits/repeatability true 和 Provider=0。
+  - Single Owner and old path action:
+    `backend/app/pdf/visual_observations.py::build_page_visual_observations()` 仍是
+    唯一 proposal Owner。retire v2 把 `12 pt` 邻域内全部 path items 永久绑定为
+    retained bbox、以及 over-1%-area context 没有 compact proof path 的两个假设；
+    不建立 v2 fallback、shadow filter 或第二 Owner。CandidateAdvisor、Provider、
+    evaluator 和 Coverage 仍只消费 Owner 输出。
+  - Exact v3 delta: base v2 snapped features/branches 全部保持；增加每个 item width
+    `<=60.000` 且 height `<=42.000` 的 compact subset。base area 超 cap 时，
+    只有 compact area 同时 `<=6000.000` 和 page cap、short-token rescue exact
+    命中且 compact `item_count >40`，才以 compact context retain；base area
+    未超 cap且 base reason 为 `geometry_wide_multi_item` 时，只有 compact reason
+    exact 为 `geometry_compact` 才以 compact context 替换。version/schema 为
+    `visual-observation/3` / `visual-proposal-gate/2`；完整 canonical JSON 及
+    comparison order 只由 accepted design 同名 amendment 拥有。
+  - Allowed paths and gate: 当前 docs-only commit 只允许
+    `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`、
+    `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+    和本文件。Quality Owner 明确批准本轮两页 200% overlays、五张 zoom 和 report
+    后，才允许 approval commit 最小增加
+    `docs/contracts/MAIN_CONTRACT_MATRIX.md` 并绑定 artifact/verdict digests；再之后
+    才能另行进入 proposal-only TDD。不得修改 Provider adapter/prompt v4/schema/
+    call policy、projection、LIVE-01 evaluator、sealed manifest/verdict/run、
+    automatic result、frontend、D7-T3 status 或 `main`。
+  - Unchanged contracts and stop boundary: source SHA
+    `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`
+    和 sealed manifest SHA
+    `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`
+    必须 exact；dedup/order、7.5% crop area、300 DPI、1536px、32 members、
+    16/page、visual-first、exact-kind/projection/0.5 overlap/exact-one、negative
+    false-positive 和 fail-closed semantics 不变。overlap count 不是 Quality
+    Owner approval；用户给出本轮 exact verdict 前不得生成 approved manifest、
+    canonical verdict 或正式 success status。fresh live run 仍未授权。
+  - Quality Owner closure — 2026-07-29:
+    - 用户在收到两页完整 `200%` overlays、五张 zoom、完整 report、全部 SHA-256
+      及 `FN-03/FN-04/FN-08/FN-11` retained-overlap 风险提示后明确回复“批准”。
+    - canonical verdict SHA-256 为
+      `05a6e3ac42d5b172e119631940c7df4890950f026ba074f8eda7fa4c539e8e80`；
+      report SHA-256 为
+      `95292be8fc086f0ae44487a6ebc460158be5c198abb0c0ed9c8bc21d954eb919`；
+      rule SHA-256 保持
+      `8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa`。
+    - `page-1-proposal-v3-overlay-200pct.png` /
+      `page-2-proposal-v3-overlay-200pct.png` artifact SHA-256 为
+      `354f61573dd684a7e9883aa66a0fa183750f82e735e30a88eb17994632070e39` /
+      `570383d0f500eac266a23a8215f792934070b5cc9d08ddb8c69c03f767534b3d`；
+      五张 zoom 的 exact digests 与 canonical verdict 绑定，由 accepted design
+      同名 approval evidence 拥有。
+    - Validation action: 进入 proposal-only PDF/cache RED→GREEN；Provider adapter、
+      prompt v4、projection、evaluator、frontend、sealed artifacts 与 `main`
+      保持不变。fresh Provider/live run 仍需后续单独 amendment。
+    - Writer ownership and order: approval docs/contract commit 先行；之后 proposal
+      code/test commit 只允许 proposal Owner、其 unit tests 和直接 cache-version
+      consumer tests。
+    - Next verification: exact PDF/cache RED，必须证明 v3 canonical bytes/digest、
+      compact transform order、old-path retirement、ID/reconstruction repeatability
+      和 cache safe miss。
+- Task 8 Step 6 proposal-v3 fresh-live authorization amendment — 2026-07-29:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: Quality Owner approval/docs commit `5ad308a`、proposal-v3
+      implementation commit `0a59798` 和 raw-threshold correction commit
+      `efea8f7` 已提交；exact current-source production replay 两次均得到
+      `80/125` observations、`13/16` batches、`205` reconstructed observations，
+      两页 retained-ID SHA-256 为
+      `83d905ec82987c4719f755a1e7a31af246c210a3d4a12113334460c7b9c3a203` /
+      `a0cc85f52868487d56f108f08e1b6c42eb4b54584759987b32c9bdeef733ffdd`，
+      batch SHA-256 为
+      `7dcbf89d4903dbe5c90633bef6d7cb6ddecd0317d5280b1c619dca848a8944ca` /
+      `925a0bc1016be66b5368b284ab8fe81bf7815fab22a597ba87970acf11d9e055`；
+      exact-once、crop limits、repeatability 均为 true，Provider
+      construction/calls=`0`。focused proposal suites `70 passed`，Provider
+      fixture contracts `37 passed` 且 `external_calls=0`，disposable migrated
+      database 上 full backend `665 passed`，focused Ruff 与
+      `check-contracts.py` 通过，independent spec/code-quality reviews 均为
+      `accept`。
+    - Validation action: 本 amendment 单独提交后，从 exact committed HEAD 重建
+      runtime，先复核两个 sealed input runs 的 receipt、schema、loader 和 source
+      identity，再只执行一次 fresh full-P0 live start；command 必须 literal 写入
+      `--current-four-run 20260728T073514713074Z-f32e6fae` 和
+      `--symbol-eval-run 20260727T085747865239Z-5aa3e8d3`，并保留
+      `--input-set current-four --pause-after first-pdf-balloons`。
+    - Writer ownership and order: parent sole writer；本次 repository change 只允许
+      本 current plan，先 commit、再 rebuild/preflight/live。不得并行 writer，
+      不得修改或重生成 sealed input artifacts。
+    - Next verification: 新 project 的第一份 two-page source 必须先通过 exact
+      LIVE-01 symbol gate，随后才允许继续 current-four sequence 和同一 run 的
+      browser evidence。
+  - Unchanged contracts: Provider 仍为最多 `16/page`、timeout `60.0s`、
+    `max_retries=0`、prompt v4、forced exact tool、checked-in response schema；
+    source、manifest、canonical verdict、candidate lineage、deterministic
+    projection、0.5 exact-one evaluator 和 frozen-negative zero-false-positive
+    gate 均不变。selector 必须在任何 manual source command 前执行；不得用后续
+    三份 PDF、overlap count、人工文字或旧 result 掩盖第一份 source failure。
+    不得修改 Provider、prompt、proposal、projection、evaluator、frontend、
+    `main`、D7-T3 status 或任何 sealed run。
+  - Fail-closed and rollback: 若 receipt/identity/runtime preflight 或 fresh run
+    失败，保留失败 run、cache、crop 和 sanitized audit，停止重试和规则修改；
+    不 resume/reuse 旧 result，不删除或改写 history。只有失败后的独立证据与新的
+    committed amendment 才能授权其他 recovery；本 amendment 本身不授权第二次
+    Provider run。
+  - Fresh-live failure closure — 2026-07-29:
+    - 唯一授权 run `20260729T005025368466Z-f16beb09` 从 exact HEAD
+      `09b2db8f82e2c7dd8f0ad336790ea783571def46` 和新 project
+      `615f72b2-662f-496e-abc1-ddf7aeef7236` 启动；source SHA-256、
+      两个 literal sealed input IDs、current-source identity、runtime
+      `visual-observation/3` 与 rule SHA-256 均通过 preflight。run 已 immutable
+      seal 为 `execution_state=failed`、`failure_reason=live_start_failed:RuntimeError`。
+    - page 0 共计划 `13` batches、page 1 共 `16` batches。前 `3` 个
+      prompt-v4 forced-tool calls 写入 schema-valid cache；第 `4` 个 page-0
+      batch index `3` 写入 sanitized `visual_schema_invalid` failure envelope 后
+      fail closed。该 batch 为 `9` observations、`18` unique associated texts、
+      `6419` prompt chars，crop bbox 为
+      `[434.400,3.990,728.100,253.390]`，crop SHA-256 为
+      `d2882628c93c673c6d91bdd2bb44c7f430afc6040f7755b0f0d15af0bd3fb968`；
+      call duration `16602ms`、prompt/completion tokens `4310/665`、
+      `retry_count=0`。这些数据证明本调用未触发 call cap、`60s` timeout 或
+      crop bounds，且 preflight 未发现 source/rule/repeatability drift；它们不能
+      排除 prompt content/length 或 Provider behavior 对 response-contract
+      failure 的影响。
+    - Root-cause boundary: 最强可证结论是
+      `forced-tool Provider response contract invalid at Qwen adapter boundary`。
+      checked-in `visual-symbol-review/1` schema SHA-256 为
+      `9bce6653860c2302894fa647e1f25e341b4318d22f79770004355a353d456b7a`；
+      message content、tool-call cardinality/type/name、arguments type/JSON/schema
+      中的具体 leaf cause 因 raw Provider body 按合同不保存而保持
+      `unproven`。不得把该边界改写成某个未经证明的字段错误、模型随机性或
+      production parser defect。
+    - No false closure: 本次未创建 `AutomaticResult`，run evidence 保持
+      `symbol_recognition=null`、`samples=[]`，也未进入 manual source command、
+      LIVE-01、browser evidence 或后续三份 PDF。前三次 schema-valid calls、
+      static/focused tests 和 overlap evidence 都不能覆盖第 `4` 次 blocking
+      failure。
+    - Stop boundary: 本次 fresh-live authorization 已消费。当前 amendment 不授权
+      retry、content/JSON-mode fallback、repair model、schema/prompt/transport/
+      packing/proposal/evaluator change 或第二次 Provider run；不允许 merge
+      `main`、frontend/browser smoke 或恢复 D7-T3。任何 recovery 必须先取得用户
+      对单一 contract dimension 的明确决策，再以新的 committed Heavy amendment
+      记录 Owner、old path、unchanged contracts 和 focused verification。
+  - Task 8 Step 6 safe Provider diagnostic amendment — 2026-07-29:
+    - Selection record:
+      - User-selected recovery dimension: `安全诊断枚举`。本次只允许在 Qwen
+        adapter boundary 增加 allowlisted first-failing-stage evidence；不得把枚举
+        值解释为完整 raw response、唯一远端根因或 Quality Owner approval。
+      - Selected lane: `Heavy`.
+      - Selected plan:
+        `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+      - Selection evidence: immutable failed run
+        `20260729T005025368466Z-f16beb09` 已证明 request ID、usage、call count、
+        timeout、crop、source/rule identity 和 `max_retries=0`，但现有 broad catch
+        只产生 `visual_schema_invalid`，无法区分 message、tool-call、arguments JSON
+        或 arguments schema 的 first-failing local branch。
+    - Problem boundary and single Owner:
+      - `backend/app/providers/qwen_vl.py::QwenVisionProvider.review_symbols()` 是唯一
+        response-conformance classification Owner。它按固定顺序选择且只选择以下
+        一个 safe enum：
+        `message_shape_invalid`、`message_content_invalid`、
+        `tool_calls_shape_invalid`、`tool_call_count_invalid`、
+        `tool_call_shape_invalid`、`tool_call_type_invalid`、
+        `tool_name_invalid`、`tool_arguments_type_invalid`、
+        `tool_arguments_json_invalid`、`tool_arguments_schema_invalid`、
+        `local_schema_invalid`。
+      - Missing or unreadable enclosing members map to the corresponding
+        `message_shape_invalid`、`tool_calls_shape_invalid` or
+        `tool_call_shape_invalid`; only a readable member with an invalid value/type may enter
+        a later specific enum. `tool_arguments_schema_invalid` includes decoded-payload schema
+        validation and the existing non-finite bbox guard. `local_schema_invalid` is limited
+        to local schema read、JSON decode or schema-definition failure.
+      - `backend/app/candidates/symbol_review.py::VisualSymbolSchemaError` 只携带
+        JSON decode、payload schema validation 或 local schema load/definition 的
+        parser-local stage 给该 Owner；它不选择 Provider policy、retry 或 persistence。
+        `backend/app/candidates/advisor.py` 只持久化 exception 上已经验证的 enum，
+        不重新分类。
+      - Old path to retire: `review_symbols()` 对
+        `AttributeError / IndexError / TypeError / VisualSymbolSchemaError` 的单一 broad
+        catch，以及无 stage 的 `build_visual_failure_envelope()`。不得保留第二个
+        undifferentiated fallback。
+    - Diagnostic evidence contract:
+      - failure envelope 升级为 exact
+        `visual-symbol-call-failure/2`，字段只能为 `schema_version`、
+        `error_code="visual_schema_invalid"` 和一个上述 `failure_stage`。request ID、
+        numeric usage、request/crop refs 与现有 call record 连接方式保持不变。
+      - 不保存、返回或记录 message content、tool arguments、raw completion、
+        response body、model explanation、host path、credential 或任何截断后的
+        Provider payload。exception string 和 Advisor client-facing error 保持 generic；
+        `__cause__` / `__context__` 不得携带 raw data。
+      - 分类顺序只说明本地校验器遇到的第一个失败边界；不得从一个 enum 推断其他
+        response fields 均有效，也不得把 `local_schema_invalid` 归因于 Provider。
+    - Allowed repository paths and writer:
+      - Parent is the sole writer. Before the diagnostic run, repository writes are limited to:
+        `backend/app/candidates/symbol_review.py`、
+        `backend/app/providers/qwen_vl.py`、
+        `backend/app/candidates/advisor.py`、
+        `backend/tests/unit/candidates/test_symbol_advisor.py`、
+        `backend/tests/contract/test_qwen_symbol_provider.py`、
+        `backend/tests/contract/test_provider_call_records.py` and this current plan.
+      - Do not modify Provider prompt/tool/schema、proposal/crop/packing/projection/evaluator、
+        cache-success identity、frontend、sealed artifacts、`main` UI or D7-T3 status.
+    - TDD and focused verification:
+      - First add RED tests that cover every enum branch、JSON-vs-schema-vs-local-schema
+        separation、exact failure-envelope `/2` bytes、generic exception text、no cause/context
+        and forbidden-marker absence. Then make the minimum production change.
+      - Run the three changed test modules, existing symbol integration/E2E suites, focused
+        Ruff、`check-contracts.py`、`git diff --check` and a forbidden-evidence scan over the
+        exact changed files. Provider construction/calls must remain `0`.
+      - Use an independent read-only reviewer to verify the single Owner、old-path retirement、
+        exact enum coverage、privacy boundary、zero retry and unchanged success behavior.
+        Commit code/tests only after GREEN and accepted review.
+    - One-run diagnostic authorization:
+      - Only after this amendment and the diagnostic code/tests are separately committed,
+        rebuild runtime from that exact HEAD and repeat the sealed preflight. Then authorize
+        exactly one new full-P0 diagnostic live start with literal
+        `--current-four-run 20260728T073514713074Z-f32e6fae` and
+        `--symbol-eval-run 20260727T085747865239Z-5aa3e8d3` plus
+        `--input-set current-four --pause-after first-pdf-balloons`.
+      - The run retains prompt v4、forced exact tool、checked-in response schema、timeout
+        `60.0s`、`max_retries=0` and all existing per-page caps. No retry、repair、
+        content fallback、second parser、schema relaxation or second diagnostic run is
+        authorized.
+      - If it fails, seal the run and record only the allowlisted stage plus existing sanitized
+        audit metadata, then stop without manual source commands、browser/frontend、`main`
+        merge or D7-T3. Any remediation of the diagnosed stage requires another explicit user
+        decision and committed Heavy amendment. If it passes, seal the exact run at the
+        `first-pdf-balloons` pause and report the result; do not continue current-four、
+        browser/frontend、`main` merge or D7-T3. Any continuation also requires a new user
+        decision and committed Heavy amendment. The enum itself is never success evidence.
+  - Safe Provider diagnostic live outcome — 2026-07-29:
+    - The one authorized diagnostic start was consumed by immutable run
+      `20260729T014016291065Z-2174c7b2` from exact committed HEAD
+      `68ff9ad50c59fe4e6302aa073632c47953935571` and fresh project
+      `9c1f2aa4-3822-4099-9bf3-d29b32514cae`. Runtime health、the four exact
+      current-source hashes、literal registration runs、current-four manifest SHA-256
+      `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`、
+      symbol manifest SHA-256
+      `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`
+      and proposal rule SHA-256
+      `8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa`
+      all passed before run creation.
+    - The run started at `2026-07-29T01:40:16.311746Z` and was immutable-sealed
+      failed at `2026-07-29T01:43:40.420215Z` with
+      `failure_reason=live_start_failed:RuntimeError`. Seven Qwen symbol calls first
+      produced schema-valid cache records. The eighth call failed closed with exact
+      allowlisted stage `tool_arguments_schema_invalid` and exact envelope
+      `visual-symbol-call-failure/2`; its request ID is
+      `chatcmpl-59204951-489b-9989-a79f-9a619bf39342`, duration is `7589ms`,
+      prompt/completion/total usage is `3419/185/3604`, and `retry_count=0`.
+      No raw message content、tool arguments、completion or response body was retained
+      or inspected.
+    - Deterministic no-Provider reproduction maps failure crop SHA-256
+      `5628b3603d6fa7f12d62a637a438740a92f29dd81e2a9de689e492b1dcb53724`
+      uniquely to page `0`, batch index `7` and global call index `8`: `6`
+      visual observations、`12` unique associated texts、`5221` prompt characters
+      and crop bbox `[363.300,329.390,630.800,544.677]`. Two in-process
+      reproductions remained exact at `80/125` observations、`13/16` batches and
+      call-order SHA-256
+      `7ecfe186fa39c03f4452b432626d7d6fcafd43cf0ff33788a75b9ac11d3c8201`;
+      reproduction Provider construction/calls=`0`.
+    - Root-cause boundary: the first failing local response-conformance branch is
+      decoded tool-arguments payload validation against the checked-in schema or its
+      existing non-finite bbox guard. The stage does not identify the invalid leaf,
+      prove a unique remote cause, authorize schema relaxation or establish model
+      randomness. The prior failed-run crop
+      `d2882628c93c673c6d91bdd2bb44c7f430afc6040f7755b0f0d15af0bd3fb968`
+      produced a schema-valid record in this run, so failure is not proven to be an
+      invariant of that prior crop; no stronger causality is claimed.
+    - No false closure: no `AutomaticResult`、sample、symbol-recognition report、
+      manual source command、LIVE-01、browser/frontend evidence、`main` merge or
+      D7-T3 continuation was created. This one-run authorization is exhausted.
+      Any response-contract remediation or another live start requires a new explicit
+      user decision and a separately committed Heavy amendment; the safe enum is
+      diagnostic evidence only, never Quality Owner approval or formal success.
+  - Task 8 Step 6 bounded schema-retry amendment — 2026-07-29:
+    - Selection record:
+      - User-selected remediation: `一次受限重试`。本次只处理 exact
+        `tool_arguments_schema_invalid`；不得扩展为 transport、timeout、其他
+        response stage、text Advisor 或 arbitrary exception retry。
+      - Selected lane and plan remain `Heavy` and this current plan. Selection
+        evidence is immutable diagnostic run
+        `20260729T014016291065Z-2174c7b2`: the prior failed crop was schema-valid
+        in the new run, while page-0 batch index `7` failed at the decoded
+        tool-arguments schema boundary after seven valid calls.
+    - Problem boundary、single Owner and old path:
+      - `backend/app/candidates/advisor.py::CandidateAdvisor.review()` owns the
+        one-document retry budget and per-page spare-call gate;
+        `CandidateAdvisor._visual_review_result()` owns exact same-input attempt
+        orchestration and sanitized persistence. Qwen adapter classification remains
+        unchanged and is not a retry Owner.
+      - Retire only the eligible branch that immediately persists one canonical
+        failure and raises on first `tool_arguments_schema_invalid`. All other failure
+        branches preserve the existing immediate fail-closed path; no second retry
+        loop、fallback、repair parser or shadow response Owner is allowed.
+    - Exact retry and budget contract:
+      - At most one additional Provider call is allowed for the entire document.
+        Eligibility requires the first call to fail with exact
+        `tool_arguments_schema_invalid` and the current page to have at least one
+        spare call under the unchanged `16/page` actual-call cap. Therefore the
+        current page-0 `13`-batch plan can consume one retry; the page-1 `16`-batch
+        plan cannot retry.
+      - The second call must reuse byte-identical canonical PNG、the same prompt
+        string、model、forced tool、checked-in response schema and timeout. The
+        OpenAI-compatible client keeps automatic `max_retries=0`; this explicit
+        Advisor attempt is the only retry. A second invalid response or any other
+        exception stops immediately with the existing generic client error and no
+        third call.
+      - Both request IDs must be retained in successful `provider_call_ids`.
+        The first failure uses an exact `qwen-symbol-retries` attempt-1 namespace
+        containing only existing sanitized request evidence、the `/2` failure
+        envelope and a call record with `retry_count=0`. The final canonical success
+        or failure record uses `retry_count=1`. Cache replay must verify the bounded
+        retry chain and make no Provider call; the full-live collector must count
+        `1 + retry_count` actual calls for page and total call limits.
+    - Privacy、unchanged contracts and allowed files:
+      - Raw message content、tool arguments、completion、response body and exception
+        context remain forbidden. Both failure raises must have no raw
+        `__cause__` / `__context__`; attempt records may contain only the existing
+        safe call-record/request-envelope fields.
+      - Prompt v4、tool/schema、proposal v3、crop/packing、projection、evaluator、
+        source/sealed artifacts、frontend、`main` UI and D7-T3 remain unchanged.
+        Repository writes before live are limited to this plan、
+        `backend/app/candidates/advisor.py`、
+        `backend/tests/unit/candidates/test_advisor.py`、
+        `backend/tests/contract/test_provider_call_records.py`、
+        `.agent/harness/scripts/run-p0.py` and
+        `backend/tests/contract/harness/test_live_run_contract.py`.
+    - TDD、review and one-run authorization:
+      - RED must prove exact same-input two-call success、two safe audit records、
+        cache replay with zero calls、second-failure no-third-call、non-eligible-stage
+        no-retry、one-document budget and page-16 no-retry. Harness RED/GREEN must
+        prove retry calls count toward both per-page call fields and `>16` remains
+        blocking. Then run changed modules、symbol integration/E2E、full backend on
+        a disposable migrated database、Provider fixtures with `external_calls=0`、
+        focused Ruff、`check-contracts.py`、privacy scan and independent review.
+      - Only after code/tests are committed, rebuild exact runtime and repeat sealed
+        preflight. Then authorize exactly one new full-P0 live start with literal
+        `--current-four-run 20260728T073514713074Z-f32e6fae`、
+        `--symbol-eval-run 20260727T085747865239Z-5aa3e8d3`、
+        `--input-set current-four --pause-after first-pdf-balloons`. Do not resume
+        prior runs. If it fails, seal and stop; if it passes, seal at the pause and
+        report. Neither outcome authorizes current-four continuation、browser/frontend、
+        `main` merge or D7-T3 without the next explicit decision.
+  - Task 8 Step 6 bounded schema-retry live outcome — 2026-07-29:
+    - Implementation and preflight:
+      - The bounded retry implementation was independently reviewed `accept` and
+        committed as
+        `e9fd7a7fa20dbf21f7575fa50ced357965829906`. Exact committed verification
+        was `685 passed` for the full backend, `86 passed` for the three changed
+        modules, Provider fixtures `41 passed / external_calls=0`, focused Ruff
+        passed, `check-contracts.py` reported `global_contracts=69`,
+        `p0_contracts=111`, `mirror_drift=0` and `bindings_drift=0`, and
+        `git diff --check` passed.
+      - API and worker were rebuilt without rebuilding frontend. Both runtime
+        copies of `backend/app/candidates/advisor.py` matched host SHA-256
+        `4994f4c921b15aa87672fe03efa9f5d3c8c945459fc3539f630d0a68b164a0e2`;
+        runtime health passed and the OpenAI-compatible client retained
+        `max_retries=0`.
+      - The no-write sealed preflight passed with `4` exact source files、`111`
+        contracts and `3` bound input artifacts using literal registration runs
+        `20260728T073514713074Z-f32e6fae` and
+        `20260727T085747865239Z-5aa3e8d3`.
+    - The single authorized live start:
+      - Immutable run `20260729T022250886453Z-2cfeb008` started at
+        `2026-07-29T02:22:50.911561Z` from exact HEAD
+        `e9fd7a7fa20dbf21f7575fa50ced357965829906` and fresh project
+        `6cee19a7-62a5-4771-ad40-87b3ad28aeb5`. It sealed failed at
+        `2026-07-29T02:26:00.809874Z` with
+        `failure_reason=live_start_failed:RuntimeError`.
+      - Seven Qwen symbol calls first produced schema-valid canonical cache and
+        audit records. For cache identity
+        `f1fd5732c5c2630603d6ce2e4e1ea5c4edff1dc47fe86de42373b83c72cf0a2f`,
+        the first attempt failed with exact
+        `tool_arguments_schema_invalid`, request ID
+        `chatcmpl-0057a436-7565-9407-8bb5-f6de2100e646`, duration `6109ms`,
+        prompt/completion/total usage `3419/186/3605` and `retry_count=0`.
+        The one authorized same-input retry also failed with the same exact stage,
+        request ID `chatcmpl-2e134b8e-4f3e-9c15-b0c8-65b13501913f`,
+        duration `6549ms`, usage `3419/185/3604` and canonical final
+        `retry_count=1`.
+      - Both attempts bind the same canonical crop SHA-256
+        `5628b3603d6fa7f12d62a637a438740a92f29dd81e2a9de689e492b1dcb53724`
+        and exact `visual-symbol-call-failure/2` envelope. Exactly `9` visual
+        Provider calls occurred through this failure point: `7` successes plus
+        the failed first attempt and its one retry. No third call、SDK retry、
+        alternate stage retry、repair parser or fallback occurred.
+    - Stop boundary:
+      - The second invalid response failed closed before `AutomaticResult`,
+        live sample or symbol-recognition report creation. No manual source
+        command、Quality Owner verdict、balloon、browser/frontend evidence、
+        current-four continuation、`main` merge or D7-T3 change was created.
+        No raw message content、tool arguments、completion、response body or
+        exception context was retained or inspected.
+      - This one-run authorization is exhausted. The bounded retry behavior is
+        proven, but it did not remediate the repeated schema-invalid response for
+        this crop. Another Provider call、response-contract remediation、schema or
+        prompt change、frontend test or continuation requires the next explicit
+        user decision and a separately committed Heavy amendment.
+  - Task 8 Step 6 Qwen-native bbox compatibility amendment — 2026-07-29:
+    - Authorization and evidence boundary:
+      - After the sealed bounded-retry failure, the user explicitly authorized
+        further Provider calls because current quota remains available. This
+        amendment authorizes one new live start only after its code/tests are
+        separately committed、reviewed、rebuilt and sealed-preflighted.
+      - Qwen3-VL primary project guidance describes native grounding coordinates
+        as integer-normalized `0..1000`, while this repository's frozen canonical
+        response uses floats in `0..1`. This is a bounded compatibility hypothesis,
+        not a claim about the unretained failed arguments: seven prior successful
+        responses already used valid `0..1` boxes, and raw response content remains
+        forbidden.
+    - Problem boundary、single Owner and unchanged contract:
+      - `backend/app/providers/qwen_vl.py` is the only Owner for converting one
+        Qwen-native tool-argument representation into the canonical response.
+        `backend/app/candidates/symbol_review.py` continues to own the unchanged
+        checked-in strict schema and downstream typed projection.
+      - Before strict schema validation, normalize only one exact alternate bbox
+        form: a four-member array of non-boolean integers where every value is
+        within `0..1000` and at least one value is greater than `1`. Divide those
+        four values by `1000`; leave already canonical `0..1` values unchanged.
+      - Missing/extra fields、unknown symbol kinds、false confirmation、negative
+        values、values greater than `1000`、non-finite values、non-integer
+        out-of-range values、invalid JSON and every non-bbox schema error remain
+        fail-closed. No generic repair、clamp、rounding、field insertion/deletion、
+        raw retention or second parser is allowed.
+      - Bump only `VISUAL_ADAPTER_VERSION` from
+        `qwen-openai-compatible/2` to `qwen-openai-compatible/3` so cache identity
+        cannot mix pre-normalization and post-normalization results. Prompt v4、
+        forced exact tool、checked-in schema、proposal/crop/packing/projection、
+        Provider timeout、explicit one-schema-retry budget and SDK
+        `max_retries=0` remain unchanged.
+    - TDD、allowed files and live stop:
+      - RED/GREEN must cover exact `0..1000` conversion、canonical `0..1`
+        preservation、mixed invalid shape rejection、negative/over-1000/fractional
+        out-of-range rejection、unchanged non-bbox failure stages、cache identity
+        versioning and absence of raw persisted evidence.
+      - Repository writes are limited to this plan、
+        `backend/app/providers/qwen_vl.py`、
+        `backend/app/candidates/symbol_review.py`、
+        `backend/tests/contract/test_qwen_symbol_provider.py` and
+        `.agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json`.
+        Run focused tests、the complete changed modules、symbol integration/E2E、
+        full backend on a disposable migrated database、Provider fixtures with
+        `external_calls=0`、Ruff、`check-contracts.py`、privacy scan and independent
+        review before commit.
+      - Then rebuild API/worker from the exact implementation commit and repeat
+        the no-write sealed preflight. Exactly one new full-P0 live start may use
+        the same literal registration runs and
+        `--pause-after first-pdf-balloons`. If it fails, seal and stop; if it
+        reaches the pause, report the exact project route for Quality Owner
+        inspection. Neither outcome authorizes current-four continuation、
+        frontend code changes、`main` merge or D7-T3.
+  - Task 8 Step 6 equivalent Qwen snapshot runtime amendment — 2026-07-29:
+    - The user changed the runtime-only `QI_QWEN_MODEL` value to
+      `qwen3-vl-plus-2025-12-19`. No credential value is copied into this
+      worktree or recorded in evidence.
+    - Alibaba Cloud's [current model page](https://help.aliyun.com/zh/model-studio/qwen3-vl-plus)
+      states that the floating
+      `qwen3-vl-plus` model is functionally equivalent to the
+      `qwen3-vl-plus-2025-12-19` snapshot; both support Function Calling and
+      structured output. The December snapshot is preferred over the older
+      `qwen3-vl-plus-2025-09-23` snapshot.
+    - The prior sealed run's nine visual calls consumed `41,053` total tokens.
+      The current source has `29` frozen visual batches, so the floating model's
+      remaining `66,008` free tokens do not provide a safe complete-run budget.
+      Snapshot and floating model free quotas are separate under the
+      [free-quota policy](https://help.aliyun.com/zh/model-studio/new-free-quota/),
+      but no quota claim substitutes for runtime success evidence.
+    - The exact snapshot model string remains part of cache identity, so no
+      floating-model cache is reusable. Preflight and live evidence must bind
+      `qwen3-vl-plus-2025-12-19` exactly. There is no fallback to the September
+      snapshot, a thinking model, Flash, or the floating alias.
+    - This runtime amendment does not add a live start: the single new start
+      already authorized by the bbox compatibility amendment remains the exact
+      total. Prompt v4、tool/schema、adapter `/3`、bounded retry、Provider limits、
+      manual gates and all downstream stop boundaries remain unchanged.
+  - Equivalent Qwen snapshot live outcome — 2026-07-29:
+    - The no-write preflight passed from clean HEAD
+      `6321860efe0bc799790cab9318893a540efef98c` with runtime model
+      `qwen3-vl-plus-2025-12-19`, four exact current sources、`111` contracts、
+      the three sealed input artifacts and current-four manifest SHA-256
+      `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`.
+      Run-directory count remained unchanged during preflight, and API/worker
+      both used adapter `/3`, SDK `max_retries=0` and host-identical
+      `qwen_vl.py` SHA-256
+      `d8ddeeecf9668684d88d591c977bb74aff6cf3d916ee99a2df20fd31d5b1244e`.
+    - The single authorized start created immutable run
+      `20260729T024549975607Z-d69e1076` and fresh project
+      `4362e5da-358f-46ca-bea0-9f0eb374002b`. It started at
+      `2026-07-29T02:45:49.996294Z` and sealed failed at
+      `2026-07-29T02:51:07.292879Z` with
+      `failure_reason=live_start_failed:RuntimeError`.
+    - The first `16` visual calls produced schema-valid caches: all `13` page-0
+      batches and the first `3` page-1 batches. The seventeenth call, page `1`
+      batch index `3`, failed closed at exact
+      `tool_arguments_schema_invalid`. Its cache identity is
+      `2f0089d02e35a55a3b6eb899052919530a7c5387e776b33a5a90cabbbc53a3af`,
+      crop SHA-256 is
+      `e4e60ff8a7434f3e00577dce1de536f616cb3dfadaa276570b33b5070fb621a2`,
+      request ID is `chatcmpl-945a3ea5-9ac6-95fa-a6f1-748589fda030`,
+      duration is `7222ms` and prompt/completion/total usage is
+      `4162/205/4367`.
+    - Exact run totals are `17` Provider calls、`16` valid caches、`0` retry calls
+      and `62,286/11,294/73,580` prompt/completion/total tokens. Page 1 already
+      owns the frozen maximum `16` batches, so the bounded retry implementation
+      correctly had no spare call below the `<=16/page` cap and persisted
+      `retry_count=0`.
+    - The different failing crop proves that adapter `/3` and the equivalent
+      snapshot do not make every Provider response schema-valid. The strongest
+      supported boundary remains decoded tool-arguments schema failure; because
+      raw arguments are intentionally not retained, this outcome does not prove
+      a bbox leaf、another exact field、a unique remote cause or a safe schema
+      relaxation.
+    - No `AutomaticResult`、working copy、reviewed result、balloon、manual source
+      command、browser/frontend evidence、current-four continuation、`main`
+      merge or D7-T3 change was created. The project is
+      `processing_failed`; the run directory/files are sealed `555/444`. This
+      one-start authorization is exhausted. Any further diagnostic dimension、
+      retry-cap/paging change、response remediation or live start requires a new
+      explicit user decision and a separately committed Heavy amendment.
+  - Task 8 Step 6 deterministic visual sampling amendment — 2026-07-29:
+    - Selection record:
+      - After reviewing the sealed equivalent-snapshot failure, the user
+        explicitly selected `固定 temperature=0` instead of raising the
+        per-page call cap or running a diagnostic-only schema-leaf replay.
+      - Alibaba Cloud's
+        [OpenAI-compatible Chat documentation](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)
+        states that Qwen3-VL non-thinking mode defaults to
+        `temperature=0.7`, lower temperature is more deterministic, and random
+        Function Calling arguments may not conform to the function signature.
+        This supports a bounded sampling hypothesis; it does not prove that
+        temperature caused any retained failure.
+    - Problem boundary、single Owner and old path:
+      - `backend/app/providers/qwen_vl.py::QwenVisionProvider.review_symbols()`
+        remains the only visual Provider request-shape Owner. Replace its
+        implicit service-default sampling with exact `temperature=0`.
+      - Do not set `top_p`、seed、penalties、logprobs、streaming or any other
+        generation option. Text `review_candidate()` remains unchanged.
+      - Prompt v4、one forced exact tool、checked-in schema、non-thinking mode、
+        bbox `/3` compatibility semantics、local strict validation、one bounded
+        crop、`60s` timeout、SDK `max_retries=0`、bounded retry ownership and
+        `<=16/page` remain unchanged. No content fallback、repair parser、second
+        model or second response Owner is allowed.
+      - Bump only `VISUAL_ADAPTER_VERSION` from
+        `qwen-openai-compatible/3` to `qwen-openai-compatible/4` so cache
+        identity cannot mix implicit-`0.7` and exact-`0` calls. The frozen
+        Provider schema and prompt versions do not change.
+    - Allowed files、TDD and verification:
+      - Repository writes are limited to this plan、
+        `backend/app/providers/qwen_vl.py`、
+        `backend/app/candidates/symbol_review.py`、
+        `backend/tests/contract/test_qwen_symbol_provider.py` and
+        `.agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json`.
+        Parent remains the sole writer.
+      - RED must prove the visual request lacks exact `temperature=0` and cache
+        identity is still `/3`; GREEN must pin exact `temperature=0`, absence of
+        `top_p`/seed/other sampling additions, unchanged text request behavior
+        and adapter `/4` cache separation.
+      - Run focused and complete changed-module tests、symbol integration/E2E、
+        full backend on a disposable migrated database、Provider fixtures with
+        `external_calls=0`、Ruff、contracts、privacy scan、diff check、
+        `auto-feature-smoke-test` and independent read-only review before commit.
+    - One-run authorization and stop:
+      - Only after the code/tests are separately committed, rebuild API/worker
+        from the exact implementation state, verify runtime model
+        `qwen3-vl-plus-2025-12-19`、adapter `/4`、`temperature=0` and
+        `max_retries=0`, then repeat the sealed no-write preflight.
+      - Authorize exactly one new full-P0 live start with the same literal
+        current-four/symbol registration runs and
+        `--pause-after first-pdf-balloons`. No targeted manual Provider command
+        or additional retry run is authorized.
+      - If it fails, seal and stop with only sanitized evidence. If it reaches
+        the human gate, report the exact project route; do not auto-approve、
+        continue current-four、change frontend、merge `main` or enter D7-T3.
+  - Deterministic visual sampling live outcome — 2026-07-29:
+    - The amendment was committed as `e1d6534`; the exact four-file
+      implementation was committed as
+      `df064057038a65d868b79914ea3825852f6fdf0d`. RED proved that the visual
+      request still lacked exact `temperature=0` and cache identity still used
+      adapter `/3`. GREEN pinned only visual `temperature=0` and adapter `/4`;
+      the text route and every other generation option remained unchanged.
+      Verification passed with `84` changed-module tests、`16` symbol
+      integration/E2E tests、`693` full-backend tests、`49` Provider fixture
+      tests with `external_calls=0`、global/P0 contract counts `69/111`、Ruff、
+      diff/privacy checks、the focused three-test `auto-feature-smoke-test` and
+      an independent read-only `accept` review. The disposable migrated
+      database was dropped after verification.
+    - API/worker were rebuilt and recreated from exact clean HEAD `df06405`
+      without touching the frontend. Both containers loaded model
+      `qwen3-vl-plus-2025-12-19`; host/container SHA-256 matched for
+      `qwen_vl.py`
+      (`36eac5ec364097cb424ead4869e9787ebefa2d5b29b243dcaed36fdd2c65535b`),
+      `symbol_review.py`
+      (`015a262ca6b7f036d7c77dbf06f30e45684894ad4b7252af2ad2a6f80909aa16`)
+      and `providers/runtime.py`
+      (`1774815f29ca8302f7869697cafbc45c1cabc8f508b8a19c7ba4eb92cbff42f8`).
+      Runtime inspection confirmed adapter `/4`、visual `temperature=0` and SDK
+      `max_retries=0`.
+    - The no-write preflight passed with four exact sources、`111` contracts、
+      first-source SHA-256
+      `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`,
+      current-four manifest SHA-256
+      `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`
+      and sealed symbol manifest SHA-256
+      `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`.
+      Run-directory count remained unchanged and Provider calls remained `0`
+      during preflight.
+    - The single authorized start created immutable run
+      `20260729T032043501680Z-cb356f72` and fresh project
+      `a0bea969-8736-4d08-a9f7-2c640e50a9b0`. It started at
+      `2026-07-29T03:20:43.525644Z` and sealed failed at
+      `2026-07-29T03:26:10.216695Z` with
+      `failure_reason=live_start_failed:RuntimeError`; all retained run files
+      are mode `444`.
+    - The first `16` visual calls again produced schema-valid caches in the
+      frozen order: all `13` page-0 batches and the first `3` page-1 batches.
+      The seventeenth call again failed closed at page `1` batch index `3` with
+      exact `tool_arguments_schema_invalid`. The adapter-`/4` cache identity is
+      `21bb7dea986d079fe379d770e2699ec41ec32105702c9112e0f3c5293adac54b`;
+      the crop SHA-256 is the same
+      `e4e60ff8a7434f3e00577dce1de536f616cb3dfadaa276570b33b5070fb621a2`.
+      The failed request ID is
+      `chatcmpl-86c7177c-3829-96b2-a2e7-f368b9991a7c`, duration is `5949ms`
+      and prompt/completion/total usage is `4162/205/4367`.
+    - Exact run totals are `17` Provider calls、`16` valid caches、`0` retry
+      calls、`316410ms` accumulated call duration and
+      `62,286/11,691/73,977` prompt/completion/total tokens. The deterministic
+      sampling hypothesis is therefore falsified for this failure boundary:
+      exact `temperature=0` did not make the retained failing batch
+      schema-valid. It does not identify a safely relaxable schema leaf because
+      raw tool arguments remain intentionally unretained and unread.
+    - The project is `processing_failed` with `0` `AutomaticResult`、working
+      copy、reviewed result and balloon rows. No item-set gate、browser/frontend
+      evidence、current-four continuation、`main` merge or D7-T3 change was
+      created. This one-start authorization is exhausted. A schema-leaf
+      diagnostic、request/schema redesign、model change、call-cap/paging change
+      or further live start requires a new explicit Heavy amendment and user
+      decision; blind replay is not authorized.
+  - Task 8 Step 6 schema-leaf diagnostic amendment — 2026-07-29:
+    - Selection record:
+      - After the deterministic-sampling run failed at the same page-1 batch、
+        the user explicitly selected `A 定向叶级诊断`: one bounded Provider call
+        against the exact retained failing crop, retaining only an allowlisted
+        JSON Schema error path/keyword/type and cryptographic identities.
+      - This is a diagnostic authorization, not another full-P0 start、retry、
+        model comparison、schema relaxation or success gate.
+    - Problem boundary、single Owner and unchanged request:
+      - `backend/app/candidates/symbol_review.py::parse_visual_symbol_json()`
+        remains the only frozen response-schema validator.
+        `backend/app/providers/qwen_vl.py::QwenVisionProvider.review_symbols()`
+        remains the only Provider request/response-shape Owner.
+      - On decoded `schema_invalid` only, the parser may attach one immutable
+        safe diagnostic containing exact schema version、validator keyword、
+        JSON Pointer instance path、JSON Pointer schema path、allowlisted
+        instance type、an optional allowlisted missing-required member and the
+        checked-in schema SHA-256. The Provider error may add only the SHA-256
+        of the unretained raw argument string.
+      - Never retain or expose the argument string、payload values、validation
+        message、unexpected property name、enum value、drawing text、image
+        bytes、authorization metadata or exception cause/context. Unsafe path
+        segments or validator values must suppress the diagnostic rather than
+        widening it.
+      - Advisor persistence、failure envelope v2、call/cache/request/response
+        schemas、adapter `/4`、prompt v4、tool/schema v1、bbox normalization、
+        `temperature=0`、SDK `max_retries=0`、timeout and every page/call cap
+        remain unchanged. The Advisor continues to persist only the existing
+        failure stage and must not persist the new in-memory diagnostic.
+    - Allowed files、TDD and verification:
+      - Repository writes are limited to this plan、
+        `backend/app/candidates/symbol_review.py`、
+        `backend/app/providers/qwen_vl.py`、
+        `backend/tests/unit/candidates/test_symbol_advisor.py` and
+        `backend/tests/contract/test_qwen_symbol_provider.py`.
+      - RED/GREEN must prove exact safe paths for required/type/enum/additional
+        property failures、raw-argument hashing、absence of raw/private marker
+        text、unchanged exception strings/causes、unchanged persisted failure
+        envelope and unchanged exact visual/text request shapes.
+      - Run focused tests、the complete changed modules、symbol
+        integration/E2E、full backend on a disposable migrated database、
+        Provider fixtures with `external_calls=0`、Ruff、contracts、privacy
+        scan、diff check、`auto-feature-smoke-test` and independent read-only
+        review before the implementation commit.
+    - Exact one-call diagnostic and stop:
+      - Rebuild only API/worker from the exact implementation commit and repeat
+        a no-write identity preflight. Reconstruct page `1` batch index `3`
+        from project `a0bea969-8736-4d08-a9f7-2c640e50a9b0` stored
+        source/inventory, and require adapter-`/4` cache identity
+        `21bb7dea986d079fe379d770e2699ec41ec32105702c9112e0f3c5293adac54b`
+        plus crop SHA-256
+        `e4e60ff8a7434f3e00577dce1de536f616cb3dfadaa276570b33b5070fb621a2`
+        before constructing the Provider.
+      - Authorize exactly one direct call through the production
+        `QwenVisionProvider.review_symbols()` with model
+        `qwen3-vl-plus-2025-12-19` and the reconstructed exact prompt. Store
+        only a sanitized report in an `mktemp` `/tmp` directory; do not write a
+        formal run、project、cache、response or approved manifest.
+      - After the call, record the safe diagnostic and stop. Any remediation、
+        second diagnostic call or new full-P0 start requires a new explicit
+        decision based on the observed leaf evidence.
+  - Schema-leaf targeted diagnostic outcome — 2026-07-29:
+    - The diagnostic implementation was committed as
+      `163e0a5d780288bcb67af31d12bd7e4bab46768e`. API/worker were rebuilt from
+      that exact state while frontend remained untouched. Runtime health、
+      host/container source hashes、model `qwen3-vl-plus-2025-12-19`、adapter
+      `/4`、prompt v4、schema v1、`temperature=0` and SDK `max_retries=0`
+      were revalidated.
+    - The no-write preflight reconstructed project
+      `a0bea969-8736-4d08-a9f7-2c640e50a9b0` page `1` batch index `3` from
+      the stored source/inventory with `80/125` visual observations and
+      `13/16` batches. Before Provider construction/calls=`0/0`, it reproduced
+      exact cache identity
+      `21bb7dea986d079fe379d770e2699ec41ec32105702c9112e0f3c5293adac54b`,
+      crop SHA-256
+      `e4e60ff8a7434f3e00577dce1de536f616cb3dfadaa276570b33b5070fb621a2`
+      and prompt SHA-256
+      `169d1a40677d07e8a845897c460613105d197349e1860de1c97828fb0d9b1989`.
+    - The single authorized production
+      `QwenVisionProvider.review_symbols()` invocation returned a
+      schema-valid response with request ID
+      `chatcmpl-e2fd3f55-417b-96f2-b3a1-fbd8f206a4fa`, `2` detections,
+      `9116ms` duration and `4162/399/4561`
+      prompt/completion/total tokens. The unretained canonical payload
+      SHA-256 was
+      `8ea333776ed5f5a3c586b6521b7262b9bfa99415a811828911c64a14fb44a113`.
+      Because this invocation was schema-valid, it produced no allowlisted
+      schema-leaf diagnostic. It neither identifies a safely relaxable leaf
+      nor overturns the two sealed full-run failures; the observed
+      response-contract failure remains intermittent at this exact
+      crop/prompt boundary.
+    - The sanitized report is
+      `/tmp/qi-symbol-schema-diagnostic.bUkTCh/targeted-diagnostic-report.json`
+      with SHA-256
+      `395bd111acf54c64e087a6ecd72a01a081c5fcadaa073fd7e1635bab1518f8df`.
+      No formal run、project、cache、response、approved manifest、
+      `AutomaticResult`、frontend change or `main` merge was created. The
+      one-call authorization is exhausted. Remediation、a second diagnostic
+      dimension/call or a new full-P0 start requires a new explicit user
+      decision.
+  - Task 8 Step 6 one-shot full-P0 live-start amendment — 2026-07-29:
+    - Selection record:
+      - Selected lane: `Heavy`.
+      - Selected plan:
+        `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+      - Selection evidence: the schema-leaf diagnostic authorization is exhausted and
+        its one schema-valid direct call did not overturn the two sealed full-run
+        failures. The user explicitly authorizes exactly one new full-P0 start using
+        the current `qwen3-vl-plus-2025-12-19` snapshot; this is not a retry or
+        continuation of any prior authorization.
+      - Validation action: require the pre-amendment clean baseline
+        `38caf6e19f9626eebf5916a588bfd49e92309a89` and, after this plan-only
+        commit, a clean worktree with no executable delta. Before any formal write
+        or Provider construction, require exact API/worker source hashes matching
+        host and implementation commit
+        `163e0a5d780288bcb67af31d12bd7e4bab46768e`, healthy API/worker, and the
+        non-sensitive runtime identity `QI_QWEN_MODEL=qwen3-vl-plus-2025-12-19`
+        with API key/workspace presence only. Then verify the two literal sealed
+        registrations and run the no-write full-P0 identity preflight before the
+        sole live command.
+      - Writer ownership and order: parent is the sole writer. This amendment is
+        the only repository change and must be committed first. Thereafter only the
+        formal Harness may create a fresh run/project/evidence; do not modify
+        production, tests, frontend, sealed historical runs/manifests, or the
+        user's `http://127.0.0.1:5173/` instance.
+      - Next verification: execute exactly one literal command:
+        `micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py live --scope full-p0 --input-set current-four --current-four-run 20260728T073514713074Z-f32e6fae --symbol-eval-run 20260727T085747865239Z-5aa3e8d3 --pause-after first-pdf-balloons --print-run-id-only`.
+    - Problem boundary, unchanged contracts and old-path action:
+      - `backend/app/candidates/advisor.py::CandidateAdvisor` remains the sole
+        automatic result Owner; `QwenVisionProvider` remains the sole Provider
+        request/response-shape Owner. The formal runner is an Executor/Veto Gate,
+        not a second Owner. Preserve the frozen response schema, adapter `/4`,
+        prompt v4, `temperature=0`, SDK `max_retries=0`, timeout, all per-page
+        caps, current-four/symbol registrations, and fail-closed failure policy.
+      - The old targeted diagnostic authorization is retired/consumed; it must not
+        be reused as a full-P0, retry, model-comparison, schema-relaxation,
+        call-cap/paging change, or additional direct-call path.
+      - The one schema-valid direct diagnostic call is evidence of intermittency,
+        not a full-P0 success criterion. No manual source command, automatic
+        approval, frontend/browser step, D7-T3, SR-5, `main` merge, or remaining
+        current-four processing is authorized by this amendment.
+    - Exact-once success/failure boundary and rollback:
+      - The runner must pause only at `first-pdf-balloons`. If it reaches the
+        Quality Owner gate, report the exact run-bound project route and stop;
+        do not approve, promote, freeze, resume, or export.
+      - If any identity/preflight condition fails, create no live run and stop.
+        If the sole live start fails, seal that fresh run, retain only its sanitized
+        formal evidence, and stop without repair or rerun. Do not alter historical
+        sealed evidence in either case.
+      - Rollback is limited to reverting this docs-only amendment if a later Owner
+        decision requires it; never delete, rewrite, or reuse the fresh run,
+        project, Provider audit, cache, or existing sealed registrations.
+  - Task 8 Step 6 one-shot full-P0 live outcome — 2026-07-29:
+    - Runtime and no-write preflight:
+      - The user supplied `QI_P0_OPERATOR_ID=reggie` and explicitly approved the
+        non-secret live controls. Only API/worker were recreated; frontend and the
+        user's `http://127.0.0.1:5173/` instance were not rebuilt or modified.
+      - API/worker were healthy with
+        `QI_QWEN_MODEL=qwen3-vl-plus-2025-12-19` and exact host/container hashes
+        for `qwen_vl.py`
+        (`23e8753dc2e577b87c9a011bab80441f38b5598184cc039c781028c58d340356`),
+        `symbol_review.py`
+        (`73edf98326c6521121cb80ad3f58c83db4e43f9722a1709ef1fa6261a1854461`)
+        and `providers/runtime.py`
+        (`1774815f29ca8302f7869697cafbc45c1cabc8f508b8a19c7ba4eb92cbff42f8`).
+      - The no-write full-P0 preflight passed with `111` contracts,
+        current-four manifest SHA-256
+        `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`
+        and symbol-eval SHA-256
+        `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`;
+        the run-directory count remained `13`.
+    - Exact-once failed result:
+      - The sole authorized start created full-P0 run
+        `20260729T051043520116Z-8ddc6a1a` and first project
+        `217e3b9d-b5f8-44a6-b2c5-ed19f8bf4679`. The run started at
+        `2026-07-29T05:10:43.542388Z` and failed at
+        `2026-07-29T05:13:34.341577Z` with
+        `failure_reason=live_start_failed:RuntimeError`; every retained run member
+        is mode `444`.
+      - Seven visual calls produced valid caches. The eighth primary call failed
+        closed with `tool_arguments_schema_invalid`, request ID
+        `chatcmpl-587610de-1f19-9c34-98df-4af311f88b52`, crop SHA-256
+        `5628b3603d6fa7f12d62a637a438740a92f29dd81e2a9de689e492b1dcb53724`,
+        duration `6426ms` and usage `3419/185/3604`. The existing bounded
+        schema-retry path made one attempt against the same crop; it also returned
+        `tool_arguments_schema_invalid`, request ID
+        `chatcmpl-23734929-9c25-9556-ac5a-320bfcd77501`, duration `6155ms`
+        and usage `3419/184/3603`.
+      - Exact totals are `9` Provider calls including the one bounded retry,
+        `7` valid caches, `161317ms` accumulated duration and
+        `34701/6154/40855` prompt/completion/total tokens. The project is
+        `processing_failed` with blocking code `vision_provider_call_failed`;
+        `AutomaticResult`、working copy、reviewed result、balloon and export
+        counts are all `0`.
+      - Run evidence SHA-256 values are
+        `b75c13a3029e978cb61321fffea0d0e2d9cb1082eb90a9c0944859426fba59fd`
+        for `run.json`,
+        `c5cefd22aec0bca800e9f72126c4693d069479adb3a5eaf189f2222709163e38`
+        for `live-run-evidence.json` and
+        `742812374715efc3b89f591c68983b84bc9b0df03ee68c953451eaaf49f61383`
+        for the sanitized failure log. No manual approval、browser/frontend
+        action、remaining current-four processing、D7-T3、SR-5 or `main` merge
+        occurred. This one-start authorization is exhausted; any remediation or
+        further live start requires a new explicit Heavy amendment.
+  - Task 8 Step 6 new-crop schema-leaf diagnostic amendment — 2026-07-29:
+    - Selection record:
+      - Selected lane: `Heavy`; selected plan remains this current parent plan.
+      - Selection evidence: the user explicitly approved one targeted diagnostic
+        after run `20260729T051043520116Z-8ddc6a1a` failed on project
+        `217e3b9d-b5f8-44a6-b2c5-ed19f8bf4679`. The failed primary call and its
+        single bounded retry independently returned
+        `tool_arguments_schema_invalid` for cache identity
+        `22a5fe3f35c2cac609bfac570e167dff7d4b7ca759f7bac234779cd5919ac49a`
+        and crop SHA-256
+        `5628b3603d6fa7f12d62a637a438740a92f29dd81e2a9de689e492b1dcb53724`.
+      - Validation action: amend and commit this plan first, then perform one
+        no-write reconstruction. Only if source、inventory、page/batch、cache、
+        crop、prompt、model、adapter、schema and runtime identities all match may
+        the single direct diagnostic call be constructed.
+      - Writer ownership and order: parent is the sole writer; repository writes
+        are limited to this plan. A read-only explorer may report the exact
+        reconstruction call chain but must not write or call Provider.
+      - Next verification: before Provider construction/calls=`0/0`, uniquely
+        reconstruct the target batch from the retained project source/inventory
+        and require the two frozen identities above plus a newly recorded canonical
+        prompt SHA-256.
+    - Problem boundary, Owner and unchanged request:
+      - `parse_visual_symbol_json()` remains the only frozen response-schema
+        validator; `QwenVisionProvider.review_symbols()` remains the sole Provider
+        request/response-shape Owner. This diagnostic may observe only the existing
+        allowlisted in-memory schema diagnostic and cryptographic identities.
+      - Preserve model `qwen3-vl-plus-2025-12-19`, adapter `/4`, prompt v4,
+        response schema v1, `temperature=0`, SDK `max_retries=0`, timeout, crop
+        bytes and canonical prompt. Do not change production、tests、schema、
+        prompt、paging、call caps、retry policy、cache or project state.
+      - This is not a full-P0 start、project retry、model comparison、schema
+        relaxation、repair or success gate. The prior full-P0 and prior targeted
+        authorizations remain consumed.
+    - Exact-once diagnostic and stop:
+      - After the no-write gate passes, authorize exactly one direct invocation of
+        production `QwenVisionProvider.review_symbols()` against the reconstructed
+        crop/prompt. Do not use Advisor persistence and do not write a formal
+        run、project、cache、request、response or approved manifest.
+      - Store only one sanitized report in a fresh `mktemp` directory. If the
+        response is schema-invalid, retain only the allowlisted diagnostic,
+        request ID、usage、duration and payload/crop/prompt/schema hashes; if it is
+        schema-valid, retain only detection count and the same safe metadata.
+        Never retain raw arguments、payload、image bytes、drawing text、validation
+        message or credentials.
+      - After that single call, record the outcome and stop. No second direct call、
+        automatic remediation、full-P0 start、manual approval、frontend/browser、
+        D7-T3、SR-5 or `main` merge is authorized.
+      - Rollback only reverts this docs amendment; retained sealed run/project
+        evidence and the new sanitized report must never be deleted or rewritten.
+- Focused gate: 必须恰好覆盖 32 个 logical IDs：
+  `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
+  `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
+  必须 `external_calls=0`；existing text/OCR/parser/Advisor/result/frontend regressions
+  保持 strict；current-source visual calls 与 total Vision calls 均必须
+  `<=16/page`；live gate 在任何 manual source command 前比较 Owner result，要求每个
+  positive、reference、non-inspection exact-one match，且 frozen-negative false
+  positives 为零。Task 5 另有 supporting regression
+  `test_revision_marker_stays_noninspection_until_explicit_promote_source`，证明 automatic
+  initial state 无 item、仅显式 Quality Owner command 可 override；它不新增 logical
+  ID，32 项 count 不变。live closure 前必须完成 independent review 与
+  `auto-feature-smoke-test`。
+- Rollback: 每个 `SR-1`～`SR-8` task 和本 activation 都必须记录实际 exact commit；
+  rollback 时先把 symbol receipt 标记为 failed/stale，再用 `git revert` 按
+  `SR-8 → SR-7 → SR-6 → SR-5 → SR-4 → SR-2C proposal code →
+  SR-2B exact-rule/Quality Owner docs → 6920958 hybrid design →
+  8e0c625 SR-2A initial amendment docs → SR-3 → SR-2`
+  逆序回退，最后才 revert `SR-1` contract/Harness，保留 sealed runs、cache、
+  audit 与 history，并在最后 revert 本 activation。`D7-T3` 因 missing-symbol
+  defect 保持 blocked；禁止 reset 或 force push。
+- Closure boundary: 本 amendment 不把 `D7-T3` 标为 complete，也不重写既有 sealed
+  receipts。只有 `SR-8` 成功后，才允许记录 D7-T2 symbol closure 并恢复 `D7-T3`。
+- Historical SR-1 verification (completed by `d3fac79`): Option A docs-only
+  clarification 后运行的初始 contract/Harness RED 为：
+
+```bash
+micromamba run -n qi-p0 python -m pytest backend/tests/contract/harness/test_symbol_eval_contract.py backend/tests/contract/harness/test_contract_architecture.py backend/tests/contract/harness/test_live_run_contract.py -q
+```
+
+当时的预期 RED 是 symbol schemas、registration loader 与 staging artifact allowlist
+尚不存在；planned contract cases 还必须覆盖 valid `revision_marker/non_inspection` 与
+`revision_table_or_invalid_marker` 的区分、缺失或重复单一家族不能满足九类 coverage、
+positive label 禁止 `negative_family`，以及 frozen-negative label 强制要求该字段。
+该 historical gate 已完成，不再是 current next verification。当前 next
+verification 只来自上方 2026-07-28 hybrid proposal-gate correction amendment 的
+subordinate `SR-2C Step 1`；本 approval turn 在该 step 前停止。
+
+`SR-1`～`SR-8` 的 allowed paths 只有以下精确集合；existing regression tests 仅可在
+直接需要时增加 assertions，不得放宽、skip 或删除 expectations。本次 pre-SR-1
+docs-only clarification 不扩展以下集合。2026-07-28 hybrid amendment 已把 accepted
+design spec 与 subordinate plan 明确加入同一集合，不建立第二套 plan。
+
+Create:
+
+- `backend/app/pdf/visual_observations.py`
+- `backend/app/candidates/symbol_review.py`
+- `backend/app/providers/visual_symbol_review.schema.json`
+- `backend/tests/helpers/__init__.py`
+- `backend/tests/helpers/symbol_fixture.py`
+- `backend/tests/unit/pdf/test_visual_observations.py`
+- `backend/tests/unit/candidates/test_symbol_advisor.py`
+- `backend/tests/contract/test_qwen_symbol_provider.py`
+- `backend/tests/integration/test_symbol_recognition_pipeline.py`
+- `backend/tests/e2e/test_symbol_recognition.py`
+- `.agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json`
+- `.agent/harness/schemas/visual-symbol-eval.schema.json`
+- `.agent/harness/schemas/visual-symbol-annotation-verdict.schema.json`
+- `.agent/harness/scripts/stage-symbol-eval.py`
+- `.agent/harness/scripts/symbol_eval.py`
+- `backend/tests/contract/harness/test_symbol_eval_contract.py`
+
+Modify:
+
+- `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
+- `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+- `docs/superpowers/specs/2026-07-27-engineering-drawing-symbol-recognition-design.md`
+- `docs/contracts/MAIN_CONTRACT_MATRIX.md`
+- `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md`
+- `.agent/harness/contracts/p0-contracts.json`（generated only）
+- `.agent/harness/contracts/global-contract-bindings.json`（generated only）
+- `.agent/harness/policy/provider-call-policy.yaml`
+- `.agent/harness/policy/p0-acceptance-policy.yaml`
+- `.agent/harness/schemas/live-run-evidence.schema.json`
+- `.agent/harness/scripts/check-contracts.py`
+- `.agent/harness/scripts/generate-receipt.py`
+- `.agent/harness/scripts/live_evidence_policy.py`
+- `.agent/harness/scripts/run-p0.py`
+- `.agent/harness/scripts/run-provider-contracts.py`
+- `backend/tests/contract/harness/test_contract_architecture.py`
+- `backend/tests/contract/harness/test_live_run_contract.py`
+- `backend/app/pdf/schemas.py`
+- `backend/app/pdf/inventory.py`
+- `backend/app/processing/automatic_result.py`
+- `backend/app/candidates/advisor.py`
+- `backend/app/candidates/coverage.py`
+- `backend/app/providers/base.py`
+- `backend/app/providers/qwen_vl.py`
+- `backend/app/processing/runtime_recognition.py`
+- `backend/app/processing/pipeline.py`
+- `backend/app/processing/tasks.py`
+- `backend/app/review/service.py`
+- `backend/app/projects/router.py`
+- `backend/tests/contract/test_provider_call_records.py`
+- `backend/tests/integration/test_error_records.py`
+- `backend/tests/integration/test_processing_entry_task.py`
+- `backend/tests/integration/test_project_workbench_api.py`
+- `backend/tests/integration/test_result_layers.py`
+- `backend/tests/integration/test_review_operations.py`
+- `backend/tests/integration/test_review_working_copy.py`
+- `backend/tests/integration/test_task_idempotency.py`
+- `frontend/src/api/types.ts`
+- `frontend/src/components/review/ReviewPanel.tsx`
+- `frontend/src/components/review/ReviewPanel.test.tsx`
+- `frontend/src/components/workbench/InspectionItemTable.tsx`
+- `frontend/src/components/workbench/InspectionItemTable.test.tsx`
+- `frontend/src/components/workbench/InspectionWorkbench.tsx`
+- `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- `frontend/src/components/workbench/ProjectWorkbenchApp.tsx`
+- `frontend/src/components/workbench/ProjectWorkbenchApp.test.tsx`
+- `frontend/src/components/pdf/PdfWorkspace.tsx`
+- `frontend/src/components/pdf/PdfWorkspace.test.tsx`
+- `frontend/src/copy/zhCN.ts`
+- `frontend/src/styles/workbench.css`
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：
@@ -535,6 +2248,7 @@ live:
   max_retries_per_call: 2
   max_crop_expansions: 1
   max_ocr_calls_per_page: 16
+  max_vision_calls_per_page: 16
   max_vision_calls_per_candidate: 2
   max_total_estimated_cost_cny: 50
   budget_exceeded_result: blocked

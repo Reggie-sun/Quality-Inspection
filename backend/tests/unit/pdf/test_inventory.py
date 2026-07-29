@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pymupdf
@@ -5,7 +6,8 @@ import pytest
 
 from app.pdf.classification import PageSignals, classify_page
 from app.pdf.inventory import _image_coverage, append_ocr_observations, build_inventory
-from app.pdf.schemas import TextObservation
+from app.pdf.schemas import TextObservation, VisualObservation
+from app.processing.automatic_result import candidate_snapshot_from_inventory
 
 
 def _write_text_pdf(path: Path, *, rotate_text: bool = False) -> None:
@@ -88,6 +90,79 @@ def test_native_observation_remains_authoritative(tmp_path: Path) -> None:
     assert extended.observations[: len(native_before)] == native_before
     assert extended.observations[-1] == ocr
     assert all(item.source_type == "native" for item in native_before)
+
+
+def test_visual_observations_are_additive_and_survive_ocr_append(
+    tmp_path: Path,
+) -> None:
+    pdf_path = tmp_path / "visual-additive.pdf"
+    _write_text_pdf(pdf_path)
+    original = build_inventory(pdf_path)[0]
+    visual = VisualObservation(
+        observation_id="visual-context-1",
+        source_type="visual",
+        observation_level="annotation_context",
+        page_index=0,
+        bbox_pdf=(60.0, 70.0, 120.0, 95.0),
+        bbox_normalized=(
+            60.0 / original.width,
+            70.0 / original.height,
+            120.0 / original.width,
+            95.0 / original.height,
+        ),
+        proposal_kind="text_adjacent_vector_context",
+        geometry_sha256="a" * 64,
+        associated_text_observation_ids=("native-line-1",),
+    )
+    page = replace(original, visual_observations=(visual,))
+    ocr = TextObservation(
+        observation_id="ocr-region-visual-page",
+        source_type="ocr",
+        observation_level="region",
+        raw_text="DIM 25",
+        normalized_text="DIM 25",
+        page_index=0,
+        bbox_pdf=(70.0, 80.0, 140.0, 100.0),
+        bbox_normalized=(70.0 / 595.0, 80.0 / 842.0, 140.0 / 595.0, 100.0 / 842.0),
+        direction=(1.0, 0.0),
+        direction_angle_degrees=0.0,
+        confidence=0.93,
+    )
+
+    assert "visual_observations" not in original.to_dict()
+    assert page.to_dict()["visual_observations"] == (
+        {
+            "observation_id": visual.observation_id,
+            "source_type": "visual",
+            "observation_level": "annotation_context",
+            "page_index": 0,
+            "bbox_pdf": visual.bbox_pdf,
+            "bbox_normalized": visual.bbox_normalized,
+            "proposal_kind": "text_adjacent_vector_context",
+            "geometry_sha256": "a" * 64,
+            "associated_text_observation_ids": ("native-line-1",),
+        },
+    )
+    extended = append_ocr_observations(page, (ocr,))
+    assert extended.visual_observations == (visual,)
+    assert extended.observations[-1] == ocr
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+    visual_entries = [
+        entry
+        for entry in snapshot.coverage_entries
+        if entry.observation_id == visual.observation_id
+    ]
+    assert snapshot.expected_observation_ids[-1] == visual.observation_id
+    assert len(visual_entries) == 1
+    assert visual_entries[0].disposition == "ambiguous"
+    assert visual_entries[0].source_location_id == visual.observation_id
+    assert visual_entries[0].coordinates == visual.bbox_pdf
+    assert visual_entries[0].requires_confirmation is True
+    assert all(
+        visual.observation_id not in candidate["source_location_ids"]
+        for candidate in snapshot.candidates
+    )
 
 
 def test_inventory_preserves_pymupdf_cropbox_local_bbox(tmp_path: Path) -> None:

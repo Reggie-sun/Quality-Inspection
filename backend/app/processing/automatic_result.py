@@ -23,7 +23,7 @@ from app.candidates.grouping import group_observations
 from app.candidates.models import AutomaticResult
 from app.candidates.schemas import Candidate, stable_candidate_id
 from app.jobs.idempotency import LogicalJob, LogicalJobStateError
-from app.pdf.schemas import TextObservation
+from app.pdf.schemas import TextObservation, VisualObservation
 from app.projects.models import Project
 from app.projects.state import InvalidTransition, ProjectState, transition
 
@@ -47,6 +47,7 @@ class CandidateSnapshot:
     expected_observation_ids: tuple[str, ...]
     duplicate_relations: tuple[DuplicateRelation, ...]
     provider_call_ids: tuple[str, ...] = ()
+    required_visual_observation_ids: tuple[str, ...] = ()
 
 
 def _selected_observations(pages: Sequence[Any]) -> list[TextObservation]:
@@ -85,6 +86,27 @@ def selected_observations(
     pages: Sequence[Any],
 ) -> tuple[TextObservation, ...]:
     return tuple(_selected_observations(pages))
+
+
+def selected_visual_observations(
+    pages: Sequence[Any],
+) -> tuple[VisualObservation, ...]:
+    return tuple(
+        sorted(
+            (
+                observation
+                for page in pages
+                for observation in getattr(page, "visual_observations", ())
+            ),
+            key=lambda observation: (
+                observation.page_index,
+                observation.bbox_pdf[1],
+                observation.bbox_pdf[0],
+                observation.proposal_kind,
+                observation.observation_id,
+            ),
+        )
+    )
 
 
 def _coarse_type(raw_text: str) -> str | None:
@@ -145,6 +167,7 @@ def candidate_snapshot_from_inventory(
     pages: Sequence[Any],
 ) -> CandidateSnapshot:
     observations = _selected_observations(pages)
+    visual_observations = selected_visual_observations(pages)
     candidates: list[dict[str, Any]] = []
     coverage_entries: list[CoverageEntry] = []
     duplicate_inputs: list[DuplicateCandidate] = []
@@ -219,14 +242,33 @@ def candidate_snapshot_from_inventory(
         )
         index += len(members)
 
+    for observation in visual_observations:
+        coverage_entries.append(
+            CoverageEntry(
+                observation_id=observation.observation_id,
+                disposition="ambiguous",
+                source_location_id=observation.observation_id,
+                coordinates=observation.bbox_pdf,
+                requires_confirmation=True,
+            )
+        )
+
     return CandidateSnapshot(
         candidates=tuple(candidates),
         coverage_entries=tuple(coverage_entries),
         expected_observation_ids=tuple(
             observation.observation_id for observation in observations
+        )
+        + tuple(
+            observation.observation_id
+            for observation in visual_observations
         ),
         duplicate_relations=tuple(
             suggest_cross_view_duplicates(duplicate_inputs)
+        ),
+        required_visual_observation_ids=tuple(
+            observation.observation_id
+            for observation in visual_observations
         ),
     )
 
