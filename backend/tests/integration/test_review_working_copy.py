@@ -223,6 +223,72 @@ def test_legacy_bootstrap_ignores_forged_high_confidence_shape(
 
 
 @pytest.mark.parametrize(
+    ("schema_version", "top_level_decision"),
+    [
+        ("automatic-result/1", None),
+        (
+            "automatic-result/2",
+            {
+                **_confidence_decision("high"),
+                "extra": True,
+            },
+        ),
+    ],
+    ids=["legacy", "malformed-v2"],
+)
+@pytest.mark.parametrize(
+    "command",
+    [
+        {"type": "keep", "item_id": "candidate-1"},
+        {
+            "type": "resolve_confirmation",
+            "item_id": "candidate-1",
+            "accepted": True,
+        },
+    ],
+    ids=["keep", "accepted-resolve"],
+)
+def test_payload_forged_high_never_becomes_decision_or_manual_override(
+    db_session: Session,
+    schema_version: str,
+    top_level_decision: object,
+    command: dict[str, object],
+) -> None:
+    candidate = _raw_candidate()
+    candidate["payload"]["confidence_decision"] = _confidence_decision("high")
+    if top_level_decision is not None:
+        candidate["confidence_decision"] = top_level_decision
+    raw_result = _make_raw_result(
+        db_session,
+        candidates=[candidate],
+        schema_version=schema_version,
+    )
+    original = copy.deepcopy(raw_result.candidates)
+    service = ReviewService(db_session)
+    working = service.create_from_raw(raw_result.id)
+
+    assert working.items[0]["status"] == "pending"
+    assert working.items[0]["acceptance_source"] is None
+    assert "confidence_decision" not in working.items[0]
+
+    acquire_lock(db_session, working.project_id, "quality-1")
+    saved = service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command=command,
+    )
+
+    assert saved.items[0]["status"] == "kept"
+    assert saved.items[0]["requires_confirmation"] is False
+    assert saved.items[0]["acceptance_source"] == "manual"
+    assert "confidence_decision" not in saved.items[0]
+    persisted = db_session.get(AutomaticResult, raw_result.id)
+    assert persisted is not None
+    assert persisted.candidates == original
+
+
+@pytest.mark.parametrize(
     "decision",
     [
         None,

@@ -461,6 +461,7 @@ class ReviewService:
         item_id = str(candidate["candidate_id"])
         payload = copy.deepcopy(candidate["payload"])
         payload.pop("candidate_id", None)
+        payload.pop("confidence_decision", None)
         validated_decision = None
         if raw_schema_version == "automatic-result/2":
             try:

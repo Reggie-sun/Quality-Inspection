@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import fitz
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ from app.projects.router import get_session as get_project_session
 from app.projects.router import get_storage
 from app.review.router import _working_copy as _review_working_copy
 from app.review.models import ReviewedResult
+from app.review.service import ReviewService
 from app.storage.models import StoredFile
 
 
@@ -398,6 +400,69 @@ def test_project_candidate_projection_exposes_backend_confidence_status() -> Non
             "status": "pending",
         },
     ]
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "top_level_decision"),
+    [
+        ("automatic-result/1", None),
+        (
+            "automatic-result/2",
+            {
+                "band": "high",
+                "review_disposition": "auto_accepted",
+                "policy_version": "candidate-confidence/1",
+                "evidence_codes": ["typed_schema_complete"],
+                "extra": True,
+            },
+        ),
+    ],
+)
+def test_project_projection_does_not_expose_payload_forged_confidence(
+    schema_version: str,
+    top_level_decision: object,
+) -> None:
+    forged = {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": ["typed_schema_complete"],
+    }
+    candidate = {
+        "candidate_id": "forged",
+        "payload": {
+            "candidate_id": "forged",
+            "item_type": "thread",
+            "raw_text": "M6",
+            "normalized_text": "M6",
+            "coordinates": [1, 2, 3, 4],
+            "scope": "local_feature",
+            "balloon_required": True,
+            "requires_confirmation": False,
+            "confidence_decision": forged,
+        },
+        "source_location_ids": ["source-forged"],
+    }
+    if top_level_decision is not None:
+        candidate["confidence_decision"] = top_level_decision
+    item = ReviewService._current_item(candidate, schema_version)
+
+    projected, _ = _project_items(
+        [item],
+        {"entries": []},
+        {
+            "source-forged": {
+                "page_index": 0,
+                "bbox_pdf": [1, 2, 3, 4],
+                "raw_text": "M6",
+                "source_type": "text",
+            }
+        },
+    )
+
+    assert projected[0]["status"] == "pending"
+    assert projected[0]["confidence_band"] is None
+    assert projected[0]["review_disposition"] is None
 
 
 def test_project_workbench_recovers_reviewed_result_and_latest_atomic_export(
