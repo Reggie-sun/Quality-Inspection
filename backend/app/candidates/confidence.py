@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import math
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -68,6 +69,10 @@ _DISPOSITION_BY_BAND = {
     "medium": "review_required",
     "low": "review_required",
 }
+_CANONICAL_THREAD_SPEC = re.compile(
+    r"M(?:0|[1-9]\d*)(?:\.\d+)?"
+    r"(?:×(?:0|[1-9]\d*)(?:\.\d+)?)?"
+)
 
 
 class ConfidenceDecisionContractError(ValueError):
@@ -309,7 +314,11 @@ def _requirement_semantics_complete(
     if item_type == "thread":
         thread_depth = payload.get("thread_depth")
         return (
-            _is_nonblank(payload.get("thread_spec"))
+            isinstance(payload.get("thread_spec"), str)
+            and _CANONICAL_THREAD_SPEC.fullmatch(
+                payload["thread_spec"]
+            )
+            is not None
             and isinstance(payload.get("through"), bool)
             and (
                 thread_depth is None
@@ -381,6 +390,17 @@ def _composite_semantics_complete(payload: Mapping[str, object]) -> bool:
         else:
             return False
     return True
+
+
+def _contains_coarse_fallback(payload: Mapping[str, object]) -> bool:
+    if "coarse_type" in payload:
+        return True
+    requirements = payload.get("sub_requirements")
+    return isinstance(requirements, list) and any(
+        isinstance(requirement, Mapping)
+        and "coarse_type" in requirement
+        for requirement in requirements
+    )
 
 
 def _ordered_evidence(codes: set[str]) -> tuple[str, ...]:
@@ -482,6 +502,16 @@ class ConfidencePolicy:
         duplicate_relations: Sequence[DuplicateRelation],
         source_signals: Sequence[CandidateSourceSignal],
     ) -> tuple[dict[str, Any], ...]:
+        source_owners: dict[str, set[int]] = {}
+        for index, candidate in enumerate(candidates):
+            for source_id in set(_source_ids(candidate)):
+                source_owners.setdefault(source_id, set()).add(index)
+        conflicted_source_ids = {
+            source_id
+            for source_id, owners in source_owners.items()
+            if len(owners) > 1
+        }
+
         evaluated: list[dict[str, Any]] = []
         for candidate in candidates:
             envelope = copy.deepcopy(dict(candidate))
@@ -490,6 +520,7 @@ class ConfidencePolicy:
                 coverage=coverage,
                 duplicate_relations=duplicate_relations,
                 source_signals=source_signals,
+                conflicted_source_ids=conflicted_source_ids,
             )
             envelope["confidence_decision"] = decision.to_dict()
             evaluated.append(envelope)
@@ -502,6 +533,7 @@ class ConfidencePolicy:
         coverage: CoverageReport,
         duplicate_relations: Sequence[DuplicateRelation],
         source_signals: Sequence[CandidateSourceSignal],
+        conflicted_source_ids: set[str],
     ) -> ConfidenceDecision:
         evidence: set[str] = set()
         eligible_for_high = True
@@ -525,6 +557,10 @@ class ConfidencePolicy:
             evidence.add("source_owner_conflict")
         else:
             evidence.add("single_source_owner")
+        if conflicted_source_ids.intersection(source_ids):
+            evidence.discard("single_source_owner")
+            evidence.add("source_owner_conflict")
+            source_shape_valid = False
         eligible_for_high &= source_shape_valid
 
         relevant_signals, signals_valid = _candidate_source_signals(
@@ -535,7 +571,7 @@ class ConfidencePolicy:
 
         typed_complete = False
         feature_unknown = False
-        if "coarse_type" in payload_mapping:
+        if _contains_coarse_fallback(payload_mapping):
             evidence.add("coarse_fallback")
         else:
             try:
@@ -678,12 +714,14 @@ class ConfidencePolicy:
             )
             if minimum >= HIGH_THRESHOLD:
                 evidence.add("source_signal_high")
-                band = "high" if eligible_for_high else "medium"
+                band = "high"
             elif minimum >= MEDIUM_THRESHOLD:
                 evidence.add("source_signal_medium")
                 band = "medium"
             else:
                 evidence.add("source_signal_low")
+                band = "low"
+            if not eligible_for_high:
                 band = "low"
 
         review_disposition: Literal[

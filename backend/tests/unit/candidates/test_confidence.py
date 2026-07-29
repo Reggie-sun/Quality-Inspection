@@ -19,7 +19,11 @@ from app.candidates.confidence import (
     normalize_visual_signal,
     validate_confidence_decision,
 )
-from app.candidates.coverage import CoverageEntry, CoverageReport
+from app.candidates.coverage import (
+    CoverageEntry,
+    CoverageReport,
+    check_coverage,
+)
 from app.candidates.duplicates import DuplicateRelation
 
 
@@ -27,6 +31,63 @@ ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = (
     ROOT
     / "tests/fixtures/confidence/candidate-confidence-v1.json"
+)
+FIXTURE_DATA = json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+
+def _matrix_cases() -> tuple[dict[str, object], ...]:
+    templates: dict[tuple[str, str], dict[str, object]] = {}
+    for case in FIXTURE_DATA["family_templates"]:
+        item_type = str(case["candidate"]["payload"]["item_type"])
+        polarity = (
+            "positive"
+            if case["expected"]["band"] == "high"
+            else "negative"
+        )
+        templates[item_type, polarity] = case
+
+    cases: list[dict[str, object]] = []
+    for combination in FIXTURE_DATA["supported_matrix"]:
+        source_types = tuple(combination["source_types"])
+        item_type = str(combination["item_type"])
+        for polarity in ("positive", "negative"):
+            case = copy.deepcopy(templates[item_type, polarity])
+            source_label = "+".join(source_types)
+            case_id = f"{source_label}-{item_type}-{polarity}"
+            candidate_id = f"fixture-{case_id}"
+            source_ids = [
+                f"{candidate_id}-source-{index}"
+                for index in range(len(source_types))
+            ]
+            case["id"] = case_id
+            case["candidate"]["candidate_id"] = candidate_id
+            if "candidate_id" in case["candidate"]["payload"]:
+                case["candidate"]["payload"]["candidate_id"] = candidate_id
+            case["candidate"]["source_location_ids"] = source_ids
+            case["source_signals"] = [
+                {
+                    "source_location_id": source_id,
+                    "source_type": source_type,
+                    "normalized_value": (
+                        "1" if source_type == "native" else "0.95"
+                    ),
+                }
+                for source_id, source_type in zip(
+                    source_ids,
+                    source_types,
+                    strict=True,
+                )
+            ]
+            case["conflicts"] = []
+            cases.append(case)
+    return tuple(cases)
+
+
+MATRIX_CASES = _matrix_cases()
+FROZEN_CASES = (
+    *MATRIX_CASES,
+    *FIXTURE_DATA["unsupported_cases"],
+    *FIXTURE_DATA["conflict_cases"],
 )
 
 
@@ -351,7 +412,8 @@ def test_every_candidate_hard_veto_prevents_high(
 ) -> None:
     del name
     _, decision = _evaluate(candidate)
-    assert decision["band"] != "high"
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
     assert expected_evidence in decision["evidence_codes"]
 
 
@@ -384,11 +446,12 @@ def test_every_coverage_hard_veto_prevents_high(
         candidate,
         coverage=_coverage(candidate, **coverage_kwargs),  # type: ignore[arg-type]
     )
-    assert decision["band"] != "high"
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
     assert expected_evidence in decision["evidence_codes"]
 
 
-def test_duplicate_relation_prevents_high() -> None:
+def test_duplicate_relation_forces_low() -> None:
     _, decision = _evaluate(
         duplicate_relations=(
             DuplicateRelation(
@@ -397,17 +460,137 @@ def test_duplicate_relation_prevents_high() -> None:
             ),
         )
     )
-    assert decision["band"] == "medium"
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
     assert "possible_duplicate" in decision["evidence_codes"]
     assert "cross_view_conflict" in decision["evidence_codes"]
 
 
-def test_duplicate_source_owner_prevents_high() -> None:
+def test_duplicate_source_owner_forces_low() -> None:
     candidate = _candidate()
     candidate["source_location_ids"] = ["source-1", "source-1"]
     _, decision = _evaluate(candidate)
-    assert decision["band"] != "high"
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
     assert "source_owner_conflict" in decision["evidence_codes"]
+
+
+@pytest.mark.parametrize("thread_spec", ["M6", "M6×1"])
+def test_canonical_thread_spec_can_be_high(thread_spec: str) -> None:
+    _, decision = _evaluate(
+        _candidate(
+            item_type="thread",
+            raw_text=thread_spec,
+            normalized_text=thread_spec,
+            thread_spec=thread_spec,
+            through=False,
+        )
+    )
+    assert decision["band"] == "high"
+
+
+@pytest.mark.parametrize(
+    "thread_spec",
+    [
+        " M6 x 1 ",
+        "m6",
+        "M6X1",
+        "M6 x1",
+        "M6*1",
+        "M6 × 1",
+    ],
+)
+def test_noncanonical_thread_spec_forces_low(thread_spec: str) -> None:
+    _, decision = _evaluate(
+        _candidate(
+            item_type="thread",
+            raw_text=thread_spec,
+            normalized_text=thread_spec,
+            thread_spec=thread_spec,
+            through=False,
+        )
+    )
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
+    assert "typed_schema_incomplete" in decision["evidence_codes"]
+
+
+def test_shared_source_owner_across_candidates_forces_both_low() -> None:
+    candidates = (
+        {
+            **_candidate(),
+            "candidate_id": "candidate-a",
+            "payload": _payload(candidate_id="candidate-a"),
+            "source_location_ids": ["shared-source"],
+        },
+        {
+            **_candidate(),
+            "candidate_id": "candidate-b",
+            "payload": _payload(candidate_id="candidate-b"),
+            "source_location_ids": ["shared-source"],
+        },
+    )
+    coverage = check_coverage(
+        [
+            CoverageEntry(
+                observation_id="observation-a",
+                disposition="candidate",
+                source_location_id="shared-source",
+                coordinates=(1, 2, 11, 12),
+                candidate_id="candidate-a",
+            ),
+            CoverageEntry(
+                observation_id="observation-b",
+                disposition="candidate",
+                source_location_id="shared-source",
+                coordinates=(1, 2, 11, 12),
+                candidate_id="candidate-b",
+            ),
+        ],
+        expected_observation_ids={"observation-a", "observation-b"},
+    )
+
+    assert coverage.coverage_checked is True
+    evaluated = ConfidencePolicy().evaluate_candidates(
+        candidates,
+        coverage=coverage,
+        duplicate_relations=(),
+        source_signals=(
+            _signal(
+                source_location_id="shared-source",
+                source_type="native",
+            ),
+        ),
+    )
+    for candidate in evaluated:
+        decision = candidate["confidence_decision"]
+        assert decision["band"] == "low"
+        assert decision["review_disposition"] == "review_required"
+        assert "source_owner_conflict" in decision["evidence_codes"]
+
+
+def test_nested_composite_coarse_fallback_forces_low() -> None:
+    candidate = _candidate(
+        item_type="composite",
+        raw_text="Φ10",
+        normalized_text="Φ10",
+        sub_requirements=[
+            {
+                "order": 0,
+                "kind": "diameter_dimension",
+                "raw_text": "Φ10",
+                "nominal": "10",
+                "feature_kind": "hole",
+                "coarse_type": "roughness",
+            }
+        ],
+    )
+
+    _, decision = _evaluate(candidate)
+
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
+    assert "coarse_fallback" in decision["evidence_codes"]
 
 
 def test_low_is_always_review_required_and_never_auto_excluded() -> None:
@@ -464,13 +647,112 @@ def _fixture_coverage(
     )
 
 
+def _fixture_inputs(
+    case: dict[str, object],
+) -> tuple[
+    dict[str, object],
+    CoverageReport,
+    tuple[DuplicateRelation, ...],
+]:
+    candidate = copy.deepcopy(case["candidate"])
+    duplicate_relations: list[DuplicateRelation] = []
+    for conflict in case["conflicts"]:
+        conflict_type = conflict["type"]
+        if conflict_type == "duplicate_relation":
+            duplicate_relations.append(
+                DuplicateRelation(
+                    left_candidate_id=str(candidate["candidate_id"]),
+                    right_candidate_id=str(
+                        conflict["other_candidate_id"]
+                    ),
+                )
+            )
+        elif conflict_type == "advisor_rejection":
+            candidate["advisor_review"] = {
+                "validated": False,
+                "rejection_code": conflict["rejection_code"],
+            }
+        else:
+            raise AssertionError(
+                f"unknown frozen conflict type: {conflict_type}"
+            )
+    return (
+        candidate,
+        _fixture_coverage(
+            candidate,
+            case["coverage"],  # type: ignore[arg-type]
+        ),
+        tuple(duplicate_relations),
+    )
+
+
+def test_frozen_supported_matrix_is_complete() -> None:
+    required = {
+        (("native",), "linear_dimension"),
+        (("ocr",), "linear_dimension"),
+        (("native",), "diameter_dimension"),
+        (("ocr",), "diameter_dimension"),
+        (("visual",), "diameter_dimension"),
+        (("native",), "thread"),
+        (("ocr",), "thread"),
+        (("native",), "radius"),
+        (("ocr",), "radius"),
+        (("native",), "angle"),
+        (("ocr",), "angle"),
+        (("native",), "general_requirement"),
+        (("visual",), "composite"),
+        (("native", "visual"), "composite"),
+    }
+    declared = {
+        (
+            tuple(combination["source_types"]),
+            str(combination["item_type"]),
+        )
+        for combination in FIXTURE_DATA["supported_matrix"]
+    }
+    observed: dict[tuple[tuple[str, ...], str], set[str]] = {}
+    for case in MATRIX_CASES:
+        combination = (
+            tuple(
+                signal["source_type"]
+                for signal in case["source_signals"]
+            ),
+            str(case["candidate"]["payload"]["item_type"]),
+        )
+        observed.setdefault(combination, set()).add(
+            "positive"
+            if case["expected"]["band"] == "high"
+            else "negative"
+        )
+
+    assert required <= declared
+    assert set(observed) == declared
+    assert all(
+        polarities == {"positive", "negative"}
+        for polarities in observed.values()
+    )
+
+
+def test_frozen_unsupported_families_are_negative_only() -> None:
+    assert {
+        case["id"] for case in FIXTURE_DATA["unsupported_cases"]
+    } == {
+        "unsupported-general-requirement-ocr-without-native-proxy",
+        "unsupported-coarse-fallback-native",
+    }
+    assert all(
+        case["expected"]["band"] == "low"
+        for case in FIXTURE_DATA["unsupported_cases"]
+    )
+
+
 @pytest.mark.parametrize(
     "case",
-    json.loads(FIXTURE.read_text(encoding="utf-8"))["cases"],
+    FROZEN_CASES,
     ids=lambda case: case["id"],
 )
 def test_frozen_release_gate_fixture(case: dict[str, object]) -> None:
-    candidate = case["candidate"]
+    candidate, coverage, duplicate_relations = _fixture_inputs(case)
     raw_signals = case["source_signals"]
     signals = tuple(
         CandidateSourceSignal(
@@ -481,12 +763,9 @@ def test_frozen_release_gate_fixture(case: dict[str, object]) -> None:
         for signal in raw_signals  # type: ignore[union-attr]
     )
     evaluated = ConfidencePolicy().evaluate_candidates(
-        (candidate,),  # type: ignore[arg-type]
-        coverage=_fixture_coverage(
-            candidate,  # type: ignore[arg-type]
-            case["coverage"],  # type: ignore[arg-type]
-        ),
-        duplicate_relations=(),
+        (candidate,),
+        coverage=coverage,
+        duplicate_relations=duplicate_relations,
         source_signals=signals,
     )
     assert evaluated[0]["confidence_decision"] == case["expected"]

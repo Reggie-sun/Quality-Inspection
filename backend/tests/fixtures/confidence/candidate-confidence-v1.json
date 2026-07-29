@@ -1,6 +1,25 @@
 {
   "schema_version": "candidate-confidence-fixture/1",
-  "cases": [
+  "supported_matrix": [
+    {"source_types": ["native"], "item_type": "linear_dimension"},
+    {"source_types": ["ocr"], "item_type": "linear_dimension"},
+    {"source_types": ["native"], "item_type": "diameter_dimension"},
+    {"source_types": ["ocr"], "item_type": "diameter_dimension"},
+    {"source_types": ["visual"], "item_type": "diameter_dimension"},
+    {"source_types": ["native"], "item_type": "thread"},
+    {"source_types": ["ocr"], "item_type": "thread"},
+    {"source_types": ["native"], "item_type": "radius"},
+    {"source_types": ["ocr"], "item_type": "radius"},
+    {"source_types": ["native"], "item_type": "angle"},
+    {"source_types": ["ocr"], "item_type": "angle"},
+    {"source_types": ["native"], "item_type": "general_requirement"},
+    {"source_types": ["visual"], "item_type": "composite"},
+    {
+      "source_types": ["native", "visual"],
+      "item_type": "composite"
+    }
+  ],
+  "family_templates": [
     {
       "id": "linear-native-positive",
       "candidate": {
@@ -81,7 +100,7 @@
       },
       "conflicts": [],
       "expected": {
-        "band": "medium",
+        "band": "low",
         "review_disposition": "review_required",
         "policy_version": "candidate-confidence/1",
         "evidence_codes": [
@@ -181,7 +200,7 @@
       },
       "conflicts": [],
       "expected": {
-        "band": "medium",
+        "band": "low",
         "review_disposition": "review_required",
         "policy_version": "candidate-confidence/1",
         "evidence_codes": [
@@ -200,11 +219,11 @@
       }
     },
     {
-      "id": "thread-visual-positive",
+      "id": "thread-native-positive",
       "candidate": {
-        "candidate_id": "thread-visual",
+        "candidate_id": "thread-native",
         "payload": {
-          "candidate_id": "thread-visual",
+          "candidate_id": "thread-native",
           "item_type": "thread",
           "raw_text": "M6通",
           "normalized_text": "M6通",
@@ -216,12 +235,12 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["thread-visual-source"]
+        "source_location_ids": ["thread-native-source"]
       },
       "source_signals": [
         {
-          "source_location_id": "thread-visual-source",
-          "source_type": "visual",
+          "source_location_id": "thread-native-source",
+          "source_type": "native",
           "normalized_value": "1"
         }
       ],
@@ -250,11 +269,11 @@
       }
     },
     {
-      "id": "thread-visual-field-negative",
+      "id": "thread-native-field-negative",
       "candidate": {
-        "candidate_id": "thread-visual-negative",
+        "candidate_id": "thread-native-negative",
         "payload": {
-          "candidate_id": "thread-visual-negative",
+          "candidate_id": "thread-native-negative",
           "item_type": "thread",
           "raw_text": "thread",
           "normalized_text": "thread",
@@ -265,12 +284,12 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["thread-visual-negative-source"]
+        "source_location_ids": ["thread-native-negative-source"]
       },
       "source_signals": [
         {
-          "source_location_id": "thread-visual-negative-source",
-          "source_type": "visual",
+          "source_location_id": "thread-native-negative-source",
+          "source_type": "native",
           "normalized_value": "1"
         }
       ],
@@ -281,7 +300,7 @@
       },
       "conflicts": [],
       "expected": {
-        "band": "medium",
+        "band": "low",
         "review_disposition": "review_required",
         "policy_version": "candidate-confidence/1",
         "evidence_codes": [
@@ -379,7 +398,7 @@
       },
       "conflicts": [],
       "expected": {
-        "band": "medium",
+        "band": "low",
         "review_disposition": "review_required",
         "policy_version": "candidate-confidence/1",
         "evidence_codes": [
@@ -479,7 +498,7 @@
       },
       "conflicts": [],
       "expected": {
-        "band": "medium",
+        "band": "low",
         "review_disposition": "review_required",
         "policy_version": "candidate-confidence/1",
         "evidence_codes": [
@@ -591,7 +610,7 @@
       },
       "conflicts": [],
       "expected": {
-        "band": "medium",
+        "band": "low",
         "review_disposition": "review_required",
         "policy_version": "candidate-confidence/1",
         "evidence_codes": [
@@ -737,7 +756,7 @@
       },
       "conflicts": [],
       "expected": {
-        "band": "medium",
+        "band": "low",
         "review_disposition": "review_required",
         "policy_version": "candidate-confidence/1",
         "evidence_codes": [
@@ -747,6 +766,234 @@
           "local_association_complete",
           "coverage_clear",
           "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    }
+  ],
+  "unsupported_cases": [
+    {
+      "id": "unsupported-general-requirement-ocr-without-native-proxy",
+      "candidate": {
+        "candidate_id": "unsupported-general-ocr",
+        "payload": {
+          "candidate_id": "unsupported-general-ocr",
+          "item_type": "general_requirement",
+          "raw_text": "未注公差按 GB/T 1804-m",
+          "normalized_text": "未注公差按 GB/T 1804-m",
+          "coordinates": [8, 9, 18, 19],
+          "scope": "global_requirement",
+          "sub_requirements": [],
+          "balloon_required": false,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["unsupported-general-ocr-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "unsupported-general-ocr-source",
+          "source_type": "ocr",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "low",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "unsupported-coarse-fallback-native",
+      "candidate": {
+        "candidate_id": "unsupported-coarse-native",
+        "payload": {
+          "raw_text": "Ra 3.2",
+          "coordinates": [8, 9, 18, 19],
+          "coarse_type": "roughness",
+          "requires_confirmation": true
+        },
+        "source_location_ids": ["unsupported-coarse-native-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "unsupported-coarse-native-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "low",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "coarse_fallback",
+          "normalized_value_invalid",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_required",
+          "balloon_requirement_unknown",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    }
+  ],
+  "conflict_cases": [
+    {
+      "id": "visual-diameter-duplicate-conflict",
+      "candidate": {
+        "candidate_id": "visual-diameter-conflict",
+        "payload": {
+          "candidate_id": "visual-diameter-conflict",
+          "item_type": "diameter_dimension",
+          "raw_text": "Φ10",
+          "normalized_text": "Φ10",
+          "coordinates": [9, 10, 19, 20],
+          "scope": "local_feature",
+          "nominal": "10",
+          "feature_kind": "hole",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["visual-diameter-conflict-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "visual-diameter-conflict-source",
+          "source_type": "visual",
+          "normalized_value": "1"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [
+        {
+          "type": "duplicate_relation",
+          "other_candidate_id": "other-candidate"
+        }
+      ],
+      "expected": {
+        "band": "low",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_complete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "possible_duplicate",
+          "cross_view_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "native-visual-composite-advisor-conflict",
+      "candidate": {
+        "candidate_id": "native-visual-composite-conflict",
+        "payload": {
+          "candidate_id": "native-visual-composite-conflict",
+          "item_type": "composite",
+          "raw_text": "Φ10\n深8",
+          "normalized_text": "Φ10\n深8",
+          "coordinates": [10, 11, 20, 21],
+          "scope": "local_feature",
+          "sub_requirements": [
+            {
+              "order": 0,
+              "kind": "diameter_dimension",
+              "raw_text": "Φ10",
+              "nominal": "10",
+              "feature_kind": "hole"
+            },
+            {
+              "order": 1,
+              "kind": "depth",
+              "raw_text": "深8",
+              "value": "8"
+            }
+          ],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": [
+          "native-composite-conflict-source",
+          "visual-composite-conflict-source"
+        ]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "native-composite-conflict-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        },
+        {
+          "source_location_id": "visual-composite-conflict-source",
+          "source_type": "visual",
+          "normalized_value": "1"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [
+        {
+          "type": "advisor_rejection",
+          "rejection_code": "visual_projection_conflict"
+        }
+      ],
+      "expected": {
+        "band": "low",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_complete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "projection_conflict",
+          "provider_schema_rejected",
           "semantic_confirmation_clear",
           "balloon_requirement_known",
           "source_signal_valid",
