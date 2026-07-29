@@ -1219,6 +1219,61 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
         prior runs. If it fails, seal and stop; if it passes, seal at the pause and
         report. Neither outcome authorizes current-four continuation、browser/frontend、
         `main` merge or D7-T3 without the next explicit decision.
+  - Task 8 Step 6 bounded schema-retry live outcome — 2026-07-29:
+    - Implementation and preflight:
+      - The bounded retry implementation was independently reviewed `accept` and
+        committed as
+        `e9fd7a7fa20dbf21f7575fa50ced357965829906`. Exact committed verification
+        was `685 passed` for the full backend, `86 passed` for the three changed
+        modules, Provider fixtures `41 passed / external_calls=0`, focused Ruff
+        passed, `check-contracts.py` reported `global_contracts=69`,
+        `p0_contracts=111`, `mirror_drift=0` and `bindings_drift=0`, and
+        `git diff --check` passed.
+      - API and worker were rebuilt without rebuilding frontend. Both runtime
+        copies of `backend/app/candidates/advisor.py` matched host SHA-256
+        `4994f4c921b15aa87672fe03efa9f5d3c8c945459fc3539f630d0a68b164a0e2`;
+        runtime health passed and the OpenAI-compatible client retained
+        `max_retries=0`.
+      - The no-write sealed preflight passed with `4` exact source files、`111`
+        contracts and `3` bound input artifacts using literal registration runs
+        `20260728T073514713074Z-f32e6fae` and
+        `20260727T085747865239Z-5aa3e8d3`.
+    - The single authorized live start:
+      - Immutable run `20260729T022250886453Z-2cfeb008` started at
+        `2026-07-29T02:22:50.911561Z` from exact HEAD
+        `e9fd7a7fa20dbf21f7575fa50ced357965829906` and fresh project
+        `6cee19a7-62a5-4771-ad40-87b3ad28aeb5`. It sealed failed at
+        `2026-07-29T02:26:00.809874Z` with
+        `failure_reason=live_start_failed:RuntimeError`.
+      - Seven Qwen symbol calls first produced schema-valid canonical cache and
+        audit records. For cache identity
+        `f1fd5732c5c2630603d6ce2e4e1ea5c4edff1dc47fe86de42373b83c72cf0a2f`,
+        the first attempt failed with exact
+        `tool_arguments_schema_invalid`, request ID
+        `chatcmpl-0057a436-7565-9407-8bb5-f6de2100e646`, duration `6109ms`,
+        prompt/completion/total usage `3419/186/3605` and `retry_count=0`.
+        The one authorized same-input retry also failed with the same exact stage,
+        request ID `chatcmpl-2e134b8e-4f3e-9c15-b0c8-65b13501913f`,
+        duration `6549ms`, usage `3419/185/3604` and canonical final
+        `retry_count=1`.
+      - Both attempts bind the same canonical crop SHA-256
+        `5628b3603d6fa7f12d62a637a438740a92f29dd81e2a9de689e492b1dcb53724`
+        and exact `visual-symbol-call-failure/2` envelope. Exactly `9` visual
+        Provider calls occurred through this failure point: `7` successes plus
+        the failed first attempt and its one retry. No third call、SDK retry、
+        alternate stage retry、repair parser or fallback occurred.
+    - Stop boundary:
+      - The second invalid response failed closed before `AutomaticResult`,
+        live sample or symbol-recognition report creation. No manual source
+        command、Quality Owner verdict、balloon、browser/frontend evidence、
+        current-four continuation、`main` merge or D7-T3 change was created.
+        No raw message content、tool arguments、completion、response body or
+        exception context was retained or inspected.
+      - This one-run authorization is exhausted. The bounded retry behavior is
+        proven, but it did not remediate the repeated schema-invalid response for
+        this crop. Another Provider call、response-contract remediation、schema or
+        prompt change、frontend test or continuation requires the next explicit
+        user decision and a separately committed Heavy amendment.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
