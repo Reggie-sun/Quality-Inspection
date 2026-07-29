@@ -891,6 +891,7 @@ then `git revert <task-commit>`. Never revert the migration file before downgrad
 **Files:**
 
 - Modify: `backend/app/candidates/symbol_routing.py`
+- Create: `backend/app/candidates/symbol_escalation_planner.py`
 - Modify: `backend/app/config.py`
 - Modify: `backend/app/projects/models.py`
 - Modify: `backend/app/projects/service.py`
@@ -965,7 +966,10 @@ exists only as a Harness entry. `shadow_uncertainty` runs the legacy route as th
 only semantic/final-write path and records only pure uncertainty decisions against
 the same observations; it makes no extra Provider call and performs no second
 candidate/coverage/result write.
-The planner exposes `max_in_flight=2` as a named production budget and proves that
+`symbol_escalation_planner.py` owns `plan_symbol_escalation_batches()` and its
+immutable proposal、batch、budget and denial records; `symbol_routing.py` retains
+only pre-VLM decision and recognition mode/router-version contracts. The planner
+exposes `max_in_flight=2` as a named production budget and proves that
 window sizes `1` and `2` generate the same stable escalation-group plan. Actual
 bounded execution、completion-order equivalence and attempt accounting close in
 `PRT-3`, where the Provider execution seam exists.
@@ -978,7 +982,8 @@ Run the RED command, then:
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/integration/test_processing_entry_task.py -q
 git diff --check
-git add backend/app/candidates/symbol_routing.py backend/app/config.py \
+git add backend/app/candidates/symbol_routing.py \
+  backend/app/candidates/symbol_escalation_planner.py backend/app/config.py \
   backend/app/projects/models.py backend/app/projects/service.py \
   backend/app/projects/router.py backend/app/processing/tasks.py \
   backend/alembic/versions/0008_symbol_routing_mode.py \
