@@ -23,7 +23,7 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
 
 - Date: `2026-07-29`
 - Selected lane: `Heavy`
-- Status: `production-routing implementation activated; PRT-0 next`
+- Status: `PRT-0 verified; commit pending; PRT-1 next after commit`
 - Current parent plan:
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
 - Current branch/worktree: `codex/symbol-production-routing` /
@@ -37,8 +37,8 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
   quality review。Explorer、auditor、reviewer 和 OSS researcher 始终只读。
 - Validation action: `amend -> continue`；每个 code task 严格
   RED -> minimal GREEN -> focused regression -> review -> exact commit。
-- Next verification: 提交 activation plan 后执行 `PRT-0` stable contract
-  amendment；第一个 production RED 是
+- Next verification: 提交已验证的 `PRT-0` stable contract amendment；随后第一个
+  production RED 是
   `test_local_symbol_resolution.py + test_symbol_routing.py`。
 - This file owns only the bounded symbol-recognition convergence steps below. It
   does not become a second current plan and cannot authorize `D7-T3`、`SR-5`、
@@ -585,7 +585,7 @@ was executed.
 - Test:
   `backend/tests/contract/harness/test_contract_architecture.py`
 
-- [ ] **Step 0: Record the docs-only TDD exemption and baseline**
+- [x] **Step 0: Record the docs-only TDD exemption and baseline**
 
 `PRT-0` changes contract/traceability documents only, so production-code TDD is
 not applicable. Its pre-change baseline replaces RED:
@@ -600,7 +600,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 Expected baseline: both pass before edits. After edits, they must still pass while
 the affected P0 bindings remain `not_run` or explicitly blocked until new evidence.
 
-- [ ] **Step 1: Amend stable contract semantics**
+- [x] **Step 1: Amend stable contract semantics**
 
 Amend only the existing Owners:
 
@@ -621,7 +621,7 @@ Amend only the existing Owners:
 - `SYS-006`/`PRJ-002`: reader-first compatibility and project-frozen recognition
   mode/router version.
 
-- [ ] **Step 2: Amend P0 bindings without false closure**
+- [x] **Step 2: Amend P0 bindings without false closure**
 
 Update `P0-REC-005/009/010`、`P0-RES-001/008`、
 `P0-UI-004/006/008` and `P0-ACC-002/007` with the new contract delta and exact
@@ -634,7 +634,7 @@ project_local_content_cache_allowed=true
 
 Do not mark a new proof `passed` before its actual command/evidence exists.
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 Run:
 
@@ -660,6 +660,25 @@ git add docs/contracts/MAIN_CONTRACT_MATRIX.md \
   docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md
 git commit -m "docs: activate production symbol routing contracts"
 ```
+
+**PRT-0 evidence (`2026-07-29`):**
+
+- Pre-change docs-only baseline:
+  `check-contracts.py` reported `global_contracts=69`、`p0_contracts=111`、
+  `mirror_drift=0`、`bindings_drift=0`; contract architecture reported
+  `29 passed`.
+- The two registered generators wrote only
+  `.agent/harness/contracts/p0-contracts.json` and
+  `.agent/harness/contracts/global-contract-bindings.json`.
+- Post-change verification reported the same `69/111` counts、zero mirror/binding
+  drift、zero unclassified/duplicate/missing/unbound/conflict counts and
+  `definition_hash_stable_under_status_only_change=1`; contract architecture
+  reported `29 passed`; `git diff --check` passed.
+- Projection audit found exactly the ten requested P0 rows in the generated mirror
+  and only `SYS-006`、`CAND-004`、`CAND-005`、`REV-002`、`DIAG-003` binding
+  membership deltas. All ten production-routing proof rows remain `not_run`.
+- Commit: `pending at pre-commit evidence write; resolved by the exact commit
+  containing this line`.
 
 Rollback is:
 
