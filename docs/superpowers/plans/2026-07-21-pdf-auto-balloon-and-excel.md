@@ -1574,6 +1574,45 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
       - After the call, record the safe diagnostic and stop. Any remediation、
         second diagnostic call or new full-P0 start requires a new explicit
         decision based on the observed leaf evidence.
+  - Schema-leaf targeted diagnostic outcome — 2026-07-29:
+    - The diagnostic implementation was committed as
+      `163e0a5d780288bcb67af31d12bd7e4bab46768e`. API/worker were rebuilt from
+      that exact state while frontend remained untouched. Runtime health、
+      host/container source hashes、model `qwen3-vl-plus-2025-12-19`、adapter
+      `/4`、prompt v4、schema v1、`temperature=0` and SDK `max_retries=0`
+      were revalidated.
+    - The no-write preflight reconstructed project
+      `a0bea969-8736-4d08-a9f7-2c640e50a9b0` page `1` batch index `3` from
+      the stored source/inventory with `80/125` visual observations and
+      `13/16` batches. Before Provider construction/calls=`0/0`, it reproduced
+      exact cache identity
+      `21bb7dea986d079fe379d770e2699ec41ec32105702c9112e0f3c5293adac54b`,
+      crop SHA-256
+      `e4e60ff8a7434f3e00577dce1de536f616cb3dfadaa276570b33b5070fb621a2`
+      and prompt SHA-256
+      `169d1a40677d07e8a845897c460613105d197349e1860de1c97828fb0d9b1989`.
+    - The single authorized production
+      `QwenVisionProvider.review_symbols()` invocation returned a
+      schema-valid response with request ID
+      `chatcmpl-e2fd3f55-417b-96f2-b3a1-fbd8f206a4fa`, `2` detections,
+      `9116ms` duration and `4162/399/4561`
+      prompt/completion/total tokens. The unretained canonical payload
+      SHA-256 was
+      `8ea333776ed5f5a3c586b6521b7262b9bfa99415a811828911c64a14fb44a113`.
+      Because this invocation was schema-valid, it produced no allowlisted
+      schema-leaf diagnostic. It neither identifies a safely relaxable leaf
+      nor overturns the two sealed full-run failures; the observed
+      response-contract failure remains intermittent at this exact
+      crop/prompt boundary.
+    - The sanitized report is
+      `/tmp/qi-symbol-schema-diagnostic.bUkTCh/targeted-diagnostic-report.json`
+      with SHA-256
+      `395bd111acf54c64e087a6ecd72a01a081c5fcadaa073fd7e1635bab1518f8df`.
+      No formal run、project、cache、response、approved manifest、
+      `AutomaticResult`、frontend change or `main` merge was created. The
+      one-call authorization is exhausted. Remediation、a second diagnostic
+      dimension/call or a new full-P0 start requires a new explicit user
+      decision.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
