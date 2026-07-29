@@ -1772,6 +1772,15 @@ describe("InspectionWorkbench", () => {
         },
         active: true,
       },
+      {
+        item_id: "kept-confirmation-item",
+        item_type: "linear_dimension" as const,
+        raw_text: "25",
+        nominal: "25",
+        status: "kept",
+        requires_confirmation: true,
+        active: true,
+      },
     ];
     render(
       <InspectionWorkbench
@@ -1787,7 +1796,7 @@ describe("InspectionWorkbench", () => {
           version: 1,
           items,
           coverage: { blocking_count: 0, review_required_count: 0 },
-          manual_review_count: 1,
+          manual_review_count: 2,
           numbering_stale: false,
           items_frozen_at: null,
           items_frozen_by: null,
@@ -1800,6 +1809,7 @@ describe("InspectionWorkbench", () => {
     expect(screen.getByRole("button", { name: "筛选待人工审核" })
       .getAttribute("data-active")).toBe("true");
     expect(screen.getByRole("row", { name: /20/ })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /25/ })).not.toBeNull();
     expect(screen.queryByRole("row", { name: /10/ })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));

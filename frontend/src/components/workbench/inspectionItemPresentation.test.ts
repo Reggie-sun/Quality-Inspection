@@ -128,6 +128,49 @@ describe("inspectionItemPresentation", () => {
     expect(isReviewRequiredItem(item as never)).toBe(true);
   });
 
+  test.each([
+    {
+      name: "active kept 仍待确认",
+      item: {
+        active: true,
+        status: "kept",
+        requires_confirmation: true,
+      },
+      expected: true,
+    },
+    {
+      name: "完整自动通过项",
+      item: {
+        active: true,
+        status: "auto_accepted",
+        requires_confirmation: false,
+        acceptance_source: "confidence_policy",
+        confidence_decision: {
+          band: "high",
+          review_disposition: "auto_accepted",
+          policy_version: "candidate-confidence/1",
+          evidence_codes: ["typed_schema_complete"],
+        },
+      },
+      expected: false,
+    },
+    {
+      name: "inactive kept 仍待确认",
+      item: {
+        active: false,
+        status: "kept",
+        requires_confirmation: true,
+      },
+      expected: false,
+    },
+  ])("$name 的默认人工队列归属为 $expected", ({ item, expected }) => {
+    expect(isReviewRequiredItem({
+      item_id: "queue-item",
+      raw_text: "10",
+      ...item,
+    } as never)).toBe(expected);
+  });
+
   test("未知 confidence/status fail closed 为待人工审核", () => {
     expect(inspectionItemPresentation({
       item_id: "unknown-confidence",

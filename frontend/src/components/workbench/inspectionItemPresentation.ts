@@ -114,6 +114,7 @@ export function isAutoAcceptedCandidateProjection(
 
 export function isReviewRequiredItem(item: ReviewItem): boolean {
   if (!item.active || isAutoAcceptedItem(item)) return false;
+  if (item.requires_confirmation === true) return true;
   return item.status !== "kept";
 }
 
