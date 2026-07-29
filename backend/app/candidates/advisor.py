@@ -364,6 +364,21 @@ def _json_bytes(payload: dict[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
+def _visual_retry_evidence_paths(
+    project_id: str,
+    cache_key: str,
+) -> tuple[str, str, str]:
+    filename = f"{cache_key}.attempt-1.json"
+    return (
+        f"projects/{project_id}/provider-calls/"
+        f"qwen-symbol-retries/{filename}",
+        f"projects/{project_id}/provider-requests/"
+        f"qwen-symbol-retries/{filename}",
+        f"projects/{project_id}/provider-responses/"
+        f"qwen-symbol-retries/{filename}",
+    )
+
+
 def _cache_key(
     *,
     model: str,
@@ -500,7 +515,7 @@ class CandidateAdvisor:
         crop_relative_path: str,
         request_relative_path: str,
         identity: dict[str, object],
-    ) -> VisionResult | None:
+    ) -> tuple[VisionResult, tuple[str, ...]] | None:
         cache_candidate = self._storage.root.joinpath(
             *relative_path.split("/")
         )
@@ -564,13 +579,19 @@ class CandidateAdvisor:
             )
             if serialize_call_record(audit) != audit_content:
                 raise ValueError("cache audit")
+            retry_count = audit.get("retry_count")
+            if (
+                not isinstance(retry_count, int)
+                or isinstance(retry_count, bool)
+                or retry_count not in (0, 1)
+            ):
+                raise ValueError("cache retry count")
             expected_audit = {
                 "provider": "qwen-vl",
                 "request_id": request_id,
                 "model": identity["model"],
                 "prompt_version": VISUAL_PROMPT_VERSION,
                 "schema_version": VISUAL_SCHEMA_VERSION,
-                "retry_count": 0,
                 "input_image_count": 1,
                 "estimated_cost": None,
                 "logical_task_reused": False,
@@ -584,10 +605,90 @@ class CandidateAdvisor:
                 "crop_sha256"
             ) or response_path.read_bytes() != response_content:
                 raise ValueError("cache audit")
-            return VisionResult(
-                request_id=request_id,
-                payload=response,
-                usage=usage,
+
+            cache_key = Path(audit_relative_path).stem
+            retry_paths = _visual_retry_evidence_paths(
+                self._project_id,
+                cache_key,
+            )
+            retry_request_ids: tuple[str, ...] = ()
+            retry_candidates = tuple(
+                self._storage.root.joinpath(*path.split("/"))
+                for path in retry_paths
+            )
+            if retry_count == 0:
+                if any(
+                    path.exists() or path.is_symlink()
+                    for path in retry_candidates
+                ):
+                    raise ValueError("unexpected retry evidence")
+            else:
+                retry_audit_path = self._storage.resolve_resource_ref(
+                    f"asset://{retry_paths[0]}"
+                )
+                retry_request_path = self._storage.resolve_resource_ref(
+                    f"asset://{retry_paths[1]}"
+                )
+                retry_response_path = self._storage.resolve_resource_ref(
+                    f"asset://{retry_paths[2]}"
+                )
+                retry_audit_content = retry_audit_path.read_bytes()
+                retry_audit = json.loads(retry_audit_content)
+                retry_request_content = retry_request_path.read_bytes()
+                retry_request = json.loads(retry_request_content)
+                retry_response_content = retry_response_path.read_bytes()
+                retry_response = json.loads(retry_response_content)
+                if (
+                    not isinstance(retry_audit, dict)
+                    or not isinstance(retry_request, dict)
+                    or not isinstance(retry_response, dict)
+                    or serialize_call_record(retry_audit)
+                    != retry_audit_content
+                    or retry_audit.get("request_id") == request_id
+                ):
+                    raise ValueError("retry evidence")
+                expected_retry_audit = {
+                    "provider": "qwen-vl",
+                    "model": identity["model"],
+                    "prompt_version": VISUAL_PROMPT_VERSION,
+                    "schema_version": VISUAL_SCHEMA_VERSION,
+                    "retry_count": 0,
+                    "input_image_count": 1,
+                    "estimated_cost": None,
+                    "logical_task_reused": False,
+                    "request_ref": f"asset://{retry_paths[1]}",
+                    "response_ref": f"asset://{retry_paths[2]}",
+                }
+                if any(
+                    retry_audit.get(key) != value
+                    for key, value in expected_retry_audit.items()
+                ):
+                    raise ValueError("retry audit")
+                retry_request_evidence = parse_visual_request_evidence(
+                    retry_request,
+                    expected_crop_ref=f"asset://{crop_relative_path}",
+                    expected_crop_sha256=str(identity["crop_sha256"]),
+                    expected_usage=retry_request.get("usage"),
+                )
+                expected_retry_response = build_visual_failure_envelope(
+                    "tool_arguments_schema_invalid"
+                )
+                if (
+                    _json_bytes(retry_request_evidence)
+                    != retry_request_content
+                    or retry_response != expected_retry_response
+                    or _json_bytes(expected_retry_response)
+                    != retry_response_content
+                ):
+                    raise ValueError("retry payload")
+                retry_request_ids = (str(retry_audit["request_id"]),)
+            return (
+                VisionResult(
+                    request_id=request_id,
+                    payload=response,
+                    usage=usage,
+                ),
+                (*retry_request_ids, request_id),
             )
         except Exception:
             raise CandidateAdvisorFailure(
@@ -604,7 +705,10 @@ class CandidateAdvisor:
         visual_observations: Sequence[VisualObservation],
         text_observations: dict[str, TextObservation],
         model: str,
-    ) -> tuple[VisionResult, object | None]:
+        allow_schema_retry: bool = False,
+    ) -> tuple[VisionResult, object | None, tuple[str, ...]]:
+        if not isinstance(allow_schema_retry, bool):
+            raise ValueError("visual schema retry flag must be boolean")
         canonical_crop_png = canonicalize_visual_png(crop_png)
         crop_sha256 = hashlib.sha256(canonical_crop_png).hexdigest()
         visual_observation_ids = tuple(
@@ -649,7 +753,12 @@ class CandidateAdvisor:
             identity=identity,
         )
         if cached is not None:
-            return cached, provider
+            cached_result, cached_request_ids = cached
+            if len(cached_request_ids) > 1 and not allow_schema_retry:
+                raise CandidateAdvisorFailure(
+                    "Visual symbol Advisor retry budget is invalid"
+                )
+            return cached_result, provider, cached_request_ids
 
         if provider is None:
             provider = self._provider_factory(self._settings)
@@ -658,46 +767,66 @@ class CandidateAdvisor:
             canonical_crop_png,
             crop_sha256,
         )
-        started = time.perf_counter_ns()
-        provider_failure: tuple[str, dict[str, int], str] | None = None
-        try:
-            raw_result = provider.review_symbols(
-                canonical_crop_png,
-                visual_review_prompt(
-                    visual_observations,
-                    text_observations=text_observations,
-                    crop_bbox_pdf=crop_bbox_pdf,
-                ),
-            )
-            response = parse_visual_symbol_json(raw_result.payload)
-            request_id, usage = validate_visual_request_metadata(
-                raw_result.request_id,
-                raw_result.usage,
-            )
-            result = VisionResult(
-                request_id=request_id,
-                payload=response,
-                usage=usage,
-            )
-        except VisualSymbolProviderError as exc:
-            provider_failure = (
-                exc.request_id,
-                dict(exc.usage),
-                exc.failure_stage,
-            )
-        except CapabilityUnavailable:
-            raise
-        except Exception:
-            raise CandidateAdvisorFailure(
-                "Visual symbol Advisor call failed"
-            ) from None
+        prompt = visual_review_prompt(
+            visual_observations,
+            text_observations=text_observations,
+            crop_bbox_pdf=crop_bbox_pdf,
+        )
 
-        if provider_failure is not None:
-            request_id, usage, failure_stage = provider_failure
+        def call_once() -> tuple[
+            VisionResult | None,
+            tuple[str, dict[str, int], str] | None,
+            int,
+        ]:
+            started = time.perf_counter_ns()
+            result: VisionResult | None = None
+            failure: tuple[str, dict[str, int], str] | None = None
+            unexpected_failure = False
+            try:
+                raw_result = provider.review_symbols(
+                    canonical_crop_png,
+                    prompt,
+                )
+                response = parse_visual_symbol_json(raw_result.payload)
+                request_id, usage = validate_visual_request_metadata(
+                    raw_result.request_id,
+                    raw_result.usage,
+                )
+                result = VisionResult(
+                    request_id=request_id,
+                    payload=response,
+                    usage=usage,
+                )
+            except VisualSymbolProviderError as exc:
+                failure = (
+                    exc.request_id,
+                    dict(exc.usage),
+                    exc.failure_stage,
+                )
+            except CapabilityUnavailable:
+                raise
+            except Exception:
+                unexpected_failure = True
             duration_ms = max(
                 0,
                 (time.perf_counter_ns() - started) // 1_000_000,
             )
+            if unexpected_failure:
+                raise CandidateAdvisorFailure(
+                    "Visual symbol Advisor call failed"
+                ) from None
+            return result, failure, duration_ms
+
+        def persist_failure(
+            failure: tuple[str, dict[str, int], str],
+            *,
+            duration_ms: int,
+            retry_count: int,
+            audit_path: str,
+            request_path: str,
+            response_path: str,
+        ) -> None:
+            request_id, usage, failure_stage = failure
             request_content = _json_bytes(
                 build_visual_request_evidence(
                     crop_ref=crop_write.resource_ref,
@@ -706,25 +835,21 @@ class CandidateAdvisor:
                 )
             )
             request_write = self._storage.write_verified(
-                request_relative,
+                request_path,
                 request_content,
                 hashlib.sha256(request_content).hexdigest(),
             )
             failure_content = _json_bytes(
                 build_visual_failure_envelope(failure_stage)
             )
-            failure_relative = (
-                f"projects/{self._project_id}/provider-responses/"
-                f"qwen-symbol/{cache_key}.json"
-            )
             failure_write = self._storage.write_verified(
-                failure_relative,
+                response_path,
                 failure_content,
                 hashlib.sha256(failure_content).hexdigest(),
             )
             persist_call_record(
                 self._storage,
-                audit_relative,
+                audit_path,
                 ProviderCallRecord(
                     provider="qwen-vl",
                     request_id=request_id,
@@ -732,7 +857,7 @@ class CandidateAdvisor:
                     prompt_version=VISUAL_PROMPT_VERSION,
                     schema_version=VISUAL_SCHEMA_VERSION,
                     duration_ms=duration_ms,
-                    retry_count=0,
+                    retry_count=retry_count,
                     input_image_count=1,
                     estimated_cost=None,
                     logical_task_reused=False,
@@ -740,11 +865,51 @@ class CandidateAdvisor:
                     response_ref=failure_write.resource_ref,
                 ),
             )
+
+        result, provider_failure, duration_ms = call_once()
+        request_ids: list[str] = []
+        retry_count = 0
+        if (
+            provider_failure is not None
+            and allow_schema_retry
+            and provider_failure[2] == "tool_arguments_schema_invalid"
+        ):
+            retry_paths = _visual_retry_evidence_paths(
+                self._project_id,
+                cache_key,
+            )
+            persist_failure(
+                provider_failure,
+                duration_ms=duration_ms,
+                retry_count=0,
+                audit_path=retry_paths[0],
+                request_path=retry_paths[1],
+                response_path=retry_paths[2],
+            )
+            request_ids.append(provider_failure[0])
+            result, provider_failure, duration_ms = call_once()
+            retry_count = 1
+
+        if provider_failure is not None:
+            persist_failure(
+                provider_failure,
+                duration_ms=duration_ms,
+                retry_count=retry_count,
+                audit_path=audit_relative,
+                request_path=request_relative,
+                response_path=(
+                    f"projects/{self._project_id}/provider-responses/"
+                    f"qwen-symbol/{cache_key}.json"
+                ),
+            )
             raise CandidateAdvisorFailure(
                 "Visual symbol Advisor response is invalid"
             ) from None
-        duration_ms = max(0, (time.perf_counter_ns() - started) // 1_000_000)
-
+        if result is None:
+            raise CandidateAdvisorFailure(
+                "Visual symbol Advisor call failed"
+            ) from None
+        request_ids.append(result.request_id)
         request_content = _json_bytes(
             build_visual_request_evidence(
                 crop_ref=crop_write.resource_ref,
@@ -790,7 +955,7 @@ class CandidateAdvisor:
                 prompt_version=VISUAL_PROMPT_VERSION,
                 schema_version=VISUAL_SCHEMA_VERSION,
                 duration_ms=duration_ms,
-                retry_count=0,
+                retry_count=retry_count,
                 input_image_count=1,
                 estimated_cost=None,
                 logical_task_reused=False,
@@ -798,7 +963,7 @@ class CandidateAdvisor:
                 response_ref=response_write.resource_ref,
             ),
         )
-        return result, provider
+        return result, provider, tuple(request_ids)
 
     def _review_result(
         self,
@@ -913,7 +1078,7 @@ class CandidateAdvisor:
         snapshot: CandidateSnapshot,
     ) -> CandidateSnapshot:
         visual_batches = plan_visual_batches(pages, snapshot)
-        visual_calls_by_page = {
+        planned_visual_calls_by_page = {
             page.page_index: len(visual_batches[index])
             for index, page in enumerate(pages)
         }
@@ -922,7 +1087,7 @@ class CandidateAdvisor:
             snapshot,
             max_calls_by_page={
                 page_index: MAX_CALLS_PER_PAGE - count
-                for page_index, count in visual_calls_by_page.items()
+                for page_index, count in planned_visual_calls_by_page.items()
             },
         )
         model = self._settings.qwen_model.strip()
@@ -967,6 +1132,11 @@ class CandidateAdvisor:
             else ""
         )
         candidates_changed = False
+        visual_retry_available = True
+        actual_visual_calls_by_page = {
+            page.page_index: 0
+            for page in pages
+        }
         document = pymupdf.open(pdf_path)
         try:
             accepted_by_page: list[list[ValidatedSymbolDetection]] = [
@@ -987,7 +1157,7 @@ class CandidateAdvisor:
                         page,
                         batch.crop_bbox_pdf,
                     )
-                    result, provider = self._visual_review_result(
+                    result, provider, request_ids = self._visual_review_result(
                         provider=provider,
                         crop_png=crop_png,
                         crop_bbox_pdf=batch.crop_bbox_pdf,
@@ -995,7 +1165,16 @@ class CandidateAdvisor:
                         visual_observations=batch_observations,
                         text_observations=text_observations_by_id,
                         model=model,
+                        allow_schema_retry=(
+                            visual_retry_available
+                            and len(page_batches) < MAX_CALLS_PER_PAGE
+                        ),
                     )
+                    actual_visual_calls_by_page[
+                        page_inventory.page_index
+                    ] += len(request_ids)
+                    if len(request_ids) > 1:
+                        visual_retry_available = False
                     accepted, rejected = validate_symbol_detections(
                         result.payload,
                         visual_observation_ids=batch.observation_ids,
@@ -1019,7 +1198,7 @@ class CandidateAdvisor:
                             rejection_sets.setdefault(identity, set()).add(
                                 rejected_item.rejection_code
                             )
-                    provider_call_ids.append(result.request_id)
+                    provider_call_ids.extend(request_ids)
 
             base_candidates = tuple(candidates)
             visual_decisions = []
@@ -1152,7 +1331,17 @@ class CandidateAdvisor:
             if not routes and not any(visual_batches):
                 return snapshot
 
+            text_calls_by_page = {
+                page.page_index: 0
+                for page in pages
+            }
             for frozen_route in routes:
+                if (
+                    actual_visual_calls_by_page[frozen_route.page_index]
+                    + text_calls_by_page[frozen_route.page_index]
+                    >= MAX_CALLS_PER_PAGE
+                ):
+                    continue
                 if frozen_route.candidate_id is not None:
                     current_indexes = [
                         index
@@ -1198,6 +1387,7 @@ class CandidateAdvisor:
                     padding_pdf=padding,
                     model=model,
                 )
+                text_calls_by_page[route.page_index] += 1
                 rejection_code = _rejection_code(route, result.payload)
 
                 updated_payload: dict[str, Any] | None = None

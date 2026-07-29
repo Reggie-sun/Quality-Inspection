@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -7,15 +8,18 @@ from pathlib import Path
 import pymupdf
 import pytest
 
+import app.candidates.advisor as advisor_module
 from app.candidates.advisor import CandidateAdvisor, CandidateAdvisorFailure
 from app.candidates.duplicates import DuplicateRelation
 from app.config import Settings
 from app.pdf.inventory import build_inventory
+from app.pdf.visual_observations import VisualBatch
 from app.processing.automatic_result import (
     CandidateSnapshot,
     candidate_snapshot_from_inventory,
 )
 from app.providers.base import VisionResult
+from app.providers.qwen_vl import VisualSymbolProviderError
 from app.storage.local import LocalFileStorage
 
 
@@ -107,6 +111,28 @@ class UnifiedRecordingProvider(EchoVisionProvider):
     def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
         self.call_order.append("text")
         return super().review_candidate(image, prompt)
+
+
+class RetryRecordingProvider(UnifiedRecordingProvider):
+    def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
+        assert image.startswith(b"\x89PNG")
+        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/1"
+        self.call_order.append("visual")
+        call_count = self.call_order.count("visual")
+        if call_count == 1:
+            raise VisualSymbolProviderError(
+                request_id="fixture-visual-retry-1",
+                usage={"total_tokens": 11},
+                failure_stage="tool_arguments_schema_invalid",
+            )
+        return VisionResult(
+            request_id="fixture-visual-retry-success",
+            payload={
+                "schema_version": "visual-symbol-review/1",
+                "detections": [],
+            },
+            usage={"total_tokens": 12},
+        )
 
 
 class VisualDiameterProvider(EchoVisionProvider):
@@ -365,6 +391,242 @@ def test_visual_calls_precede_the_text_budget_remainder(tmp_path: Path) -> None:
         "symbol_kinds": [],
         "rejection_code": "visual_no_detection",
     }
+
+
+def test_one_visual_schema_retry_consumes_page_and_document_budget(
+    tmp_path: Path,
+) -> None:
+    source, pages, snapshot = dense_visual_roughness_fixture(tmp_path)
+    provider = RetryRecordingProvider()
+
+    reviewed = candidate_advisor(tmp_path, provider).review(
+        source,
+        pages,
+        snapshot,
+    )
+
+    assert provider.call_order == ["visual", "visual", *(["text"] * 14)]
+    assert len(reviewed.provider_call_ids) == 16
+    assert reviewed.provider_call_ids[:2] == (
+        "fixture-visual-retry-1",
+        "fixture-visual-retry-success",
+    )
+
+
+def test_second_visual_schema_failure_in_document_is_not_retried(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, snapshot = visual_diameter_fixture(tmp_path)
+    visual_id = pages[0].visual_observations[0].observation_id
+    monkeypatch.setattr(
+        advisor_module,
+        "plan_visual_batches",
+        lambda _pages, _snapshot: (
+            (
+                VisualBatch(
+                    page_index=0,
+                    call_index=0,
+                    observation_ids=(visual_id,),
+                    crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+                    pixel_width=334,
+                    pixel_height=334,
+                ),
+                VisualBatch(
+                    page_index=0,
+                    call_index=1,
+                    observation_ids=(visual_id,),
+                    crop_bbox_pdf=(0.0, 0.0, 100.0, 100.0),
+                    pixel_width=417,
+                    pixel_height=417,
+                ),
+            ),
+        ),
+    )
+
+    class TwoFailureProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def review_symbols(self, _image: bytes, _prompt: str) -> VisionResult:
+            self.calls += 1
+            if self.calls in (1, 3):
+                raise VisualSymbolProviderError(
+                    request_id=f"fixture-schema-failure-{self.calls}",
+                    usage={"total_tokens": self.calls},
+                    failure_stage="tool_arguments_schema_invalid",
+                )
+            return VisionResult(
+                request_id=f"fixture-schema-success-{self.calls}",
+                payload={
+                    "schema_version": "visual-symbol-review/1",
+                    "detections": [],
+                },
+                usage={"total_tokens": self.calls},
+            )
+
+    provider = TwoFailureProvider()
+    with pytest.raises(
+        CandidateAdvisorFailure,
+        match="^Visual symbol Advisor response is invalid$",
+    ):
+        candidate_advisor(tmp_path, provider).review(source, pages, snapshot)
+
+    assert provider.calls == 3
+
+
+def test_second_cached_visual_retry_chain_in_document_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    batches = (
+        VisualBatch(
+            page_index=0,
+            call_index=0,
+            observation_ids=(visual.observation_id,),
+            crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+            pixel_width=334,
+            pixel_height=334,
+        ),
+        VisualBatch(
+            page_index=0,
+            call_index=1,
+            observation_ids=(visual.observation_id,),
+            crop_bbox_pdf=(0.0, 0.0, 100.0, 100.0),
+            pixel_width=417,
+            pixel_height=417,
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "plan_visual_batches",
+        lambda _pages, _snapshot: (batches,),
+    )
+
+    class TwoRetryCacheProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def review_symbols(self, _image: bytes, _prompt: str) -> VisionResult:
+            self.calls += 1
+            if self.calls % 2 == 1:
+                raise VisualSymbolProviderError(
+                    request_id=f"fixture-cached-retry-{self.calls}",
+                    usage={"total_tokens": self.calls},
+                    failure_stage="tool_arguments_schema_invalid",
+                )
+            return VisionResult(
+                request_id=f"fixture-cached-success-{self.calls}",
+                payload={
+                    "schema_version": "visual-symbol-review/1",
+                    "detections": [],
+                },
+                usage={"total_tokens": self.calls},
+            )
+
+    provider = TwoRetryCacheProvider()
+    builder = candidate_advisor(tmp_path, provider)
+    source_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+    text_observations = {
+        observation.observation_id: observation
+        for observation in pages[0].observations
+    }
+    document = pymupdf.open(source)
+    try:
+        for batch in batches:
+            builder._visual_review_result(
+                provider=provider,
+                crop_png=advisor_module._render_visual_crop(
+                    document[0],
+                    batch.crop_bbox_pdf,
+                ),
+                crop_bbox_pdf=batch.crop_bbox_pdf,
+                source_sha256=source_sha256,
+                visual_observations=(visual,),
+                text_observations=text_observations,
+                model="qwen3-vl-plus",
+                allow_schema_retry=True,
+            )
+    finally:
+        document.close()
+    assert provider.calls == 4
+
+    class MustNotCallProvider:
+        calls = 0
+
+        @classmethod
+        def review_symbols(
+            cls,
+            _image: bytes,
+            _prompt: str,
+        ) -> VisionResult:
+            cls.calls += 1
+            raise AssertionError("invalid retry cache reached Provider")
+
+    with pytest.raises(
+        CandidateAdvisorFailure,
+        match="^Visual symbol Advisor retry budget is invalid$",
+    ):
+        candidate_advisor(tmp_path, MustNotCallProvider()).review(
+            source,
+            pages,
+            snapshot,
+        )
+
+    assert MustNotCallProvider.calls == 0
+
+
+def test_full_visual_page_has_no_retry_spare(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, snapshot = visual_diameter_fixture(tmp_path)
+    visual_id = pages[0].visual_observations[0].observation_id
+    batch = VisualBatch(
+        page_index=0,
+        call_index=0,
+        observation_ids=(visual_id,),
+        crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+        pixel_width=334,
+        pixel_height=334,
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "plan_visual_batches",
+        lambda _pages, _snapshot: (tuple(replace(batch, call_index=i) for i in range(16)),),
+    )
+
+    class FailThenSucceedProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def review_symbols(self, _image: bytes, _prompt: str) -> VisionResult:
+            self.calls += 1
+            if self.calls == 1:
+                raise VisualSymbolProviderError(
+                    request_id="fixture-no-spare-failure",
+                    usage={"total_tokens": 1},
+                    failure_stage="tool_arguments_schema_invalid",
+                )
+            return VisionResult(
+                request_id="fixture-no-spare-success",
+                payload={
+                    "schema_version": "visual-symbol-review/1",
+                    "detections": [],
+                },
+                usage={"total_tokens": 1},
+            )
+
+    provider = FailThenSucceedProvider()
+    with pytest.raises(
+        CandidateAdvisorFailure,
+        match="^Visual symbol Advisor response is invalid$",
+    ):
+        candidate_advisor(tmp_path, provider).review(source, pages, snapshot)
+
+    assert provider.calls == 1
 
 
 def test_visual_projection_does_not_create_same_review_text_route(

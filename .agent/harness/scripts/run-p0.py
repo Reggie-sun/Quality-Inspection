@@ -1539,6 +1539,7 @@ finally:
 
 
 _SYMBOL_RESULT_PROGRAM = r"""
+import hashlib
 import json
 import os
 import uuid
@@ -1548,9 +1549,233 @@ from sqlalchemy import select
 
 from app.audit.operations import OperationRecord
 from app.candidates.models import AutomaticResult
+from app.candidates.symbol_review import (
+    build_visual_failure_envelope,
+    parse_visual_request_evidence,
+)
 from app.config import get_settings
 from app.db import SessionLocal
+from app.providers.call_records import serialize_call_record
 from app.storage.local import LocalFileStorage
+
+
+def visual_attempt_count(audit, retry_evidence):
+    if (
+        not isinstance(audit, dict)
+        or not isinstance(audit.get("request_id"), str)
+        or not audit["request_id"]
+        or not isinstance(audit.get("retry_count"), int)
+        or isinstance(audit["retry_count"], bool)
+        or audit["retry_count"] not in (0, 1)
+        or not isinstance(retry_evidence, list)
+        or len(retry_evidence) != audit["retry_count"]
+    ):
+        raise RuntimeError("visual Provider retry evidence is invalid")
+    for retry in retry_evidence:
+        if (
+            not isinstance(retry, dict)
+            or set(retry)
+            != {"request_id", "retry_count", "failure_stage"}
+            or not isinstance(retry["request_id"], str)
+            or not retry["request_id"]
+            or retry["request_id"] == audit["request_id"]
+            or retry["retry_count"] != 0
+            or retry["failure_stage"]
+            != "tool_arguments_schema_invalid"
+        ):
+            raise RuntimeError("visual Provider retry evidence is invalid")
+    return 1 + audit["retry_count"]
+
+
+def paired_cache(project_root, storage, project_id, relative):
+    def exact_json_files(evidence_relative):
+        directory = project_root / evidence_relative
+        if not directory.exists():
+            return []
+        if directory.is_symlink() or not directory.is_dir():
+            raise RuntimeError("Provider evidence directory is invalid")
+        files = sorted(directory.glob("*.json"))
+        if any(path.is_symlink() or not path.is_file() for path in files):
+            raise RuntimeError("Provider evidence file is invalid")
+        return files
+
+    cache_files = exact_json_files(f"provider-cache/{relative}")
+    audit_files = exact_json_files(f"provider-calls/{relative}")
+    cache_names = {path.name for path in cache_files}
+    if cache_names != {path.name for path in audit_files}:
+        raise RuntimeError("Provider cache/call evidence differs")
+
+    retry_by_cache = {}
+    if relative == "qwen-symbol":
+        retry_directories = {
+            "audit": "provider-calls/qwen-symbol-retries",
+            "request": "provider-requests/qwen-symbol-retries",
+            "response": "provider-responses/qwen-symbol-retries",
+        }
+        retry_files = {
+            kind: exact_json_files(directory)
+            for kind, directory in retry_directories.items()
+        }
+        retry_names = {
+            kind: {path.name for path in paths}
+            for kind, paths in retry_files.items()
+        }
+        if (
+            retry_names["audit"] != retry_names["request"]
+            or retry_names["audit"] != retry_names["response"]
+        ):
+            raise RuntimeError("visual Provider retry evidence is invalid")
+        for filename in retry_names["audit"]:
+            suffix = ".attempt-1.json"
+            digest = filename.removesuffix(suffix)
+            if (
+                not filename.endswith(suffix)
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+            ):
+                raise RuntimeError("visual Provider retry evidence is invalid")
+            cache_name = f"{digest}.json"
+            if cache_name not in cache_names or cache_name in retry_by_cache:
+                raise RuntimeError("visual Provider retry evidence is invalid")
+            retry_by_cache[cache_name] = {
+                kind: project_root / directory / filename
+                for kind, directory in retry_directories.items()
+            }
+
+    pairs = []
+    for cache_path in cache_files:
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        audit_path = project_root / "provider-calls" / relative / cache_path.name
+        audit_content = audit_path.read_bytes()
+        audit = json.loads(audit_content)
+        if (
+            not isinstance(cache, dict)
+            or not isinstance(audit, dict)
+            or cache.get("request_id") != audit.get("request_id")
+            or audit.get("logical_task_reused") is not False
+            or serialize_call_record(audit) != audit_content
+        ):
+            raise RuntimeError("Provider cache/call identity is invalid")
+
+        retry_evidence = []
+        retry_paths = retry_by_cache.pop(cache_path.name, None)
+        if retry_paths is not None:
+            retry_contents = {
+                kind: path.read_bytes()
+                for kind, path in retry_paths.items()
+            }
+            retry_audit = json.loads(retry_contents["audit"])
+            retry_request = json.loads(retry_contents["request"])
+            retry_response = json.loads(retry_contents["response"])
+            identity = cache.get("identity")
+            crop_sha256 = (
+                identity.get("crop_sha256")
+                if isinstance(identity, dict)
+                else None
+            )
+            filename = retry_paths["audit"].name
+            project_segment = str(project_id)
+            expected_request_ref = (
+                f"asset://projects/{project_segment}/provider-requests/"
+                f"qwen-symbol-retries/{filename}"
+            )
+            expected_response_ref = (
+                f"asset://projects/{project_segment}/provider-responses/"
+                f"qwen-symbol-retries/{filename}"
+            )
+            expected_crop_ref = (
+                f"asset://projects/{project_segment}/provider-inputs/"
+                f"qwen-symbol/{crop_sha256}.png"
+            )
+            expected_retry_audit = {
+                "provider": "qwen-vl",
+                "model": identity.get("model") if isinstance(identity, dict) else None,
+                "prompt_version": (
+                    identity.get("prompt_version")
+                    if isinstance(identity, dict)
+                    else None
+                ),
+                "schema_version": (
+                    identity.get("schema_version")
+                    if isinstance(identity, dict)
+                    else None
+                ),
+                "retry_count": 0,
+                "input_image_count": 1,
+                "estimated_cost": None,
+                "logical_task_reused": False,
+                "request_ref": expected_request_ref,
+                "response_ref": expected_response_ref,
+            }
+            if (
+                not isinstance(retry_audit, dict)
+                or not isinstance(retry_request, dict)
+                or not isinstance(retry_response, dict)
+                or not isinstance(crop_sha256, str)
+                or len(crop_sha256) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in crop_sha256
+                )
+                or serialize_call_record(retry_audit)
+                != retry_contents["audit"]
+                or any(
+                    retry_audit.get(key) != value
+                    for key, value in expected_retry_audit.items()
+                )
+            ):
+                raise RuntimeError("visual Provider retry evidence is invalid")
+            try:
+                parsed_request = parse_visual_request_evidence(
+                    retry_request,
+                    expected_crop_ref=expected_crop_ref,
+                    expected_crop_sha256=crop_sha256,
+                    expected_usage=retry_request.get("usage"),
+                )
+                crop_path = storage.resolve_resource_ref(expected_crop_ref)
+            except (TypeError, ValueError):
+                raise RuntimeError(
+                    "visual Provider retry evidence is invalid"
+                ) from None
+            canonical_request = json.dumps(
+                parsed_request,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            expected_response = build_visual_failure_envelope(
+                "tool_arguments_schema_invalid"
+            )
+            canonical_response = json.dumps(
+                expected_response,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            if (
+                canonical_request != retry_contents["request"]
+                or retry_response != expected_response
+                or canonical_response != retry_contents["response"]
+                or hashlib.sha256(crop_path.read_bytes()).hexdigest()
+                != crop_sha256
+            ):
+                raise RuntimeError("visual Provider retry evidence is invalid")
+            retry_evidence.append({
+                "request_id": retry_audit.get("request_id"),
+                "retry_count": retry_audit.get("retry_count"),
+                "failure_stage": retry_response.get("failure_stage"),
+            })
+
+        pairs.append((cache, visual_attempt_count(audit, retry_evidence)))
+    if retry_by_cache:
+        raise RuntimeError("visual Provider retry evidence is invalid")
+    if (
+        relative == "qwen-symbol"
+        and sum(attempt_count - 1 for _, attempt_count in pairs) > 1
+    ):
+        raise RuntimeError("visual Provider retry evidence is invalid")
+    return pairs
+
 
 project_id = uuid.UUID(os.environ["QI_P0_PROJECT_ID"])
 session = SessionLocal()
@@ -1601,43 +1826,13 @@ try:
 
     project_root = storage.root / "projects" / str(project_id)
 
-    def exact_json_files(relative):
-        directory = project_root / relative
-        if not directory.exists():
-            return []
-        if directory.is_symlink() or not directory.is_dir():
-            raise RuntimeError("Provider evidence directory is invalid")
-        files = sorted(directory.glob("*.json"))
-        if any(path.is_symlink() or not path.is_file() for path in files):
-            raise RuntimeError("Provider evidence file is invalid")
-        return files
-
-    def paired_cache(relative):
-        cache_files = exact_json_files(f"provider-cache/{relative}")
-        audit_files = exact_json_files(f"provider-calls/{relative}")
-        if {path.name for path in cache_files} != {
-            path.name for path in audit_files
-        }:
-            raise RuntimeError("Provider cache/call evidence differs")
-        pairs = []
-        for cache_path in cache_files:
-            cache = json.loads(cache_path.read_text(encoding="utf-8"))
-            audit = json.loads(
-                (project_root / "provider-calls" / relative / cache_path.name)
-                .read_text(encoding="utf-8")
-            )
-            if (
-                not isinstance(cache, dict)
-                or not isinstance(audit, dict)
-                or cache.get("request_id") != audit.get("request_id")
-                or audit.get("logical_task_reused") is not False
-            ):
-                raise RuntimeError("Provider cache/call identity is invalid")
-            pairs.append(cache)
-        return pairs
-
     visual_counts = {page_index: 0 for page_index in page_indexes}
-    for cache in paired_cache("qwen-symbol"):
+    for cache, attempt_count in paired_cache(
+        project_root,
+        storage,
+        project_id,
+        "qwen-symbol",
+    ):
         identity = cache.get("identity")
         visual_ids = (
             identity.get("visual_observation_ids")
@@ -1653,7 +1848,7 @@ try:
         }
         if None in call_pages or len(call_pages) != 1:
             raise RuntimeError("visual Provider page identity is ambiguous")
-        visual_counts[next(iter(call_pages))] += 1
+        visual_counts[next(iter(call_pages))] += attempt_count
 
     text_pages_by_crop = {}
     for candidate in raw.candidates:
@@ -1682,12 +1877,17 @@ try:
             text_pages_by_crop.setdefault(crop_sha256, set()).add(page_index)
 
     text_counts = {page_index: 0 for page_index in page_indexes}
-    for cache in paired_cache("qwen"):
+    for cache, attempt_count in paired_cache(
+        project_root,
+        storage,
+        project_id,
+        "qwen",
+    ):
         crop_sha256 = cache.get("crop_sha256")
         call_pages = text_pages_by_crop.get(crop_sha256, set())
         if len(call_pages) != 1:
             raise RuntimeError("text Provider page identity is ambiguous")
-        text_counts[next(iter(call_pages))] += 1
+        text_counts[next(iter(call_pages))] += attempt_count
 
     source_commands = list(
         session.scalars(
@@ -2214,6 +2414,23 @@ def _call_counts(
     return normalized
 
 
+def _vision_call_budget_failures(
+    visual_calls: list[dict[str, int]],
+    total_calls: list[dict[str, int]],
+) -> list[dict[str, str]]:
+    failures: list[dict[str, str]] = []
+    if any(entry["count"] > 16 for entry in visual_calls):
+        failures.append({"reason": "visual_call_budget_exceeded"})
+    if any(entry["count"] > 16 for entry in total_calls):
+        failures.append({"reason": "total_vision_call_budget_exceeded"})
+    if any(
+        total["count"] < visual["count"]
+        for visual, total in zip(visual_calls, total_calls, strict=True)
+    ):
+        failures.append({"reason": "vision_call_counts_inconsistent"})
+    return failures
+
+
 def _record_symbol_recognition_evidence(
     run_dir: Path,
     evidence: Mapping[str, Any],
@@ -2289,15 +2506,12 @@ def _run_symbol_recognition_gate(
         field="total_vision_calls_by_page",
     )
     failures = list(evaluation.get("failures", []))
-    if any(entry["count"] > 16 for entry in visual_calls):
-        failures.append({"reason": "visual_call_budget_exceeded"})
-    if any(entry["count"] > 16 for entry in total_calls):
-        failures.append({"reason": "total_vision_call_budget_exceeded"})
-    if any(
-        total["count"] < visual["count"]
-        for visual, total in zip(visual_calls, total_calls, strict=True)
-    ):
-        failures.append({"reason": "vision_call_counts_inconsistent"})
+    failures.extend(
+        _vision_call_budget_failures(
+            visual_calls,
+            total_calls,
+        )
+    )
     if actual.get("source_command_count") != 0:
         failures.append({"reason": "pre_manual_source_command_detected"})
     passed = evaluation.get("passed") is True and not failures

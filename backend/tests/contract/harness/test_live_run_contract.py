@@ -15,6 +15,14 @@ from urllib.parse import urlsplit
 import jsonschema
 import pytest
 
+from app.candidates.symbol_review import (
+    build_visual_failure_envelope,
+    build_visual_request_evidence,
+    parse_visual_request_evidence,
+)
+from app.providers.call_records import ProviderCallRecord, serialize_call_record
+from app.storage.local import LocalFileStorage
+
 
 ROOT = Path(__file__).resolve().parents[4]
 HARNESS = ROOT / ".agent/harness"
@@ -42,7 +50,11 @@ def _load_module(name: str, path: Path) -> ModuleType:
     return module
 
 
-def _embedded_function(program: str, name: str):
+def _embedded_function(
+    program: str,
+    name: str,
+    namespace: dict[str, object] | None = None,
+):
     functions = [
         node
         for node in ast.parse(program).body
@@ -52,9 +64,12 @@ def _embedded_function(program: str, name: str):
     module = ast.fix_missing_locations(
         ast.Module(body=functions, type_ignores=[])
     )
-    namespace: dict[str, object] = {}
-    exec(compile(module, "<embedded-program>", "exec"), namespace)
-    return namespace[name]
+    execution_namespace = {} if namespace is None else dict(namespace)
+    exec(
+        compile(module, "<embedded-program>", "exec"),
+        execution_namespace,
+    )
+    return execution_namespace[name]
 
 
 def _schema(name: str) -> dict[str, object]:
@@ -2424,3 +2439,431 @@ def test_live_policy_requires_visual_symbol_page_budget() -> None:
         runner._validate_live_policy(
             {"provider_call_policy": {"live": provider_policy}}
         )
+
+
+def _materialize_visual_retry_chain(
+    tmp_path: Path,
+) -> tuple[
+    object,
+    Path,
+    LocalFileStorage,
+    str,
+    dict[str, Path],
+    dict[str, object],
+]:
+    runner = _load_module(
+        f"qi_runner_retry_chain_{tmp_path.name}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    attempt_count = _embedded_function(
+        runner._SYMBOL_RESULT_PROGRAM,
+        "visual_attempt_count",
+    )
+    paired_cache = _embedded_function(
+        runner._SYMBOL_RESULT_PROGRAM,
+        "paired_cache",
+        {
+            "build_visual_failure_envelope": build_visual_failure_envelope,
+            "hashlib": hashlib,
+            "json": json,
+            "parse_visual_request_evidence": parse_visual_request_evidence,
+            "serialize_call_record": serialize_call_record,
+            "visual_attempt_count": attempt_count,
+        },
+    )
+    storage = LocalFileStorage(tmp_path / "storage")
+    project_id = "project-retry"
+    project_root = storage.root / "projects" / project_id
+    cache_key = hashlib.sha256(b"retry-cache").hexdigest()
+    crop_content = b"canonical-visual-crop"
+    crop_sha256 = hashlib.sha256(crop_content).hexdigest()
+    filename = f"{cache_key}.attempt-1.json"
+    identity = {
+        "crop_sha256": crop_sha256,
+        "model": "qwen3-vl-plus",
+        "prompt_version": "visual-symbol-prompt/4",
+        "schema_version": "visual-symbol-review/1",
+        "visual_observation_ids": ["visual-1"],
+    }
+    cache = {
+        "request_id": "fixture-final-request",
+        "identity": identity,
+    }
+    relatives = {
+        "cache": (
+            f"projects/{project_id}/provider-cache/qwen-symbol/"
+            f"{cache_key}.json"
+        ),
+        "final_audit": (
+            f"projects/{project_id}/provider-calls/qwen-symbol/"
+            f"{cache_key}.json"
+        ),
+        "retry_audit": (
+            f"projects/{project_id}/provider-calls/"
+            f"qwen-symbol-retries/{filename}"
+        ),
+        "retry_request": (
+            f"projects/{project_id}/provider-requests/"
+            f"qwen-symbol-retries/{filename}"
+        ),
+        "retry_response": (
+            f"projects/{project_id}/provider-responses/"
+            f"qwen-symbol-retries/{filename}"
+        ),
+        "crop": (
+            f"projects/{project_id}/provider-inputs/qwen-symbol/"
+            f"{crop_sha256}.png"
+        ),
+    }
+
+    def compact(document: object) -> bytes:
+        return json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    def write(relative: str, content: bytes) -> Path:
+        return storage.write_verified(
+            relative,
+            content,
+            hashlib.sha256(content).hexdigest(),
+        ).path
+
+    paths = {
+        "cache": write(relatives["cache"], compact(cache)),
+        "final_audit": write(
+            relatives["final_audit"],
+            serialize_call_record(
+                ProviderCallRecord(
+                    provider="qwen-vl",
+                    request_id="fixture-final-request",
+                    model="qwen3-vl-plus",
+                    prompt_version="visual-symbol-prompt/4",
+                    schema_version="visual-symbol-review/1",
+                    duration_ms=2,
+                    retry_count=1,
+                    input_image_count=1,
+                    estimated_cost=None,
+                    logical_task_reused=False,
+                    request_ref=(
+                        f"asset://projects/{project_id}/provider-requests/"
+                        f"qwen-symbol/{cache_key}.json"
+                    ),
+                    response_ref=(
+                        f"asset://projects/{project_id}/provider-responses/"
+                        f"qwen-symbol/final.json"
+                    ),
+                )
+            ),
+        ),
+        "crop": write(relatives["crop"], crop_content),
+    }
+    retry_request = build_visual_request_evidence(
+        crop_ref=f"asset://{relatives['crop']}",
+        crop_sha256=crop_sha256,
+        usage={"total_tokens": 11},
+    )
+    retry_response = build_visual_failure_envelope(
+        "tool_arguments_schema_invalid"
+    )
+    paths["retry_request"] = write(
+        relatives["retry_request"],
+        compact(retry_request),
+    )
+    paths["retry_response"] = write(
+        relatives["retry_response"],
+        compact(retry_response),
+    )
+    paths["retry_audit"] = write(
+        relatives["retry_audit"],
+        serialize_call_record(
+            ProviderCallRecord(
+                provider="qwen-vl",
+                request_id="fixture-first-request",
+                model="qwen3-vl-plus",
+                prompt_version="visual-symbol-prompt/4",
+                schema_version="visual-symbol-review/1",
+                duration_ms=1,
+                retry_count=0,
+                input_image_count=1,
+                estimated_cost=None,
+                logical_task_reused=False,
+                request_ref=f"asset://{relatives['retry_request']}",
+                response_ref=f"asset://{relatives['retry_response']}",
+            )
+        ),
+    )
+    return paired_cache, project_root, storage, project_id, paths, cache
+
+
+def test_live_symbol_retry_chain_is_canonical_and_identity_bound(
+    tmp_path: Path,
+) -> None:
+    """P0-REC-005: Harness counts only one exact, canonical retry chain."""
+    (
+        paired_cache,
+        project_root,
+        storage,
+        project_id,
+        _paths,
+        cache,
+    ) = _materialize_visual_retry_chain(tmp_path)
+
+    assert paired_cache(
+        project_root,
+        storage,
+        project_id,
+        "qwen-symbol",
+    ) == [(cache, 2)]
+
+
+def test_live_symbol_retry_chain_rejects_second_document_retry(
+    tmp_path: Path,
+) -> None:
+    """P0-REC-005: Harness rejects two valid retry chains in one document."""
+    (
+        paired_cache,
+        project_root,
+        storage,
+        project_id,
+        paths,
+        cache,
+    ) = _materialize_visual_retry_chain(tmp_path)
+    second_key = hashlib.sha256(b"second-retry-cache").hexdigest()
+    second_filename = f"{second_key}.attempt-1.json"
+
+    def write(relative: str, content: bytes) -> None:
+        storage.write_verified(
+            relative,
+            content,
+            hashlib.sha256(content).hexdigest(),
+        )
+
+    second_cache = {
+        **cache,
+        "request_id": "fixture-second-final-request",
+    }
+    write(
+        f"projects/{project_id}/provider-cache/qwen-symbol/"
+        f"{second_key}.json",
+        json.dumps(
+            second_cache,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8"),
+    )
+    final_audit = json.loads(
+        paths["final_audit"].read_text(encoding="utf-8")
+    )
+    final_audit.update(
+        {
+            "request_id": "fixture-second-final-request",
+            "request_ref": (
+                f"asset://projects/{project_id}/provider-requests/"
+                f"qwen-symbol/{second_key}.json"
+            ),
+            "response_ref": (
+                f"asset://projects/{project_id}/provider-responses/"
+                "qwen-symbol/second-final.json"
+            ),
+        }
+    )
+    write(
+        f"projects/{project_id}/provider-calls/qwen-symbol/"
+        f"{second_key}.json",
+        serialize_call_record(final_audit),
+    )
+    write(
+        f"projects/{project_id}/provider-requests/qwen-symbol-retries/"
+        f"{second_filename}",
+        paths["retry_request"].read_bytes(),
+    )
+    write(
+        f"projects/{project_id}/provider-responses/qwen-symbol-retries/"
+        f"{second_filename}",
+        paths["retry_response"].read_bytes(),
+    )
+    retry_audit = json.loads(
+        paths["retry_audit"].read_text(encoding="utf-8")
+    )
+    retry_audit.update(
+        {
+            "request_id": "fixture-second-first-request",
+            "request_ref": (
+                f"asset://projects/{project_id}/provider-requests/"
+                f"qwen-symbol-retries/{second_filename}"
+            ),
+            "response_ref": (
+                f"asset://projects/{project_id}/provider-responses/"
+                f"qwen-symbol-retries/{second_filename}"
+            ),
+        }
+    )
+    write(
+        f"projects/{project_id}/provider-calls/qwen-symbol-retries/"
+        f"{second_filename}",
+        serialize_call_record(retry_audit),
+    )
+
+    with pytest.raises(RuntimeError, match="retry evidence"):
+        paired_cache(
+            project_root,
+            storage,
+            project_id,
+            "qwen-symbol",
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "orphan_request",
+        "missing_response",
+        "unrelated_request_ref",
+        "noncanonical_request",
+        "crop_mismatch",
+        "response_stage_tampered",
+    ),
+)
+def test_live_symbol_retry_chain_rejects_orphan_or_tampered_evidence(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    """P0-REC-005: retry evidence cannot be orphaned or rebound."""
+    (
+        paired_cache,
+        project_root,
+        storage,
+        project_id,
+        paths,
+        _cache,
+    ) = _materialize_visual_retry_chain(tmp_path)
+
+    if mutation == "orphan_request":
+        orphan_name = f"{'c' * 64}.attempt-1.json"
+        orphan = (
+            project_root
+            / "provider-requests/qwen-symbol-retries"
+            / orphan_name
+        )
+        orphan.write_bytes(paths["retry_request"].read_bytes())
+    elif mutation == "missing_response":
+        paths["retry_response"].unlink()
+    elif mutation == "unrelated_request_ref":
+        unrelated = (
+            project_root
+            / "provider-requests/qwen-symbol/unrelated.json"
+        )
+        unrelated.parent.mkdir(parents=True, exist_ok=True)
+        unrelated.write_bytes(paths["retry_request"].read_bytes())
+        audit = json.loads(paths["retry_audit"].read_text(encoding="utf-8"))
+        audit["request_ref"] = (
+            f"asset://projects/{project_id}/provider-requests/"
+            "qwen-symbol/unrelated.json"
+        )
+        paths["retry_audit"].write_bytes(serialize_call_record(audit))
+    elif mutation == "noncanonical_request":
+        paths["retry_request"].write_bytes(
+            paths["retry_request"].read_bytes() + b"\n"
+        )
+    elif mutation == "crop_mismatch":
+        request = json.loads(
+            paths["retry_request"].read_text(encoding="utf-8")
+        )
+        request["crop_sha256"] = "d" * 64
+        paths["retry_request"].write_text(
+            json.dumps(
+                request,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+    else:
+        response = build_visual_failure_envelope(
+            "tool_arguments_json_invalid"
+        )
+        paths["retry_response"].write_text(
+            json.dumps(
+                response,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+
+    with pytest.raises(RuntimeError, match="retry evidence"):
+        paired_cache(
+            project_root,
+            storage,
+            project_id,
+            "qwen-symbol",
+        )
+
+
+def test_live_symbol_retry_attempt_counts_are_bounded_and_audited() -> None:
+    """P0-REC-005: one explicit schema retry counts as one actual Vision call."""
+    runner = _load_module(
+        "qi_runner_visual_retry_budget",
+        HARNESS / "scripts/run-p0.py",
+    )
+    attempt_count = _embedded_function(
+        runner._SYMBOL_RESULT_PROGRAM,
+        "visual_attempt_count",
+    )
+    canonical = {
+        "request_id": "fixture-final-request",
+        "retry_count": 1,
+    }
+    retry = {
+        "request_id": "fixture-first-request",
+        "retry_count": 0,
+        "failure_stage": "tool_arguments_schema_invalid",
+    }
+
+    assert attempt_count(canonical, [retry]) == 2
+    assert attempt_count(
+        {"request_id": "fixture-no-retry", "retry_count": 0},
+        [],
+    ) == 1
+
+    invalid_cases = (
+        (canonical, []),
+        ({**canonical, "retry_count": 2}, [retry, retry]),
+        (canonical, [{**retry, "retry_count": 1}]),
+        (
+            canonical,
+            [{**retry, "failure_stage": "tool_arguments_json_invalid"}],
+        ),
+        (canonical, [{**retry, "request_id": "fixture-final-request"}]),
+    )
+    for audit, retries in invalid_cases:
+        with pytest.raises(RuntimeError, match="retry evidence"):
+            attempt_count(audit, retries)
+
+
+def test_live_symbol_retry_derived_seventeenth_call_is_blocked() -> None:
+    """P0-REC-005: a retry-derived seventeenth Vision call blocks the gate."""
+    runner = _load_module(
+        "qi_runner_visual_retry_budget_exceeded",
+        HARNESS / "scripts/run-p0.py",
+    )
+
+    assert runner._vision_call_budget_failures(
+        [
+            {"page_index": 0, "count": 17},
+            {"page_index": 1, "count": 16},
+        ],
+        [
+            {"page_index": 0, "count": 17},
+            {"page_index": 1, "count": 16},
+        ],
+    ) == [
+        {"reason": "visual_call_budget_exceeded"},
+        {"reason": "total_vision_call_budget_exceeded"},
+    ]

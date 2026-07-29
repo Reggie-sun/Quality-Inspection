@@ -92,6 +92,41 @@ def _record() -> ProviderCallRecord:
     )
 
 
+def _visual_review_common(image: bytes) -> dict[str, object]:
+    text = TextObservation(
+        observation_id="text-retry",
+        source_type="native",
+        observation_level="line",
+        raw_text="10",
+        normalized_text="10",
+        page_index=0,
+        bbox_pdf=(2.0, 3.0, 8.0, 6.0),
+        bbox_normalized=(0.0, 0.0, 1.0, 1.0),
+        direction=(1.0, 0.0),
+        direction_angle_degrees=0.0,
+        confidence=None,
+    )
+    visual = VisualObservation(
+        observation_id="visual-retry",
+        source_type="visual",
+        observation_level="annotation_context",
+        page_index=0,
+        bbox_pdf=(2.0, 3.0, 8.0, 6.0),
+        bbox_normalized=(0.0, 0.0, 1.0, 1.0),
+        proposal_kind="text_adjacent_vector_context",
+        geometry_sha256="b" * 64,
+        associated_text_observation_ids=(text.observation_id,),
+    )
+    return {
+        "crop_png": image,
+        "crop_bbox_pdf": (1.0, 2.0, 30.0, 40.0),
+        "source_sha256": "a" * 64,
+        "visual_observations": (visual,),
+        "text_observations": {text.observation_id: text},
+        "model": "qwen3-vl-plus",
+    }
+
+
 def test_refs_and_versions_persist_without_secrets(tmp_path: Path) -> None:
     """P0-RES-005: redacted refs and versions survive FileStorage round trip."""
     storage = LocalFileStorage(tmp_path)
@@ -181,6 +216,244 @@ def test_serializer_rejects_non_finite_cost(unsafe_cost: float) -> None:
     """P0-RES-008: persisted estimated cost must be finite."""
     with pytest.raises(ValueError, match="estimated_cost"):
         serialize_call_record(replace(_record(), estimated_cost=unsafe_cost))
+
+
+def test_visual_schema_failure_retries_once_with_same_input_and_safe_audits(
+    tmp_path: Path,
+) -> None:
+    class FailThenSucceedProvider:
+        def __init__(self) -> None:
+            self.calls: list[tuple[bytes, str]] = []
+
+        def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
+            self.calls.append((image, prompt))
+            if len(self.calls) == 1:
+                raise VisualSymbolProviderError(
+                    request_id="fixture-retry-attempt-1",
+                    usage={"total_tokens": 11},
+                    failure_stage="tool_arguments_schema_invalid",
+                )
+            return VisionResult(
+                request_id="fixture-retry-success",
+                payload={
+                    "schema_version": "visual-symbol-review/1",
+                    "detections": [],
+                },
+                usage={"total_tokens": 12},
+            )
+
+    storage = LocalFileStorage(tmp_path / "retry-storage")
+    provider = FailThenSucceedProvider()
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        storage,
+        project_id="project-retry",
+        provider_factory=lambda _settings: provider,
+    )
+    image = _png(text=b"bounded-retry")
+
+    result, _, request_ids = advisor._visual_review_result(
+        provider=provider,
+        allow_schema_retry=True,
+        **_visual_review_common(image),
+    )
+
+    assert result.request_id == "fixture-retry-success"
+    assert request_ids == (
+        "fixture-retry-attempt-1",
+        "fixture-retry-success",
+    )
+    assert len(provider.calls) == 2
+    assert provider.calls[0] == provider.calls[1]
+
+    retry_record_path = next(
+        storage.root.glob(
+            "projects/*/provider-calls/qwen-symbol-retries/*.json"
+        )
+    )
+    final_record_path = next(
+        storage.root.glob("projects/*/provider-calls/qwen-symbol/*.json")
+    )
+    retry_record = json.loads(retry_record_path.read_text(encoding="utf-8"))
+    final_record = json.loads(final_record_path.read_text(encoding="utf-8"))
+    retry_response = json.loads(
+        storage.resolve_resource_ref(retry_record["response_ref"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert retry_record["request_id"] == "fixture-retry-attempt-1"
+    assert retry_record["retry_count"] == 0
+    assert retry_response == {
+        "schema_version": "visual-symbol-call-failure/2",
+        "error_code": "visual_schema_invalid",
+        "failure_stage": "tool_arguments_schema_invalid",
+    }
+    assert final_record["request_id"] == "fixture-retry-success"
+    assert final_record["retry_count"] == 1
+
+    class MustNotCallProvider:
+        calls = 0
+
+        @classmethod
+        def review_symbols(cls, _image: bytes, _prompt: str) -> VisionResult:
+            cls.calls += 1
+            raise AssertionError("validated retry cache reached Provider")
+
+    cached, _, cached_request_ids = advisor._visual_review_result(
+        provider=MustNotCallProvider(),
+        allow_schema_retry=True,
+        **_visual_review_common(image),
+    )
+    assert cached == result
+    assert cached_request_ids == (
+        "fixture-retry-attempt-1",
+        "fixture-retry-success",
+    )
+    assert MustNotCallProvider.calls == 0
+
+    for case in (
+        "missing_retry_audit",
+        "missing_retry_request",
+        "missing_retry_response",
+        "final_retry_count_zero",
+    ):
+        case_root = tmp_path / f"invalid-retry-cache-{case}"
+        shutil.copytree(storage.root, case_root)
+        if case == "final_retry_count_zero":
+            path = next(
+                case_root.glob(
+                    "projects/*/provider-calls/qwen-symbol/*.json"
+                )
+            )
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["retry_count"] = 0
+            path.write_bytes(serialize_call_record(payload))
+        else:
+            evidence_kind = case.removeprefix("missing_retry_")
+            evidence_directory = {
+                "audit": "calls",
+                "request": "requests",
+                "response": "responses",
+            }[evidence_kind]
+            path = next(
+                case_root.glob(
+                    f"projects/*/provider-{evidence_directory}/"
+                    "qwen-symbol-retries/*.json"
+                )
+            )
+            path.unlink()
+
+        class CountingProvider:
+            calls = 0
+
+            @classmethod
+            def review_symbols(
+                cls,
+                _image: bytes,
+                _prompt: str,
+            ) -> VisionResult:
+                cls.calls += 1
+                raise AssertionError("invalid retry cache reached Provider")
+
+        invalid_advisor = CandidateAdvisor(
+            Settings(qwen_model="qwen3-vl-plus"),
+            LocalFileStorage(case_root),
+            project_id="project-retry",
+            provider_factory=lambda _settings: CountingProvider(),
+        )
+        with pytest.raises(
+            CandidateAdvisorFailure,
+            match="^Visual symbol Advisor cache is invalid$",
+        ):
+            invalid_advisor._visual_review_result(
+                provider=CountingProvider(),
+                allow_schema_retry=True,
+                **_visual_review_common(image),
+            )
+        assert CountingProvider.calls == 0
+
+    encoded = json.dumps(
+        [retry_record, retry_response, final_record],
+        sort_keys=True,
+    ).lower()
+    for forbidden in (
+        "bounded-retry",
+        "data:image",
+        "base64",
+        "/home/",
+        "authorization",
+        "api_key",
+        "secret",
+        "explanation",
+    ):
+        assert forbidden not in encoded
+
+
+@pytest.mark.parametrize(
+    ("stages", "expected_calls", "expected_retry_records"),
+    (
+        (
+            (
+                "tool_arguments_schema_invalid",
+                "tool_arguments_schema_invalid",
+            ),
+            2,
+            1,
+        ),
+        (("tool_arguments_json_invalid",), 1, 0),
+    ),
+)
+def test_visual_schema_retry_stops_after_one_and_excludes_other_stages(
+    tmp_path: Path,
+    stages: tuple[str, ...],
+    expected_calls: int,
+    expected_retry_records: int,
+) -> None:
+    class InvalidSequenceProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def review_symbols(self, _image: bytes, _prompt: str) -> VisionResult:
+            stage = stages[self.calls]
+            self.calls += 1
+            raise VisualSymbolProviderError(
+                request_id=f"fixture-invalid-{self.calls}",
+                usage={"total_tokens": self.calls},
+                failure_stage=stage,
+            )
+
+    storage = LocalFileStorage(tmp_path / ("-".join(stages)))
+    provider = InvalidSequenceProvider()
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        storage,
+        project_id="project-retry-failure",
+        provider_factory=lambda _settings: provider,
+    )
+    with pytest.raises(
+        CandidateAdvisorFailure,
+        match="^Visual symbol Advisor response is invalid$",
+    ) as raised:
+        advisor._visual_review_result(
+            provider=provider,
+            allow_schema_retry=True,
+            **_visual_review_common(_png()),
+        )
+
+    assert provider.calls == expected_calls
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+    retry_records = tuple(
+        storage.root.glob(
+            "projects/*/provider-calls/qwen-symbol-retries/*.json"
+        )
+    )
+    assert len(retry_records) == expected_retry_records
+    final_record_path = next(
+        storage.root.glob("projects/*/provider-calls/qwen-symbol/*.json")
+    )
+    final_record = json.loads(final_record_path.read_text(encoding="utf-8"))
+    assert final_record["retry_count"] == expected_calls - 1
 
 
 def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
@@ -291,11 +564,12 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         "text_observations": text_observations,
         "model": "qwen3-vl-plus",
     }
-    result, _ = advisor._visual_review_result(
+    result, _, request_ids = advisor._visual_review_result(
         provider=success_provider,
         **common,
     )
     assert result.request_id == "fixture-visual-success"
+    assert request_ids == ("fixture-visual-success",)
     sent_data_url = completions.calls[0]["messages"][1]["content"][0][
         "image_url"
     ]["url"]
@@ -350,11 +624,12 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         text=b"alternate\x00different-private-metadata"
     )
     assert canonicalize_visual_png(metadata_variant) == canonical_image
-    variant_result, _ = advisor._visual_review_result(
+    variant_result, _, variant_request_ids = advisor._visual_review_result(
         provider=success_provider,
         **(common | {"crop_png": metadata_variant}),
     )
     assert variant_result == result
+    assert variant_request_ids == ("fixture-visual-success",)
     assert len(completions.calls) == 1
 
     class MustNotCallProvider:
@@ -362,11 +637,12 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         def review_symbols(_image: bytes, _prompt: str) -> VisionResult:
             raise AssertionError("validated visual cache constructed a Provider call")
 
-    cached, _ = advisor._visual_review_result(
+    cached, _, cached_request_ids = advisor._visual_review_result(
         provider=MustNotCallProvider(),
         **common,
     )
     assert cached == result
+    assert cached_request_ids == ("fixture-visual-success",)
 
     cache_cases = (
         "missing_audit",
