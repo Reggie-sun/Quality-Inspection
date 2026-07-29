@@ -35,8 +35,8 @@ from app.projects.models import Project
 from app.projects.state import InvalidTransition, ProjectState, transition
 
 
-AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"
-NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"
+LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"
+AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"
 ROUGHNESS_TOKEN = re.compile(r"(?<![A-Za-z])Ra(?=\s*[0-9])", re.IGNORECASE)
 
 
@@ -356,9 +356,9 @@ def _validated_candidates_for_schema(
     candidates: Sequence[Mapping[str, Any]],
     schema_version: str,
 ) -> Sequence[Mapping[str, Any]]:
-    if schema_version == AUTOMATIC_RESULT_SCHEMA_VERSION:
+    if schema_version == LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION:
         return candidates
-    if schema_version != NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION:
+    if schema_version != AUTOMATIC_RESULT_SCHEMA_VERSION:
         raise ConfidenceDecisionContractError(
             f"automatic result schema_version is unknown: {schema_version}"
         )

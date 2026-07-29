@@ -20,6 +20,7 @@ from app.jobs.idempotency import (
     complete_logical_job,
 )
 from app.processing.automatic_result import (
+    AUTOMATIC_RESULT_SCHEMA_VERSION,
     automatic_result_ref,
     build_automatic_result,
 )
@@ -89,6 +90,7 @@ def _freeze_empty_automatic_result(
         candidates=[],
         coverage=check_coverage([], expected_observation_ids=set()),
         provider_call_ids=[],
+        schema_version=AUTOMATIC_RESULT_SCHEMA_VERSION,
     )
 
 
@@ -300,6 +302,31 @@ def test_inventory_pipeline_persists_one_successful_raw_result(
     )
     events: list[str] = []
 
+    class CountingConfidencePolicy:
+        calls = 0
+
+        def evaluate_candidates(
+            self,
+            candidates,
+            *,
+            coverage,
+            duplicate_relations,
+            source_signals,
+        ):
+            self.calls += 1
+            assert coverage.coverage_checked is True
+            assert duplicate_relations == ()
+            assert source_signals == ()
+            assert db_session.scalar(
+                select(func.count()).select_from(AutomaticResult).where(
+                    AutomaticResult.project_id == project.id
+                )
+            ) == 0
+            events.append("confidence_policy")
+            return tuple(candidates)
+
+    confidence_policy = CountingConfidencePolicy()
+
     def build_inventory(source_path: Path) -> tuple[InventoryPageStub, ...]:
         assert events == ["preflight"]
         assert source_path == source.path
@@ -308,12 +335,23 @@ def test_inventory_pipeline_persists_one_successful_raw_result(
 
     db_session.add_all([project, source_file])
     db_session.commit()
-    result_ref = InventoryPipeline(
+    pipeline = InventoryPipeline(
         db_session,
         storage,
         PassingPreflight(events),
         inventory_builder=build_inventory,
-    ).run(str(project.id), source.resource_ref, logical_task_key)
+        confidence_policy=confidence_policy,
+    )
+    result_ref = pipeline.run(
+        str(project.id),
+        source.resource_ref,
+        logical_task_key,
+    )
+    repeated_result_ref = pipeline.run(
+        str(project.id),
+        source.resource_ref,
+        logical_task_key,
+    )
 
     job = db_session.scalar(
         select(LogicalJob).where(
@@ -326,12 +364,15 @@ def test_inventory_pipeline_persists_one_successful_raw_result(
     )
     assert job is not None
     assert raw_result is not None
+    assert repeated_result_ref == result_ref
     assert job.status == "succeeded"
     assert job.result_ref == result_ref == f"automatic-result://{raw_result.id}"
     assert raw_result.source_file_id == source_file.id
     assert raw_result.candidates == []
     assert raw_result.coverage["coverage_checked"] is True
-    assert events == ["preflight", "inventory"]
+    assert raw_result.schema_version == AUTOMATIC_RESULT_SCHEMA_VERSION
+    assert confidence_policy.calls == 1
+    assert events == ["preflight", "inventory", "confidence_policy"]
     assert json.loads(storage.read_bytes(raw_result.inventory_ref)) == {
         "pages": [{"support_level": "supported"}],
         "schema_version": "page-inventory/1",

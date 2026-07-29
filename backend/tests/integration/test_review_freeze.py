@@ -231,7 +231,11 @@ def test_item_set_freeze_preserves_editing_without_reviewed_result(
     assert project is not None
     assert project.state == ProjectState.EDITING
     assert service.reviewed_result_for(working_copy.project_id) is None
-    assert db_session.scalar(select(func.count()).select_from(ReviewedResult)) == 0
+    assert db_session.scalar(
+        select(func.count()).select_from(ReviewedResult).where(
+            ReviewedResult.project_id == working_copy.project_id
+        )
+    ) == 0
 
 
 def test_item_set_freeze_rejects_later_semantic_commands(

@@ -11,7 +11,7 @@ from app.candidates.confidence import (
 )
 from app.processing.automatic_result import (
     AUTOMATIC_RESULT_SCHEMA_VERSION,
-    NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+    LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION,
     _validated_candidates_for_schema,
     build_automatic_result,
 )
@@ -101,7 +101,7 @@ def test_automatic_result_v2_rejects_candidate_without_confidence_decision(
     with pytest.raises(ConfidenceDecisionContractError):
         _validated_candidates_for_schema(
             [candidate],
-            NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+            AUTOMATIC_RESULT_SCHEMA_VERSION,
         )
 
 
@@ -112,7 +112,7 @@ def test_automatic_result_v2_rejects_unknown_confidence_policy() -> None:
     ):
         _validated_candidates_for_schema(
             [_candidate(_decision(policy_version="candidate-confidence/999"))],
-            NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+            AUTOMATIC_RESULT_SCHEMA_VERSION,
         )
 
 
@@ -151,7 +151,7 @@ def test_automatic_result_v2_rejects_invalid_confidence_decision(
     with pytest.raises(ConfidenceDecisionContractError):
         _validated_candidates_for_schema(
             [_candidate(decision)],
-            NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+            AUTOMATIC_RESULT_SCHEMA_VERSION,
         )
 
 
@@ -175,7 +175,7 @@ def test_automatic_result_v2_accepts_complete_confidence_decision(
 
     validated = _validated_candidates_for_schema(
         candidates,
-        NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+        AUTOMATIC_RESULT_SCHEMA_VERSION,
     )
 
     assert validated is candidates
@@ -201,7 +201,7 @@ def test_automatic_result_v2_rejects_legacy_disposition_field() -> None:
     ):
         _validated_candidates_for_schema(
             [_candidate(legacy_decision)],
-            NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+            AUTOMATIC_RESULT_SCHEMA_VERSION,
         )
 
 
@@ -216,7 +216,7 @@ def test_automatic_result_v1_remains_readable_without_confidence_decision() -> N
 
     validated = _validated_candidates_for_schema(
         candidates,
-        AUTOMATIC_RESULT_SCHEMA_VERSION,
+        LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION,
     )
 
     assert validated is candidates
@@ -257,5 +257,5 @@ def test_build_rejects_invalid_v2_before_database_access() -> None:
                 coverage_checked=True,
             ),
             provider_call_ids=[],
-            schema_version=NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+            schema_version=AUTOMATIC_RESULT_SCHEMA_VERSION,
         )

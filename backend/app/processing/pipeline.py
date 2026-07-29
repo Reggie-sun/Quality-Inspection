@@ -12,6 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.capabilities.service import CapabilityUnavailable
 from app.candidates.advisor import CandidateAdvisorFailure
+from app.candidates.confidence import (
+    ConfidenceDecisionContractError,
+    ConfidencePolicy,
+)
 from app.candidates.coverage import check_coverage
 from app.candidates.models import AutomaticResult
 from app.errors.models import ErrorRecord
@@ -26,6 +30,7 @@ from app.jobs.idempotency import (
 from app.pdf.inventory import build_inventory
 from app.pdf.visual_observations import VisualObservationBlockingError
 from app.processing.automatic_result import (
+    AUTOMATIC_RESULT_SCHEMA_VERSION,
     CandidateSnapshot,
     CoverageBlocking,
     automatic_result_ref,
@@ -39,6 +44,10 @@ from app.storage.models import StoredFile
 
 
 class UnsupportedInput(ValueError):
+    pass
+
+
+class ConfidencePolicyError(RuntimeError):
     pass
 
 
@@ -72,12 +81,18 @@ class InventoryPipeline:
         candidate_snapshot_builder: Callable[
             [tuple[Any, ...]], CandidateSnapshot
         ] = candidate_snapshot_from_inventory,
+        confidence_policy: ConfidencePolicy | None = None,
     ) -> None:
         self._session = session
         self._storage = storage
         self._preflight = preflight
         self._inventory_builder = inventory_builder
         self._candidate_snapshot_builder = candidate_snapshot_builder
+        self._confidence_policy = (
+            confidence_policy
+            if confidence_policy is not None
+            else ConfidencePolicy()
+        )
 
     def _project(self, project_id: str, *, for_update: bool = False) -> Project:
         try:
@@ -280,17 +295,36 @@ class InventoryPipeline:
                     snapshot.required_visual_observation_ids
                 ),
             )
-            automatic_result = build_automatic_result(
-                self._session,
-                project_id=project.id,
-                source_file_id=source_file.id,
-                logical_job_id=job.id,
-                inventory_ref=inventory_ref,
-                candidates=snapshot.candidates,
-                coverage=coverage,
-                provider_call_ids=snapshot.provider_call_ids,
-                duplicate_relations=snapshot.duplicate_relations,
-            )
+            try:
+                decided_candidates = (
+                    self._confidence_policy.evaluate_candidates(
+                        candidates=snapshot.candidates,
+                        coverage=coverage,
+                        duplicate_relations=snapshot.duplicate_relations,
+                        source_signals=snapshot.source_signals,
+                    )
+                )
+            except Exception as exc:
+                raise ConfidencePolicyError(
+                    "Confidence policy evaluation failed"
+                ) from exc
+            try:
+                automatic_result = build_automatic_result(
+                    self._session,
+                    project_id=project.id,
+                    source_file_id=source_file.id,
+                    logical_job_id=job.id,
+                    inventory_ref=inventory_ref,
+                    candidates=decided_candidates,
+                    coverage=coverage,
+                    provider_call_ids=snapshot.provider_call_ids,
+                    duplicate_relations=snapshot.duplicate_relations,
+                    schema_version=AUTOMATIC_RESULT_SCHEMA_VERSION,
+                )
+            except ConfidenceDecisionContractError as exc:
+                raise ConfidencePolicyError(
+                    "Confidence policy evaluation failed"
+                ) from exc
             return automatic_result_ref(automatic_result)
         except UnsupportedInput:
             raise
@@ -305,6 +339,20 @@ class InventoryPipeline:
                 message=str(exc),
                 stage="coverage",
                 location_ref=inventory_ref,
+                cause_category="processing_defect",
+            )
+            if existing is not None:
+                return existing
+            raise
+        except ConfidencePolicyError:
+            existing = self._record_failure(
+                project,
+                job,
+                state=ProjectState.PROCESSING_FAILED,
+                code="confidence_policy_failed",
+                message="Confidence policy evaluation failed",
+                stage="confidence_policy",
+                location_ref=None,
                 cause_category="processing_defect",
             )
             if existing is not None:

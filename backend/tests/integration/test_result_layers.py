@@ -14,7 +14,10 @@ from app.candidates.coverage import CoverageEntry, check_coverage
 from app.candidates.models import AutomaticResult
 from app.db import engine
 from app.jobs.idempotency import LogicalJob
-from app.processing.automatic_result import build_automatic_result
+from app.processing.automatic_result import (
+    LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION,
+    build_automatic_result,
+)
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.review.models import ReviewedResult
@@ -95,6 +98,7 @@ def raw_result(db_session: Session) -> AutomaticResult:
         ],
         coverage=coverage,
         provider_call_ids=[],
+        schema_version=LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION,
     )
 
 
@@ -179,9 +183,10 @@ def test_new_symbol_result_does_not_mutate_existing_text_only_raw_result(
                 requires_confirmation=True,
                 advisor_review={
                     "route": "visual_symbol",
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "symbol_kinds": [],
                     "rejection_code": "visual_no_detection",
+                    "confidence_signal": None,
                 },
             )
         ],
@@ -197,6 +202,7 @@ def test_new_symbol_result_does_not_mutate_existing_text_only_raw_result(
         candidates=[],
         coverage=coverage,
         provider_call_ids=["fixture-symbol-request"],
+        schema_version=LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION,
     )
 
     working = ReviewService(db_session).create_from_raw(symbol_result.id)
@@ -207,9 +213,10 @@ def test_new_symbol_result_does_not_mutate_existing_text_only_raw_result(
     assert persisted_old.coverage == original_coverage
     assert symbol_result.coverage["entries"][0]["advisor_review"] == {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "symbol_kinds": [],
         "rejection_code": "visual_no_detection",
+        "confidence_signal": None,
     }
     assert working.items == []
     assert working.coverage["entries"][0]["symbol_kinds"] == []

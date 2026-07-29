@@ -19,6 +19,7 @@ from app.candidates.advisor import CandidateAdvisor
 from app.candidates.coverage import CoverageEntry
 from app.candidates.confidence import CandidateSourceSignal
 from app.candidates.models import AutomaticResult
+from app.candidates.duplicates import DuplicateRelation
 from app.config import Settings
 from app.db import engine
 from app.errors.models import ErrorRecord
@@ -29,7 +30,7 @@ from app.processing.automatic_result import (
     CoverageBlocking,
     candidate_snapshot_from_inventory,
 )
-from app.processing.pipeline import InventoryPipeline
+from app.processing.pipeline import ConfidencePolicyError, InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.projects.models import Project
 from app.projects.state import ProjectState
@@ -333,3 +334,243 @@ def test_coverage_blocking_creates_no_raw_result_and_records_error(
     assert error.stage == "coverage"
     assert error.severity == "blocking"
     assert db_session.get(Project, project.id).state == ProjectState.PROCESSING_FAILED
+
+
+def _linear_candidate(
+    candidate_id: str,
+    source_location_id: str,
+) -> dict[str, object]:
+    return {
+        "candidate_id": candidate_id,
+        "payload": {
+            "candidate_id": candidate_id,
+            "item_type": "linear_dimension",
+            "raw_text": "10",
+            "normalized_text": "10",
+            "coordinates": [1, 2, 11, 12],
+            "scope": "local_feature",
+            "nominal": "10",
+            "sub_requirements": [],
+            "balloon_required": True,
+            "requires_confirmation": False,
+        },
+        "source_location_ids": [source_location_id],
+        "source_truth_preserved": True,
+    }
+
+
+def test_pipeline_freezes_mixed_confidence_decisions_after_coverage(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    storage = LocalFileStorage(tmp_path)
+    source_file = _source(db_session, storage, project)
+    candidates = tuple(
+        _linear_candidate(f"candidate-{index}", f"source-{index}")
+        for index in range(1, 6)
+    )
+    coverage_entries = tuple(
+        CoverageEntry(
+            observation_id=f"source-{index}",
+            disposition="ambiguous" if index == 4 else "candidate",
+            source_location_id=f"source-{index}",
+            coordinates=(1, 2, 11, 12),
+            candidate_id=f"candidate-{index}",
+            requires_confirmation=index == 4,
+        )
+        for index in range(1, 6)
+    )
+    snapshot = CandidateSnapshot(
+        candidates=candidates,
+        coverage_entries=coverage_entries,
+        expected_observation_ids=tuple(
+            f"source-{index}" for index in range(1, 6)
+        ),
+        duplicate_relations=(
+            DuplicateRelation(
+                left_candidate_id="candidate-5",
+                right_candidate_id="other-candidate",
+            ),
+        ),
+        source_signals=tuple(
+            CandidateSourceSignal(
+                source_location_id=f"source-{index}",
+                source_type="native",
+                normalized_value=value,
+            )
+            for index, value in enumerate(
+                (
+                    Decimal("1"),
+                    Decimal("0.80"),
+                    Decimal("0.50"),
+                    Decimal("1"),
+                    Decimal("1"),
+                ),
+                start=1,
+            )
+        ),
+    )
+    observation = TextObservation(
+        observation_id="inventory-source",
+        source_type="native",
+        observation_level="line",
+        raw_text="10",
+        normalized_text="10",
+        page_index=0,
+        bbox_pdf=(1, 2, 11, 12),
+        bbox_normalized=(0.01, 0.02, 0.11, 0.12),
+        direction=(1.0, 0.0),
+        direction_angle_degrees=0.0,
+        confidence=None,
+    )
+
+    result_ref = InventoryPipeline(
+        db_session,
+        storage,
+        PassingPreflight(),
+        inventory_builder=lambda _path: (_page(observation),),
+        candidate_snapshot_builder=lambda _pages: snapshot,
+    ).run(
+        str(project.id),
+        source_file.resource_ref,
+        "process:mixed-confidence",
+    )
+
+    result = db_session.scalar(
+        select(AutomaticResult).where(AutomaticResult.project_id == project.id)
+    )
+    assert result is not None
+    assert result_ref == f"automatic-result://{result.id}"
+    assert result.schema_version == "automatic-result/2"
+    decisions = [
+        candidate["confidence_decision"] for candidate in result.candidates
+    ]
+    assert [decision["band"] for decision in decisions] == [
+        "high",
+        "medium",
+        "low",
+        "low",
+        "low",
+    ]
+    assert all(
+        set(candidate).intersection({"confidence_decision"})
+        == {"confidence_decision"}
+        for candidate in result.candidates
+    )
+    assert (
+        decisions[0]["review_disposition"] == "auto_accepted"
+        and decisions[1]["review_disposition"] == "review_required"
+    )
+    assert "ambiguous_source" in decisions[3]["evidence_codes"]
+    assert "possible_duplicate" in decisions[4]["evidence_codes"]
+
+
+def test_confidence_policy_failure_is_structured_and_atomic(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    class ExplodingPolicy:
+        def evaluate_candidates(self, *_args, **_kwargs):
+            raise ValueError("private policy implementation detail")
+
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    storage = LocalFileStorage(tmp_path)
+    source_file = _source(db_session, storage, project)
+
+    with pytest.raises(ConfidencePolicyError):
+        InventoryPipeline(
+            db_session,
+            storage,
+            PassingPreflight(),
+            inventory_builder=lambda _path: (),
+            confidence_policy=ExplodingPolicy(),
+        ).run(
+            str(project.id),
+            source_file.resource_ref,
+            "process:confidence-policy-failure",
+        )
+
+    assert db_session.scalar(
+        select(func.count()).select_from(AutomaticResult).where(
+            AutomaticResult.project_id == project.id
+        )
+    ) == 0
+    error = db_session.scalar(
+        select(ErrorRecord).where(ErrorRecord.project_id == project.id)
+    )
+    assert error is not None
+    assert error.code == "confidence_policy_failed"
+    assert error.stage == "confidence_policy"
+    assert error.cause_category == "processing_defect"
+    assert error.message == "Confidence policy evaluation failed"
+    assert db_session.get(Project, project.id).state == ProjectState.PROCESSING_FAILED
+
+
+def test_unknown_confidence_policy_version_is_rejected_before_persistence(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    candidate = _linear_candidate("candidate-1", "source-1")
+
+    class UnknownVersionPolicy:
+        def evaluate_candidates(self, *_args, **_kwargs):
+            decided = dict(candidate)
+            decided["confidence_decision"] = {
+                "band": "high",
+                "review_disposition": "auto_accepted",
+                "policy_version": "candidate-confidence/unknown",
+                "evidence_codes": ["typed_schema_complete"],
+            }
+            return (decided,)
+
+    snapshot = CandidateSnapshot(
+        candidates=(candidate,),
+        coverage_entries=(
+            CoverageEntry(
+                observation_id="source-1",
+                disposition="candidate",
+                source_location_id="source-1",
+                coordinates=(1, 2, 11, 12),
+                candidate_id="candidate-1",
+            ),
+        ),
+        expected_observation_ids=("source-1",),
+        duplicate_relations=(),
+    )
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    storage = LocalFileStorage(tmp_path)
+    source_file = _source(db_session, storage, project)
+
+    with pytest.raises(ConfidencePolicyError):
+        InventoryPipeline(
+            db_session,
+            storage,
+            PassingPreflight(),
+            inventory_builder=lambda _path: (),
+            candidate_snapshot_builder=lambda _pages: snapshot,
+            confidence_policy=UnknownVersionPolicy(),
+        ).run(
+            str(project.id),
+            source_file.resource_ref,
+            "process:unknown-confidence-policy",
+        )
+
+    assert db_session.scalar(
+        select(func.count()).select_from(AutomaticResult).where(
+            AutomaticResult.project_id == project.id
+        )
+    ) == 0
+    error = db_session.scalar(
+        select(ErrorRecord).where(ErrorRecord.project_id == project.id)
+    )
+    assert error is not None
+    assert (
+        error.code,
+        error.stage,
+        error.cause_category,
+    ) == (
+        "confidence_policy_failed",
+        "confidence_policy",
+        "processing_defect",
+    )

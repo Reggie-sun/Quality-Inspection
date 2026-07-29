@@ -901,10 +901,11 @@ def test_confidence_decision_contract_has_one_canonical_definition() -> None:
     )
     assert "validate_confidence_decision(" in automatic_result_source
     assert (
-        'AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"'
+        'AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"'
         in automatic_result_source
     )
     assert (
-        'NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"'
+        'LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"'
         in automatic_result_source
     )
+    assert "NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION" not in automatic_result_source
