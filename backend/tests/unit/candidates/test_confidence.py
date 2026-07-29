@@ -113,6 +113,7 @@ def _candidate(**payload_overrides: object) -> dict[str, object]:
         "candidate_id": "candidate-1",
         "payload": _payload(**payload_overrides),
         "source_location_ids": ["source-1"],
+        "source_truth_preserved": True,
     }
 
 
@@ -257,6 +258,25 @@ def test_numeric_adapters_reject_missing_bool_nonfinite_and_negative(
     ],
 )
 def test_numeric_adapters_reject_out_of_range(adapter, value: object) -> None:
+    with pytest.raises(ValueError):
+        adapter(value)
+
+
+@pytest.mark.parametrize(
+    ("adapter", "value"),
+    [
+        (normalize_tencent_ocr_signal, "95"),
+        (normalize_tencent_ocr_signal, b"95"),
+        (normalize_tencent_ocr_signal, object()),
+        (normalize_visual_signal, "0.95"),
+        (normalize_visual_signal, b"0.95"),
+        (normalize_visual_signal, object()),
+    ],
+)
+def test_numeric_adapters_reject_non_number_inputs(
+    adapter,
+    value: object,
+) -> None:
     with pytest.raises(ValueError):
         adapter(value)
 
@@ -481,6 +501,116 @@ def test_duplicate_source_owner_forces_low() -> None:
     assert "source_owner_conflict" in decision["evidence_codes"]
 
 
+def test_missing_source_truth_fact_forces_low_on_overwritten_value() -> None:
+    candidate = _candidate(
+        raw_text="10",
+        normalized_text="999",
+        nominal="999",
+    )
+    candidate.pop("source_truth_preserved")
+
+    _, decision = _evaluate(candidate)
+
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
+    assert "normalized_value_invalid" in decision["evidence_codes"]
+    assert "source_truth_preserved" not in decision["evidence_codes"]
+
+
+@pytest.mark.parametrize("fact", [False, None, 1, "true"])
+def test_non_literal_true_source_truth_fact_forces_low(
+    fact: object,
+) -> None:
+    candidate = _candidate()
+    candidate["source_truth_preserved"] = fact
+
+    _, decision = _evaluate(candidate)
+
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
+    assert "normalized_value_invalid" in decision["evidence_codes"]
+
+
+@pytest.mark.parametrize("envelope_id", [None, "", " "])
+def test_blank_or_missing_envelope_candidate_id_forces_low(
+    envelope_id: object,
+) -> None:
+    candidate = _candidate()
+    coverage = _coverage(candidate)
+    if envelope_id is None:
+        candidate.pop("candidate_id")
+    else:
+        candidate["candidate_id"] = envelope_id
+
+    _, decision = _evaluate(candidate, coverage=coverage)
+
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
+    assert "typed_schema_incomplete" in decision["evidence_codes"]
+
+
+def test_envelope_and_payload_candidate_id_mismatch_forces_low() -> None:
+    _, decision = _evaluate(
+        _candidate(candidate_id="payload-candidate")
+    )
+
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
+    assert "typed_schema_incomplete" in decision["evidence_codes"]
+
+
+def test_duplicate_envelope_candidate_ids_force_all_affected_low() -> None:
+    candidates = (
+        {
+            **_candidate(),
+            "candidate_id": "duplicate-candidate",
+            "payload": _payload(candidate_id="duplicate-candidate"),
+            "source_location_ids": ["source-a"],
+        },
+        {
+            **_candidate(),
+            "candidate_id": "duplicate-candidate",
+            "payload": _payload(candidate_id="duplicate-candidate"),
+            "source_location_ids": ["source-b"],
+        },
+    )
+    coverage = check_coverage(
+        [
+            CoverageEntry(
+                observation_id="observation-a",
+                disposition="candidate",
+                source_location_id="source-a",
+                coordinates=(1, 2, 11, 12),
+                candidate_id="duplicate-candidate",
+            ),
+            CoverageEntry(
+                observation_id="observation-b",
+                disposition="candidate",
+                source_location_id="source-b",
+                coordinates=(1, 2, 11, 12),
+                candidate_id="duplicate-candidate",
+            ),
+        ],
+        expected_observation_ids={"observation-a", "observation-b"},
+    )
+    evaluated = ConfidencePolicy().evaluate_candidates(
+        candidates,
+        coverage=coverage,
+        duplicate_relations=(),
+        source_signals=(
+            _signal(source_location_id="source-a"),
+            _signal(source_location_id="source-b"),
+        ),
+    )
+
+    assert coverage.coverage_checked is True
+    for candidate in evaluated:
+        decision = candidate["confidence_decision"]
+        assert decision["band"] == "low"
+        assert decision["review_disposition"] == "review_required"
+        assert "typed_schema_incomplete" in decision["evidence_codes"]
+
+
 @pytest.mark.parametrize("thread_spec", ["M6", "M6×1"])
 def test_canonical_thread_spec_can_be_high(thread_spec: str) -> None:
     _, decision = _evaluate(
@@ -597,6 +727,30 @@ def test_nested_composite_coarse_fallback_forces_low() -> None:
     assert decision["band"] == "low"
     assert decision["review_disposition"] == "review_required"
     assert "coarse_fallback" in decision["evidence_codes"]
+
+
+def test_nested_composite_unknown_feature_emits_specific_evidence() -> None:
+    candidate = _candidate(
+        item_type="composite",
+        raw_text="Φ10",
+        normalized_text="Φ10",
+        sub_requirements=[
+            {
+                "order": 0,
+                "kind": "diameter_dimension",
+                "raw_text": "Φ10",
+                "nominal": "10",
+                "feature_kind": "unknown",
+            }
+        ],
+    )
+
+    _, decision = _evaluate(candidate)
+
+    assert decision["band"] == "low"
+    assert decision["review_disposition"] == "review_required"
+    assert "typed_schema_incomplete" in decision["evidence_codes"]
+    assert "feature_kind_unknown" in decision["evidence_codes"]
 
 
 def test_low_is_always_review_required_and_never_auto_excluded() -> None:

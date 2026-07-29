@@ -42,7 +42,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["linear-native-source"]
+        "source_location_ids": ["linear-native-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -90,7 +91,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["linear-native-negative-source"]
+        "source_location_ids": ["linear-native-negative-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -140,7 +142,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["diameter-ocr-source"]
+        "source_location_ids": ["diameter-ocr-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -190,7 +193,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["diameter-ocr-negative-source"]
+        "source_location_ids": ["diameter-ocr-negative-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -241,7 +245,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["thread-native-source"]
+        "source_location_ids": ["thread-native-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -290,7 +295,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["thread-native-negative-source"]
+        "source_location_ids": ["thread-native-negative-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -339,7 +345,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["radius-native-source"]
+        "source_location_ids": ["radius-native-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -388,7 +395,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["radius-native-negative-source"]
+        "source_location_ids": ["radius-native-negative-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -439,7 +447,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["angle-ocr-source"]
+        "source_location_ids": ["angle-ocr-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -488,7 +497,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["angle-ocr-negative-source"]
+        "source_location_ids": ["angle-ocr-negative-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -539,7 +549,8 @@
         "source_location_ids": [
           "general-native-source",
           "general-visual-source"
-        ]
+        ],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -595,7 +606,8 @@
         "source_location_ids": [
           "general-native-negative-source",
           "general-visual-negative-source"
-        ]
+        ],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -671,7 +683,8 @@
         "source_location_ids": [
           "composite-native-source",
           "composite-visual-source"
-        ]
+        ],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -741,7 +754,8 @@
         "source_location_ids": [
           "composite-native-negative-source",
           "composite-visual-negative-source"
-        ]
+        ],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -796,7 +810,8 @@
           "balloon_required": false,
           "requires_confirmation": false
         },
-        "source_location_ids": ["unsupported-general-ocr-source"]
+        "source_location_ids": ["unsupported-general-ocr-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -844,7 +859,8 @@
           "balloon_required": false,
           "requires_confirmation": false
         },
-        "source_location_ids": ["unsupported-general-visual-source"]
+        "source_location_ids": ["unsupported-general-visual-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -887,7 +903,8 @@
           "coarse_type": "roughness",
           "requires_confirmation": true
         },
-        "source_location_ids": ["unsupported-coarse-native-source"]
+        "source_location_ids": ["unsupported-coarse-native-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -940,7 +957,8 @@
           "balloon_required": true,
           "requires_confirmation": false
         },
-        "source_location_ids": ["visual-diameter-conflict-source"]
+        "source_location_ids": ["visual-diameter-conflict-source"],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {
@@ -1011,7 +1029,8 @@
         "source_location_ids": [
           "native-composite-conflict-source",
           "visual-composite-conflict-source"
-        ]
+        ],
+        "source_truth_preserved": true
       },
       "source_signals": [
         {

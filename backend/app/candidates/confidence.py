@@ -187,7 +187,10 @@ def _normalized_decimal(
     maximum: Decimal,
     field: str,
 ) -> Decimal:
-    if value is None or isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(
+        value,
+        (int, float, Decimal),
+    ):
         raise ValueError(f"{field} must be one finite number")
     try:
         normalized = Decimal(str(value))
@@ -276,7 +279,7 @@ def _family_semantics_complete(
 ) -> tuple[bool, bool]:
     item_type = payload.get("item_type")
     if item_type == "composite":
-        return _composite_semantics_complete(payload), False
+        return _composite_semantics_complete(payload)
     return _requirement_semantics_complete(
         item_type,
         payload,
@@ -355,41 +358,43 @@ def _requirement_semantics_complete(
     return False, feature_unknown
 
 
-def _composite_semantics_complete(payload: Mapping[str, object]) -> bool:
+def _composite_semantics_complete(
+    payload: Mapping[str, object],
+) -> tuple[bool, bool]:
     requirements = payload.get("sub_requirements")
     if not isinstance(requirements, list) or not requirements:
-        return False
+        return False, False
     if any(not isinstance(requirement, Mapping) for requirement in requirements):
-        return False
+        return False, False
     if [
         requirement.get("order")
         for requirement in requirements
     ] != list(range(len(requirements))):
-        return False
+        return False, False
     primary = requirements[0]
     if not isinstance(primary, Mapping):
-        return False
-    primary_complete, _ = _requirement_semantics_complete(
+        return False, False
+    primary_complete, feature_unknown = _requirement_semantics_complete(
         primary.get("kind"),
         primary,
     )
     if not primary_complete:
-        return False
+        return False, feature_unknown
     for modifier in requirements[1:]:
         if not isinstance(modifier, Mapping):
-            return False
+            return False, feature_unknown
         if modifier.get("kind") == "depth":
             if _decimal_value(
                 modifier.get("value"),
                 nonnegative=True,
             ) is None:
-                return False
+                return False, feature_unknown
         elif modifier.get("kind") == "through":
             if modifier.get("value") is not True:
-                return False
+                return False, feature_unknown
         else:
-            return False
-    return True
+            return False, feature_unknown
+    return True, feature_unknown
 
 
 def _contains_coarse_fallback(payload: Mapping[str, object]) -> bool:
@@ -511,6 +516,16 @@ class ConfidencePolicy:
             for source_id, owners in source_owners.items()
             if len(owners) > 1
         }
+        candidate_id_counts = Counter(
+            candidate.get("candidate_id")
+            for candidate in candidates
+            if _is_nonblank(candidate.get("candidate_id"))
+        )
+        duplicate_candidate_ids = {
+            candidate_id
+            for candidate_id, count in candidate_id_counts.items()
+            if count > 1
+        }
 
         evaluated: list[dict[str, Any]] = []
         for candidate in candidates:
@@ -521,6 +536,7 @@ class ConfidencePolicy:
                 duplicate_relations=duplicate_relations,
                 source_signals=source_signals,
                 conflicted_source_ids=conflicted_source_ids,
+                duplicate_candidate_ids=duplicate_candidate_ids,
             )
             envelope["confidence_decision"] = decision.to_dict()
             evaluated.append(envelope)
@@ -534,6 +550,7 @@ class ConfidencePolicy:
         duplicate_relations: Sequence[DuplicateRelation],
         source_signals: Sequence[CandidateSourceSignal],
         conflicted_source_ids: set[str],
+        duplicate_candidate_ids: set[object],
     ) -> ConfidenceDecision:
         evidence: set[str] = set()
         eligible_for_high = True
@@ -545,6 +562,11 @@ class ConfidencePolicy:
         payload = candidate.get("payload")
         payload_mapping = payload if isinstance(payload, Mapping) else {}
         source_ids = _source_ids(candidate)
+        identity_valid = (
+            bool(candidate_id)
+            and payload_mapping.get("candidate_id") == candidate_id
+            and candidate_id not in duplicate_candidate_ids
+        )
 
         source_shape_valid = (
             bool(source_ids)
@@ -586,7 +608,8 @@ class ConfidencePolicy:
                     )
                 )
                 typed_complete = (
-                    semantics_complete
+                    identity_valid
+                    and semantics_complete
                     and _is_nonblank(payload_mapping.get("raw_text"))
                     and _is_nonblank(payload_mapping.get("normalized_text"))
                     and _valid_coordinates(
@@ -602,10 +625,9 @@ class ConfidencePolicy:
             evidence.add("feature_kind_unknown")
         eligible_for_high &= typed_complete
 
-        source_truth_preserved = candidate.get(
-            "source_truth_preserved",
-            True,
-        ) is True
+        source_truth_preserved = (
+            candidate.get("source_truth_preserved") is True
+        )
         normalized_valid = (
             _is_nonblank(payload_mapping.get("normalized_text"))
             and source_truth_preserved
