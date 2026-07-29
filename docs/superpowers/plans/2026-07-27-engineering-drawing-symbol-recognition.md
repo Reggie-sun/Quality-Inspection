@@ -23,7 +23,7 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
 
 - Date: `2026-07-29`
 - Selected lane: `Heavy`
-- Status: `PRT-1 committed; PRT-2 next`
+- Status: `PRT-2 committed; PRT-3 next`
 - Current parent plan:
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
 - Current branch/worktree: `codex/symbol-production-routing` /
@@ -37,9 +37,9 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
   quality review。Explorer、auditor、reviewer 和 OSS researcher 始终只读。
 - Validation action: `amend -> continue`；每个 code task 严格
   RED -> minimal GREEN -> focused regression -> review -> exact commit。
-- Next verification: `PRT-2` planner/mode RED in
-  `test_symbol_routing.py + test_project_intake_api.py +
-  test_project_status_api.py + test_schema.py`。
+- Next verification: `PRT-3` zero-call and mixed-route RED in
+  `test_advisor.py + test_symbol_advisor.py +
+  test_symbol_recognition_pipeline.py + test_symbol_recognition.py`。
 - This file owns only the bounded symbol-recognition convergence steps below. It
   does not become a second current plan and cannot authorize `D7-T3`、`SR-5`、
   `main` merge or frontend work outside the exact `PRT-6` files and checks.
@@ -905,7 +905,7 @@ then `git revert <task-commit>`. Never revert the migration file before downgrad
 - Modify: `backend/tests/integration/test_processing_entry_task.py`
 - Modify: `backend/tests/integration/test_schema.py`
 
-- [ ] **Step 1: RED planner and mode tests**
+- [x] **Step 1: RED planner and mode tests**
 
 Cover stable dedup/merge order、primary-group budgets `4/page` and `8/project`、
 wall budgets `45s/page` and `90s/project`、the existing actual-attempt unified
@@ -946,7 +946,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 Expected RED: missing recognition settings/columns and planner budget behavior;
 unrelated intake/status assertions remain green.
 
-- [ ] **Step 2: GREEN migration and planner**
+- [x] **Step 2: GREEN migration and planner**
 
 Add reader-first project columns:
 
@@ -978,7 +978,7 @@ window sizes `1` and `2` generate the same stable escalation-group plan. Actual
 bounded execution、completion-order equivalence and attempt accounting close in
 `PRT-3`, where the Provider execution seam exists.
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 Run the RED command, then:
 
@@ -1024,6 +1024,28 @@ If rollback proof fails, do not commit. After commit, next verification is the
 `PRT-3` zero-call RED. Rollback recreates the disposable database at committed
 head, downgrades to `0007`, cleans up the disposable targets, then runs
 `git revert <PRT-2-commit>` and the project-intake/status tests.
+
+**PRT-2 evidence (`2026-07-29`):**
+
+- Required planner/mode tests were introduced as RED before the minimal
+  implementation. Review counterexamples then exposed and closed unstable wall
+  accounting、malformed decision/state records、overlap-merge、lineage/budget
+  binding、retry identity、hostile collection and empty-family cross-field gaps.
+- Final focused `test_symbol_routing.py` verification reported `93 passed`.
+  The unchanged local-resolution/routing/visual-observation/advisor regression
+  group reported `214 passed`; focused Ruff and `git diff --check` passed.
+- On the exact isolated `qi-symbol-routing-migration-postgres` /
+  `qi-symbol-routing-migration` targets, Alembic
+  `upgrade head -> downgrade 0007 -> upgrade head` succeeded. The four PRT-2
+  integration files reported `45 passed` both before and after the rollback
+  cycle. Both disposable targets were removed afterward; no live database was
+  touched.
+- Independent spec and quality reviews both returned
+  `accept with concerns` with no blocker. PRT-3 must import the named unified
+  `16/page` ceiling, retire the legacy executor-local literal and own actual
+  execution/timing evidence. PRT-4 must bind provenance authenticity; current
+  digests prove record self-consistency only.
+- Commit: `46d3ea77c75deb4e6b21b12aa97046f1955f7f34`.
 
 ### PRT-3: Integrate CandidateAdvisor Without Deleting Legacy
 
