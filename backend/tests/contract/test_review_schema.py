@@ -76,6 +76,10 @@ def test_typed_edit_rejects_identity_and_balloon_fields(field: str) -> None:
             "type": "ignore_source",
             "observation_id": "observation-1",
         },
+        {
+            "type": "ignore_sources",
+            "observation_ids": ["observation-1", "observation-2"],
+        },
     ],
 )
 def test_review_command_union_accepts_only_planned_commands(
@@ -177,6 +181,22 @@ def test_source_review_commands_require_exact_fields(
 ) -> None:
     with pytest.raises(ValidationError):
         parse_review_command(command)
+
+
+@pytest.mark.parametrize(
+    "observation_ids",
+    [[], [""], ["observation-1", "observation-1"]],
+)
+def test_ignore_sources_requires_unique_nonblank_targets(
+    observation_ids: list[str],
+) -> None:
+    with pytest.raises(ValidationError):
+        parse_review_command(
+            {
+                "type": "ignore_sources",
+                "observation_ids": observation_ids,
+            }
+        )
 
 
 def test_promote_source_rejects_coordinates_as_extra_field() -> None:

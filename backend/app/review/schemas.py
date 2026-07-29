@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    TypeAdapter,
+    field_validator,
+)
 
 from app.candidates.schemas import CandidateType
 
@@ -56,6 +63,18 @@ class PromoteSource(CommandBase):
 class IgnoreSource(CommandBase):
     type: Literal["ignore_source"]
     observation_id: str = Field(min_length=1)
+
+
+class IgnoreSources(CommandBase):
+    type: Literal["ignore_sources"]
+    observation_ids: list[NonBlankText] = Field(min_length=1)
+
+    @field_validator("observation_ids")
+    @classmethod
+    def require_unique_observation_ids(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("observation_ids must be unique")
+        return value
 
 
 class Merge(CommandBase):
@@ -135,6 +154,7 @@ ReviewCommand = Annotated[
         Add,
         PromoteSource,
         IgnoreSource,
+        IgnoreSources,
         Merge,
         Split,
         ResolveConfirmation,

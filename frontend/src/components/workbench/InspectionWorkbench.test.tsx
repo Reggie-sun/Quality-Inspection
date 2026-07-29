@@ -1498,6 +1498,92 @@ describe("InspectionWorkbench", () => {
     });
   });
 
+  test("确认当前有效项只提交一次批量来源命令", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const onFreeze = vi.fn();
+    const onGenerate = vi.fn();
+    const onConfirm = vi.fn();
+    const items = [{
+      item_id: "item-1",
+      item_type: "thread" as const,
+      raw_text: "M6",
+      balloon_required: true,
+      requires_confirmation: false,
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[
+          {
+            id: "batch-source-1",
+            pageIndex: 0,
+            bbox: [10, 20, 30, 40],
+            rawText: "设计",
+          },
+          {
+            id: "batch-source-2",
+            pageIndex: 0,
+            bbox: [50, 60, 70, 80],
+            rawText: "日期",
+          },
+        ]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "batch-working-id",
+          project_id: "batch-project-id",
+          raw_result_id: "batch-result-id",
+          version: 8,
+          items,
+          coverage: {
+            blocking_count: 0,
+            review_required_count: 2,
+            entries: [
+              {
+                observation_id: "batch-observation-1",
+                source_location_id: "batch-source-1",
+                candidate_id: null,
+                disposition: "ambiguous",
+                coordinates: [10, 20, 30, 40],
+                requires_confirmation: true,
+              },
+              {
+                observation_id: "batch-observation-2",
+                source_location_id: "batch-source-2",
+                candidate_id: null,
+                disposition: "ambiguous",
+                coordinates: [50, 60, 70, 80],
+                requires_confirmation: true,
+              },
+            ],
+          },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={onSave}
+        onFreeze={onFreeze}
+        onGenerate={onGenerate}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "确认当前有效项" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认排除 2 条" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave).toHaveBeenCalledWith({
+      type: "ignore_sources",
+      observation_ids: ["batch-observation-1", "batch-observation-2"],
+    });
+    expect(onFreeze).not.toHaveBeenCalled();
+    expect(onGenerate).not.toHaveBeenCalled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   test("来源 promote 保存失败后保留选择和草稿供重试", async () => {
     const onSave = vi.fn().mockRejectedValue(new Error("save failed"));
     const items = [{

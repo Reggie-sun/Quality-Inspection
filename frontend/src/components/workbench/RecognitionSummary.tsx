@@ -27,10 +27,11 @@ export function RecognitionSummary({
 }: RecognitionSummaryProps) {
   const active = items.filter((item) => item.active).length;
   const excluded = items.length - active;
-  const manual = balloons.filter(
+  const manualBalloons = balloons.filter(
     (balloon) =>
       balloon.status !== "deleted" && balloon.placementStatus === "manual_required",
-  ).length + pendingSourceCount;
+  ).length;
+  const hasPendingSources = pendingSourceCount > 0;
   const hardCollision = balloons.filter(
     (balloon) =>
       balloon.status !== "deleted" && (balloon.collisionFlags?.length ?? 0) > 0,
@@ -55,9 +56,11 @@ export function RecognitionSummary({
     },
     {
       value: "manual_required",
-      label: zhCN.summary.manualRequired,
+      label: hasPendingSources
+        ? zhCN.summary.pendingSources
+        : zhCN.summary.manualRequired,
       testId: "summary-manual-count",
-      count: manual,
+      count: hasPendingSources ? pendingSourceCount : manualBalloons,
     },
     {
       value: "hard_collision",
@@ -87,7 +90,13 @@ export function RecognitionSummary({
         <button
           key={chip.value}
           type="button"
-          className={`summary-chip summary-chip--${chip.value}`}
+          className={[
+            "summary-chip",
+            `summary-chip--${chip.value}`,
+            chip.value === "manual_required" && hasPendingSources
+              ? "summary-chip--pending_sources"
+              : "",
+          ].filter(Boolean).join(" ")}
           data-active={filter === chip.value}
           aria-label={zhCN.summary.filter(chip.label)}
           onClick={() => onFilterChange(chip.value)}

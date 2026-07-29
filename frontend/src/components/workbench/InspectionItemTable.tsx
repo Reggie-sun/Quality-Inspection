@@ -193,6 +193,7 @@ export function InspectionItemTable({
     },
   );
   const [dirtySourceIds, setDirtySourceIds] = useState<string[]>([]);
+  const [batchConfirmationOpen, setBatchConfirmationOpen] = useState(false);
   const selectedSourceDraft = selectedSource && (
     sourceDrafts[selectedSource.observationId] ?? selectedSourceBaseline);
 
@@ -209,6 +210,9 @@ export function InspectionItemTable({
   useEffect(() => {
     onDraftChange?.(dirtySourceIds.length > 0);
   }, [dirtySourceIds, onDraftChange]);
+  useEffect(() => {
+    if (pendingSources.length === 0) setBatchConfirmationOpen(false);
+  }, [pendingSources.length]);
   useEffect(() => setPage(1), [filter, search, statusFilter]);
   useEffect(() => {
     if (selectedPage !== undefined) setPage(selectedPage);
@@ -280,6 +284,73 @@ export function InspectionItemTable({
           </select>
         </label>
       </div>
+      {pendingSources.length === 0 ? null : (
+        <section
+          className="source-batch-bar"
+          aria-label={zhCN.summary.pendingSources}
+        >
+          {batchConfirmationOpen ? (
+            <div className="source-batch-confirmation">
+              <div>
+                <strong>
+                  {zhCN.inspection.batchConfirmation(
+                    items.filter((item) => item.active).length,
+                    pendingSources.length,
+                  )}
+                </strong>
+                <p>{zhCN.inspection.batchExclusionWarning}</p>
+              </div>
+              <div className="source-batch-actions">
+                <button
+                  type="button"
+                  onClick={() => setBatchConfirmationOpen(false)}
+                >
+                  {zhCN.inspection.cancelBatchExclusion}
+                </button>
+                <button
+                  type="button"
+                  className="source-batch-actions__confirm"
+                  disabled={
+                    disabled
+                    || onCommand === undefined
+                    || dirtySourceIds.length > 0
+                  }
+                  onClick={async () => {
+                    const succeeded = await commandSucceeded(onCommand, {
+                      type: "ignore_sources",
+                      observation_ids: pendingSources.map(
+                        (source) => source.observationId,
+                      ),
+                    });
+                    if (succeeded) setBatchConfirmationOpen(false);
+                  }}
+                >
+                  {zhCN.inspection.confirmBatchExclusion(
+                    pendingSources.length,
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <strong>
+                {zhCN.inspection.pendingSourceCount(pendingSources.length)}
+              </strong>
+              <button
+                type="button"
+                disabled={
+                  disabled
+                  || onCommand === undefined
+                  || dirtySourceIds.length > 0
+                }
+                onClick={() => setBatchConfirmationOpen(true)}
+              >
+                {zhCN.inspection.confirmCurrentItems}
+              </button>
+            </>
+          )}
+        </section>
+      )}
       <div
         className="inspection-table"
         role="table"

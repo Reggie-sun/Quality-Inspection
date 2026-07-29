@@ -128,6 +128,7 @@ export type ReviewCommand =
       page_index: number;
     }
   | { type: "ignore_source"; observation_id: string }
+  | { type: "ignore_sources"; observation_ids: string[] }
   | {
       type: "set_sip_detail_fields";
       item_id: string;

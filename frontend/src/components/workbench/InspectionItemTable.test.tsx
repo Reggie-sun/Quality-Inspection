@@ -363,6 +363,150 @@ test("缺少 onCommand 时不渲染 SIP 字段组", () => {
   ).toBeNull();
 });
 
+test("确认当前有效项一次性排除全部待确认来源", async () => {
+  const onCommand = vi.fn().mockResolvedValue(true);
+  render(
+    <InspectionItemTable
+      items={[
+        { item_id: "i1", raw_text: "M6", active: true },
+        { item_id: "i2", raw_text: "10", active: true },
+      ]}
+      balloons={[]}
+      pendingSources={[
+        {
+          observationId: "observation-1",
+          sourceId: "source-1",
+          rawText: "设计",
+          coordinates: [1, 2, 3, 4],
+          pageIndex: 0,
+        },
+        {
+          observationId: "observation-2",
+          sourceId: "source-2",
+          rawText: "日期",
+          coordinates: [5, 6, 7, 8],
+          pageIndex: 0,
+        },
+      ]}
+      filter="manual_required"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={onCommand}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "确认当前有效项" }));
+  expect(screen.getByText(
+    "将保留当前 2 个有效检验项，并排除全部 2 条待确认来源。",
+  )).not.toBeNull();
+  expect(screen.getByText(
+    "排除内容不会进入 SIP，也不会生成气泡。",
+  )).not.toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "确认排除 2 条" }));
+
+  await waitFor(() => expect(onCommand).toHaveBeenCalledTimes(1));
+  expect(onCommand).toHaveBeenCalledWith({
+    type: "ignore_sources",
+    observation_ids: ["observation-1", "observation-2"],
+  });
+  expect(screen.queryByText(
+    "将保留当前 2 个有效检验项，并排除全部 2 条待确认来源。",
+  )).toBeNull();
+});
+
+test("批量确认取消不提交，失败时保留确认提示", async () => {
+  const onCommand = vi.fn().mockResolvedValue(false);
+  render(
+    <InspectionItemTable
+      items={[{ item_id: "i1", raw_text: "M6", active: true }]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-1",
+        sourceId: "source-1",
+        rawText: "设计",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="manual_required"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={onCommand}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "确认当前有效项" }));
+  fireEvent.click(screen.getByRole("button", { name: "取消" }));
+  expect(onCommand).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "确认排除 1 条" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "确认当前有效项" }));
+  fireEvent.click(screen.getByRole("button", { name: "确认排除 1 条" }));
+
+  await waitFor(() => expect(onCommand).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("button", { name: "确认排除 1 条" })).not.toBeNull();
+});
+
+test("存在未保存来源草稿时禁止批量确认", () => {
+  render(
+    <InspectionItemTable
+      items={[{ item_id: "i1", raw_text: "M6", active: true }]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-1",
+        sourceId: "source-1",
+        rawText: "设计",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="manual_required"
+      selectedSourceId="source-1"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={vi.fn()}
+    />,
+  );
+
+  fireEvent.change(screen.getByRole("textbox", { name: "原始标注" }), {
+    target: { value: "设计说明" },
+  });
+
+  expect(screen.getByRole("button", { name: "确认当前有效项" })
+    .hasAttribute("disabled")).toBe(true);
+});
+
+test("打开批量确认后修改来源草稿仍禁止最终提交", () => {
+  const onCommand = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[{ item_id: "i1", raw_text: "M6", active: true }]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "observation-1",
+        sourceId: "source-1",
+        rawText: "设计",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="manual_required"
+      selectedSourceId="source-1"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={onCommand}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "确认当前有效项" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "原始标注" }), {
+    target: { value: "设计说明" },
+  });
+
+  const confirm = screen.getByRole("button", { name: "确认排除 1 条" });
+  expect(confirm.hasAttribute("disabled")).toBe(true);
+  fireEvent.click(confirm);
+  expect(onCommand).not.toHaveBeenCalled();
+});
+
 test("待判定来源进入统一列表并产生显式 source review commands", () => {
   const onSelectSource = vi.fn();
   const onCommand = vi.fn();

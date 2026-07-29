@@ -21,6 +21,7 @@ from app.review.schemas import (
     Edit,
     Exclude,
     IgnoreSource,
+    IgnoreSources,
     Keep,
     Merge,
     PromoteSource,
@@ -644,6 +645,22 @@ class ReviewService:
             )
             self._refresh_review_required_count(coverage)
             return [command.observation_id], numbering_stale
+        if isinstance(command, IgnoreSources):
+            entries = [
+                self._pending_source_entry(coverage, observation_id)
+                for observation_id in command.observation_ids
+            ]
+            for entry in entries:
+                entry.update(
+                    {
+                        "disposition": "non_inspection",
+                        "candidate_id": None,
+                        "requires_confirmation": False,
+                        "confirmation_accepted": False,
+                    }
+                )
+            self._refresh_review_required_count(coverage)
+            return list(command.observation_ids), numbering_stale
         if isinstance(command, ResolveConfirmation):
             self._resolve_confirmation(
                 items,

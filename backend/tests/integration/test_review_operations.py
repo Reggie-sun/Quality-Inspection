@@ -651,6 +651,154 @@ def test_ignore_source_resolves_coverage_without_changing_items_or_numbering(
     assert records[0].target_ids == ["source-only"]
 
 
+def test_ignore_sources_resolves_all_targets_in_one_version_and_audit_record(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    coverage = copy.deepcopy(working_copy.coverage)
+    coverage["entries"] = [
+        {
+            "observation_id": "source-1",
+            "disposition": "ambiguous",
+            "source_location_id": "source-location-1",
+            "coordinates": [21, 22, 23, 24],
+            "candidate_id": None,
+            "requires_confirmation": True,
+        },
+        {
+            "observation_id": "source-2",
+            "disposition": "ambiguous",
+            "source_location_id": "source-location-2",
+            "coordinates": [31, 32, 33, 34],
+            "candidate_id": None,
+            "requires_confirmation": True,
+        },
+    ]
+    coverage["review_required_count"] = 2
+    working_copy.coverage = coverage
+    db_session.commit()
+    db_session.refresh(working_copy)
+    before_version = working_copy.version
+    before_items = copy.deepcopy(working_copy.items)
+    before_numbering_stale = working_copy.numbering_stale
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=before_version,
+        operator_id="quality-1",
+        command={
+            "type": "ignore_sources",
+            "observation_ids": ["source-1", "source-2"],
+        },
+    )
+
+    assert saved.version == before_version + 1
+    assert saved.items == before_items
+    assert saved.numbering_stale is before_numbering_stale
+    assert saved.coverage["review_required_count"] == 0
+    assert [
+        {
+            key: entry.get(key)
+            for key in (
+                "observation_id",
+                "disposition",
+                "candidate_id",
+                "requires_confirmation",
+                "confirmation_accepted",
+            )
+        }
+        for entry in saved.coverage["entries"]
+    ] == [
+        {
+            "observation_id": "source-1",
+            "disposition": "non_inspection",
+            "candidate_id": None,
+            "requires_confirmation": False,
+            "confirmation_accepted": False,
+        },
+        {
+            "observation_id": "source-2",
+            "disposition": "non_inspection",
+            "candidate_id": None,
+            "requires_confirmation": False,
+            "confirmation_accepted": False,
+        },
+    ]
+    records = list(
+        db_session.scalars(
+            select(OperationRecord).where(
+                OperationRecord.project_id == working_copy.project_id
+            )
+        )
+    )
+    assert len(records) == 1
+    assert records[0].command == "ignore_sources"
+    assert records[0].target_ids == ["source-1", "source-2"]
+    assert records[0].before_version == before_version
+    assert records[0].after_version == before_version + 1
+
+
+def test_ignore_sources_rejects_the_entire_batch_when_one_target_is_resolved(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    coverage = copy.deepcopy(working_copy.coverage)
+    coverage["entries"] = [
+        {
+            "observation_id": "source-1",
+            "disposition": "ambiguous",
+            "source_location_id": "source-location-1",
+            "coordinates": [21, 22, 23, 24],
+            "candidate_id": None,
+            "requires_confirmation": True,
+        },
+        {
+            "observation_id": "source-2",
+            "disposition": "non_inspection",
+            "source_location_id": "source-location-2",
+            "coordinates": [31, 32, 33, 34],
+            "candidate_id": None,
+            "requires_confirmation": False,
+            "confirmation_accepted": False,
+        },
+    ]
+    coverage["review_required_count"] = 1
+    working_copy.coverage = coverage
+    db_session.commit()
+    db_session.refresh(working_copy)
+    before_version = working_copy.version
+    before_items = copy.deepcopy(working_copy.items)
+    before_coverage = copy.deepcopy(working_copy.coverage)
+
+    with pytest.raises(ReviewNotFound):
+        review_service.apply(
+            working_copy.id,
+            expected_version=before_version,
+            operator_id="quality-1",
+            command={
+                "type": "ignore_sources",
+                "observation_ids": ["source-1", "source-2"],
+            },
+        )
+
+    db_session.expire_all()
+    persisted = db_session.get(ReviewWorkingCopy, working_copy.id)
+    assert persisted is not None
+    assert persisted.version == before_version
+    assert persisted.items == before_items
+    assert persisted.coverage == before_coverage
+    records = list(
+        db_session.scalars(
+            select(OperationRecord).where(
+                OperationRecord.project_id == working_copy.project_id
+            )
+        )
+    )
+    assert records == []
+
+
 def test_resolve_confirmation_rejects_source_only_observation_atomically(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,

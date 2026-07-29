@@ -1,6 +1,7 @@
 # Source Review Convergence Design
 
-**Status:** Approved in conversation on 2026-07-24; pending written-spec review
+**Status:** Approved on 2026-07-24; batch-confirmation amendment approved on
+2026-07-29
 
 ## Problem Statement
 
@@ -36,6 +37,26 @@
 - **Next verification:** review command contract/integration tests，然后 frontend
   component tests，最后 authenticated localhost Chrome smoke。
 
+### 2026-07-29 Batch Amendment Selection
+
+- **Selected lane:** `Heavy`
+  - 新增稳定 `ignore_sources` command schema，并跨 frontend、Review aggregate 与
+    Coverage Ledger data-integrity boundary 提交批量 disposition。
+- **Selected plan:** `docs/superpowers/plans/2026-07-24-source-review-convergence.md`
+  的 batch-confirmation amendment。
+- **Selection evidence:** 用户确认待判定来源大部分是无需纳入的识别噪声，批准保留
+  当前有效项并一次性排除全部剩余 pending source。
+- **Validation action:** `replan`
+  - 原 spec 明确排除 batch ignore，必须原地修订，不能静默扩大 scope。
+- **Current-plan boundary:** 最新用户目标临时选择本 plan；confidence-routed plan
+  保持现有 commits，不在本任务继续推进，也不回滚。
+- **Single owner:** `ReviewService.apply()` / `_apply_command()` 继续是唯一 mutation
+  Owner；不新增 endpoint、frontend loop 或第二套 batch executor。
+- **Writer ownership and order:** 父 agent 串行修改 docs → backend contract/service
+  → frontend consumer；独立 reviewer 只读。
+- **Next verification:** schema RED/GREEN → service atomicity RED/GREEN → frontend
+  interaction RED/GREEN → focused/full tests → Chrome smoke → independent review。
+
 ## Confirmed Product Decisions
 
 - 删除独立“来源待确认”卡片和它的上一条/下一条导航。
@@ -47,6 +68,12 @@
 - “忽略，不作为检验项”必须把 Coverage Ledger disposition 改为
   `non_inspection`。
 - 添加为检验项时，用户必须显式选择检验类型；系统不猜测默认类型。
+- 用户可在粗略检查后选择“确认当前有效项”，把所有仍待判定的 source-only
+  entries 在一个事务内批量标记为 `non_inspection`。
+- 批量确认必须先显示将保留的 active item 数和将排除的 pending source 数，并要求
+  用户二次确认；不得静默执行。
+- 批量确认只解决 pending source，不自动 freeze、生成气泡或确认 reviewed result。
+- 逐条“添加为检验项”继续作为少量漏识别内容的纠错入口。
 - 现有 `requires_confirmation` freeze Veto Gate 保持不变。
 
 ## Goals
@@ -56,6 +83,7 @@
 3. 保证来源处理、item-set 和 coverage 在同一事务中一致更新。
 4. 保留 source identity、PDF 坐标、页码和 operation audit。
 5. 不影响普通 candidate 的 keep/exclude/edit/confirmation 行为。
+6. 允许用户以一次显式、可审计的批量决定排除明显的非检验来源噪声。
 
 ## Non-Goals
 
@@ -63,7 +91,9 @@
 - 不自动批量忽略水印、公司名、标题栏或其他文本。
 - 不增加模型调用或后台自动分类。
 - 不改变 frozen working copy、immutable reviewed result 或已发布文件。
-- 不实现 undo、批量添加、批量忽略或新的审核角色。
+- 不实现 undo、批量添加、按类型批量纳入、混合 decision payload 或新的审核角色。
+- 不根据文本内容自动选择要忽略的来源；本次批量操作始终覆盖当前全部 pending
+  source，并由用户显式确认。
 - 不推进或修改多 PDF 项目设计。
 - 不改变气泡编号、碰撞、SIP 字段确认或正式导出格式。
 
@@ -107,6 +137,19 @@ source-only blocker。拒绝。
 采用 `promote_source` 和 `ignore_source` 两个命令。每个命令只产生一个 working-copy
 version 和一个 operation record，后端在同一事务内更新 item-set 与 coverage。
 这是选定方案。
+
+### D. Frontend 循环发送 `ignore_source`
+
+第一条命令成功后 working-copy version 已递增，后续命令仍使用旧 snapshot version，
+会产生 `review_version_conflict`。即使逐条刷新 version，也可能部分成功，不能把
+326 条来源表示为一个审计决定。拒绝。
+
+### E. 新增 `ignore_sources` 原子批量命令
+
+继续复用现有 `POST /review/commands` 和 `ReviewService.apply()` Owner，用一个
+`expected_version`、一个 transaction、一次 version increment 和一条 operation
+record 提交全部 pending source disposition。任何目标重复、缺失、已处理或
+candidate-backed 时整批失败。这是 2026-07-29 amendment 的选定方案。
 
 ## Backend Command Design
 
@@ -175,6 +218,37 @@ Atomic effects:
 4. numbering state 不变；
 5. 写入一个 `ignore_source` operation record。
 
+### `ignore_sources`
+
+Request:
+
+```json
+{
+  "type": "ignore_sources",
+  "observation_ids": ["source-1", "source-2"]
+}
+```
+
+Validation:
+
+- `observation_ids` 至少一项、每项非空且不得重复；
+- 每个 identity 必须唯一命中一个 `requires_confirmation=true`、
+  `candidate_id=null` 的 source-only coverage entry；
+- 必须先校验全部 identities，再更新任何 entry；
+- 不接受 filter、page、文本匹配或自动分类参数，避免 frontend 提交第二套语义。
+
+Atomic effects:
+
+1. 所有目标 entry 改为 `disposition="non_inspection"`、
+   `candidate_id=null`、`requires_confirmation=false`、
+   `confirmation_accepted=false`；
+2. 不创建或修改 `ReviewItem`；
+3. 一次重算 `review_required_count`；
+4. numbering state 不变；
+5. working-copy version 只递增一次；
+6. 写入一条 `ignore_sources` operation record，`target_ids` 按 request 顺序保存；
+7. 任一目标无效时 item-set、coverage、version 和 operation audit 全部不写入。
+
 ### Existing Command Boundary
 
 `resolve_confirmation` 继续处理已经存在的 candidate/item confirmation。它不再接受
@@ -229,6 +303,35 @@ overlay。点击普通 item 时保持现有反向清除逻辑。
 pending command + 显式“保存审核修改”流程；保存成功后 backend 新 working-copy
 projection 使该 pending source row 消失。按钮文案不再使用“保留来源”。
 
+### Batch Confirmation
+
+当 `pendingSources.length > 0` 时，统一列表顶部显示一条 batch decision bar：
+
+- 状态文案：`N 条待确认来源`；
+- 主操作：`确认当前有效项`；
+- 点击后显示 inline confirmation，不使用 browser-native confirm；
+- confirmation 明确写出：保留当前 active item 数，并把全部 `N` 条待确认来源排除；
+- warning 明确说明被排除内容不会进入 SIP，也不会生成气泡；
+- 最终操作：`确认排除 N 条`；取消操作关闭 confirmation，不提交命令。
+
+最终操作只发送一次：
+
+```json
+{
+  "type": "ignore_sources",
+  "observation_ids": ["当前全部 pending source observation IDs"]
+}
+```
+
+成功 refresh 后 pending rows 与 batch bar 同时消失；失败时保留 confirmation、
+selection 和 draft，继续显示现有保存失败状态。存在未保存 source draft 时 batch
+操作 disabled，避免静默丢弃人工修改。
+
+顶部 summary 在 pending source 存在时使用“待确认来源”并只显示 pending source
+数，不再把 pending source 与生成后的 balloon `manual_required` 合并成一个数字。
+pending source 清零后，该 chip 恢复现有气泡“需人工处理”语义。本 amendment 不改变
+placement Owner。
+
 ### Old Path Retirement
 
 同一实现提交中删除：
@@ -247,6 +350,7 @@ projection 使该 pending source row 消失。按钮文案不再使用“保留�
   review API 错误路径；
 - source entry 不存在、已经处理、不是 source-only 或不再待确认时，命令失败且整个
  事务不写入；
+- batch 中任一 identity 无效或重复时整批失败，不能保留部分 disposition；
 - promotion 字段验证失败时不改变 item-set、coverage 或 version；
 - frontend 保存失败时保留选中来源和编辑内容，显示现有“保存失败”状态；
 - 未解决 source row 始终保持 freeze blocker，不能用 warning 或 UI 隐藏绕过。
@@ -254,6 +358,8 @@ projection 使该 pending source row 消失。按钮文案不再使用“保留�
 ## Data Integrity And Invariants
 
 - 一个 source-only observation 最多被 promote 或 ignore 一次；
+- 一个 `ignore_sources` command 只能包含唯一 observation identities；
+- batch mutation 前必须完成全量 eligibility validation；
 - promoted item 与 coverage entry 共享同一 source identity 和服务端坐标；
 - promote 后 coverage disposition 是 `candidate`，并指向新 item identity；
 - ignore 后 coverage disposition 是 `non_inspection`，且没有 candidate identity；
@@ -320,6 +426,12 @@ Plan and durable contract projection:
 5. ignore 生成正确 `ignore_source` command。
 6. 保存失败保留 source draft；保存成功由新 projection 移除该行。
 7. 普通 item table、SIP detail、分页和 finalized read-only regression 保持通过。
+8. batch confirmation 只发送一个 `ignore_sources` command，并包含全部 pending
+   observation IDs。
+9. batch cancel 不发送命令；失败保留 confirmation；成功 projection 移除全部
+   pending rows。
+10. backend batch success 只递增一次 version、只写一条 operation record；任一无效
+    target 时验证 working copy 与 audit 零写入。
 
 ### Required Checks
 
@@ -345,8 +457,9 @@ smoke：
 
 ## Rollback
 
-本设计不需要 migration。若实现引入回归，回滚整个 implementation commit，恢复旧
-`CoverageReviewPanel` 与旧 command schema，不保留半迁移 frontend。
+本设计不需要 migration。若 batch amendment 引入回归，只回滚 amendment
+implementation commit，恢复逐条 `promote_source` / `ignore_source` 路径；不得回滚
+已经完成的 unified source review convergence，也不得恢复 `CoverageReviewPanel`。
 
 发生 rollback 后第一项验证是：
 

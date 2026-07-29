@@ -55,13 +55,45 @@ test("P0-UI-004 derives active, excluded and manual-required filters from projec
     .toContain("5");
   expect(screen.getByTestId("summary-active-count").textContent).toBe("2");
   expect(screen.getByTestId("summary-excluded-count").textContent).toBe("1");
-  expect(screen.getByTestId("summary-manual-count").textContent).toBe("3");
+  expect(screen.getByTestId("summary-manual-count").textContent).toBe("2");
   expect(screen.getByRole("button", { name: "筛选有效项" })).not.toBeNull();
 
-  fireEvent.click(screen.getByRole("button", { name: "筛选需人工处理" }));
+  const pendingChip = screen.getByRole("button", { name: "筛选待确认来源" });
+  expect(pendingChip.classList.contains("summary-chip--pending_sources"))
+    .toBe(true);
+  fireEvent.click(pendingChip);
   expect(onFilterChange).toHaveBeenCalledWith("manual_required");
-  for (const label of ["全部", "有效项", "已排除", "需人工处理", "硬碰撞"]) {
+  for (const label of ["全部", "有效项", "已排除", "待确认来源", "硬碰撞"]) {
     expect(screen.getByRole("region", { name: "识别汇总" }).textContent)
       .toContain(label);
   }
+});
+
+test("待确认来源清零后恢复气泡人工处理统计", () => {
+  render(
+    <RecognitionSummary
+      items={[{ item_id: "i1", raw_text: "M6", active: true }]}
+      balloons={[{
+        id: "b1",
+        itemId: "i1",
+        sourceId: "s1",
+        pageIndex: 0,
+        center: [30, 30],
+        number: 1,
+        version: 1,
+        status: "active",
+        sortOrder: 0,
+        placementStatus: "manual_required",
+        collisionFlags: [],
+        leaderTarget: [20, 20],
+      }]}
+      pendingSourceCount={0}
+      filter="all"
+      onFilterChange={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByRole("button", { name: "筛选需人工处理" }))
+    .not.toBeNull();
+  expect(screen.getByTestId("summary-manual-count").textContent).toBe("1");
 });

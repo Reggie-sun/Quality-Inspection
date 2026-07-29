@@ -2,9 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 source-only coverage 待确认项原子地合入检验项审核列表，确保“添加为检验项”生成真实可导出的 `ReviewItem`，“忽略”生成明确的 `non_inspection` disposition。
+**Goal:** 把 source-only coverage 待确认项原子地合入检验项审核列表，并允许用户在
+粗略检查后以一次显式、可审计的批量决定确认当前有效项、排除全部剩余 pending
+source。
 
-**Architecture:** `ReviewService` 继续是 working-copy mutation 的单一 Owner，新增 `promote_source` 与 `ignore_source` 两个稳定命令，在一个 PostgreSQL transaction 内同时更新 item-set、Coverage Ledger、version、numbering state 和 operation record。Frontend 从现有 working-copy coverage 与 workbench sources 派生待判定来源行，把它们加入 `InspectionItemTable` 的统一搜索、筛选、分页和详情区域，并在新路径通过后删除 `CoverageReviewPanel` 旧路径。
+**Architecture:** `ReviewService` 继续是 working-copy mutation 的单一 Owner；既有
+`promote_source` / `ignore_source` 保持逐条纠错，新 `ignore_sources` 在一个
+PostgreSQL transaction 内批量更新 Coverage Ledger、version 和 operation record。
+Frontend 只提交当前全部 pending observation identities，不循环调用单项命令，也不
+自动触发 freeze、生成或 reviewed confirmation。
 
 **Tech Stack:** Python 3.12、FastAPI/Pydantic、SQLAlchemy/PostgreSQL、pytest、React 19、TypeScript、Vitest/Testing Library、Vite、Chrome DevTools MCP。
 
@@ -55,6 +61,52 @@ micromamba run -n qi-p0 npm --prefix frontend run build
 ```bash
 micromamba run -n qi-p0 pytest \
   backend/tests/integration/test_review_freeze.py::test_source_only_confirmation_blocks_freeze -q
+```
+
+## 2026-07-29 Batch Confirmation Amendment
+
+- **Status:** approved by user on 2026-07-29。
+- **Selected lane:** `Heavy`。
+- **Validation action:** `replan`，因为原 spec/plan 明确把 batch ignore 排除在 scope
+  外，而本 amendment 新增稳定 command schema 与跨层 data-integrity transition。
+- **Problem boundary:** 只批量处理当前 working copy 中所有
+  `candidate_id is None` 且 `requires_confirmation is True` 的 source-only
+  coverage entries。
+- **Single owner:** `backend/app/review/service.py::ReviewService.apply` /
+  `_apply_command`。
+- **Old path action:** 逐条 `ignore_source` 选择 `preserve`，它仍是明确单项纠错
+  consumer；frontend loop 选择 `remove`，不得实现。
+- **Unchanged contracts:**
+  - `promote_source` 仍要求用户显式选择类型；
+  - unresolved source 仍是 freeze Veto；
+  - batch 成功不自动 freeze、生成气泡或确认 reviewed result；
+  - AutomaticResult、Coverage Owner、SIP、balloon、export 和 immutable reviewed
+    result 不变；
+  - 不新增 endpoint、migration、runtime config、feature flag 或 fallback。
+- **Current-plan boundary:** 本 amendment 是当前唯一 active plan；已提交的
+  confidence-routed work 保持原样但暂停，不在本 task 修改。
+- **Writer ownership:** 父 agent 是 backend/frontend/docs 唯一 writer；完成实现后
+  reviewer 只读检查。
+- **Rollback:** 回滚本 amendment 的 implementation/docs commits，恢复逐条 source
+  review；不得恢复已删除的 `CoverageReviewPanel`。实际 rollback 后第一项验证：
+
+```bash
+micromamba run -n qi-p0 pytest \
+  backend/tests/integration/test_review_freeze.py::test_source_only_confirmation_blocks_freeze -q
+```
+
+- **Focused verification:**
+
+```bash
+micromamba run -n qi-p0 pytest \
+  backend/tests/contract/test_review_schema.py \
+  backend/tests/integration/test_review_operations.py \
+  backend/tests/integration/test_review_freeze.py -q
+micromamba run -n qi-p0 npm --prefix frontend test -- --run \
+  src/components/workbench/RecognitionSummary.test.tsx \
+  src/components/workbench/InspectionItemTable.test.tsx \
+  src/components/workbench/InspectionWorkbench.test.tsx
+micromamba run -n qi-p0 npm --prefix frontend run build
 ```
 
 ## File Structure
@@ -1358,6 +1410,333 @@ git commit -m "docs: bind atomic source review contract"
 Do not include implementation review fixes in this docs commit；Step 6 owns their
 separate RED/GREEN commit。Do not stage `.env.example`、`.gitignore`、`AGENTS.md`、
 `compose.yaml`、`.local/`、`__pycache__/` or `frontend/test-results/`。
+
+## Task 6: Add The Atomic Batch Command Contract
+
+**Files:**
+- Modify: `backend/tests/contract/test_review_schema.py`
+- Modify: `backend/app/review/schemas.py`
+
+- [ ] **Step 1: Write RED contract tests**
+
+把合法 payload 加入现有 command-union 参数：
+
+```python
+{
+    "type": "ignore_sources",
+    "observation_ids": ["source-1", "source-2"],
+}
+```
+
+新增：
+
+```python
+@pytest.mark.parametrize(
+    "observation_ids",
+    [[], [""], ["source-1", "source-1"]],
+)
+def test_ignore_sources_requires_unique_nonblank_targets(
+    observation_ids: list[str],
+) -> None:
+    with pytest.raises(ValidationError):
+        parse_review_command(
+            {"type": "ignore_sources", "observation_ids": observation_ids}
+        )
+```
+
+- [ ] **Step 2: Run RED**
+
+```bash
+micromamba run -n qi-p0 pytest \
+  backend/tests/contract/test_review_schema.py \
+  -k 'planned_commands or ignore_sources' -q
+```
+
+Expected: legal payload 因 discriminator 不认识 `ignore_sources` 而失败。
+
+- [ ] **Step 3: Implement the exact schema**
+
+在 `backend/app/review/schemas.py` import `field_validator`，然后新增：
+
+```python
+class IgnoreSources(CommandBase):
+    type: Literal["ignore_sources"]
+    observation_ids: list[NonBlankText] = Field(min_length=1)
+
+    @field_validator("observation_ids")
+    @classmethod
+    def require_unique_observation_ids(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("observation_ids must be unique")
+        return value
+```
+
+把 `IgnoreSources` 加入 `ReviewCommand` discriminated union。不得新增 endpoint、
+generic batch wrapper 或 filter payload。
+
+- [ ] **Step 4: Run GREEN**
+
+```bash
+micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py -q
+```
+
+Expected: zero failures。
+
+## Task 7: Apply All Source Exclusions In One Transaction
+
+**Files:**
+- Modify: `backend/tests/integration/test_review_operations.py`
+- Modify: `backend/app/review/service.py`
+- Verify: `backend/tests/integration/test_review_freeze.py`
+
+- [ ] **Step 1: Write RED success and atomic-failure tests**
+
+新增两条 source-only coverage entries，断言成功路径：
+
+```python
+before_version = working_copy.version
+saved = review_service.apply(
+    working_copy.id,
+    expected_version=before_version,
+    operator_id="quality-1",
+    command={
+        "type": "ignore_sources",
+        "observation_ids": ["source-1", "source-2"],
+    },
+)
+assert saved.version == before_version + 1
+assert saved.coverage["review_required_count"] == 0
+assert {
+    entry["disposition"] for entry in saved.coverage["entries"]
+} == {"non_inspection"}
+```
+
+同时断言只存在一条 `OperationRecord(command="ignore_sources")`，其
+`target_ids == ["source-1", "source-2"]`，items 与 numbering state 不变。
+
+失败路径把 `source-2` 设为已解决，再发送同一 batch；断言抛
+`ReviewNotFound`，refresh 后 items、coverage、version 与 operation records
+完全不变。
+
+- [ ] **Step 2: Run RED**
+
+```bash
+micromamba run -n qi-p0 pytest \
+  backend/tests/integration/test_review_operations.py \
+  -k 'ignore_sources' -q
+```
+
+Expected: command 尚未由 service 支持而失败。
+
+- [ ] **Step 3: Implement prevalidate-then-mutate**
+
+Import `IgnoreSources`，在 `_apply_command()` 的 `IgnoreSource` 分支之后加入：
+
+```python
+if isinstance(command, IgnoreSources):
+    entries = [
+        self._pending_source_entry(coverage, observation_id)
+        for observation_id in command.observation_ids
+    ]
+    for entry in entries:
+        entry.update(
+            {
+                "disposition": "non_inspection",
+                "candidate_id": None,
+                "requires_confirmation": False,
+                "confirmation_accepted": False,
+            }
+        )
+    self._refresh_review_required_count(coverage)
+    return list(command.observation_ids), numbering_stale
+```
+
+必须先构造完整 `entries` 后再 mutation。继续复用 `ReviewService.apply()` 的 deep
+copy、optimistic version update、transaction 和 operation audit。
+
+- [ ] **Step 4: Run GREEN and freeze regression**
+
+```bash
+micromamba run -n qi-p0 pytest \
+  backend/tests/contract/test_review_schema.py \
+  backend/tests/integration/test_review_operations.py \
+  backend/tests/integration/test_review_freeze.py -q
+```
+
+Expected: zero failures。
+
+## Task 8: Add “Confirm Current Effective Items” To The Unified List
+
+**Files:**
+- Modify: `frontend/src/api/types.ts`
+- Modify: `frontend/src/copy/zhCN.ts`
+- Modify: `frontend/src/components/workbench/RecognitionSummary.tsx`
+- Modify: `frontend/src/components/workbench/RecognitionSummary.test.tsx`
+- Modify: `frontend/src/components/workbench/InspectionItemTable.tsx`
+- Modify: `frontend/src/components/workbench/InspectionItemTable.test.tsx`
+- Modify: `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- Modify: `frontend/src/styles/workbench.css`
+
+- [ ] **Step 1: Write RED interaction tests**
+
+在 `InspectionItemTable.test.tsx` render 两条 pending sources 和两个 active items，
+断言：
+
+```typescript
+fireEvent.click(screen.getByRole("button", { name: "确认当前有效项" }));
+expect(screen.getByText(
+  "将保留当前 2 个有效检验项，并排除全部 2 条待确认来源。",
+)).not.toBeNull();
+fireEvent.click(screen.getByRole("button", { name: "确认排除 2 条" }));
+await waitFor(() => expect(onCommand).toHaveBeenCalledTimes(1));
+expect(onCommand).toHaveBeenCalledWith({
+  type: "ignore_sources",
+  observation_ids: ["observation-1", "observation-2"],
+});
+```
+
+另加 cancel 不提交、`onCommand` 返回 `false` 时 confirmation 保留、source draft
+dirty 时 batch disabled 的 assertions。
+
+在 `RecognitionSummary.test.tsx` 断言 pending 存在时 chip 文案为“待确认来源”且
+count 只等于 pending source 数；pending 为零时恢复“需人工处理”与 balloon manual
+count。
+
+在 `InspectionWorkbench.test.tsx` 断言真实 working-copy projection 发送一次
+`ignore_sources`，不调用 `onFreeze` / `onGenerate` / `onConfirm`。
+
+- [ ] **Step 2: Run RED**
+
+```bash
+micromamba run -n qi-p0 npm --prefix frontend test -- --run \
+  src/components/workbench/RecognitionSummary.test.tsx \
+  src/components/workbench/InspectionItemTable.test.tsx \
+  src/components/workbench/InspectionWorkbench.test.tsx
+```
+
+Expected: copy、command type 和 batch controls 尚不存在，tests 失败。
+
+- [ ] **Step 3: Mirror the command and add exact copy**
+
+在 `ReviewCommand` union 加入：
+
+```typescript
+| { type: "ignore_sources"; observation_ids: string[] }
+```
+
+在 `zhCN.inspection` 增加：
+
+```typescript
+pendingSources: "待确认来源",
+confirmCurrentItems: "确认当前有效项",
+batchConfirmation: (active: number, pending: number) =>
+  `将保留当前 ${active} 个有效检验项，并排除全部 ${pending} 条待确认来源。`,
+batchExclusionWarning: "排除内容不会进入 SIP，也不会生成气泡。",
+confirmBatchExclusion: (count: number) => `确认排除 ${count} 条`,
+cancelBatchExclusion: "取消",
+```
+
+- [ ] **Step 4: Add one inline confirmation owner**
+
+`InspectionItemTable` 新增 `batchConfirmationOpen` state。在 search/status controls
+下方、table rows 之前，当 `pendingSources.length > 0` 时显示 batch bar。最终按钮
+调用：
+
+```typescript
+const succeeded = await commandSucceeded(onCommand, {
+  type: "ignore_sources",
+  observation_ids: pendingSources.map((source) => source.observationId),
+});
+if (succeeded) setBatchConfirmationOpen(false);
+```
+
+active count 使用 `items.filter((item) => item.active).length`。batch entry 与
+final confirm button 在 `disabled || dirtySourceIds.length > 0` 时 disabled，覆盖
+“先打开确认、再编辑来源”的时序。取消只关闭 inline confirmation。不得使用
+`window.confirm`，不得自动保存 draft、freeze 或生成。
+
+- [ ] **Step 5: Separate pending-source summary semantics**
+
+`RecognitionSummary` 在 `pendingSourceCount > 0` 时让 existing
+`manual_required` chip 显示 `待确认来源` 和 `pendingSourceCount`；清零后恢复
+`需人工处理` 和 active manual balloon count。`InspectionItemTable` 的
+`manual_required` filter 继续显示 pending rows，保持现有 filter value 与 consumer。
+
+- [ ] **Step 6: Add minimal existing-style CSS**
+
+只增加 `.source-batch-bar`、`.source-batch-confirmation` 与 action row 的 layout、
+border、background 和 spacing；复用现有 button tokens，不新增 palette 或 icon。
+
+- [ ] **Step 7: Run GREEN and build**
+
+```bash
+micromamba run -n qi-p0 npm --prefix frontend test -- --run \
+  src/components/workbench/RecognitionSummary.test.tsx \
+  src/components/workbench/InspectionItemTable.test.tsx \
+  src/components/workbench/InspectionWorkbench.test.tsx
+micromamba run -n qi-p0 npm --prefix frontend run build
+```
+
+Expected: zero failures；build exits 0。
+
+## Task 9: Verify Runtime, Review, And Commit The Amendment
+
+**Files:**
+- Review exact amendment diff only。
+
+- [ ] **Step 1: Run focused and full regression**
+
+```bash
+git diff --check
+micromamba run -n qi-p0 pytest \
+  backend/tests/contract/test_review_schema.py \
+  backend/tests/integration/test_review_operations.py \
+  backend/tests/integration/test_review_freeze.py -q
+micromamba run -n qi-p0 npm --prefix frontend test -- --run
+micromamba run -n qi-p0 npm --prefix frontend run build
+```
+
+- [ ] **Step 2: Run current-source Chrome smoke**
+
+使用真实 pending-source project：
+
+1. summary 显示“待确认来源 N”；
+2. 点击“确认当前有效项”显示 active/pending 数与排除后果；
+3. 取消不改变 working copy；
+4. 最终确认只产生一次 request；
+5. refresh 后 pending count 为 0、rows 与 batch bar 消失；
+6. backend working-copy version 只加 1，所有目标 disposition 为
+   `non_inspection`，operation audit 只有一条 `ignore_sources`；
+7. freeze/generate 没有被 batch command 自动触发；
+8. console/network 无新增 error。
+
+- [ ] **Step 3: Run independent read-only review**
+
+Reviewer 必须检查：schema 唯一性、全量 prevalidation、single transaction/version/
+audit、failure zero-write、frontend single request、逐条 promote 保留、freeze 和
+SIP/balloon/export Owner 未改变。Verdict 使用 `accept / accept with concerns /
+reject`。
+
+- [ ] **Step 4: Commit exact owned paths**
+
+```bash
+git add \
+  docs/superpowers/specs/2026-07-24-source-review-convergence-design.md \
+  docs/superpowers/plans/2026-07-24-source-review-convergence.md \
+  backend/app/review/schemas.py \
+  backend/app/review/service.py \
+  backend/tests/contract/test_review_schema.py \
+  backend/tests/integration/test_review_operations.py \
+  frontend/src/api/types.ts \
+  frontend/src/copy/zhCN.ts \
+  frontend/src/components/workbench/RecognitionSummary.tsx \
+  frontend/src/components/workbench/RecognitionSummary.test.tsx \
+  frontend/src/components/workbench/InspectionItemTable.tsx \
+  frontend/src/components/workbench/InspectionItemTable.test.tsx \
+  frontend/src/components/workbench/InspectionWorkbench.test.tsx \
+  frontend/src/styles/workbench.css
+git commit -m "feat: confirm current inspection items in batch"
+```
 
 ## Completion Checklist
 
