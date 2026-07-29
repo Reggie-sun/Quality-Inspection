@@ -125,6 +125,57 @@ def _visual_tool_call(
     )
 
 
+def test_qwen_visual_symbol_sampling_temperature_is_pinned_to_zero() -> None:
+    class SamplingCompletions:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return SimpleNamespace(
+                id="fixture-qwen-sampling",
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                _visual_tool_call(
+                                    json.dumps(
+                                        {
+                                            "schema_version": (
+                                                "visual-symbol-review/1"
+                                            ),
+                                            "detections": [],
+                                        }
+                                    )
+                                )
+                            ],
+                        )
+                    )
+                ],
+                usage={"total_tokens": 4},
+            )
+
+    completions = SamplingCompletions()
+    QwenVisionProvider(
+        SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    ).review_symbols(_png(text=None), "safe prompt")
+
+    sampling_keys = {
+        "temperature",
+        "top_p",
+        "seed",
+        "frequency_penalty",
+        "presence_penalty",
+        "logprobs",
+    }
+    assert {
+        key: value
+        for key, value in completions.calls[0].items()
+        if key in sampling_keys
+    } == {"temperature": 0}
+
+
 def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -526,7 +577,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     assert (
         fixture["adapter_version"]
         == VISUAL_ADAPTER_VERSION
-        == "qwen-openai-compatible/3"
+        == "qwen-openai-compatible/4"
     )
 
     class FakeCompletions:
@@ -761,6 +812,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                 "function": {"name": _VISUAL_TOOL_NAME},
             },
             "parallel_tool_calls": False,
+            "temperature": 0,
             "extra_body": {"enable_thinking": False},
         }
     ]

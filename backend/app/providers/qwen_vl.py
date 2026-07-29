@@ -398,6 +398,7 @@ class QwenVisionProvider:
                 "function": {"name": VISUAL_TOOL_NAME},
             },
             parallel_tool_calls=False,
+            temperature=0,
             extra_body={"enable_thinking": False},
         )
         request_id, usage = validate_visual_request_metadata(
