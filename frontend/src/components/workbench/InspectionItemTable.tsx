@@ -10,7 +10,10 @@ import { zhCN } from "../../copy/zhCN";
 import {
   INSPECTION_ITEM_STATUS_LABELS,
   INSPECTION_ITEM_TYPE_LABELS,
+  confidenceBandLabel,
   inspectionItemPresentation,
+  isAutoAcceptedItem,
+  isReviewRequiredItem,
 } from "./inspectionItemPresentation";
 import type { ItemStatus } from "./inspectionItemPresentation";
 import type { InspectionFilter } from "./RecognitionSummary";
@@ -131,7 +134,7 @@ export function InspectionItemTable({
     .filter((entry) => {
       if (entry.kind === "source") {
         const matchesSummary =
-          filter === "all" || filter === "manual_required";
+          filter === "all" || filter === "review_required";
         const matchesStatus =
           statusFilter === "all" || statusFilter === "source_pending";
         const matchesSearch = entry.source.rawText
@@ -145,11 +148,15 @@ export function InspectionItemTable({
         ? item.active
         : filter === "excluded"
           ? !item.active
-          : filter === "manual_required"
-            ? balloon?.placementStatus === "manual_required"
-            : filter === "hard_collision"
-              ? (balloon?.collisionFlags?.length ?? 0) > 0
-              : true;
+          : filter === "auto_accepted"
+            ? isAutoAcceptedItem(item)
+            : filter === "review_required"
+              ? isReviewRequiredItem(item)
+              : filter === "manual_required"
+                ? balloon?.placementStatus === "manual_required"
+                : filter === "hard_collision"
+                  ? (balloon?.collisionFlags?.length ?? 0) > 0
+                  : true;
       const status = inspectionItemPresentation(item, balloon).status;
       const matchesSearch = item.raw_text
         .toLocaleLowerCase("zh-CN")
@@ -429,6 +436,9 @@ export function InspectionItemTable({
             const collisions = balloon?.collisionFlags
               ?.map((flag) => COLLISION_LABELS[flag] ?? zhCN.workbench.unknown)
               .join("、");
+            const confidenceLabel = confidenceBandLabel(item);
+            const confidenceEvidence =
+              item.confidence_decision?.evidence_codes.join("、");
             return (
               <div
                 key={entry.key}
@@ -451,7 +461,10 @@ export function InspectionItemTable({
                   className={[
                     "inspection-number",
                     `inspection-number--${presentation.numberKind}`,
-                  ].join(" ")}
+                    presentation.status === "auto_accepted"
+                      ? "inspection-number--auto_accepted"
+                      : "",
+                  ].filter(Boolean).join(" ")}
                   aria-label={
                     presentation.numberKind === "candidate"
                       ? presentation.numberLabel
@@ -463,6 +476,16 @@ export function InspectionItemTable({
                 <span role="cell" className="inspection-item-copy">
                   <strong title={item.raw_text}>{item.raw_text}</strong>
                   <small>{presentation.typeLabel}</small>
+                  {confidenceLabel === undefined ? null : (
+                    <small className="confidence-badge">
+                      {confidenceLabel}
+                    </small>
+                  )}
+                  {confidenceEvidence ? (
+                    <small className="confidence-evidence">
+                      {confidenceEvidence}
+                    </small>
+                  ) : null}
                 </span>
                 {compact ? null : (
                   <span role="cell">

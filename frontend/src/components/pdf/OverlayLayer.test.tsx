@@ -399,4 +399,102 @@ describe("OverlayLayer", () => {
     expect(marker.classList.contains("pdf-overlay-candidate-marker")).toBe(true);
     expect(marker.getAttribute("data-selected")).toBe("false");
   });
+
+  test("仅精确 auto_accepted 后端投影使用红色待统一编号气泡", () => {
+    const candidates = [
+      {
+        id: "auto-candidate",
+        itemId: "auto-item",
+        candidateNumber: 1,
+        bbox: [10, 10, 30, 30] as [number, number, number, number],
+        confidenceBand: "high" as const,
+        reviewDisposition: "auto_accepted" as const,
+        status: "auto_accepted",
+      },
+      {
+        id: "unknown-candidate",
+        itemId: "unknown-item",
+        candidateNumber: 2,
+        bbox: [60, 10, 80, 30] as [number, number, number, number],
+        confidenceBand: "future_band" as never,
+        reviewDisposition: "future_disposition" as never,
+        status: "future_status",
+      },
+      {
+        id: "unknown-band-candidate",
+        itemId: "unknown-band-item",
+        candidateNumber: 3,
+        bbox: [60, 60, 80, 80] as [number, number, number, number],
+        confidenceBand: "future_band" as never,
+        reviewDisposition: "auto_accepted" as const,
+        status: "auto_accepted",
+      },
+    ];
+    const { rerender } = render(
+      <OverlayLayer
+        pageWidth={120}
+        pageHeight={100}
+        scale={1}
+        candidates={candidates}
+        sources={[]}
+        balloons={[]}
+        onSelectItem={vi.fn()}
+      />,
+    );
+
+    const auto = screen.getByRole("button", {
+      name: "自动通过气泡 1，待统一编号",
+    });
+    const autoCircle = auto.querySelector("circle")!;
+    expect(autoCircle.getAttribute("fill")).toBe("transparent");
+    expect(autoCircle.getAttribute("stroke")).toBe("#c23b3b");
+    expect(auto.querySelector("text")?.getAttribute("fill")).toBe("#c23b3b");
+
+    const unknown = screen.getByRole("button", { name: "候选气泡 2" });
+    expect(unknown.querySelector("circle")?.getAttribute("stroke")).toBe("#2563EB");
+    const unknownBand = screen.getByRole("button", { name: "候选气泡 3" });
+    expect(unknownBand.querySelector("circle")?.getAttribute("stroke"))
+      .toBe("#2563EB");
+
+    rerender(
+      <OverlayLayer
+        pageWidth={120}
+        pageHeight={100}
+        scale={1}
+        candidates={candidates}
+        sources={[]}
+        balloons={[]}
+        selectedItemId="auto-item"
+        onSelectItem={vi.fn()}
+      />,
+    );
+    const selectedAuto = screen.getByRole("button", {
+      name: "自动通过气泡 1，待统一编号",
+    });
+    expect(selectedAuto.querySelector("circle")?.getAttribute("fill")).toBe("#c23b3b");
+    expect(selectedAuto.querySelector("text")?.getAttribute("fill")).toBe("#FFFFFF");
+  });
+
+  test("正式 Balloon projection 继续使用既有正式样式与可访问名称", () => {
+    render(
+      <OverlayLayer
+        pageWidth={100}
+        pageHeight={100}
+        scale={1}
+        candidates={[]}
+        sources={[]}
+        balloons={[{
+          id: "formal-balloon",
+          itemId: "formal-item",
+          center: [50, 50],
+          number: 7,
+          status: "active",
+        }]}
+      />,
+    );
+
+    const formal = screen.getByRole("button", { name: "气泡 7" });
+    expect(formal.getAttribute("data-testid")).toBe("balloon-formal-balloon");
+    expect(formal.querySelector("circle")?.getAttribute("stroke")).toBe("#dc2626");
+  });
 });

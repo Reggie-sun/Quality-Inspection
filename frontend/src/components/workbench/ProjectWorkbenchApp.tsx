@@ -244,6 +244,9 @@ export function ProjectWorkbenchApp({
             pageIndex: candidate.page_index,
             bbox: candidate.bbox_pdf,
             candidateNumber,
+            confidenceBand: candidate.confidence_band,
+            reviewDisposition: candidate.review_disposition,
+            status: candidate.status,
             showCandidateMarker: candidateMarkerNumber(
               item ?? {},
               candidateNumber,

@@ -392,6 +392,10 @@ export function OverlayLayer({
           { itemId, itemIds: item.itemIds },
           selected,
         );
+        const isAutoAccepted =
+          item.confidenceBand === "high"
+          && item.reviewDisposition === "auto_accepted"
+          && item.status === "auto_accepted";
         const selectCandidate = () => {
           const selectedItem = selectRelationItem(
             { itemId, itemIds: item.itemIds },
@@ -420,8 +424,15 @@ export function OverlayLayer({
               data-testid={`candidate-number-${item.id}`}
               data-item-id={itemId}
               data-selected={isSelected}
+              data-review-disposition={
+                isAutoAccepted ? "auto_accepted" : "review_required"
+              }
               role="button"
-              aria-label={zhCN.pdf.candidateMarker(candidateNumber)}
+              aria-label={
+                isAutoAccepted
+                  ? zhCN.pdf.autoAcceptedMarker(candidateNumber)
+                  : zhCN.pdf.candidateMarker(candidateNumber)
+              }
               tabIndex={
                 selectItem === undefined
                   ? undefined
@@ -442,8 +453,12 @@ export function OverlayLayer({
                 cx={markerX}
                 cy={markerY}
                 r={CANDIDATE_MARKER_RADIUS}
-                fill={isSelected ? "#2563EB" : "#EFF6FF"}
-                stroke="#2563EB"
+                fill={
+                  isAutoAccepted
+                    ? isSelected ? "#c23b3b" : "transparent"
+                    : isSelected ? "#2563EB" : "#EFF6FF"
+                }
+                stroke={isAutoAccepted ? "#c23b3b" : "#2563EB"}
                 strokeWidth={isSelected ? 2 : 1.5}
               />
               <text
@@ -453,7 +468,11 @@ export function OverlayLayer({
                 dominantBaseline="middle"
                 fontFamily="DejaVu Sans"
                 fontSize={8}
-                fill={isSelected ? "#FFFFFF" : "#2563EB"}
+                fill={
+                  isAutoAccepted
+                    ? isSelected ? "#FFFFFF" : "#c23b3b"
+                    : isSelected ? "#FFFFFF" : "#2563EB"
+                }
                 style={{ pointerEvents: "none" }}
               >
                 {candidateNumber}

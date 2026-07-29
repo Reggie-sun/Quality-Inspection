@@ -7,6 +7,16 @@ export type PdfPageTransform = {
   renderToPdfMatrix?: PdfMatrix;
 };
 
+export type ConfidenceBand = "high" | "medium" | "low";
+export type ReviewDisposition = "auto_accepted" | "review_required";
+
+export type ConfidenceDecision = {
+  band: ConfidenceBand;
+  review_disposition: ReviewDisposition;
+  policy_version: "candidate-confidence/1";
+  evidence_codes: string[];
+};
+
 export type OverlayBox = {
   id: string;
   itemId?: string;
@@ -16,6 +26,9 @@ export type OverlayBox = {
   rawText?: string;
   candidateNumber?: number;
   showCandidateMarker?: boolean;
+  confidenceBand?: ConfidenceBand | null;
+  reviewDisposition?: ReviewDisposition | null;
+  status?: string | null;
 };
 
 export type BalloonOverlay = {
@@ -98,6 +111,12 @@ export type ReviewItem = {
   source_page?: number;
   remarks?: string;
   sip_detail_fields_confirmed?: boolean;
+  confidence_decision?: ConfidenceDecision;
+  acceptance_source?:
+    | "confidence_policy"
+    | "manual"
+    | "manual_override"
+    | null;
   active: boolean;
 };
 
@@ -156,6 +175,7 @@ export type ReviewWorkingCopy = {
   version: number;
   items: ReviewItem[];
   coverage: ReviewCoverage;
+  manual_review_count?: number;
   numbering_stale: boolean;
   items_frozen_at: string | null;
   items_frozen_by: string | null;
@@ -200,6 +220,9 @@ export type ProjectWorkbenchCandidate = {
   item_id: string;
   page_index: number;
   bbox_pdf: PdfCoordinates;
+  confidence_band?: ConfidenceBand | null;
+  review_disposition?: ReviewDisposition | null;
+  status?: string | null;
 };
 
 export type ProjectWorkbenchSource = {

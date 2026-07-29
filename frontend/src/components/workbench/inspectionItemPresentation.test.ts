@@ -52,6 +52,48 @@ describe("inspectionItemPresentation", () => {
     });
   });
 
+  test("精确 auto_accepted 显示自动通过且候选编号明确待统一编号", () => {
+    expect(inspectionItemPresentation(
+      {
+        item_id: "auto-item",
+        raw_text: "10",
+        status: "auto_accepted",
+        confidence_decision: {
+          band: "high",
+          review_disposition: "auto_accepted",
+          policy_version: "candidate-confidence/1",
+          evidence_codes: ["typed_schema_complete", "coverage_clear"],
+        },
+        active: true,
+      },
+      undefined,
+      3,
+    )).toMatchObject({
+      status: "auto_accepted",
+      statusLabel: "自动通过",
+      numberKind: "candidate",
+      numberLabel: "自动通过，待统一编号",
+    });
+  });
+
+  test("未知 confidence/status fail closed 为待人工审核", () => {
+    expect(inspectionItemPresentation({
+      item_id: "unknown-confidence",
+      raw_text: "未知投影",
+      status: "future_status",
+      confidence_decision: {
+        band: "future_band",
+        review_disposition: "future_disposition",
+        policy_version: "future-policy",
+        evidence_codes: [],
+      } as never,
+      active: true,
+    })).toMatchObject({
+      status: "pending",
+      statusLabel: "待人工审核",
+    });
+  });
+
   test("没有正式气泡时使用候选编号，完全无编号时不按数组索引回填", () => {
     expect(inspectionItemPresentation(
       {

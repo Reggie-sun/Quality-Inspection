@@ -8,6 +8,7 @@ import { zhCN } from "../../copy/zhCN";
 
 export type ItemStatus =
   | "pending"
+  | "auto_accepted"
   | "confirmed"
   | "candidate"
   | "excluded"
@@ -34,6 +35,7 @@ export const INSPECTION_ITEM_TYPE_LABELS: Partial<
 
 export const INSPECTION_ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
   pending: zhCN.inspection.statusPending,
+  auto_accepted: zhCN.inspection.statusAutoAccepted,
   confirmed: zhCN.inspection.statusConfirmed,
   candidate: zhCN.inspection.statusCandidate,
   excluded: zhCN.inspection.statusExcluded,
@@ -79,6 +81,7 @@ function inspectionItemStatus(
   if (!item.active) return "excluded";
   if (balloon?.placementStatus === "manual_required") return "manual";
   if ((balloon?.collisionFlags?.length ?? 0) > 0) return "collision";
+  if (isAutoAcceptedItem(item)) return "auto_accepted";
   if (item.requires_confirmation === true || item.status === "pending") {
     return "pending";
   }
@@ -88,6 +91,29 @@ function inspectionItemStatus(
   return balloon === undefined && item.balloon_required === true
     ? "candidate"
     : "pending";
+}
+
+export function isAutoAcceptedItem(item: ReviewItem): boolean {
+  return item.status === "auto_accepted"
+    && item.confidence_decision?.band === "high"
+    && item.confidence_decision.review_disposition === "auto_accepted"
+    && item.confidence_decision.policy_version === "candidate-confidence/1";
+}
+
+export function isReviewRequiredItem(item: ReviewItem): boolean {
+  if (!item.active || isAutoAcceptedItem(item)) return false;
+  return item.status !== "kept";
+}
+
+export function confidenceBandLabel(item: ReviewItem): string | undefined {
+  const band = item.confidence_decision?.band;
+  return band === "high"
+    ? zhCN.inspection.confidenceHigh
+    : band === "medium"
+      ? zhCN.inspection.confidenceMedium
+      : band === "low"
+        ? zhCN.inspection.confidenceLow
+        : undefined;
 }
 
 
@@ -104,6 +130,7 @@ export function inspectionItemPresentation(
     : candidateNumber !== undefined
       ? "candidate"
       : "empty";
+  const autoAccepted = isAutoAcceptedItem(item);
 
   return {
     displayNumber,
@@ -111,7 +138,9 @@ export function inspectionItemPresentation(
     numberLabel: balloon !== undefined
       ? zhCN.inspection.formalNumber(balloon.number)
       : candidateNumber !== undefined
-        ? zhCN.inspection.candidateNumber(candidateNumber)
+        ? autoAccepted
+          ? zhCN.inspection.autoAcceptedCandidateNumber
+          : zhCN.inspection.candidateNumber(candidateNumber)
         : zhCN.inspection.noNumber,
     typeLabel: inspectionItemTypeLabel(item),
     page,

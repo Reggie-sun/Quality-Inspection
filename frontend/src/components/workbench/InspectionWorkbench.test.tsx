@@ -745,6 +745,7 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
     fireEvent.click(screen.getByRole("row", { name: /M8/ }));
 
     const workspace = screen.getByRole("group", {
@@ -996,6 +997,8 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
+    fireEvent.click(screen.getByRole("row", { name: /M6/ }));
     const summary = within(
       screen.getByRole("region", { name: "项目摘要" }),
     );
@@ -1732,5 +1735,71 @@ describe("InspectionWorkbench", () => {
       balloon_required: true,
       page_index: 0,
     }));
+  });
+
+  test("默认只展示待人工审核项，切到全部后自动通过项仍可选择编辑", () => {
+    const items = [
+      {
+        item_id: "auto-item",
+        item_type: "linear_dimension" as const,
+        raw_text: "10",
+        nominal: "10",
+        status: "auto_accepted",
+        confidence_decision: {
+          band: "high" as const,
+          review_disposition: "auto_accepted" as const,
+          policy_version: "candidate-confidence/1" as const,
+          evidence_codes: ["typed_schema_complete"],
+        },
+        active: true,
+      },
+      {
+        item_id: "review-item",
+        item_type: "linear_dimension" as const,
+        raw_text: "20",
+        nominal: "20",
+        status: "pending",
+        confidence_decision: {
+          band: "medium" as const,
+          review_disposition: "review_required" as const,
+          policy_version: "candidate-confidence/1" as const,
+          evidence_codes: ["coverage_unchecked"],
+        },
+        active: true,
+      },
+    ];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          manual_review_count: 1,
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "筛选待人工审核" })
+      .getAttribute("data-active")).toBe("true");
+    expect(screen.getByRole("row", { name: /20/ })).not.toBeNull();
+    expect(screen.queryByRole("row", { name: /10/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
+    fireEvent.click(screen.getByRole("row", { name: /10/ }));
+    expect(screen.getByRole("textbox", { name: "基本尺寸：10" })).not.toBeNull();
+    expect(screen.getAllByText("高置信度")).toHaveLength(2);
   });
 });

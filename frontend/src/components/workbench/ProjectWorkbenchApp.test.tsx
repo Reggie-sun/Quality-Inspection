@@ -304,3 +304,58 @@ test("无正式气泡时显示候选气泡并在检验项详情复用候选序�
   const detail = screen.getByRole("article", { name: "检验项 1 · 螺纹" });
   expect(within(detail).getByText("候选序号 1")).not.toBeNull();
 });
+
+test("后端 auto_accepted status/disposition 原样投影为红色 provisional marker", async () => {
+  const snapshot = reviewedResponse();
+  snapshot.project.state = "editing";
+  snapshot.working_copy.items_frozen_at = null;
+  snapshot.working_copy.items_frozen_by = null;
+  snapshot.working_copy.items_frozen_version = null;
+  snapshot.working_copy.manual_review_count = 0;
+  snapshot.working_copy.items[0] = {
+    ...snapshot.working_copy.items[0],
+    status: "auto_accepted",
+    acceptance_source: "confidence_policy",
+    confidence_decision: {
+      band: "high",
+      review_disposition: "auto_accepted",
+      policy_version: "candidate-confidence/1",
+      evidence_codes: ["typed_schema_complete"],
+    },
+  };
+  snapshot.candidates = [{
+    id: "candidate-secret-uuid",
+    item_id: "item-secret-uuid",
+    page_index: 0,
+    bbox_pdf: [10, 20, 30, 40],
+    confidence_band: "high",
+    review_disposition: "auto_accepted",
+    status: "auto_accepted",
+  }];
+  snapshot.balloons = [];
+  snapshot.reviewed_result_id = null;
+  snapshot.latest_export = null;
+  vi.stubGlobal("fetch", vi.fn(async (
+    path: RequestInfo | URL,
+  ) => new Response(JSON.stringify(
+    String(path).endsWith("/review/lock")
+      ? { operator_id: "operator-real" }
+      : snapshot,
+  ), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })));
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+    />,
+  );
+
+  const marker = await screen.findByRole("button", {
+    name: "自动通过气泡 1，待统一编号",
+  });
+  expect(marker.querySelector("circle")?.getAttribute("stroke")).toBe("#c23b3b");
+});

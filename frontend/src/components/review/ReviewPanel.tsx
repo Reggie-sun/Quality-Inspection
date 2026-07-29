@@ -7,7 +7,10 @@ import type {
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
-import type { InspectionItemPresentation } from "../workbench/inspectionItemPresentation";
+import {
+  confidenceBandLabel,
+  type InspectionItemPresentation,
+} from "../workbench/inspectionItemPresentation";
 
 
 type ReviewPanelProps = {
@@ -310,6 +313,9 @@ export function ReviewPanel({
           selectedItemPresentation.displayNumber,
         )
       : selectedItemPresentation?.numberLabel ?? zhCN.workbench.unknown;
+  const selectedConfidenceBandLabel = selectedItem === undefined
+    ? undefined
+    : confidenceBandLabel(selectedItem);
   const isSelectedItemDirty =
     selectedItem !== undefined && dirtyItemIds.includes(selectedItem.item_id);
   const beginEditingSelected = () => {
@@ -578,6 +584,28 @@ export function ReviewPanel({
               </span>
             )}
           </header>
+          {
+            selectedItem.confidence_decision === undefined
+            || selectedConfidenceBandLabel === undefined
+              ? null
+              : (
+                <section
+                  className="confidence-provenance"
+                  role="group"
+                  aria-label={zhCN.review.confidenceEvidence}
+                >
+                  <span className={`confidence-badge confidence-badge--${
+                    selectedItem.confidence_decision.band
+                  }`}>
+                    {selectedConfidenceBandLabel}
+                  </span>
+                  <span>{selectedItem.confidence_decision.policy_version}</span>
+                  <span>
+                    {selectedItem.confidence_decision.evidence_codes.join("、")}
+                  </span>
+                </section>
+                )
+          }
           <div className="review-selected-item__workspace review-selected-item__workspace--stacked">
           <div className="review-selected-item__form">
           {selectedItem.coarse_type === undefined ? null : (

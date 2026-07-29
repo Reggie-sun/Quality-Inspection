@@ -448,6 +448,13 @@
 .drawing-legend i[data-color="balloon"] {
   border-radius: 50%;
   border-color: #c23b3b;
+  background: #c23b3b;
+}
+
+.drawing-legend i[data-color="auto-accepted"] {
+  border-radius: 50%;
+  border-color: #c23b3b;
+  background: transparent;
 }
 
 .drawing-legend i[data-color="candidate"] {
@@ -491,7 +498,7 @@
 
 .recognition-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(58px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
   gap: 5px;
 }
 
@@ -524,12 +531,9 @@
 }
 
 .summary-chip--manual_required strong,
+.summary-chip--review_required strong,
 .summary-chip--hard_collision strong {
   color: var(--qi-error);
-}
-
-.summary-chip--pending_sources strong {
-  color: #b45309;
 }
 
 .inspection-table-section {
@@ -711,8 +715,20 @@
   color: #2563eb;
 }
 
+.inspection-number--auto_accepted {
+  border-color: #c23b3b;
+  background: #ffffff;
+  color: #c23b3b;
+}
+
 .inspection-table__row[data-selected="true"] .inspection-number--candidate {
   background: #2563eb;
+  color: #ffffff;
+}
+
+.inspection-table__row[data-selected="true"]
+  .inspection-number--auto_accepted {
+  background: #c23b3b;
   color: #ffffff;
 }
 
@@ -723,6 +739,30 @@
 
 .geometry-state--confirmed strong {
   color: var(--qi-success);
+}
+
+.geometry-state--auto_accepted strong {
+  color: #9f2f2f;
+}
+
+.confidence-badge {
+  width: fit-content;
+  padding: 1px 5px;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475467;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.confidence-badge--high {
+  color: #9f2f2f;
+}
+
+.confidence-evidence {
+  color: var(--qi-muted);
+  font-size: 9px;
 }
 
 .inspection-table__empty {
@@ -1022,6 +1062,17 @@
 
 .review-selected-item__workspace {
   display: grid;
+}
+
+.confidence-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--qi-border);
+  color: var(--qi-muted);
+  font-size: 10px;
 }
 
 .review-selected-item__workspace--stacked {

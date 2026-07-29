@@ -388,7 +388,7 @@ test("确认当前有效项一次性排除全部待确认来源", async () => {
           pageIndex: 0,
         },
       ]}
-      filter="manual_required"
+      filter="review_required"
       onSelectItem={vi.fn()}
       onSelectSource={vi.fn()}
       onCommand={onCommand}
@@ -428,7 +428,7 @@ test("批量确认取消不提交，失败时保留确认提示", async () => {
         coordinates: [1, 2, 3, 4],
         pageIndex: 0,
       }]}
-      filter="manual_required"
+      filter="review_required"
       onSelectItem={vi.fn()}
       onSelectSource={vi.fn()}
       onCommand={onCommand}
@@ -459,7 +459,7 @@ test("存在未保存来源草稿时禁止批量确认", () => {
         coordinates: [1, 2, 3, 4],
         pageIndex: 0,
       }]}
-      filter="manual_required"
+      filter="review_required"
       selectedSourceId="source-1"
       onSelectItem={vi.fn()}
       onSelectSource={vi.fn()}
@@ -488,7 +488,7 @@ test("打开批量确认后修改来源草稿仍禁止最终提交", () => {
         coordinates: [1, 2, 3, 4],
         pageIndex: 0,
       }]}
-      filter="manual_required"
+      filter="review_required"
       selectedSourceId="source-1"
       onSelectItem={vi.fn()}
       onSelectSource={vi.fn()}
@@ -607,7 +607,7 @@ test("待判定来源编辑器使用分层决策布局并突出纳入动作", ()
   ).toBe(true);
 });
 
-test("需人工处理筛选包含待判定来源", () => {
+test("待人工审核筛选包含待判定来源", () => {
   render(
     <InspectionItemTable
       items={[]}
@@ -619,7 +619,7 @@ test("需人工处理筛选包含待判定来源", () => {
         coordinates: [1, 2, 3, 4],
         pageIndex: 0,
       }]}
-      filter="manual_required"
+      filter="review_required"
       onSelectItem={vi.fn()}
       onSelectSource={vi.fn()}
     />,
@@ -848,4 +848,110 @@ test("空白来源只在列表显示占位符且补全真实文字后才允许 p
     balloon_required: true,
     page_index: 0,
   });
+});
+
+test("review_required 默认队列包含中低与未知项但不包含自动通过项", () => {
+  const items = [
+    {
+      item_id: "auto-item",
+      raw_text: "自动项",
+      status: "auto_accepted",
+      confidence_decision: {
+        band: "high" as const,
+        review_disposition: "auto_accepted" as const,
+        policy_version: "candidate-confidence/1" as const,
+        evidence_codes: ["typed_schema_complete"],
+      },
+      active: true,
+    },
+    {
+      item_id: "medium-item",
+      raw_text: "中置信项",
+      status: "pending",
+      confidence_decision: {
+        band: "medium" as const,
+        review_disposition: "review_required" as const,
+        policy_version: "candidate-confidence/1" as const,
+        evidence_codes: ["typed_schema_complete", "coverage_unchecked"],
+      },
+      active: true,
+    },
+    {
+      item_id: "low-item",
+      raw_text: "低置信项",
+      status: "pending",
+      confidence_decision: {
+        band: "low" as const,
+        review_disposition: "review_required" as const,
+        policy_version: "candidate-confidence/1" as const,
+        evidence_codes: ["source_signal_invalid"],
+      },
+      active: true,
+    },
+    {
+      item_id: "unknown-item",
+      raw_text: "未知项",
+      status: "future_status",
+      active: true,
+    },
+  ];
+  const { rerender } = render(
+    <InspectionItemTable
+      items={items}
+      balloons={[]}
+      filter="review_required"
+      onSelectItem={vi.fn()}
+    />,
+  );
+
+  expect(screen.queryByRole("row", { name: /自动项/ })).toBeNull();
+  expect(screen.getByRole("row", { name: /中置信项/ }).textContent)
+    .toContain("中置信度");
+  expect(screen.getByRole("row", { name: /中置信项/ }).textContent)
+    .toContain("typed_schema_complete、coverage_unchecked");
+  expect(screen.getByRole("row", { name: /低置信项/ }).textContent)
+    .toContain("低置信度");
+  expect(screen.getByRole("row", { name: /未知项/ }).textContent)
+    .toContain("待人工审核");
+
+  rerender(
+    <InspectionItemTable
+      items={items}
+      balloons={[]}
+      filter="auto_accepted"
+      onSelectItem={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("row", { name: /自动项/ }).textContent)
+    .toContain("高置信度");
+  expect(screen.queryByRole("row", { name: /中置信项/ })).toBeNull();
+});
+
+test("全部筛选保留自动通过项的选择身份", () => {
+  const onSelectItem = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[{
+        item_id: "auto-editable",
+        raw_text: "自动通过可编辑",
+        status: "auto_accepted",
+        confidence_decision: {
+          band: "high",
+          review_disposition: "auto_accepted",
+          policy_version: "candidate-confidence/1",
+          evidence_codes: ["typed_schema_complete"],
+        },
+        active: true,
+      }]}
+      balloons={[]}
+      filter="all"
+      selectedItemId="auto-editable"
+      onSelectItem={onSelectItem}
+    />,
+  );
+
+  const row = screen.getByRole("row", { name: /自动通过可编辑/ });
+  expect(row.getAttribute("data-selected")).toBe("true");
+  fireEvent.click(row);
+  expect(onSelectItem).toHaveBeenCalledWith("auto-editable");
 });

@@ -1,11 +1,14 @@
 import type { BalloonOverlay, ReviewItem } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
+import { isAutoAcceptedItem } from "./inspectionItemPresentation";
 
 
 export type InspectionFilter =
   | "all"
   | "active"
   | "excluded"
+  | "auto_accepted"
+  | "review_required"
   | "manual_required"
   | "hard_collision";
 
@@ -13,6 +16,7 @@ type RecognitionSummaryProps = {
   items: ReviewItem[];
   balloons: BalloonOverlay[];
   pendingSourceCount?: number;
+  manualReviewCount?: number;
   filter: InspectionFilter;
   onFilterChange: (filter: InspectionFilter) => void;
 };
@@ -22,16 +26,17 @@ export function RecognitionSummary({
   items,
   balloons,
   pendingSourceCount = 0,
+  manualReviewCount = 0,
   filter,
   onFilterChange,
 }: RecognitionSummaryProps) {
   const active = items.filter((item) => item.active).length;
   const excluded = items.length - active;
+  const autoAccepted = items.filter(isAutoAcceptedItem).length;
   const manualBalloons = balloons.filter(
     (balloon) =>
       balloon.status !== "deleted" && balloon.placementStatus === "manual_required",
   ).length;
-  const hasPendingSources = pendingSourceCount > 0;
   const hardCollision = balloons.filter(
     (balloon) =>
       balloon.status !== "deleted" && (balloon.collisionFlags?.length ?? 0) > 0,
@@ -55,12 +60,22 @@ export function RecognitionSummary({
       count: excluded,
     },
     {
+      value: "auto_accepted",
+      label: zhCN.summary.autoAccepted,
+      testId: "summary-auto-count",
+      count: autoAccepted,
+    },
+    {
+      value: "review_required",
+      label: zhCN.summary.reviewRequired,
+      testId: "summary-review-count",
+      count: manualReviewCount,
+    },
+    {
       value: "manual_required",
-      label: hasPendingSources
-        ? zhCN.summary.pendingSources
-        : zhCN.summary.manualRequired,
+      label: zhCN.summary.manualRequired,
       testId: "summary-manual-count",
-      count: hasPendingSources ? pendingSourceCount : manualBalloons,
+      count: manualBalloons,
     },
     {
       value: "hard_collision",
@@ -93,9 +108,6 @@ export function RecognitionSummary({
           className={[
             "summary-chip",
             `summary-chip--${chip.value}`,
-            chip.value === "manual_required" && hasPendingSources
-              ? "summary-chip--pending_sources"
-              : "",
           ].filter(Boolean).join(" ")}
           data-active={filter === chip.value}
           aria-label={zhCN.summary.filter(chip.label)}

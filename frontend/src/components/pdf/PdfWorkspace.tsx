@@ -431,6 +431,10 @@ export function PdfWorkspace({
         </div>
       </div>
       <ul className="drawing-legend" aria-label={zhCN.pdf.legend}>
+        <li>
+          <i data-color="auto-accepted" />
+          {zhCN.pdf.autoAcceptedPendingNumber}
+        </li>
         <li><i data-color="balloon" />{zhCN.pdf.formalBalloon}</li>
         <li><i data-color="candidate" />{zhCN.pdf.candidate}</li>
         <li><i data-color="source" />{zhCN.pdf.source}</li>

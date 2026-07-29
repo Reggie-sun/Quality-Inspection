@@ -26,4 +26,35 @@ describe("deriveCandidateNumbers", () => {
     expect(candidateMarkerNumber({ balloon_required: true }, 66)).toBe(66);
     expect(candidateMarkerNumber({}, 66)).toBe(66);
   });
+
+  test("自动通过项只获得稳定候选序号，不从 confidence 推断正式编号", () => {
+    const items = [
+      {
+        item_id: "auto-item",
+        raw_text: "10",
+        status: "auto_accepted",
+        confidence_decision: {
+          band: "high" as const,
+          review_disposition: "auto_accepted" as const,
+          policy_version: "candidate-confidence/1" as const,
+          evidence_codes: ["typed_schema_complete"],
+        },
+        balloon_required: true,
+        active: true,
+      },
+      {
+        item_id: "review-item",
+        raw_text: "20",
+        status: "pending",
+        balloon_required: true,
+        active: true,
+      },
+    ] satisfies ReviewItem[];
+
+    expect(Array.from(deriveCandidateNumbers(items).entries())).toEqual([
+      ["auto-item", 1],
+      ["review-item", 2],
+    ]);
+    expect(candidateMarkerNumber(items[0], 1)).toBe(1);
+  });
 });

@@ -21,7 +21,10 @@ import {
   InspectionItemTable,
   type PendingSourceReview,
 } from "./InspectionItemTable";
-import { inspectionItemPresentation } from "./inspectionItemPresentation";
+import {
+  inspectionItemPresentation,
+  isReviewRequiredItem,
+} from "./inspectionItemPresentation";
 import {
   RecognitionSummary,
   type InspectionFilter,
@@ -118,12 +121,15 @@ export function InspectionWorkbench({
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(
-    () => items.find((item) => item.active)?.item_id,
+    () => (
+      items.find(isReviewRequiredItem)
+      ?? items.find((item) => item.active)
+    )?.item_id,
   );
   const [selectedBalloonId, setSelectedBalloonId] = useState<string>();
   const [selectedSourceId, setSelectedSourceId] = useState<string>();
   const [pageIndex, setPageIndex] = useState(0);
-  const [filter, setFilter] = useState<InspectionFilter>("all");
+  const [filter, setFilter] = useState<InspectionFilter>("review_required");
   const [metadata, setMetadata] = useState<MetadataDraft>(
     () => metadataDraft(workingCopy),
   );
@@ -430,6 +436,7 @@ export function InspectionWorkbench({
             items={items}
             balloons={balloons}
             pendingSourceCount={pendingSources.length}
+            manualReviewCount={workingCopy?.manual_review_count ?? 0}
             filter={filter}
             onFilterChange={setFilter}
           />
