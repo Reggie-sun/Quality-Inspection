@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
 import zlib
@@ -18,6 +19,7 @@ from app.candidates.symbol_review import (
     VisualSymbolFailureStage,
     VisualSymbolSchemaError,
     parse_visual_symbol_json,
+    validate_visual_schema_diagnostic,
 )
 
 
@@ -41,6 +43,8 @@ _FORBIDDEN_METADATA = re.compile(
 )
 _SAFE_USAGE_KEY = re.compile(r"^[a-z][a-z0-9_]{0,31}_tokens$")
 _MISSING_RESPONSE_MEMBER = object()
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_PROVIDER_DIAGNOSTIC_VERSION = "visual-symbol-provider-diagnostic/1"
 
 
 class CandidateSchemaError(ValueError):
@@ -62,6 +66,7 @@ class VisualSymbolProviderError(RuntimeError):
         request_id: str,
         usage: dict[str, int],
         failure_stage: VisualSymbolFailureStage,
+        diagnostic: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__("visual symbol response violates frozen schema")
         if (
@@ -76,6 +81,39 @@ class VisualSymbolProviderError(RuntimeError):
             usage,
         )
         self.failure_stage = failure_stage
+        self.diagnostic = self._validated_diagnostic(diagnostic)
+
+    @staticmethod
+    def _validated_diagnostic(
+        diagnostic: Mapping[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if diagnostic is None:
+            return None
+        document = dict(diagnostic)
+        arguments_sha256 = document.get("arguments_sha256")
+        schema_validation = document.get("schema_validation")
+        if (
+            set(document)
+            != {
+                "schema_version",
+                "arguments_sha256",
+                "schema_validation",
+            }
+            or document.get("schema_version") != _PROVIDER_DIAGNOSTIC_VERSION
+            or not isinstance(arguments_sha256, str)
+            or _SHA256_RE.fullmatch(arguments_sha256) is None
+            or not isinstance(schema_validation, Mapping)
+        ):
+            raise ValueError(
+                "visual symbol provider diagnostic is invalid"
+            ) from None
+        return {
+            "schema_version": _PROVIDER_DIAGNOSTIC_VERSION,
+            "arguments_sha256": arguments_sha256,
+            "schema_validation": validate_visual_schema_diagnostic(
+                schema_validation
+            ),
+        }
 
 
 def _response_member(value: Any, name: str) -> Any:
@@ -483,12 +521,14 @@ class QwenVisionProvider:
             ) from None
 
         parser_failure_stage = None
+        parser_diagnostic = None
         try:
             payload = parse_visual_symbol_json(
                 _normalize_qwen_native_visual_payload(arguments)
             )
         except VisualSymbolSchemaError as exc:
             parser_failure_stage = exc.failure_stage
+            parser_diagnostic = exc.diagnostic
         if parser_failure_stage is not None:
             failure_stage: VisualSymbolFailureStage
             if parser_failure_stage == "json_invalid":
@@ -501,6 +541,20 @@ class QwenVisionProvider:
                 request_id=request_id,
                 usage=usage,
                 failure_stage=failure_stage,
+                diagnostic=(
+                    {
+                        "schema_version": _PROVIDER_DIAGNOSTIC_VERSION,
+                        "arguments_sha256": hashlib.sha256(
+                            arguments.encode("utf-8", errors="surrogatepass")
+                        ).hexdigest(),
+                        "schema_validation": parser_diagnostic,
+                    }
+                    if (
+                        failure_stage == "tool_arguments_schema_invalid"
+                        and parser_diagnostic is not None
+                    )
+                    else None
+                ),
             ) from None
         return VisionResult(
             request_id=request_id,

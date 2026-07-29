@@ -66,6 +66,71 @@ _FORBIDDEN_EVIDENCE_KEY = re.compile(
     r"authorization|api[_-]?key|secret|credential|bearer",
     re.IGNORECASE,
 )
+VISUAL_SCHEMA_DIAGNOSTIC_VERSION = "visual-symbol-schema-diagnostic/1"
+_VISUAL_SCHEMA_DIAGNOSTIC_FIELDS = {
+    "schema_version",
+    "validator",
+    "instance_path",
+    "schema_path",
+    "instance_type",
+    "required_member",
+    "schema_sha256",
+}
+_SAFE_SCHEMA_VALIDATORS = frozenset(
+    {
+        "additionalProperties",
+        "const",
+        "enum",
+        "maxItems",
+        "maximum",
+        "minItems",
+        "minimum",
+        "minLength",
+        "pattern",
+        "required",
+        "type",
+        "uniqueItems",
+    }
+)
+_SAFE_INSTANCE_PATH_MEMBERS = frozenset(
+    {
+        "associated_text_observation_ids",
+        "bbox_normalized",
+        "detections",
+        "requires_confirmation",
+        "schema_version",
+        "symbol_kind",
+        "visual_observation_id",
+    }
+)
+_SAFE_SCHEMA_PATH_MEMBERS = frozenset(
+    {
+        "additionalProperties",
+        "associated_text_observation_ids",
+        "bbox_normalized",
+        "const",
+        "detections",
+        "enum",
+        "items",
+        "maxItems",
+        "maximum",
+        "minItems",
+        "minimum",
+        "minLength",
+        "pattern",
+        "properties",
+        "required",
+        "requires_confirmation",
+        "schema_version",
+        "symbol_kind",
+        "type",
+        "uniqueItems",
+        "visual_observation_id",
+    }
+)
+_SAFE_INSTANCE_TYPES = frozenset(
+    {"array", "boolean", "integer", "null", "number", "object", "string"}
+)
 
 SymbolKind = Literal[
     "diameter",
@@ -144,9 +209,158 @@ class VisualSymbolSchemaError(ValueError):
         self,
         *,
         failure_stage: VisualSymbolParserFailureStage,
+        diagnostic: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__("visual symbol response violates frozen schema")
         self.failure_stage = failure_stage
+        self.diagnostic = (
+            None
+            if diagnostic is None
+            else validate_visual_schema_diagnostic(diagnostic)
+        )
+
+
+def _safe_json_pointer(
+    path: Sequence[Any],
+    *,
+    safe_members: Collection[str],
+) -> str | None:
+    encoded: list[str] = []
+    for member in path:
+        if type(member) is int and 0 <= member <= 4096:
+            encoded.append(str(member))
+        elif isinstance(member, str) and member in safe_members:
+            encoded.append(member.replace("~", "~0").replace("/", "~1"))
+        else:
+            return None
+    return "".join(f"/{member}" for member in encoded)
+
+
+def _is_safe_json_pointer(
+    value: Any,
+    *,
+    safe_members: Collection[str],
+) -> bool:
+    if not isinstance(value, str):
+        return False
+    if value == "":
+        return True
+    if not value.startswith("/"):
+        return False
+    for member in value[1:].split("/"):
+        if member in safe_members:
+            continue
+        if (
+            member.isascii()
+            and member.isdecimal()
+            and (member == "0" or not member.startswith("0"))
+            and int(member) <= 4096
+        ):
+            continue
+        return False
+    return True
+
+
+def _safe_instance_type(value: Any) -> str | None:
+    if value is None:
+        return "null"
+    if type(value) is bool:
+        return "boolean"
+    if type(value) is int:
+        return "integer"
+    if type(value) is float:
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, Mapping):
+        return "object"
+    return None
+
+
+def validate_visual_schema_diagnostic(
+    diagnostic: Mapping[str, Any],
+) -> dict[str, Any]:
+    document = dict(diagnostic)
+    validator = document.get("validator")
+    required_member = document.get("required_member")
+    schema_sha256 = document.get("schema_sha256")
+    if (
+        set(document) != _VISUAL_SCHEMA_DIAGNOSTIC_FIELDS
+        or document.get("schema_version") != VISUAL_SCHEMA_DIAGNOSTIC_VERSION
+        or validator not in _SAFE_SCHEMA_VALIDATORS
+        or not _is_safe_json_pointer(
+            document.get("instance_path"),
+            safe_members=_SAFE_INSTANCE_PATH_MEMBERS,
+        )
+        or not _is_safe_json_pointer(
+            document.get("schema_path"),
+            safe_members=_SAFE_SCHEMA_PATH_MEMBERS,
+        )
+        or document.get("instance_type") not in _SAFE_INSTANCE_TYPES
+        or (
+            required_member is not None
+            and (
+                validator != "required"
+                or required_member not in _SAFE_INSTANCE_PATH_MEMBERS
+            )
+        )
+        or not isinstance(schema_sha256, str)
+        or _SHA256_RE.fullmatch(schema_sha256) is None
+    ):
+        raise ValueError("visual symbol schema diagnostic is invalid") from None
+    return document
+
+
+def _visual_schema_diagnostic(
+    error: jsonschema.ValidationError,
+    *,
+    schema_sha256: str,
+) -> dict[str, Any] | None:
+    validator = error.validator
+    instance_path = _safe_json_pointer(
+        tuple(error.absolute_path),
+        safe_members=_SAFE_INSTANCE_PATH_MEMBERS,
+    )
+    schema_path = _safe_json_pointer(
+        tuple(error.absolute_schema_path),
+        safe_members=_SAFE_SCHEMA_PATH_MEMBERS,
+    )
+    instance_type = _safe_instance_type(error.instance)
+    if (
+        not isinstance(validator, str)
+        or validator not in _SAFE_SCHEMA_VALIDATORS
+        or instance_path is None
+        or schema_path is None
+        or instance_type is None
+    ):
+        return None
+    required_member = None
+    if (
+        validator == "required"
+        and isinstance(error.validator_value, list)
+        and isinstance(error.instance, Mapping)
+    ):
+        missing = [
+            member
+            for member in error.validator_value
+            if member in _SAFE_INSTANCE_PATH_MEMBERS
+            and member not in error.instance
+        ]
+        if len(missing) == 1:
+            required_member = missing[0]
+    return validate_visual_schema_diagnostic(
+        {
+            "schema_version": VISUAL_SCHEMA_DIAGNOSTIC_VERSION,
+            "validator": validator,
+            "instance_path": instance_path,
+            "schema_path": schema_path,
+            "instance_type": instance_type,
+            "required_member": required_member,
+            "schema_sha256": schema_sha256,
+        }
+    )
 
 
 def _json_bytes(payload: Mapping[str, Any]) -> bytes:
@@ -551,8 +765,11 @@ def parse_visual_symbol_json(
 
     local_schema_invalid = False
     validator: jsonschema.Draft202012Validator | None = None
+    schema_sha256 = ""
     try:
-        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+        schema_bytes = SCHEMA_PATH.read_bytes()
+        schema_sha256 = hashlib.sha256(schema_bytes).hexdigest()
+        schema = json.loads(schema_bytes)
         jsonschema.Draft202012Validator.check_schema(schema)
         validator = jsonschema.Draft202012Validator(schema)
     except (
@@ -568,7 +785,8 @@ def parse_visual_symbol_json(
             failure_stage="local_schema_invalid"
         ) from None
 
-    schema_invalid = False
+    schema_diagnostic: dict[str, Any] | None = None
+    schema_validation_failed = False
     try:
         validator.validate(payload)
         if any(
@@ -577,14 +795,20 @@ def parse_visual_symbol_json(
             for value in detection["bbox_normalized"]
         ):
             raise ValueError("non-finite bbox")
-    except (
-        jsonschema.ValidationError,
-        KeyError,
-        TypeError,
-        ValueError,
-    ):
-        schema_invalid = True
-    if schema_invalid or not isinstance(payload, dict):
+    except jsonschema.ValidationError as exc:
+        schema_validation_failed = True
+        schema_diagnostic = _visual_schema_diagnostic(
+            exc,
+            schema_sha256=schema_sha256,
+        )
+    except (KeyError, TypeError, ValueError):
+        schema_validation_failed = True
+    if schema_validation_failed:
+        raise VisualSymbolSchemaError(
+            failure_stage="schema_invalid",
+            diagnostic=schema_diagnostic,
+        ) from None
+    if not isinstance(payload, dict):
         raise VisualSymbolSchemaError(
             failure_stage="schema_invalid"
         ) from None

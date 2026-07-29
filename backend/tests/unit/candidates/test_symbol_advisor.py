@@ -156,6 +156,151 @@ def test_visual_symbol_response_reports_only_safe_parser_stages(
         assert raised.value.__context__ is None
 
 
+@pytest.mark.parametrize(
+    ("mutate", "expected"),
+    (
+        (
+            lambda payload: payload["detections"][0].pop("symbol_kind"),
+            {
+                "schema_version": "visual-symbol-schema-diagnostic/1",
+                "validator": "required",
+                "instance_path": "/detections/0",
+                "schema_path": "/properties/detections/items/required",
+                "instance_type": "object",
+                "required_member": "symbol_kind",
+                "schema_sha256": (
+                    "9bce6653860c2302894fa647e1f25e341"
+                    "b4318d22f79770004355a353d456b7a"
+                ),
+            },
+        ),
+        (
+            lambda payload: payload["detections"][0].__setitem__(
+                "bbox_normalized",
+                "private-bbox-value",
+            ),
+            {
+                "schema_version": "visual-symbol-schema-diagnostic/1",
+                "validator": "type",
+                "instance_path": "/detections/0/bbox_normalized",
+                "schema_path": (
+                    "/properties/detections/items/properties/"
+                    "bbox_normalized/type"
+                ),
+                "instance_type": "string",
+                "required_member": None,
+                "schema_sha256": (
+                    "9bce6653860c2302894fa647e1f25e341"
+                    "b4318d22f79770004355a353d456b7a"
+                ),
+            },
+        ),
+        (
+            lambda payload: payload["detections"][0].__setitem__(
+                "symbol_kind",
+                "private-enum-value",
+            ),
+            {
+                "schema_version": "visual-symbol-schema-diagnostic/1",
+                "validator": "enum",
+                "instance_path": "/detections/0/symbol_kind",
+                "schema_path": (
+                    "/properties/detections/items/properties/symbol_kind/enum"
+                ),
+                "instance_type": "string",
+                "required_member": None,
+                "schema_sha256": (
+                    "9bce6653860c2302894fa647e1f25e341"
+                    "b4318d22f79770004355a353d456b7a"
+                ),
+            },
+        ),
+        (
+            lambda payload: payload["detections"][0].__setitem__(
+                "private-property-name",
+                "private-property-value",
+            ),
+            {
+                "schema_version": "visual-symbol-schema-diagnostic/1",
+                "validator": "additionalProperties",
+                "instance_path": "/detections/0",
+                "schema_path": (
+                    "/properties/detections/items/additionalProperties"
+                ),
+                "instance_type": "object",
+                "required_member": None,
+                "schema_sha256": (
+                    "9bce6653860c2302894fa647e1f25e341"
+                    "b4318d22f79770004355a353d456b7a"
+                ),
+            },
+        ),
+    ),
+)
+def test_visual_symbol_schema_diagnostic_is_exact_and_content_free(
+    mutate,
+    expected: dict[str, object],
+) -> None:
+    payload = _payload()
+    mutate(payload)
+
+    with pytest.raises(VisualSymbolSchemaError) as raised:
+        parse_visual_symbol_json(payload)
+
+    assert raised.value.failure_stage == "schema_invalid"
+    assert raised.value.diagnostic == expected
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+    serialized = repr(raised.value.diagnostic)
+    assert "private-" not in serialized
+    assert str(raised.value) == (
+        "visual symbol response violates frozen schema"
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "unsafe_value"),
+    (
+        ("instance_path", "/detections/0/private-marker"),
+        ("instance_path", "/detections/١"),
+        ("schema_path", "/properties/private-marker"),
+        ("required_member", "private-marker"),
+        ("schema_sha256", int("1" * 64)),
+        ("validator", "type"),
+    ),
+)
+def test_visual_symbol_schema_diagnostic_rejects_untrusted_or_inconsistent_content(
+    field: str,
+    unsafe_value: object,
+) -> None:
+    diagnostic = {
+        "schema_version": "visual-symbol-schema-diagnostic/1",
+        "validator": "required",
+        "instance_path": "/detections/0",
+        "schema_path": "/properties/detections/items/required",
+        "instance_type": "object",
+        "required_member": "symbol_kind",
+        "schema_sha256": (
+            "9bce6653860c2302894fa647e1f25e341"
+            "b4318d22f79770004355a353d456b7a"
+        ),
+    }
+    diagnostic[field] = unsafe_value
+
+    with pytest.raises(
+        ValueError,
+        match="^visual symbol schema diagnostic is invalid$",
+    ) as raised:
+        VisualSymbolSchemaError(
+            failure_stage="schema_invalid",
+            diagnostic=diagnostic,
+        )
+
+    assert "private-marker" not in str(raised.value)
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
 def test_visual_symbol_failure_envelope_is_exact_and_allowlisted() -> None:
     assert build_visual_failure_envelope(
         "tool_arguments_schema_invalid"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import zlib
 from io import BytesIO
@@ -397,6 +398,69 @@ def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
     with pytest.raises(VisualSymbolProviderError) as raised:
         provider.review_symbols(image, "safe-stage-prompt")
     assert raised.value.failure_stage == "local_schema_invalid"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
+    private_marker = "private-marker-provider-response"
+    arguments = json.dumps(
+        {
+            "schema_version": "visual-symbol-review/1",
+            "detections": [
+                {
+                    "visual_observation_id": "visual-001",
+                    "bbox_normalized": [0.1, 0.2, 0.3, 0.4],
+                    "associated_text_observation_ids": [private_marker],
+                    "requires_confirmation": True,
+                }
+            ],
+        }
+    )
+
+    class InvalidCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                id="fixture-qwen-schema-diagnostic",
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=None,
+                            tool_calls=[_visual_tool_call(arguments)],
+                        )
+                    )
+                ],
+                usage={"prompt_tokens": 3, "completion_tokens": 1},
+            )
+
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=InvalidCompletions())
+        )
+    )
+    with pytest.raises(VisualSymbolProviderError) as raised:
+        provider.review_symbols(_png(text=None), "safe prompt")
+
+    assert raised.value.failure_stage == "tool_arguments_schema_invalid"
+    assert raised.value.diagnostic == {
+        "schema_version": "visual-symbol-provider-diagnostic/1",
+        "arguments_sha256": hashlib.sha256(arguments.encode()).hexdigest(),
+        "schema_validation": {
+            "schema_version": "visual-symbol-schema-diagnostic/1",
+            "validator": "required",
+            "instance_path": "/detections/0",
+            "schema_path": "/properties/detections/items/required",
+            "instance_type": "object",
+            "required_member": "symbol_kind",
+            "schema_sha256": (
+                "9bce6653860c2302894fa647e1f25e341"
+                "b4318d22f79770004355a353d456b7a"
+            ),
+        },
+    }
+    assert private_marker not in repr(raised.value.diagnostic)
+    assert private_marker not in str(raised.value)
     assert raised.value.__cause__ is None
     assert raised.value.__context__ is None
 
