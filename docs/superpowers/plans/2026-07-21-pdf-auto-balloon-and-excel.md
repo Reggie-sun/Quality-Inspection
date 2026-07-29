@@ -1513,6 +1513,67 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
       diagnostic、request/schema redesign、model change、call-cap/paging change
       or further live start requires a new explicit Heavy amendment and user
       decision; blind replay is not authorized.
+  - Task 8 Step 6 schema-leaf diagnostic amendment — 2026-07-29:
+    - Selection record:
+      - After the deterministic-sampling run failed at the same page-1 batch、
+        the user explicitly selected `A 定向叶级诊断`: one bounded Provider call
+        against the exact retained failing crop, retaining only an allowlisted
+        JSON Schema error path/keyword/type and cryptographic identities.
+      - This is a diagnostic authorization, not another full-P0 start、retry、
+        model comparison、schema relaxation or success gate.
+    - Problem boundary、single Owner and unchanged request:
+      - `backend/app/candidates/symbol_review.py::parse_visual_symbol_json()`
+        remains the only frozen response-schema validator.
+        `backend/app/providers/qwen_vl.py::QwenVisionProvider.review_symbols()`
+        remains the only Provider request/response-shape Owner.
+      - On decoded `schema_invalid` only, the parser may attach one immutable
+        safe diagnostic containing exact schema version、validator keyword、
+        JSON Pointer instance path、JSON Pointer schema path、allowlisted
+        instance type、an optional allowlisted missing-required member and the
+        checked-in schema SHA-256. The Provider error may add only the SHA-256
+        of the unretained raw argument string.
+      - Never retain or expose the argument string、payload values、validation
+        message、unexpected property name、enum value、drawing text、image
+        bytes、authorization metadata or exception cause/context. Unsafe path
+        segments or validator values must suppress the diagnostic rather than
+        widening it.
+      - Advisor persistence、failure envelope v2、call/cache/request/response
+        schemas、adapter `/4`、prompt v4、tool/schema v1、bbox normalization、
+        `temperature=0`、SDK `max_retries=0`、timeout and every page/call cap
+        remain unchanged. The Advisor continues to persist only the existing
+        failure stage and must not persist the new in-memory diagnostic.
+    - Allowed files、TDD and verification:
+      - Repository writes are limited to this plan、
+        `backend/app/candidates/symbol_review.py`、
+        `backend/app/providers/qwen_vl.py`、
+        `backend/tests/unit/candidates/test_symbol_advisor.py` and
+        `backend/tests/contract/test_qwen_symbol_provider.py`.
+      - RED/GREEN must prove exact safe paths for required/type/enum/additional
+        property failures、raw-argument hashing、absence of raw/private marker
+        text、unchanged exception strings/causes、unchanged persisted failure
+        envelope and unchanged exact visual/text request shapes.
+      - Run focused tests、the complete changed modules、symbol
+        integration/E2E、full backend on a disposable migrated database、
+        Provider fixtures with `external_calls=0`、Ruff、contracts、privacy
+        scan、diff check、`auto-feature-smoke-test` and independent read-only
+        review before the implementation commit.
+    - Exact one-call diagnostic and stop:
+      - Rebuild only API/worker from the exact implementation commit and repeat
+        a no-write identity preflight. Reconstruct page `1` batch index `3`
+        from project `a0bea969-8736-4d08-a9f7-2c640e50a9b0` stored
+        source/inventory, and require adapter-`/4` cache identity
+        `21bb7dea986d079fe379d770e2699ec41ec32105702c9112e0f3c5293adac54b`
+        plus crop SHA-256
+        `e4e60ff8a7434f3e00577dce1de536f616cb3dfadaa276570b33b5070fb621a2`
+        before constructing the Provider.
+      - Authorize exactly one direct call through the production
+        `QwenVisionProvider.review_symbols()` with model
+        `qwen3-vl-plus-2025-12-19` and the reconstructed exact prompt. Store
+        only a sanitized report in an `mktemp` `/tmp` directory; do not write a
+        formal run、project、cache、response or approved manifest.
+      - After the call, record the safe diagnostic and stop. Any remediation、
+        second diagnostic call or new full-P0 start requires a new explicit
+        decision based on the observed leaf evidence.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
