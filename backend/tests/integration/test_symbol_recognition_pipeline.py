@@ -731,6 +731,36 @@ def test_roughness_gdt_and_datum_project_without_schema_expansion(
             revision_ids.intersection(item["source_location_ids"])
             for item in working.items
         )
+        retired_revision_entries = [
+            entry
+            for entry in raw.coverage["entries"]
+            if entry["observation_id"] not in visual_ids
+            and entry.get("advisor_review", {}).get("symbol_kinds")
+            == ["revision_marker"]
+        ]
+        assert len(retired_revision_entries) == 2
+        assert all(
+            entry["advisor_review"]
+            == _visual_review(["revision_marker"], None)
+            for entry in retired_revision_entries
+        )
+        working_coverage_by_id = {
+            entry["observation_id"]: entry
+            for entry in working.coverage["entries"]
+        }
+        assert all(
+            working_coverage_by_id[entry["observation_id"]][
+                "symbol_kinds"
+            ]
+            == ["revision_marker"]
+            and working_coverage_by_id[entry["observation_id"]][
+                "rejection_code"
+            ]
+            is None
+            and "advisor_review"
+            not in working_coverage_by_id[entry["observation_id"]]
+            for entry in retired_revision_entries
+        )
         assert set(get_args(CandidateType)) == {
             "linear_dimension",
             "diameter_dimension",

@@ -44,8 +44,15 @@ def _write_pdf(
 
 
 class RecordingOcrProvider:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        raw_text: str = "M8",
+        confidence: float = 98.5,
+    ) -> None:
         self.calls: list[tuple[int, int]] = []
+        self.raw_text = raw_text
+        self.confidence = confidence
 
     def recognize_png(self, image: bytes) -> OcrResult:
         assert image.startswith(b"\x89PNG\r\n\x1a\n")
@@ -55,8 +62,8 @@ class RecordingOcrProvider:
             request_id="fixture-runtime-ocr-request",
             observations=(
                 OcrObservation(
-                    raw_text="M8",
-                    confidence=98.5,
+                    raw_text=self.raw_text,
+                    confidence=self.confidence,
                     polygon=(
                         (12.0, 8.0),
                         (72.0, 8.0),
@@ -145,6 +152,61 @@ def test_hybrid_image_region_appends_separate_coordinate_safe_ocr_observation(
     assert ocr_candidate["source_truth_preserved"] is True
     assert provider.calls == [(120, 80)]
     assert factory_calls == ["factory"]
+
+
+@pytest.mark.parametrize(
+    ("confidence", "expected_signal"),
+    ((73.25, "0.7325"), (float("nan"), None)),
+)
+def test_ambiguous_ocr_observation_still_emits_one_source_signal(
+    tmp_path: Path,
+    confidence: float,
+    expected_signal: str | None,
+) -> None:
+    pdf_path = tmp_path / "ambiguous-ocr.pdf"
+    _write_pdf(
+        pdf_path,
+        native_text="M6",
+        image_rect=pymupdf.Rect(100.0, 100.0, 160.0, 140.0),
+    )
+    provider = RecordingOcrProvider(
+        raw_text="NOTE",
+        confidence=confidence,
+    )
+    factory_calls: list[str] = []
+    recognition = _recognition(provider, factory_calls)
+
+    enhanced = recognition.build_inventory(pdf_path)
+    snapshot = recognition.build_candidate_snapshot(enhanced)
+
+    ocr_observation = next(
+        observation
+        for observation in enhanced[0].observations
+        if observation.source_type == "ocr"
+    )
+    ocr_entry = next(
+        entry
+        for entry in snapshot.coverage_entries
+        if entry.observation_id == ocr_observation.observation_id
+    )
+    ocr_signals = [
+        signal
+        for signal in snapshot.source_signals
+        if signal.source_location_id == ocr_observation.observation_id
+    ]
+    assert ocr_entry.disposition == "ambiguous"
+    assert len(ocr_signals) == 1
+    assert ocr_signals[0].source_type == "ocr"
+    if expected_signal is None:
+        assert ocr_signals[0].normalized_value is None
+    else:
+        assert str(ocr_signals[0].normalized_value) == expected_signal
+    assert len(snapshot.source_signals) == len(
+        {entry.observation_id for entry in snapshot.coverage_entries}
+    )
+    assert len(
+        {signal.source_location_id for signal in snapshot.source_signals}
+    ) == len(snapshot.source_signals)
 
 
 def test_supported_full_page_hybrid_uses_bounded_local_ocr_crops(

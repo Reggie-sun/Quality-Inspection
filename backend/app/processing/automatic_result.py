@@ -181,6 +181,33 @@ def candidate_snapshot_from_inventory(
     coverage_entries: list[CoverageEntry] = []
     duplicate_inputs: list[DuplicateCandidate] = []
     source_signals: list[CandidateSourceSignal] = []
+    source_signal_indexes: dict[str, list[int]] = {}
+    for observation in observations:
+        if observation.source_type == "native":
+            signal = CandidateSourceSignal(
+                source_location_id=observation.observation_id,
+                source_type="native",
+                normalized_value=None,
+            )
+        elif observation.source_type == "ocr":
+            try:
+                normalized_signal = normalize_tencent_ocr_signal(
+                    observation.confidence
+                )
+            except ValueError:
+                normalized_signal = None
+            signal = CandidateSourceSignal(
+                source_location_id=observation.observation_id,
+                source_type="ocr",
+                normalized_value=normalized_signal,
+            )
+        else:
+            continue
+        source_signal_indexes.setdefault(
+            observation.observation_id,
+            [],
+        ).append(len(source_signals))
+        source_signals.append(signal)
     index = 0
 
     while index < len(observations):
@@ -234,33 +261,16 @@ def candidate_snapshot_from_inventory(
             getattr(candidate, "requires_confirmation", False)
         )
         for member in members:
-            signal: CandidateSourceSignal | None
-            if member.source_type == "native":
-                signal = CandidateSourceSignal(
-                    source_location_id=member.observation_id,
-                    source_type="native",
-                    normalized_value=(
-                        normalize_native_signal(True)
-                        if source_truth_preserved
-                        else None
-                    ),
-                )
-            elif member.source_type == "ocr":
-                try:
-                    normalized_signal = normalize_tencent_ocr_signal(
-                        member.confidence
+            if member.source_type == "native" and source_truth_preserved:
+                for signal_index in source_signal_indexes.get(
+                    member.observation_id,
+                    (),
+                ):
+                    source_signals[signal_index] = CandidateSourceSignal(
+                        source_location_id=member.observation_id,
+                        source_type="native",
+                        normalized_value=normalize_native_signal(True),
                     )
-                except ValueError:
-                    normalized_signal = None
-                signal = CandidateSourceSignal(
-                    source_location_id=member.observation_id,
-                    source_type="ocr",
-                    normalized_value=normalized_signal,
-                )
-            else:
-                signal = None
-            if signal is not None:
-                source_signals.append(signal)
             coverage_entries.append(
                 CoverageEntry(
                     observation_id=member.observation_id,

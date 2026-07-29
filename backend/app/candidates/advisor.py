@@ -1324,6 +1324,9 @@ class CandidateAdvisor:
                                 retirement.symbol_kinds
                             ),
                             "rejection_code": None,
+                            "confidence_signal": (
+                                retirement.confidence_signal
+                            ),
                         },
                     )
             candidates_changed = candidates != list(base_candidates)

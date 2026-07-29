@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pymupdf
 import pytest
@@ -13,6 +14,7 @@ from app.candidates.advisor import CandidateAdvisor, CandidateAdvisorFailure
 from app.candidates.duplicates import DuplicateRelation
 from app.config import Settings
 from app.pdf.inventory import build_inventory
+from app.pdf.schemas import TextObservation
 from app.pdf.visual_observations import VisualBatch
 from app.processing.automatic_result import (
     CandidateSnapshot,
@@ -187,6 +189,48 @@ class VisualDiameterProvider(EchoVisionProvider):
         return super().review_candidate(image, prompt)
 
 
+class VisualRoughnessProvider(EchoVisionProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.call_order: list[str] = []
+
+    def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
+        assert image.startswith(b"\x89PNG")
+        request = json.loads(prompt)
+        context = request["visual_contexts"][0]
+        line = next(
+            item
+            for item in context["associated_text_allowlist"]
+            if item["observation_level"] == "line"
+        )
+        assert str(line["raw_text"]).startswith("Ra ")
+        self.call_order.append("visual")
+        return VisionResult(
+            request_id="fixture-visual-roughness-request",
+            payload={
+                "schema_version": "visual-symbol-review/2",
+                "detections": [
+                    {
+                        "visual_observation_id": context[
+                            "visual_observation_id"
+                        ],
+                        "symbol_kind": "surface_roughness",
+                        "bbox_normalized": [0.1, 0.1, 0.4, 0.4],
+                        "associated_text_observation_ids": [
+                            line["observation_id"]
+                        ],
+                        "confidence_signal": 0.97,
+                    }
+                ],
+            },
+            usage={},
+        )
+
+    def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
+        self.call_order.append("text")
+        return super().review_candidate(image, prompt)
+
+
 class FailingIfCalledVisionProvider:
     def __init__(self) -> None:
         self.calls = 0
@@ -296,6 +340,68 @@ def test_clear_native_candidate_does_not_construct_provider(
     assert reviewed.source_signals[0].source_type == "native"
     assert str(reviewed.source_signals[0].normalized_value) == "1"
     assert reviewed.candidates[0]["source_truth_preserved"] is True
+
+
+def test_ambiguous_native_observation_still_emits_one_source_signal(
+    tmp_path: Path,
+) -> None:
+    _source, _pages, snapshot = drawing_fixture(tmp_path, raw_text="NOTE")
+
+    assert snapshot.candidates == ()
+    assert len(snapshot.coverage_entries) == 1
+    assert snapshot.coverage_entries[0].disposition == "ambiguous"
+    assert len(snapshot.source_signals) == 1
+    signal = snapshot.source_signals[0]
+    assert (
+        signal.source_location_id
+        == snapshot.coverage_entries[0].observation_id
+    )
+    assert signal.source_type == "native"
+    assert signal.normalized_value is None
+
+
+def test_composite_members_each_emit_exactly_one_native_source_signal() -> None:
+    def observation(
+        observation_id: str,
+        raw_text: str,
+        y0: float,
+    ) -> TextObservation:
+        return TextObservation(
+            observation_id=observation_id,
+            source_type="native",
+            observation_level="line",
+            raw_text=raw_text,
+            normalized_text=raw_text,
+            page_index=0,
+            bbox_pdf=(10.0, y0, 40.0, y0 + 8.0),
+            bbox_normalized=(0.05, y0 / 100.0, 0.2, (y0 + 8.0) / 100.0),
+            direction=(1.0, 0.0),
+            direction_angle_degrees=0.0,
+            confidence=None,
+        )
+
+    members = (
+        observation("native-thread", "M6", 10.0),
+        observation("native-through", "贯穿", 20.0),
+    )
+    snapshot = candidate_snapshot_from_inventory(
+        (
+            SimpleNamespace(
+                observations=members,
+                visual_observations=(),
+            ),
+        )
+    )
+
+    assert len(snapshot.candidates) == 1
+    assert snapshot.candidates[0]["payload"]["item_type"] == "composite"
+    assert [signal.source_location_id for signal in snapshot.source_signals] == [
+        member.observation_id for member in members
+    ]
+    assert all(
+        str(signal.normalized_value) == "1"
+        for signal in snapshot.source_signals
+    )
 
 
 def test_coarse_candidate_uses_one_bounded_local_crop(tmp_path: Path) -> None:
@@ -661,6 +767,35 @@ def test_visual_projection_does_not_create_same_review_text_route(
     )
     assert len(visual_signals) == 1
     assert str(visual_signals[0].normalized_value) == "0.97"
+
+
+def test_visual_promotion_preserves_ambiguous_text_signal_and_appends_visual(
+    tmp_path: Path,
+) -> None:
+    source, pages, snapshot = dense_visual_roughness_fixture(tmp_path)
+    provider = VisualRoughnessProvider()
+    text_signal = next(
+        signal
+        for signal in snapshot.source_signals
+        if signal.source_type == "native"
+    )
+    assert text_signal.normalized_value is None
+
+    reviewed = candidate_advisor(tmp_path, provider).review(
+        source,
+        pages,
+        snapshot,
+    )
+
+    assert reviewed.source_signals[: len(snapshot.source_signals)] == (
+        snapshot.source_signals
+    )
+    assert len(reviewed.source_signals) == len(snapshot.source_signals) + 1
+    assert len(
+        {signal.source_location_id for signal in reviewed.source_signals}
+    ) == len(reviewed.source_signals)
+    assert reviewed.source_signals[-1].source_type == "visual"
+    assert str(reviewed.source_signals[-1].normalized_value) == "0.97"
 
 
 def test_validator_rejects_raw_text_or_type_drift(tmp_path: Path) -> None:
