@@ -1150,6 +1150,75 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
       Any response-contract remediation or another live start requires a new explicit
       user decision and a separately committed Heavy amendment; the safe enum is
       diagnostic evidence only, never Quality Owner approval or formal success.
+  - Task 8 Step 6 bounded schema-retry amendment — 2026-07-29:
+    - Selection record:
+      - User-selected remediation: `一次受限重试`。本次只处理 exact
+        `tool_arguments_schema_invalid`；不得扩展为 transport、timeout、其他
+        response stage、text Advisor 或 arbitrary exception retry。
+      - Selected lane and plan remain `Heavy` and this current plan. Selection
+        evidence is immutable diagnostic run
+        `20260729T014016291065Z-2174c7b2`: the prior failed crop was schema-valid
+        in the new run, while page-0 batch index `7` failed at the decoded
+        tool-arguments schema boundary after seven valid calls.
+    - Problem boundary、single Owner and old path:
+      - `backend/app/candidates/advisor.py::CandidateAdvisor.review()` owns the
+        one-document retry budget and per-page spare-call gate;
+        `CandidateAdvisor._visual_review_result()` owns exact same-input attempt
+        orchestration and sanitized persistence. Qwen adapter classification remains
+        unchanged and is not a retry Owner.
+      - Retire only the eligible branch that immediately persists one canonical
+        failure and raises on first `tool_arguments_schema_invalid`. All other failure
+        branches preserve the existing immediate fail-closed path; no second retry
+        loop、fallback、repair parser or shadow response Owner is allowed.
+    - Exact retry and budget contract:
+      - At most one additional Provider call is allowed for the entire document.
+        Eligibility requires the first call to fail with exact
+        `tool_arguments_schema_invalid` and the current page to have at least one
+        spare call under the unchanged `16/page` actual-call cap. Therefore the
+        current page-0 `13`-batch plan can consume one retry; the page-1 `16`-batch
+        plan cannot retry.
+      - The second call must reuse byte-identical canonical PNG、the same prompt
+        string、model、forced tool、checked-in response schema and timeout. The
+        OpenAI-compatible client keeps automatic `max_retries=0`; this explicit
+        Advisor attempt is the only retry. A second invalid response or any other
+        exception stops immediately with the existing generic client error and no
+        third call.
+      - Both request IDs must be retained in successful `provider_call_ids`.
+        The first failure uses an exact `qwen-symbol-retries` attempt-1 namespace
+        containing only existing sanitized request evidence、the `/2` failure
+        envelope and a call record with `retry_count=0`. The final canonical success
+        or failure record uses `retry_count=1`. Cache replay must verify the bounded
+        retry chain and make no Provider call; the full-live collector must count
+        `1 + retry_count` actual calls for page and total call limits.
+    - Privacy、unchanged contracts and allowed files:
+      - Raw message content、tool arguments、completion、response body and exception
+        context remain forbidden. Both failure raises must have no raw
+        `__cause__` / `__context__`; attempt records may contain only the existing
+        safe call-record/request-envelope fields.
+      - Prompt v4、tool/schema、proposal v3、crop/packing、projection、evaluator、
+        source/sealed artifacts、frontend、`main` UI and D7-T3 remain unchanged.
+        Repository writes before live are limited to this plan、
+        `backend/app/candidates/advisor.py`、
+        `backend/tests/unit/candidates/test_advisor.py`、
+        `backend/tests/contract/test_provider_call_records.py`、
+        `.agent/harness/scripts/run-p0.py` and
+        `backend/tests/contract/harness/test_live_run_contract.py`.
+    - TDD、review and one-run authorization:
+      - RED must prove exact same-input two-call success、two safe audit records、
+        cache replay with zero calls、second-failure no-third-call、non-eligible-stage
+        no-retry、one-document budget and page-16 no-retry. Harness RED/GREEN must
+        prove retry calls count toward both per-page call fields and `>16` remains
+        blocking. Then run changed modules、symbol integration/E2E、full backend on
+        a disposable migrated database、Provider fixtures with `external_calls=0`、
+        focused Ruff、`check-contracts.py`、privacy scan and independent review.
+      - Only after code/tests are committed, rebuild exact runtime and repeat sealed
+        preflight. Then authorize exactly one new full-P0 live start with literal
+        `--current-four-run 20260728T073514713074Z-f32e6fae`、
+        `--symbol-eval-run 20260727T085747865239Z-5aa3e8d3`、
+        `--input-set current-four --pause-after first-pdf-balloons`. Do not resume
+        prior runs. If it fails, seal and stop; if it passes, seal at the pause and
+        report. Neither outcome authorizes current-four continuation、browser/frontend、
+        `main` merge or D7-T3 without the next explicit decision.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
