@@ -1665,6 +1665,58 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
       - Rollback is limited to reverting this docs-only amendment if a later Owner
         decision requires it; never delete, rewrite, or reuse the fresh run,
         project, Provider audit, cache, or existing sealed registrations.
+  - Task 8 Step 6 one-shot full-P0 live outcome — 2026-07-29:
+    - Runtime and no-write preflight:
+      - The user supplied `QI_P0_OPERATOR_ID=reggie` and explicitly approved the
+        non-secret live controls. Only API/worker were recreated; frontend and the
+        user's `http://127.0.0.1:5173/` instance were not rebuilt or modified.
+      - API/worker were healthy with
+        `QI_QWEN_MODEL=qwen3-vl-plus-2025-12-19` and exact host/container hashes
+        for `qwen_vl.py`
+        (`23e8753dc2e577b87c9a011bab80441f38b5598184cc039c781028c58d340356`),
+        `symbol_review.py`
+        (`73edf98326c6521121cb80ad3f58c83db4e43f9722a1709ef1fa6261a1854461`)
+        and `providers/runtime.py`
+        (`1774815f29ca8302f7869697cafbc45c1cabc8f508b8a19c7ba4eb92cbff42f8`).
+      - The no-write full-P0 preflight passed with `111` contracts,
+        current-four manifest SHA-256
+        `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`
+        and symbol-eval SHA-256
+        `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`;
+        the run-directory count remained `13`.
+    - Exact-once failed result:
+      - The sole authorized start created full-P0 run
+        `20260729T051043520116Z-8ddc6a1a` and first project
+        `217e3b9d-b5f8-44a6-b2c5-ed19f8bf4679`. The run started at
+        `2026-07-29T05:10:43.542388Z` and failed at
+        `2026-07-29T05:13:34.341577Z` with
+        `failure_reason=live_start_failed:RuntimeError`; every retained run member
+        is mode `444`.
+      - Seven visual calls produced valid caches. The eighth primary call failed
+        closed with `tool_arguments_schema_invalid`, request ID
+        `chatcmpl-587610de-1f19-9c34-98df-4af311f88b52`, crop SHA-256
+        `5628b3603d6fa7f12d62a637a438740a92f29dd81e2a9de689e492b1dcb53724`,
+        duration `6426ms` and usage `3419/185/3604`. The existing bounded
+        schema-retry path made one attempt against the same crop; it also returned
+        `tool_arguments_schema_invalid`, request ID
+        `chatcmpl-23734929-9c25-9556-ac5a-320bfcd77501`, duration `6155ms`
+        and usage `3419/184/3603`.
+      - Exact totals are `9` Provider calls including the one bounded retry,
+        `7` valid caches, `161317ms` accumulated duration and
+        `34701/6154/40855` prompt/completion/total tokens. The project is
+        `processing_failed` with blocking code `vision_provider_call_failed`;
+        `AutomaticResult`、working copy、reviewed result、balloon and export
+        counts are all `0`.
+      - Run evidence SHA-256 values are
+        `b75c13a3029e978cb61321fffea0d0e2d9cb1082eb90a9c0944859426fba59fd`
+        for `run.json`,
+        `c5cefd22aec0bca800e9f72126c4693d069479adb3a5eaf189f2222709163e38`
+        for `live-run-evidence.json` and
+        `742812374715efc3b89f591c68983b84bc9b0df03ee68c953451eaaf49f61383`
+        for the sanitized failure log. No manual approval、browser/frontend
+        action、remaining current-four processing、D7-T3、SR-5 or `main` merge
+        occurred. This one-start authorization is exhausted; any remediation or
+        further live start requires a new explicit Heavy amendment.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
