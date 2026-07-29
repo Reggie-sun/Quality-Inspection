@@ -557,7 +557,7 @@ disposition 的隐式决定，最终 effective writer 仍只有一个。
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-29-confidence-routed-balloon-review.md`
-  （draft，等待用户批准）
+  （approved）
 - Selection evidence: 用户批准全部自动识别项使用方案 A，并明确 high-confidence
   item 显示红色气泡、无需逐条审核但保持人工可改
 - Validation action: `replan`
@@ -567,8 +567,8 @@ disposition 的隐式决定，最终 effective writer 仍只有一个。
   immutable ReviewedResult 和 atomic export
 - Old path action: Provider confirmation、projection confirmation、all-pending bootstrap
   统一 `replace`
-- Next verification: successor plan placeholder/consistency/scope scan、exact diff
-  review、commit，然后进入 plan review gate
+- Next verification: 按 approved successor plan 执行 Task 1 contract lock，并通过
+  spec-compliance 与 code-quality 双 review gate
 
 ## Acceptance Criteria
 

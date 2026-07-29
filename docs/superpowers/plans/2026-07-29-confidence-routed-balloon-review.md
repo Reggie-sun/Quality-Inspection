@@ -13,15 +13,15 @@
 ## Status
 
 - Date: `2026-07-29`
-- Status: `draft; awaiting user approval`
+- Status: `approved`
 - Selected lane: `Heavy`
 - Validation action: `replan`
 - Design source:
   `docs/superpowers/specs/2026-07-29-confidence-routed-balloon-review-design.md`
 - Supersession boundary: 本 plan 是该 feature 的唯一 successor implementation plan；
   不修改或重开已 sealed 的七天 P0 task 状态。
-- Production authorization: 用户批准本 plan 前，不得执行 Task 1 之后的 production
-  code 修改。
+- Production authorization: 用户已批准按
+  `superpowers:subagent-driven-development` 执行 Task 1→8。
 
 ## Problem Boundary
 
