@@ -3,16 +3,22 @@
   "supported_matrix": [
     {"source_types": ["native"], "item_type": "linear_dimension"},
     {"source_types": ["ocr"], "item_type": "linear_dimension"},
+    {"source_types": ["visual"], "item_type": "linear_dimension"},
     {"source_types": ["native"], "item_type": "diameter_dimension"},
     {"source_types": ["ocr"], "item_type": "diameter_dimension"},
     {"source_types": ["visual"], "item_type": "diameter_dimension"},
     {"source_types": ["native"], "item_type": "thread"},
     {"source_types": ["ocr"], "item_type": "thread"},
+    {"source_types": ["visual"], "item_type": "thread"},
     {"source_types": ["native"], "item_type": "radius"},
     {"source_types": ["ocr"], "item_type": "radius"},
+    {"source_types": ["visual"], "item_type": "radius"},
     {"source_types": ["native"], "item_type": "angle"},
     {"source_types": ["ocr"], "item_type": "angle"},
+    {"source_types": ["visual"], "item_type": "angle"},
     {"source_types": ["native"], "item_type": "general_requirement"},
+    {"source_types": ["native"], "item_type": "composite"},
+    {"source_types": ["ocr"], "item_type": "composite"},
     {"source_types": ["visual"], "item_type": "composite"},
     {
       "source_types": ["native", "visual"],
@@ -796,6 +802,54 @@
         {
           "source_location_id": "unsupported-general-ocr-source",
           "source_type": "ocr",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "low",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "unsupported-general-requirement-visual-without-native-proxy",
+      "candidate": {
+        "candidate_id": "unsupported-general-visual",
+        "payload": {
+          "candidate_id": "unsupported-general-visual",
+          "item_type": "general_requirement",
+          "raw_text": "未注公差按 GB/T 1804-m",
+          "normalized_text": "未注公差按 GB/T 1804-m",
+          "coordinates": [8, 9, 18, 19],
+          "scope": "global_requirement",
+          "sub_requirements": [],
+          "balloon_required": false,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["unsupported-general-visual-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "unsupported-general-visual-source",
+          "source_type": "visual",
           "normalized_value": "0.95"
         }
       ],

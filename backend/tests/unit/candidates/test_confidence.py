@@ -196,6 +196,7 @@ def test_native_exact_signal_is_deterministic() -> None:
     ("percent", "expected"),
     [
         (0, Decimal("0")),
+        (0.95, Decimal("0.0095")),
         (70, Decimal("0.70")),
         (95, Decimal("0.95")),
         (100, Decimal("1")),
@@ -252,6 +253,7 @@ def test_numeric_adapters_reject_missing_bool_nonfinite_and_negative(
     [
         (normalize_tencent_ocr_signal, 100.0001),
         (normalize_visual_signal, 1.0001),
+        (normalize_visual_signal, 95),
     ],
 )
 def test_numeric_adapters_reject_out_of_range(adapter, value: object) -> None:
@@ -424,6 +426,10 @@ def test_every_candidate_hard_veto_prevents_high(
         ({"blocking_count": 1}, "coverage_blocking"),
         ({"disposition": "ambiguous"}, "ambiguous_source"),
         ({"associated": False}, "local_association_missing"),
+        (
+            {"requires_confirmation": True},
+            "semantic_confirmation_required",
+        ),
         (
             {
                 "advisor_review": {
@@ -690,16 +696,22 @@ def test_frozen_supported_matrix_is_complete() -> None:
     required = {
         (("native",), "linear_dimension"),
         (("ocr",), "linear_dimension"),
+        (("visual",), "linear_dimension"),
         (("native",), "diameter_dimension"),
         (("ocr",), "diameter_dimension"),
         (("visual",), "diameter_dimension"),
         (("native",), "thread"),
         (("ocr",), "thread"),
+        (("visual",), "thread"),
         (("native",), "radius"),
         (("ocr",), "radius"),
+        (("visual",), "radius"),
         (("native",), "angle"),
         (("ocr",), "angle"),
+        (("visual",), "angle"),
         (("native",), "general_requirement"),
+        (("native",), "composite"),
+        (("ocr",), "composite"),
         (("visual",), "composite"),
         (("native", "visual"), "composite"),
     }
@@ -725,7 +737,8 @@ def test_frozen_supported_matrix_is_complete() -> None:
             else "negative"
         )
 
-    assert required <= declared
+    assert required == declared
+    assert len(declared) == 20
     assert set(observed) == declared
     assert all(
         polarities == {"positive", "negative"}
@@ -734,12 +747,38 @@ def test_frozen_supported_matrix_is_complete() -> None:
 
 
 def test_frozen_unsupported_families_are_negative_only() -> None:
-    assert {
-        case["id"] for case in FIXTURE_DATA["unsupported_cases"]
-    } == {
+    expected_ids = {
         "unsupported-general-requirement-ocr-without-native-proxy",
+        "unsupported-general-requirement-visual-without-native-proxy",
         "unsupported-coarse-fallback-native",
     }
+    expected_combinations = {
+        (("ocr",), "general_requirement"),
+        (("visual",), "general_requirement"),
+        (("native",), "coarse_fallback"),
+    }
+    observed_combinations = set()
+    for case in FIXTURE_DATA["unsupported_cases"]:
+        payload = case["candidate"]["payload"]
+        family = (
+            "coarse_fallback"
+            if "coarse_type" in payload
+            else str(payload["item_type"])
+        )
+        observed_combinations.add(
+            (
+                tuple(
+                    signal["source_type"]
+                    for signal in case["source_signals"]
+                ),
+                family,
+            )
+        )
+
+    assert {
+        case["id"] for case in FIXTURE_DATA["unsupported_cases"]
+    } == expected_ids
+    assert observed_combinations == expected_combinations
     assert all(
         case["expected"]["band"] == "low"
         for case in FIXTURE_DATA["unsupported_cases"]
