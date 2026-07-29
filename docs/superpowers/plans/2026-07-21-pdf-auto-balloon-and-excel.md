@@ -1449,6 +1449,70 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
       - If it fails, seal and stop with only sanitized evidence. If it reaches
         the human gate, report the exact project route; do not auto-approve、
         continue current-four、change frontend、merge `main` or enter D7-T3.
+  - Deterministic visual sampling live outcome — 2026-07-29:
+    - The amendment was committed as `e1d6534`; the exact four-file
+      implementation was committed as
+      `df064057038a65d868b79914ea3825852f6fdf0d`. RED proved that the visual
+      request still lacked exact `temperature=0` and cache identity still used
+      adapter `/3`. GREEN pinned only visual `temperature=0` and adapter `/4`;
+      the text route and every other generation option remained unchanged.
+      Verification passed with `84` changed-module tests、`16` symbol
+      integration/E2E tests、`693` full-backend tests、`49` Provider fixture
+      tests with `external_calls=0`、global/P0 contract counts `69/111`、Ruff、
+      diff/privacy checks、the focused three-test `auto-feature-smoke-test` and
+      an independent read-only `accept` review. The disposable migrated
+      database was dropped after verification.
+    - API/worker were rebuilt and recreated from exact clean HEAD `df06405`
+      without touching the frontend. Both containers loaded model
+      `qwen3-vl-plus-2025-12-19`; host/container SHA-256 matched for
+      `qwen_vl.py`
+      (`36eac5ec364097cb424ead4869e9787ebefa2d5b29b243dcaed36fdd2c65535b`),
+      `symbol_review.py`
+      (`015a262ca6b7f036d7c77dbf06f30e45684894ad4b7252af2ad2a6f80909aa16`)
+      and `providers/runtime.py`
+      (`1774815f29ca8302f7869697cafbc45c1cabc8f508b8a19c7ba4eb92cbff42f8`).
+      Runtime inspection confirmed adapter `/4`、visual `temperature=0` and SDK
+      `max_retries=0`.
+    - The no-write preflight passed with four exact sources、`111` contracts、
+      first-source SHA-256
+      `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`,
+      current-four manifest SHA-256
+      `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`
+      and sealed symbol manifest SHA-256
+      `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`.
+      Run-directory count remained unchanged and Provider calls remained `0`
+      during preflight.
+    - The single authorized start created immutable run
+      `20260729T032043501680Z-cb356f72` and fresh project
+      `a0bea969-8736-4d08-a9f7-2c640e50a9b0`. It started at
+      `2026-07-29T03:20:43.525644Z` and sealed failed at
+      `2026-07-29T03:26:10.216695Z` with
+      `failure_reason=live_start_failed:RuntimeError`; all retained run files
+      are mode `444`.
+    - The first `16` visual calls again produced schema-valid caches in the
+      frozen order: all `13` page-0 batches and the first `3` page-1 batches.
+      The seventeenth call again failed closed at page `1` batch index `3` with
+      exact `tool_arguments_schema_invalid`. The adapter-`/4` cache identity is
+      `21bb7dea986d079fe379d770e2699ec41ec32105702c9112e0f3c5293adac54b`;
+      the crop SHA-256 is the same
+      `e4e60ff8a7434f3e00577dce1de536f616cb3dfadaa276570b33b5070fb621a2`.
+      The failed request ID is
+      `chatcmpl-86c7177c-3829-96b2-a2e7-f368b9991a7c`, duration is `5949ms`
+      and prompt/completion/total usage is `4162/205/4367`.
+    - Exact run totals are `17` Provider calls、`16` valid caches、`0` retry
+      calls、`316410ms` accumulated call duration and
+      `62,286/11,691/73,977` prompt/completion/total tokens. The deterministic
+      sampling hypothesis is therefore falsified for this failure boundary:
+      exact `temperature=0` did not make the retained failing batch
+      schema-valid. It does not identify a safely relaxable schema leaf because
+      raw tool arguments remain intentionally unretained and unread.
+    - The project is `processing_failed` with `0` `AutomaticResult`、working
+      copy、reviewed result and balloon rows. No item-set gate、browser/frontend
+      evidence、current-four continuation、`main` merge or D7-T3 change was
+      created. This one-start authorization is exhausted. A schema-leaf
+      diagnostic、request/schema redesign、model change、call-cap/paging change
+      or further live start requires a new explicit Heavy amendment and user
+      decision; blind replay is not authorized.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
