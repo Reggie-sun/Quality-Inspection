@@ -1018,6 +1018,93 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
       `main`、frontend/browser smoke 或恢复 D7-T3。任何 recovery 必须先取得用户
       对单一 contract dimension 的明确决策，再以新的 committed Heavy amendment
       记录 Owner、old path、unchanged contracts 和 focused verification。
+  - Task 8 Step 6 safe Provider diagnostic amendment — 2026-07-29:
+    - Selection record:
+      - User-selected recovery dimension: `安全诊断枚举`。本次只允许在 Qwen
+        adapter boundary 增加 allowlisted first-failing-stage evidence；不得把枚举
+        值解释为完整 raw response、唯一远端根因或 Quality Owner approval。
+      - Selected lane: `Heavy`.
+      - Selected plan:
+        `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+      - Selection evidence: immutable failed run
+        `20260729T005025368466Z-f16beb09` 已证明 request ID、usage、call count、
+        timeout、crop、source/rule identity 和 `max_retries=0`，但现有 broad catch
+        只产生 `visual_schema_invalid`，无法区分 message、tool-call、arguments JSON
+        或 arguments schema 的 first-failing local branch。
+    - Problem boundary and single Owner:
+      - `backend/app/providers/qwen_vl.py::QwenVisionProvider.review_symbols()` 是唯一
+        response-conformance classification Owner。它按固定顺序选择且只选择以下
+        一个 safe enum：
+        `message_shape_invalid`、`message_content_invalid`、
+        `tool_calls_shape_invalid`、`tool_call_count_invalid`、
+        `tool_call_shape_invalid`、`tool_call_type_invalid`、
+        `tool_name_invalid`、`tool_arguments_type_invalid`、
+        `tool_arguments_json_invalid`、`tool_arguments_schema_invalid`、
+        `local_schema_invalid`。
+      - Missing or unreadable enclosing members map to the corresponding
+        `message_shape_invalid`、`tool_calls_shape_invalid` or
+        `tool_call_shape_invalid`; only a readable member with an invalid value/type may enter
+        a later specific enum. `tool_arguments_schema_invalid` includes decoded-payload schema
+        validation and the existing non-finite bbox guard. `local_schema_invalid` is limited
+        to local schema read、JSON decode or schema-definition failure.
+      - `backend/app/candidates/symbol_review.py::VisualSymbolSchemaError` 只携带
+        JSON decode、payload schema validation 或 local schema load/definition 的
+        parser-local stage 给该 Owner；它不选择 Provider policy、retry 或 persistence。
+        `backend/app/candidates/advisor.py` 只持久化 exception 上已经验证的 enum，
+        不重新分类。
+      - Old path to retire: `review_symbols()` 对
+        `AttributeError / IndexError / TypeError / VisualSymbolSchemaError` 的单一 broad
+        catch，以及无 stage 的 `build_visual_failure_envelope()`。不得保留第二个
+        undifferentiated fallback。
+    - Diagnostic evidence contract:
+      - failure envelope 升级为 exact
+        `visual-symbol-call-failure/2`，字段只能为 `schema_version`、
+        `error_code="visual_schema_invalid"` 和一个上述 `failure_stage`。request ID、
+        numeric usage、request/crop refs 与现有 call record 连接方式保持不变。
+      - 不保存、返回或记录 message content、tool arguments、raw completion、
+        response body、model explanation、host path、credential 或任何截断后的
+        Provider payload。exception string 和 Advisor client-facing error 保持 generic；
+        `__cause__` / `__context__` 不得携带 raw data。
+      - 分类顺序只说明本地校验器遇到的第一个失败边界；不得从一个 enum 推断其他
+        response fields 均有效，也不得把 `local_schema_invalid` 归因于 Provider。
+    - Allowed repository paths and writer:
+      - Parent is the sole writer. Before the diagnostic run, repository writes are limited to:
+        `backend/app/candidates/symbol_review.py`、
+        `backend/app/providers/qwen_vl.py`、
+        `backend/app/candidates/advisor.py`、
+        `backend/tests/unit/candidates/test_symbol_advisor.py`、
+        `backend/tests/contract/test_qwen_symbol_provider.py`、
+        `backend/tests/contract/test_provider_call_records.py` and this current plan.
+      - Do not modify Provider prompt/tool/schema、proposal/crop/packing/projection/evaluator、
+        cache-success identity、frontend、sealed artifacts、`main` UI or D7-T3 status.
+    - TDD and focused verification:
+      - First add RED tests that cover every enum branch、JSON-vs-schema-vs-local-schema
+        separation、exact failure-envelope `/2` bytes、generic exception text、no cause/context
+        and forbidden-marker absence. Then make the minimum production change.
+      - Run the three changed test modules, existing symbol integration/E2E suites, focused
+        Ruff、`check-contracts.py`、`git diff --check` and a forbidden-evidence scan over the
+        exact changed files. Provider construction/calls must remain `0`.
+      - Use an independent read-only reviewer to verify the single Owner、old-path retirement、
+        exact enum coverage、privacy boundary、zero retry and unchanged success behavior.
+        Commit code/tests only after GREEN and accepted review.
+    - One-run diagnostic authorization:
+      - Only after this amendment and the diagnostic code/tests are separately committed,
+        rebuild runtime from that exact HEAD and repeat the sealed preflight. Then authorize
+        exactly one new full-P0 diagnostic live start with literal
+        `--current-four-run 20260728T073514713074Z-f32e6fae` and
+        `--symbol-eval-run 20260727T085747865239Z-5aa3e8d3` plus
+        `--input-set current-four --pause-after first-pdf-balloons`.
+      - The run retains prompt v4、forced exact tool、checked-in response schema、timeout
+        `60.0s`、`max_retries=0` and all existing per-page caps. No retry、repair、
+        content fallback、second parser、schema relaxation or second diagnostic run is
+        authorized.
+      - If it fails, seal the run and record only the allowlisted stage plus existing sanitized
+        audit metadata, then stop without manual source commands、browser/frontend、`main`
+        merge or D7-T3. Any remediation of the diagnosed stage requires another explicit user
+        decision and committed Heavy amendment. If it passes, seal the exact run at the
+        `first-pdf-balloons` pause and report the result; do not continue current-four、
+        browser/frontend、`main` merge or D7-T3. Any continuation also requires a new user
+        decision and committed Heavy amendment. The enum itself is never success evidence.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
