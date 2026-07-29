@@ -494,7 +494,7 @@ def test_dense_compact_rescue_fails_closed_at_each_required_boundary(
     assert contexts == ()
 
 
-def test_wide_base_context_is_replaced_by_exact_compact_threshold_items() -> None:
+def test_wide_base_context_uses_raw_compact_threshold_items() -> None:
     line = _synthetic_line(raw_text="ordinary")
     compact_items = [
         ("re", pymupdf.Rect(40.0, 79.0, 100.0, 121.0), 1),
@@ -503,14 +503,21 @@ def test_wide_base_context_is_replaced_by_exact_compact_threshold_items() -> Non
     ]
     over_width = (
         "re",
-        pymupdf.Rect(112.0, 100.0, 172.001, 103.0),
+        pymupdf.Rect(64.9996, 100.0, 125.0, 103.0),
         1,
     )
     over_height = (
         "re",
-        pymupdf.Rect(100.0, 112.0, 103.0, 154.001),
+        pymupdf.Rect(100.0, 87.9996, 103.0, 130.0),
         1,
     )
+    wide_trigger = (
+        "re",
+        pymupdf.Rect(112.0, 100.0, 173.0, 103.0),
+        1,
+    )
+    assert over_width[1].width == pytest.approx(60.0004)
+    assert over_height[1].height == pytest.approx(42.0004)
 
     observations, contexts = build_page_visual_observations(
         page_index=0,
@@ -520,7 +527,7 @@ def test_wide_base_context_is_replaced_by_exact_compact_threshold_items() -> Non
         native_observations=(line,),
         drawings=(
             _synthetic_drawing(
-                [*compact_items, over_width, over_height],
+                [*compact_items, over_width, over_height, wide_trigger],
             ),
         ),
         transform=PageTransform(

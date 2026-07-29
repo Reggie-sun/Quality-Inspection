@@ -603,16 +603,8 @@ def build_page_visual_observations(
         compact_items = [
             item
             for item in selected
-            if _measure(
-                item.bbox[2] - item.bbox[0],
-                page_index=page_index,
-            )
-            <= Decimal("60.000")
-            and _measure(
-                item.bbox[3] - item.bbox[1],
-                page_index=page_index,
-            )
-            <= Decimal("42.000")
+            if item.bbox[2] - item.bbox[0] <= 60.0
+            and item.bbox[3] - item.bbox[1] <= 42.0
         ]
         if _area(source_union) > page_area_cap:
             if not compact_items:
