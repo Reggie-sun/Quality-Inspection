@@ -23,7 +23,7 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
 
 - Date: `2026-07-29`
 - Selected lane: `Heavy`
-- Status: `PRT-0 committed; PRT-1 next`
+- Status: `PRT-1 committed; PRT-2 next`
 - Current parent plan:
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
 - Current branch/worktree: `codex/symbol-production-routing` /
@@ -37,8 +37,9 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
   quality review。Explorer、auditor、reviewer 和 OSS researcher 始终只读。
 - Validation action: `amend -> continue`；每个 code task 严格
   RED -> minimal GREEN -> focused regression -> review -> exact commit。
-- Next verification: 第一个 production RED 是
-  `test_local_symbol_resolution.py + test_symbol_routing.py`。
+- Next verification: `PRT-2` planner/mode RED in
+  `test_symbol_routing.py + test_project_intake_api.py +
+  test_project_status_api.py + test_schema.py`。
 - This file owns only the bounded symbol-recognition convergence steps below. It
   does not become a second current plan and cannot authorize `D7-T3`、`SR-5`、
   `main` merge or frontend work outside the exact `PRT-6` files and checks.
@@ -751,7 +752,7 @@ conflict test. `PRT-7` must report the always-escalate families explicitly; it m
 not hide them behind aggregate local-resolution counts or claim the performance
 gate before the measured call budget passes.
 
-- [ ] **Step 1: Write RED tests**
+- [x] **Step 1: Write RED tests**
 
 Required tests:
 
@@ -778,7 +779,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/unit/candidates/test_symbol_routing.py -q
 ```
 
-- [ ] **Step 2: Implement minimal GREEN**
+- [x] **Step 2: Implement minimal GREEN**
 
 Add immutable dataclasses:
 
@@ -793,7 +794,7 @@ Reason arrays are allowlisted、sorted、deduplicated and exact-one by dispositi
 The resolver emits evidence only; the router chooses disposition only. Neither
 module calls Provider、cache、storage、DB or frontend.
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 Run the RED command plus:
 
@@ -813,6 +814,25 @@ git add backend/app/candidates/local_symbol_resolution.py \
   backend/tests/unit/candidates/test_symbol_routing.py
 git commit -m "feat: add explainable symbol uncertainty router"
 ```
+
+**PRT-1 evidence (`2026-07-29`):**
+
+- Initial missing-module RED exited `2` with two collection errors for
+  `app.candidates.local_symbol_resolution`.
+- The first GREEN reported `39 passed`; independent reviews then reproduced
+  false-local-positive and malformed-contract gaps. Three bounded review-fix
+  RED rounds reported `15 failed / 41 passed`、`13 failed / 58 passed` and
+  `3 failed / 72 passed` before their minimal fixes.
+- Final focused verification reported `75 passed`; unchanged
+  `test_visual_observations.py + test_symbol_advisor.py` reported `82 passed`;
+  focused Ruff and `git diff --check` passed.
+- Independent spec and quality reviews accepted the final four-file diff with no
+  blocker. Conservative exact coordinate equality may increase escalation rate;
+  typed OCR without family-specific deterministic geometry also remains
+  escalation because no approved OCR-local reason exists. Either relaxation
+  requires measured evidence and a versioned contract amendment.
+- Commit:
+  `97daeb10dac6a6cac9aa8168d32a97159a3391c5`.
 
 Next verification is the `PRT-2` planner/mode RED. Rollback is
 `git revert <PRT-1-commit>` followed by
