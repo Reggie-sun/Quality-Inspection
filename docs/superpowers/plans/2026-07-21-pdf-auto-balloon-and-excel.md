@@ -980,6 +980,44 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     不 resume/reuse 旧 result，不删除或改写 history。只有失败后的独立证据与新的
     committed amendment 才能授权其他 recovery；本 amendment 本身不授权第二次
     Provider run。
+  - Fresh-live failure closure — 2026-07-29:
+    - 唯一授权 run `20260729T005025368466Z-f16beb09` 从 exact HEAD
+      `09b2db8f82e2c7dd8f0ad336790ea783571def46` 和新 project
+      `615f72b2-662f-496e-abc1-ddf7aeef7236` 启动；source SHA-256、
+      两个 literal sealed input IDs、current-source identity、runtime
+      `visual-observation/3` 与 rule SHA-256 均通过 preflight。run 已 immutable
+      seal 为 `execution_state=failed`、`failure_reason=live_start_failed:RuntimeError`。
+    - page 0 共计划 `13` batches、page 1 共 `16` batches。前 `3` 个
+      prompt-v4 forced-tool calls 写入 schema-valid cache；第 `4` 个 page-0
+      batch index `3` 写入 sanitized `visual_schema_invalid` failure envelope 后
+      fail closed。该 batch 为 `9` observations、`18` unique associated texts、
+      `6419` prompt chars，crop bbox 为
+      `[434.400,3.990,728.100,253.390]`，crop SHA-256 为
+      `d2882628c93c673c6d91bdd2bb44c7f430afc6040f7755b0f0d15af0bd3fb968`；
+      call duration `16602ms`、prompt/completion tokens `4310/665`、
+      `retry_count=0`。这些数据证明本调用未触发 call cap、`60s` timeout 或
+      crop bounds，且 preflight 未发现 source/rule/repeatability drift；它们不能
+      排除 prompt content/length 或 Provider behavior 对 response-contract
+      failure 的影响。
+    - Root-cause boundary: 最强可证结论是
+      `forced-tool Provider response contract invalid at Qwen adapter boundary`。
+      checked-in `visual-symbol-review/1` schema SHA-256 为
+      `9bce6653860c2302894fa647e1f25e341b4318d22f79770004355a353d456b7a`；
+      message content、tool-call cardinality/type/name、arguments type/JSON/schema
+      中的具体 leaf cause 因 raw Provider body 按合同不保存而保持
+      `unproven`。不得把该边界改写成某个未经证明的字段错误、模型随机性或
+      production parser defect。
+    - No false closure: 本次未创建 `AutomaticResult`，run evidence 保持
+      `symbol_recognition=null`、`samples=[]`，也未进入 manual source command、
+      LIVE-01、browser evidence 或后续三份 PDF。前三次 schema-valid calls、
+      static/focused tests 和 overlap evidence 都不能覆盖第 `4` 次 blocking
+      failure。
+    - Stop boundary: 本次 fresh-live authorization 已消费。当前 amendment 不授权
+      retry、content/JSON-mode fallback、repair model、schema/prompt/transport/
+      packing/proposal/evaluator change 或第二次 Provider run；不允许 merge
+      `main`、frontend/browser smoke 或恢复 D7-T3。任何 recovery 必须先取得用户
+      对单一 contract dimension 的明确决策，再以新的 committed Heavy amendment
+      记录 Owner、old path、unchanged contracts 和 focused verification。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
