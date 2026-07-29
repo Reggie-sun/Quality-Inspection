@@ -133,6 +133,36 @@ def _visual_symbol_tool() -> dict[str, Any]:
     }
 
 
+def _normalize_qwen_native_visual_payload(
+    arguments: str,
+) -> str | dict[str, Any]:
+    try:
+        payload = json.loads(arguments)
+    except (json.JSONDecodeError, TypeError):
+        return arguments
+    if not isinstance(payload, dict):
+        return arguments
+    detections = payload.get("detections")
+    if not isinstance(detections, list):
+        return payload
+    for detection in detections:
+        if not isinstance(detection, dict):
+            continue
+        bbox = detection.get("bbox_normalized")
+        if (
+            isinstance(bbox, list)
+            and len(bbox) == 4
+            and all(type(value) is int for value in bbox)
+            and all(0 <= value <= 1000 for value in bbox)
+            and any(value > 1 for value in bbox)
+        ):
+            detection["bbox_normalized"] = [
+                value / 1000
+                for value in bbox
+            ]
+    return payload
+
+
 def canonicalize_visual_png(image: bytes) -> bytes:
     if (
         not isinstance(image, bytes)
@@ -453,7 +483,9 @@ class QwenVisionProvider:
 
         parser_failure_stage = None
         try:
-            payload = parse_visual_symbol_json(arguments)
+            payload = parse_visual_symbol_json(
+                _normalize_qwen_native_visual_payload(arguments)
+            )
         except VisualSymbolSchemaError as exc:
             parser_failure_stage = exc.failure_stage
         if parser_failure_stage is not None:

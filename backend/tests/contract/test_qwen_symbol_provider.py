@@ -350,6 +350,125 @@ def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
     assert raised.value.__context__ is None
 
 
+def test_qwen_native_integer_bbox_is_normalized_before_strict_schema() -> None:
+    image = _png(text=None)
+
+    def provider_for(payload: dict[str, object]) -> QwenVisionProvider:
+        class FixedCompletions:
+            @staticmethod
+            def create(**_kwargs):
+                return SimpleNamespace(
+                    id="fixture-qwen-native-bbox",
+                    choices=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(
+                                content=None,
+                                tool_calls=[
+                                    _visual_tool_call(
+                                        json.dumps(payload)
+                                    )
+                                ],
+                            )
+                        )
+                    ],
+                    usage={"total_tokens": 4},
+                )
+
+        return QwenVisionProvider(
+            SimpleNamespace(
+                chat=SimpleNamespace(completions=FixedCompletions())
+            )
+        )
+
+    canonical_detection = {
+        "visual_observation_id": "visual-001",
+        "symbol_kind": "diameter",
+        "bbox_normalized": [0.1, 0.2, 0.3, 0.4],
+        "associated_text_observation_ids": ["text-001"],
+        "requires_confirmation": True,
+    }
+    canonical = {
+        "schema_version": "visual-symbol-review/1",
+        "detections": [canonical_detection],
+    }
+    assert (
+        provider_for(canonical).review_symbols(image, "safe prompt").payload
+        == canonical
+    )
+
+    qwen_native = {
+        **canonical,
+        "detections": [
+            {
+                **canonical_detection,
+                "bbox_normalized": [100, 200, 300, 400],
+            }
+        ],
+    }
+    assert provider_for(qwen_native).review_symbols(
+        image,
+        "safe prompt",
+    ).payload == canonical
+
+
+@pytest.mark.parametrize(
+    "bbox",
+    (
+        [-1, 0, 500, 800],
+        [0, 0, 500, 1001],
+        [0, 0, 500.5, 800],
+        [0, 0.5, 500, 800],
+        [False, 0, 500, 800],
+        [0, 0, 500],
+    ),
+)
+def test_qwen_native_bbox_normalization_rejects_other_invalid_forms(
+    bbox: list[object],
+) -> None:
+    payload = {
+        "schema_version": "visual-symbol-review/1",
+        "detections": [
+            {
+                "visual_observation_id": "visual-001",
+                "symbol_kind": "diameter",
+                "bbox_normalized": bbox,
+                "associated_text_observation_ids": ["text-001"],
+                "requires_confirmation": True,
+            }
+        ],
+    }
+
+    class InvalidCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(
+                id="fixture-qwen-invalid-native-bbox",
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                _visual_tool_call(json.dumps(payload))
+                            ],
+                        )
+                    )
+                ],
+                usage={"total_tokens": 4},
+            )
+
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=InvalidCompletions())
+        )
+    )
+    with pytest.raises(VisualSymbolProviderError) as raised:
+        provider.review_symbols(_png(text=None), "safe prompt")
+
+    assert raised.value.failure_stage == "tool_arguments_schema_invalid"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
 def test_visual_prompt_requires_independent_exact_multikind_reporting() -> None:
     prompt = json.loads(
         visual_review_prompt(
@@ -407,7 +526,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     assert (
         fixture["adapter_version"]
         == VISUAL_ADAPTER_VERSION
-        == "qwen-openai-compatible/2"
+        == "qwen-openai-compatible/3"
     )
 
     class FakeCompletions:
