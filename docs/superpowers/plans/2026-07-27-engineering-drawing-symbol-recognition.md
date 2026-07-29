@@ -293,3 +293,144 @@ response_retained=false
 full_p0_blocked=true
 next_action=stop
 ```
+
+## Remediation Amendment: Missing Structural Schema Version
+
+### Selection Record
+
+- Selected lane: `Standard`
+- Selected plan:
+  `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+- Selection evidence:
+  - 用户在 `main` 明确要求修复真实上传失败；
+  - browser upload project
+    `e3cd58e8-37e6-4321-adb8-84c49838a738` 已证明 upload `202`、worker
+    received、24 次 Provider HTTP `200`，最终因
+    `tool_arguments_schema_invalid` fail closed；
+  - 该 project 有 `23` 个 schema-valid cache 和 `1` 个 sanitized failure
+    record；失败 cache key 为
+    `21bb2e2e1198f459cb0e088211192761ce253ed4980790e04501e229448f11f7`，
+    crop SHA-256 为
+    `0a2b5ddf4f3d66135995139934cea2119d0adbd797e250bcca61365f7b0973e0`；
+  - 该 project 的 formal evidence 只证明 schema failure family；上面的
+    completed exact-crop diagnostic 已独立证明同一 production Provider 会
+    偶发省略根级 required member `schema_version`；
+  - current adapter 已拥有 Qwen-native bbox normalization，但未处理这个
+    deterministic structural constant omission。
+- Validation action: `amend`；目标和唯一 Owner 不变，新增 bounded
+  remediation、cache identity bump 和 focused regression checks。
+- Writer ownership and order:
+  - parent agent 是唯一 writer；
+  - read-only explorer 只提供 call-chain evidence；
+  - implementation 完成后由独立 read-only reviewer 审查；
+  - 不允许 concurrent writer。
+- Next verification: 先新增 missing-`schema_version` focused contract test 并
+  确认 RED；不得在 RED 前修改 production。
+
+### Problem Boundary And Root-Cause Hypothesis
+
+本 amendment 只处理一个已证实的 Provider serialization failure：
+
+```text
+otherwise schema-valid root object
++ detections is an array
++ schema_version key is absent
+→ strict response schema rejects the payload
+→ CandidateAdvisor fails closed
+→ project never reaches the Quality Owner gate
+```
+
+Root-cause hypothesis：Qwen 偶发省略 response schema 中值固定的结构性
+discriminator；`QwenVisionProvider` adapter 只归一化 Qwen-native integer bbox，
+因此在 strict local validation 前没有补齐该 deterministic constant。该问题位于
+Provider adapter boundary，不是上传、frontend、transport、schema 或业务
+projection failure。
+
+新 project 没有持久化 leaf-level diagnostic，因此不得声称它已证明同一个 leaf；
+它只提供同一 failure family 的 current live evidence。修复依据来自上面 sealed
+exact-crop diagnostic 的 missing-`schema_version` leaf 证据。
+
+### Owner, Old Path And Unchanged Contract
+
+- Single Owner:
+  `backend/app/providers/qwen_vl.py::_normalize_qwen_native_visual_payload()`
+  owns the deterministic Provider-native repair before frozen validation.
+- Old path action: replace the incomplete normalization path that only repairs
+  integer bbox scaling. Do not add a fallback, bridge, shadow parser or second
+  response Owner.
+- Repair only when all are true:
+  - decoded payload is a root object;
+  - `detections` is an array;
+  - the `schema_version` key is completely absent.
+- Inject only canonical `VISUAL_SCHEMA_VERSION`.
+- Preserve fail closed for wrong/null `schema_version`、missing/non-array
+  `detections`、extra properties and every invalid detection member.
+- Bump `VISUAL_ADAPTER_VERSION` from `/4` to `/5` so old cache identity cannot be
+  reused under changed normalization semantics.
+- Unchanged:
+  - response schema `visual-symbol-review/1`;
+  - prompt `visual-symbol-prompt/4`;
+  - forced tool、`temperature=0`、SDK `max_retries=0`、timeout；
+  - CandidateAdvisor retry/call-cap/paging and fail-closed behavior；
+  - candidate projection、review、balloon、export and frontend contracts；
+  - model `qwen3-vl-plus-2025-12-19`.
+
+### Allowed Files
+
+- `backend/app/providers/qwen_vl.py`
+- `backend/app/candidates/symbol_review.py`
+- `backend/tests/contract/test_qwen_symbol_provider.py`
+- `.agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json`
+- this plan, for amendment and final verified outcome only
+
+No production schema、advisor、pipeline、frontend、sealed run/project/manifest or
+credential file may change.
+
+### Required RED/GREEN And Verification
+
+1. RED:
+   - otherwise-canonical payload missing only `schema_version` must expect the
+     canonical payload and fail against adapter `/4`;
+   - negative controls must keep wrong/null version、missing detections and extra
+     root fields schema-invalid.
+2. GREEN:
+   - implement the three-condition repair and `/5` cache identity bump;
+   - update only the sanitized Provider fixture identity.
+3. Focused:
+   - Qwen Provider contract tests;
+   - Advisor and Provider call-record regression tests;
+   - symbol recognition integration/e2e fixture tests with
+     `external_calls=0`.
+4. Repository:
+   - contracts、Ruff、privacy scan、full backend and `git diff --check`.
+5. Independent read-only review must verify Owner uniqueness、negative controls、
+   cache invalidation and absence of schema/retry/frontend changes.
+
+No new live Provider call、UI retry/upload、API/worker rebuild or `full-p0` is
+authorized by this amendment. A later canary requires an explicit isolated call
+budget and acceptance rule after local GREEN and review.
+
+### Rollback
+
+Rollback only the remediation implementation commit and its fixture/test identity
+updates; do not alter sealed evidence or historical projects. The first
+post-rollback verification is:
+
+```bash
+pytest -q backend/tests/contract/test_qwen_symbol_provider.py
+```
+
+### Current Remediation State
+
+```text
+status=authorized_for_red
+branch=main
+owner=QwenVisionProvider_adapter
+old_path_action=replace_incomplete_qwen_native_normalization
+schema_contract_changed=false
+retry_or_call_cap_changed=false
+frontend_changed=false
+live_provider_calls_authorized=0
+full_p0_blocked=true
+next_action=focused_red
+```
