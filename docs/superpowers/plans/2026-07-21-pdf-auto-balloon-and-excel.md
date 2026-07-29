@@ -1274,6 +1274,59 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
         this crop. Another Provider call、response-contract remediation、schema or
         prompt change、frontend test or continuation requires the next explicit
         user decision and a separately committed Heavy amendment.
+  - Task 8 Step 6 Qwen-native bbox compatibility amendment — 2026-07-29:
+    - Authorization and evidence boundary:
+      - After the sealed bounded-retry failure, the user explicitly authorized
+        further Provider calls because current quota remains available. This
+        amendment authorizes one new live start only after its code/tests are
+        separately committed、reviewed、rebuilt and sealed-preflighted.
+      - Qwen3-VL primary project guidance describes native grounding coordinates
+        as integer-normalized `0..1000`, while this repository's frozen canonical
+        response uses floats in `0..1`. This is a bounded compatibility hypothesis,
+        not a claim about the unretained failed arguments: seven prior successful
+        responses already used valid `0..1` boxes, and raw response content remains
+        forbidden.
+    - Problem boundary、single Owner and unchanged contract:
+      - `backend/app/providers/qwen_vl.py` is the only Owner for converting one
+        Qwen-native tool-argument representation into the canonical response.
+        `backend/app/candidates/symbol_review.py` continues to own the unchanged
+        checked-in strict schema and downstream typed projection.
+      - Before strict schema validation, normalize only one exact alternate bbox
+        form: a four-member array of non-boolean integers where every value is
+        within `0..1000` and at least one value is greater than `1`. Divide those
+        four values by `1000`; leave already canonical `0..1` values unchanged.
+      - Missing/extra fields、unknown symbol kinds、false confirmation、negative
+        values、values greater than `1000`、non-finite values、non-integer
+        out-of-range values、invalid JSON and every non-bbox schema error remain
+        fail-closed. No generic repair、clamp、rounding、field insertion/deletion、
+        raw retention or second parser is allowed.
+      - Bump only `VISUAL_ADAPTER_VERSION` from
+        `qwen-openai-compatible/2` to `qwen-openai-compatible/3` so cache identity
+        cannot mix pre-normalization and post-normalization results. Prompt v4、
+        forced exact tool、checked-in schema、proposal/crop/packing/projection、
+        Provider timeout、explicit one-schema-retry budget and SDK
+        `max_retries=0` remain unchanged.
+    - TDD、allowed files and live stop:
+      - RED/GREEN must cover exact `0..1000` conversion、canonical `0..1`
+        preservation、mixed invalid shape rejection、negative/over-1000/fractional
+        out-of-range rejection、unchanged non-bbox failure stages、cache identity
+        versioning and absence of raw persisted evidence.
+      - Repository writes are limited to this plan、
+        `backend/app/providers/qwen_vl.py`、
+        `backend/app/candidates/symbol_review.py`、
+        `backend/tests/contract/test_qwen_symbol_provider.py` and
+        `.agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json`.
+        Run focused tests、the complete changed modules、symbol integration/E2E、
+        full backend on a disposable migrated database、Provider fixtures with
+        `external_calls=0`、Ruff、`check-contracts.py`、privacy scan and independent
+        review before commit.
+      - Then rebuild API/worker from the exact implementation commit and repeat
+        the no-write sealed preflight. Exactly one new full-P0 live start may use
+        the same literal registration runs and
+        `--pause-after first-pdf-balloons`. If it fails, seal and stop; if it
+        reaches the pause, report the exact project route for Quality Owner
+        inspection. Neither outcome authorizes current-four continuation、
+        frontend code changes、`main` merge or D7-T3.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
