@@ -120,6 +120,32 @@ def test_review_commands_forbid_unknown_fields() -> None:
 
 
 @pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("status", "auto_accepted"),
+        ("acceptance_source", "provider"),
+        (
+            "confidence_decision",
+            {
+                "band": "high",
+                "disposition": "auto_accepted",
+                "policy_version": "candidate-confidence/1",
+                "evidence_codes": ["typed_schema_complete"],
+            },
+        ),
+    ],
+)
+def test_review_commands_cannot_overwrite_confidence_provenance(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        parse_review_command(
+            {"type": "keep", "item_id": "i1", field: value}
+        )
+
+
+@pytest.mark.parametrize(
     "command",
     [
         {

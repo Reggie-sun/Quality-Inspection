@@ -873,3 +873,34 @@ def test_provider_fixture_guard_rejects_secrets_and_full_base64(
 
     with pytest.raises(ValueError, match="symlink"):
         provider_contracts.load_fixture(tmp_path / relative_path)
+
+
+def test_confidence_decision_contract_has_one_canonical_definition() -> None:
+    confidence_source = (
+        ROOT / "backend/app/candidates/confidence.py"
+    ).read_text(encoding="utf-8")
+    automatic_result_source = (
+        ROOT / "backend/app/processing/automatic_result.py"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        confidence_source.count(
+            'CONFIDENCE_POLICY_VERSION = "candidate-confidence/1"'
+        )
+        == 1
+    )
+    assert "CONFIDENCE_EVIDENCE_CODE_ORDER = (" in confidence_source
+    assert "def validate_confidence_decision(" in confidence_source
+    assert "candidate-confidence/1" not in automatic_result_source
+    assert (
+        "from app.candidates.confidence import (" in automatic_result_source
+    )
+    assert "validate_confidence_decision(" in automatic_result_source
+    assert (
+        'AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"'
+        in automatic_result_source
+    )
+    assert (
+        'NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"'
+        in automatic_result_source
+    )

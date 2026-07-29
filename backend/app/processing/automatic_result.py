@@ -12,6 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.candidates.complex_fallback import CoarseCandidate, coarse_candidate
+from app.candidates.confidence import (
+    ConfidenceDecisionContractError,
+    validate_confidence_decision,
+)
 from app.candidates.coverage import CoverageEntry, CoverageReport
 from app.candidates.disposition import classify_technical_requirement
 from app.candidates.duplicates import (
@@ -29,6 +33,7 @@ from app.projects.state import InvalidTransition, ProjectState, transition
 
 
 AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"
+NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"
 ROUGHNESS_TOKEN = re.compile(r"(?<![A-Za-z])Ra(?=\s*[0-9])", re.IGNORECASE)
 
 
@@ -299,6 +304,29 @@ def automatic_result_ref(result: AutomaticResult | uuid.UUID) -> str:
     return f"automatic-result://{identity}"
 
 
+def _validated_candidates_for_schema(
+    candidates: Sequence[Mapping[str, Any]],
+    schema_version: str,
+) -> Sequence[Mapping[str, Any]]:
+    if schema_version == AUTOMATIC_RESULT_SCHEMA_VERSION:
+        return candidates
+    if schema_version != NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION:
+        raise ConfidenceDecisionContractError(
+            f"automatic result schema_version is unknown: {schema_version}"
+        )
+    for index, candidate in enumerate(candidates):
+        if not isinstance(candidate, Mapping):
+            raise ConfidenceDecisionContractError(
+                f"candidate at index {index} must be one object"
+            )
+        if "confidence_decision" not in candidate:
+            raise ConfidenceDecisionContractError(
+                f"candidate at index {index} requires confidence_decision"
+            )
+        validate_confidence_decision(candidate["confidence_decision"])
+    return candidates
+
+
 def build_automatic_result(
     session: Session,
     *,
@@ -323,6 +351,10 @@ def build_automatic_result(
         for call_id in provider_call_ids
     ):
         raise ValueError("provider_call_ids must contain non-blank strings")
+    validated_candidates = _validated_candidates_for_schema(
+        candidates,
+        schema_version,
+    )
 
     project_identity = _uuid(project_id, "project_id")
     source_identity = _uuid(source_file_id, "source_file_id")
@@ -376,7 +408,7 @@ def build_automatic_result(
         source_file_id=source_identity,
         logical_job_id=job.id,
         inventory_ref=inventory_ref,
-        candidates=_json_safe(list(candidates)),
+        candidates=_json_safe(list(validated_candidates)),
         coverage=_json_safe(coverage_payload),
         provider_call_ids=list(provider_call_ids),
         schema_version=schema_version,
