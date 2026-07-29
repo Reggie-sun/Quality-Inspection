@@ -934,6 +934,52 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
     - Next verification: exact PDF/cache RED，必须证明 v3 canonical bytes/digest、
       compact transform order、old-path retirement、ID/reconstruction repeatability
       和 cache safe miss。
+- Task 8 Step 6 proposal-v3 fresh-live authorization amendment — 2026-07-29:
+  - Selection record:
+    - Selected lane: `Heavy`.
+    - Selected plan:
+      `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+    - Selection evidence: Quality Owner approval/docs commit `5ad308a`、proposal-v3
+      implementation commit `0a59798` 和 raw-threshold correction commit
+      `efea8f7` 已提交；exact current-source production replay 两次均得到
+      `80/125` observations、`13/16` batches、`205` reconstructed observations，
+      两页 retained-ID SHA-256 为
+      `83d905ec82987c4719f755a1e7a31af246c210a3d4a12113334460c7b9c3a203` /
+      `a0cc85f52868487d56f108f08e1b6c42eb4b54584759987b32c9bdeef733ffdd`，
+      batch SHA-256 为
+      `7dcbf89d4903dbe5c90633bef6d7cb6ddecd0317d5280b1c619dca848a8944ca` /
+      `925a0bc1016be66b5368b284ab8fe81bf7815fab22a597ba87970acf11d9e055`；
+      exact-once、crop limits、repeatability 均为 true，Provider
+      construction/calls=`0`。focused proposal suites `70 passed`，Provider
+      fixture contracts `37 passed` 且 `external_calls=0`，disposable migrated
+      database 上 full backend `665 passed`，focused Ruff 与
+      `check-contracts.py` 通过，independent spec/code-quality reviews 均为
+      `accept`。
+    - Validation action: 本 amendment 单独提交后，从 exact committed HEAD 重建
+      runtime，先复核两个 sealed input runs 的 receipt、schema、loader 和 source
+      identity，再只执行一次 fresh full-P0 live start；command 必须 literal 写入
+      `--current-four-run 20260728T073514713074Z-f32e6fae` 和
+      `--symbol-eval-run 20260727T085747865239Z-5aa3e8d3`，并保留
+      `--input-set current-four --pause-after first-pdf-balloons`。
+    - Writer ownership and order: parent sole writer；本次 repository change 只允许
+      本 current plan，先 commit、再 rebuild/preflight/live。不得并行 writer，
+      不得修改或重生成 sealed input artifacts。
+    - Next verification: 新 project 的第一份 two-page source 必须先通过 exact
+      LIVE-01 symbol gate，随后才允许继续 current-four sequence 和同一 run 的
+      browser evidence。
+  - Unchanged contracts: Provider 仍为最多 `16/page`、timeout `60.0s`、
+    `max_retries=0`、prompt v4、forced exact tool、checked-in response schema；
+    source、manifest、canonical verdict、candidate lineage、deterministic
+    projection、0.5 exact-one evaluator 和 frozen-negative zero-false-positive
+    gate 均不变。selector 必须在任何 manual source command 前执行；不得用后续
+    三份 PDF、overlap count、人工文字或旧 result 掩盖第一份 source failure。
+    不得修改 Provider、prompt、proposal、projection、evaluator、frontend、
+    `main`、D7-T3 status 或任何 sealed run。
+  - Fail-closed and rollback: 若 receipt/identity/runtime preflight 或 fresh run
+    失败，保留失败 run、cache、crop 和 sanitized audit，停止重试和规则修改；
+    不 resume/reuse 旧 result，不删除或改写 history。只有失败后的独立证据与新的
+    committed amendment 才能授权其他 recovery；本 amendment 本身不授权第二次
+    Provider run。
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
