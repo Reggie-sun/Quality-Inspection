@@ -485,3 +485,41 @@ replace frontend. Before the upload, require:
 
 This browser canary consumes the authorization regardless of outcome. It does
 not unblock formal `full-p0`、D7-T3、SR-5 or any later main merge/push.
+
+### Browser Canary Outcome
+
+The authorization was consumed exactly once:
+
+```text
+status=ready_for_review
+project_id=d61ec678-0133-4a22-ba55-b7dc58d26edf
+task_id=5ddd2b20-1ca0-4ec1-a017-9dc17c7ed831
+automatic_result_id=578ca69b-5d6a-43ab-8597-26646ba1f1fa
+duration_seconds=513.4402794169728
+browser_file_selections=1
+browser_submit_clicks=1
+project_creations=1
+direct_provider_calls=0
+candidate_advisor_call_records=29
+schema_failure_records=0
+schema_valid_cache_records=29
+workbench_ready=true
+retryable=false
+quality_owner_actions=0
+frontend_rebuilt=false
+screenshot=/tmp/qi-symbol-repair-canary-ready.png
+screenshot_sha256=516075f12ce2d8d3eaffbd79228ae6de83d4fa121695ef52052383f2910c5a8e
+authorization_consumed=true
+full_p0_blocked=true
+next_action=quality_owner_manual_review
+```
+
+The current SPA remains at `/` and retains the project in browser-local context.
+The stable compatibility route is:
+
+```text
+http://127.0.0.1:5173/?project_id=d61ec678-0133-4a22-ba55-b7dc58d26edf
+```
+
+No review confirmation、freeze、balloon generation、export、retry or second upload
+was executed.
