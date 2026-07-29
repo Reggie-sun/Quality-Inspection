@@ -1327,6 +1327,30 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
         reaches the pause, report the exact project route for Quality Owner
         inspection. Neither outcome authorizes current-four continuation、
         frontend code changes、`main` merge or D7-T3.
+  - Task 8 Step 6 equivalent Qwen snapshot runtime amendment — 2026-07-29:
+    - The user changed the runtime-only `QI_QWEN_MODEL` value to
+      `qwen3-vl-plus-2025-12-19`. No credential value is copied into this
+      worktree or recorded in evidence.
+    - Alibaba Cloud's [current model page](https://help.aliyun.com/zh/model-studio/qwen3-vl-plus)
+      states that the floating
+      `qwen3-vl-plus` model is functionally equivalent to the
+      `qwen3-vl-plus-2025-12-19` snapshot; both support Function Calling and
+      structured output. The December snapshot is preferred over the older
+      `qwen3-vl-plus-2025-09-23` snapshot.
+    - The prior sealed run's nine visual calls consumed `41,053` total tokens.
+      The current source has `29` frozen visual batches, so the floating model's
+      remaining `66,008` free tokens do not provide a safe complete-run budget.
+      Snapshot and floating model free quotas are separate under the
+      [free-quota policy](https://help.aliyun.com/zh/model-studio/new-free-quota/),
+      but no quota claim substitutes for runtime success evidence.
+    - The exact snapshot model string remains part of cache identity, so no
+      floating-model cache is reusable. Preflight and live evidence must bind
+      `qwen3-vl-plus-2025-12-19` exactly. There is no fallback to the September
+      snapshot, a thinking model, Flash, or the floating alias.
+    - This runtime amendment does not add a live start: the single new start
+      already authorized by the bbox compatibility amendment remains the exact
+      total. Prompt v4、tool/schema、adapter `/3`、bounded retry、Provider limits、
+      manual gates and all downstream stop boundaries remain unchanged.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
