@@ -205,6 +205,11 @@ confidence decision 存在 candidate envelope，不进入 typed semantic payload
 
 source signal 不得在 frontend 重新归一化。
 
+同一 candidate 有多个贡献来源时，canonical signal 取所有
+`source_location_ids` 对应 normalized signals 的最小值。任一贡献来源 signal
+缺失、非法、非有限或不能唯一归属该 candidate 时，不做平均或忽略弱信号，直接触发
+eligibility veto 并得到 `low / review_required`。
+
 ### Band Rules
 
 先执行 hard eligibility gates，再计算 band。
@@ -249,6 +254,12 @@ config。
 
 不能满足上述条件的 family 仍使用同一 policy，但必须通过 eligibility gate
 fail closed 到 `medium/low`。不得为了让 UI 出现更多红色气泡降低 threshold。
+
+当前 policy 不维护 source/type high 白名单。所有现有 typed candidate family 使用
+同一 eligibility gates；coarse fallback、unknown feature、未解决冲突或缺少 local
+association 的 family 自然 fail closed。首批 release gate 必须对当前 native、OCR
+和 visual 支持 family 的 frozen positive/negative fixtures 全部通过，才视为 Quality
+Owner 对 `candidate-confidence/1` high path 的批准。
 
 ## Provider And Old-Path Retirement
 
@@ -544,8 +555,9 @@ disposition 的隐式决定，最终 effective writer 仍只有一个。
 ## Planning Status
 
 - Selected lane: `Heavy`
-- Selected plan: 当前没有获批的 successor implementation plan；本文通过用户 review
-  后创建唯一新 plan
+- Selected plan:
+  `docs/superpowers/plans/2026-07-29-confidence-routed-balloon-review.md`
+  （draft，等待用户批准）
 - Selection evidence: 用户批准全部自动识别项使用方案 A，并明确 high-confidence
   item 显示红色气泡、无需逐条审核但保持人工可改
 - Validation action: `replan`
@@ -555,8 +567,8 @@ disposition 的隐式决定，最终 effective writer 仍只有一个。
   immutable ReviewedResult 和 atomic export
 - Old path action: Provider confirmation、projection confirmation、all-pending bootstrap
   统一 `replace`
-- Next verification: spec placeholder/consistency/scope scan、exact diff review、commit，
-  然后进入用户 review gate
+- Next verification: successor plan placeholder/consistency/scope scan、exact diff
+  review、commit，然后进入 plan review gate
 
 ## Acceptance Criteria
 
