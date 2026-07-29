@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import json
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
 from app.exports.manifest import ArtifactDigest, ExportManifest, sha256_bytes
 from app.exports.models import ExportArtifact, ExportJob
-from app.exports.service import assert_artifact_identity, assert_export_counts
+from app.exports.service import (
+    ExportService,
+    assert_artifact_identity,
+    assert_export_counts,
+)
 
 
 def _reviewed_items() -> list[dict[str, object]]:
@@ -78,6 +83,145 @@ def test_pdf_and_excel_number_identity_does_not_depend_on_row_order() -> None:
     assert_export_counts(reviewed_items, balloons, excel_rows)
 
 
+def test_manifest_aggregates_deterministic_confidence_provenance() -> None:
+    reviewed_result_id = uuid.uuid4()
+    project_id = uuid.uuid4()
+    export_id = uuid.uuid4()
+    reviewed_items = [
+        {
+            "item_id": "auto",
+            "active": True,
+            "acceptance_source": "confidence_policy",
+            "confidence_decision": {
+                "policy_version": "candidate-confidence/1",
+            },
+        },
+        {
+            "item_id": "override",
+            "active": True,
+            "acceptance_source": "manual_override",
+            "confidence_decision": {
+                "policy_version": "candidate-confidence/0",
+            },
+        },
+        {
+            "item_id": "excluded-auto",
+            "active": False,
+            "acceptance_source": "confidence_policy",
+            "confidence_decision": {
+                "policy_version": "candidate-confidence/1",
+            },
+        },
+        {
+            "item_id": "superseded-override",
+            "active": False,
+            "acceptance_source": "manual_override",
+            "confidence_decision": {
+                "policy_version": "candidate-confidence/0",
+            },
+        },
+        {
+            "item_id": "manual",
+            "active": True,
+            "acceptance_source": "manual",
+        },
+    ]
+
+    manifest = ExportService._manifest(
+        SimpleNamespace(id=export_id, project_id=project_id),
+        SimpleNamespace(id=reviewed_result_id, items=reviewed_items),
+        SimpleNamespace(sha256="1" * 64),
+        SimpleNamespace(
+            template_id="sip-v1",
+            template_version="1",
+            template_sha256="2" * 64,
+            mapping_version="1",
+        ),
+        1,
+        {
+            "ballooned_pdf": "drawing-ballooned.pdf",
+            "sip_excel": "drawing-sip.xlsx",
+        },
+        SimpleNamespace(sha256="4" * 64, size_bytes=41),
+        SimpleNamespace(sha256="5" * 64, size_bytes=52),
+        [],
+    )
+
+    assert manifest.schema_version == "export-manifest/2"
+    assert manifest.confidence_policy_versions == (
+        "candidate-confidence/0",
+        "candidate-confidence/1",
+    )
+    assert manifest.auto_accepted_item_count == 1
+    assert manifest.manual_override_item_count == 1
+
+
+def test_manifest_legacy_only_result_has_empty_confidence_provenance() -> None:
+    reviewed_result_id = uuid.uuid4()
+    manifest = ExportService._manifest(
+        SimpleNamespace(id=uuid.uuid4(), project_id=uuid.uuid4()),
+        SimpleNamespace(
+            id=reviewed_result_id,
+            items=[
+                {
+                    "item_id": "legacy",
+                    "active": True,
+                    "acceptance_source": "manual",
+                }
+            ],
+        ),
+        SimpleNamespace(sha256="1" * 64),
+        SimpleNamespace(
+            template_id="sip-v1",
+            template_version="1",
+            template_sha256="2" * 64,
+            mapping_version="1",
+        ),
+        1,
+        {
+            "ballooned_pdf": "drawing-ballooned.pdf",
+            "sip_excel": "drawing-sip.xlsx",
+        },
+        SimpleNamespace(sha256="4" * 64, size_bytes=41),
+        SimpleNamespace(sha256="5" * 64, size_bytes=52),
+        [],
+    )
+
+    assert manifest.confidence_policy_versions == ()
+    assert manifest.auto_accepted_item_count == 0
+    assert manifest.manual_override_item_count == 0
+
+
+def test_confidence_provenance_is_not_written_to_sip_business_rows() -> None:
+    rows = ExportService._excel_rows(
+        [
+            {
+                "item_id": "i1",
+                "active": True,
+                "balloon_required": False,
+                "scope": "global_requirement",
+                "inspection_item": "deburr",
+                "inspection_standard": "no sharp edge",
+                "inspection_method": "visual",
+                "key_dimension": "no",
+                "inspection_role": "FQC",
+                "source_page": 1,
+                "sip_detail_fields_confirmed": True,
+                "acceptance_source": "confidence_policy",
+                "confidence_decision": {
+                    "policy_version": "candidate-confidence/1",
+                },
+            }
+        ],
+        [],
+    )
+
+    assert len(rows) == 1
+    assert "acceptance_source" not in rows[0]
+    assert "confidence_decision" not in rows[0]
+    assert "confidence_policy_versions" not in rows[0]
+
+
 def test_artifacts_share_reviewed_result_id() -> None:
     """P0-RES-004 binds all three formal artifacts to one reviewed result."""
     reviewed_result_id = uuid.uuid4()
@@ -111,7 +255,7 @@ def test_artifacts_share_reviewed_result_id() -> None:
         reviewed_result_id=reviewed_result_id,
     )
     manifest = ExportManifest(
-        schema_version="export-manifest/1",
+        schema_version="export-manifest/2",
         export_id=str(export_id),
         project_id=str(project_id),
         reviewed_result_id=str(reviewed_result_id),
@@ -126,6 +270,9 @@ def test_artifacts_share_reviewed_result_id() -> None:
         balloon_required_count=1,
         balloon_count=1,
         source_page_count=1,
+        confidence_policy_versions=("candidate-confidence/1",),
+        auto_accepted_item_count=1,
+        manual_override_item_count=0,
         artifacts=(
             ArtifactDigest(
                 kind=pdf.kind,

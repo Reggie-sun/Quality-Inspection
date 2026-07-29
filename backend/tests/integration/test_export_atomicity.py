@@ -343,6 +343,10 @@ def test_success_exposes_exactly_three_verified_downloads(
     manifest_ref = service.download_ref(export.id, "manifest")
     assert manifest_ref is not None
     manifest = json.loads(storage.read_bytes(manifest_ref))
+    assert manifest["schema_version"] == "export-manifest/2"
+    assert manifest["confidence_policy_versions"] == []
+    assert manifest["auto_accepted_item_count"] == 0
+    assert manifest["manual_override_item_count"] == 0
     assert manifest["reviewed_result_id"] == str(reviewed.id)
     assert {
         artifact["reviewed_result_id"] for artifact in manifest["artifacts"]

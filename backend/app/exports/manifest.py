@@ -31,6 +31,9 @@ class ExportManifest:
     balloon_required_count: int
     balloon_count: int
     source_page_count: int
+    confidence_policy_versions: tuple[str, ...]
+    auto_accepted_item_count: int
+    manual_override_item_count: int
     artifacts: tuple[ArtifactDigest, ...]
 
     def to_bytes(self) -> bytes:

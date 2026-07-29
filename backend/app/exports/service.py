@@ -43,7 +43,7 @@ from app.storage.models import StoredFile
 
 
 RENDERER_VERSION = "balloon-pdf/1"
-MANIFEST_SCHEMA_VERSION = "export-manifest/1"
+MANIFEST_SCHEMA_VERSION = "export-manifest/2"
 _DETAIL_FIELDS = {
     "inspection_item",
     "inspection_standard",
@@ -708,6 +708,14 @@ class ExportService:
         required = [
             item for item in active_items if item.get("balloon_required") is True
         ]
+        confidence_policy_versions: set[str] = set()
+        for item in reviewed.items:
+            confidence_decision = item.get("confidence_decision")
+            if not isinstance(confidence_decision, dict):
+                continue
+            policy_version = confidence_decision.get("policy_version")
+            if isinstance(policy_version, str) and policy_version:
+                confidence_policy_versions.add(policy_version)
         return ExportManifest(
             schema_version=MANIFEST_SCHEMA_VERSION,
             export_id=str(export.id),
@@ -724,6 +732,15 @@ class ExportService:
             balloon_required_count=len(required),
             balloon_count=len(balloons),
             source_page_count=source_page_count,
+            confidence_policy_versions=tuple(sorted(confidence_policy_versions)),
+            auto_accepted_item_count=sum(
+                item.get("acceptance_source") == "confidence_policy"
+                for item in active_items
+            ),
+            manual_override_item_count=sum(
+                item.get("acceptance_source") == "manual_override"
+                for item in active_items
+            ),
             artifacts=(
                 ArtifactDigest(
                     kind="ballooned_pdf",
