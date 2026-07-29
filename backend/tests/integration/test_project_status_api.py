@@ -243,6 +243,8 @@ def test_project_status_projects_real_owners(
     assert payload["workbench_ready"] is (expected_phase == "ready_for_review")
     assert payload["retryable"] is False
     assert "project_id" not in payload
+    assert "recognition_mode" not in payload
+    assert "recognition_router_version" not in payload
     assert "resource_ref" not in response.text
     assert "asset://" not in response.text
 

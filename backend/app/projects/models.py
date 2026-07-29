@@ -21,3 +21,15 @@ class Project(Base):
         nullable=False,
     )
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    recognition_mode: Mapped[str] = mapped_column(
+        String(40),
+        default="legacy_high_recall",
+        server_default="legacy_high_recall",
+        nullable=False,
+    )
+    recognition_router_version: Mapped[str] = mapped_column(
+        String(64),
+        default="legacy",
+        server_default="legacy",
+        nullable=False,
+    )

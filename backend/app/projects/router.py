@@ -15,7 +15,8 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from app.balloons.models import Balloon
 from app.balloons.service import BalloonService
 from app.candidates.models import AutomaticResult
-from app.config import get_settings
+from app.candidates.symbol_routing import symbol_routing_identity
+from app.config import Settings, get_settings
 from app.db import SessionLocal
 from app.exports.router import _export_payload
 from app.exports.service import ExportService
@@ -63,14 +64,25 @@ def get_dispatcher() -> ProjectDispatcher:
 SessionDependency = Annotated[Session, Depends(get_session)]
 StorageDependency = Annotated[LocalFileStorage, Depends(get_storage)]
 DispatcherDependency = Annotated[ProjectDispatcher, Depends(get_dispatcher)]
+SettingsDependency = Annotated[Settings, Depends(get_settings)]
 
 
 def get_project_service(
     session: SessionDependency,
     storage: StorageDependency,
     dispatch: DispatcherDependency,
+    settings: SettingsDependency,
 ) -> ProjectIntakeService:
-    return ProjectIntakeService(session, storage, dispatch)
+    recognition_mode, router_version = symbol_routing_identity(
+        settings.symbol_recognition_mode
+    )
+    return ProjectIntakeService(
+        session,
+        storage,
+        dispatch,
+        recognition_mode=recognition_mode,
+        recognition_router_version=router_version,
+    )
 
 
 ProjectServiceDependency = Annotated[

@@ -7,6 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.candidates.advisor import CandidateAdvisor
+from app.candidates.symbol_routing import (
+    validate_frozen_symbol_routing_identity,
+)
 from app.capabilities.service import ProcessingPreflight
 from app.celery_app import celery_app
 from app.config import get_settings
@@ -80,9 +83,18 @@ def inventory_project(
     logical_task_key: str,
 ) -> str:
     """Run inventory through coverage closure and return the raw-result ref."""
-    settings = get_settings()
     session = SessionLocal()
     try:
+        project = session.get(Project, uuid.UUID(project_id))
+        if project is None:
+            raise ValueError("project frozen symbol routing identity is missing")
+        recognition_mode, _ = validate_frozen_symbol_routing_identity(
+            getattr(project, "recognition_mode", None),
+            getattr(project, "recognition_router_version", None),
+        )
+        settings = get_settings().model_copy(
+            update={"symbol_recognition_mode": recognition_mode}
+        )
         storage = LocalFileStorage(settings.storage_root)
         preflight = ProcessingPreflight(
             storage,

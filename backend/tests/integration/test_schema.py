@@ -48,6 +48,41 @@ def test_processing_migration_has_exact_owned_columns() -> None:
     }
 
 
+def test_project_schema_has_frozen_symbol_routing_mode() -> None:
+    inspector = inspect(engine)
+
+    assert {column["name"] for column in inspector.get_columns("projects")} == {
+        "id",
+        "state",
+        "version",
+        "recognition_mode",
+        "recognition_router_version",
+    }
+    mode_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("projects")
+        if column["name"] in {"recognition_mode", "recognition_router_version"}
+    }
+    assert mode_columns["recognition_mode"]["nullable"] is False
+    assert mode_columns["recognition_router_version"]["nullable"] is False
+    assert "legacy_high_recall" in str(
+        mode_columns["recognition_mode"]["default"]
+    )
+    assert "legacy" in str(
+        mode_columns["recognition_router_version"]["default"]
+    )
+    checks = {
+        constraint["name"]: constraint
+        for constraint in inspector.get_check_constraints("projects")
+    }
+    assert set(checks) == {"ck_projects_recognition_mode"}
+    sqltext = checks["ck_projects_recognition_mode"]["sqltext"]
+    assert "legacy_high_recall" in sqltext
+    assert "shadow_uncertainty" in sqltext
+    assert "production_uncertainty" in sqltext
+    assert "verification_high_recall" not in sqltext
+
+
 def test_automatic_result_schema_and_immutability_trigger() -> None:
     """P0-RES-001 freezes the exact raw-result fields once per logical job."""
     inspector = inspect(engine)

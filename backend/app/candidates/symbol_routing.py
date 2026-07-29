@@ -16,9 +16,26 @@ from app.candidates.symbol_review import VisualReviewDecision
 
 
 RoutingDisposition = Literal["locally_resolved", "escalate", "block"]
+SymbolRecognitionMode = Literal[
+    "legacy_high_recall",
+    "shadow_uncertainty",
+    "production_uncertainty",
+]
 
 SYMBOL_ROUTING_SCHEMA_VERSION = "symbol-routing-decision/1"
 SYMBOL_ROUTER_VERSION = "symbol-uncertainty-router/1"
+SYMBOL_RECOGNITION_MODES = frozenset(
+    {
+        "legacy_high_recall",
+        "shadow_uncertainty",
+        "production_uncertainty",
+    }
+)
+_MODE_ROUTER_VERSION = {
+    "legacy_high_recall": "legacy",
+    "shadow_uncertainty": SYMBOL_ROUTER_VERSION,
+    "production_uncertainty": SYMBOL_ROUTER_VERSION,
+}
 LOCAL_RESOLUTION_REASON_CODES = frozenset(
     {
         "native_symbol_explicit",
@@ -76,6 +93,164 @@ class RoutingDecision:
     escalation_reason_codes: tuple[str, ...]
     block_reason_codes: tuple[str, ...]
     requires_confirmation: bool
+
+
+def _is_lower_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _valid_reason_array(
+    value: object,
+    allowed_reasons: frozenset[str],
+) -> bool:
+    if (
+        not isinstance(value, tuple)
+        or not value
+        or any(not isinstance(reason, str) for reason in value)
+    ):
+        return False
+    return (
+        value == tuple(sorted(set(value)))
+        and set(value).issubset(allowed_reasons)
+    )
+
+
+def _validate_routing_decision(decision: object) -> RoutingDecision:
+    """Validate the structural versioned exact-one decision contract.
+
+    Consumer-specific semantic evidence binding is validated by that
+    consumer; the escalation planner binds this record to LocalResolution.
+    """
+    if not isinstance(decision, RoutingDecision):
+        raise ValueError("routing decision contract invalid")
+    if (
+        decision.schema_version != SYMBOL_ROUTING_SCHEMA_VERSION
+        or decision.router_version != SYMBOL_ROUTER_VERSION
+        or not isinstance(decision.visual_observation_id, str)
+        or not _is_lower_sha256(decision.input_sha256)
+        or decision.disposition
+        not in {"locally_resolved", "escalate", "block"}
+        or not isinstance(decision.requires_confirmation, bool)
+    ):
+        raise ValueError("routing decision contract invalid")
+    if decision.visual_observation_id == "":
+        if (
+            decision.disposition == "block"
+            and decision.local_resolution_reason_codes == ()
+            and decision.escalation_reason_codes == ()
+            and decision.block_reason_codes
+            == ("routing_contract_invalid",)
+            and decision.requires_confirmation is True
+        ):
+            return decision
+        raise ValueError("routing decision contract invalid")
+    if (
+        not decision.visual_observation_id
+        or decision.visual_observation_id.strip()
+        != decision.visual_observation_id
+    ):
+        raise ValueError("routing decision contract invalid")
+
+    reason_contract = {
+        "locally_resolved": (
+            decision.local_resolution_reason_codes,
+            LOCAL_RESOLUTION_REASON_CODES,
+        ),
+        "escalate": (
+            decision.escalation_reason_codes,
+            ESCALATION_REASON_CODES,
+        ),
+        "block": (
+            decision.block_reason_codes,
+            BLOCK_REASON_CODES,
+        ),
+    }
+    reason_arrays = (
+        decision.local_resolution_reason_codes,
+        decision.escalation_reason_codes,
+        decision.block_reason_codes,
+    )
+    active_reasons, allowed_reasons = reason_contract[
+        decision.disposition
+    ]
+    if (
+        any(not isinstance(reasons, tuple) for reasons in reason_arrays)
+        or sum(bool(reasons) for reasons in reason_arrays) != 1
+        or not _valid_reason_array(active_reasons, allowed_reasons)
+        or (
+            decision.disposition == "escalate"
+            and decision.requires_confirmation is not True
+        )
+        or (
+            decision.disposition == "block"
+            and decision.requires_confirmation is not True
+        )
+    ):
+        raise ValueError("routing decision contract invalid")
+    return decision
+
+
+def validate_routing_decision(decision: object) -> RoutingDecision:
+    """Contain hostile record fields behind the public contract boundary."""
+    try:
+        return _validate_routing_decision(decision)
+    except Exception as exc:
+        raise ValueError("routing decision contract invalid") from exc
+
+
+def _symbol_routing_identity(
+    mode: object,
+) -> tuple[SymbolRecognitionMode, str]:
+    """Resolve the only runtime-mode to router-version mapping."""
+    if not isinstance(mode, str) or mode not in SYMBOL_RECOGNITION_MODES:
+        raise ValueError("unsupported symbol recognition mode")
+    typed_mode: SymbolRecognitionMode = mode  # type: ignore[assignment]
+    return typed_mode, _MODE_ROUTER_VERSION[typed_mode]
+
+
+def symbol_routing_identity(
+    mode: object,
+) -> tuple[SymbolRecognitionMode, str]:
+    try:
+        return _symbol_routing_identity(mode)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("unsupported symbol recognition mode") from exc
+
+
+def _validate_frozen_symbol_routing_identity(
+    mode: object,
+    router_version: object,
+) -> tuple[SymbolRecognitionMode, str]:
+    frozen_mode, expected_version = _symbol_routing_identity(mode)
+    if (
+        not isinstance(router_version, str)
+        or router_version != expected_version
+    ):
+        raise ValueError("frozen symbol router version does not match mode")
+    return frozen_mode, expected_version
+
+
+def validate_frozen_symbol_routing_identity(
+    mode: object,
+    router_version: object,
+) -> tuple[SymbolRecognitionMode, str]:
+    try:
+        return _validate_frozen_symbol_routing_identity(
+            mode,
+            router_version,
+        )
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(
+            "frozen symbol router version does not match mode"
+        ) from exc
 
 
 _MAX_CANONICAL_DEPTH = 16
@@ -422,11 +597,15 @@ def _invalid_input_sha256(resolution: object) -> str:
 
 def _contract_invalid(resolution: object) -> RoutingDecision:
     visual_observation_id = ""
-    if isinstance(resolution, LocalResolution) and isinstance(
-        resolution.visual_observation_id,
-        str,
-    ):
-        visual_observation_id = resolution.visual_observation_id
+    try:
+        candidate_id = resolution.visual_observation_id  # type: ignore[union-attr]
+        if isinstance(resolution, LocalResolution) and isinstance(
+            candidate_id,
+            str,
+        ) and candidate_id and candidate_id.strip() == candidate_id:
+            visual_observation_id = candidate_id
+    except Exception:
+        pass
     invalid_hash = hashlib.sha256(
         (
             SYMBOL_ROUTING_SCHEMA_VERSION
@@ -517,6 +696,8 @@ def _valid_resolution_shape(resolution: object) -> bool:
     if (
         not isinstance(resolution.visual_observation_id, str)
         or not resolution.visual_observation_id
+        or resolution.visual_observation_id.strip()
+        != resolution.visual_observation_id
         or not _valid_string_tuple(resolution.reason_codes)
         or (
             resolution.resolved_family is not None
@@ -545,7 +726,7 @@ def _valid_resolution_shape(resolution: object) -> bool:
     return _valid_projection(resolution, resolution.projection)
 
 
-def route_visual_observation(
+def _route_visual_observation(
     resolution: object,
 ) -> RoutingDecision:
     """Choose the exact-one pre-VLM disposition for local resolver evidence."""
@@ -606,3 +787,13 @@ def route_visual_observation(
         )
 
     return _contract_invalid(resolution)
+
+
+def route_visual_observation(
+    resolution: object,
+) -> RoutingDecision:
+    """Choose one disposition and fail closed on hostile local evidence."""
+    try:
+        return _route_visual_observation(resolution)
+    except Exception:
+        return _contract_invalid(resolution)

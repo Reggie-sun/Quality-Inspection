@@ -8,6 +8,10 @@ import pymupdf
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.candidates.symbol_routing import (
+    SymbolRecognitionMode,
+    validate_frozen_symbol_routing_identity,
+)
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
@@ -83,10 +87,20 @@ class ProjectIntakeService:
         session: Session,
         storage: LocalFileStorage,
         dispatch: ProjectDispatcher,
+        *,
+        recognition_mode: SymbolRecognitionMode,
+        recognition_router_version: str,
     ) -> None:
         self.session = session
         self.storage = storage
         self.dispatch = dispatch
+        (
+            self.recognition_mode,
+            self.recognition_router_version,
+        ) = validate_frozen_symbol_routing_identity(
+            recognition_mode,
+            recognition_router_version,
+        )
 
     def create_pdf(
         self,
@@ -95,7 +109,12 @@ class ProjectIntakeService:
         content_type: str,
     ) -> ProjectStatusResponse:
         validate_pdf(content, content_type)
-        project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+        project = Project(
+            id=uuid.uuid4(),
+            state=ProjectState.PROCESSING,
+            recognition_mode=self.recognition_mode,
+            recognition_router_version=self.recognition_router_version,
+        )
         stored = self.storage.write_verified(
             f"projects/{project.id}/source.pdf",
             content,
