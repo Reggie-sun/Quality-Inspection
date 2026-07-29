@@ -273,7 +273,84 @@ describe("BalloonOverlay", () => {
   });
 });
 
-test("P0-BAL-009/010/011/012 toolbar exposes balloon commands explicitly", () => {
+test("未生成过正式气泡时隐藏气泡操作", () => {
+  render(
+    <BalloonToolbar
+      balloons={[]}
+      onDelete={vi.fn()}
+      onRebuild={vi.fn()}
+      onReorder={vi.fn()}
+      onRenumber={vi.fn()}
+    />,
+  );
+
+  expect(screen.queryByRole("region", { name: "气泡操作" })).toBeNull();
+});
+
+test("未选择气泡时只显示全局重新编号", () => {
+  render(
+    <BalloonToolbar
+      balloons={[
+        {
+          id: "b1",
+          itemId: "i1",
+          sourceId: "s1",
+          pageIndex: 0,
+          center: [50, 60],
+          number: 1,
+          version: 4,
+          status: "active",
+          sortOrder: 0,
+        },
+      ]}
+      onDelete={vi.fn()}
+      onRebuild={vi.fn()}
+      onReorder={vi.fn()}
+      onRenumber={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("1 个有效气泡")).not.toBeNull();
+  expect(screen.getByRole("button", { name: "重新编号" })).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "删除气泡" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "重建气泡" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "编号顺序前移" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "编号顺序后移" })).toBeNull();
+});
+
+test("删除后的所选气泡只保留重建入口", () => {
+  render(
+    <BalloonToolbar
+      balloons={[
+        {
+          id: "deleted-b1",
+          itemId: "i1",
+          sourceId: "s1",
+          pageIndex: 0,
+          center: [50, 60],
+          number: 1,
+          version: 5,
+          status: "deleted",
+          sortOrder: 0,
+        },
+      ]}
+      selectedBalloonId="deleted-b1"
+      onDelete={vi.fn()}
+      onRebuild={vi.fn()}
+      onReorder={vi.fn()}
+      onRenumber={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByRole("region", { name: "气泡操作" })).not.toBeNull();
+  expect(screen.getByRole("button", { name: "重建气泡" })).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "删除气泡" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "编号顺序前移" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "编号顺序后移" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "重新编号" })).toBeNull();
+});
+
+test("P0-BAL-009/010/011/012 toolbar exposes selected balloon commands explicitly", () => {
   const onDelete = vi.fn();
   const onRebuild = vi.fn();
   const onReorder = vi.fn();
@@ -304,7 +381,7 @@ test("P0-BAL-009/010/011/012 toolbar exposes balloon commands explicitly", () =>
   expect(onDelete).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "删除气泡" }));
   fireEvent.click(screen.getByRole("button", { name: "重建气泡" }));
-  fireEvent.click(screen.getByRole("button", { name: "气泡后移" }));
+  fireEvent.click(screen.getByRole("button", { name: "编号顺序后移" }));
   fireEvent.click(screen.getByRole("button", { name: "重新编号" }));
 
   expect(onDelete).toHaveBeenCalledWith("b1", 4);
