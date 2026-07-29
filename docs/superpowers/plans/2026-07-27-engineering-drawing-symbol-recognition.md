@@ -574,6 +574,10 @@ was executed.
 - Modify: `docs/contracts/MAIN_CONTRACT_MATRIX.md`
 - Modify:
   `docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md`
+- Generate only:
+  `.agent/harness/contracts/p0-contracts.json`
+- Generate only:
+  `.agent/harness/contracts/global-contract-bindings.json`
 - Modify after verification:
   `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
 - Test:
@@ -636,6 +640,10 @@ Run:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
+  python .agent/harness/scripts/generate-contract-mirror.py
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
+  python .agent/harness/scripts/generate-global-bindings.py
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
   python .agent/harness/scripts/check-contracts.py
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/contract/harness/test_contract_architecture.py -q
@@ -647,6 +655,8 @@ Commit only the two contract files and this status update:
 ```bash
 git add docs/contracts/MAIN_CONTRACT_MATRIX.md \
   docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md \
+  .agent/harness/contracts/p0-contracts.json \
+  .agent/harness/contracts/global-contract-bindings.json \
   docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md
 git commit -m "docs: activate production symbol routing contracts"
 ```
