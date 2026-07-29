@@ -14,11 +14,11 @@
 
 - Date: `2026-07-29`
 - Selected lane: `Heavy`
-- Status: `implementation frozen; live Provider response contract blocked`
+- Status: `diagnostic complete; live Provider response contract blocked`
 - Current parent plan:
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
-- Current branch/worktree: `codex/symbol-recognition` /
-  `/home/reggie/vscode_folder/Quality_Inspection/.worktrees/symbol-recognition`
+- Current branch/worktree: `main` /
+  `/home/reggie/vscode_folder/Quality_Inspection`
 - Selection evidence: 用户明确点名本文件进行收敛；当前 runtime、tests、sealed
   evidence 和 Git history 证明 implementation 已完成，而剩余 blocker 只在
   production Provider response contract。
@@ -165,7 +165,7 @@ provider_construction=0
 provider_calls=0
 ```
 
-- [ ] **Step 3: Revalidate runtime identity immediately before the call**
+- [x] **Step 3: Revalidate runtime identity immediately before the call**
 
 Required:
 
@@ -181,7 +181,12 @@ providers/runtime.py=1774815f29ca8302f7869697cafbc45c1cabc8f508b8a19c7ba4eb92cbf
 Expected: host、API and worker hashes match; credentials are checked only for
 presence and are never printed.
 
-- [ ] **Step 4: Invoke the production Provider method exactly once**
+Verified on `main`: API health `ok`、worker `running`、host/API/worker source and
+schema hashes matched, model and credential-presence checks passed, and the
+source/inventory/batch/cache/crop/prompt identities from Step 2 reproduced
+exactly with Provider construction/calls=`0/0`.
+
+- [x] **Step 4: Invoke the production Provider method exactly once**
 
 Use the reconstructed in-memory crop and canonical prompt to call only:
 
@@ -193,7 +198,12 @@ Do not call `CandidateAdvisor`、write storage、open a formal Harness run or re
 The exact-once authorization is session-bound; this plan intentionally does not
 provide a reusable shell replay command.
 
-- [ ] **Step 5: Write and hash one sanitized report**
+The sole invocation returned `tool_arguments_schema_invalid` after `5632ms` with
+request ID `chatcmpl-e1d0556c-0624-913e-ad5b-aebdeb5061a7`. The allowlisted
+diagnostic identifies a root-object `required` failure for missing
+`schema_version`; direct Provider method invocations=`1`.
+
+- [x] **Step 5: Write and hash one sanitized report**
 
 Allowlisted report fields:
 
@@ -216,6 +226,15 @@ direct_provider_method_invocations=1
 Never retain raw tool arguments、payload values、validation message、drawing text、
 image bytes or credentials. Set report and containing directory read-only, compute
 SHA-256, then update `Current Outcome` in place and commit only this file.
+
+Sanitized report:
+
+```text
+path=/tmp/qi-symbol-schema-diagnostic.EVhSLo/targeted-diagnostic-report.json
+sha256=e3590660a0b445fcc2e18040308a7fa77ef6c75c43c8dc9f4142db0c8cc64467
+directory_mode=500
+report_mode=400
+```
 
 ## Outcome Branch And Stop Condition
 
@@ -253,8 +272,24 @@ python .agent/harness/scripts/check-contracts.py
 ## Current Outcome
 
 ```text
-status=ready_for_single_diagnostic
-direct_provider_method_invocations=0
-authorization_consumed=false
+status=completed_schema_invalid
+main_commit=b215def608602159bae8692c93390d54548da0d2
+request_id=chatcmpl-e1d0556c-0624-913e-ad5b-aebdeb5061a7
+duration_ms=5632
+usage=3419/185/3604
+failure_stage=tool_arguments_schema_invalid
+schema_validator=required
+schema_instance_path=""
+required_member=schema_version
+payload_sha256=5db34d6143679e064c3fc758d3caf22e2e9a4c75beee869b47055b491f79b7bc
+report_path=/tmp/qi-symbol-schema-diagnostic.EVhSLo/targeted-diagnostic-report.json
+report_sha256=e3590660a0b445fcc2e18040308a7fa77ef6c75c43c8dc9f4142db0c8cc64467
+direct_provider_method_invocations=1
+authorization_consumed=true
+formal_run_created=false
+project_created=false
+cache_written=false
+response_retained=false
 full_p0_blocked=true
+next_action=stop
 ```
