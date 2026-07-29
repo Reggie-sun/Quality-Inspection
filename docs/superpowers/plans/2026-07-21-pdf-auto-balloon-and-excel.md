@@ -1395,6 +1395,60 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
       one-start authorization is exhausted. Any further diagnostic dimension、
       retry-cap/paging change、response remediation or live start requires a new
       explicit user decision and a separately committed Heavy amendment.
+  - Task 8 Step 6 deterministic visual sampling amendment — 2026-07-29:
+    - Selection record:
+      - After reviewing the sealed equivalent-snapshot failure, the user
+        explicitly selected `固定 temperature=0` instead of raising the
+        per-page call cap or running a diagnostic-only schema-leaf replay.
+      - Alibaba Cloud's
+        [OpenAI-compatible Chat documentation](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)
+        states that Qwen3-VL non-thinking mode defaults to
+        `temperature=0.7`, lower temperature is more deterministic, and random
+        Function Calling arguments may not conform to the function signature.
+        This supports a bounded sampling hypothesis; it does not prove that
+        temperature caused any retained failure.
+    - Problem boundary、single Owner and old path:
+      - `backend/app/providers/qwen_vl.py::QwenVisionProvider.review_symbols()`
+        remains the only visual Provider request-shape Owner. Replace its
+        implicit service-default sampling with exact `temperature=0`.
+      - Do not set `top_p`、seed、penalties、logprobs、streaming or any other
+        generation option. Text `review_candidate()` remains unchanged.
+      - Prompt v4、one forced exact tool、checked-in schema、non-thinking mode、
+        bbox `/3` compatibility semantics、local strict validation、one bounded
+        crop、`60s` timeout、SDK `max_retries=0`、bounded retry ownership and
+        `<=16/page` remain unchanged. No content fallback、repair parser、second
+        model or second response Owner is allowed.
+      - Bump only `VISUAL_ADAPTER_VERSION` from
+        `qwen-openai-compatible/3` to `qwen-openai-compatible/4` so cache
+        identity cannot mix implicit-`0.7` and exact-`0` calls. The frozen
+        Provider schema and prompt versions do not change.
+    - Allowed files、TDD and verification:
+      - Repository writes are limited to this plan、
+        `backend/app/providers/qwen_vl.py`、
+        `backend/app/candidates/symbol_review.py`、
+        `backend/tests/contract/test_qwen_symbol_provider.py` and
+        `.agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json`.
+        Parent remains the sole writer.
+      - RED must prove the visual request lacks exact `temperature=0` and cache
+        identity is still `/3`; GREEN must pin exact `temperature=0`, absence of
+        `top_p`/seed/other sampling additions, unchanged text request behavior
+        and adapter `/4` cache separation.
+      - Run focused and complete changed-module tests、symbol integration/E2E、
+        full backend on a disposable migrated database、Provider fixtures with
+        `external_calls=0`、Ruff、contracts、privacy scan、diff check、
+        `auto-feature-smoke-test` and independent read-only review before commit.
+    - One-run authorization and stop:
+      - Only after the code/tests are separately committed, rebuild API/worker
+        from the exact implementation state, verify runtime model
+        `qwen3-vl-plus-2025-12-19`、adapter `/4`、`temperature=0` and
+        `max_retries=0`, then repeat the sealed no-write preflight.
+      - Authorize exactly one new full-P0 live start with the same literal
+        current-four/symbol registration runs and
+        `--pause-after first-pdf-balloons`. No targeted manual Provider command
+        or additional retry run is authorized.
+      - If it fails, seal and stop with only sanitized evidence. If it reaches
+        the human gate, report the exact project route; do not auto-approve、
+        continue current-four、change frontend、merge `main` or enter D7-T3.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
