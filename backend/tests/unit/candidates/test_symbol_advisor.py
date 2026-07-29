@@ -40,15 +40,15 @@ def test_visual_cache_identity_uses_proposal_owner_version() -> None:
     current = visual_cache_identity(**arguments)
     legacy = visual_cache_identity(
         **arguments,
-        proposal_version="visual-observation/1",
+        proposal_version="visual-observation/2",
     )
 
-    assert PROPOSAL_RULE_VERSION == "visual-observation/2"
+    assert PROPOSAL_RULE_VERSION == "visual-observation/3"
     assert current["proposal_version"] == PROPOSAL_RULE_VERSION
-    assert legacy["proposal_version"] == "visual-observation/1"
+    assert legacy["proposal_version"] == "visual-observation/2"
     assert visual_cache_key(**arguments) != visual_cache_key(
         **arguments,
-        proposal_version="visual-observation/1",
+        proposal_version="visual-observation/2",
     )
     assert not hasattr(symbol_review, "VISUAL_PROPOSAL_VERSION")
 

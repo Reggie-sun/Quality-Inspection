@@ -15,27 +15,44 @@ from app.pdf.coordinates import BBox, PageTransform
 from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
 
 
-PROPOSAL_RULE_VERSION = "visual-observation/2"
+PROPOSAL_RULE_VERSION = "visual-observation/3"
 PROPOSAL_RULE_CANONICAL_JSON = (
-    b'{"branch_order":["geometry_compact","geometry_wide_multi_item",'
-    b'"geometry_filled","short_token_rescue"],"feature_quantum":"0.001",'
-    b'"geometry_common":'
-    b'{"max_item_height_min_exclusive":"2.000","mean_item_height_max":"34.000"},'
+    b'{"base_branch_order":["geometry_compact","geometry_wide_multi_item",'
+    b'"geometry_filled","short_token_rescue"],"compact_item_filter":'
+    b'{"max_item_height_max":"42.000","max_item_width_max":"60.000"},'
+    b'"context_transform_order":["dense_short_token_compact_rescue",'
+    b'"wide_compact_replacement","base_admission"],'
+    b'"dense_short_token_compact_rescue":'
+    b'{"base_context_area_relation":"greater_than_page_area_cap",'
+    b'"compact_context_area_max":"6000.000",'
+    b'"compact_context_area_relation":"less_than_or_equal_to_page_area_cap",'
+    b'"compact_item_count_min_exclusive":40,'
+    b'"compact_reason_required":"short_token_rescue"},'
+    b'"feature_quantum":"0.001","geometry_common":'
+    b'{"max_item_height_min_exclusive":"2.000",'
+    b'"mean_item_height_max":"34.000"},'
     b'"geometry_compact":{"context_area_max":"6000.000","fill_count_max":1,'
     b'"max_item_width_max":"60.000"},"geometry_filled":'
     b'{"context_area_min_exclusive":"5800.000",'
     b'"fill_count_min_exclusive":1,"max_item_height_max":"42.000"},'
     b'"geometry_wide_multi_item":{"fill_count_max":1,'
-    b'"item_count_min_exclusive":3,"max_item_width_min_exclusive":"60.000"},'
-    b'"proposal_rule_version":"visual-observation/2",'
-    b'"schema_version":"visual-proposal-gate/1","short_token_rescue":'
-    b'{"context_area_max":"6000.000","pattern":"[A-Z0-9]{1,3}"}}'
+    b'"item_count_min_exclusive":3,'
+    b'"max_item_width_min_exclusive":"60.000"},'
+    b'"proposal_rule_version":"visual-observation/3","provisional_context":'
+    b'{"axis_gap_max":"12.000","item_extent_max":"96.000",'
+    b'"page_area_ratio_max":"0.010"},"schema_version":"visual-proposal-gate/2",'
+    b'"short_token_rescue":{"context_area_max":"6000.000",'
+    b'"pattern":"[A-Z0-9]{1,3}"},"wide_compact_replacement":'
+    b'{"base_context_area_relation":"less_than_or_equal_to_page_area_cap",'
+    b'"base_reason_required":"geometry_wide_multi_item",'
+    b'"compact_context_area_relation":"less_than_or_equal_to_page_area_cap",'
+    b'"compact_reason_required":"geometry_compact"}}'
 )
 PROPOSAL_RULE_SHA256 = hashlib.sha256(
     PROPOSAL_RULE_CANONICAL_JSON
 ).hexdigest()
 if PROPOSAL_RULE_SHA256 != (
-    "ef23fce2a747ef89b28c7bee0a5504a4135c32d42799b0f493170e8796fcffd7"
+    "8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa"
 ):
     raise RuntimeError("visual proposal rule digest mismatch")
 
@@ -572,12 +589,10 @@ def build_page_visual_observations(
         source_union = _union_bboxes(
             (line.bbox_pdf, *(item.bbox for item in selected))
         )
-        if (
-            _area(source_union)
-            > page_width * page_height * MAX_CONTEXT_PAGE_AREA_RATIO
-        ):
-            continue
-        decision = _proposal_decision(
+        page_area_cap = (
+            page_width * page_height * MAX_CONTEXT_PAGE_AREA_RATIO
+        )
+        base_decision = _proposal_decision(
             _proposal_features(
                 raw_text=line.raw_text,
                 selected=selected,
@@ -585,8 +600,74 @@ def build_page_visual_observations(
                 page_index=page_index,
             )
         )
-        if not decision.retained:
-            continue
+        compact_items = [
+            item
+            for item in selected
+            if _measure(
+                item.bbox[2] - item.bbox[0],
+                page_index=page_index,
+            )
+            <= Decimal("60.000")
+            and _measure(
+                item.bbox[3] - item.bbox[1],
+                page_index=page_index,
+            )
+            <= Decimal("42.000")
+        ]
+        if _area(source_union) > page_area_cap:
+            if not compact_items:
+                continue
+            compact_union = _union_bboxes(
+                (
+                    line.bbox_pdf,
+                    *(item.bbox for item in compact_items),
+                )
+            )
+            compact_features = _proposal_features(
+                raw_text=line.raw_text,
+                selected=compact_items,
+                source_union=compact_union,
+                page_index=page_index,
+            )
+            compact_decision = _proposal_decision(compact_features)
+            if (
+                _area(compact_union) > page_area_cap
+                or compact_features.context_area > Decimal("6000.000")
+                or len(compact_items) <= 40
+                or not compact_decision.retained
+                or compact_decision.reason_code != "short_token_rescue"
+            ):
+                continue
+            selected = compact_items
+            source_union = compact_union
+        else:
+            if not base_decision.retained:
+                continue
+            if (
+                base_decision.reason_code == "geometry_wide_multi_item"
+                and compact_items
+            ):
+                compact_union = _union_bboxes(
+                    (
+                        line.bbox_pdf,
+                        *(item.bbox for item in compact_items),
+                    )
+                )
+                if _area(compact_union) <= page_area_cap:
+                    compact_decision = _proposal_decision(
+                        _proposal_features(
+                            raw_text=line.raw_text,
+                            selected=compact_items,
+                            source_union=compact_union,
+                            page_index=page_index,
+                        )
+                    )
+                    if (
+                        compact_decision.retained
+                        and compact_decision.reason_code == "geometry_compact"
+                    ):
+                        selected = compact_items
+                        source_union = compact_union
         bbox_pdf = transform.clip_bbox(source_union)
         selected = sorted(
             selected,

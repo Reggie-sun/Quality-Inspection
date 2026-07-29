@@ -17,6 +17,8 @@ from app.pdf.visual_observations import (
     MAX_AXIS_GAP_PT,
     MAX_CONTEXT_PAGE_AREA_RATIO,
     MAX_PATH_ITEM_EXTENT_PT,
+    PROPOSAL_RULE_CANONICAL_JSON,
+    PROPOSAL_RULE_SHA256,
     PROPOSAL_RULE_VERSION,
     VisualObservationBlockingError,
     _ProposalFeatures,
@@ -27,6 +29,40 @@ from app.pdf.visual_observations import (
     reconstruct_visual_geometry_contexts,
 )
 from tests.helpers.symbol_fixture import NEGATIVE_FAMILIES, build_symbol_fixture
+
+
+_EXPECTED_V3_RULE = (
+    b'{"base_branch_order":["geometry_compact","geometry_wide_multi_item",'
+    b'"geometry_filled","short_token_rescue"],"compact_item_filter":'
+    b'{"max_item_height_max":"42.000","max_item_width_max":"60.000"},'
+    b'"context_transform_order":["dense_short_token_compact_rescue",'
+    b'"wide_compact_replacement","base_admission"],'
+    b'"dense_short_token_compact_rescue":'
+    b'{"base_context_area_relation":"greater_than_page_area_cap",'
+    b'"compact_context_area_max":"6000.000",'
+    b'"compact_context_area_relation":"less_than_or_equal_to_page_area_cap",'
+    b'"compact_item_count_min_exclusive":40,'
+    b'"compact_reason_required":"short_token_rescue"},'
+    b'"feature_quantum":"0.001","geometry_common":'
+    b'{"max_item_height_min_exclusive":"2.000",'
+    b'"mean_item_height_max":"34.000"},"geometry_compact":'
+    b'{"context_area_max":"6000.000","fill_count_max":1,'
+    b'"max_item_width_max":"60.000"},"geometry_filled":'
+    b'{"context_area_min_exclusive":"5800.000",'
+    b'"fill_count_min_exclusive":1,"max_item_height_max":"42.000"},'
+    b'"geometry_wide_multi_item":{"fill_count_max":1,'
+    b'"item_count_min_exclusive":3,'
+    b'"max_item_width_min_exclusive":"60.000"},'
+    b'"proposal_rule_version":"visual-observation/3","provisional_context":'
+    b'{"axis_gap_max":"12.000","item_extent_max":"96.000",'
+    b'"page_area_ratio_max":"0.010"},"schema_version":"visual-proposal-gate/2",'
+    b'"short_token_rescue":{"context_area_max":"6000.000",'
+    b'"pattern":"[A-Z0-9]{1,3}"},"wide_compact_replacement":'
+    b'{"base_context_area_relation":"less_than_or_equal_to_page_area_cap",'
+    b'"base_reason_required":"geometry_wide_multi_item",'
+    b'"compact_context_area_relation":"less_than_or_equal_to_page_area_cap",'
+    b'"compact_reason_required":"geometry_compact"}}'
+)
 
 
 def _observation_signature(
@@ -79,6 +115,52 @@ def _gate_features(
         short_token_fullmatch=False,
     )
     return replace(features, **changes)
+
+
+def _synthetic_line(
+    *,
+    raw_text: str,
+    observation_id: str = "line",
+) -> TextObservation:
+    return TextObservation(
+        observation_id=observation_id,
+        source_type="native",
+        observation_level="line",
+        raw_text=raw_text,
+        normalized_text=raw_text,
+        page_index=0,
+        bbox_pdf=(100.0, 100.0, 110.0, 110.0),
+        bbox_normalized=(0.1, 0.1, 0.11, 0.11),
+        direction=(1.0, 0.0),
+        direction_angle_degrees=0.0,
+        confidence=None,
+    )
+
+
+def _synthetic_drawing(
+    items: list[tuple[object, ...]],
+) -> dict[str, object]:
+    return {
+        "items": items,
+        "width": 1.0,
+        "dashes": "[] 0",
+        "lineCap": 0,
+        "lineJoin": 0,
+        "color": (0.0,),
+        "fill": None,
+        "closePath": False,
+    }
+
+
+def test_visual_proposal_v3_rule_bytes_digest_and_version_are_exact() -> None:
+    assert PROPOSAL_RULE_VERSION == "visual-observation/3"
+    assert PROPOSAL_RULE_CANONICAL_JSON == _EXPECTED_V3_RULE
+    assert hashlib.sha256(PROPOSAL_RULE_CANONICAL_JSON).hexdigest() == (
+        "8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa"
+    )
+    assert PROPOSAL_RULE_SHA256 == (
+        "8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa"
+    )
 
 
 @pytest.mark.parametrize(
@@ -310,12 +392,203 @@ def test_hybrid_proposal_gate_rejects_noise_and_snaps_boundaries(
     assert decision.reason_code == expected_reason
 
 
-def test_visual_observation_v2_reconstructs_or_blocks(
+def test_dense_short_token_uses_compact_context_when_base_exceeds_page_cap() -> None:
+    line = _synthetic_line(raw_text="A1", observation_id="dense-line")
+    span = replace(
+        line,
+        observation_id="dense-span",
+        observation_level="span",
+        parent_region_id=line.observation_id,
+    )
+    compact_items = [
+        (
+            "l",
+            pymupdf.Point(98.0, 96.0 + index / 10),
+            pymupdf.Point(100.0, 96.0 + index / 10),
+        )
+        for index in range(41)
+    ]
+    distant_noise = (
+        "re",
+        pymupdf.Rect(112.0, 112.0, 208.0, 208.0),
+        1,
+    )
+
+    observations, contexts = build_page_visual_observations(
+        page_index=0,
+        page_width=1000.0,
+        page_height=1000.0,
+        source_sha256="a" * 64,
+        native_observations=(line, span),
+        drawings=(_synthetic_drawing([*compact_items, distant_noise]),),
+        transform=PageTransform(
+            width=1000.0,
+            height=1000.0,
+            rotation=0,
+            scale=1.0,
+        ),
+    )
+
+    assert len(observations) == len(contexts) == 1
+    observation = observations[0]
+    context = contexts[0]
+    assert observation.associated_text_observation_ids == (
+        "dense-line",
+        "dense-span",
+    )
+    assert observation.bbox_pdf == pytest.approx((98.0, 96.0, 110.0, 110.0))
+    assert context.path_bboxes == tuple(
+        (98.0, 96.0 + index / 10, 100.0, 96.0 + index / 10)
+        for index in range(41)
+    )
+    assert distant_noise[1] not in context.path_bboxes
+    assert len(context.canonical_path_items) == 41
+    assert context.geometry_sha256 == hashlib.sha256(
+        b"".join(context.canonical_path_items)
+    ).hexdigest()
+    assert observation.geometry_sha256 == context.geometry_sha256
+
+
+@pytest.mark.parametrize(
+    ("item_count", "raw_text"),
+    (
+        (40, "A1"),
+        (41, "ordinary"),
+    ),
+)
+def test_dense_compact_rescue_fails_closed_at_each_required_boundary(
+    item_count: int,
+    raw_text: str,
+) -> None:
+    line = _synthetic_line(raw_text=raw_text)
+    compact_items = [
+        (
+            "l",
+            pymupdf.Point(98.0, 96.0 + index / 10),
+            pymupdf.Point(100.0, 96.0 + index / 10),
+        )
+        for index in range(item_count)
+    ]
+    distant_noise = (
+        "re",
+        pymupdf.Rect(112.0, 112.0, 208.0, 208.0),
+        1,
+    )
+
+    observations, contexts = build_page_visual_observations(
+        page_index=0,
+        page_width=1000.0,
+        page_height=1000.0,
+        source_sha256="a" * 64,
+        native_observations=(line,),
+        drawings=(_synthetic_drawing([*compact_items, distant_noise]),),
+        transform=PageTransform(
+            width=1000.0,
+            height=1000.0,
+            rotation=0,
+            scale=1.0,
+        ),
+    )
+
+    assert observations == ()
+    assert contexts == ()
+
+
+def test_wide_base_context_is_replaced_by_exact_compact_threshold_items() -> None:
+    line = _synthetic_line(raw_text="ordinary")
+    compact_items = [
+        ("re", pymupdf.Rect(40.0, 79.0, 100.0, 121.0), 1),
+        ("re", pymupdf.Rect(96.0, 96.0, 99.0, 99.0), 1),
+        ("re", pymupdf.Rect(100.0, 108.0, 103.0, 111.0), 1),
+    ]
+    over_width = (
+        "re",
+        pymupdf.Rect(112.0, 100.0, 172.001, 103.0),
+        1,
+    )
+    over_height = (
+        "re",
+        pymupdf.Rect(100.0, 112.0, 103.0, 154.001),
+        1,
+    )
+
+    observations, contexts = build_page_visual_observations(
+        page_index=0,
+        page_width=1000.0,
+        page_height=1000.0,
+        source_sha256="b" * 64,
+        native_observations=(line,),
+        drawings=(
+            _synthetic_drawing(
+                [*compact_items, over_width, over_height],
+            ),
+        ),
+        transform=PageTransform(
+            width=1000.0,
+            height=1000.0,
+            rotation=0,
+            scale=1.0,
+        ),
+    )
+
+    assert len(observations) == len(contexts) == 1
+    observation = observations[0]
+    context = contexts[0]
+    assert observation.bbox_pdf == pytest.approx((40.0, 79.0, 110.0, 121.0))
+    assert context.path_bboxes == (
+        (40.0, 79.0, 100.0, 121.0),
+        (96.0, 96.0, 99.0, 99.0),
+        (100.0, 108.0, 103.0, 111.0),
+    )
+    assert over_width[1] not in context.path_bboxes
+    assert over_height[1] not in context.path_bboxes
+    assert len(context.canonical_path_items) == 3
+    assert observation.geometry_sha256 == hashlib.sha256(
+        b"".join(context.canonical_path_items)
+    ).hexdigest()
+
+
+def test_failed_wide_compact_replacement_preserves_valid_base_context() -> None:
+    line = _synthetic_line(raw_text="ordinary")
+    wide_items = [
+        (
+            "re",
+            pymupdf.Rect(50.0, 98.0 + index * 3, 111.0, 101.0 + index * 3),
+            1,
+        )
+        for index in range(4)
+    ]
+
+    observations, contexts = build_page_visual_observations(
+        page_index=0,
+        page_width=1000.0,
+        page_height=1000.0,
+        source_sha256="c" * 64,
+        native_observations=(line,),
+        drawings=(_synthetic_drawing(wide_items),),
+        transform=PageTransform(
+            width=1000.0,
+            height=1000.0,
+            rotation=0,
+            scale=1.0,
+        ),
+    )
+
+    assert len(observations) == len(contexts) == 1
+    assert observations[0].bbox_pdf == pytest.approx((50.0, 98.0, 111.0, 110.0))
+    assert contexts[0].path_bboxes == tuple(
+        (50.0, 98.0 + index * 3, 111.0, 101.0 + index * 3)
+        for index in range(4)
+    )
+    assert len(contexts[0].canonical_path_items) == 4
+
+
+def test_visual_observation_v3_reconstructs_or_blocks(
     tmp_path: Path,
 ) -> None:
     pdf_path, _manifest = build_symbol_fixture(tmp_path)
     pages = build_inventory(pdf_path)
-    assert PROPOSAL_RULE_VERSION == "visual-observation/2"
+    assert PROPOSAL_RULE_VERSION == "visual-observation/3"
     assert [len(page.visual_observations) for page in pages] == [10, 9]
     first = reconstruct_visual_geometry_contexts(pdf_path, pages)
     second = reconstruct_visual_geometry_contexts(pdf_path, pages)
