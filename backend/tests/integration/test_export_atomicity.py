@@ -220,6 +220,13 @@ def reviewed_result(
     review_service = ReviewService(db_session, storage=storage)
     working = review_service.create_from_raw(raw.id)
     acquire_lock(db_session, project_id, "quality-1")
+    for item_id in ("i1", "i2"):
+        working = review_service.apply(
+            working.id,
+            expected_version=working.version,
+            operator_id="quality-1",
+            command={"type": "keep", "item_id": item_id},
+        )
     working = _prepare_sip_review(review_service, working)
     frozen = review_service.freeze_items(
         working.id,

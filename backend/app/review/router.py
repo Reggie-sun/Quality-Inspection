@@ -25,6 +25,7 @@ from app.review.service import (
     ReviewNotFound,
     ReviewService,
     ReviewVersionConflict,
+    manual_review_count,
 )
 
 
@@ -200,6 +201,10 @@ def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
         "items_frozen_version": working.items_frozen_version,
         "created_at": working.created_at,
         "updated_at": working.updated_at,
+        "manual_review_count": manual_review_count(
+            working.items,
+            working.coverage,
+        ),
     }
 
 

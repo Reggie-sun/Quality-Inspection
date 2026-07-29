@@ -187,6 +187,49 @@ def _item(working: ReviewWorkingCopy, item_id: str) -> dict[str, object]:
     return next(item for item in working.items if item["item_id"] == item_id)
 
 
+def _confidence_decision(band: str) -> dict[str, object]:
+    return {
+        "band": band,
+        "review_disposition": (
+            "auto_accepted" if band == "high" else "review_required"
+        ),
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+            "typed_schema_complete",
+            "source_truth_preserved",
+            "single_source_owner",
+            "local_association_complete",
+            "coverage_clear",
+            "no_conflict",
+            "semantic_confirmation_clear",
+            "balloon_requirement_known",
+            "source_signal_valid",
+            f"source_signal_{band}",
+        ],
+    }
+
+
+def _set_confidence_state(
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+    item_id: str,
+    band: str,
+) -> dict[str, object]:
+    items = copy.deepcopy(working_copy.items)
+    item = next(value for value in items if value["item_id"] == item_id)
+    decision = _confidence_decision(band)
+    item["confidence_decision"] = decision
+    item["status"] = "auto_accepted" if band == "high" else "pending"
+    item["requires_confirmation"] = band != "high"
+    item["acceptance_source"] = (
+        "confidence_policy" if band == "high" else None
+    )
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+    return decision
+
+
 def _set_source_only_coverage(
     working_copy: ReviewWorkingCopy,
     db_session: Session,
@@ -230,7 +273,35 @@ def test_keep_candidate(
 
     assert _item(saved, "i1")["status"] == "kept"
     assert _item(saved, "i1")["active"] is True
+    assert _item(saved, "i1")["requires_confirmation"] is False
+    assert _item(saved, "i1")["acceptance_source"] == "manual"
     assert saved.version == before_version + 1
+
+
+def test_keep_review_required_candidate_is_manual_override_and_complete(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    decision = _set_confidence_state(
+        working_copy,
+        db_session,
+        "i1",
+        "medium",
+    )
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={"type": "keep", "item_id": "i1"},
+    )
+
+    kept = _item(saved, "i1")
+    assert kept["status"] == "kept"
+    assert kept["requires_confirmation"] is False
+    assert kept["acceptance_source"] == "manual_override"
+    assert kept["confidence_decision"] == decision
 
 
 def test_exclude_candidate_without_deleting_original(
@@ -253,6 +324,91 @@ def test_exclude_candidate_without_deleting_original(
     persisted = db_session.get(AutomaticResult, raw_result.id)
     assert persisted is not None
     assert persisted.candidates == original
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        {
+            "type": "edit",
+            "item_id": "i1",
+            "fields": {"raw_text": "M6 通"},
+        },
+        {
+            "type": "exclude",
+            "item_id": "i1",
+        },
+        {
+            "type": "set_balloon_required",
+            "item_id": "i1",
+            "balloon_required": False,
+        },
+    ],
+    ids=["edit", "exclude", "balloon-toggle"],
+)
+def test_human_semantic_action_preserves_high_decision_as_manual_override(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    raw_result: AutomaticResult,
+    db_session: Session,
+    command: dict[str, object],
+) -> None:
+    decision = _set_confidence_state(
+        working_copy,
+        db_session,
+        "i1",
+        "high",
+    )
+    original = copy.deepcopy(raw_result.candidates)
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command=command,
+    )
+
+    changed = _item(saved, "i1")
+    assert changed["acceptance_source"] == "manual_override"
+    assert changed["confidence_decision"] == decision
+    assert changed["status"] == (
+        "excluded" if command["type"] == "exclude" else "kept"
+    )
+    assert db_session.get(AutomaticResult, raw_result.id).candidates == original
+
+
+def test_sip_only_update_does_not_override_auto_disposition(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    decision = _set_confidence_state(
+        working_copy,
+        db_session,
+        "i1",
+        "high",
+    )
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_detail_fields",
+            "item_id": "i1",
+            "inspection_item": "M6 thread",
+            "inspection_standard": "6H",
+            "inspection_method": "thread gauge",
+            "key_dimension": "yes",
+            "inspection_role": "IPQC",
+            "source_page": 1,
+        },
+    )
+
+    item = _item(saved, "i1")
+    assert item["status"] == "auto_accepted"
+    assert item["acceptance_source"] == "confidence_policy"
+    assert item["confidence_decision"] == decision
 
 
 def test_edit_raw_text(
@@ -322,6 +478,8 @@ def test_add_manual_item(
     assert added["scope"] == "local_feature"
     assert added["coordinates"] == [21.0, 22.0, 23.0, 24.0]
     assert added["source_location_ids"] == []
+    assert added["status"] == "kept"
+    assert added["acceptance_source"] == "manual"
 
 
 def test_set_balloon_required_marks_numbering_stale(
@@ -437,6 +595,65 @@ def test_simple_merge_preserves_sources_without_quantity_sum(
     }
 
 
+def test_merge_and_split_outputs_are_manual_overrides_without_inherited_decision(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    first_decision = _set_confidence_state(
+        working_copy,
+        db_session,
+        "i1",
+        "high",
+    )
+    _set_confidence_state(working_copy, db_session, "i2", "high")
+
+    merged = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "merge",
+            "item_ids": ["i1", "i2"],
+            "raw_text": "M6 通",
+        },
+    )
+    merged_item = merged.items[-1]
+
+    assert merged_item["status"] == "kept"
+    assert merged_item["acceptance_source"] == "manual_override"
+    assert "confidence_decision" not in merged_item
+    assert _item(merged, "i1")["acceptance_source"] == "manual_override"
+    assert _item(merged, "i1")["confidence_decision"] == first_decision
+
+    split_decision = _set_confidence_state(
+        merged,
+        db_session,
+        "composite-1",
+        "high",
+    )
+    split = review_service.apply(
+        merged.id,
+        expected_version=merged.version,
+        operator_id="quality-1",
+        command={
+            "type": "split",
+            "item_id": "composite-1",
+            "parts": [{"raw_text": "Φ10"}, {"raw_text": "深20"}],
+        },
+    )
+
+    assert all(item["status"] == "kept" for item in split.items[-2:])
+    assert all(
+        item["acceptance_source"] == "manual_override"
+        for item in split.items[-2:]
+    )
+    assert all("confidence_decision" not in item for item in split.items[-2:])
+    source = _item(split, "composite-1")
+    assert source["acceptance_source"] == "manual_override"
+    assert source["confidence_decision"] == split_decision
+
+
 @pytest.mark.parametrize(
     ("command", "message"),
     [
@@ -500,7 +717,14 @@ def test_simple_split_preserves_source_relations(
 def test_resolve_confirmation_records_explicit_outcome(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,
+    db_session: Session,
 ) -> None:
+    decision = _set_confidence_state(
+        working_copy,
+        db_session,
+        "complex-1",
+        "low",
+    )
     saved = review_service.apply(
         working_copy.id,
         expected_version=working_copy.version,
@@ -515,6 +739,9 @@ def test_resolve_confirmation_records_explicit_outcome(
     resolved = _item(saved, "complex-1")
     assert resolved["requires_confirmation"] is False
     assert resolved["confirmation_accepted"] is False
+    assert resolved["status"] == "kept"
+    assert resolved["acceptance_source"] == "manual_override"
+    assert resolved["confidence_decision"] == decision
     assert saved.coverage["entries"][0]["candidate_id"] == "complex-1"
     assert saved.coverage["entries"][0]["requires_confirmation"] is False
     assert saved.coverage["entries"][0]["confirmation_accepted"] is False
@@ -562,7 +789,8 @@ def test_promote_source_creates_item_and_resolves_coverage_atomically(
         "source_location_ids": ["source-location"],
         "page_index": 1,
         "source_type": "manual",
-        "status": "pending",
+        "status": "kept",
+        "acceptance_source": "manual",
         "active": True,
     }
     assert sum(

@@ -13,8 +13,34 @@ from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.review.locks import acquire_lock
-from app.review.service import ReviewService
+from app.review.service import ReviewService, manual_review_count
 from app.storage.models import StoredFile
+
+
+def _confidence_decision(
+    band: str,
+    *,
+    evidence_codes: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "band": band,
+        "review_disposition": (
+            "auto_accepted" if band == "high" else "review_required"
+        ),
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": evidence_codes or [
+            "typed_schema_complete",
+            "source_truth_preserved",
+            "single_source_owner",
+            "local_association_complete",
+            "coverage_clear",
+            "no_conflict",
+            "semantic_confirmation_clear",
+            "balloon_requirement_known",
+            "source_signal_valid",
+            f"source_signal_{band}",
+        ],
+    }
 
 
 @pytest.fixture
@@ -36,6 +62,34 @@ def db_session() -> Iterator[Session]:
 
 @pytest.fixture
 def raw_result(db_session: Session) -> AutomaticResult:
+    return _make_raw_result(db_session)
+
+
+def _raw_candidate(
+    candidate_id: str = "candidate-1",
+) -> dict[str, object]:
+    return {
+        "candidate_id": candidate_id,
+        "payload": {
+            "candidate_id": candidate_id,
+            "item_type": "thread",
+            "raw_text": "M6",
+            "normalized_text": "M6",
+            "coordinates": [1, 2, 3, 4],
+            "scope": "local_feature",
+            "balloon_required": True,
+            "requires_confirmation": False,
+        },
+        "source_location_ids": [f"source-{candidate_id}"],
+    }
+
+
+def _make_raw_result(
+    db_session: Session,
+    *,
+    candidates: list[dict[str, object]] | None = None,
+    schema_version: str = "automatic-result/1",
+) -> AutomaticResult:
     project_id = uuid.uuid4()
     source_file_id = uuid.uuid4()
     job_id = uuid.uuid4()
@@ -46,22 +100,7 @@ def raw_result(db_session: Session) -> AutomaticResult:
         source_file_id=source_file_id,
         logical_job_id=job_id,
         inventory_ref=f"asset://tests/{project_id}/inventory.json",
-        candidates=[
-            {
-                "candidate_id": "candidate-1",
-                "payload": {
-                    "candidate_id": "candidate-1",
-                    "item_type": "thread",
-                    "raw_text": "M6",
-                    "normalized_text": "M6",
-                    "coordinates": [1, 2, 3, 4],
-                    "scope": "local_feature",
-                    "balloon_required": True,
-                    "requires_confirmation": False,
-                },
-                "source_location_ids": ["source-1"],
-            }
-        ],
+        candidates=candidates or [_raw_candidate()],
         coverage={
             "blocking_count": 0,
             "review_required_count": 0,
@@ -71,7 +110,7 @@ def raw_result(db_session: Session) -> AutomaticResult:
             "relations": [],
         },
         provider_call_ids=[],
-        schema_version="automatic-result/1",
+        schema_version=schema_version,
     )
     db_session.add_all(
         [
@@ -131,6 +170,175 @@ def test_create_working_copy_moves_ready_project_to_editing(
     assert project is not None
     assert project.state == ProjectState.EDITING
     assert working.project_id == project.id
+
+
+def test_v2_bootstrap_routes_only_high_confidence_away_from_manual_review(
+    db_session: Session,
+) -> None:
+    candidates: list[dict[str, object]] = []
+    for band in ("high", "medium", "low"):
+        candidate_id = f"candidate-{band}"
+        candidate = _raw_candidate(candidate_id)
+        candidate["confidence_decision"] = _confidence_decision(band)
+        candidates.append(candidate)
+    raw_result = _make_raw_result(
+        db_session,
+        candidates=candidates,
+        schema_version="automatic-result/2",
+    )
+
+    working = ReviewService(db_session).create_from_raw(raw_result.id)
+    items = {item["item_id"]: item for item in working.items}
+
+    assert items["candidate-high"] == {
+        **items["candidate-high"],
+        "status": "auto_accepted",
+        "requires_confirmation": False,
+        "acceptance_source": "confidence_policy",
+        "confidence_decision": _confidence_decision("high"),
+    }
+    for band in ("medium", "low"):
+        assert items[f"candidate-{band}"]["status"] == "pending"
+        assert items[f"candidate-{band}"]["requires_confirmation"] is True
+        assert items[f"candidate-{band}"]["acceptance_source"] is None
+        assert items[f"candidate-{band}"]["confidence_decision"] == (
+            _confidence_decision(band)
+        )
+    assert manual_review_count(working.items, working.coverage) == 2
+
+
+def test_legacy_bootstrap_ignores_forged_high_confidence_shape(
+    db_session: Session,
+) -> None:
+    candidates = [_raw_candidate()]
+    candidates[0]["confidence_decision"] = _confidence_decision("high")
+    raw_result = _make_raw_result(db_session, candidates=candidates)
+
+    working = ReviewService(db_session).create_from_raw(raw_result.id)
+
+    assert working.items[0]["status"] == "pending"
+    assert working.items[0]["requires_confirmation"] is True
+    assert working.items[0]["acceptance_source"] is None
+    assert "confidence_decision" not in working.items[0]
+
+
+@pytest.mark.parametrize(
+    "decision",
+    [
+        None,
+        "not-an-object",
+        {
+            **_confidence_decision("high"),
+            "policy_version": "candidate-confidence/999",
+        },
+        {
+            **_confidence_decision("high"),
+            "evidence_codes": [
+                "typed_schema_complete",
+                "typed_schema_complete",
+            ],
+        },
+        {
+            **_confidence_decision("high"),
+            "evidence_codes": [
+                "source_signal_high",
+                "typed_schema_complete",
+            ],
+        },
+        {
+            **_confidence_decision("high"),
+            "evidence_codes": ["unknown"],
+        },
+        {
+            **_confidence_decision("high"),
+            "extra": True,
+        },
+        {
+            **_confidence_decision("high"),
+            "evidence_codes": "typed_schema_complete",
+        },
+        {
+            **_confidence_decision("high"),
+            "band": True,
+        },
+        {
+            **_confidence_decision("high"),
+            "review_disposition": "review_required",
+        },
+    ],
+    ids=[
+        "missing",
+        "malformed",
+        "unknown-version",
+        "duplicate-evidence",
+        "out-of-order-evidence",
+        "unknown-evidence",
+        "extra-field",
+        "wrong-type",
+        "wrong-band-type",
+        "illegal-pair",
+    ],
+)
+def test_v2_malformed_confidence_decision_fails_closed_without_500(
+    db_session: Session,
+    decision: object,
+) -> None:
+    candidates = [_raw_candidate()]
+    if decision is not None:
+        candidates[0]["confidence_decision"] = decision
+    raw_result = _make_raw_result(
+        db_session,
+        candidates=candidates,
+        schema_version="automatic-result/2",
+    )
+
+    working = ReviewService(db_session).create_from_raw(raw_result.id)
+
+    assert working.items[0]["status"] == "pending"
+    assert working.items[0]["requires_confirmation"] is True
+    assert working.items[0]["acceptance_source"] is None
+    assert "confidence_decision" not in working.items[0]
+
+
+def test_manual_review_count_deduplicates_candidate_linked_coverage() -> None:
+    items = [
+        {
+            "item_id": "candidate-review",
+            "active": True,
+            "requires_confirmation": True,
+        },
+        {
+            "item_id": "candidate-auto",
+            "active": True,
+            "requires_confirmation": False,
+        },
+        {
+            "item_id": "excluded",
+            "active": False,
+            "requires_confirmation": True,
+        },
+    ]
+    coverage = {
+        "entries": [
+            {
+                "observation_id": "candidate-linked",
+                "candidate_id": "candidate-review",
+                "requires_confirmation": True,
+            },
+            {
+                "observation_id": "source-only",
+                "candidate_id": None,
+                "requires_confirmation": True,
+            },
+            {
+                "observation_id": "source-only",
+                "candidate_id": None,
+                "requires_confirmation": True,
+            },
+        ]
+    }
+
+    assert manual_review_count(items, coverage) == 2
 
 
 def test_visual_coverage_exposes_only_owner_committed_discriminator() -> None:

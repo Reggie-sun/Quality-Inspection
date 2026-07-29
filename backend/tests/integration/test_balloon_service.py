@@ -32,6 +32,28 @@ class BalloonContext:
     working_copy: ReviewWorkingCopy
 
 
+def _confidence_decision(band: str) -> dict[str, object]:
+    return {
+        "band": band,
+        "review_disposition": (
+            "auto_accepted" if band == "high" else "review_required"
+        ),
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+            "typed_schema_complete",
+            "source_truth_preserved",
+            "single_source_owner",
+            "local_association_complete",
+            "coverage_clear",
+            "no_conflict",
+            "semantic_confirmation_clear",
+            "balloon_requirement_known",
+            "source_signal_valid",
+            f"source_signal_{band}",
+        ],
+    }
+
+
 @pytest.fixture
 def db_session() -> Iterator[Session]:
     connection = engine.connect()
@@ -142,6 +164,7 @@ def make_balloon_context(
                         "requires_confirmation": False,
                     },
                     "source_location_ids": ["s1"],
+                    "confidence_decision": _confidence_decision("high"),
                 },
                 {
                     "candidate_id": "i2",
@@ -156,6 +179,7 @@ def make_balloon_context(
                         "requires_confirmation": False,
                     },
                     "source_location_ids": ["s2"],
+                    "confidence_decision": _confidence_decision("medium"),
                 },
             ],
             coverage={
@@ -167,13 +191,19 @@ def make_balloon_context(
                 "relations": [],
             },
             provider_call_ids=[],
-            schema_version="automatic-result/1",
+            schema_version="automatic-result/2",
         )
     )
     db_session.commit()
     review_service = ReviewService(db_session, storage=storage)
     working = review_service.create_from_raw(result_id)
     acquire_lock(db_session, project_id, "quality-1")
+    working = review_service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+        command={"type": "keep", "item_id": "i2"},
+    )
     for item_id, item_text in (("i1", "M6"), ("i2", "M8")):
         working = review_service.apply(
             working.id,
@@ -245,6 +275,11 @@ def test_formal_numbers_require_frozen_item_set(
 
     assert [balloon.formal_number for balloon in generated] == [1, 2]
     assert [balloon.suggested_number for balloon in generated] == [1, 2]
+    items = {item["item_id"]: item for item in frozen.items}
+    assert items["i1"]["status"] == "auto_accepted"
+    assert items["i1"]["acceptance_source"] == "confidence_policy"
+    assert items["i2"]["status"] == "kept"
+    assert items["i2"]["acceptance_source"] == "manual_override"
 
 
 @pytest.mark.parametrize(

@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.audit.operations import OperationRecord
 from app.candidates.complex_fallback import CoarseType
+from app.candidates.confidence import (
+    ConfidenceDecisionContractError,
+    validate_confidence_decision,
+)
 from app.candidates.models import AutomaticResult
 from app.candidates.schemas import Candidate
 from app.projects.models import Project
@@ -75,6 +79,29 @@ _COARSE_TYPE = TypeAdapter(CoarseType)
 _SIP_DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
 
 
+def manual_review_count(
+    items: list[dict[str, Any]],
+    coverage: dict[str, Any],
+) -> int:
+    review_item_ids = {
+        item.get("item_id")
+        for item in items
+        if item.get("active", True)
+        and item.get("requires_confirmation") is True
+        and isinstance(item.get("item_id"), str)
+    }
+    entries = coverage.get("entries", [])
+    source_only_ids = {
+        entry.get("observation_id")
+        for entry in entries
+        if isinstance(entry, dict)
+        and entry.get("requires_confirmation") is True
+        and entry.get("candidate_id") is None
+        and isinstance(entry.get("observation_id"), str)
+    } if isinstance(entries, list) else set()
+    return len(review_item_ids) + len(source_only_ids)
+
+
 class ReviewService:
     def __init__(
         self,
@@ -115,7 +142,10 @@ class ReviewService:
             project_id=raw_result.project_id,
             raw_result_id=raw_result.id,
             version=1,
-            items=[self._current_item(candidate) for candidate in raw_result.candidates],
+            items=[
+                self._current_item(candidate, raw_result.schema_version)
+                for candidate in raw_result.candidates
+            ],
             coverage=self._review_coverage(raw_result.coverage),
             sip_metadata={},
             numbering_stale=False,
@@ -424,18 +454,42 @@ class ReviewService:
         raise ReviewedResultImmutable("immutable reviewed result cannot be replaced")
 
     @staticmethod
-    def _current_item(candidate: dict[str, Any]) -> dict[str, Any]:
+    def _current_item(
+        candidate: dict[str, Any],
+        raw_schema_version: str,
+    ) -> dict[str, Any]:
         item_id = str(candidate["candidate_id"])
         payload = copy.deepcopy(candidate["payload"])
         payload.pop("candidate_id", None)
-        return {
+        validated_decision = None
+        if raw_schema_version == "automatic-result/2":
+            try:
+                validated_decision = validate_confidence_decision(
+                    candidate.get("confidence_decision")
+                )
+            except ConfidenceDecisionContractError:
+                pass
+        is_auto_accepted = (
+            validated_decision is not None
+            and validated_decision.review_disposition == "auto_accepted"
+        )
+        current = {
             "item_id": item_id,
             **payload,
             "source_location_ids": list(candidate.get("source_location_ids", [])),
             "source_type": "automatic",
-            "status": "pending",
+            "status": "auto_accepted" if is_auto_accepted else "pending",
+            "requires_confirmation": not is_auto_accepted,
+            "acceptance_source": (
+                "confidence_policy" if is_auto_accepted else None
+            ),
             "active": True,
         }
+        if validated_decision is not None:
+            current["confidence_decision"] = copy.deepcopy(
+                candidate["confidence_decision"]
+            )
+        return current
 
     @staticmethod
     def _review_coverage(raw_coverage: dict[str, Any]) -> dict[str, Any]:
@@ -495,10 +549,11 @@ class ReviewService:
     ) -> tuple[list[str], bool]:
         if isinstance(command, Keep):
             item = self._active_item(items, command.item_id)
-            item["status"] = "kept"
+            self._mark_manual_acceptance(item)
             return [command.item_id], numbering_stale
         if isinstance(command, Exclude):
             item = self._active_item(items, command.item_id)
+            self._mark_manual_acceptance(item)
             item["status"] = "excluded"
             item["active"] = False
             return [command.item_id], True
@@ -506,6 +561,7 @@ class ReviewService:
             item = self._active_item(items, command.item_id)
             self._edit_item(item, command.fields)
             self._clear_sip_detail_fields(item)
+            self._mark_manual_acceptance(item)
             return [command.item_id], numbering_stale or "coordinates" in command.fields
         if isinstance(command, Add):
             item_id = str(uuid.uuid4())
@@ -525,7 +581,8 @@ class ReviewService:
                     "source_location_ids": source_location_ids,
                     "page_index": command.page_index,
                     "source_type": "manual",
-                    "status": "pending",
+                    "status": "kept",
+                    "acceptance_source": "manual",
                     "active": True,
                 }
             )
@@ -550,12 +607,16 @@ class ReviewService:
                     "quantity": None,
                     "source_location_ids": self._ordered_source_union(source_items),
                     "source_type": "manual",
-                    "status": "pending",
+                    "status": "kept",
+                    "requires_confirmation": False,
+                    "acceptance_source": "manual_override",
                     "active": True,
                     "merged_from_item_ids": list(command.item_ids),
                 }
             )
+            merged.pop("confidence_decision", None)
             for source in source_items:
+                self._mark_manual_acceptance(source)
                 source["status"] = "superseded"
                 source["active"] = False
             items.append(merged)
@@ -564,6 +625,7 @@ class ReviewService:
             source = self._active_item(items, command.item_id)
             if "item_type" not in source:
                 raise ValueError("split is limited to simple items")
+            self._mark_manual_acceptance(source)
             source["status"] = "superseded"
             source["active"] = False
             split_ids: list[str] = []
@@ -579,11 +641,14 @@ class ReviewService:
                         "normalized_text": part.raw_text,
                         "quantity": None,
                         "source_type": "manual",
-                        "status": "pending",
+                        "status": "kept",
+                        "requires_confirmation": False,
+                        "acceptance_source": "manual_override",
                         "active": True,
                         "split_from_item_id": command.item_id,
                     }
                 )
+                split_item.pop("confidence_decision", None)
                 items.append(split_item)
             return [command.item_id, *split_ids], True
         if isinstance(command, PromoteSource):
@@ -626,7 +691,8 @@ class ReviewService:
                     "source_location_ids": [source_location_id],
                     "page_index": command.page_index,
                     "source_type": "manual",
-                    "status": "pending",
+                    "status": "kept",
+                    "acceptance_source": "manual",
                     "active": True,
                 }
             )
@@ -682,6 +748,7 @@ class ReviewService:
         if isinstance(command, SetBalloonRequired):
             item = self._active_item(items, command.item_id)
             item["balloon_required"] = command.balloon_required
+            self._mark_manual_acceptance(item)
             return [command.item_id], True
         if isinstance(command, SetSipDetailFields):
             item = self._active_item(items, command.item_id)
@@ -708,6 +775,21 @@ class ReviewService:
             if item["item_id"] == item_id and item.get("active", True):
                 return item
         raise ReviewNotFound(f"active review item {item_id} was not found")
+
+    @staticmethod
+    def _mark_manual_acceptance(item: dict[str, Any]) -> None:
+        if "confidence_decision" in item:
+            ReviewService._mark_manual_override(item)
+            return
+        item["status"] = "kept"
+        item["requires_confirmation"] = False
+        item["acceptance_source"] = "manual"
+
+    @staticmethod
+    def _mark_manual_override(item: dict[str, Any]) -> None:
+        item["status"] = "kept"
+        item["requires_confirmation"] = False
+        item["acceptance_source"] = "manual_override"
 
     @staticmethod
     def _edit_item(item: dict[str, Any], fields: dict[str, Any]) -> None:
@@ -805,6 +887,7 @@ class ReviewService:
             if item["item_id"] == item_id and item.get("active", True):
                 item["requires_confirmation"] = False
                 item["confirmation_accepted"] = accepted
+                ReviewService._mark_manual_acceptance(item)
                 resolved = True
         for entry in ReviewService._coverage_entries(coverage):
             if entry.get("candidate_id") == item_id:

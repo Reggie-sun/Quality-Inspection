@@ -106,6 +106,12 @@ def working_copy(db_session: Session) -> ReviewWorkingCopy:
         working.id,
         expected_version=working.version,
         operator_id="quality-1",
+        command={"type": "keep", "item_id": "i1"},
+    )
+    working = service.apply(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
         command={
             "type": "set_sip_detail_fields",
             "item_id": "i1",

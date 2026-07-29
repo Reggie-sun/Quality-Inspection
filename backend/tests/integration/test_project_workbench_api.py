@@ -18,8 +18,10 @@ from app.db import engine
 from app.exports.models import ExportJob
 from app.exports.service import ExportService
 from app.main import app
+from app.projects.router import _project_items
 from app.projects.router import get_session as get_project_session
 from app.projects.router import get_storage
+from app.review.router import _working_copy as _review_working_copy
 from app.review.models import ReviewedResult
 from app.storage.models import StoredFile
 
@@ -92,6 +94,7 @@ def test_project_workbench_delivers_real_pdf_without_internal_references(
         }
         assert payload["working_copy"]["id"] == str(context.working_copy.id)
         assert payload["working_copy"]["version"] == context.working_copy.version
+        assert payload["working_copy"]["manual_review_count"] == 0
         assert payload["source_pdf_url"] == f"{base}/source-pdf"
         assert payload["pages"] == [
             {
@@ -266,6 +269,11 @@ def test_project_workbench_projects_source_only_coverage_for_review(
         )
 
         assert response.status_code == 200
+        assert response.json()["working_copy"]["manual_review_count"] == 3
+        assert (
+            _review_working_copy(context.working_copy)["manual_review_count"]
+            == 3
+        )
         source = next(
             item
             for item in response.json()["sources"]
@@ -326,6 +334,70 @@ def test_project_workbench_projects_source_only_coverage_for_review(
         session.close()
         outer_transaction.rollback()
         connection.close()
+
+
+def test_project_candidate_projection_exposes_backend_confidence_status() -> None:
+    items = [
+        {
+            "item_id": "high",
+            "active": True,
+            "page_index": 0,
+            "coordinates": [1, 2, 3, 4],
+            "source_location_ids": ["source-high"],
+            "status": "auto_accepted",
+            "confidence_decision": {
+                "band": "high",
+                "review_disposition": "auto_accepted",
+                "policy_version": "candidate-confidence/1",
+                "evidence_codes": ["typed_schema_complete"],
+            },
+        },
+        {
+            "item_id": "legacy",
+            "active": True,
+            "page_index": 0,
+            "coordinates": [5, 6, 7, 8],
+            "source_location_ids": ["source-legacy"],
+            "status": "pending",
+        },
+    ]
+    observations = {
+        "source-high": {
+            "page_index": 0,
+            "bbox_pdf": [1, 2, 3, 4],
+            "raw_text": "M6",
+            "source_type": "text",
+        },
+        "source-legacy": {
+            "page_index": 0,
+            "bbox_pdf": [5, 6, 7, 8],
+            "raw_text": "M8",
+            "source_type": "text",
+        },
+    }
+
+    candidates, _ = _project_items(items, {"entries": []}, observations)
+
+    assert candidates == [
+        {
+            "id": "candidate-high",
+            "item_id": "high",
+            "page_index": 0,
+            "bbox_pdf": [1, 2, 3, 4],
+            "confidence_band": "high",
+            "review_disposition": "auto_accepted",
+            "status": "auto_accepted",
+        },
+        {
+            "id": "candidate-legacy",
+            "item_id": "legacy",
+            "page_index": 0,
+            "bbox_pdf": [5, 6, 7, 8],
+            "confidence_band": None,
+            "review_disposition": None,
+            "status": "pending",
+        },
+    ]
 
 
 def test_project_workbench_recovers_reviewed_result_and_latest_atomic_export(

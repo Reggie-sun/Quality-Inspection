@@ -29,6 +29,7 @@ from app.projects.service import (
     ProjectNotFound,
 )
 from app.review.models import ReviewedResult, ReviewWorkingCopy
+from app.review.service import manual_review_count
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -334,12 +335,20 @@ def _project_items(
             page_index = source["page_index"]
         coordinates = item.get("coordinates")
         if isinstance(page_index, int) and _is_bbox(coordinates):
+            confidence_decision = item.get("confidence_decision")
+            if not isinstance(confidence_decision, dict):
+                confidence_decision = {}
             candidates.append(
                 {
                     "id": f"candidate-{item_id}",
                     "item_id": item_id,
                     "page_index": page_index,
                     "bbox_pdf": list(coordinates),
+                    "confidence_band": confidence_decision.get("band"),
+                    "review_disposition": confidence_decision.get(
+                        "review_disposition"
+                    ),
+                    "status": item.get("status"),
                 }
             )
         for source_id in source_ids:
@@ -410,6 +419,10 @@ def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
         "items_frozen_at": working.items_frozen_at,
         "items_frozen_by": working.items_frozen_by,
         "items_frozen_version": working.items_frozen_version,
+        "manual_review_count": manual_review_count(
+            working.items,
+            working.coverage,
+        ),
     }
 
 
