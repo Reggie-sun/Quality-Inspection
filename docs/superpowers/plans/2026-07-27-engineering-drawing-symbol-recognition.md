@@ -900,6 +900,7 @@ then `git revert <task-commit>`. Never revert the migration file before downgrad
 - Modify: `backend/tests/unit/candidates/test_symbol_routing.py`
 - Modify: `backend/tests/integration/test_project_intake_api.py`
 - Modify: `backend/tests/integration/test_project_status_api.py`
+- Modify: `backend/tests/integration/test_processing_entry_task.py`
 - Modify: `backend/tests/integration/test_schema.py`
 
 - [ ] **Step 1: RED planner and mode tests**
@@ -921,8 +922,13 @@ test_planner_fake_clock_enforces_page_and_project_wall_budgets
 test_project_freezes_allowlisted_recognition_mode_at_intake
 test_worker_uses_frozen_project_mode_after_settings_change
 test_runtime_rejects_verification_high_recall_mode
-test_symbol_routing_mode_migration_upgrade_and_downgrade
+test_project_schema_has_frozen_symbol_routing_mode
 ```
+
+`test_project_schema_has_frozen_symbol_routing_mode` checks the current migrated
+schema only. The disposable PostgreSQL `upgrade head -> downgrade 0007 -> upgrade
+head` commands below are the unique migration downgrade/upgrade evidence; tests
+must not downgrade or mock-downgrade the shared integration database.
 
 Run:
 
@@ -931,6 +937,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/unit/candidates/test_symbol_routing.py \
   backend/tests/integration/test_project_intake_api.py \
   backend/tests/integration/test_project_status_api.py \
+  backend/tests/integration/test_processing_entry_task.py \
   backend/tests/integration/test_schema.py -q
 ```
 
@@ -978,6 +985,7 @@ git add backend/app/candidates/symbol_routing.py backend/app/config.py \
   backend/tests/unit/candidates/test_symbol_routing.py \
   backend/tests/integration/test_project_intake_api.py \
   backend/tests/integration/test_project_status_api.py \
+  backend/tests/integration/test_processing_entry_task.py \
   backend/tests/integration/test_schema.py
 git commit -m "feat: freeze symbol routing mode"
 ```
