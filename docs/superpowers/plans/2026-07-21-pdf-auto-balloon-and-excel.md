@@ -1105,6 +1105,51 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
         `first-pdf-balloons` pause and report the result; do not continue current-four、
         browser/frontend、`main` merge or D7-T3. Any continuation also requires a new user
         decision and committed Heavy amendment. The enum itself is never success evidence.
+  - Safe Provider diagnostic live outcome — 2026-07-29:
+    - The one authorized diagnostic start was consumed by immutable run
+      `20260729T014016291065Z-2174c7b2` from exact committed HEAD
+      `68ff9ad50c59fe4e6302aa073632c47953935571` and fresh project
+      `9c1f2aa4-3822-4099-9bf3-d29b32514cae`. Runtime health、the four exact
+      current-source hashes、literal registration runs、current-four manifest SHA-256
+      `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`、
+      symbol manifest SHA-256
+      `0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448`
+      and proposal rule SHA-256
+      `8b7b67f4e303c7cfb7648c9dc2b11530198216f4799ee485f49199f0e99a8cfa`
+      all passed before run creation.
+    - The run started at `2026-07-29T01:40:16.311746Z` and was immutable-sealed
+      failed at `2026-07-29T01:43:40.420215Z` with
+      `failure_reason=live_start_failed:RuntimeError`. Seven Qwen symbol calls first
+      produced schema-valid cache records. The eighth call failed closed with exact
+      allowlisted stage `tool_arguments_schema_invalid` and exact envelope
+      `visual-symbol-call-failure/2`; its request ID is
+      `chatcmpl-59204951-489b-9989-a79f-9a619bf39342`, duration is `7589ms`,
+      prompt/completion/total usage is `3419/185/3604`, and `retry_count=0`.
+      No raw message content、tool arguments、completion or response body was retained
+      or inspected.
+    - Deterministic no-Provider reproduction maps failure crop SHA-256
+      `5628b3603d6fa7f12d62a637a438740a92f29dd81e2a9de689e492b1dcb53724`
+      uniquely to page `0`, batch index `7` and global call index `8`: `6`
+      visual observations、`12` unique associated texts、`5221` prompt characters
+      and crop bbox `[363.300,329.390,630.800,544.677]`. Two in-process
+      reproductions remained exact at `80/125` observations、`13/16` batches and
+      call-order SHA-256
+      `7ecfe186fa39c03f4452b432626d7d6fcafd43cf0ff33788a75b9ac11d3c8201`;
+      reproduction Provider construction/calls=`0`.
+    - Root-cause boundary: the first failing local response-conformance branch is
+      decoded tool-arguments payload validation against the checked-in schema or its
+      existing non-finite bbox guard. The stage does not identify the invalid leaf,
+      prove a unique remote cause, authorize schema relaxation or establish model
+      randomness. The prior failed-run crop
+      `d2882628c93c673c6d91bdd2bb44c7f430afc6040f7755b0f0d15af0bd3fb968`
+      produced a schema-valid record in this run, so failure is not proven to be an
+      invariant of that prior crop; no stronger causality is claimed.
+    - No false closure: no `AutomaticResult`、sample、symbol-recognition report、
+      manual source command、LIVE-01、browser/frontend evidence、`main` merge or
+      D7-T3 continuation was created. This one-run authorization is exhausted.
+      Any response-contract remediation or another live start requires a new explicit
+      user decision and a separately committed Heavy amendment; the safe enum is
+      diagnostic evidence only, never Quality Owner approval or formal success.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
