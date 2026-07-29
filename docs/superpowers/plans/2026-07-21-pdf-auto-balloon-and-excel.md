@@ -1351,6 +1351,50 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
       already authorized by the bbox compatibility amendment remains the exact
       total. Prompt v4、tool/schema、adapter `/3`、bounded retry、Provider limits、
       manual gates and all downstream stop boundaries remain unchanged.
+  - Equivalent Qwen snapshot live outcome — 2026-07-29:
+    - The no-write preflight passed from clean HEAD
+      `6321860efe0bc799790cab9318893a540efef98c` with runtime model
+      `qwen3-vl-plus-2025-12-19`, four exact current sources、`111` contracts、
+      the three sealed input artifacts and current-four manifest SHA-256
+      `0f507df9bafcffed63947df86e3c774a22e08f3965c15580683363722fd0d47b`.
+      Run-directory count remained unchanged during preflight, and API/worker
+      both used adapter `/3`, SDK `max_retries=0` and host-identical
+      `qwen_vl.py` SHA-256
+      `d8ddeeecf9668684d88d591c977bb74aff6cf3d916ee99a2df20fd31d5b1244e`.
+    - The single authorized start created immutable run
+      `20260729T024549975607Z-d69e1076` and fresh project
+      `4362e5da-358f-46ca-bea0-9f0eb374002b`. It started at
+      `2026-07-29T02:45:49.996294Z` and sealed failed at
+      `2026-07-29T02:51:07.292879Z` with
+      `failure_reason=live_start_failed:RuntimeError`.
+    - The first `16` visual calls produced schema-valid caches: all `13` page-0
+      batches and the first `3` page-1 batches. The seventeenth call, page `1`
+      batch index `3`, failed closed at exact
+      `tool_arguments_schema_invalid`. Its cache identity is
+      `2f0089d02e35a55a3b6eb899052919530a7c5387e776b33a5a90cabbbc53a3af`,
+      crop SHA-256 is
+      `e4e60ff8a7434f3e00577dce1de536f616cb3dfadaa276570b33b5070fb621a2`,
+      request ID is `chatcmpl-945a3ea5-9ac6-95fa-a6f1-748589fda030`,
+      duration is `7222ms` and prompt/completion/total usage is
+      `4162/205/4367`.
+    - Exact run totals are `17` Provider calls、`16` valid caches、`0` retry calls
+      and `62,286/11,294/73,580` prompt/completion/total tokens. Page 1 already
+      owns the frozen maximum `16` batches, so the bounded retry implementation
+      correctly had no spare call below the `<=16/page` cap and persisted
+      `retry_count=0`.
+    - The different failing crop proves that adapter `/3` and the equivalent
+      snapshot do not make every Provider response schema-valid. The strongest
+      supported boundary remains decoded tool-arguments schema failure; because
+      raw arguments are intentionally not retained, this outcome does not prove
+      a bbox leaf、another exact field、a unique remote cause or a safe schema
+      relaxation.
+    - No `AutomaticResult`、working copy、reviewed result、balloon、manual source
+      command、browser/frontend evidence、current-four continuation、`main`
+      merge or D7-T3 change was created. The project is
+      `processing_failed`; the run directory/files are sealed `555/444`. This
+      one-start authorization is exhausted. Any further diagnostic dimension、
+      retry-cap/paging change、response remediation or live start requires a new
+      explicit user decision and a separately committed Heavy amendment.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
