@@ -406,9 +406,9 @@ credential file may change.
 5. Independent read-only review must verify Owner uniqueness、negative controls、
    cache invalidation and absence of schema/retry/frontend changes.
 
-No new live Provider call、UI retry/upload、API/worker rebuild or `full-p0` is
-authorized by this amendment. A later canary requires an explicit isolated call
-budget and acceptance rule after local GREEN and review.
+The remediation amendment itself did not authorize a live Provider call、
+UI retry/upload、API/worker rebuild or `full-p0`. The separately authorized
+browser canary below is the only successor live action.
 
 ### Rollback
 
@@ -423,14 +423,65 @@ pytest -q backend/tests/contract/test_qwen_symbol_provider.py
 ### Current Remediation State
 
 ```text
-status=authorized_for_red
+status=implementation_committed_canary_authorized
 branch=main
+implementation_commit=da846bb638bf72e7a54a003746cfb7232a8030c2
 owner=QwenVisionProvider_adapter
 old_path_action=replace_incomplete_qwen_native_normalization
 schema_contract_changed=false
 retry_or_call_cap_changed=false
 frontend_changed=false
-live_provider_calls_authorized=0
+focused_provider_contracts=18_passed
+symbol_integration_e2e=16_passed
+provider_fixtures=56_passed_external_calls_0
+full_backend=710_passed
+independent_review=accept_with_concern_resolved
+live_provider_calls_authorized=one_browser_upload_existing_caps
 full_p0_blocked=true
-next_action=focused_red
+next_action=browser_canary
 ```
+
+## Browser Canary Authorization
+
+用户在 implementation GREEN、full backend 和 independent review 后明确要求：
+“修复完了再次用浏览器上传”。该授权只允许下面一次 browser canary，不授权
+formal `full-p0`、direct Provider diagnostic 或自动 retry。
+
+### Identity And Runtime
+
+- source filename: `JS26032501-1-03-036#上下座B#A1.pdf`
+- source SHA-256:
+  `58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec`
+- implementation commit:
+  `da846bb638bf72e7a54a003746cfb7232a8030c2`
+- model: `qwen3-vl-plus-2025-12-19`
+- adapter: `qwen-openai-compatible/5`
+- response schema: `visual-symbol-review/1`
+- UI: keep the current `main` UI at `http://127.0.0.1:5173/`
+
+Rebuild and recreate only API/worker from `main`; do not rebuild、restart or
+replace frontend. Before the upload, require:
+
+- API health `ok` and worker `running`;
+- host/API/worker hashes match for `qwen_vl.py` and `symbol_review.py`;
+- runtime model and adapter match the identities above;
+- credential presence may be checked, but values must never be read or printed.
+
+### Exact Budget And Stop Rule
+
+- Browser file selection count: exactly `1`.
+- Browser submit click count: exactly `1`.
+- Project creation count: exactly `1`.
+- Direct Provider calls: `0`.
+- Provider calls may occur only through that project’s existing bounded
+  CandidateAdvisor path and existing unchanged call caps.
+- Do not click `重新处理`、reselect、submit a second project or run a targeted call.
+- Acceptance:
+  - if the project reaches the Quality Owner review gate, record the exact
+    project route and stop; do not approve;
+  - if it fails, record only sanitized project/call evidence and stop; do not
+    fix or rerun;
+  - if runtime/source identity differs, stop before file selection.
+
+This browser canary consumes the authorization regardless of outcome. It does
+not unblock formal `full-p0`、D7-T3、SR-5 or any later main merge/push.
