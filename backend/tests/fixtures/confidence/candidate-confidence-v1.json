@@ -1,0 +1,758 @@
+{
+  "schema_version": "candidate-confidence-fixture/1",
+  "cases": [
+    {
+      "id": "linear-native-positive",
+      "candidate": {
+        "candidate_id": "linear-native",
+        "payload": {
+          "candidate_id": "linear-native",
+          "item_type": "linear_dimension",
+          "raw_text": "10",
+          "normalized_text": "10",
+          "coordinates": [1, 2, 11, 12],
+          "scope": "local_feature",
+          "nominal": "10",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["linear-native-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "linear-native-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_complete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "linear-native-field-negative",
+      "candidate": {
+        "candidate_id": "linear-native-negative",
+        "payload": {
+          "candidate_id": "linear-native-negative",
+          "item_type": "linear_dimension",
+          "raw_text": "ten",
+          "normalized_text": "ten",
+          "coordinates": [1, 2, 11, 12],
+          "scope": "local_feature",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["linear-native-negative-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "linear-native-negative-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "medium",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "diameter-ocr-positive",
+      "candidate": {
+        "candidate_id": "diameter-ocr",
+        "payload": {
+          "candidate_id": "diameter-ocr",
+          "item_type": "diameter_dimension",
+          "raw_text": "Φ10",
+          "normalized_text": "Φ10",
+          "coordinates": [2, 3, 12, 13],
+          "scope": "local_feature",
+          "nominal": "10",
+          "feature_kind": "hole",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["diameter-ocr-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "diameter-ocr-source",
+          "source_type": "ocr",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_complete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "diameter-ocr-veto-negative",
+      "candidate": {
+        "candidate_id": "diameter-ocr-negative",
+        "payload": {
+          "candidate_id": "diameter-ocr-negative",
+          "item_type": "diameter_dimension",
+          "raw_text": "Φ10",
+          "normalized_text": "Φ10",
+          "coordinates": [2, 3, 12, 13],
+          "scope": "local_feature",
+          "nominal": "10",
+          "feature_kind": "unknown",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["diameter-ocr-negative-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "diameter-ocr-negative-source",
+          "source_type": "ocr",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "medium",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "feature_kind_unknown",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "thread-visual-positive",
+      "candidate": {
+        "candidate_id": "thread-visual",
+        "payload": {
+          "candidate_id": "thread-visual",
+          "item_type": "thread",
+          "raw_text": "M6通",
+          "normalized_text": "M6通",
+          "coordinates": [3, 4, 13, 14],
+          "scope": "local_feature",
+          "thread_spec": "M6",
+          "through": true,
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["thread-visual-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "thread-visual-source",
+          "source_type": "visual",
+          "normalized_value": "1"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_complete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "thread-visual-field-negative",
+      "candidate": {
+        "candidate_id": "thread-visual-negative",
+        "payload": {
+          "candidate_id": "thread-visual-negative",
+          "item_type": "thread",
+          "raw_text": "thread",
+          "normalized_text": "thread",
+          "coordinates": [3, 4, 13, 14],
+          "scope": "local_feature",
+          "through": false,
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["thread-visual-negative-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "thread-visual-negative-source",
+          "source_type": "visual",
+          "normalized_value": "1"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "medium",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "radius-native-positive",
+      "candidate": {
+        "candidate_id": "radius-native",
+        "payload": {
+          "candidate_id": "radius-native",
+          "item_type": "radius",
+          "raw_text": "R5",
+          "normalized_text": "R5",
+          "coordinates": [4, 5, 14, 15],
+          "scope": "local_feature",
+          "radius_value": "5",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["radius-native-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "radius-native-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_complete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "radius-native-field-negative",
+      "candidate": {
+        "candidate_id": "radius-native-negative",
+        "payload": {
+          "candidate_id": "radius-native-negative",
+          "item_type": "radius",
+          "raw_text": "R-5",
+          "normalized_text": "R-5",
+          "coordinates": [4, 5, 14, 15],
+          "scope": "local_feature",
+          "radius_value": "-5",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["radius-native-negative-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "radius-native-negative-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "medium",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "angle-ocr-positive",
+      "candidate": {
+        "candidate_id": "angle-ocr",
+        "payload": {
+          "candidate_id": "angle-ocr",
+          "item_type": "angle",
+          "raw_text": "45°",
+          "normalized_text": "45°",
+          "coordinates": [5, 6, 15, 16],
+          "scope": "local_feature",
+          "angle_value": "45",
+          "upper_tolerance": "1",
+          "lower_tolerance": "-1",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["angle-ocr-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "angle-ocr-source",
+          "source_type": "ocr",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_complete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "angle-ocr-field-negative",
+      "candidate": {
+        "candidate_id": "angle-ocr-negative",
+        "payload": {
+          "candidate_id": "angle-ocr-negative",
+          "item_type": "angle",
+          "raw_text": "361°",
+          "normalized_text": "361°",
+          "coordinates": [5, 6, 15, 16],
+          "scope": "local_feature",
+          "angle_value": "361",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": ["angle-ocr-negative-source"]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "angle-ocr-negative-source",
+          "source_type": "ocr",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "medium",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "general-native-visual-positive",
+      "candidate": {
+        "candidate_id": "general-native-visual",
+        "payload": {
+          "candidate_id": "general-native-visual",
+          "item_type": "general_requirement",
+          "raw_text": "未注公差按 GB/T 1804-m",
+          "normalized_text": "未注公差按 GB/T 1804-m",
+          "coordinates": [6, 7, 16, 17],
+          "scope": "global_requirement",
+          "sub_requirements": [],
+          "balloon_required": false,
+          "requires_confirmation": false
+        },
+        "source_location_ids": [
+          "general-native-source",
+          "general-visual-source"
+        ]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "general-native-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        },
+        {
+          "source_location_id": "general-visual-source",
+          "source_type": "visual",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_complete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "general-native-visual-field-negative",
+      "candidate": {
+        "candidate_id": "general-native-visual-negative",
+        "payload": {
+          "candidate_id": "general-native-visual-negative",
+          "item_type": "general_requirement",
+          "raw_text": "未注公差按 GB/T 1804-m",
+          "normalized_text": "未注公差按 GB/T 1804-m",
+          "coordinates": [6, 7, 16, 17],
+          "scope": "global_requirement",
+          "sub_requirements": [],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": [
+          "general-native-negative-source",
+          "general-visual-negative-source"
+        ]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "general-native-negative-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        },
+        {
+          "source_location_id": "general-visual-negative-source",
+          "source_type": "visual",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "medium",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "composite-native-visual-positive",
+      "candidate": {
+        "candidate_id": "composite-native-visual",
+        "payload": {
+          "candidate_id": "composite-native-visual",
+          "item_type": "composite",
+          "raw_text": "Φ10\n深8\n贯穿",
+          "normalized_text": "Φ10\n深8\n贯穿",
+          "coordinates": [7, 8, 17, 18],
+          "scope": "local_feature",
+          "sub_requirements": [
+            {
+              "order": 0,
+              "kind": "diameter_dimension",
+              "raw_text": "Φ10",
+              "nominal": "10",
+              "feature_kind": "hole"
+            },
+            {
+              "order": 1,
+              "kind": "depth",
+              "raw_text": "深8",
+              "value": "8"
+            },
+            {
+              "order": 2,
+              "kind": "through",
+              "raw_text": "贯穿",
+              "value": true
+            }
+          ],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": [
+          "composite-native-source",
+          "composite-visual-source"
+        ]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "composite-native-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        },
+        {
+          "source_location_id": "composite-visual-source",
+          "source_type": "visual",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_complete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    },
+    {
+      "id": "composite-native-visual-field-negative",
+      "candidate": {
+        "candidate_id": "composite-native-visual-negative",
+        "payload": {
+          "candidate_id": "composite-native-visual-negative",
+          "item_type": "composite",
+          "raw_text": "Φ10\n深-8",
+          "normalized_text": "Φ10\n深-8",
+          "coordinates": [7, 8, 17, 18],
+          "scope": "local_feature",
+          "sub_requirements": [
+            {
+              "order": 0,
+              "kind": "diameter_dimension",
+              "raw_text": "Φ10",
+              "nominal": "10",
+              "feature_kind": "hole"
+            },
+            {
+              "order": 2,
+              "kind": "depth",
+              "raw_text": "深-8",
+              "value": "-8"
+            }
+          ],
+          "balloon_required": true,
+          "requires_confirmation": false
+        },
+        "source_location_ids": [
+          "composite-native-negative-source",
+          "composite-visual-negative-source"
+        ]
+      },
+      "source_signals": [
+        {
+          "source_location_id": "composite-native-negative-source",
+          "source_type": "native",
+          "normalized_value": "1"
+        },
+        {
+          "source_location_id": "composite-visual-negative-source",
+          "source_type": "visual",
+          "normalized_value": "0.95"
+        }
+      ],
+      "coverage": {
+        "coverage_checked": true,
+        "blocking_count": 0,
+        "local_association_complete": true
+      },
+      "conflicts": [],
+      "expected": {
+        "band": "medium",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": [
+          "typed_schema_incomplete",
+          "source_truth_preserved",
+          "single_source_owner",
+          "local_association_complete",
+          "coverage_clear",
+          "no_conflict",
+          "semantic_confirmation_clear",
+          "balloon_requirement_known",
+          "source_signal_valid",
+          "source_signal_high"
+        ]
+      }
+    }
+  ]
+}

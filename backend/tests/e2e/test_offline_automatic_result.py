@@ -4,6 +4,8 @@ import json
 import socket
 import uuid
 from collections.abc import Iterator
+from dataclasses import replace
+from decimal import Decimal
 from hashlib import sha256
 from pathlib import Path
 from unittest.mock import patch
@@ -15,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.candidates.advisor import CandidateAdvisor
 from app.candidates.coverage import CoverageEntry
+from app.candidates.confidence import CandidateSourceSignal
 from app.candidates.models import AutomaticResult
 from app.config import Settings
 from app.db import engine
@@ -108,6 +111,34 @@ def _source(
     db_session.add_all([project, source_file])
     db_session.commit()
     return source_file
+
+
+def test_candidate_snapshot_source_signals_default_and_preserve() -> None:
+    empty = CandidateSnapshot(
+        candidates=(),
+        coverage_entries=(),
+        expected_observation_ids=(),
+        duplicate_relations=(),
+    )
+    signal = CandidateSourceSignal(
+        source_location_id="observation-1",
+        source_type="native",
+        normalized_value=Decimal("1"),
+    )
+    populated = CandidateSnapshot(
+        candidates=(),
+        coverage_entries=(),
+        expected_observation_ids=(),
+        duplicate_relations=(),
+        source_signals=(signal,),
+    )
+
+    assert empty.source_signals == ()
+    assert populated.source_signals == (signal,)
+    assert replace(
+        populated,
+        provider_call_ids=("provider-call-1",),
+    ).source_signals == (signal,)
 
 
 @pytest.mark.parametrize("text", ("DRAFT", "DRAWING", "GENERAL"))

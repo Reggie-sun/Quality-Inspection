@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.candidates.complex_fallback import CoarseCandidate, coarse_candidate
 from app.candidates.confidence import (
+    CandidateSourceSignal,
     ConfidenceDecisionContractError,
     validate_confidence_decision,
 )
@@ -51,6 +52,7 @@ class CandidateSnapshot:
     coverage_entries: tuple[CoverageEntry, ...]
     expected_observation_ids: tuple[str, ...]
     duplicate_relations: tuple[DuplicateRelation, ...]
+    source_signals: tuple[CandidateSourceSignal, ...] = ()
     provider_call_ids: tuple[str, ...] = ()
     required_visual_observation_ids: tuple[str, ...] = ()
 
