@@ -1,5 +1,5 @@
 {
-  "contract_definition_hash": "40884218ac346c794751d993cdd6753649b0b66baad8634c67d4b957657925d7",
+  "contract_definition_hash": "d083d5596b43b8b7d8d0fa206f7d91a8d731706dfedb49f43bc4235a32705ba5",
   "contracts": [
     {
       "blocking_level": "blocking",
@@ -1008,17 +1008,18 @@
       "current_status": "not_run",
       "global_contract_id": "REV-002",
       "implementation_only": false,
-      "implementation_reason": "既有 raw-result immutability proof 仍有效，但 versioned completeness、preview binding、late-response 和 exact-once delta 尚无执行证据。",
+      "implementation_reason": "既有 raw-result immutability proof 仍有效，但 reader-first result、project-frozen mode/router identity、versioned completeness、preview binding、late-response 和 exact-once delta 尚无执行证据。",
       "owner": "Automatic-result repository",
       "p0_contract_id": "P0-RES-001",
       "related_global_contract_ids": [
         "CAND-005",
+        "PRJ-002",
         "SYS-006"
       ],
-      "stable_p0_requirement": "Processing 可先绑定同一输入 identity 的 immutable preview revisions，terminal 时精确一次冻结带 versioned `complete` or `partial_review_required` completeness 的 immutable `raw_automatic_result`；working edits 或 late Provider response 不得原地修改",
+      "stable_p0_requirement": "Result reader 必须先按登记默认值兼容读取新增字段；processing 绑定 project intake 时冻结的 `recognition_mode`、`recognition_router_version` 与同一 input identity，可先关联 immutable preview revisions，terminal 时精确一次冻结带 versioned `complete` or `partial_review_required` completeness 的 immutable `raw_automatic_result`；runtime setting、working edits 或 late Provider response 不得原地改变结果语义",
       "task_id": "D3-T2",
       "tier": "integration",
-      "verification_selector": "pytest backend/tests/integration/test_result_layers.py backend/tests/integration/test_recognition_preview.py backend/tests/integration/test_task_idempotency.py -q"
+      "verification_selector": "pytest backend/tests/integration/test_result_layers.py backend/tests/integration/test_project_intake_api.py backend/tests/integration/test_project_status_api.py backend/tests/integration/test_recognition_preview.py backend/tests/integration/test_task_idempotency.py -q"
     },
     {
       "blocking_level": "blocking",
