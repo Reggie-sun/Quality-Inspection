@@ -130,13 +130,13 @@ class FixtureVisionProvider:
                             "symbol_kind": symbol_kind,
                             "bbox_normalized": list(normalized_bbox),
                             "associated_text_observation_ids": list(text_ids),
-                            "requires_confirmation": True,
+                            "confidence_signal": 0.98,
                         }
                     )
         return VisionResult(
             request_id=f"fixture-visual-{self.symbol_calls}",
             payload={
-                "schema_version": "visual-symbol-review/1",
+                "schema_version": "visual-symbol-review/2",
                 "detections": detections,
             },
             usage={},
@@ -315,9 +315,12 @@ def _visual_review(
 ) -> dict[str, object]:
     return {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "symbol_kinds": symbol_kinds,
         "rejection_code": rejection_code,
+        "confidence_signal": (
+            None if rejection_code == "visual_no_detection" else 0.98
+        ),
     }
 
 
@@ -826,9 +829,10 @@ def test_visual_provider_failure_prevents_ready_for_edit(
                     requires_confirmation=True,
                     advisor_review={
                         "route": "visual_symbol",
-                        "schema_version": "visual-symbol-review/1",
+                        "schema_version": "visual-symbol-review/2",
                         "symbol_kinds": ["diameter"],
                         "rejection_code": "visual_no_detection",
+                        "confidence_signal": None,
                     },
                 ),
             ),
@@ -874,7 +878,7 @@ def test_visual_provider_failure_prevents_ready_for_edit(
                 ) -> VisionResult:
                     return VisionResult(
                         request_id="fixture-invalid-schema",
-                        payload={"schema_version": "visual-symbol-review/1"},
+                        payload={"schema_version": "visual-symbol-review/2"},
                         usage={},
                     )
 

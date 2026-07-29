@@ -236,7 +236,7 @@ def test_visual_schema_failure_retries_once_with_same_input_and_safe_audits(
             return VisionResult(
                 request_id="fixture-retry-success",
                 payload={
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "detections": [],
                 },
                 usage={"total_tokens": 12},
@@ -481,7 +481,7 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
                                         arguments=json.dumps(
                                             {
                                                 "schema_version": (
-                                                    "visual-symbol-review/1"
+                                                    "visual-symbol-review/2"
                                                 ),
                                                 "detections": [],
                                             }
@@ -607,7 +607,7 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         success_request["crop_sha256"]
     )
     assert success_response == {
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "detections": [],
     }
     assert Path(success_record["response_ref"]).name == (
@@ -701,7 +701,7 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         elif case == "response_schema":
             cache_payload = json.loads(cache_path.read_text())
             cache_payload["response"]["schema_version"] = (
-                "visual-symbol-review/2"
+                "visual-symbol-review/1"
             )
             response_bytes = json.dumps(
                 cache_payload["response"],
@@ -733,14 +733,14 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
             response_path.write_text(
                 json.dumps(
                     {
-                        "schema_version": "visual-symbol-review/1",
+                        "schema_version": "visual-symbol-review/2",
                         "detections": [
                             {
                                 "visual_observation_id": "visual-001",
                                 "symbol_kind": "diameter",
                                 "bbox_normalized": [0.1, 0.1, 0.2, 0.2],
                                 "associated_text_observation_ids": [],
-                                "requires_confirmation": True,
+                                "confidence_signal": 0.98,
                             }
                         ],
                     },
@@ -756,7 +756,7 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
                     "symbol_kind": "diameter",
                     "bbox_normalized": [0.1, 0.1, 0.2, 0.2],
                     "associated_text_observation_ids": [],
-                    "requires_confirmation": True,
+                    "confidence_signal": 0.98,
                 }
             ]
             response_bytes = json.dumps(
@@ -807,7 +807,7 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         VisionResult(
             request_id="secret-request-id",
             payload={
-                "schema_version": "visual-symbol-review/1",
+                "schema_version": "visual-symbol-review/2",
                 "detections": [],
             },
             usage={"total_tokens": 1},
@@ -815,7 +815,7 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         VisionResult(
             request_id="fixture-safe-request-id",
             payload={
-                "schema_version": "visual-symbol-review/1",
+                "schema_version": "visual-symbol-review/2",
                 "detections": [],
             },
             usage={"api_key": 1},

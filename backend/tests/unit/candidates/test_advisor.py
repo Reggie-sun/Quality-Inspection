@@ -97,12 +97,12 @@ class UnifiedRecordingProvider(EchoVisionProvider):
 
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
-        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/1"
+        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/2"
         self.call_order.append("visual")
         return VisionResult(
             request_id="fixture-visual-request-1",
             payload={
-                "schema_version": "visual-symbol-review/1",
+                "schema_version": "visual-symbol-review/2",
                 "detections": [],
             },
             usage={},
@@ -116,7 +116,7 @@ class UnifiedRecordingProvider(EchoVisionProvider):
 class RetryRecordingProvider(UnifiedRecordingProvider):
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
-        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/1"
+        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/2"
         self.call_order.append("visual")
         call_count = self.call_order.count("visual")
         if call_count == 1:
@@ -128,7 +128,7 @@ class RetryRecordingProvider(UnifiedRecordingProvider):
         return VisionResult(
             request_id="fixture-visual-retry-success",
             payload={
-                "schema_version": "visual-symbol-review/1",
+                "schema_version": "visual-symbol-review/2",
                 "detections": [],
             },
             usage={"total_tokens": 12},
@@ -143,7 +143,7 @@ class VisualDiameterProvider(EchoVisionProvider):
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
         request = json.loads(prompt)
-        assert request["schema_version"] == "visual-symbol-review/1"
+        assert request["schema_version"] == "visual-symbol-review/2"
         assert request["prompt_version"] == "visual-symbol-prompt/4"
         assert len(request["visual_contexts"]) == 1
         context = request["visual_contexts"][0]
@@ -164,7 +164,7 @@ class VisualDiameterProvider(EchoVisionProvider):
         return VisionResult(
             request_id="fixture-visual-diameter-request",
             payload={
-                "schema_version": "visual-symbol-review/1",
+                "schema_version": "visual-symbol-review/2",
                 "detections": [
                     {
                         "visual_observation_id": context[
@@ -175,7 +175,7 @@ class VisualDiameterProvider(EchoVisionProvider):
                         "associated_text_observation_ids": [
                             line["observation_id"]
                         ],
-                        "requires_confirmation": True,
+                        "confidence_signal": 0.97,
                     }
                 ],
             },
@@ -292,6 +292,10 @@ def test_clear_native_candidate_does_not_construct_provider(
 
     assert reviewed == snapshot
     assert constructed == []
+    assert len(reviewed.source_signals) == 1
+    assert reviewed.source_signals[0].source_type == "native"
+    assert str(reviewed.source_signals[0].normalized_value) == "1"
+    assert reviewed.candidates[0]["source_truth_preserved"] is True
 
 
 def test_coarse_candidate_uses_one_bounded_local_crop(tmp_path: Path) -> None:
@@ -387,9 +391,10 @@ def test_visual_calls_precede_the_text_budget_remainder(tmp_path: Path) -> None:
     )
     assert visual_coverage.advisor_review == {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "symbol_kinds": [],
         "rejection_code": "visual_no_detection",
+        "confidence_signal": None,
     }
 
 
@@ -459,7 +464,7 @@ def test_second_visual_schema_failure_in_document_is_not_retried(
             return VisionResult(
                 request_id=f"fixture-schema-success-{self.calls}",
                 payload={
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "detections": [],
                 },
                 usage={"total_tokens": self.calls},
@@ -520,7 +525,7 @@ def test_second_cached_visual_retry_chain_in_document_fails_closed(
             return VisionResult(
                 request_id=f"fixture-cached-success-{self.calls}",
                 payload={
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "detections": [],
                 },
                 usage={"total_tokens": self.calls},
@@ -613,7 +618,7 @@ def test_full_visual_page_has_no_retry_spare(
             return VisionResult(
                 request_id="fixture-no-spare-success",
                 payload={
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "detections": [],
                 },
                 usage={"total_tokens": 1},
@@ -646,6 +651,16 @@ def test_visual_projection_does_not_create_same_review_text_route(
         "diameter_dimension"
     )
     assert reviewed.candidates[0]["payload"]["requires_confirmation"] is True
+    assert reviewed.source_signals[: len(snapshot.source_signals)] == (
+        snapshot.source_signals
+    )
+    visual_signals = tuple(
+        signal
+        for signal in reviewed.source_signals
+        if signal.source_type == "visual"
+    )
+    assert len(visual_signals) == 1
+    assert str(visual_signals[0].normalized_value) == "0.97"
 
 
 def test_validator_rejects_raw_text_or_type_drift(tmp_path: Path) -> None:

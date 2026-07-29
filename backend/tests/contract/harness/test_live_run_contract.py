@@ -2482,7 +2482,7 @@ def _materialize_visual_retry_chain(
         "crop_sha256": crop_sha256,
         "model": "qwen3-vl-plus",
         "prompt_version": "visual-symbol-prompt/4",
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "visual_observation_ids": ["visual-1"],
     }
     cache = {
@@ -2541,7 +2541,7 @@ def _materialize_visual_retry_chain(
                     request_id="fixture-final-request",
                     model="qwen3-vl-plus",
                     prompt_version="visual-symbol-prompt/4",
-                    schema_version="visual-symbol-review/1",
+                    schema_version="visual-symbol-review/2",
                     duration_ms=2,
                     retry_count=1,
                     input_image_count=1,
@@ -2584,7 +2584,7 @@ def _materialize_visual_retry_chain(
                 request_id="fixture-first-request",
                 model="qwen3-vl-plus",
                 prompt_version="visual-symbol-prompt/4",
-                schema_version="visual-symbol-review/1",
+                schema_version="visual-symbol-review/2",
                 duration_ms=1,
                 retry_count=0,
                 input_image_count=1,

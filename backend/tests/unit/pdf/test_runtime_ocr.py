@@ -131,6 +131,18 @@ def test_hybrid_image_region_appends_separate_coordinate_safe_ocr_observation(
     )
     assert all(0.0 <= value <= 1.0 for value in appended[0].bbox_normalized)
     assert snapshot.provider_call_ids == ("fixture-runtime-ocr-request",)
+    ocr_signal = next(
+        signal
+        for signal in snapshot.source_signals
+        if signal.source_location_id == appended[0].observation_id
+    )
+    assert str(ocr_signal.normalized_value) == "0.985"
+    ocr_candidate = next(
+        candidate
+        for candidate in snapshot.candidates
+        if appended[0].observation_id in candidate["source_location_ids"]
+    )
+    assert ocr_candidate["source_truth_preserved"] is True
     assert provider.calls == [(120, 80)]
     assert factory_calls == ["factory"]
 

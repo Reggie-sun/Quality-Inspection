@@ -19,7 +19,7 @@ import pymupdf
 from app.candidates.coverage import Disposition
 from app.candidates.grouping import group_observations
 from app.candidates.parser import NUMBER, normalize_text, parse_annotation
-from app.candidates.schemas import stable_candidate_id
+from app.candidates.schemas import Candidate, stable_candidate_id
 from app.pdf.coordinates import BBox
 from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
 from app.pdf.visual_observations import (
@@ -35,7 +35,7 @@ SCHEMA_PATH = (
     Path(__file__).parents[1] / "providers/visual_symbol_review.schema.json"
 )
 VISUAL_PROMPT_VERSION = "visual-symbol-prompt/4"
-VISUAL_SCHEMA_VERSION = "visual-symbol-review/1"
+VISUAL_SCHEMA_VERSION = "visual-symbol-review/2"
 VISUAL_ADAPTER_VERSION = "qwen-openai-compatible/5"
 VISUAL_CACHE_SCHEMA_VERSION = "visual-symbol-advisor-cache/1"
 VISUAL_REQUEST_SCHEMA_VERSION = "visual-symbol-call-request/1"
@@ -96,8 +96,8 @@ _SAFE_INSTANCE_PATH_MEMBERS = frozenset(
     {
         "associated_text_observation_ids",
         "bbox_normalized",
+        "confidence_signal",
         "detections",
-        "requires_confirmation",
         "schema_version",
         "symbol_kind",
         "visual_observation_id",
@@ -108,6 +108,7 @@ _SAFE_SCHEMA_PATH_MEMBERS = frozenset(
         "additionalProperties",
         "associated_text_observation_ids",
         "bbox_normalized",
+        "confidence_signal",
         "const",
         "detections",
         "enum",
@@ -120,7 +121,6 @@ _SAFE_SCHEMA_PATH_MEMBERS = frozenset(
         "pattern",
         "properties",
         "required",
-        "requires_confirmation",
         "schema_version",
         "symbol_kind",
         "type",
@@ -172,6 +172,7 @@ class ValidatedSymbolDetection:
     symbol_kind: SymbolKind
     bbox_pdf: BBox
     associated_text_observation_ids: tuple[str, ...]
+    confidence_signal: float
 
 
 @dataclass(frozen=True)
@@ -196,6 +197,7 @@ class VisualReviewDecision:
     requires_confirmation: bool
     symbol_kinds: tuple[SymbolKind, ...]
     rejection_code: str | None
+    confidence_signal: float | None = None
 
 
 @dataclass(frozen=True)
@@ -576,7 +578,7 @@ def visual_review_prompt(
                 "prefer_line_level_text_when_line_and_span_duplicate_raw_text",
                 "return_no_detection_for_unrecognized_or_absent_symbols",
                 "match_response_schema_exactly",
-                "requires_confirmation_must_be_true",
+                "report_one_confidence_signal_between_zero_and_one",
                 "return_one_json_object_only",
             ],
             "response_schema": response_schema,
@@ -792,7 +794,10 @@ def parse_visual_symbol_json(
         if any(
             not math.isfinite(float(value))
             for detection in payload["detections"]
-            for value in detection["bbox_normalized"]
+            for value in (
+                *detection["bbox_normalized"],
+                detection["confidence_signal"],
+            )
         ):
             raise ValueError("non-finite bbox")
     except jsonschema.ValidationError as exc:
@@ -861,6 +866,7 @@ def validate_symbol_detections(
             str(value)
             for value in detection["associated_text_observation_ids"]
         )
+        confidence_signal = float(detection["confidence_signal"])
         if (
             normalized[2] <= normalized[0]
             or normalized[3] <= normalized[1]
@@ -927,6 +933,7 @@ def validate_symbol_detections(
                 symbol_kind=cast(SymbolKind, kind),
                 bbox_pdf=bbox_pdf,
                 associated_text_observation_ids=associated_ids,
+                confidence_signal=confidence_signal,
             )
         )
 
@@ -1097,6 +1104,9 @@ def group_symbol_detections(
                             )
                         }
                     )
+                ),
+                confidence_signal=min(
+                    detection.confidence_signal for detection in group
                 ),
             ),
             visual_observation_ids=tuple(
@@ -1367,7 +1377,6 @@ def _enrich_existing_depth(
             if not _append_normalized_depth(payload, value):
                 return None
         payload["coordinates"] = coordinates
-        payload["requires_confirmation"] = True
         return payload
     else:
         return None
@@ -1380,7 +1389,6 @@ def _enrich_existing_depth(
         if not _append_normalized_depth(payload, value):
             return None
     payload["coordinates"] = coordinates
-    payload["requires_confirmation"] = True
     return payload
 
 
@@ -1573,6 +1581,22 @@ def _envelope(
     }
 
 
+def _projection_requires_confirmation(payload: Mapping[str, Any]) -> bool:
+    if "coarse_type" in payload:
+        return True
+    try:
+        candidate = Candidate.model_validate(payload)
+    except (TypeError, ValueError):
+        return True
+    if candidate.feature_kind == "unknown":
+        return True
+    return any(
+        isinstance(requirement, Mapping)
+        and requirement.get("feature_kind") == "unknown"
+        for requirement in candidate.sub_requirements
+    )
+
+
 def _ambiguous(
     observation: VisualObservation,
     *,
@@ -1581,6 +1605,7 @@ def _ambiguous(
     kinds: tuple[SymbolKind, ...],
     rejection_code: str,
     existing_index: int | None = None,
+    confidence_signal: float | None = None,
 ) -> VisualReviewDecision:
     return VisualReviewDecision(
         observation.observation_id,
@@ -1593,6 +1618,7 @@ def _ambiguous(
         True,
         kinds,
         rejection_code,
+        confidence_signal,
     )
 
 
@@ -1979,6 +2005,26 @@ def project_visual_observation(
         if str(_detection_value(item, "visual_observation_id"))
         == observation.observation_id
     ]
+    raw_confidence_signals = tuple(
+        (
+            item.get("confidence_signal")
+            if isinstance(item, Mapping)
+            else item.confidence_signal
+        )
+        for item in current
+    )
+    confidence_signal = (
+        min(float(value) for value in raw_confidence_signals)
+        if raw_confidence_signals
+        and all(
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and 0 <= float(value) <= 1
+            for value in raw_confidence_signals
+        )
+        else None
+    )
     kind_counts = Counter(
         str(_detection_value(item, "symbol_kind"))
         for item in current
@@ -2199,6 +2245,7 @@ def project_visual_observation(
             False,
             kinds,
             None,
+            confidence_signal,
         )
     if kinds == ("revision_marker",):
         if not _valid_revision_geometry(geometry_context, texts):
@@ -2220,6 +2267,7 @@ def project_visual_observation(
             True,
             kinds,
             None,
+            confidence_signal,
         )
 
     payload: dict[str, Any] | None = None
@@ -2247,7 +2295,6 @@ def project_visual_observation(
                     raw_text=texts[0].raw_text,
                     coordinates=coordinates,
                     feature_kind="unknown",
-                    requires_confirmation=True,
                 )
                 if existing is not None:
                     original = deepcopy(existing.get("payload"))
@@ -2299,7 +2346,6 @@ def project_visual_observation(
                         payload.update(
                             raw_text=raw_text,
                             coordinates=coordinates,
-                            requires_confirmation=True,
                         )
         else:
             projected, depth_value, rejection_code = (
@@ -2322,7 +2368,6 @@ def project_visual_observation(
                 payload = projected
                 payload.update(
                     coordinates=coordinates,
-                    requires_confirmation=True,
                 )
             elif projected is not None:
                 projection_rejection_code = "visual_projection_conflict"
@@ -2361,7 +2406,6 @@ def project_visual_observation(
             payload = typed_projection[0]
             payload.update(
                 coordinates=coordinates,
-                requires_confirmation=True,
             )
         elif len(distinct) > 1:
             projection_rejection_code = "visual_projection_conflict"
@@ -2434,7 +2478,6 @@ def project_visual_observation(
                         },
                     ],
                     "balloon_required": True,
-                    "requires_confirmation": True,
                 }
                 if (
                     existing is not None
@@ -2455,7 +2498,6 @@ def project_visual_observation(
                 "raw_text": raw_text,
                 "coordinates": coordinates,
                 "coarse_type": "roughness",
-                "requires_confirmation": True,
             }
     elif kinds[0].startswith("gdt_"):
         tolerances = _distinct_ascii_decimals(texts)
@@ -2470,7 +2512,6 @@ def project_visual_observation(
                 "raw_text": f"{symbols[kinds[0]]} {raw_text}",
                 "coordinates": coordinates,
                 "coarse_type": "geometric_tolerance",
-                "requires_confirmation": True,
             }
         elif len(tolerances) > 1:
             projection_rejection_code = "visual_projection_conflict"
@@ -2484,12 +2525,15 @@ def project_visual_observation(
             rejection_code=projection_rejection_code,
             existing_index=existing_index,
         )
+    requires_confirmation = _projection_requires_confirmation(payload)
+    payload["requires_confirmation"] = requires_confirmation
     candidate_id, envelope = _envelope(
         payload=payload,
         source_ids=source_ids,
         projection_type=projection_type,
         existing=existing,
     )
+    envelope["source_truth_preserved"] = not requires_confirmation
     return VisualReviewDecision(
         observation.observation_id,
         "candidate",
@@ -2498,9 +2542,10 @@ def project_visual_observation(
         candidate_id,
         existing_index,
         envelope,
-        True,
+        requires_confirmation,
         kinds,
         None,
+        confidence_signal,
     )
 
 
@@ -2638,10 +2683,26 @@ def _merge_existing_candidate_decisions(
         if compatible and isinstance(merged_payload, dict):
             merged_payload.update(changed_values)
             merged_payload["coordinates"] = coordinates
+            merged_requires_confirmation = any(
+                decision.requires_confirmation
+                for decision in representatives
+            )
+            merged_payload["requires_confirmation"] = (
+                merged_requires_confirmation
+            )
+            merged_signals = tuple(
+                decision.confidence_signal
+                for decision in representatives
+                if decision.confidence_signal is not None
+            )
+            merged_confidence_signal = (
+                min(merged_signals) if merged_signals else None
+            )
             envelope = {
                 "candidate_id": candidate_id,
                 "payload": merged_payload,
                 "source_location_ids": list(source_ids),
+                "source_truth_preserved": not merged_requires_confirmation,
             }
             primary_index = ordered_indexes[0]
             for decision_index in decision_indexes:
@@ -2649,6 +2710,8 @@ def _merge_existing_candidate_decisions(
                     merged_decisions[decision_index],
                     source_location_ids=source_ids,
                     coordinates=coordinates,
+                    requires_confirmation=merged_requires_confirmation,
+                    confidence_signal=merged_confidence_signal,
                     candidate_envelope=(
                         envelope
                         if decision_index == primary_index

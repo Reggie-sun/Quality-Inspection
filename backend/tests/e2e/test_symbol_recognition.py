@@ -118,14 +118,14 @@ class FrozenSymbolProvider:
                     "symbol_kind": symbol_kind,
                     "bbox_normalized": context["context_bbox_normalized"],
                     "associated_text_observation_ids": list(prompt_text_ids),
-                    "requires_confirmation": True,
+                    "confidence_signal": 0.98,
                 }
                 for symbol_kind in _SYMBOL_KINDS_BY_TEXTS[line_texts]
             )
         return VisionResult(
             request_id=f"fixture-symbol-{self.symbol_calls}",
             payload={
-                "schema_version": "visual-symbol-review/1",
+                "schema_version": "visual-symbol-review/2",
                 "detections": detections,
             },
             usage={},

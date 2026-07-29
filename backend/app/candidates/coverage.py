@@ -116,14 +116,15 @@ def _valid_visual_semantics(
     *,
     symbol_kinds: list[str],
     rejection_code: object,
+    confidence_signal: object,
 ) -> bool:
     kinds = tuple(symbol_kinds)
     has_candidate = not _is_blank(entry.candidate_id)
     if entry.disposition == "candidate":
         return (
             has_candidate
-            and entry.requires_confirmation
             and rejection_code is None
+            and confidence_signal is not None
             and kinds in _VISUAL_INSPECTION_KIND_SETS
         )
     if entry.disposition == "reference_context":
@@ -131,6 +132,7 @@ def _valid_visual_semantics(
             not has_candidate
             and not entry.requires_confirmation
             and rejection_code is None
+            and confidence_signal is not None
             and kinds == ("datum_reference",)
         )
     if entry.disposition == "non_inspection":
@@ -138,6 +140,7 @@ def _valid_visual_semantics(
             not has_candidate
             and entry.requires_confirmation
             and rejection_code is None
+            and confidence_signal is not None
             and kinds == ("revision_marker",)
         )
     if entry.disposition == "ambiguous":
@@ -209,10 +212,30 @@ def check_coverage(
                     "schema_version",
                     "symbol_kinds",
                     "rejection_code",
+                    "confidence_signal",
                 }
                 and review.get("route") == "visual_symbol"
-                and review.get("schema_version") == "visual-symbol-review/1"
+                and review.get("schema_version") == "visual-symbol-review/2"
                 and symbol_kinds_valid
+                and (
+                    review.get("confidence_signal") is None
+                    or (
+                        isinstance(
+                            review.get("confidence_signal"),
+                            (int, float),
+                        )
+                        and not isinstance(
+                            review.get("confidence_signal"),
+                            bool,
+                        )
+                        and math.isfinite(
+                            float(review["confidence_signal"])
+                        )
+                        and 0
+                        <= float(review["confidence_signal"])
+                        <= 1
+                    )
+                )
                 and (
                     review.get("rejection_code") is None
                     or review.get("rejection_code") in _VISUAL_REJECTION_CODES
@@ -229,6 +252,11 @@ def check_coverage(
                     symbol_kinds=symbol_kinds,
                     rejection_code=(
                         review.get("rejection_code")
+                        if isinstance(review, dict)
+                        else None
+                    ),
+                    confidence_signal=(
+                        review.get("confidence_signal")
                         if isinstance(review, dict)
                         else None
                     ),

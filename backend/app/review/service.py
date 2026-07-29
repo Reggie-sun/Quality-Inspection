@@ -443,18 +443,28 @@ class ReviewService:
         for entry in coverage.get("entries", []):
             if isinstance(entry, dict):
                 advisor_review = entry.get("advisor_review")
+                legacy_fields = {
+                    "route",
+                    "schema_version",
+                    "symbol_kinds",
+                    "rejection_code",
+                }
+                active_fields = {*legacy_fields, "confidence_signal"}
                 if (
                     isinstance(advisor_review, dict)
-                    and set(advisor_review)
-                    == {
-                        "route",
-                        "schema_version",
-                        "symbol_kinds",
-                        "rejection_code",
-                    }
+                    and (
+                        (
+                            set(advisor_review) == legacy_fields
+                            and advisor_review.get("schema_version")
+                            == "visual-symbol-review/1"
+                        )
+                        or (
+                            set(advisor_review) == active_fields
+                            and advisor_review.get("schema_version")
+                            == "visual-symbol-review/2"
+                        )
+                    )
                     and advisor_review.get("route") == "visual_symbol"
-                    and advisor_review.get("schema_version")
-                    == "visual-symbol-review/1"
                 ):
                     symbol_kinds = advisor_review.get("symbol_kinds")
                     rejection_code = advisor_review.get("rejection_code")

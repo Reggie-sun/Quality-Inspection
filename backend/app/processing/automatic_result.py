@@ -15,6 +15,8 @@ from app.candidates.complex_fallback import CoarseCandidate, coarse_candidate
 from app.candidates.confidence import (
     CandidateSourceSignal,
     ConfidenceDecisionContractError,
+    normalize_native_signal,
+    normalize_tencent_ocr_signal,
     validate_confidence_decision,
 )
 from app.candidates.coverage import CoverageEntry, CoverageReport
@@ -178,6 +180,7 @@ def candidate_snapshot_from_inventory(
     candidates: list[dict[str, Any]] = []
     coverage_entries: list[CoverageEntry] = []
     duplicate_inputs: list[DuplicateCandidate] = []
+    source_signals: list[CandidateSourceSignal] = []
     index = 0
 
     while index < len(observations):
@@ -220,12 +223,44 @@ def candidate_snapshot_from_inventory(
             continue
 
         envelope = _candidate_envelope(candidate, members)
+        source_truth_preserved = (
+            isinstance(candidate, Candidate)
+            and not bool(candidate.requires_confirmation)
+        )
+        envelope["source_truth_preserved"] = source_truth_preserved
         candidate_id = str(envelope["candidate_id"])
         candidates.append(envelope)
         requires_confirmation = bool(
             getattr(candidate, "requires_confirmation", False)
         )
         for member in members:
+            signal: CandidateSourceSignal | None
+            if member.source_type == "native":
+                signal = CandidateSourceSignal(
+                    source_location_id=member.observation_id,
+                    source_type="native",
+                    normalized_value=(
+                        normalize_native_signal(True)
+                        if source_truth_preserved
+                        else None
+                    ),
+                )
+            elif member.source_type == "ocr":
+                try:
+                    normalized_signal = normalize_tencent_ocr_signal(
+                        member.confidence
+                    )
+                except ValueError:
+                    normalized_signal = None
+                signal = CandidateSourceSignal(
+                    source_location_id=member.observation_id,
+                    source_type="ocr",
+                    normalized_value=normalized_signal,
+                )
+            else:
+                signal = None
+            if signal is not None:
+                source_signals.append(signal)
             coverage_entries.append(
                 CoverageEntry(
                     observation_id=member.observation_id,
@@ -273,6 +308,7 @@ def candidate_snapshot_from_inventory(
         duplicate_relations=tuple(
             suggest_cross_view_duplicates(duplicate_inputs)
         ),
+        source_signals=tuple(source_signals),
         required_visual_observation_ids=tuple(
             observation.observation_id
             for observation in visual_observations

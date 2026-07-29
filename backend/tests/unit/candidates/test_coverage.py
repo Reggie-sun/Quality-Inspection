@@ -143,9 +143,12 @@ def _visual_review(
 ) -> dict[str, object]:
     return {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "symbol_kinds": list(symbol_kinds),
         "rejection_code": rejection_code,
+        "confidence_signal": (
+            None if rejection_code == "visual_no_detection" else 0.98
+        ),
     }
 
 
@@ -157,7 +160,7 @@ def test_visual_candidate_has_one_complete_coverage_entry() -> None:
         "visual-1",
         (1, 2, 3, 4),
         candidate_id="candidate-1",
-        requires_confirmation=True,
+        requires_confirmation=False,
         advisor_review=_visual_review(),
     )
     report = check_coverage(
@@ -166,7 +169,7 @@ def test_visual_candidate_has_one_complete_coverage_entry() -> None:
         required_visual_observation_ids={"visual-1"},
     )
     assert report.blocking_count == 0
-    assert report.review_required_count == 1
+    assert report.review_required_count == 0
     assert report.entries == (entry,)
 
 
@@ -279,8 +282,8 @@ def test_visual_missing_source_coordinates_or_conflict_blocks(
     assert report.coverage_checked is False
 
 
-def test_visual_confirmation_cannot_be_downgraded() -> None:
-    """COV-04: only a locally validated datum reference can clear review."""
+def test_complete_visual_candidate_may_clear_semantic_confirmation() -> None:
+    """COV-04: local typed projection may clear Provider-era confirmation."""
     downgraded = CoverageEntry(
         "visual-1",
         "candidate",
@@ -302,7 +305,8 @@ def test_visual_confirmation_cannot_be_downgraded() -> None:
         [downgraded, datum],
         required_visual_observation_ids={"visual-1", "visual-2"},
     )
-    assert report.blocking_observation_ids == ("visual-1",)
+    assert report.blocking_observation_ids == ()
+    assert report.review_required_count == 0
 
 
 @pytest.mark.parametrize(
@@ -316,6 +320,12 @@ def test_visual_confirmation_cannot_be_downgraded() -> None:
             "route": "visual_symbol",
             "schema_version": "visual-symbol-review/1",
             "symbol_kinds": "datum_reference",
+            "rejection_code": None,
+        },
+        {
+            "route": "visual_symbol",
+            "schema_version": "visual-symbol-review/2",
+            "symbol_kinds": ["diameter"],
             "rejection_code": None,
         },
     ),
@@ -347,7 +357,7 @@ def test_malformed_visual_symbol_review_blocks_without_crashing(
             "visual-1",
             (1, 2, 3, 4),
             candidate_id="candidate-1",
-            requires_confirmation=True,
+            requires_confirmation=False,
             advisor_review=_visual_review(
                 symbol_kinds=("datum_reference",),
             ),

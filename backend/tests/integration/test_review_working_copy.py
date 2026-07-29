@@ -134,8 +134,23 @@ def test_create_working_copy_moves_ready_project_to_editing(
 
 
 def test_visual_coverage_exposes_only_owner_committed_discriminator() -> None:
-    projected = ReviewService._review_coverage(
+    diagnostics = (
         {
+            "route": "visual_symbol",
+            "schema_version": "visual-symbol-review/1",
+            "symbol_kinds": [],
+            "rejection_code": "visual_no_detection",
+        },
+        {
+            "route": "visual_symbol",
+            "schema_version": "visual-symbol-review/2",
+            "symbol_kinds": [],
+            "rejection_code": "visual_no_detection",
+            "confidence_signal": None,
+        },
+    )
+    for diagnostic in diagnostics:
+        projected = ReviewService._review_coverage({
             "blocking_count": 0,
             "review_required_count": 1,
             "coverage_checked": True,
@@ -148,26 +163,20 @@ def test_visual_coverage_exposes_only_owner_committed_discriminator() -> None:
                     "coordinates": [1, 2, 3, 4],
                     "candidate_id": None,
                     "requires_confirmation": True,
-                    "advisor_review": {
-                        "route": "visual_symbol",
-                        "schema_version": "visual-symbol-review/1",
-                        "symbol_kinds": [],
-                        "rejection_code": "visual_no_detection",
-                    },
+                    "advisor_review": diagnostic,
                 }
             ],
-        }
-    )
+        })
 
-    assert projected["entries"] == [
-        {
-            "observation_id": "visual-source",
-            "disposition": "ambiguous",
-            "source_location_id": "visual-source",
-            "coordinates": [1, 2, 3, 4],
-            "candidate_id": None,
-            "requires_confirmation": True,
-            "symbol_kinds": [],
-            "rejection_code": "visual_no_detection",
-        }
-    ]
+        assert projected["entries"] == [
+            {
+                "observation_id": "visual-source",
+                "disposition": "ambiguous",
+                "source_location_id": "visual-source",
+                "coordinates": [1, 2, 3, 4],
+                "candidate_id": None,
+                "requires_confirmation": True,
+                "symbol_kinds": [],
+                "rejection_code": "visual_no_detection",
+            }
+        ]

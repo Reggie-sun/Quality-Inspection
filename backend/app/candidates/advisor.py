@@ -7,6 +7,7 @@ import time
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,10 @@ from app.candidates.duplicates import (
     DuplicateCandidate,
     DuplicateRelation,
     suggest_cross_view_duplicates,
+)
+from app.candidates.confidence import (
+    CandidateSourceSignal,
+    normalize_visual_signal,
 )
 from app.candidates.parser import normalize_text, parse_annotation
 from app.candidates.schemas import stable_candidate_id
@@ -1095,6 +1100,7 @@ class CandidateAdvisor:
         candidates = [dict(candidate) for candidate in snapshot.candidates]
         coverage_entries = list(snapshot.coverage_entries)
         provider_call_ids = list(snapshot.provider_call_ids)
+        source_signals = list(snapshot.source_signals)
         observations = {
             observation.observation_id: observation
             for observation in selected_observations(pages)
@@ -1232,6 +1238,7 @@ class CandidateAdvisor:
                     "schema_version": VISUAL_SCHEMA_VERSION,
                     "symbol_kinds": list(decision.symbol_kinds),
                     "rejection_code": decision.rejection_code,
+                    "confidence_signal": decision.confidence_signal,
                 }
                 if (
                     decision.disposition == "candidate"
@@ -1268,14 +1275,7 @@ class CandidateAdvisor:
                     source_location_id=decision.observation_id,
                     coordinates=decision.coordinates,
                     candidate_id=decision.candidate_id,
-                    requires_confirmation=(
-                        coverage_entries[
-                            coverage_index
-                        ].requires_confirmation
-                        or decision.requires_confirmation
-                    )
-                    if decision.disposition != "reference_context"
-                    else decision.requires_confirmation,
+                    requires_confirmation=decision.requires_confirmation,
                     advisor_review=review,
                 )
 
@@ -1327,6 +1327,34 @@ class CandidateAdvisor:
                         },
                     )
             candidates_changed = candidates != list(base_candidates)
+            visual_signal_values: dict[str, Decimal] = {}
+            for decision in visual_decisions:
+                if (
+                    decision.disposition != "candidate"
+                    or decision.candidate_id is None
+                    or decision.confidence_signal is None
+                ):
+                    continue
+                normalized = normalize_visual_signal(
+                    decision.confidence_signal
+                )
+                for source_id in decision.source_location_ids:
+                    if source_id not in visual_observations:
+                        continue
+                    prior = visual_signal_values.get(source_id)
+                    visual_signal_values[source_id] = (
+                        normalized
+                        if prior is None
+                        else min(prior, normalized)
+                    )
+            source_signals.extend(
+                CandidateSourceSignal(
+                    source_location_id=source_id,
+                    source_type="visual",
+                    normalized_value=visual_signal_values[source_id],
+                )
+                for source_id in sorted(visual_signal_values)
+            )
 
             if not routes and not any(visual_batches):
                 return snapshot
@@ -1503,6 +1531,7 @@ class CandidateAdvisor:
             coverage_entries=tuple(coverage_entries),
             expected_observation_ids=snapshot.expected_observation_ids,
             duplicate_relations=duplicate_relations,
+            source_signals=tuple(source_signals),
             provider_call_ids=tuple(provider_call_ids),
             required_visual_observation_ids=(
                 snapshot.required_visual_observation_ids

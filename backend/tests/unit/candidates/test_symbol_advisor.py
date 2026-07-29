@@ -57,21 +57,21 @@ def test_visual_cache_identity_uses_proposal_owner_version() -> None:
 
 def _payload() -> dict[str, object]:
     return {
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "detections": [
             {
                 "visual_observation_id": "visual-001",
                 "symbol_kind": "diameter",
                 "bbox_normalized": [0.1, 0.2, 0.3, 0.4],
                 "associated_text_observation_ids": ["text-001"],
-                "requires_confirmation": True,
+                "confidence_signal": 0.98,
             },
             {
                 "visual_observation_id": "visual-002",
                 "symbol_kind": "revision_marker",
                 "bbox_normalized": [0.6, 0.5, 0.8, 0.9],
                 "associated_text_observation_ids": ["text-002"],
-                "requires_confirmation": True,
+                "confidence_signal": 0.75,
             },
         ],
     }
@@ -89,12 +89,12 @@ def test_visual_symbol_response_accepts_only_exact_schema() -> None:
     extra_root = copy.deepcopy(payload)
     extra_root["explanation"] = "not allowed"
     invalid_payloads.append(extra_root)
-    extra_detection = copy.deepcopy(payload)
-    extra_detection["detections"][0]["confidence"] = 0.99  # type: ignore[index]
-    invalid_payloads.append(extra_detection)
-    unconfirmed = copy.deepcopy(payload)
-    unconfirmed["detections"][0]["requires_confirmation"] = False  # type: ignore[index]
-    invalid_payloads.append(unconfirmed)
+    provider_verdict = copy.deepcopy(payload)
+    provider_verdict["detections"][0]["requires_confirmation"] = True  # type: ignore[index]
+    invalid_payloads.append(provider_verdict)
+    provider_truth_claim = copy.deepcopy(payload)
+    provider_truth_claim["detections"][0]["source_truth_preserved"] = True  # type: ignore[index]
+    invalid_payloads.append(provider_truth_claim)
 
     for invalid in invalid_payloads:
         with pytest.raises(
@@ -109,6 +109,23 @@ def test_visual_symbol_response_accepts_only_exact_schema() -> None:
     assert raised.value.__cause__ is None
     assert raised.value.__context__ is None
     assert private_marker not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "signal",
+    (None, float("nan"), float("inf"), -0.01, 1.01, True, "0.98"),
+)
+def test_visual_symbol_response_rejects_missing_or_invalid_confidence_signal(
+    signal: object,
+) -> None:
+    payload = _payload()
+    if signal is None:
+        payload["detections"][0].pop("confidence_signal")  # type: ignore[index]
+    else:
+        payload["detections"][0]["confidence_signal"] = signal  # type: ignore[index]
+
+    with pytest.raises(VisualSymbolSchemaError):
+        parse_visual_symbol_json(payload)
 
 
 def test_visual_symbol_response_reports_only_safe_parser_stages(
@@ -169,8 +186,8 @@ def test_visual_symbol_response_reports_only_safe_parser_stages(
                 "instance_type": "object",
                 "required_member": "symbol_kind",
                 "schema_sha256": (
-                    "9bce6653860c2302894fa647e1f25e341"
-                    "b4318d22f79770004355a353d456b7a"
+                    "8f331090b210d1057e4da36cd9b61b82"
+                    "c9b07f5a308f29d07ca999f9ffc92b66"
                 ),
             },
         ),
@@ -190,8 +207,8 @@ def test_visual_symbol_response_reports_only_safe_parser_stages(
                 "instance_type": "string",
                 "required_member": None,
                 "schema_sha256": (
-                    "9bce6653860c2302894fa647e1f25e341"
-                    "b4318d22f79770004355a353d456b7a"
+                    "8f331090b210d1057e4da36cd9b61b82"
+                    "c9b07f5a308f29d07ca999f9ffc92b66"
                 ),
             },
         ),
@@ -210,8 +227,8 @@ def test_visual_symbol_response_reports_only_safe_parser_stages(
                 "instance_type": "string",
                 "required_member": None,
                 "schema_sha256": (
-                    "9bce6653860c2302894fa647e1f25e341"
-                    "b4318d22f79770004355a353d456b7a"
+                    "8f331090b210d1057e4da36cd9b61b82"
+                    "c9b07f5a308f29d07ca999f9ffc92b66"
                 ),
             },
         ),
@@ -230,8 +247,8 @@ def test_visual_symbol_response_reports_only_safe_parser_stages(
                 "instance_type": "object",
                 "required_member": None,
                 "schema_sha256": (
-                    "9bce6653860c2302894fa647e1f25e341"
-                    "b4318d22f79770004355a353d456b7a"
+                    "8f331090b210d1057e4da36cd9b61b82"
+                    "c9b07f5a308f29d07ca999f9ffc92b66"
                 ),
             },
         ),
@@ -281,8 +298,8 @@ def test_visual_symbol_schema_diagnostic_rejects_untrusted_or_inconsistent_conte
         "instance_type": "object",
         "required_member": "symbol_kind",
         "schema_sha256": (
-            "9bce6653860c2302894fa647e1f25e341"
-            "b4318d22f79770004355a353d456b7a"
+            "8f331090b210d1057e4da36cd9b61b82"
+            "c9b07f5a308f29d07ca999f9ffc92b66"
         ),
     }
     diagnostic[field] = unsafe_value
@@ -330,21 +347,21 @@ def test_visual_symbol_response_rejects_invalid_identity_or_shape() -> None:
             "symbol_kind": "diameter",
             "bbox_normalized": [0.1, 0.2, 0.3, 0.4],
             "associated_text_observation_ids": ["text-001"],
-            "requires_confirmation": True,
+            "confidence_signal": 0.91,
         },
         {
             "visual_observation_id": "visual-002",
             "symbol_kind": "depth",
             "bbox_normalized": [0.4, 0.4, 0.4, 0.6],
             "associated_text_observation_ids": ["text-002"],
-            "requires_confirmation": True,
+            "confidence_signal": 0.92,
         },
         {
             "visual_observation_id": "visual-002",
             "symbol_kind": "counterbore",
             "bbox_normalized": [0.5, 0.5, 0.7, 0.7],
             "associated_text_observation_ids": ["unknown-text"],
-            "requires_confirmation": True,
+            "confidence_signal": 0.93,
         },
     ]
     unchanged = copy.deepcopy(payload)
@@ -361,6 +378,7 @@ def test_visual_symbol_response_rejects_invalid_identity_or_shape() -> None:
     assert len(accepted) == 1
     assert accepted[0].visual_observation_id == "visual-001"
     assert accepted[0].bbox_pdf == (20.0, 60.0, 40.0, 100.0)
+    assert accepted[0].confidence_signal == pytest.approx(0.98)
     assert {item.rejection_code for item in rejected} == {
         "visual_bbox_invalid",
         "visual_source_mismatch",
@@ -375,7 +393,7 @@ def test_visual_symbol_response_rejects_invalid_identity_or_shape() -> None:
             "symbol_kind": "diameter",
             "bbox_normalized": [0.1 * index, 0.1, 0.1 * index + 0.05, 0.2],
             "associated_text_observation_ids": ["text-001"],
-            "requires_confirmation": True,
+            "confidence_signal": 0.9,
         }
         for index in range(5)
     ]
@@ -527,6 +545,7 @@ def _decision(
             "symbol_kind": kind,
             "bbox_pdf": visual.bbox_pdf,
             "associated_text_observation_ids": visual.associated_text_observation_ids,
+            "confidence_signal": 0.98,
         }
         for kind in kinds
     )
@@ -582,6 +601,7 @@ def test_diameter_enriches_existing_candidate() -> None:
     assert payload["normalized_text"] == "Φ10"
     assert payload["feature_kind"] == "unknown"
     assert payload["requires_confirmation"] is True
+    assert decision.candidate_envelope["source_truth_preserved"] is False
     assert decision.source_location_ids == ("visual-1", "text-1")
     assert decision.coordinates == (12, 18, 32, 28)
 
@@ -960,6 +980,7 @@ def test_visual_only_depth_value_enriches_direct_unique_typed_primary(
         "symbol_kind": "depth",
         "bbox_pdf": visual.bbox_pdf,
         "associated_text_observation_ids": ("owner", "value"),
+        "confidence_signal": 0.96,
     }
 
     decision = project_visual_observation(
@@ -973,6 +994,9 @@ def test_visual_only_depth_value_enriches_direct_unique_typed_primary(
     assert decision.disposition == "candidate"
     assert decision.candidate_id == "candidate-original"
     assert decision.candidate_envelope is not None
+    assert decision.requires_confirmation is False
+    assert decision.confidence_signal == pytest.approx(0.96)
+    assert decision.candidate_envelope["source_truth_preserved"] is True
     projected = decision.candidate_envelope["payload"]
     assert projected["raw_text"] == owner_text
     assert projected["normalized_text"] == f"{owner_text} 深 8"
@@ -1942,12 +1966,14 @@ def test_nonoverlap_same_kind_is_conflict_in_both_input_orders() -> None:
             "diameter",
             (10, 10, 18, 20),
             ("text-1",),
+            0.98,
         ),
         ValidatedSymbolDetection(
             "visual-1",
             "diameter",
             (22, 10, 30, 20),
             ("text-1",),
+            0.96,
         ),
     )
 
@@ -1997,6 +2023,7 @@ def test_multiple_existing_candidate_projections_merge_or_conflict_stably() -> N
             "diameter",
             visual.bbox_pdf,
             ("owner",),
+            0.99 if visual.observation_id == "visual-1" else 0.81,
         )
         for visual in compatible_visuals
     )
@@ -2025,6 +2052,7 @@ def test_multiple_existing_candidate_projections_merge_or_conflict_stably() -> N
     assert all(
         decision.source_location_ids == ("visual-1", "visual-2", "owner")
         and decision.coordinates == (10, 10, 52, 20)
+        and decision.confidence_signal == pytest.approx(0.81)
         for decision in compatible
     )
 
@@ -2043,6 +2071,7 @@ def test_multiple_existing_candidate_projections_merge_or_conflict_stably() -> N
             "depth",
             visual.bbox_pdf,
             tuple(visual.associated_text_observation_ids),
+            0.95,
         )
         for visual in conflict_visuals
     )
@@ -2080,6 +2109,7 @@ def test_rejected_detection_preserves_accepted_symbol_kinds() -> None:
         "diameter",
         visual.bbox_pdf,
         ("text-1",),
+        0.9,
     )
 
     decisions = project_visual_page(
@@ -2104,18 +2134,21 @@ def test_cross_batch_overlap_grouping_is_order_independent() -> None:
             "diameter",
             (11.0, 10.0, 21.0, 20.0),
             ("text-2",),
+            0.82,
         ),
         ValidatedSymbolDetection(
             "visual-1",
             "diameter",
             (10.0, 10.0, 20.0, 20.0),
             ("text-1",),
+            0.99,
         ),
         ValidatedSymbolDetection(
             "visual-3",
             "diameter",
             (12.1, 10.0, 22.1, 20.0),
             ("text-3",),
+            0.91,
         ),
     )
     forward = group_symbol_detections(detections)
@@ -2132,6 +2165,7 @@ def test_cross_batch_overlap_grouping_is_order_independent() -> None:
         "text-2",
         "text-3",
     )
+    assert forward[0].detection.confidence_signal == pytest.approx(0.82)
 
 
 def test_page_projection_unions_cross_batch_visual_sources() -> None:
@@ -2146,12 +2180,14 @@ def test_page_projection_unions_cross_batch_visual_sources() -> None:
             "diameter",
             (11, 10, 21, 20),
             ("text-1",),
+            0.81,
         ),
         ValidatedSymbolDetection(
             "visual-1",
             "diameter",
             (10, 10, 20, 20),
             ("text-1",),
+            0.99,
         ),
     )
     decisions = project_visual_page(

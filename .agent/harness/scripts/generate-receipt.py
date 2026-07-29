@@ -39,7 +39,7 @@ PROVIDER_FIXTURE_PREFIX = "provider-fixture:"
 PROVIDER_FIXTURE_PATHS = (
     ".agent/harness/fixtures/providers/tencent-ocr/general-accurate-v1.json",
     ".agent/harness/fixtures/providers/qwen-vl/candidate-review-v1.json",
-    ".agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json",
+    ".agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v2.json",
 )
 CONTROLLED_LIVE_SELECTORS = (
     "phase://live/symbol-recognition?input_set=current-four",

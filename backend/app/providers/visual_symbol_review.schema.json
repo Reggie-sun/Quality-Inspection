@@ -10,7 +10,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "visual-symbol-review/1"
+      "const": "visual-symbol-review/2"
     },
     "detections": {
       "type": "array",
@@ -23,7 +23,7 @@
           "symbol_kind",
           "bbox_normalized",
           "associated_text_observation_ids",
-          "requires_confirmation"
+          "confidence_signal"
         ],
         "properties": {
           "visual_observation_id": {
@@ -62,8 +62,10 @@
               "minLength": 1
             }
           },
-          "requires_confirmation": {
-            "const": true
+          "confidence_signal": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           }
         }
       }

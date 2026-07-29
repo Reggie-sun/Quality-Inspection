@@ -786,7 +786,11 @@ def test_d2_t2_input_identity_binds_only_sanitized_provider_fixtures(
     relative_paths = (
         ".agent/harness/fixtures/providers/tencent-ocr/general-accurate-v1.json",
         ".agent/harness/fixtures/providers/qwen-vl/candidate-review-v1.json",
-        ".agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v1.json",
+        ".agent/harness/fixtures/providers/qwen-vl/visual-symbol-review-v2.json",
+    )
+    assert not any(
+        path.endswith("visual-symbol-review-v1.json")
+        for path in relative_paths
     )
     for index, relative_path in enumerate(relative_paths):
         path = tmp_path / relative_path

@@ -144,7 +144,7 @@ def test_qwen_visual_symbol_sampling_temperature_is_pinned_to_zero() -> None:
                                     json.dumps(
                                         {
                                             "schema_version": (
-                                                "visual-symbol-review/1"
+                                                "visual-symbol-review/2"
                                             ),
                                             "detections": [],
                                         }
@@ -175,6 +175,7 @@ def test_qwen_visual_symbol_sampling_temperature_is_pinned_to_zero() -> None:
         for key, value in completions.calls[0].items()
         if key in sampling_keys
     } == {"temperature": 0}
+    assert VISUAL_SCHEMA_VERSION == "visual-symbol-review/2"
 
 
 def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
@@ -183,7 +184,7 @@ def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
 ) -> None:
     valid_arguments = json.dumps(
         {
-            "schema_version": "visual-symbol-review/1",
+            "schema_version": "visual-symbol-review/2",
             "detections": [],
         }
     )
@@ -340,7 +341,7 @@ def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
                             json.dumps(
                                 {
                                     "schema_version": (
-                                        "visual-symbol-review/1"
+                                        "visual-symbol-review/2"
                                     ),
                                     "detections": [
                                         {"private": private_marker}
@@ -406,13 +407,13 @@ def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
     private_marker = "private-marker-provider-response"
     arguments = json.dumps(
         {
-            "schema_version": "visual-symbol-review/1",
+            "schema_version": "visual-symbol-review/2",
             "detections": [
                 {
                     "visual_observation_id": "visual-001",
                     "bbox_normalized": [0.1, 0.2, 0.3, 0.4],
                     "associated_text_observation_ids": [private_marker],
-                    "requires_confirmation": True,
+                    "confidence_signal": 0.98,
                 }
             ],
         }
@@ -454,8 +455,8 @@ def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
             "instance_type": "object",
             "required_member": "symbol_kind",
             "schema_sha256": (
-                "9bce6653860c2302894fa647e1f25e341"
-                "b4318d22f79770004355a353d456b7a"
+                "8f331090b210d1057e4da36cd9b61b82"
+                "c9b07f5a308f29d07ca999f9ffc92b66"
             ),
         },
     }
@@ -500,10 +501,10 @@ def test_qwen_native_integer_bbox_is_normalized_before_strict_schema() -> None:
         "symbol_kind": "diameter",
         "bbox_normalized": [0.1, 0.2, 0.3, 0.4],
         "associated_text_observation_ids": ["text-001"],
-        "requires_confirmation": True,
+        "confidence_signal": 0.98,
     }
     canonical = {
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "detections": [canonical_detection],
     }
     assert (
@@ -528,7 +529,7 @@ def test_qwen_native_integer_bbox_is_normalized_before_strict_schema() -> None:
 
 def test_qwen_missing_structural_schema_version_is_normalized() -> None:
     canonical = {
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "detections": [],
     }
     qwen_native = {"detections": []}
@@ -567,11 +568,11 @@ def test_qwen_missing_structural_schema_version_is_normalized() -> None:
     "qwen_native",
     (
         {"schema_version": None, "detections": []},
-        {"schema_version": "visual-symbol-review/2", "detections": []},
-        {"schema_version": "visual-symbol-review/1"},
-        {"schema_version": "visual-symbol-review/1", "detections": {}},
+        {"schema_version": "visual-symbol-review/3", "detections": []},
+        {"schema_version": "visual-symbol-review/2"},
+        {"schema_version": "visual-symbol-review/2", "detections": {}},
         {
-            "schema_version": "visual-symbol-review/1",
+            "schema_version": "visual-symbol-review/2",
             "detections": [],
             "unexpected": True,
         },
@@ -624,14 +625,14 @@ def test_qwen_native_bbox_normalization_rejects_other_invalid_forms(
     bbox: list[object],
 ) -> None:
     payload = {
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "detections": [
             {
                 "visual_observation_id": "visual-001",
                 "symbol_kind": "diameter",
                 "bbox_normalized": bbox,
                 "associated_text_observation_ids": ["text-001"],
-                "requires_confirmation": True,
+                "confidence_signal": 0.98,
             }
         ],
     }
@@ -717,7 +718,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         (
             Path(__file__).parents[3]
             / ".agent/harness/fixtures/providers/qwen-vl/"
-            "visual-symbol-review-v1.json"
+            "visual-symbol-review-v2.json"
         ).read_text(encoding="utf-8")
     )
     qwen_symbol_fixture = fixture["payload"]
@@ -801,7 +802,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     expected_prompt = {
         "task": "review_local_engineering_drawing_symbol_contexts",
         "prompt_version": "visual-symbol-prompt/4",
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "visual_observation_ids": ["visual-001", "visual-002"],
         "visual_contexts": [
             {
@@ -877,7 +878,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
             "prefer_line_level_text_when_line_and_span_duplicate_raw_text",
             "return_no_detection_for_unrecognized_or_absent_symbols",
             "match_response_schema_exactly",
-            "requires_confirmation_must_be_true",
+            "report_one_confidence_signal_between_zero_and_one",
             "return_one_json_object_only",
         ],
         "response_schema": response_schema,
@@ -1003,7 +1004,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         "crop_sha256": "d" * 64,
         "model": "qwen3-vl-max",
         "prompt_version": "visual-symbol-prompt/2",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/1",
         "adapter_version": "qwen-openai-compatible/1",
         "proposal_version": "visual-observation/1",
         "pymupdf_version": "1.27.0",
