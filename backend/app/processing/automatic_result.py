@@ -362,6 +362,14 @@ def _validated_candidates_for_schema(
         raise ConfidenceDecisionContractError(
             f"automatic result schema_version is unknown: {schema_version}"
         )
+    if (
+        not isinstance(candidates, Sequence)
+        or isinstance(candidates, (str, bytes, bytearray))
+        or isinstance(candidates, Mapping)
+    ):
+        raise ConfidenceDecisionContractError(
+            "automatic-result/2 candidates must be a non-string sequence"
+        )
     for index, candidate in enumerate(candidates):
         if not isinstance(candidate, Mapping):
             raise ConfidenceDecisionContractError(
