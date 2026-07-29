@@ -1613,6 +1613,58 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
       one-call authorization is exhausted. Remediation、a second diagnostic
       dimension/call or a new full-P0 start requires a new explicit user
       decision.
+  - Task 8 Step 6 one-shot full-P0 live-start amendment — 2026-07-29:
+    - Selection record:
+      - Selected lane: `Heavy`.
+      - Selected plan:
+        `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+      - Selection evidence: the schema-leaf diagnostic authorization is exhausted and
+        its one schema-valid direct call did not overturn the two sealed full-run
+        failures. The user explicitly authorizes exactly one new full-P0 start using
+        the current `qwen3-vl-plus-2025-12-19` snapshot; this is not a retry or
+        continuation of any prior authorization.
+      - Validation action: require the pre-amendment clean baseline
+        `38caf6e19f9626eebf5916a588bfd49e92309a89` and, after this plan-only
+        commit, a clean worktree with no executable delta. Before any formal write
+        or Provider construction, require exact API/worker source hashes matching
+        host and implementation commit
+        `163e0a5d780288bcb67af31d12bd7e4bab46768e`, healthy API/worker, and the
+        non-sensitive runtime identity `QI_QWEN_MODEL=qwen3-vl-plus-2025-12-19`
+        with API key/workspace presence only. Then verify the two literal sealed
+        registrations and run the no-write full-P0 identity preflight before the
+        sole live command.
+      - Writer ownership and order: parent is the sole writer. This amendment is
+        the only repository change and must be committed first. Thereafter only the
+        formal Harness may create a fresh run/project/evidence; do not modify
+        production, tests, frontend, sealed historical runs/manifests, or the
+        user's `http://127.0.0.1:5173/` instance.
+      - Next verification: execute exactly one literal command:
+        `micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py live --scope full-p0 --input-set current-four --current-four-run 20260728T073514713074Z-f32e6fae --symbol-eval-run 20260727T085747865239Z-5aa3e8d3 --pause-after first-pdf-balloons --print-run-id-only`.
+    - Problem boundary, unchanged contracts and old-path action:
+      - `backend/app/candidates/advisor.py::CandidateAdvisor` remains the sole
+        automatic result Owner; `QwenVisionProvider` remains the sole Provider
+        request/response-shape Owner. The formal runner is an Executor/Veto Gate,
+        not a second Owner. Preserve the frozen response schema, adapter `/4`,
+        prompt v4, `temperature=0`, SDK `max_retries=0`, timeout, all per-page
+        caps, current-four/symbol registrations, and fail-closed failure policy.
+      - The old targeted diagnostic authorization is retired/consumed; it must not
+        be reused as a full-P0, retry, model-comparison, schema-relaxation,
+        call-cap/paging change, or additional direct-call path.
+      - The one schema-valid direct diagnostic call is evidence of intermittency,
+        not a full-P0 success criterion. No manual source command, automatic
+        approval, frontend/browser step, D7-T3, SR-5, `main` merge, or remaining
+        current-four processing is authorized by this amendment.
+    - Exact-once success/failure boundary and rollback:
+      - The runner must pause only at `first-pdf-balloons`. If it reaches the
+        Quality Owner gate, report the exact run-bound project route and stop;
+        do not approve, promote, freeze, resume, or export.
+      - If any identity/preflight condition fails, create no live run and stop.
+        If the sole live start fails, seal that fresh run, retain only its sanitized
+        formal evidence, and stop without repair or rerun. Do not alter historical
+        sealed evidence in either case.
+      - Rollback is limited to reverting this docs-only amendment if a later Owner
+        decision requires it; never delete, rewrite, or reuse the fresh run,
+        project, Provider audit, cache, or existing sealed registrations.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
