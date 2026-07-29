@@ -112,6 +112,32 @@ describe("ReviewPanel", () => {
     })).toBeNull();
   });
 
+  test("审核详情不展示数量字段", () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "quantity-hidden",
+          item_type: "linear_dimension",
+          raw_text: "4 × 48",
+          quantity: 4,
+          nominal: "48",
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="quantity-hidden"
+      />,
+    );
+
+    const parsedResult = screen.getByRole("group", { name: "解析结果" });
+
+    expect(within(parsedResult).queryByRole("spinbutton", {
+      name: "数量：4 × 48",
+    })).toBeNull();
+    expect(within(parsedResult).getByRole("textbox", {
+      name: "基本尺寸：4 × 48",
+    })).not.toBeNull();
+  });
+
   test("原文与解析结果不同时也不展示识别原文", () => {
     render(
       <ReviewPanel
@@ -609,7 +635,7 @@ describe("ReviewPanel", () => {
     expect(save.hasAttribute("disabled")).toBe(true);
   });
 
-  test("修改成功后采用服务端规范化的数量值", async () => {
+  test("修改成功后采用服务端规范化的基本尺寸值", async () => {
     let resolveCommand: (outcome: boolean) => void = () => undefined;
     const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
       resolveCommand = resolve;
@@ -618,62 +644,62 @@ describe("ReviewPanel", () => {
     const { rerender } = render(
       <ReviewPanel
         items={[{
-          item_id: "canonical-quantity",
+          item_id: "canonical-nominal",
           item_type: "linear_dimension",
           raw_text: "尺寸",
-          quantity: 2,
+          nominal: "2",
           active: true,
         }]}
         onCommand={onCommand}
         onDraftChange={onDraftChange}
-        selectedItemId="canonical-quantity"
+        selectedItemId="canonical-nominal"
       />,
     );
 
-    const quantity = screen.getByRole("spinbutton", { name: "数量：尺寸" });
+    const nominal = screen.getByRole("textbox", { name: "基本尺寸：尺寸" });
     const save = screen.getByRole(
       "button",
       { name: "保存修改检验项：尺寸" },
     );
-    fireEvent.change(quantity, { target: { value: "01" } });
+    fireEvent.change(nominal, { target: { value: "02" } });
     expect(save.hasAttribute("disabled")).toBe(false);
     fireEvent.click(save);
 
     rerender(
       <ReviewPanel
         items={[{
-          item_id: "canonical-quantity",
+          item_id: "canonical-nominal",
           item_type: "linear_dimension",
           raw_text: "尺寸",
-          quantity: 1,
+          nominal: "2",
           active: true,
         }]}
         onCommand={onCommand}
         onDraftChange={onDraftChange}
-        selectedItemId="canonical-quantity"
+        selectedItemId="canonical-nominal"
       />,
     );
     await act(async () => resolveCommand(true));
 
     await waitFor(() => {
-      expect((quantity as HTMLInputElement).value).toBe("1");
-      expect(quantity.hasAttribute("readonly")).toBe(false);
+      expect((nominal as HTMLInputElement).value).toBe("2");
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
   });
 
-  test("持久化签名不变的新快照仍会规范化数量值", async () => {
+  test("持久化签名不变的新快照仍会规范化基本尺寸值", async () => {
     let resolveCommand: (outcome: boolean) => void = () => undefined;
     const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
       resolveCommand = resolve;
     }));
     const onDraftChange = vi.fn();
     const items: ReviewItem[] = [{
-      item_id: "same-signature-quantity",
+      item_id: "same-signature-nominal",
       item_type: "linear_dimension",
-      raw_text: "数量尺寸",
-      quantity: 2,
+      raw_text: "尺寸",
+      nominal: "2",
       active: true,
     }];
     const { rerender } = render(
@@ -681,19 +707,16 @@ describe("ReviewPanel", () => {
         items={items}
         onCommand={onCommand}
         onDraftChange={onDraftChange}
-        selectedItemId="same-signature-quantity"
+        selectedItemId="same-signature-nominal"
       />,
     );
 
-    const quantity = screen.getByRole(
-      "spinbutton",
-      { name: "数量：数量尺寸" },
-    );
+    const nominal = screen.getByRole("textbox", { name: "基本尺寸：尺寸" });
     const save = screen.getByRole(
       "button",
-      { name: "保存修改检验项：数量尺寸" },
+      { name: "保存修改检验项：尺寸" },
     );
-    fireEvent.change(quantity, { target: { value: "02" } });
+    fireEvent.change(nominal, { target: { value: "02" } });
     fireEvent.click(save);
 
     rerender(
@@ -701,24 +724,24 @@ describe("ReviewPanel", () => {
         items={items.map((item) => ({ ...item }))}
         onCommand={onCommand}
         onDraftChange={onDraftChange}
-        selectedItemId="same-signature-quantity"
+        selectedItemId="same-signature-nominal"
       />,
     );
     await act(async () => resolveCommand(true));
 
     await waitFor(() => {
-      expect((quantity as HTMLInputElement).value).toBe("2");
-      expect(quantity.hasAttribute("readonly")).toBe(false);
+      expect((nominal as HTMLInputElement).value).toBe("2");
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
 
-    fireEvent.change(quantity, { target: { value: "02" } });
+    fireEvent.change(nominal, { target: { value: "02" } });
     fireEvent.click(save);
     await act(async () => resolveCommand(true));
     await waitFor(() => {
-      expect((quantity as HTMLInputElement).value).toBe("02");
-      expect(quantity.hasAttribute("readonly")).toBe(false);
+      expect((nominal as HTMLInputElement).value).toBe("02");
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
 
@@ -727,11 +750,11 @@ describe("ReviewPanel", () => {
         items={items.map((item) => ({ ...item }))}
         onCommand={onCommand}
         onDraftChange={onDraftChange}
-        selectedItemId="same-signature-quantity"
+        selectedItemId="same-signature-nominal"
       />,
     );
     await waitFor(() => {
-      expect((quantity as HTMLInputElement).value).toBe("2");
+      expect((nominal as HTMLInputElement).value).toBe("2");
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
