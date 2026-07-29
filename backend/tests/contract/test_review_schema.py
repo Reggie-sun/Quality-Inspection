@@ -128,7 +128,7 @@ def test_review_commands_forbid_unknown_fields() -> None:
             "confidence_decision",
             {
                 "band": "high",
-                "disposition": "auto_accepted",
+                "review_disposition": "auto_accepted",
                 "policy_version": "candidate-confidence/1",
                 "evidence_codes": ["typed_schema_complete"],
             },

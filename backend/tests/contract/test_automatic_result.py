@@ -20,7 +20,7 @@ from app.processing.automatic_result import (
 def _decision(**overrides: object) -> dict[str, object]:
     decision: dict[str, object] = {
         "band": "high",
-        "disposition": "auto_accepted",
+        "review_disposition": "auto_accepted",
         "policy_version": CONFIDENCE_POLICY_VERSION,
         "evidence_codes": [
             "typed_schema_complete",
@@ -88,7 +88,7 @@ def test_confidence_evidence_code_order_is_frozen() -> None:
         _candidate(
             {
                 "band": "high",
-                "disposition": "auto_accepted",
+                "review_disposition": "auto_accepted",
                 "policy_version": CONFIDENCE_POLICY_VERSION,
             }
         ),
@@ -121,9 +121,18 @@ def test_automatic_result_v2_rejects_unknown_confidence_policy() -> None:
     [
         _decision(band="unknown"),
         _decision(band=[]),
-        _decision(band="medium", disposition="auto_accepted"),
-        _decision(band="low", disposition="auto_accepted"),
-        _decision(band="high", disposition="review_required"),
+        _decision(
+            band="medium",
+            review_disposition="auto_accepted",
+        ),
+        _decision(
+            band="low",
+            review_disposition="auto_accepted",
+        ),
+        _decision(
+            band="high",
+            review_disposition="review_required",
+        ),
         _decision(evidence_codes=[]),
         _decision(evidence_codes=["coverage_clear", "coverage_clear"]),
         _decision(evidence_codes=["coverage_clear", 7]),
@@ -156,6 +165,25 @@ def test_automatic_result_v2_accepts_complete_confidence_decision() -> None:
 
     assert validated is candidates
     assert validated[0]["confidence_decision"] == _decision()
+
+
+def test_automatic_result_v2_rejects_legacy_disposition_field() -> None:
+    legacy_decision = _decision()
+    legacy_decision["disposition"] = legacy_decision.pop(
+        "review_disposition"
+    )
+
+    with pytest.raises(
+        ConfidenceDecisionContractError,
+        match=(
+            r"missing=\['review_disposition'\], "
+            r"extra=\['disposition'\]"
+        ),
+    ):
+        _validated_candidates_for_schema(
+            [_candidate(legacy_decision)],
+            NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+        )
 
 
 def test_automatic_result_v1_remains_readable_without_confidence_decision() -> None:

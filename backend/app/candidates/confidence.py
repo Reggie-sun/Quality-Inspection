@@ -40,7 +40,7 @@ CONFIDENCE_EVIDENCE_CODE_ORDER = (
 
 _CONFIDENCE_DECISION_FIELDS = {
     "band",
-    "disposition",
+    "review_disposition",
     "policy_version",
     "evidence_codes",
 }
@@ -79,11 +79,11 @@ def validate_confidence_decision(decision: object) -> None:
             "confidence_decision.band must be high, medium, or low"
         )
 
-    disposition = decision["disposition"]
+    review_disposition = decision["review_disposition"]
     expected_disposition = _DISPOSITION_BY_BAND[band]
-    if disposition != expected_disposition:
+    if review_disposition != expected_disposition:
         raise ConfidenceDecisionContractError(
-            "confidence_decision.disposition does not match band"
+            "confidence_decision.review_disposition does not match band"
         )
 
     if decision["policy_version"] != CONFIDENCE_POLICY_VERSION:
