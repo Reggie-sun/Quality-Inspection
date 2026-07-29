@@ -1717,6 +1717,56 @@ Owner、scope、Provider-call、rollback、`D7-T3`、allowed-path 或 literal-ru
         action、remaining current-four processing、D7-T3、SR-5 or `main` merge
         occurred. This one-start authorization is exhausted; any remediation or
         further live start requires a new explicit Heavy amendment.
+  - Task 8 Step 6 new-crop schema-leaf diagnostic amendment — 2026-07-29:
+    - Selection record:
+      - Selected lane: `Heavy`; selected plan remains this current parent plan.
+      - Selection evidence: the user explicitly approved one targeted diagnostic
+        after run `20260729T051043520116Z-8ddc6a1a` failed on project
+        `217e3b9d-b5f8-44a6-b2c5-ed19f8bf4679`. The failed primary call and its
+        single bounded retry independently returned
+        `tool_arguments_schema_invalid` for cache identity
+        `22a5fe3f35c2cac609bfac570e167dff7d4b7ca759f7bac234779cd5919ac49a`
+        and crop SHA-256
+        `5628b3603d6fa7f12d62a637a438740a92f29dd81e2a9de689e492b1dcb53724`.
+      - Validation action: amend and commit this plan first, then perform one
+        no-write reconstruction. Only if source、inventory、page/batch、cache、
+        crop、prompt、model、adapter、schema and runtime identities all match may
+        the single direct diagnostic call be constructed.
+      - Writer ownership and order: parent is the sole writer; repository writes
+        are limited to this plan. A read-only explorer may report the exact
+        reconstruction call chain but must not write or call Provider.
+      - Next verification: before Provider construction/calls=`0/0`, uniquely
+        reconstruct the target batch from the retained project source/inventory
+        and require the two frozen identities above plus a newly recorded canonical
+        prompt SHA-256.
+    - Problem boundary, Owner and unchanged request:
+      - `parse_visual_symbol_json()` remains the only frozen response-schema
+        validator; `QwenVisionProvider.review_symbols()` remains the sole Provider
+        request/response-shape Owner. This diagnostic may observe only the existing
+        allowlisted in-memory schema diagnostic and cryptographic identities.
+      - Preserve model `qwen3-vl-plus-2025-12-19`, adapter `/4`, prompt v4,
+        response schema v1, `temperature=0`, SDK `max_retries=0`, timeout, crop
+        bytes and canonical prompt. Do not change production、tests、schema、
+        prompt、paging、call caps、retry policy、cache or project state.
+      - This is not a full-P0 start、project retry、model comparison、schema
+        relaxation、repair or success gate. The prior full-P0 and prior targeted
+        authorizations remain consumed.
+    - Exact-once diagnostic and stop:
+      - After the no-write gate passes, authorize exactly one direct invocation of
+        production `QwenVisionProvider.review_symbols()` against the reconstructed
+        crop/prompt. Do not use Advisor persistence and do not write a formal
+        run、project、cache、request、response or approved manifest.
+      - Store only one sanitized report in a fresh `mktemp` directory. If the
+        response is schema-invalid, retain only the allowlisted diagnostic,
+        request ID、usage、duration and payload/crop/prompt/schema hashes; if it is
+        schema-valid, retain only detection count and the same safe metadata.
+        Never retain raw arguments、payload、image bytes、drawing text、validation
+        message or credentials.
+      - After that single call, record the outcome and stop. No second direct call、
+        automatic remediation、full-P0 start、manual approval、frontend/browser、
+        D7-T3、SR-5 or `main` merge is authorized.
+      - Rollback only reverts this docs amendment; retained sealed run/project
+        evidence and the new sanitized report must never be deleted or rewritten.
 - Focused gate: 必须恰好覆盖 32 个 logical IDs：
   `PDF-01..05`、`ADV-01..09`、`COV-01..04`、`PROV-01..02`、
   `INT-01..06`、`FE-01..03`、`E2E-01..02`、`LIVE-01`。fixture tests
