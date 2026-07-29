@@ -11,6 +11,7 @@ import pytest
 from openai.types.completion_usage import CompletionUsage
 from PIL import Image
 
+import app.candidates.symbol_review as symbol_review
 from app.candidates.symbol_review import (
     VISUAL_ADAPTER_VERSION,
     VISUAL_PROMPT_VERSION,
@@ -122,6 +123,231 @@ def _visual_tool_call(
             arguments=arguments,
         ),
     )
+
+
+def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    valid_arguments = json.dumps(
+        {
+            "schema_version": "visual-symbol-review/1",
+            "detections": [],
+        }
+    )
+    private_marker = "private-marker-provider-response"
+    image = _png(text=None)
+
+    class FixedCompletions:
+        def __init__(self, completion: object) -> None:
+            self.completion = completion
+
+        def create(self, **_kwargs):
+            return self.completion
+
+    def completion(message: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            id="fixture-qwen-safe-stage",
+            choices=[SimpleNamespace(message=message)],
+            usage={"total_tokens": 4},
+        )
+
+    valid_tool_call = _visual_tool_call(valid_arguments)
+    cases = (
+        (
+            SimpleNamespace(
+                id="fixture-qwen-safe-stage",
+                choices=[],
+                usage={"total_tokens": 4},
+            ),
+            "message_shape_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(tool_calls=[valid_tool_call])
+            ),
+            "message_shape_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(content=None)
+            ),
+            "tool_calls_shape_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(
+                    content=private_marker,
+                    tool_calls=[valid_tool_call],
+                )
+            ),
+            "message_content_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(content=None, tool_calls=None)
+            ),
+            "tool_calls_shape_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(content=None, tool_calls=[])
+            ),
+            "tool_call_count_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(
+                    content=None,
+                    tool_calls=[valid_tool_call, valid_tool_call],
+                )
+            ),
+            "tool_call_count_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(
+                    content=None,
+                    tool_calls=[SimpleNamespace(type="function")],
+                )
+            ),
+            "tool_call_shape_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(
+                    content=None,
+                    tool_calls=[
+                        SimpleNamespace(
+                            type="function",
+                            function=SimpleNamespace(
+                                name=_VISUAL_TOOL_NAME
+                            ),
+                        )
+                    ],
+                )
+            ),
+            "tool_call_shape_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(
+                    content=None,
+                    tool_calls=[
+                        _visual_tool_call(
+                            valid_arguments,
+                            call_type="not-function",
+                        )
+                    ],
+                )
+            ),
+            "tool_call_type_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(
+                    content=None,
+                    tool_calls=[
+                        _visual_tool_call(
+                            valid_arguments,
+                            name="wrong_visual_tool",
+                        )
+                    ],
+                )
+            ),
+            "tool_name_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(
+                    content=None,
+                    tool_calls=[
+                        _visual_tool_call({"not": "json text"})
+                    ],
+                )
+            ),
+            "tool_arguments_type_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(
+                    content=None,
+                    tool_calls=[
+                        _visual_tool_call(private_marker)
+                    ],
+                )
+            ),
+            "tool_arguments_json_invalid",
+        ),
+        (
+            completion(
+                SimpleNamespace(
+                    content=None,
+                    tool_calls=[
+                        _visual_tool_call(
+                            json.dumps(
+                                {
+                                    "schema_version": (
+                                        "visual-symbol-review/1"
+                                    ),
+                                    "detections": [
+                                        {"private": private_marker}
+                                    ],
+                                }
+                            )
+                        )
+                    ],
+                )
+            ),
+            "tool_arguments_schema_invalid",
+        ),
+    )
+
+    for provider_completion, expected_stage in cases:
+        provider = QwenVisionProvider(
+            SimpleNamespace(
+                chat=SimpleNamespace(
+                    completions=FixedCompletions(
+                        provider_completion
+                    )
+                )
+            )
+        )
+        with pytest.raises(VisualSymbolProviderError) as raised:
+            provider.review_symbols(image, "safe-stage-prompt")
+        assert raised.value.failure_stage == expected_stage
+        assert raised.value.request_id == "fixture-qwen-safe-stage"
+        assert raised.value.usage == {"total_tokens": 4}
+        assert str(raised.value) == (
+            "visual symbol response violates frozen schema"
+        )
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None
+        assert private_marker not in str(raised.value)
+
+    missing_schema = tmp_path / "missing-visual-symbol.schema.json"
+    monkeypatch.setattr(symbol_review, "SCHEMA_PATH", missing_schema)
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=FixedCompletions(
+                    completion(
+                        SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                _visual_tool_call(valid_arguments)
+                            ],
+                        )
+                    )
+                )
+            )
+        )
+    )
+    with pytest.raises(VisualSymbolProviderError) as raised:
+        provider.review_symbols(image, "safe-stage-prompt")
+    assert raised.value.failure_stage == "local_schema_invalid"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
 
 
 def test_visual_prompt_requires_independent_exact_multikind_reporting() -> None:

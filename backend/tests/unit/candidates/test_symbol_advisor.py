@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +12,7 @@ from app.candidates.symbol_review import (
     ValidatedSymbolDetection,
     VisualReviewDecision,
     VisualSymbolSchemaError,
+    build_visual_failure_envelope,
     group_symbol_detections,
     parse_visual_symbol_json,
     plan_visual_batches,
@@ -104,6 +106,69 @@ def test_visual_symbol_response_accepts_only_exact_schema() -> None:
     private_marker = "private-marker-should-not-cross-schema-boundary"
     with pytest.raises(VisualSymbolSchemaError) as raised:
         parse_visual_symbol_json(private_marker)
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+    assert private_marker not in str(raised.value)
+
+
+def test_visual_symbol_response_reports_only_safe_parser_stages(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_marker = "private-marker-should-not-cross-parser-boundary"
+    invalid_schema = _payload()
+    del invalid_schema["detections"][0]["symbol_kind"]  # type: ignore[index]
+    non_finite = _payload()
+    non_finite["detections"][0]["bbox_normalized"][0] = float("nan")  # type: ignore[index]
+
+    for content, expected_stage in (
+        (private_marker, "json_invalid"),
+        (invalid_schema, "schema_invalid"),
+        (non_finite, "schema_invalid"),
+    ):
+        with pytest.raises(VisualSymbolSchemaError) as raised:
+            parse_visual_symbol_json(content)
+        assert raised.value.failure_stage == expected_stage
+        assert str(raised.value) == (
+            "visual symbol response violates frozen schema"
+        )
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None
+        assert private_marker not in str(raised.value)
+
+    local_schema_cases = (
+        (None, "missing"),
+        ("{", "invalid-json"),
+        ('{"type": 1}', "invalid-definition"),
+    )
+    for schema_content, suffix in local_schema_cases:
+        schema_path = tmp_path / f"visual-symbol-{suffix}.schema.json"
+        if schema_content is not None:
+            schema_path.write_text(schema_content, encoding="utf-8")
+        monkeypatch.setattr(symbol_review, "SCHEMA_PATH", schema_path)
+        with pytest.raises(VisualSymbolSchemaError) as raised:
+            parse_visual_symbol_json(_payload())
+        assert raised.value.failure_stage == "local_schema_invalid"
+        assert str(raised.value) == (
+            "visual symbol response violates frozen schema"
+        )
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None
+
+
+def test_visual_symbol_failure_envelope_is_exact_and_allowlisted() -> None:
+    assert build_visual_failure_envelope(
+        "tool_arguments_schema_invalid"
+    ) == {
+        "schema_version": "visual-symbol-call-failure/2",
+        "error_code": "visual_schema_invalid",
+        "failure_stage": "tool_arguments_schema_invalid",
+    }
+
+    private_marker = "private-marker-not-an-allowlisted-stage"
+    with pytest.raises(ValueError) as raised:
+        build_visual_failure_envelope(private_marker)
+    assert str(raised.value) == "visual symbol failure stage is invalid"
     assert raised.value.__cause__ is None
     assert raised.value.__context__ is None
     assert private_marker not in str(raised.value)

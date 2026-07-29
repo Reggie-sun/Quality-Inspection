@@ -14,6 +14,8 @@ from PIL import Image, UnidentifiedImageError
 
 from app.providers.base import VisionResult
 from app.candidates.symbol_review import (
+    VISUAL_SYMBOL_FAILURE_STAGES,
+    VisualSymbolFailureStage,
     VisualSymbolSchemaError,
     parse_visual_symbol_json,
 )
@@ -38,6 +40,7 @@ _FORBIDDEN_METADATA = re.compile(
     re.IGNORECASE,
 )
 _SAFE_USAGE_KEY = re.compile(r"^[a-z][a-z0-9_]{0,31}_tokens$")
+_MISSING_RESPONSE_MEMBER = object()
 
 
 class CandidateSchemaError(ValueError):
@@ -53,12 +56,33 @@ class VisualSymbolMetadataError(ValueError):
 
 
 class VisualSymbolProviderError(RuntimeError):
-    def __init__(self, *, request_id: str, usage: dict[str, int]) -> None:
+    def __init__(
+        self,
+        *,
+        request_id: str,
+        usage: dict[str, int],
+        failure_stage: VisualSymbolFailureStage,
+    ) -> None:
         super().__init__("visual symbol response violates frozen schema")
+        if (
+            not isinstance(failure_stage, str)
+            or failure_stage not in VISUAL_SYMBOL_FAILURE_STAGES
+        ):
+            raise ValueError(
+                "visual symbol failure stage is invalid"
+            ) from None
         self.request_id, self.usage = validate_visual_request_metadata(
             request_id,
             usage,
         )
+        self.failure_stage = failure_stage
+
+
+def _response_member(value: Any, name: str) -> Any:
+    try:
+        return getattr(value, name)
+    except (AttributeError, IndexError, TypeError):
+        return _MISSING_RESPONSE_MEMBER
 
 
 def parse_candidate_json(content: str) -> dict[str, Any]:
@@ -350,34 +374,100 @@ class QwenVisionProvider:
             getattr(completion, "id", None),
             getattr(completion, "usage", None),
         )
-        try:
-            message = completion.choices[0].message
-            tool_calls = message.tool_calls
-            if (
-                message.content not in (None, "")
-                or not isinstance(tool_calls, (list, tuple))
-                or len(tool_calls) != 1
-            ):
-                raise TypeError("tool_calls")
-            tool_call = tool_calls[0]
-            function = tool_call.function
-            arguments = function.arguments
-            if (
-                tool_call.type != "function"
-                or function.name != VISUAL_TOOL_NAME
-                or not isinstance(arguments, str)
-            ):
-                raise TypeError("tool_call")
-            payload = parse_visual_symbol_json(arguments)
-        except (
-            AttributeError,
-            IndexError,
-            TypeError,
-            VisualSymbolSchemaError,
+        choices = _response_member(completion, "choices")
+        if not isinstance(choices, (list, tuple)) or not choices:
+            raise VisualSymbolProviderError(
+                request_id=request_id,
+                usage=usage,
+                failure_stage="message_shape_invalid",
+            ) from None
+        message = _response_member(choices[0], "message")
+        content = _response_member(message, "content")
+        if (
+            message is _MISSING_RESPONSE_MEMBER
+            or content is _MISSING_RESPONSE_MEMBER
         ):
             raise VisualSymbolProviderError(
                 request_id=request_id,
                 usage=usage,
+                failure_stage="message_shape_invalid",
+            ) from None
+        if content not in (None, ""):
+            raise VisualSymbolProviderError(
+                request_id=request_id,
+                usage=usage,
+                failure_stage="message_content_invalid",
+            ) from None
+
+        tool_calls = _response_member(message, "tool_calls")
+        if not isinstance(tool_calls, (list, tuple)):
+            raise VisualSymbolProviderError(
+                request_id=request_id,
+                usage=usage,
+                failure_stage="tool_calls_shape_invalid",
+            ) from None
+        if len(tool_calls) != 1:
+            raise VisualSymbolProviderError(
+                request_id=request_id,
+                usage=usage,
+                failure_stage="tool_call_count_invalid",
+            ) from None
+
+        tool_call = tool_calls[0]
+        tool_call_type = _response_member(tool_call, "type")
+        function = _response_member(tool_call, "function")
+        function_name = _response_member(function, "name")
+        arguments = _response_member(function, "arguments")
+        if any(
+            value is _MISSING_RESPONSE_MEMBER
+            for value in (
+                tool_call_type,
+                function,
+                function_name,
+                arguments,
+            )
+        ):
+            raise VisualSymbolProviderError(
+                request_id=request_id,
+                usage=usage,
+                failure_stage="tool_call_shape_invalid",
+            ) from None
+        if tool_call_type != "function":
+            raise VisualSymbolProviderError(
+                request_id=request_id,
+                usage=usage,
+                failure_stage="tool_call_type_invalid",
+            ) from None
+        if function_name != VISUAL_TOOL_NAME:
+            raise VisualSymbolProviderError(
+                request_id=request_id,
+                usage=usage,
+                failure_stage="tool_name_invalid",
+            ) from None
+        if not isinstance(arguments, str):
+            raise VisualSymbolProviderError(
+                request_id=request_id,
+                usage=usage,
+                failure_stage="tool_arguments_type_invalid",
+            ) from None
+
+        parser_failure_stage = None
+        try:
+            payload = parse_visual_symbol_json(arguments)
+        except VisualSymbolSchemaError as exc:
+            parser_failure_stage = exc.failure_stage
+        if parser_failure_stage is not None:
+            failure_stage: VisualSymbolFailureStage
+            if parser_failure_stage == "json_invalid":
+                failure_stage = "tool_arguments_json_invalid"
+            elif parser_failure_stage == "schema_invalid":
+                failure_stage = "tool_arguments_schema_invalid"
+            else:
+                failure_stage = "local_schema_invalid"
+            raise VisualSymbolProviderError(
+                request_id=request_id,
+                usage=usage,
+                failure_stage=failure_stage,
             ) from None
         return VisionResult(
             request_id=request_id,

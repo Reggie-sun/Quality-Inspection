@@ -659,6 +659,7 @@ class CandidateAdvisor:
             crop_sha256,
         )
         started = time.perf_counter_ns()
+        provider_failure: tuple[str, dict[str, int], str] | None = None
         try:
             raw_result = provider.review_symbols(
                 canonical_crop_png,
@@ -679,6 +680,20 @@ class CandidateAdvisor:
                 usage=usage,
             )
         except VisualSymbolProviderError as exc:
+            provider_failure = (
+                exc.request_id,
+                dict(exc.usage),
+                exc.failure_stage,
+            )
+        except CapabilityUnavailable:
+            raise
+        except Exception:
+            raise CandidateAdvisorFailure(
+                "Visual symbol Advisor call failed"
+            ) from None
+
+        if provider_failure is not None:
+            request_id, usage, failure_stage = provider_failure
             duration_ms = max(
                 0,
                 (time.perf_counter_ns() - started) // 1_000_000,
@@ -687,7 +702,7 @@ class CandidateAdvisor:
                 build_visual_request_evidence(
                     crop_ref=crop_write.resource_ref,
                     crop_sha256=crop_write.sha256,
-                    usage=exc.usage,
+                    usage=usage,
                 )
             )
             request_write = self._storage.write_verified(
@@ -696,7 +711,7 @@ class CandidateAdvisor:
                 hashlib.sha256(request_content).hexdigest(),
             )
             failure_content = _json_bytes(
-                build_visual_failure_envelope()
+                build_visual_failure_envelope(failure_stage)
             )
             failure_relative = (
                 f"projects/{self._project_id}/provider-responses/"
@@ -712,7 +727,7 @@ class CandidateAdvisor:
                 audit_relative,
                 ProviderCallRecord(
                     provider="qwen-vl",
-                    request_id=exc.request_id,
+                    request_id=request_id,
                     model=model,
                     prompt_version=VISUAL_PROMPT_VERSION,
                     schema_version=VISUAL_SCHEMA_VERSION,
@@ -727,12 +742,6 @@ class CandidateAdvisor:
             )
             raise CandidateAdvisorFailure(
                 "Visual symbol Advisor response is invalid"
-            ) from None
-        except CapabilityUnavailable:
-            raise
-        except Exception:
-            raise CandidateAdvisorFailure(
-                "Visual symbol Advisor call failed"
             ) from None
         duration_ms = max(0, (time.perf_counter_ns() - started) // 1_000_000)
 

@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from itertools import combinations
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, get_args
 
 import jsonschema
 import pymupdf
@@ -78,6 +78,27 @@ SymbolKind = Literal[
     "datum_reference",
     "revision_marker",
 ]
+VisualSymbolParserFailureStage = Literal[
+    "json_invalid",
+    "schema_invalid",
+    "local_schema_invalid",
+]
+VisualSymbolFailureStage = Literal[
+    "message_shape_invalid",
+    "message_content_invalid",
+    "tool_calls_shape_invalid",
+    "tool_call_count_invalid",
+    "tool_call_shape_invalid",
+    "tool_call_type_invalid",
+    "tool_name_invalid",
+    "tool_arguments_type_invalid",
+    "tool_arguments_json_invalid",
+    "tool_arguments_schema_invalid",
+    "local_schema_invalid",
+]
+VISUAL_SYMBOL_FAILURE_STAGES = frozenset(
+    get_args(VisualSymbolFailureStage)
+)
 
 
 @dataclass(frozen=True)
@@ -119,7 +140,13 @@ class DeduplicatedSymbolGroup:
 
 
 class VisualSymbolSchemaError(ValueError):
-    pass
+    def __init__(
+        self,
+        *,
+        failure_stage: VisualSymbolParserFailureStage,
+    ) -> None:
+        super().__init__("visual symbol response violates frozen schema")
+        self.failure_stage = failure_stage
 
 
 def _json_bytes(payload: Mapping[str, Any]) -> bytes:
@@ -379,10 +406,18 @@ def build_visual_cache_envelope(
     }
 
 
-def build_visual_failure_envelope() -> dict[str, str]:
+def build_visual_failure_envelope(
+    failure_stage: VisualSymbolFailureStage | str,
+) -> dict[str, str]:
+    if (
+        not isinstance(failure_stage, str)
+        or failure_stage not in VISUAL_SYMBOL_FAILURE_STAGES
+    ):
+        raise ValueError("visual symbol failure stage is invalid") from None
     return {
-        "schema_version": "visual-symbol-call-failure/1",
+        "schema_version": "visual-symbol-call-failure/2",
         "error_code": "visual_schema_invalid",
+        "failure_stage": failure_stage,
     }
 
 
@@ -498,11 +533,44 @@ def parse_visual_symbol_json(
     content: str | Mapping[str, Any],
 ) -> dict[str, Any]:
     payload: Any = None
-    invalid = False
+    json_invalid = False
+    if isinstance(content, str):
+        try:
+            payload = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            json_invalid = True
+    else:
+        try:
+            payload = dict(content)
+        except (TypeError, ValueError):
+            json_invalid = True
+    if json_invalid:
+        raise VisualSymbolSchemaError(
+            failure_stage="json_invalid"
+        ) from None
+
+    local_schema_invalid = False
+    validator: jsonschema.Draft202012Validator | None = None
     try:
-        payload = json.loads(content) if isinstance(content, str) else dict(content)
         schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-        jsonschema.Draft202012Validator(schema).validate(payload)
+        jsonschema.Draft202012Validator.check_schema(schema)
+        validator = jsonschema.Draft202012Validator(schema)
+    except (
+        json.JSONDecodeError,
+        jsonschema.SchemaError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
+        local_schema_invalid = True
+    if local_schema_invalid or validator is None:
+        raise VisualSymbolSchemaError(
+            failure_stage="local_schema_invalid"
+        ) from None
+
+    schema_invalid = False
+    try:
+        validator.validate(payload)
         if any(
             not math.isfinite(float(value))
             for detection in payload["detections"]
@@ -510,18 +578,16 @@ def parse_visual_symbol_json(
         ):
             raise ValueError("non-finite bbox")
     except (
-        json.JSONDecodeError,
-        jsonschema.SchemaError,
         jsonschema.ValidationError,
-        OSError,
+        KeyError,
         TypeError,
         ValueError,
     ):
-        invalid = True
-    if invalid or not isinstance(payload, dict):
+        schema_invalid = True
+    if schema_invalid or not isinstance(payload, dict):
         raise VisualSymbolSchemaError(
-            "visual symbol response violates frozen schema"
-        )
+            failure_stage="schema_invalid"
+        ) from None
     return payload
 
 
@@ -551,8 +617,8 @@ def validate_symbol_detections(
     detections = payload.get("detections")
     if not isinstance(detections, list):
         raise VisualSymbolSchemaError(
-            "visual symbol response violates frozen schema"
-        )
+            failure_stage="schema_invalid"
+        ) from None
     counts = Counter(
         str(item["visual_observation_id"])
         for item in detections

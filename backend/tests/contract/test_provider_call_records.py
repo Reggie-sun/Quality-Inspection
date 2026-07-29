@@ -228,6 +228,7 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
             raise VisualSymbolProviderError(
                 request_id="fixture-visual-invalid",
                 usage={"total_tokens": 9},
+                failure_stage="tool_arguments_schema_invalid",
             )
 
     storage = LocalFileStorage(tmp_path / "storage")
@@ -590,6 +591,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
             **common,
         )
     assert "synthetic-crop" not in str(raised.value)
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
 
     failure_record_path = next(
         failure_advisor._storage.root.glob(
@@ -626,7 +629,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
     )
     assert failure_response == {
         "error_code": "visual_schema_invalid",
-        "schema_version": "visual-symbol-call-failure/1",
+        "failure_stage": "tool_arguments_schema_invalid",
+        "schema_version": "visual-symbol-call-failure/2",
     }
 
     encoded = json.dumps(
