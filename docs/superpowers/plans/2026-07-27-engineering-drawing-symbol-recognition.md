@@ -23,7 +23,7 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
 
 - Date: `2026-07-29`
 - Selected lane: `Heavy`
-- Status: `PRT-0 spec-review binding fix verified; fix commit pending`
+- Status: `PRT-0 committed; PRT-1 next`
 - Current parent plan:
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
 - Current branch/worktree: `codex/symbol-production-routing` /
@@ -37,8 +37,7 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
   quality review。Explorer、auditor、reviewer 和 OSS researcher 始终只读。
 - Validation action: `amend -> continue`；每个 code task 严格
   RED -> minimal GREEN -> focused regression -> review -> exact commit。
-- Next verification: 关闭 `P0-RES-001 -> PRJ-002` project-frozen
-  mode/router traceability gap；随后第一个 production RED 是
+- Next verification: 第一个 production RED 是
   `test_local_symbol_resolution.py + test_symbol_routing.py`。
 - This file owns only the bounded symbol-recognition convergence steps below. It
   does not become a second current plan and cannot authorize `D7-T3`、`SR-5`、
@@ -681,7 +680,8 @@ git commit -m "docs: activate production symbol routing contracts"
   `530853a01bed603e46f409ad2839f009ba343d77`.
 - Spec-review gap: `P0-RES-001` 未把 reader-first automatic-result semantics
   与 project intake 时冻结的 recognition mode/router identity 绑定到
-  `PRJ-002`; review fix commit: `pending at pre-commit evidence write`.
+  `PRJ-002`; review fix commit:
+  `d06341c533a542e7fd906d46c360b70d7465f8cd`.
 - Review-fix verification: registered generation changed only `P0-RES-001` in
   `p0-contracts.json` and only `PRJ-002` binding membership; task ID remains
   `D3-T2` and status remains `not_run`. `check-contracts.py` reported `69/111`
