@@ -155,8 +155,23 @@ def test_automatic_result_v2_rejects_invalid_confidence_decision(
         )
 
 
-def test_automatic_result_v2_accepts_complete_confidence_decision() -> None:
-    candidates = [_candidate(_decision())]
+@pytest.mark.parametrize(
+    ("band", "review_disposition"),
+    [
+        ("high", "auto_accepted"),
+        ("medium", "review_required"),
+        ("low", "review_required"),
+    ],
+)
+def test_automatic_result_v2_accepts_complete_confidence_decision(
+    band: str,
+    review_disposition: str,
+) -> None:
+    decision = _decision(
+        band=band,
+        review_disposition=review_disposition,
+    )
+    candidates = [_candidate(decision)]
 
     validated = _validated_candidates_for_schema(
         candidates,
@@ -164,7 +179,11 @@ def test_automatic_result_v2_accepts_complete_confidence_decision() -> None:
     )
 
     assert validated is candidates
-    assert validated[0]["confidence_decision"] == _decision()
+    assert validated[0]["confidence_decision"] is decision
+    assert decision == _decision(
+        band=band,
+        review_disposition=review_disposition,
+    )
 
 
 def test_automatic_result_v2_rejects_legacy_disposition_field() -> None:
