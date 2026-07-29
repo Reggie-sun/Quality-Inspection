@@ -64,13 +64,8 @@ function isAutoAccepted(item: ReviewItem): boolean {
 }
 
 
-function isReviewRequired(item: ReviewItem): boolean {
-  return item.active
-    && !isAutoAccepted(item)
-    && (
-      item.requires_confirmation === true
-      || item.status !== "kept"
-    );
+function requiresManualReview(item: ReviewItem): boolean {
+  return item.active && item.requires_confirmation === true;
 }
 
 
@@ -218,7 +213,7 @@ async function resolveManualReview(
   }
 
   for (;;) {
-    const item = current.items.find(isReviewRequired);
+    const item = current.items.find(requiresManualReview);
     if (item === undefined) break;
     current = await reviewCommand(
       page,
@@ -457,8 +452,23 @@ test("confidence policy routes only exceptions to review and preserves publicati
   expect(byBand.low.length, "approved PDF must produce low decisions")
     .toBeGreaterThan(0);
   expect(byBand.high.every(isAutoAccepted)).toBe(true);
+  for (const [band, items] of [
+    ["medium", byBand.medium],
+    ["low", byBand.low],
+  ] as const) {
+    for (const item of items) {
+      expect(item.confidence_decision?.band).toBe(band);
+      expect(item.confidence_decision?.review_disposition).toBe(
+        "review_required",
+      );
+      expect(item.confidence_decision?.policy_version).toBe(
+        "candidate-confidence/1",
+      );
+      expect(item.requires_confirmation).toBe(true);
+    }
+  }
 
-  const expectedReviewItems = active.filter(isReviewRequired)
+  const expectedReviewItems = active.filter(requiresManualReview)
     .map((item) => item.item_id)
     .sort();
   const expectedReviewSources = (initial.working_copy.coverage.entries ?? [])
@@ -495,9 +505,19 @@ test("confidence policy routes only exceptions to review and preserves publicati
     `[data-testid^='candidate-number-'][data-item-id='${editableHigh.item_id}']`,
   );
   await expect(provisional).toBeVisible();
-  await expect(provisional).toHaveAttribute(
+  const provisionalLabel = await provisional.getAttribute("aria-label");
+  const candidateNumberMatch = provisionalLabel?.match(
+    /^自动通过气泡 ([1-9]\d*)，待统一编号$/,
+  );
+  if (candidateNumberMatch === undefined || candidateNumberMatch === null) {
+    throw new Error("auto-accepted marker has no deterministic candidate number");
+  }
+  const candidateNumber = candidateNumberMatch[1];
+  await expect(provisional).toHaveAttribute("data-item-id", editableHigh.item_id);
+  await expect(highRow).toHaveAttribute("data-item-id", editableHigh.item_id);
+  await expect(highRow.locator(".inspection-number")).toHaveAttribute(
     "aria-label",
-    /^自动通过气泡 [1-9]\d*，待统一编号$/,
+    `自动通过气泡 ${candidateNumber}，待统一编号`,
   );
   await expect(provisional).toHaveAttribute(
     "data-review-disposition",
@@ -513,6 +533,10 @@ test("confidence policy routes only exceptions to review and preserves publicati
   await expect(highRow).toHaveAttribute("data-selected", "true");
   const selectedEditor = page.locator(
     "article.review-selected-item[data-selected='true']",
+  );
+  await expect(selectedEditor).toHaveAttribute(
+    "aria-label",
+    new RegExp(`^检验项 ${candidateNumber} · `),
   );
   await expect(selectedEditor).toContainText(editableHigh.raw_text);
   await expect(selectedEditor.getByRole("group", { name: "置信度依据" }))
@@ -595,17 +619,6 @@ test("confidence policy routes only exceptions to review and preserves publicati
   expect(activeBalloons.map((balloon) => balloon.formal_number)).toEqual(
     activeBalloons.map((_, index) => index + 1),
   );
-  const highIds = new Set(byBand.high.map((item) => item.item_id));
-  const manualBandIds = new Set([
-    ...byBand.medium.map((item) => item.item_id),
-    ...byBand.low.map((item) => item.item_id),
-  ]);
-  expect(activeBalloons.some(
-    (balloon) => highIds.has(balloon.inspection_item_id),
-  )).toBe(true);
-  expect(activeBalloons.some(
-    (balloon) => manualBandIds.has(balloon.inspection_item_id),
-  )).toBe(true);
 
   await page.reload({ waitUntil: "networkidle" });
   await page.getByRole("button", { name: "筛选全部" }).click();
@@ -636,6 +649,23 @@ test("confidence policy routes only exceptions to review and preserves publicati
     blockedBalloons.length,
     "approved PDF must retain a real placement/collision veto case",
   ).toBeGreaterThan(0);
+  const expectedVetoCodes = new Set<string>();
+  if (blockedBalloons.some(
+    (balloon) => balloon.placement_status === "manual_required",
+  )) {
+    expectedVetoCodes.add("manual_required");
+  }
+  for (const balloon of blockedBalloons) {
+    for (const flag of balloon.collision_flags) {
+      expectedVetoCodes.add(
+        flag === "forbidden_overlap" ? "source_text_overlap" : flag,
+      );
+    }
+  }
+  expect(expectedVetoCodes.size).toBeGreaterThan(0);
+  for (const code of expectedVetoCodes) {
+    expect(beforePlacement.balloon_blockers).toContain(code);
+  }
   const blockedConfirm = await apiRequest<ErrorPayload>(
     page,
     `/api/v1/projects/${projectId}/review/confirm`,
@@ -644,9 +674,9 @@ test("confidence policy routes only exceptions to review and preserves publicati
     operatorId,
   );
   expect(blockedConfirm.status).toBe(409);
-  expect(blockedConfirm.payload.error?.blockers).toEqual(
-    beforePlacement.balloon_blockers,
-  );
+  for (const code of expectedVetoCodes) {
+    expect(blockedConfirm.payload.error?.blockers).toContain(code);
+  }
   expect(blockedConfirm.payload.error?.code).toBe(
     beforePlacement.balloon_blockers[0],
   );
@@ -663,6 +693,33 @@ test("confidence policy routes only exceptions to review and preserves publicati
   );
   expect(confirmed.status).toBe(200);
   expect(confirmed.payload.schema_version).toBe("reviewed-result/2");
+  const finalActiveItems = confirmed.payload.items.filter((item) => item.active);
+  const finalAutoIds = new Set(
+    finalActiveItems
+      .filter((item) => item.acceptance_source === "confidence_policy")
+      .map((item) => item.item_id),
+  );
+  const finalManualOverrideIds = new Set(
+    finalActiveItems
+      .filter((item) => item.acceptance_source === "manual_override")
+      .map((item) => item.item_id),
+  );
+  expect(finalAutoIds.size).toBeGreaterThan(0);
+  expect(finalManualOverrideIds.size).toBeGreaterThan(0);
+  const finalBalloons = confirmed.payload.balloons
+    .filter((balloon) => balloon.status === "active")
+    .sort((left, right) => (
+      (left.formal_number ?? 0) - (right.formal_number ?? 0)
+    ));
+  expect(finalBalloons.map((balloon) => balloon.formal_number)).toEqual(
+    finalBalloons.map((_, index) => index + 1),
+  );
+  expect(finalBalloons.some(
+    (balloon) => finalAutoIds.has(balloon.inspection_item_id),
+  )).toBe(true);
+  expect(finalBalloons.some(
+    (balloon) => finalManualOverrideIds.has(balloon.inspection_item_id),
+  )).toBe(true);
   const created = await apiRequest<ExportJob>(
     page,
     `/api/v1/projects/${projectId}/exports`,
@@ -690,9 +747,11 @@ test("confidence policy routes only exceptions to review and preserves publicati
   expect(manifest.confidence_policy_versions).toEqual([
     "candidate-confidence/1",
   ]);
-  expect(
-    manifest.auto_accepted_item_count + manifest.manual_override_item_count,
-  ).toBeGreaterThan(0);
+  expect(manifest.auto_accepted_item_count).toBe(finalAutoIds.size);
+  expect(manifest.auto_accepted_item_count).toBeGreaterThan(0);
+  expect(manifest.manual_override_item_count).toBe(
+    finalManualOverrideIds.size,
+  );
   expect(manifest.manual_override_item_count).toBeGreaterThan(0);
   expect(manifest.artifacts.every(
     (artifact) => artifact.reviewed_result_id === confirmed.payload.id,

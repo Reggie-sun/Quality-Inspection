@@ -525,12 +525,12 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
     .toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("region", { name: "项目摘要" }))
     .toBeVisible({ timeout: 10 * 60_000 });
-  const candidateMarkers = page.getByRole("button", {
-    name: /^候选气泡 [1-9]\d*$/,
+  const provisionalMarkers = page.getByRole("button", {
+    name: /^(?:候选气泡 [1-9]\d*|自动通过气泡 [1-9]\d*，待统一编号)$/,
   });
-  await expect(candidateMarkers.first()).toBeVisible();
+  await expect(provisionalMarkers.first()).toBeVisible();
   expect(
-    await candidateMarkers.count(),
+    await provisionalMarkers.count(),
     "审核前必须显示正整数候选气泡序号",
   ).toBeGreaterThan(0);
   expect(new URL(page.url()).search, "产品 URL 不得包含 query").toBe("");
@@ -562,6 +562,9 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   await clickAndRefresh(page, "冻结检验项", "/review/freeze");
   await clickAndRefresh(page, "生成气泡", "/balloons/generate");
   await expect(page.getByRole("button", { name: /^候选气泡 / })).toHaveCount(0);
+  await expect(page.getByRole("button", {
+    name: /^自动通过气泡 [1-9]\d*，待统一编号$/,
+  })).toHaveCount(0);
   const generatedBalloons = page.getByRole("button", {
     name: /^正式气泡 [1-9]\d*(?:，需人工处理)?$/,
   });
