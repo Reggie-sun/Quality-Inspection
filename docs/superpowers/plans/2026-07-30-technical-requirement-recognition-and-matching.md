@@ -21,7 +21,7 @@
   `docs/superpowers/specs/2026-07-30-technical-requirement-recognition-and-matching-design.md`
 - Selection evidence: 用户批准“语义拆解匹配 + SIP 填充”、“规则 Owner + 辅助识别”
   和“不自动换算 `GB/T 1804/1184` 数值”的边界
-- Validation action: `replan`
+- Validation action: `amend`
 - Production authorization: 用户已选择 `A 主线程串行执行`，并授权创建独立
   worktree
 - Execution branch: `feature/technical-requirement-matching`
@@ -33,8 +33,45 @@
   - frontend focused: `32 passed`
 - Writer ownership and order: 一个 write-capable executor 严格按 Task 1 → Task 7；
   同一 file group 不并发写
-- Next verification: 绑定本地 `reviewer` profile 完成 Task 7 independent
-  reviewer gate；implementation、real-PDF runtime 和 parent verification 已通过
+- Next verification: 先以 RED tests 复现并修复 reviewer 确认的两项行为回归，
+  再补 migration downgrade evidence，重跑 focused/full verification，最后重新绑定
+  本地 `reviewer` profile 完成 Task 7 independent reviewer gate
+
+### Task 7 Reviewer Residual Amendment
+
+- Review evidence: child rollout
+  `019fb12e-f516-71a1-aefd-afcaaa74a453` 已确认实际加载
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`，结论为
+  `reject`。
+- Confirmed residual 1: `Exclude / Merge / Split` 会停用原 review item，但不会
+  同事务更新 `technical_requirements` relation，可能留下 inactive target 并让
+  requirement 在 freeze/export 前静默丢失。
+- Confirmed residual 2: 新 Rule Owner 只重建带 `技术要求` 标题的编号块，没有接管
+  被删除旧 classifier 的 title-block 外 standalone executable requirement 行为。
+- Review item 3 disposition: `.agent/real-pdf-inputs.env` 的真实本机路径来自用户明确
+  要求的 hardcoded `.agent` 输入，不含 credential；本轮不擅自删除或改写，重新 review
+  时作为 intentional local-path boundary 明示，保留其 portability/privacy 风险。
+- Review concerns 4 disposition: `ReviewPanel.tsx` 和 workspace ratio commits 是同分支
+  上既存用户并发改动，不属于本 amendment 的 writer ownership；不 reset、revert 或
+  顺手重写。
+- Allowed paths:
+  - `backend/app/candidates/technical_requirements.py`
+  - `backend/app/candidates/disposition.py`
+  - `backend/app/processing/automatic_result.py`
+  - `backend/app/review/service.py`
+  - `backend/tests/e2e/test_offline_automatic_result.py`
+  - `backend/tests/integration/test_review_operations.py`
+  - `backend/tests/integration/test_review_freeze.py`
+  - `backend/tests/integration/test_schema.py`
+  - `.agent/bug-memory.md`
+  - 本 plan
+- Unchanged contract: 单一 Technical Requirement Rule Owner、`automatic-result/2`、
+  confirmed-only reviewed result、freeze/export identity、global requirement 无气泡，
+  以及不自动写入 `GB/T 1804/1184` 数值公差。
+- Writer ownership and order: 主线程单 writer；先 relation RED/green，再 standalone
+  replacement RED/green，再 migration downgrade evidence；completed reviewer 保持只读。
+- Focused verification:
+  `micromamba run -n qi-p0 pytest backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/e2e/test_offline_automatic_result.py backend/tests/integration/test_schema.py -q`
 
 ## Problem Boundary
 

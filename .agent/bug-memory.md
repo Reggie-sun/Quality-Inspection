@@ -1,0 +1,42 @@
+# Project Bug Memory
+
+本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
+
+## BUG-20260730-requirement-relation-retirement
+
+- Status: 已修复，待独立复审
+- First reported: 2026-07-30
+- Last reported: 2026-07-30
+- Recurrence: 1
+- Surface: `backend/app/review/service.py` 的 `Exclude / Merge / Split` command path
+- Symptom: 已确认的技术要求 relation 在目标 item 被停用后仍引用 inactive ID，可能在 freeze/export 前静默丢失。
+- Previously correct behavior: requirement relation 必须只指向 active item；唯一 target 消失时必须重新进入人工确认。
+- Reproduction: 新增 exclude/merge/split focused tests 分别失败于 relation 仍是 `matched_items`、仍指向 `i1`。
+- Root cause: `_apply_command()` 只提交 item retirement/replacement，没有把 ID replacement map 同事务应用到 `technical_requirements`。
+- Fix: 在 `Exclude / ResolveConfirmation(false) / Merge / Split` 的同一 command
+  transaction 内应用 target replacement map；无剩余 target 时把 requirement 重开为
+  `unresolved` 并恢复 source coverage confirmation，有 replacement 时只重连 active item
+  并重新投影 SIP suggestion。
+- Regression check: `backend/tests/integration/test_review_operations.py`
+- Runtime proof: focused relation cases 和 full backend suite 均使用隔离 PostgreSQL
+  实例执行；最终结果记录在当前 plan 的 Task 7 closeout。
+- Change: current Task 7 fix commit
+
+## BUG-20260730-standalone-requirement-owner-replacement
+
+- Status: 已修复，待独立复审
+- First reported: 2026-07-30
+- Last reported: 2026-07-30
+- Recurrence: 1
+- Surface: `candidate_snapshot_from_inventory()` 与 `backend/app/candidates/technical_requirements.py`
+- Symptom: title-block 外的 standalone executable requirement 在旧 classifier 被删除后不再保证生成无气泡技术要求项。
+- Previously correct behavior: 同时含 inspection verb 和 verifiable criterion 的 standalone observation 会生成 `general_requirement`。
+- Reproduction: 两个 snapshot focused cases 都得到 `technical_requirements == ()`，未进入新 Owner。
+- Root cause: Owner replacement 迁移了 entry classification，却没有迁移旧入口的 standalone executable observation 准入与 entry 构造。
+- Fix: 将 standalone executable predicate 收敛到 Technical Requirement Rule Owner，
+  在编号块重建之后补充未消费 observation 的 standalone entry；已识别 subtype 走既有
+  rule，其他可执行行保守生成 `standalone_check / ambiguous` 无气泡全局技术要求。
+- Regression check: `backend/tests/e2e/test_offline_automatic_result.py`
+- Runtime proof: standalone snapshot cases 和 full backend suite 均使用隔离 PostgreSQL
+  实例执行；最终结果记录在当前 plan 的 Task 7 closeout。
+- Change: current Task 7 fix commit

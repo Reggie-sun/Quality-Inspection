@@ -251,6 +251,40 @@ def test_candidate_snapshot_reconstructs_and_matches_six_technical_requirements(
     )
 
 
+@pytest.mark.parametrize(
+    ("raw_text", "expected_subtype"),
+    [
+        ("检查外观，不得有裂纹", "surface_integrity"),
+        ("测量倒角，尺寸应为1×45°", "default_chamfer"),
+    ],
+)
+def test_candidate_snapshot_preserves_standalone_executable_requirements(
+    raw_text: str,
+    expected_subtype: str,
+) -> None:
+    """Owner replacement retains executable requirements outside a note block."""
+    observation = _text_observation(
+        raw_text,
+        observation_id=f"standalone-{expected_subtype}",
+    )
+
+    snapshot = candidate_snapshot_from_inventory((_page(observation),))
+
+    assert len(snapshot.technical_requirements) == 1
+    requirement = snapshot.technical_requirements[0]
+    assert requirement["ordinal"] is None
+    assert requirement["subtype"] == expected_subtype
+    assert requirement["match_outcome"] == "global_scope"
+    assert requirement["source_location_ids"] == [observation.observation_id]
+    generated = next(
+        candidate
+        for candidate in snapshot.candidates
+        if candidate["candidate_id"] == requirement["generated_candidate_id"]
+    )
+    assert generated["payload"]["item_type"] == "general_requirement"
+    assert generated["payload"]["balloon_required"] is False
+
+
 def test_pipeline_freezes_technical_requirement_decisions(
     db_session: Session,
     tmp_path: Path,

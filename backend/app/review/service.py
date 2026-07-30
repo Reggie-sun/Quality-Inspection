@@ -576,6 +576,12 @@ class ReviewService:
         if isinstance(command, Exclude):
             item = self._active_item(items, command.item_id)
             self._complete_manual_item(item, coverage, accepted=False)
+            self._remap_requirement_targets(
+                items,
+                coverage,
+                technical_requirements,
+                {command.item_id: ()},
+            )
             return [command.item_id], True
         if isinstance(command, Edit):
             item = self._active_item(items, command.item_id)
@@ -641,6 +647,15 @@ class ReviewService:
                 source["status"] = "superseded"
                 source["active"] = False
             items.append(merged)
+            self._remap_requirement_targets(
+                items,
+                coverage,
+                technical_requirements,
+                {
+                    source_id: (merged_id,)
+                    for source_id in command.item_ids
+                },
+            )
             return [*command.item_ids, merged_id], True
         if isinstance(command, Split):
             source = self._active_item(items, command.item_id)
@@ -672,6 +687,12 @@ class ReviewService:
                 )
                 split_item.pop("confidence_decision", None)
                 items.append(split_item)
+            self._remap_requirement_targets(
+                items,
+                coverage,
+                technical_requirements,
+                {command.item_id: tuple(split_ids)},
+            )
             return [command.item_id, *split_ids], True
         if isinstance(command, PromoteSource):
             entry = self._pending_source_entry(
@@ -766,6 +787,13 @@ class ReviewService:
                 command.item_id,
                 command.accepted,
             )
+            if not command.accepted:
+                self._remap_requirement_targets(
+                    items,
+                    coverage,
+                    technical_requirements,
+                    {command.item_id: ()},
+                )
             return [command.item_id], numbering_stale or not command.accepted
         if isinstance(command, SetBalloonRequired):
             item = self._active_item(items, command.item_id)
@@ -930,6 +958,76 @@ class ReviewService:
             if item.get("item_id") == generated_id:
                 item["active"] = False
                 item["status"] = "superseded"
+
+    def _remap_requirement_targets(
+        self,
+        items: list[dict[str, Any]],
+        coverage: dict[str, Any],
+        technical_requirements: list[dict[str, Any]],
+        replacements: dict[str, tuple[str, ...]],
+    ) -> None:
+        active_items = {
+            str(item["item_id"]): item
+            for item in items
+            if isinstance(item.get("item_id"), str)
+            and item.get("active", True)
+        }
+        for requirement in technical_requirements:
+            if requirement.get("match_outcome") != "matched_items":
+                continue
+            current_ids = requirement.get("matched_candidate_ids")
+            if not isinstance(current_ids, list) or not any(
+                target_id in replacements for target_id in current_ids
+            ):
+                continue
+            requirement_id = requirement.get("requirement_id")
+            if not isinstance(requirement_id, str):
+                continue
+            remapped_ids = sorted(
+                {
+                    remapped_id
+                    for target_id in current_ids
+                    for remapped_id in replacements.get(
+                        target_id,
+                        (target_id,),
+                    )
+                }
+            )
+            self._remove_requirement_projection(items, requirement_id)
+            if not remapped_ids:
+                requirement.update(
+                    {
+                        "match_outcome": "unresolved",
+                        "matched_candidate_ids": [],
+                        "generated_candidate_id": None,
+                        "review_required": True,
+                        "review_status": "suggested",
+                    }
+                )
+                self._reopen_requirement_coverage(coverage, requirement)
+                continue
+            requirement["matched_candidate_ids"] = remapped_ids
+            for target_id in remapped_ids:
+                target = active_items.get(target_id)
+                if target is None:
+                    raise ReviewNotFound(
+                        f"active review item {target_id} was not found"
+                    )
+                self._add_requirement_ref(target, requirement_id)
+                self._apply_requirement_suggestion(target, requirement)
+
+    @staticmethod
+    def _reopen_requirement_coverage(
+        coverage: dict[str, Any],
+        requirement: dict[str, Any],
+    ) -> None:
+        source_ids = set(requirement.get("source_location_ids", []))
+        for entry in ReviewService._coverage_entries(coverage):
+            if entry.get("observation_id") not in source_ids:
+                continue
+            entry["requires_confirmation"] = True
+            entry.pop("confirmation_accepted", None)
+        ReviewService._refresh_review_required_count(coverage)
 
     @staticmethod
     def _global_requirement_item(

@@ -6,13 +6,12 @@ from dataclasses import dataclass
 from typing import AbstractSet, Literal, Sequence
 
 from app.candidates.parser import NUMBER, normalize_text, parse_annotation
+from app.candidates.technical_requirements import (
+    is_standalone_executable_requirement,
+)
 from app.pdf.schemas import TextObservation
 
 
-INSPECTION_VERB = re.compile(r"检查|检验|检测|测量|确认|验证")
-VERIFIABLE_CRITERION = re.compile(
-    r"不得|不允许|应为|应达到|应符合|符合|不大于|不小于|≤|≥|无(?:毛刺|裂纹|缺陷|损伤)"
-)
 PRIMARY_DISPOSITION_RULE_VERSION = "p0-a1-r1"
 EXACT_METADATA_LABELS = frozenset(
     {
@@ -66,7 +65,7 @@ def _is_engineering_semantic(observation: TextObservation) -> bool:
     normalized = normalize_text(observation.normalized_text or observation.raw_text)
     if STANDALONE_NUMBER.fullmatch(normalized):
         return True
-    if INSPECTION_VERB.search(normalized) and VERIFIABLE_CRITERION.search(normalized):
+    if is_standalone_executable_requirement(normalized):
         return True
     try:
         parse_annotation(normalized)

@@ -223,6 +223,9 @@ def _technical_requirement_coverage_entries(
                 disposition = "reference_context"
                 candidate_id = None
                 requires_confirmation = False
+        standalone = bool(source_decisions) and all(
+            decision.ordinal is None for decision in source_decisions
+        )
         entries.append(
             CoverageEntry(
                 observation_id=observation.observation_id,
@@ -231,8 +234,12 @@ def _technical_requirement_coverage_entries(
                 coordinates=observation.bbox_pdf,
                 candidate_id=candidate_id,
                 requires_confirmation=requires_confirmation,
-                disposition_reason="technical_requirement",
-                disposition_rule_version="technical-requirement/1",
+                disposition_reason=(
+                    None if standalone else "technical_requirement"
+                ),
+                disposition_rule_version=(
+                    None if standalone else "technical-requirement/1"
+                ),
             )
         )
     return tuple(entries)

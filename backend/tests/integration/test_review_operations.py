@@ -425,6 +425,140 @@ def test_requirement_global_and_excluded_preserve_confirmed_values(
     assert excluded.technical_requirements[0]["review_status"] == "excluded"
 
 
+def _confirm_requirement_target(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+) -> ReviewWorkingCopy:
+    return review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "matched_items",
+            "matched_item_ids": ["i1"],
+        },
+    )
+
+
+def test_excluding_only_requirement_target_reopens_requirement_review(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    """Retiring the last active target must not silently lose its requirement."""
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed = _confirm_requirement_target(review_service, working_copy)
+
+    saved = review_service.apply(
+        confirmed.id,
+        expected_version=confirmed.version,
+        operator_id="quality-1",
+        command={"type": "exclude", "item_id": "i1"},
+    )
+
+    requirement = saved.technical_requirements[0]
+    assert requirement["match_outcome"] == "unresolved"
+    assert requirement["matched_candidate_ids"] == []
+    assert requirement["review_required"] is True
+    assert requirement["review_status"] == "suggested"
+    requirement_coverage = next(
+        entry
+        for entry in saved.coverage["entries"]
+        if entry["observation_id"] == "requirement-source"
+    )
+    assert requirement_coverage["requires_confirmation"] is True
+    assert "confirmation_accepted" not in requirement_coverage
+    assert _item(saved, "i1")["technical_requirement_refs"] == []
+
+
+def test_rejecting_requirement_target_reopens_requirement_review(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    """Confirmation rejection retires an item through the same relation boundary."""
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed = _confirm_requirement_target(review_service, working_copy)
+
+    saved = review_service.apply(
+        confirmed.id,
+        expected_version=confirmed.version,
+        operator_id="quality-1",
+        command={
+            "type": "resolve_confirmation",
+            "item_id": "i1",
+            "accepted": False,
+        },
+    )
+
+    requirement = saved.technical_requirements[0]
+    assert requirement["match_outcome"] == "unresolved"
+    assert requirement["matched_candidate_ids"] == []
+    assert requirement["review_required"] is True
+
+
+def test_merging_requirement_target_relinks_to_active_merged_item(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    """Replacing a target by merge must rewrite the persisted relation."""
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed = _confirm_requirement_target(review_service, working_copy)
+
+    saved = review_service.apply(
+        confirmed.id,
+        expected_version=confirmed.version,
+        operator_id="quality-1",
+        command={
+            "type": "merge",
+            "item_ids": ["i1", "i2"],
+            "raw_text": "M6 merged",
+        },
+    )
+
+    merged = saved.items[-1]
+    requirement = saved.technical_requirements[0]
+    assert requirement["matched_candidate_ids"] == [merged["item_id"]]
+    assert merged["technical_requirement_refs"] == ["requirement-1"]
+    assert merged["inspection_standard"] == "GB/T 1804-m"
+    assert _item(saved, "i1")["technical_requirement_refs"] == []
+
+
+def test_splitting_requirement_target_relinks_to_every_active_part(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    """Replacing a target by split must preserve the requirement on each part."""
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed = _confirm_requirement_target(review_service, working_copy)
+
+    saved = review_service.apply(
+        confirmed.id,
+        expected_version=confirmed.version,
+        operator_id="quality-1",
+        command={
+            "type": "split",
+            "item_id": "i1",
+            "parts": [{"raw_text": "M6 first"}, {"raw_text": "M6 second"}],
+        },
+    )
+
+    split_items = saved.items[-2:]
+    split_ids = sorted(str(item["item_id"]) for item in split_items)
+    requirement = saved.technical_requirements[0]
+    assert requirement["matched_candidate_ids"] == split_ids
+    assert all(
+        item["technical_requirement_refs"] == ["requirement-1"]
+        and item["inspection_standard"] == "GB/T 1804-m"
+        for item in split_items
+    )
+    assert _item(saved, "i1")["technical_requirement_refs"] == []
+
+
 def _freeze_blockers_with_completed_sip(
     working_copy: ReviewWorkingCopy,
 ) -> list[str]:

@@ -36,6 +36,11 @@ MatchOutcome = Literal["matched_items", "global_scope", "unresolved"]
 
 _HEADING = re.compile(r"^技术要求\s*[:：]?$")
 _NUMBERED_ENTRY = re.compile(r"^(?P<ordinal>[1-9][0-9]*)\s*[.．、)]\s*(?P<body>.+)$")
+_INSPECTION_VERB = re.compile(r"检查|检验|检测|测量|确认|验证")
+_VERIFIABLE_CRITERION = re.compile(
+    r"不得|不允许|应为|应达到|应符合|符合|不大于|不小于|≤|≥|"
+    r"无(?:毛刺|裂纹|缺陷|损伤)"
+)
 _DIMENSIONAL_STANDARD = re.compile(
     r"未(?:注|标注)尺寸公差按\s*GB\s*/\s*T\s*1804\s*[-—]?\s*"
     r"(?P<class>[FfMmCcVv])\s*执行"
@@ -249,6 +254,29 @@ def _entry_from_segments(
     )
 
 
+def is_standalone_executable_requirement(text: str) -> bool:
+    normalized = normalize_text(text)
+    return bool(
+        _INSPECTION_VERB.search(normalized)
+        and _VERIFIABLE_CRITERION.search(normalized)
+    )
+
+
+def _standalone_entry(
+    observation: TextObservation,
+) -> TechnicalRequirementEntry:
+    segments = _segments((observation,))
+    return TechnicalRequirementEntry(
+        ordinal=None,
+        raw_text=observation.raw_text,
+        normalized_text=normalize_text(observation.raw_text),
+        source_location_ids=(observation.observation_id,),
+        source_segment_ids=tuple(segment.segment_id for segment in segments),
+        page_index=observation.page_index,
+        coordinates=tuple(segment.bbox_pdf for segment in segments),
+    )
+
+
 def reconstruct_technical_requirement_entries(
     observations: Sequence[TextObservation],
 ) -> tuple[TechnicalRequirementEntry, ...]:
@@ -320,6 +348,30 @@ def reconstruct_technical_requirement_entries(
         current_texts.append(segment.text)
 
     flush()
+    consumed_source_ids = {
+        source_id
+        for entry in entries
+        for source_id in (
+            *entry.source_location_ids,
+            *entry.heading_source_location_ids,
+        )
+    }
+    entries.extend(
+        _standalone_entry(observation)
+        for observation in observations
+        if observation.observation_id not in consumed_source_ids
+        and is_standalone_executable_requirement(observation.raw_text)
+    )
+    source_order = {
+        observation.observation_id: index
+        for index, observation in enumerate(observations)
+    }
+    entries.sort(
+        key=lambda entry: source_order.get(
+            entry.source_location_ids[0],
+            len(source_order),
+        )
+    )
     return tuple(entries)
 
 
@@ -461,6 +513,19 @@ def classify_technical_requirement_entry(
         if classification is not None:
             break
 
+    if (
+        classification is None
+        and entry.ordinal is None
+        and is_standalone_executable_requirement(entry.normalized_text)
+    ):
+        classification = _Classification(
+            category="standalone_check",
+            subtype="ambiguous",
+            parsed_parameters={},
+            inspection_item="技术要求检查",
+            inspection_standard=entry.raw_text,
+            key_dimension=None,
+        )
     if classification is None:
         unsupported_standard = bool(
             _UNKNOWN_DIMENSIONAL_STANDARD.search(entry.normalized_text)
