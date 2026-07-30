@@ -1554,5 +1554,30 @@ git commit -m "docs: close P0-A2 layout routing verification"
 
 ## Execution Results
 
-尚未执行。实施后只能在各 Task 的 RED/GREEN、固定 corpus diagnostic、focused/full
-suite、contract check 和独立 reviewer 均有真实证据时更新本节。
+### Execution Selection
+
+- Authorization: 用户于 `2026-07-30` 明确调用
+  `$superpowers:executing-plans` 执行本计划。
+- Selected lane: `Heavy`
+- Selected plan:
+  `docs/superpowers/plans/2026-07-30-p0-a2-welli-template-aware-layout-noise-routing.md`
+- Selection evidence: 用户点名本计划及 approved design；worktree
+  `codex/welli-template-layout-filtering-spec` clean，`HEAD=85d975a`，实现基线仍为
+  `main@f9c8c2d`。
+- Validation action: `continue`
+- Writer ownership and order: 当前主线程是唯一 writer，严格按 Task 1→9 顺序；
+  不并发修改 coupled file groups。
+- Problem boundary: 只实现 versioned WELLI layout evidence、cell-aware disposition、
+  same-page watermark、text/visual Coverage 和 required visual routing。
+- Single owner: `backend/app/candidates/disposition.py` 继续是 primary disposition
+  唯一 Owner；`build_inventory()` 只生产 layout evidence。
+- Old path to preserve: technical requirement、P0-A1-R1 generic disposition、
+  grouping/parser/coarse fallback、unmatched/OCR path 和 unresolved visual Advisor
+  path。
+- Unchanged contract: observation identity/bbox/lineage、Coverage exact-once、
+  Provider schema/retry/cache、review/freeze/numbering/balloon/export 均不变。
+- Next verification: Task 1 schema serialization/immutability tests先 RED，再最小
+  schema GREEN。
+
+后续只有在各 Task 的 RED/GREEN、固定 corpus diagnostic、focused/full suite、
+contract check 和独立 reviewer 均有真实证据时，才继续更新本节。
