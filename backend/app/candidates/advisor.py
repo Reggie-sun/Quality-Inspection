@@ -52,6 +52,7 @@ from app.candidates.routing_evidence import (
     EscalationOutcome,
     ObservationOutcome,
     RoutingEvidenceRepository,
+    routing_decision_sha256,
     routing_decision_group_sha256,
 )
 from app.candidates.symbol_cache import (
@@ -2007,6 +2008,9 @@ class CandidateAdvisor:
         uncertainty_mode = self._settings.symbol_recognition_mode
         routing_decision_sha256_by_observation: dict[str, str] = {}
         uncertainty_routing_decisions: list[RoutingDecision] = []
+        local_resolution_evidence_by_observation: dict[
+            str, dict[str, object]
+        ] = {}
         if (
             self._require_symbol_persistence
             and uncertainty_mode
@@ -2076,6 +2080,33 @@ class CandidateAdvisor:
                                 raise ValueError(
                                     "local symbol projection missing"
                                 )
+                            decision_sha256 = routing_decision_sha256(
+                                decision=routing_decision,
+                                escalation_group_id=None,
+                                escalation_group_member_index=None,
+                                local_resolution_ref=(
+                                    "sha256:"
+                                    + routing_decision.input_sha256
+                                ),
+                            )
+                            local_resolution_evidence_by_observation[
+                                observation.observation_id
+                            ] = {
+                                "schema_version": (
+                                    routing_decision.schema_version
+                                ),
+                                "router_version": (
+                                    routing_decision.router_version
+                                ),
+                                "input_sha256": (
+                                    routing_decision.input_sha256
+                                ),
+                                "decision_sha256": decision_sha256,
+                                "reason_codes": list(
+                                    routing_decision
+                                    .local_resolution_reason_codes
+                                ),
+                            }
                             production_local_decisions[
                                 page_position
                             ].append(local_resolution.projection)
@@ -2178,6 +2209,18 @@ class CandidateAdvisor:
                 raise CandidateAdvisorFailure(
                     "Visual symbol routing evidence is incomplete"
                 )
+            if any(
+                routing_decision_sha256_by_observation.get(
+                    observation_id,
+                    evidence["decision_sha256"],
+                )
+                != evidence["decision_sha256"]
+                for observation_id, evidence
+                in local_resolution_evidence_by_observation.items()
+            ):
+                raise CandidateAdvisorFailure(
+                    "Visual symbol local routing evidence conflicts"
+                )
             if (
                 uncertainty_mode == "production_uncertainty"
                 and plan.denied
@@ -2252,6 +2295,7 @@ class CandidateAdvisor:
                 )
             else:
                 production_local_decisions = [[] for _ in pages]
+                local_resolution_evidence_by_observation = {}
                 visual_batches = plan_visual_batches(pages, snapshot)
         else:
             visual_batches = plan_visual_batches(pages, snapshot)
@@ -2803,6 +2847,15 @@ class CandidateAdvisor:
                     "rejection_code": decision.rejection_code,
                     "confidence_signal": decision.confidence_signal,
                 }
+                local_resolution_evidence = (
+                    local_resolution_evidence_by_observation.get(
+                        decision.observation_id
+                    )
+                )
+                if local_resolution_evidence is not None:
+                    review["local_resolution_evidence"] = dict(
+                        local_resolution_evidence
+                    )
                 if (
                     decision.disposition == "candidate"
                     and decision.candidate_envelope is not None
@@ -2889,6 +2942,18 @@ class CandidateAdvisor:
                             "rejection_code": None,
                             "confidence_signal": (
                                 retirement.confidence_signal
+                            ),
+                            **(
+                                {
+                                    "local_resolution_evidence": dict(
+                                        local_resolution_evidence_by_observation[
+                                            retirement.observation_id
+                                        ]
+                                    )
+                                }
+                                if retirement.observation_id
+                                in local_resolution_evidence_by_observation
+                                else {}
                             ),
                         },
                     )

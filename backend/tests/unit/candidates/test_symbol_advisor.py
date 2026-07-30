@@ -2149,12 +2149,13 @@ def test_nonfirst_local_projection_merges_with_same_page_vlm_decision() -> None:
     decisions = project_visual_page(
         visual_observations=(local_visual, vlm_visual),
         detections=(
-            ValidatedSymbolDetection(
-                vlm_visual.observation_id,
-                "diameter",
-                vlm_visual.bbox_pdf,
-                ("owner",),
-            ),
+                ValidatedSymbolDetection(
+                    vlm_visual.observation_id,
+                    "diameter",
+                    vlm_visual.bbox_pdf,
+                    ("owner",),
+                    0.9,
+                ),
         ),
         rejection_codes={},
         text_observations=(owner,),

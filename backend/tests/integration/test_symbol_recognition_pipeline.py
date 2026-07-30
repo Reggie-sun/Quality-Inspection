@@ -453,6 +453,7 @@ def _bounded_symbol_input(
 
 def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
     monkeypatch: pytest.MonkeyPatch,
+    db_session: Session,
     tmp_path: Path,
 ) -> None:
     source, pages, initial = _bounded_symbol_input(
@@ -546,6 +547,21 @@ def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
     assert coverage_by_id[
         local_visual.observation_id
     ].disposition == "non_inspection"
+    local_review = coverage_by_id[
+        local_visual.observation_id
+    ].advisor_review
+    assert local_review is not None
+    assert local_review["confidence_signal"] is None
+    local_evidence = local_review["local_resolution_evidence"]
+    assert isinstance(local_evidence, dict)
+    assert local_evidence["schema_version"] == "symbol-routing-decision/1"
+    assert local_evidence["router_version"] == "symbol-uncertainty-router/1"
+    assert local_evidence["reason_codes"] == [
+        "deterministic_geometry_complete",
+        "local_projection_complete",
+    ]
+    assert isinstance(local_evidence["input_sha256"], str)
+    assert len(local_evidence["input_sha256"]) == 64
     assert coverage_by_id[
         escalated_visual.observation_id
     ].source_location_id == escalated_visual.observation_id
@@ -553,6 +569,13 @@ def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
         escalated_visual.observation_id
     ].advisor_review == _visual_review([], "visual_no_detection")
     assert initial == candidate_snapshot_from_inventory(pages)
+    _project, raw, _working = _persist_snapshot(
+        db_session,
+        LocalFileStorage(tmp_path / "pipeline-storage"),
+        reviewed,
+    )
+    assert raw.coverage["blocking_count"] == 0
+    assert raw.coverage["coverage_checked"] is True
 
 
 def test_shadow_uncertainty_uses_legacy_final_write_without_extra_provider(

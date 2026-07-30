@@ -1,6 +1,8 @@
 import pytest
 
 from app.candidates.coverage import CoverageEntry, check_coverage
+from app.candidates.routing_evidence import routing_decision_sha256
+from app.candidates.symbol_routing import RoutingDecision
 
 
 @pytest.mark.parametrize(
@@ -173,6 +175,92 @@ def _visual_review(
             None if rejection_code == "visual_no_detection" else 0.98
         ),
     }
+
+
+def _local_resolution_evidence(
+    observation_id: str,
+    *,
+    requires_confirmation: bool,
+) -> dict[str, object]:
+    decision = RoutingDecision(
+        schema_version="symbol-routing-decision/1",
+        router_version="symbol-uncertainty-router/1",
+        visual_observation_id=observation_id,
+        input_sha256="a" * 64,
+        disposition="locally_resolved",
+        local_resolution_reason_codes=(
+            "deterministic_geometry_complete",
+            "local_projection_complete",
+        ),
+        escalation_reason_codes=(),
+        block_reason_codes=(),
+        requires_confirmation=requires_confirmation,
+    )
+    return {
+        "schema_version": decision.schema_version,
+        "router_version": decision.router_version,
+        "input_sha256": decision.input_sha256,
+        "decision_sha256": routing_decision_sha256(
+            decision=decision,
+            escalation_group_id=None,
+            escalation_group_member_index=None,
+            local_resolution_ref=f"sha256:{decision.input_sha256}",
+        ),
+        "reason_codes": list(
+            decision.local_resolution_reason_codes
+        ),
+    }
+
+
+def test_deterministic_local_visual_can_omit_provider_confidence() -> None:
+    review = _visual_review(symbol_kinds=("revision_marker",))
+    review["confidence_signal"] = None
+    review["local_resolution_evidence"] = _local_resolution_evidence(
+        "visual-local",
+        requires_confirmation=True,
+    )
+    entry = CoverageEntry(
+        "visual-local",
+        "non_inspection",
+        "visual-local",
+        (1, 2, 3, 4),
+        requires_confirmation=True,
+        advisor_review=review,
+    )
+
+    report = check_coverage(
+        [entry],
+        required_visual_observation_ids={"visual-local"},
+    )
+
+    assert report.blocking_count == 0
+    assert report.review_required_count == 1
+
+
+def test_forged_local_resolution_evidence_does_not_replace_confidence() -> None:
+    review = _visual_review(symbol_kinds=("revision_marker",))
+    review["confidence_signal"] = None
+    evidence = _local_resolution_evidence(
+        "visual-local",
+        requires_confirmation=True,
+    )
+    evidence["decision_sha256"] = "b" * 64
+    review["local_resolution_evidence"] = evidence
+    entry = CoverageEntry(
+        "visual-local",
+        "non_inspection",
+        "visual-local",
+        (1, 2, 3, 4),
+        requires_confirmation=True,
+        advisor_review=review,
+    )
+
+    report = check_coverage(
+        [entry],
+        required_visual_observation_ids={"visual-local"},
+    )
+
+    assert report.blocking_observation_ids == ("visual-local",)
 
 
 def test_visual_candidate_has_one_complete_coverage_entry() -> None:

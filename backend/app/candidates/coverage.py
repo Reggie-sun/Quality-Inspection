@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import dataclass
 from typing import Literal
@@ -45,6 +47,18 @@ _VISUAL_INSPECTION_KIND_SETS = {
     ("gdt_parallelism",),
     ("gdt_perpendicularity",),
     ("gdt_flatness",),
+}
+_VISUAL_REVIEW_KEYS = {
+    "route",
+    "schema_version",
+    "symbol_kinds",
+    "rejection_code",
+    "confidence_signal",
+}
+_LOCAL_RESOLUTION_REASON_CODES = {
+    "native_symbol_explicit",
+    "deterministic_geometry_complete",
+    "local_projection_complete",
 }
 
 
@@ -125,6 +139,7 @@ def _valid_visual_semantics(
     symbol_kinds: list[str],
     rejection_code: object,
     confidence_signal: object,
+    local_resolution_valid: bool,
 ) -> bool:
     kinds = tuple(symbol_kinds)
     has_candidate = not _is_blank(entry.candidate_id)
@@ -132,7 +147,10 @@ def _valid_visual_semantics(
         return (
             has_candidate
             and rejection_code is None
-            and confidence_signal is not None
+            and (
+                confidence_signal is not None
+                or local_resolution_valid
+            )
             and kinds in _VISUAL_INSPECTION_KIND_SETS
         )
     if entry.disposition == "reference_context":
@@ -140,7 +158,10 @@ def _valid_visual_semantics(
             not has_candidate
             and not entry.requires_confirmation
             and rejection_code is None
-            and confidence_signal is not None
+            and (
+                confidence_signal is not None
+                or local_resolution_valid
+            )
             and kinds == ("datum_reference",)
         )
     if entry.disposition == "non_inspection":
@@ -148,13 +169,17 @@ def _valid_visual_semantics(
             not has_candidate
             and entry.requires_confirmation
             and rejection_code is None
-            and confidence_signal is not None
+            and (
+                confidence_signal is not None
+                or local_resolution_valid
+            )
             and kinds == ("revision_marker",)
         )
     if entry.disposition == "ambiguous":
         return (
             not has_candidate
             and entry.requires_confirmation
+            and not local_resolution_valid
             and rejection_code in _VISUAL_REJECTION_CODES
             and (
                 (rejection_code == "visual_no_detection" and not kinds)
@@ -162,6 +187,71 @@ def _valid_visual_semantics(
             )
         )
     return False
+
+
+def _valid_local_resolution_evidence(
+    entry: CoverageEntry,
+    value: object,
+) -> bool:
+    if not isinstance(value, dict) or set(value) != {
+        "schema_version",
+        "router_version",
+        "input_sha256",
+        "decision_sha256",
+        "reason_codes",
+    }:
+        return False
+    input_sha256 = value.get("input_sha256")
+    decision_sha256 = value.get("decision_sha256")
+    reason_codes = value.get("reason_codes")
+    if (
+        value.get("schema_version") != "symbol-routing-decision/1"
+        or value.get("router_version") != "symbol-uncertainty-router/1"
+        or not isinstance(input_sha256, str)
+        or len(input_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in input_sha256)
+        or not isinstance(decision_sha256, str)
+        or len(decision_sha256) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in decision_sha256
+        )
+        or not isinstance(reason_codes, list)
+        or not reason_codes
+        or any(not isinstance(code, str) for code in reason_codes)
+        or reason_codes != sorted(set(reason_codes))
+        or not set(reason_codes).issubset(
+            _LOCAL_RESOLUTION_REASON_CODES
+        )
+        or "local_projection_complete" not in reason_codes
+        or not set(reason_codes).intersection(
+            {
+                "native_symbol_explicit",
+                "deterministic_geometry_complete",
+            }
+        )
+    ):
+        return False
+    canonical = json.dumps(
+        {
+            "schema_version": value["schema_version"],
+            "router_version": value["router_version"],
+            "visual_observation_id": entry.observation_id,
+            "input_sha256": input_sha256,
+            "disposition": "locally_resolved",
+            "local_resolution_reason_codes": reason_codes,
+            "escalation_reason_codes": [],
+            "block_reason_codes": [],
+            "requires_confirmation": entry.requires_confirmation,
+            "escalation_group_id": None,
+            "escalation_group_member_index": None,
+            "local_resolution_ref": f"sha256:{input_sha256}",
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest() == decision_sha256
 
 
 def check_coverage(
@@ -212,19 +302,33 @@ def check_coverage(
                 and symbol_kinds == sorted(set(symbol_kinds))
                 and set(symbol_kinds).issubset(_VISUAL_SYMBOL_KINDS)
             )
+            local_resolution_present = (
+                isinstance(review, dict)
+                and "local_resolution_evidence" in review
+            )
+            local_resolution_valid = (
+                isinstance(review, dict)
+                and _valid_local_resolution_evidence(
+                    entry,
+                    review.get("local_resolution_evidence"),
+                )
+            )
             visual_review_valid = (
                 isinstance(review, dict)
                 and set(review)
-                == {
-                    "route",
-                    "schema_version",
-                    "symbol_kinds",
-                    "rejection_code",
-                    "confidence_signal",
-                }
+                == (
+                    _VISUAL_REVIEW_KEYS
+                    | {"local_resolution_evidence"}
+                    if local_resolution_present
+                    else _VISUAL_REVIEW_KEYS
+                )
                 and review.get("route") == "visual_symbol"
                 and review.get("schema_version") == "visual-symbol-review/2"
                 and symbol_kinds_valid
+                and (
+                    not local_resolution_present
+                    or local_resolution_valid
+                )
                 and (
                     review.get("confidence_signal") is None
                     or (
@@ -268,6 +372,7 @@ def check_coverage(
                         if isinstance(review, dict)
                         else None
                     ),
+                    local_resolution_valid=local_resolution_valid,
                 )
             ):
                 blocking_ids.add(entry.observation_id)

@@ -524,12 +524,26 @@ def test_production_locally_resolved_visual_skips_provider(
         if entry.observation_id == visual.observation_id
     )
     assert visual_coverage.disposition == "non_inspection"
-    assert visual_coverage.advisor_review == {
+    assert visual_coverage.advisor_review is not None
+    assert {
+        key: value
+        for key, value in visual_coverage.advisor_review.items()
+        if key != "local_resolution_evidence"
+    } == {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/1",
+        "schema_version": "visual-symbol-review/2",
         "symbol_kinds": ["revision_marker"],
         "rejection_code": None,
+        "confidence_signal": None,
     }
+    local_evidence = visual_coverage.advisor_review[
+        "local_resolution_evidence"
+    ]
+    assert isinstance(local_evidence, dict)
+    assert local_evidence["reason_codes"] == [
+        "deterministic_geometry_complete",
+        "local_projection_complete",
+    ]
 
 
 def test_typed_local_resolution_excludes_only_its_text_advisor_route(
@@ -838,7 +852,7 @@ def test_production_sends_only_escalated_visuals_to_provider(
             return VisionResult(
                 request_id="fixture-escalated-request",
                 payload={
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "detections": [],
                 },
                 usage={},
@@ -1419,7 +1433,7 @@ def test_production_visual_executor_is_bounded_and_prepares_crops_first(
                 return VisionResult(
                     request_id=f"fixture-bounded-{call_index}",
                     payload={
-                        "schema_version": "visual-symbol-review/1",
+                        "schema_version": "visual-symbol-review/2",
                         "detections": [],
                     },
                     usage={},
@@ -1482,7 +1496,7 @@ def test_success_terminal_refills_sliding_window_while_peer_is_blocked(
             return VisionResult(
                 request_id=f"sliding-{identity}",
                 payload={
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "detections": [],
                 },
                 usage={},
@@ -1582,7 +1596,7 @@ def test_production_failure_stops_before_queued_job_provider_call(
             return VisionResult(
                 request_id=f"success-{identity}",
                 payload={
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "detections": [],
                 },
                 usage={},
@@ -1664,7 +1678,7 @@ def test_actual_wall_budget_stops_queued_job_with_fake_clock(
             return VisionResult(
                 request_id=f"slow-{identity}",
                 payload={
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "detections": [],
                 },
                 usage={},
@@ -1782,7 +1796,7 @@ def test_production_completion_permutations_keep_planner_ordered_bytes(
                 return VisionResult(
                     request_id=f"request-{identity}",
                     payload={
-                        "schema_version": "visual-symbol-review/1",
+                        "schema_version": "visual-symbol-review/2",
                         "detections": [],
                     },
                     usage={},
@@ -1902,7 +1916,7 @@ def test_concurrent_schema_failures_reserve_exactly_one_project_retry(
             return VisionResult(
                 request_id=f"success-{identity}-{attempt}",
                 payload={
-                    "schema_version": "visual-symbol-review/1",
+                    "schema_version": "visual-symbol-review/2",
                     "detections": [],
                 },
                 usage={},
