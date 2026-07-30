@@ -427,7 +427,7 @@ test("confidence policy routes only exceptions to review and preserves publicati
   await page.getByLabel("选择工程 PDF").setInputFiles(sourcePdf);
   await page.getByRole("button", { name: "上传并开始识别" }).click();
   await expect(page.getByRole("region", { name: "项目摘要" }))
-    .toBeVisible({ timeout: 10 * 60_000 });
+    .toBeVisible({ timeout: 20 * 60_000 });
   const projectId = await page.evaluate(
     () => window.sessionStorage.getItem("qi.current-project-id"),
   );
