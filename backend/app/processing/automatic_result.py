@@ -89,6 +89,7 @@ def _validate_terminal_recognition_provenance(
     *,
     project: Project,
     project_id: uuid.UUID,
+    completeness: str,
     recognition_mode: str,
     router_version: str,
     recognition_summary: Mapping[str, Any] | None,
@@ -114,6 +115,12 @@ def _validate_terminal_recognition_provenance(
             or summary["unresolved_roi_count"] < 0
         ):
             raise ValueError("recognition_summary is invalid")
+        if (
+            completeness == "partial_review_required"
+        ) != (summary["unresolved_roi_count"] > 0):
+            raise ValueError(
+                "completeness must match unresolved_roi_count"
+            )
     expected_evidence_ref = (
         f"symbol-routing-evidence://{project_id}"
         if recognition_mode == "production_uncertainty"
@@ -903,6 +910,7 @@ def build_automatic_result(
     _validate_terminal_recognition_provenance(
         project=project,
         project_id=project_identity,
+        completeness=completeness,
         recognition_mode=recognition_mode,
         router_version=router_version,
         recognition_summary=recognition_summary,

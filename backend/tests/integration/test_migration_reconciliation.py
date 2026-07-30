@@ -214,6 +214,63 @@ def test_integrated_migration_converges_feature_only_0008_schema() -> None:
             transaction.rollback()
 
 
+def test_symbol_result_completeness_downgrade_removes_legacy_defaults() -> None:
+    schema = f"migration_legacy_completeness_{uuid.uuid4().hex}"
+    migration_0011 = _load_migration(MIGRATION_PATHS[-1])
+    result_id = uuid.uuid4()
+
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+            connection.execute(
+                sa.text(f'SET LOCAL search_path TO "{schema}", public')
+            )
+            sa.Table(
+                "automatic_results",
+                sa.MetaData(),
+                sa.Column(
+                    "id",
+                    postgresql.UUID(as_uuid=True),
+                    primary_key=True,
+                ),
+                schema=schema,
+            ).create(connection)
+            migration_0011.op = Operations(
+                MigrationContext.configure(connection)
+            )
+            migration_0011.upgrade()
+            connection.execute(
+                sa.text("INSERT INTO automatic_results (id) VALUES (:id)"),
+                {"id": result_id},
+            )
+            assert connection.execute(
+                sa.text(
+                    "SELECT completeness, recognition_mode, router_version, "
+                    "recognition_summary, recognition_evidence_ref "
+                    "FROM automatic_results WHERE id = :id"
+                ),
+                {"id": result_id},
+            ).one() == (
+                "complete",
+                "legacy_high_recall",
+                "legacy",
+                {},
+                None,
+            )
+
+            migration_0011.downgrade()
+
+            assert {
+                column["name"]
+                for column in sa.inspect(connection).get_columns(
+                    "automatic_results"
+                )
+            } == {"id"}
+        finally:
+            transaction.rollback()
+
+
 def test_symbol_result_completeness_downgrade_refuses_provenance_loss() -> None:
     schema = f"migration_completeness_{uuid.uuid4().hex}"
     migration_0011 = _load_migration(MIGRATION_PATHS[-1])

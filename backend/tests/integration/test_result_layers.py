@@ -229,6 +229,7 @@ def _terminal_provenance_result(
     router_version: str,
     recognition_summary: dict[str, object],
     recognition_evidence_ref: str | None,
+    completeness: str = "complete",
 ) -> AutomaticResult:
     return build_automatic_result(
         db_session,
@@ -247,6 +248,7 @@ def _terminal_provenance_result(
         coverage=coverage,  # type: ignore[arg-type]
         provider_call_ids=[],
         schema_version=LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION,
+        completeness=completeness,
         recognition_mode=recognition_mode,
         router_version=router_version,
         recognition_summary=recognition_summary,
@@ -275,6 +277,50 @@ def test_terminal_result_refuses_locked_project_provenance_mismatch(
             recognition_summary={
                 "schema_version": "symbol-recognition-summary/1",
                 "unresolved_roi_count": 0,
+            },
+            recognition_evidence_ref=(
+                f"symbol-routing-evidence://{project.id}"
+            ),
+        )
+
+    assert db_session.scalar(
+        select(AutomaticResult).where(AutomaticResult.logical_job_id == job.id)
+    ) is None
+    assert db_session.get(LogicalJob, job.id).status == "pending"  # type: ignore[union-attr]
+    assert db_session.get(Project, project.id).state == ProjectState.PROCESSING  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    ("completeness", "unresolved_roi_count"),
+    (
+        ("complete", 1),
+        ("partial_review_required", 0),
+    ),
+)
+def test_terminal_result_rejects_inconsistent_completeness_summary(
+    db_session: Session,
+    completeness: str,
+    unresolved_roi_count: int,
+) -> None:
+    project, source_file, job, coverage = _fresh_process_inputs(
+        db_session,
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
+
+    with pytest.raises(ValueError, match="completeness"):
+        _terminal_provenance_result(
+            db_session,
+            project=project,
+            source_file=source_file,
+            job=job,
+            coverage=coverage,
+            completeness=completeness,
+            recognition_mode="production_uncertainty",
+            router_version="symbol-uncertainty-router/1",
+            recognition_summary={
+                "schema_version": "symbol-recognition-summary/1",
+                "unresolved_roi_count": unresolved_roi_count,
             },
             recognition_evidence_ref=(
                 f"symbol-routing-evidence://{project.id}"
