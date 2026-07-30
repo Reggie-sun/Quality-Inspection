@@ -23,6 +23,27 @@
 - Production authorization: 用户已批准按
   `superpowers:subagent-driven-development` 执行 Task 1→8。
 
+### Deferred Runtime Acceptance — 2026-07-30
+
+- Selected lane: `Standard`
+- Selected plan:
+  `docs/superpowers/plans/2026-07-29-confidence-routed-balloon-review.md`
+- Selection evidence: 当前实现、自动化检查和独立只读 review 已完成；approved real
+  PDF 项目 `6ef8002c-c2ae-470c-82ed-b68c346bae89` 实际产生 `120 high /
+  auto_accepted`、`162 low / review_required`、`0 medium`，不能满足 Task 8
+  同一真实输入的 mixed high/medium/low Browser proof。
+- Validation action: `amend`
+- Writer ownership and order: 主线程只修改本 plan；不修改 production code、稳定
+  contract、runtime config、Task 8 assertions 或其他 plan/status。
+- Approved disposition: 当前实现允许继续用于受控内部 QA；不 claim plan complete，
+  不把现有证据用作正式生产发布或远端 `main` 放行依据。无需为了凑齐 medium 人工调整
+  Provider、threshold 或真实输入。
+- Resume trigger: 获得同一次 runtime 可产生 high/medium/low 的 approved real PDF，
+  或进入正式生产发布 gate，以先发生者为准。
+- Next verification: 使用 current source-mounted runtime 重跑 focused Playwright、
+  Browser 七步、`auto-feature-smoke-test`，并验证 PDF、SIP Excel、manifest 绑定同一
+  `reviewed_result_id`；全部通过后才允许关闭 Task 8 和 Completion Contract。
+
 ## Problem Boundary
 
 | Dimension | Decision |
