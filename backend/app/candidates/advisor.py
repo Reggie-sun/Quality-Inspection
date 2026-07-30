@@ -1082,6 +1082,9 @@ class CandidateAdvisor:
         pages: Sequence[Any],
         snapshot: CandidateSnapshot,
     ) -> CandidateSnapshot:
+        required_visual_ids = frozenset(
+            snapshot.required_visual_observation_ids
+        )
         visual_batches = plan_visual_batches(pages, snapshot)
         planned_visual_calls_by_page = {
             page.page_index: len(visual_batches[index])
@@ -1118,6 +1121,7 @@ class CandidateAdvisor:
             observation.observation_id: observation
             for page in pages
             for observation in page.visual_observations
+            if observation.observation_id in required_visual_ids
         }
         visual_coverage_indexes = {
             entry.observation_id: index
@@ -1131,6 +1135,7 @@ class CandidateAdvisor:
                 if any(visual_batches)
                 else ()
             )
+            if item.observation_id in required_visual_ids
         }
         source_sha256 = (
             hashlib.sha256(Path(pdf_path).read_bytes()).hexdigest()
@@ -1211,7 +1216,12 @@ class CandidateAdvisor:
             for page_position, page in enumerate(pages):
                 visual_decisions.extend(
                     project_visual_page(
-                        visual_observations=page.visual_observations,
+                        visual_observations=tuple(
+                            observation
+                            for observation in page.visual_observations
+                            if observation.observation_id
+                            in required_visual_ids
+                        ),
                         detections=tuple(
                             accepted_by_page[page_position]
                         ),

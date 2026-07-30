@@ -485,6 +485,7 @@ def _snapshot(
     page: PageInventory,
     *,
     candidates: tuple[dict[str, object], ...] = (),
+    required_visual_observation_ids: tuple[str, ...] | None = None,
 ) -> CandidateSnapshot:
     candidate_source_ids = {
         str(source_id)
@@ -528,7 +529,9 @@ def _snapshot(
         (),
         required_visual_observation_ids=tuple(
             item.observation_id for item in page.visual_observations
-        ),
+        )
+        if required_visual_observation_ids is None
+        else required_visual_observation_ids,
     )
 
 
@@ -2284,3 +2287,96 @@ def test_unified_scheduler_is_deterministic_and_blocks_visual_overflow() -> None
         match="symbol_route_budget_exhausted",
     ):
         plan_visual_batches((wide_page,), _snapshot(wide_page))
+
+
+def test_visual_scheduler_only_plans_required_observations() -> None:
+    visuals = (
+        _visual("resolved-a", (10, 10, 20, 20), ()),
+        _visual("unresolved-b", (40, 10, 50, 20), ()),
+        _visual("resolved-c", (70, 10, 80, 20), ()),
+    )
+    page = _page((), visuals)
+    snapshot = _snapshot(
+        page,
+        required_visual_observation_ids=("unresolved-b",),
+    )
+
+    planned = plan_visual_batches((page,), snapshot)
+
+    assert tuple(
+        observation_id
+        for batch in planned[0]
+        for observation_id in batch.observation_ids
+    ) == ("unresolved-b",)
+
+
+def test_visual_scheduler_preserves_empty_page_batches_and_required_order() -> None:
+    visuals = (
+        _visual("resolved-a", (10, 10, 20, 20), ()),
+        _visual("unresolved-b", (40, 10, 50, 20), ()),
+        _visual("unresolved-c", (70, 10, 80, 20), ()),
+    )
+    page = _page((), visuals)
+
+    assert plan_visual_batches(
+        (page,),
+        _snapshot(page, required_visual_observation_ids=()),
+    ) == ((),)
+
+    planned = plan_visual_batches(
+        (page,),
+        _snapshot(
+            page,
+            required_visual_observation_ids=(
+                "unresolved-c",
+                "unresolved-b",
+            ),
+        ),
+    )
+    assert tuple(
+        observation_id
+        for batch in planned[0]
+        for observation_id in batch.observation_ids
+    ) == ("unresolved-b", "unresolved-c")
+
+
+def test_visual_scheduler_rejects_absent_required_observation() -> None:
+    page = _page((), (_visual("visual-present", (10, 10, 20, 20), ()),))
+
+    with pytest.raises(
+        ValueError,
+        match="^required visual observation is absent from pages$",
+    ):
+        plan_visual_batches(
+            (page,),
+            _snapshot(
+                page,
+                required_visual_observation_ids=("visual-missing",),
+            ),
+        )
+
+
+def test_visual_scheduler_budget_only_counts_required_observations() -> None:
+    overflow = tuple(
+        _visual(
+            f"visual-{index}",
+            (index * 1000.0, 10, index * 1000.0 + 3, 13),
+            (),
+        )
+        for index in range(17)
+    )
+    page = replace(
+        _page((), overflow),
+        width=17000,
+    )
+
+    planned = plan_visual_batches(
+        (page,),
+        _snapshot(
+            page,
+            required_visual_observation_ids=("visual-16",),
+        ),
+    )
+
+    assert len(planned[0]) == 1
+    assert planned[0][0].observation_ids == ("visual-16",)
