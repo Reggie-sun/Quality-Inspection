@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import get_args
@@ -15,18 +16,41 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 import app.candidates.advisor as advisor_module
-from app.candidates.advisor import CandidateAdvisor, CandidateAdvisorFailure
+from app.candidates.advisor import (
+    CandidateAdvisor,
+    CandidateAdvisorFailure,
+    VisualEvidenceContext,
+    VisualExecutionIdentity,
+)
 from app.candidates.complex_fallback import CoarseType
 from app.candidates.coverage import CoverageEntry
 from app.candidates.local_symbol_resolution import LocalResolution
-from app.candidates.models import AutomaticResult
+from app.candidates.models import (
+    AutomaticResult,
+    SymbolEscalationAttemptEventRecord,
+    SymbolEscalationOutcomeRecord,
+    SymbolRoutingDecisionRecord,
+    VisualSymbolCacheEntryRecord,
+)
+from app.candidates.routing_evidence import routing_decision_group_sha256
 from app.candidates.schemas import CandidateType
+from app.candidates.symbol_cache import (
+    SymbolCacheProvenance,
+    build_cache_entry,
+)
+from app.candidates.symbol_escalation_contracts import EscalationBatch
+from app.candidates.symbol_escalation_planner import (
+    EscalationPlan,
+    EscalationRequest,
+    plan_symbol_escalation_batches,
+)
+from app.candidates.symbol_routing import RoutingDecision, route_visual_observation
 from app.candidates.symbol_review import (
     VisualReviewDecision,
     plan_visual_batches,
 )
 from app.config import Settings
-from app.db import engine
+from app.db import SessionLocal, engine
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
 from app.pdf.inventory import build_inventory
@@ -47,6 +71,10 @@ from app.processing.tasks import inventory_project
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.providers.base import VisionResult
+from app.providers.qwen_vl import (
+    VisualSymbolProviderError,
+    canonicalize_visual_png,
+)
 from app.review.locks import acquire_lock
 from app.review.models import ReviewWorkingCopy
 from app.review.service import ReviewService
@@ -206,6 +234,12 @@ def task_session_factory(
         )
 
     return factory
+
+
+@pytest.fixture
+def committed_db_session() -> Iterator[Session]:
+    with SessionLocal() as session:
+        yield session
 
 
 def _store_project_source(
@@ -450,6 +484,279 @@ def _bounded_symbol_input(
     return source, pages, candidate_snapshot_from_inventory(pages)
 
 
+@dataclass(frozen=True)
+class PartialMatrixInput:
+    source: Path
+    pages: tuple[PageInventory, ...]
+    snapshot: CandidateSnapshot
+    local_visual: VisualObservation
+    cache_visual: VisualObservation
+    vlm_visual: VisualObservation
+    failed_visual: VisualObservation
+    decisions: dict[str, RoutingDecision]
+    plan: EscalationPlan
+
+
+def _partial_matrix_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> PartialMatrixInput:
+    source, _manifest = build_symbol_fixture(tmp_path / "partial-matrix")
+    original_pages = tuple(build_inventory(source))
+    original_snapshot = candidate_snapshot_from_inventory(original_pages)
+    legacy_batches = plan_visual_batches(original_pages, original_snapshot)
+    selected_ids = (
+        legacy_batches[0][0].observation_ids[0],
+        legacy_batches[0][1].observation_ids[0],
+        legacy_batches[1][0].observation_ids[0],
+        legacy_batches[1][-1].observation_ids[0],
+    )
+    selected = set(selected_ids)
+    assert len(selected) == 4
+    contexts = tuple(
+        context
+        for context in reconstruct_visual_geometry_contexts(
+            source,
+            original_pages,
+        )
+        if context.observation_id in selected
+    )
+    pages = tuple(
+        replace(
+            page,
+            visual_observations=tuple(
+                visual
+                for visual in page.visual_observations
+                if visual.observation_id in selected
+            ),
+        )
+        for page in original_pages
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "reconstruct_visual_geometry_contexts",
+        lambda _path, _pages: contexts,
+    )
+    visuals = {
+        visual.observation_id: visual
+        for page in pages
+        for visual in page.visual_observations
+    }
+    local_visual = visuals[selected_ids[0]]
+    local_projection = VisualReviewDecision(
+        observation_id=local_visual.observation_id,
+        disposition="non_inspection",
+        source_location_ids=(local_visual.observation_id,),
+        coordinates=local_visual.bbox_pdf,
+        candidate_id=None,
+        existing_candidate_index=None,
+        candidate_envelope=None,
+        requires_confirmation=True,
+        symbol_kinds=("revision_marker",),
+        rejection_code=None,
+    )
+
+    def resolve(**kwargs: object) -> LocalResolution:
+        observation = kwargs["observation"]
+        assert isinstance(observation, VisualObservation)
+        if observation.observation_id == local_visual.observation_id:
+            return LocalResolution(
+                visual_observation_id=observation.observation_id,
+                family_hypotheses=("revision_marker",),
+                resolved_family="revision_marker",
+                reason_codes=(
+                    "deterministic_geometry_complete",
+                    "local_projection_complete",
+                ),
+                projection=local_projection,
+            )
+        return LocalResolution(
+            visual_observation_id=observation.observation_id,
+            family_hypotheses=(),
+            resolved_family=None,
+            reason_codes=("unknown_symbol_pattern",),
+            projection=None,
+        )
+
+    monkeypatch.setattr(
+        advisor_module,
+        "prepare_local_family_hypotheses",
+        lambda **kwargs: (
+            ("revision_marker",)
+            if kwargs["observation"].observation_id
+            == local_visual.observation_id
+            else ()
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "resolve_visual_observation",
+        resolve,
+    )
+    decisions: dict[str, RoutingDecision] = {}
+    requests: list[EscalationRequest] = []
+    for visual in visuals.values():
+        resolution = resolve(observation=visual)
+        decision = route_visual_observation(resolution)
+        decisions[visual.observation_id] = decision
+        if decision.disposition == "escalate":
+            requests.append(
+                EscalationRequest(
+                    decision=decision,
+                    observation=visual,
+                    local_resolution=resolution,
+                    projected_wall_seconds=10.0,
+                )
+            )
+    plan = plan_symbol_escalation_batches(
+        requests,
+        actual_call_capacity_by_page={
+            page.page_index: 16 for page in pages
+        },
+    )
+    assert plan.denied == ()
+    assert [batch.observation_ids for batch in plan.batches] == [
+        (selected_ids[1],),
+        (selected_ids[2],),
+        (selected_ids[3],),
+    ]
+    return PartialMatrixInput(
+        source=source,
+        pages=pages,
+        snapshot=candidate_snapshot_from_inventory(pages),
+        local_visual=local_visual,
+        cache_visual=visuals[selected_ids[1]],
+        vlm_visual=visuals[selected_ids[2]],
+        failed_visual=visuals[selected_ids[3]],
+        decisions=decisions,
+        plan=plan,
+    )
+
+
+def _execution_input(
+    matrix: PartialMatrixInput,
+    batch: EscalationBatch,
+) -> tuple[
+    bytes,
+    tuple[float, float, float, float],
+    tuple[VisualObservation, ...],
+    dict[str, TextObservation],
+    VisualExecutionIdentity,
+]:
+    page_inventory = next(
+        page for page in matrix.pages if page.page_index == batch.page_index
+    )
+    visuals = {
+        visual.observation_id: visual
+        for page in matrix.pages
+        for visual in page.visual_observations
+    }
+    batch_visuals = tuple(
+        visuals[observation_id]
+        for observation_id in batch.observation_ids
+    )
+    packed = advisor_module.pack_visual_batches(
+        page_inventory,
+        batch_visuals,
+    )
+    assert len(packed) == 1
+    crop_bbox_pdf = packed[0].crop_bbox_pdf
+    with pymupdf.open(matrix.source) as document:
+        crop_png = advisor_module._render_visual_crop(
+            document[batch.page_index],
+            crop_bbox_pdf,
+        )
+    canonical_crop = canonicalize_visual_png(crop_png)
+    execution_identity = VisualExecutionIdentity(
+        page_index=batch.page_index,
+        content_sha256=batch.content_sha256,
+        lineage_sha256=batch.lineage_sha256,
+        budget_sha256=batch.budget_sha256,
+        observation_member_bindings=batch.observation_member_bindings,
+        crop_sha256=sha256(canonical_crop).hexdigest(),
+        member_content_sha256s=batch.member_content_sha256s,
+    )
+    texts = {
+        observation.observation_id: observation
+        for page in matrix.pages
+        for observation in page.observations
+    }
+    return (
+        crop_png,
+        crop_bbox_pdf,
+        batch_visuals,
+        texts,
+        execution_identity,
+    )
+
+
+def _record_matrix_decisions(
+    advisor: CandidateAdvisor,
+    matrix: PartialMatrixInput,
+) -> dict[str, str]:
+    group_by_observation = {
+        observation_id: batch.content_sha256
+        for batch in matrix.plan.batches
+        for observation_id in batch.observation_ids
+    }
+    member_index_by_observation = {
+        observation_id: member_index
+        for batch in matrix.plan.batches
+        for member_index, observation_id in enumerate(
+            batch.observation_ids
+        )
+    }
+    return advisor._record_routing_decisions(
+        decisions=tuple(matrix.decisions.values()),
+        escalation_group_by_observation=group_by_observation,
+        escalation_group_member_index_by_observation=(
+            member_index_by_observation
+        ),
+    )
+
+
+def _seed_matrix_cache(
+    advisor: CandidateAdvisor,
+    matrix: PartialMatrixInput,
+) -> dict[str, str]:
+    decision_hashes = _record_matrix_decisions(advisor, matrix)
+    batch = matrix.plan.batches[0]
+    (
+        crop_png,
+        crop_bbox_pdf,
+        batch_visuals,
+        texts,
+        execution_identity,
+    ) = _execution_input(matrix, batch)
+    cache_provider = _fixture_provider(matrix.source)
+    outcome = advisor._visual_review_result(
+        provider=cache_provider,
+        crop_png=crop_png,
+        crop_bbox_pdf=crop_bbox_pdf,
+        source_sha256=sha256(matrix.source.read_bytes()).hexdigest(),
+        visual_observations=batch_visuals,
+        text_observations=texts,
+        model="qwen3-vl-plus",
+        allow_schema_retry=False,
+        execution_identity=execution_identity,
+        legacy_cache_enabled=False,
+        evidence_context=VisualEvidenceContext(
+            escalation_group_id=batch.content_sha256,
+            routing_decision_sha256=routing_decision_group_sha256(
+                tuple(
+                    decision_hashes[observation_id]
+                    for observation_id in batch.observation_ids
+                )
+            ),
+        ),
+    )
+    assert outcome.cache_hit is False
+    assert cache_provider.symbol_observation_ids == [
+        (matrix.cache_visual.observation_id,)
+    ]
+    return decision_hashes
+
+
 def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
     monkeypatch: pytest.MonkeyPatch,
     db_session: Session,
@@ -577,78 +884,205 @@ def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
     assert raw.coverage["coverage_checked"] is True
 
 
-def test_one_localized_provider_failure_preserves_sibling_results_as_partial(
+@pytest.mark.parametrize(
+    ("failure_family", "expected_failure_stage"),
+    (
+        ("timeout", "provider_timeout"),
+        ("transport", "provider_transport_failure"),
+        ("schema", "provider_schema_invalid"),
+    ),
+)
+def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
+    failure_family: str,
+    expected_failure_stage: str,
     monkeypatch: pytest.MonkeyPatch,
-    db_session: Session,
+    committed_db_session: Session,
     tmp_path: Path,
 ) -> None:
-    """PRT-5 localizes one transport failure without discarding siblings."""
-    source, _manifest = build_symbol_fixture(tmp_path / "partial-fixture")
-    pages = tuple(build_inventory(source))
-    initial = candidate_snapshot_from_inventory(pages)
-    failed_observation_id = pages[-1].visual_observations[-1].observation_id
-    successful = _fixture_provider(source)
+    """PRT-5 retains local, cache, and VLM siblings around one failed ROI."""
+    matrix = _partial_matrix_input(tmp_path, monkeypatch)
+    storage = LocalFileStorage(tmp_path / f"partial-{failure_family}")
+    db_session = committed_db_session
+    project, source_file = _store_project_source(
+        db_session, storage, matrix.source.read_bytes()
+    )
+    successful = _fixture_provider(matrix.source)
 
-    class OneTransportFailureProvider:
-        failed_calls = 0
+    class OneLocalizedFailureProvider:
+        def __init__(self) -> None:
+            self.symbol_observation_ids: list[tuple[str, ...]] = []
 
         def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
             request = json.loads(prompt)
-            if failed_observation_id in request["visual_observation_ids"]:
-                self.failed_calls += 1
-                raise ConnectionError(
-                    "/srv/private/customer.pdf token=do-not-leak"
+            observation_ids = tuple(request["visual_observation_ids"])
+            self.symbol_observation_ids.append(observation_ids)
+            assert matrix.cache_visual.observation_id not in observation_ids
+            assert matrix.local_visual.observation_id not in observation_ids
+            if matrix.failed_visual.observation_id in observation_ids:
+                if failure_family == "timeout":
+                    raise TimeoutError(
+                        "/srv/private/customer.pdf token=do-not-leak"
+                    )
+                if failure_family == "transport":
+                    raise ConnectionError(
+                        "/srv/private/customer.pdf token=do-not-leak"
+                    )
+                raise VisualSymbolProviderError(
+                    request_id="fixture-localized-schema",
+                    usage={},
+                    failure_stage="tool_arguments_schema_invalid",
                 )
             return successful.review_symbols(image, prompt)
 
         def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
             return successful.review_candidate(image, prompt)
 
-    provider = OneTransportFailureProvider()
-    monkeypatch.setattr(
-        advisor_module,
-        "prepare_local_family_hypotheses",
-        lambda **_kwargs: (),
+    provider = OneLocalizedFailureProvider()
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        storage,
+        project_id=str(project.id),
+        provider_factory=lambda _settings: provider,
+        symbol_session_factory=SessionLocal,
+        require_symbol_persistence=True,
     )
+    _seed_matrix_cache(advisor, matrix)
     reviewed: CandidateSnapshot | None = None
+    result_ref: str | None = None
+
     try:
-        reviewed = CandidateAdvisor(
-            Settings(
-                qwen_model="qwen3-vl-plus",
-                symbol_recognition_mode="production_uncertainty",
-            ),
-            LocalFileStorage(tmp_path / "partial-provider-storage"),
-            project_id="partial-transport",
-            provider_factory=lambda _settings: provider,
-        ).review(source, pages, initial)
+        reviewed = advisor.review(
+            matrix.source,
+            matrix.pages,
+            matrix.snapshot,
+        )
     except CandidateAdvisorFailure:
         pass
 
+    if reviewed is not None:
+        result_ref = InventoryPipeline(
+            db_session,
+            storage,
+            PassingPreflight(),
+            inventory_builder=lambda _path: matrix.pages,
+            candidate_snapshot_builder=lambda _pages: reviewed,
+        ).run(
+            str(project.id),
+            source_file.resource_ref,
+            f"product-process:{project.id}",
+        )
+
+    db_session.expire_all()
+    decisions = tuple(
+        db_session.scalars(
+            select(SymbolRoutingDecisionRecord)
+            .where(SymbolRoutingDecisionRecord.project_id == project.id)
+        )
+    )
+    assert {
+        decision.visual_observation_id: decision.disposition
+        for decision in decisions
+    } == {
+        matrix.local_visual.observation_id: "locally_resolved",
+        matrix.cache_visual.observation_id: "escalate",
+        matrix.vlm_visual.observation_id: "escalate",
+        matrix.failed_visual.observation_id: "escalate",
+    }
+    outcomes = tuple(
+        db_session.scalars(
+            select(SymbolEscalationOutcomeRecord)
+            .where(SymbolEscalationOutcomeRecord.project_id == project.id)
+        )
+    )
+    outcome_by_observation = {
+        outcome.observation_outcomes[0]["visual_observation_id"]:
+        outcome.observation_outcomes[0]["outcome_code"]
+        for outcome in outcomes
+    }
+    assert outcome_by_observation == {
+        matrix.cache_visual.observation_id: "cache_resolved",
+        matrix.vlm_visual.observation_id: "provider_resolved",
+        matrix.failed_visual.observation_id: expected_failure_stage,
+    }
+    cache_attempt = db_session.scalar(
+        select(SymbolEscalationAttemptEventRecord).where(
+            SymbolEscalationAttemptEventRecord.project_id == project.id,
+            SymbolEscalationAttemptEventRecord.event_code
+            == "cache_hit_valid",
+        )
+    )
+    assert cache_attempt is not None
+    assert cache_attempt.cache_entry_id is not None
+    assert (
+        db_session.get(
+            VisualSymbolCacheEntryRecord,
+            cache_attempt.cache_entry_id,
+        ).project_id
+        == project.id
+    )
+    called_visual_ids = {
+        observation_id
+        for observation_ids in provider.symbol_observation_ids
+        for observation_id in observation_ids
+    }
+    assert called_visual_ids == {
+        matrix.vlm_visual.observation_id,
+        matrix.failed_visual.observation_id,
+    }
+
+    raw = db_session.scalar(
+        select(AutomaticResult).where(
+            AutomaticResult.project_id == project.id
+        )
+    )
     assert reviewed is not None
+    assert raw is not None
+    assert result_ref == f"automatic-result://{raw.id}"
     assert getattr(reviewed, "completeness", None) == (
         "partial_review_required"
     )
-    assert provider.failed_calls == 1
-    assert successful.symbol_calls > 0
+    assert getattr(raw, "completeness", None) == "partial_review_required"
     assert {
         entry.observation_id for entry in reviewed.coverage_entries
-    } == set(initial.expected_observation_ids)
+    } == set(matrix.snapshot.expected_observation_ids)
+    coverage_by_id = {
+        entry.observation_id: entry
+        for entry in reviewed.coverage_entries
+    }
+    local_review = coverage_by_id[
+        matrix.local_visual.observation_id
+    ].advisor_review
+    assert local_review is not None
+    assert "local_resolution_evidence" in local_review
+    assert coverage_by_id[
+        matrix.cache_visual.observation_id
+    ].advisor_review is not None
+    assert coverage_by_id[
+        matrix.vlm_visual.observation_id
+    ].advisor_review is not None
     failed_entry = next(
         entry
         for entry in reviewed.coverage_entries
-        if entry.observation_id == failed_observation_id
+        if entry.observation_id == matrix.failed_visual.observation_id
     )
+    assert failed_entry.source_location_id == (
+        matrix.failed_visual.observation_id
+    )
+    assert failed_entry.coordinates == matrix.failed_visual.bbox_pdf
     assert failed_entry.requires_confirmation is True
     assert failed_entry.advisor_review is not None
+    assert failed_entry.advisor_review["failure_stage"] == (
+        expected_failure_stage
+    )
     assert "do-not-leak" not in repr(failed_entry.advisor_review)
 
-    project, raw, working = _persist_snapshot(
-        db_session,
-        LocalFileStorage(tmp_path / "partial-result-storage"),
-        reviewed,
-    )
-    assert getattr(raw, "completeness", None) == "partial_review_required"
-    assert working.raw_result_id == raw.id
+    service = ReviewService(db_session)
+    first = service.create_from_raw(raw.id)
+    second = service.create_from_raw(raw.id)
+    assert first.id == second.id
     assert (
         db_session.scalar(
             select(func.count())
@@ -667,45 +1101,248 @@ def test_one_localized_provider_failure_preserves_sibling_results_as_partial(
     )
 
 
-def test_invalid_cache_provenance_is_quarantined_and_recomputed(
+@pytest.mark.parametrize(
+    "corruption",
+    ("malformed_provenance", "incompatible_identity"),
+)
+def test_invalid_project_cache_is_quarantined_before_fresh_recomputation(
+    corruption: str,
+    monkeypatch: pytest.MonkeyPatch,
+    committed_db_session: Session,
     tmp_path: Path,
 ) -> None:
-    """PRT-5 treats unusable cache provenance as a miss, not a fatal result."""
-    source, _manifest = build_symbol_fixture(tmp_path / "cache-fixture")
-    pages = tuple(build_inventory(source))
-    initial = candidate_snapshot_from_inventory(pages)
-    storage = LocalFileStorage(tmp_path / "cache-storage")
-    project_id = "cache-quarantine"
-    first_provider = _fixture_provider(source)
-    CandidateAdvisor(
-        Settings(qwen_model="qwen3-vl-plus"),
+    """PRT-5 never promotes a malformed or incompatible cache winner."""
+    matrix = _partial_matrix_input(tmp_path, monkeypatch)
+    storage = LocalFileStorage(tmp_path / f"quarantine-{corruption}")
+    project, _source_file = _store_project_source(
+        committed_db_session,
         storage,
-        project_id=project_id,
-        provider_factory=lambda _settings: first_provider,
-    ).review(source, pages, initial)
-    audit_path = next(
-        storage.root.glob(
-            f"projects/{project_id}/provider-calls/qwen-symbol/*.json"
+        matrix.source.read_bytes(),
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        storage,
+        project_id=str(project.id),
+        provider_factory=lambda _settings: None,
+        symbol_session_factory=SessionLocal,
+        require_symbol_persistence=True,
+    )
+    decision_hashes = _record_matrix_decisions(advisor, matrix)
+    batch = matrix.plan.batches[0]
+    (
+        crop_png,
+        crop_bbox_pdf,
+        batch_visuals,
+        texts,
+        execution_identity,
+    ) = _execution_input(matrix, batch)
+    expected_identity = advisor._production_cache_identity(
+        execution_identity=execution_identity,
+        visual_observations=batch_visuals,
+        text_observations=texts,
+        model="qwen3-vl-plus",
+    )
+    stored_identity = (
+        expected_identity
+        if corruption == "malformed_provenance"
+        else replace(
+            expected_identity,
+            router_version="symbol-uncertainty-router/incompatible",
         )
     )
-    audit_path.unlink()
-    replacement_provider = _fixture_provider(source)
+    response = {
+        "schema_version": "visual-symbol-review/2",
+        "detections": [],
+    }
+    response_sha256 = sha256(
+        json.dumps(
+            response,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    entry = build_cache_entry(
+        identity=stored_identity,
+        response=response,
+        provenance=SymbolCacheProvenance(
+            identity_sha256=stored_identity.sha256,
+            producer_project_id=str(project.id),
+            producer_request_id="provider-request-invalid",
+            producer_call_record_ref=(
+                f"asset://projects/{project.id}/provider-calls/"
+                "qwen-symbol/provider-request-invalid.json"
+            ),
+            response_sha256=response_sha256,
+            created_at=datetime(2026, 7, 30, tzinfo=UTC),
+            model_identity=stored_identity.model_identity,
+            response_schema_version=(
+                stored_identity.response_schema_version
+            ),
+            router_version=stored_identity.router_version,
+            validation_outcome="schema_valid",
+        ),
+        provider_event_code="provider_response_valid",
+        schema_valid=True,
+    )
+    assert entry.provenance is not None
+    provenance = asdict(entry.provenance)
+    provenance["created_at"] = entry.provenance.created_at.isoformat()
+    if corruption == "malformed_provenance":
+        provenance["identity_sha256"] = "f" * 64
+    invalid_record = VisualSymbolCacheEntryRecord(
+        project_id=project.id,
+        cache_key=expected_identity.sha256,
+        cache_schema_version="visual-symbol-cache-entry/1",
+        identity_sha256=stored_identity.sha256,
+        identity=asdict(stored_identity),
+        response=entry.response,
+        response_sha256=entry.response_sha256,
+        producer_request_id=entry.provenance.producer_request_id,
+        producer_call_record_ref=(
+            entry.provenance.producer_call_record_ref
+        ),
+        producer_provenance=provenance,
+        provenance_sha256=sha256(
+            json.dumps(
+                provenance,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest(),
+    )
+    committed_db_session.add(invalid_record)
+    committed_db_session.commit()
 
-    reviewed: CandidateSnapshot | None = None
-    try:
-        reviewed = CandidateAdvisor(
-            Settings(qwen_model="qwen3-vl-plus"),
-            storage,
-            project_id=project_id,
-            provider_factory=lambda _settings: replacement_provider,
-        ).review(source, pages, initial)
-    except CandidateAdvisorFailure:
-        pass
+    fresh_provider = _fixture_provider(matrix.source)
+    outcome = advisor._visual_review_result(
+        provider=fresh_provider,
+        crop_png=crop_png,
+        crop_bbox_pdf=crop_bbox_pdf,
+        source_sha256=sha256(matrix.source.read_bytes()).hexdigest(),
+        visual_observations=batch_visuals,
+        text_observations=texts,
+        model="qwen3-vl-plus",
+        allow_schema_retry=False,
+        execution_identity=execution_identity,
+        legacy_cache_enabled=False,
+        evidence_context=VisualEvidenceContext(
+            escalation_group_id=batch.content_sha256,
+            routing_decision_sha256=routing_decision_group_sha256(
+                tuple(
+                    decision_hashes[observation_id]
+                    for observation_id in batch.observation_ids
+                )
+            ),
+        ),
+    )
 
-    assert reviewed is not None
-    assert replacement_provider.symbol_calls > 0
-    assert set(reviewed.expected_observation_ids) == set(
-        initial.expected_observation_ids
+    assert outcome.cache_hit is False
+    assert outcome.result.request_id == "fixture-visual-1"
+    assert fresh_provider.symbol_observation_ids == [
+        (matrix.cache_visual.observation_id,)
+    ]
+    attempts = tuple(
+        committed_db_session.scalars(
+            select(SymbolEscalationAttemptEventRecord)
+            .where(
+                SymbolEscalationAttemptEventRecord.project_id
+                == project.id
+            )
+        )
+    )
+    attempt_by_code = {
+        attempt.event_code: attempt for attempt in attempts
+    }
+    assert set(attempt_by_code) == {
+        "cache_provenance_invalid",
+        "provider_response_valid",
+    }
+    assert (
+        attempt_by_code["cache_provenance_invalid"].cache_entry_id
+        == invalid_record.id
+    )
+    assert (
+        attempt_by_code["provider_response_valid"].provider_request_id
+        == "fixture-visual-1"
+    )
+    assert all(attempt.project_id == project.id for attempt in attempts)
+
+
+def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
+    monkeypatch: pytest.MonkeyPatch,
+    committed_db_session: Session,
+    tmp_path: Path,
+) -> None:
+    """PRT-5 distinguishes persisted evidence conflict from write failure."""
+    matrix = _partial_matrix_input(tmp_path, monkeypatch)
+    storage = LocalFileStorage(tmp_path / "evidence-revalidation")
+    project, _source_file = _store_project_source(
+        committed_db_session,
+        storage,
+        matrix.source.read_bytes(),
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        storage,
+        project_id=str(project.id),
+        provider_factory=lambda _settings: (_ for _ in ()).throw(
+            AssertionError("conflicting persisted evidence reached Provider")
+        ),
+        symbol_session_factory=SessionLocal,
+        require_symbol_persistence=True,
+    )
+    record_decisions = advisor._record_routing_decisions
+
+    def record_then_conflict(**kwargs: object) -> dict[str, str]:
+        persisted = record_decisions(**kwargs)
+        return {
+            observation_id: "f" * 64
+            for observation_id in persisted
+        }
+
+    monkeypatch.setattr(
+        advisor,
+        "_record_routing_decisions",
+        record_then_conflict,
+    )
+
+    with pytest.raises(CandidateAdvisorFailure):
+        advisor.review(matrix.source, matrix.pages, matrix.snapshot)
+
+    decisions = tuple(
+        committed_db_session.scalars(
+            select(SymbolRoutingDecisionRecord).where(
+                SymbolRoutingDecisionRecord.project_id == project.id
+            )
+        )
+    )
+    assert {
+        decision.visual_observation_id for decision in decisions
+    } == set(matrix.decisions)
+    assert all(decision.decision_sha256 != "f" * 64 for decision in decisions)
+    assert (
+        committed_db_session.scalar(
+            select(func.count())
+            .select_from(AutomaticResult)
+            .where(AutomaticResult.project_id == project.id)
+        )
+        == 0
+    )
+    assert (
+        committed_db_session.scalar(
+            select(func.count())
+            .select_from(ReviewWorkingCopy)
+            .where(ReviewWorkingCopy.project_id == project.id)
+        )
+        == 0
     )
 
 
