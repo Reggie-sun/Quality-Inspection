@@ -1,7 +1,7 @@
 """Add technical requirement persistence.
 
-Revision ID: 0008
-Revises: 0007
+Revision ID: 0010
+Revises: 0009
 """
 
 from collections.abc import Sequence
@@ -11,8 +11,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "0008"
-down_revision: str | None = "0007"
+revision: str = "0010"
+down_revision: str | None = "0009"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

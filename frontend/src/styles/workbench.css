@@ -504,7 +504,7 @@
 
 .recognition-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -549,7 +549,7 @@
 
 .inspection-list-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
 }
 
@@ -656,11 +656,17 @@
 
 .inspection-table-section--compact .inspection-table__head,
 .inspection-table-section--compact .inspection-table__row {
-  grid-template-columns: 34px minmax(90px, 1fr) minmax(72px, 0.75fr);
+  grid-template-columns: 28px minmax(0, 1fr) 52px;
+  gap: 3px;
+  padding-inline: 3px;
 }
 
 .inspection-table-section--compact .inspection-table__body {
   max-height: none;
+}
+
+.inspection-table-section--compact .geometry-state strong {
+  font-size: 10px;
 }
 
 .inspection-table__row {

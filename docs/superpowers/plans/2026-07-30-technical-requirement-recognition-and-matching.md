@@ -159,7 +159,7 @@ export。
 
 ### New Files
 
-- `backend/alembic/versions/0008_technical_requirements.py`
+- `backend/alembic/versions/0010_technical_requirements.py`
   - 两个 JSONB column 的 upgrade、data-safe downgrade。
 - `backend/app/candidates/technical_requirements.py`
   - 唯一 reconstruction、classification、matching、validation Owner。
@@ -224,7 +224,7 @@ export。
 **Files:**
 
 - Modify: `docs/contracts/MAIN_CONTRACT_MATRIX.md`
-- Create: `backend/alembic/versions/0008_technical_requirements.py`
+- Create: `backend/alembic/versions/0010_technical_requirements.py`
 - Modify: `backend/app/candidates/models.py`
 - Modify: `backend/app/review/models.py`
 - Modify: `backend/tests/integration/test_schema.py`
@@ -328,7 +328,7 @@ Expected: FAIL，两个 exact-column assertions 都缺
 
 - [x] **Step 3: 实现 migration 和 model fields**
 
-`0008_technical_requirements.py` 使用：
+`0010_technical_requirements.py` 使用：
 
 ```python
 """Add technical requirement persistence.
@@ -344,8 +344,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "0008"
-down_revision: str | None = "0007"
+revision: str = "0010"
+down_revision: str | None = "0009"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -432,7 +432,7 @@ Expected: contract checker PASS，diff check 无输出。
 Commit:
 
 ```bash
-git add docs/contracts/MAIN_CONTRACT_MATRIX.md backend/alembic/versions/0008_technical_requirements.py backend/app/candidates/models.py backend/app/review/models.py backend/tests/integration/test_schema.py
+git add docs/contracts/MAIN_CONTRACT_MATRIX.md backend/alembic/versions/0010_technical_requirements.py backend/app/candidates/models.py backend/app/review/models.py backend/tests/integration/test_schema.py
 git commit -m "feat: add technical requirement persistence"
 ```
 
@@ -1398,6 +1398,28 @@ Task 7 checkpoint (`2026-07-30`):
 - residual fix commits:
   `69b6b0b`、`e3a7e6a`、`7ae04c1`、`966ad20`；
 - Task 7 Steps 1–8 全部完成，plan 状态关闭为 `completed`。
+
+Main integration checkpoint (`2026-07-30`):
+
+- integrated source: `main@637a096`；6 个 textual conflicts 均保留 WELLI/layout/
+  symbol routing 与 Technical Requirement Rule Owner 两侧语义；
+- migration graph: 技术要求 migration 从冲突的 `0008` 顺延为
+  `0010_technical_requirements.py`，接在 symbol routing `0009` 后，
+  `alembic heads` 为单一 `0010`；
+- migration deployment caveat: fresh chain 已验证；若任何持久环境曾执行
+  feature-only revision `0008`，部署前必须盘点 `alembic_version` 与 column shape，
+  并走专门恢复流程，不能盲目 `stamp` 或直接升级；
+- pre-existing main Harness blocker: `P0-ACC-007` contract selector 曾携带 runner
+  未消费的 `recognition_mode` query，与 failure-proof policy/runner 不一致；恢复为
+  canonical `phase://failure/no-silent-success`，并新增三方 selector 一致性测试；
+- integrated verification: 隔离 PostgreSQL backend `1409 passed`，frontend
+  `210 passed`，production build PASS，Harness `134 passed`，contract mirror 和
+  bindings drift 全零；
+- read-only merge mapper: rollout `019fb16c-7d5f-7ee3-8708-1a9a79f93810`
+  核验冲突两侧语义与 Harness selector Owner；最终 merge 仍由父 agent 裁决。
+- independent merge reviewer: rollout
+  `019fb179-aba1-7110-9f14-65b6d38868aa` verdict `accept with concerns`，
+  无 blocking issue；checkpoint SHA 已修正，持久数据库 migration 风险已记录。
 
 如果 real PDF 或 reviewer gate blocked，保持 `Status: in_progress` 并记录唯一 blocker，
 不得用文档勾选替代实际证据。

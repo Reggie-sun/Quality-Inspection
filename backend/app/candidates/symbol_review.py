@@ -987,7 +987,18 @@ def plan_visual_batches(
     pages: Sequence[PageInventory],
     snapshot: Any,
 ) -> tuple[tuple[VisualBatch, ...], ...]:
-    """Purely schedule all visual observations before any Provider work."""
+    """Purely schedule required visual observations before Provider work."""
+    required_ids = frozenset(snapshot.required_visual_observation_ids)
+    available_ids = {
+        observation.observation_id
+        for page in pages
+        for observation in page.visual_observations
+    }
+    if not required_ids.issubset(available_ids):
+        raise ValueError(
+            "required visual observation is absent from pages"
+        )
+
     planned: list[tuple[VisualBatch, ...]] = []
     for page in pages:
         texts = {
@@ -995,7 +1006,11 @@ def plan_visual_batches(
             for item in page.observations
         }
         ordered = sorted(
-            page.visual_observations,
+            (
+                observation
+                for observation in page.visual_observations
+                if observation.observation_id in required_ids
+            ),
             key=lambda item: (
                 _visual_priority(item, snapshot, texts),
                 item.page_index,
@@ -2743,6 +2758,7 @@ def project_visual_page(
     text_observations: Sequence[TextObservation],
     candidates: Sequence[Mapping[str, Any]],
     geometry_contexts: Mapping[str, VisualGeometryContext],
+    local_decisions: Sequence[VisualReviewDecision] = (),
 ) -> tuple[VisualReviewDecision, ...]:
     """Project one page only after every batch response has been validated."""
     ordered_visuals = tuple(sorted(visual_observations, key=_visual_reading_key))
@@ -2750,9 +2766,22 @@ def project_visual_page(
         observation.observation_id: observation
         for observation in ordered_visuals
     }
+    local_by_id = {
+        decision.observation_id: decision for decision in local_decisions
+    }
+    if (
+        len(local_by_id) != len(tuple(local_decisions))
+        or any(identity not in visual_by_id for identity in local_by_id)
+    ):
+        raise ValueError("local visual decisions do not bind page observations")
+    routed_visuals = tuple(
+        observation
+        for observation in ordered_visuals
+        if observation.observation_id not in local_by_id
+    )
     parent = {
         observation.observation_id: observation.observation_id
-        for observation in ordered_visuals
+        for observation in routed_visuals
     }
 
     def find(identity: str) -> str:
@@ -2779,18 +2808,18 @@ def project_visual_page(
         identities = [
             identity
             for identity in group.visual_observation_ids
-            if identity in visual_by_id
+            if identity in parent
         ]
         for identity in identities[1:]:
             union(identities[0], identity)
 
     components: dict[str, list[VisualObservation]] = {}
-    for observation in ordered_visuals:
+    for observation in routed_visuals:
         components.setdefault(find(observation.observation_id), []).append(
             observation
         )
 
-    decisions: list[VisualReviewDecision] = []
+    decisions: list[VisualReviewDecision] = list(local_by_id.values())
     for component in sorted(
         components.values(),
         key=lambda items: _visual_reading_key(min(items, key=_visual_reading_key)),

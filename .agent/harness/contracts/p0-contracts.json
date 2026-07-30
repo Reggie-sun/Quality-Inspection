@@ -1,5 +1,5 @@
 {
-  "contract_definition_hash": "f30c38b7757996cf8948008eabb40b3e9df0100b7a9438fe6680127ec209b350",
+  "contract_definition_hash": "8950003780d9cdfc65a42f61d0c056d01a71156618be61c55b81716afb095eb1",
   "contracts": [
     {
       "blocking_level": "blocking",
@@ -21,20 +21,22 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": null,
       "implementation_only": true,
-      "implementation_reason": "current-four candidate/coverage和operator-confirmed item-set completeness是当前P0验收编排。",
-      "owner": "P0 harness",
+      "implementation_reason": "既有 current-four legacy/high-recall acceptance 仍有效；production uncertainty route 的 sealed comparison、recall regression gate、partial evidence 和 Quality Owner verdict 尚未执行，Harness 只编排证据而非业务 Owner。",
+      "owner": "Quality Owner candidate/coverage gate",
       "p0_contract_id": "P0-ACC-002",
       "related_global_contract_ids": [
+        "CAND-004",
         "CAND-005",
+        "DIAG-003",
         "REV-002"
       ],
-      "stable_p0_requirement": "四份均产生带source/coordinates/disposition的可审核candidates；质量人员逐页确认应检验项均keep/add且excluded有明确disposition evidence，空结果、coverage blocking或mass exclusion不得冒充ready",
+      "stable_p0_requirement": "Production uncertainty route 对四份 frozen input 保留完整 source/coordinates/disposition/unresolved evidence；Quality Owner 逐页确认应检验项均 keep/add、excluded 有明确 evidence，且 recall 不低于已登记 gate。空结果、coverage blocking、mass exclusion、`partial_review_required` 或低 call count 均不得冒充 completeness success",
       "task_id": "D7-T2",
       "tier": "live-e2e",
-      "verification_selector": "phase://live/candidates?input_set=current-four"
+      "verification_selector": "phase://live/candidates?input_set=current-four&recognition_mode=production_uncertainty"
     },
     {
       "blocking_level": "blocking",
@@ -107,16 +109,18 @@
     },
     {
       "blocking_level": "fatal",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "PRJ-005",
       "implementation_only": false,
-      "implementation_reason": "—",
-      "owner": "Processing / Export formal-success Veto Gate",
+      "implementation_reason": "既有 no-silent-success proof 仍有效，但 localized partial retention、systemic fail-closed 和 production-route Harness evidence 尚未执行。",
+      "owner": "Processing / Review / Export formal-success Veto Gate",
       "p0_contract_id": "P0-ACC-007",
       "related_global_contract_ids": [
-        "EXP-006"
+        "CAND-005",
+        "EXP-006",
+        "REV-002"
       ],
-      "stable_p0_requirement": "Provider、storage、template、font 或任一子产物故障都不会产生 formal success/download",
+      "stable_p0_requirement": "局部 ROI Provider/budget 故障保留 sibling 正式证据并只形成 `partial_review_required`；identity/conflict/schema-provenance corruption、storage、template、font 或任一正式子产物故障仍阻止 result/formal success/download。Provider、frontend 和 Harness 均不能降级此 Veto Gate",
       "task_id": "D7-T1",
       "tier": "failure-e2e",
       "verification_selector": "phase://failure/no-silent-success"
@@ -653,8 +657,8 @@
       "current_status": "not_run",
       "global_contract_id": null,
       "implementation_only": true,
-      "implementation_reason": "既有 passed text-candidate Provider proof 仍有效，但不能满足新增 visual-symbol schema、local validator 与 input-registration delta；`not_run` 是 Harness 对 pending visual proof 的既有状态。",
-      "owner": "Vision Advisor adapter",
+      "implementation_reason": "既有 Provider/schema proof 仍有效，但 production uncertainty router 的 local-skip、reason-code、zero-call 与 Provider non-owner delta 尚无执行证据。",
+      "owner": "Candidate Advisor boundary",
       "p0_contract_id": "P0-REC-005",
       "related_global_contract_ids": [
         "CAND-004",
@@ -663,10 +667,10 @@
         "PROV-003",
         "SYS-003"
       ],
-      "stable_p0_requirement": "`qwen3-vl-plus` 只复核局部 candidate 或 suspicious visual-observation crop，输出必须通过各自冻结 JSON Schema；Provider 不拥有正式 disposition",
+      "stable_p0_requirement": "Proposal admission 与 reason-coded escalation 独立；native/OCR/deterministic geometry 已明确解析的 observation 不调用 Provider，只有 unresolved/conflicting/unknown/unparseable 局部 ROI 可由 `qwen3-vl-plus` 复核并通过冻结 JSON Schema，Provider 不拥有正式 disposition",
       "task_id": "D7-T2",
       "tier": "provider-contract",
-      "verification_selector": "pytest backend/tests/contract/test_qwen_vl_provider.py backend/tests/contract/test_qwen_symbol_provider.py -q"
+      "verification_selector": "pytest backend/tests/unit/candidates/test_local_symbol_resolution.py backend/tests/unit/candidates/test_symbol_routing.py backend/tests/unit/candidates/test_advisor.py backend/tests/contract/test_qwen_symbol_provider.py -q"
     },
     {
       "blocking_level": "blocking",
@@ -969,47 +973,53 @@
       "current_status": "not_run",
       "global_contract_id": "CAND-005",
       "implementation_only": false,
-      "implementation_reason": "既有 passed text coverage proof 仍有效，但不能满足新增 visual observation identity、scheduling 与 completeness delta；`not_run` 是 Harness 对 pending visual proof 的既有状态。",
+      "implementation_reason": "既有 text/visual coverage proof 仍有效，但 production route 的 exact-one routing、budget/partial retention 和 completeness delta 尚无执行证据。",
       "owner": "Coverage Owner",
       "p0_contract_id": "P0-REC-009",
       "related_global_contract_ids": [
         "CAND-002",
-        "PDF-007"
+        "PDF-007",
+        "REV-002"
       ],
-      "stable_p0_requirement": "Coverage Ledger 中每个疑似工程 text/visual observation 恰有一个 primary disposition、source 与 coordinates；未调度或预算溢出的 visual observation 为 blocking",
+      "stable_p0_requirement": "Coverage Ledger 中每个 admitted text/visual observation 恰有一个 primary disposition、source 与 coordinates；预算拒绝或局部 Provider 失败保留 unresolved reason 和完整 coverage，并使 terminal completeness 为 `partial_review_required`，不得静默丢弃",
       "task_id": "D7-T2",
       "tier": "unit",
-      "verification_selector": "pytest backend/tests/unit/candidates/test_coverage.py::test_every_suspicious_observation_has_complete_disposition backend/tests/unit/candidates/test_coverage.py::test_visual_candidate_has_one_complete_coverage_entry -q"
+      "verification_selector": "pytest backend/tests/unit/candidates/test_symbol_routing.py::test_every_admitted_observation_has_exactly_one_disposition backend/tests/integration/test_symbol_recognition_pipeline.py backend/tests/integration/test_result_layers.py -q"
     },
     {
       "blocking_level": "blocking",
       "current_status": "not_run",
       "global_contract_id": "CAND-005",
       "implementation_only": false,
-      "implementation_reason": "既有 passed text ambiguity proof 仍有效，但不能满足新增 visual source-review 与 reference/non-inspection distinction delta；`not_run` 是 Harness 对 pending visual proof 的既有状态。",
+      "implementation_reason": "既有 ambiguity/source-review proof 仍有效，但 fail-closed corruption、partial unresolved closure 和 Quality Owner veto delta 尚无执行证据。",
       "owner": "Coverage Veto Gate",
       "p0_contract_id": "P0-REC-010",
       "related_global_contract_ids": [
-        "CAND-006"
+        "CAND-006",
+        "REV-002"
       ],
-      "stable_p0_requirement": "`ambiguous` text/visual source 可进入审核并保持可定位、promote/ignore；缺 disposition/source/coordinates 或冲突归属为 blocking",
+      "stable_p0_requirement": "`ambiguous`/unresolved text/visual source 可进入审核并保持可定位、promote/ignore；缺 identity/disposition/source/coordinates、冲突归属或证据损坏仍为 blocking，Quality Owner 必须关闭 unresolved evidence 后才可越过正式 gate",
       "task_id": "D7-T2",
       "tier": "unit",
-      "verification_selector": "pytest backend/tests/unit/candidates/test_coverage.py::test_ambiguous_is_reviewable_but_incomplete_is_blocking backend/tests/unit/candidates/test_coverage.py::test_visual_reference_noninspection_and_ambiguous_are_distinct -q"
+      "verification_selector": "pytest backend/tests/unit/candidates/test_symbol_routing.py::test_conflicting_family_evidence_escalates backend/tests/unit/candidates/test_symbol_routing.py::test_unknown_reason_fails_closed backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_validation.py -q"
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "REV-002",
       "implementation_only": false,
-      "implementation_reason": "—",
+      "implementation_reason": "既有 raw-result immutability proof 仍有效，但 reader-first result、project-frozen mode/router identity、versioned completeness、preview binding、late-response 和 exact-once delta 尚无执行证据。",
       "owner": "Automatic-result repository",
       "p0_contract_id": "P0-RES-001",
-      "related_global_contract_ids": [],
-      "stable_p0_requirement": "processing 完成后冻结 immutable `raw_automatic_result`；working edits 不得原地修改",
+      "related_global_contract_ids": [
+        "CAND-005",
+        "PRJ-002",
+        "SYS-006"
+      ],
+      "stable_p0_requirement": "Result reader 必须先按登记默认值兼容读取新增字段；processing 绑定 project intake 时冻结的 `recognition_mode`、`recognition_router_version` 与同一 input identity，可先关联 immutable preview revisions，terminal 时精确一次冻结带 versioned `complete` or `partial_review_required` completeness 的 immutable `raw_automatic_result`；runtime setting、working edits 或 late Provider response 不得原地改变结果语义",
       "task_id": "D3-T2",
       "tier": "integration",
-      "verification_selector": "pytest backend/tests/integration/test_result_layers.py::test_raw_result_is_immutable -q"
+      "verification_selector": "pytest backend/tests/integration/test_result_layers.py backend/tests/integration/test_project_intake_api.py backend/tests/integration/test_project_status_api.py backend/tests/integration/test_recognition_preview.py backend/tests/integration/test_task_idempotency.py -q"
     },
     {
       "blocking_level": "blocking",
@@ -1102,19 +1112,19 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "PROV-005",
       "implementation_only": false,
-      "implementation_reason": "—",
-      "owner": "Provider telemetry",
+      "implementation_reason": "既有 minimum call statistics proof 仍有效，但独立 primary/actual/wall accounting、compatible cache provenance 和 offline evidence delta 尚无执行证据；跨项目 cache 明确 blocked，不得报告 passed。",
+      "owner": "Provider-call policy Owner",
       "p0_contract_id": "P0-RES-008",
       "related_global_contract_ids": [
         "DIAG-003"
       ],
-      "stable_p0_requirement": "保存 Provider call count、duration、retry count、estimated cost 和同一 logical-task reuse；P0 不建立跨运行通用 Provider cache",
+      "stable_p0_requirement": "分开保存 visual primary groups `4/page, 8/project`、text+visual actual attempts `16/page`、retry、`45s/page, 90s/project` wall budget、duration/cost/cache provenance；retry 不增加 primary 但消耗 actual/wall。`cross_project_cache_status=blocked_missing_security_scope_owner`；`project_local_content_cache_allowed=true`",
       "task_id": "D2-T2",
       "tier": "provider-contract",
-      "verification_selector": "pytest backend/tests/contract/test_provider_call_records.py::test_minimum_call_statistics -q"
+      "verification_selector": "pytest backend/tests/unit/candidates/test_symbol_routing.py::test_planner_enforces_page_project_and_unified_call_budgets backend/tests/unit/candidates/test_symbol_routing.py::test_retry_preserves_primary_count_but_consumes_actual_and_wall_budget backend/tests/unit/candidates/test_symbol_cache.py backend/tests/contract/test_provider_call_records.py backend/tests/contract/harness/test_symbol_eval_contract.py -q"
     },
     {
       "blocking_level": "blocking",
@@ -1550,17 +1560,20 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "REV-003",
       "implementation_only": false,
-      "implementation_reason": "—",
-      "owner": "Workbench presentation executor",
+      "implementation_reason": "既有 workbench statistics/overlay proof 仍有效，但 backend-owned progressive preview、refresh 和 frontend non-owner delta 尚无执行证据。",
+      "owner": "Workbench presentation executor (non-owner projection)",
       "p0_contract_id": "P0-UI-004",
-      "related_global_contract_ids": [],
-      "stable_p0_requirement": "Product Design工作台同页区分candidate/source、全部active required balloons与leader，并显示真实active/excluded/manual-required统计、筛选和collision state",
+      "related_global_contract_ids": [
+        "DIAG-003",
+        "REV-002"
+      ],
+      "stable_p0_requirement": "Product Design 工作台同页区分 candidate/source、全部 active required balloons 与 leader；production route 处理中只读显示 backend-owned `local_ready -> vlm_enriching -> terminal` preview/completeness/call-budget summary，frontend 不推导业务成功或伪造 working copy",
       "task_id": "D7-T2",
       "tier": "frontend",
-      "verification_selector": "npm --prefix frontend test -- --run src/components/workbench/RecognitionSummary.test.tsx src/components/workbench/InspectionItemTable.test.tsx src/components/balloons/BalloonOverlay.test.tsx"
+      "verification_selector": "npm --prefix frontend test -- --run src/components/workbench/RecognitionPreviewApp.test.tsx src/components/workbench/RecognitionSummary.test.tsx src/components/workbench/InspectionItemTable.test.tsx src/components/balloons/BalloonOverlay.test.tsx"
     },
     {
       "blocking_level": "blocking",
@@ -1578,17 +1591,20 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "REV-004",
       "implementation_only": false,
-      "implementation_reason": "—",
-      "owner": "Review UI",
+      "implementation_reason": "既有 review-command UI proof 仍有效，但 preview read-only/mutation-disable 和 frontend non-owner delta 尚无执行证据。",
+      "owner": "Review-command Owner; frontend executor",
       "p0_contract_id": "P0-UI-006",
-      "related_global_contract_ids": [],
-      "stable_p0_requirement": "核心审核表单支持 keep/exclude/edit/add/split/confirmation/balloon-required；重复建议由识别阶段内部产生，不提供通用人工 merge 入口",
+      "related_global_contract_ids": [
+        "DIAG-003",
+        "REV-002"
+      ],
+      "stable_p0_requirement": "核心审核表单支持 keep/exclude/edit/add/split/confirmation/balloon-required；progressive preview 在真实 working copy 创建前只读且 mutation controls disabled，frontend 不把 preview 提交为正式 review 语义",
       "task_id": "D4-T3",
       "tier": "frontend",
-      "verification_selector": "npm --prefix frontend test -- --run src/components/review/ReviewPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx"
+      "verification_selector": "npm --prefix frontend test -- --run src/components/workbench/RecognitionPreviewApp.test.tsx src/components/review/ReviewPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx"
     },
     {
       "blocking_level": "blocking",
@@ -1606,21 +1622,24 @@
     },
     {
       "blocking_level": "blocking",
-      "current_status": "passed",
+      "current_status": "not_run",
       "global_contract_id": "REV-006",
       "implementation_only": false,
-      "implementation_reason": "—",
-      "owner": "Review freeze UI",
+      "implementation_reason": "既有 Save/Confirm distinction proof 仍有效，但 partial completeness/Quality Owner veto 与 preview UI delta 尚无执行证据。",
+      "owner": "Review freeze Owner; frontend executor",
       "p0_contract_id": "P0-UI-008",
-      "related_global_contract_ids": [],
-      "stable_p0_requirement": "明确 Confirm 动作冻结 reviewed result；普通 Save 不会 freeze",
+      "related_global_contract_ids": [
+        "CAND-005",
+        "REV-002"
+      ],
+      "stable_p0_requirement": "明确 Confirm 动作只可在真实 working copy、complete coverage 与 Quality Owner closure 后冻结 reviewed result；`partial_review_required` preview/result、普通 Save 或 frontend terminal label 均不会 freeze、balloon 或 export",
       "task_id": "D5-T3",
       "tier": "frontend",
-      "verification_selector": "npm --prefix frontend test -- --run src/components/workbench/FreezeReviewButton.test.tsx"
+      "verification_selector": "pytest backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_validation.py -q && npm --prefix frontend test -- --run src/components/workbench/RecognitionPreviewApp.test.tsx src/components/workbench/FreezeReviewButton.test.tsx"
     }
   ],
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "p0-contracts/1",
   "source": "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md",
-  "status_projection_hash": "f018ccff01a789ee562ab570b11fb340a217b9aa259b7a3095fecb8c3d15a7b6"
+  "status_projection_hash": "c18a682e0bb85b77722568fa43178b08958182d7b9202be9f5947df4a00061cd"
 }

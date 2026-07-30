@@ -104,6 +104,7 @@
       "primary_p0_contract_ids": [],
       "related_business_p0_contract_ids": [],
       "related_implementation_p0_contract_ids": [
+        "P0-ACC-002",
         "P0-REC-005"
       ]
     },
@@ -113,7 +114,11 @@
         "P0-REC-009",
         "P0-REC-010"
       ],
-      "related_business_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-ACC-007",
+        "P0-RES-001",
+        "P0-UI-008"
+      ],
       "related_implementation_p0_contract_ids": [
         "P0-ACC-002"
       ]
@@ -148,9 +153,13 @@
       "global_contract_id": "DIAG-003",
       "primary_p0_contract_ids": [],
       "related_business_p0_contract_ids": [
-        "P0-RES-008"
+        "P0-RES-008",
+        "P0-UI-004",
+        "P0-UI-006"
       ],
-      "related_implementation_p0_contract_ids": []
+      "related_implementation_p0_contract_ids": [
+        "P0-ACC-002"
+      ]
     },
     {
       "global_contract_id": "EXP-001",
@@ -379,6 +388,7 @@
       "global_contract_id": "PRJ-002",
       "primary_p0_contract_ids": [],
       "related_business_p0_contract_ids": [
+        "P0-RES-001",
         "P0-RUN-009"
       ],
       "related_implementation_p0_contract_ids": []
@@ -483,7 +493,14 @@
       "primary_p0_contract_ids": [
         "P0-RES-001"
       ],
-      "related_business_p0_contract_ids": [],
+      "related_business_p0_contract_ids": [
+        "P0-ACC-007",
+        "P0-REC-009",
+        "P0-REC-010",
+        "P0-UI-004",
+        "P0-UI-006",
+        "P0-UI-008"
+      ],
       "related_implementation_p0_contract_ids": [
         "P0-ACC-002"
       ]
@@ -582,12 +599,13 @@
       "global_contract_id": "SYS-006",
       "primary_p0_contract_ids": [],
       "related_business_p0_contract_ids": [
-        "P0-EXP-008"
+        "P0-EXP-008",
+        "P0-RES-001"
       ],
       "related_implementation_p0_contract_ids": []
     }
   ],
-  "contract_definition_hash": "f30c38b7757996cf8948008eabb40b3e9df0100b7a9438fe6680127ec209b350",
+  "contract_definition_hash": "8950003780d9cdfc65a42f61d0c056d01a71156618be61c55b81716afb095eb1",
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "global-contract-bindings/1",
   "source": ".agent/harness/contracts/p0-contracts.json"

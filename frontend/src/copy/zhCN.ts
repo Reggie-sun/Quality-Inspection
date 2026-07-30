@@ -168,7 +168,6 @@ export const zhCN = {
     candidateNumber: (number: number) => `候选序号 ${number}`,
     formalNumber: (number: number) => `正式序号 ${number}`,
     noNumber: "暂无序号",
-    search: "搜索检验项",
     statusFilter: "筛选状态",
     allStatuses: "全部状态",
     number: "序号",

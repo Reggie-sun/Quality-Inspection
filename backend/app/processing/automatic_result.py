@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -21,8 +22,10 @@ from app.candidates.confidence import (
 )
 from app.candidates.coverage import CoverageEntry, CoverageReport
 from app.candidates.disposition import (
+    WELLI_LAYOUT_RULE_VERSION,
     classify_primary_disposition,
     repeated_page_overlay_observation_ids,
+    welli_page_frame_assignment_touches_outer_edge,
 )
 from app.candidates.duplicates import (
     DuplicateCandidate,
@@ -35,11 +38,14 @@ from app.candidates.schemas import Candidate, stable_candidate_id
 from app.candidates.technical_requirements import (
     TechnicalRequirementDecision,
     evaluate_technical_requirements,
+    is_standalone_executable_requirement,
     reconstruct_technical_requirement_entries,
     technical_requirement_source_location_ids,
     validate_technical_requirements,
 )
 from app.jobs.idempotency import LogicalJob, LogicalJobStateError
+from app.pdf.layout_profiles import welli_same_page_watermark_observation_ids
+from app.pdf.schemas import LayoutProfileMatch, ObservationRegionAssignment
 from app.pdf.schemas import TextObservation, VisualObservation
 from app.projects.models import Project
 from app.projects.state import InvalidTransition, ProjectState, transition
@@ -245,6 +251,224 @@ def _technical_requirement_coverage_entries(
     return tuple(entries)
 
 
+@dataclass(frozen=True)
+class _LayoutSnapshotContext:
+    matches_by_page: Mapping[int, LayoutProfileMatch]
+    assignments_by_observation_id: Mapping[str, ObservationRegionAssignment]
+    watermark_observation_ids: frozenset[str]
+    engineering_preservation_observation_ids: frozenset[str]
+
+
+def _revision_description_is_engineering(
+    observation: TextObservation,
+) -> bool:
+    if is_standalone_executable_requirement(observation.raw_text):
+        return True
+    try:
+        return bool(group_observations((observation,)))
+    except ValueError:
+        return False
+
+
+def _layout_snapshot_context(
+    pages: Sequence[Any],
+    *,
+    selected_text_observations: Sequence[TextObservation],
+    visual_observations: Sequence[VisualObservation],
+) -> _LayoutSnapshotContext:
+    selected_by_id = {
+        observation.observation_id: observation
+        for observation in selected_text_observations
+    }
+    visual_text_ids = {
+        observation_id
+        for visual in visual_observations
+        for observation_id in visual.associated_text_observation_ids
+    }
+    matches_by_page: dict[int, LayoutProfileMatch] = {}
+    assignment_groups: dict[
+        str,
+        list[ObservationRegionAssignment],
+    ] = defaultdict(list)
+    watermark_ids: set[str] = set()
+    for page in pages:
+        match = getattr(page, "layout_profile_match", None)
+        if (
+            not isinstance(match, LayoutProfileMatch)
+            or match.match_state != "high_confidence"
+            or match.page_index != page.page_index
+            or match.rule_version != WELLI_LAYOUT_RULE_VERSION
+        ):
+            continue
+        matches_by_page[page.page_index] = match
+        for assignment in match.assignments:
+            assignment_groups[assignment.observation_id].append(assignment)
+        watermark_ids.update(
+            welli_same_page_watermark_observation_ids(
+                profile_match=match,
+                observations=getattr(page, "observations", ()),
+            )
+        )
+
+    assignments_by_id: dict[str, ObservationRegionAssignment] = {}
+    preservation_ids: set[str] = set()
+    for observation_id, grouped_assignments in assignment_groups.items():
+        observation = selected_by_id.get(observation_id)
+        if len(grouped_assignments) != 1:
+            preservation_ids.add(observation_id)
+            continue
+        assignment = grouped_assignments[0]
+        match = matches_by_page.get(assignment.page_index)
+        if (
+            observation is None
+            or observation.source_type != "native"
+            or observation.observation_level != "line"
+            or match is None
+            or assignment.profile_id != match.profile_id
+            or assignment.rule_version != match.rule_version
+        ):
+            preservation_ids.add(observation_id)
+            continue
+        assignments_by_id[observation_id] = assignment
+        if (
+            assignment.boundary_distance_mm < 1.0
+            and not welli_page_frame_assignment_touches_outer_edge(assignment)
+        ):
+            preservation_ids.add(observation_id)
+        elif (
+            assignment.cell_role == "revision_description"
+            and _revision_description_is_engineering(observation)
+        ):
+            preservation_ids.add(observation_id)
+        elif (
+            assignment.cell_role == "revision_description"
+            and observation_id in visual_text_ids
+        ):
+            preservation_ids.add(observation_id)
+
+    revision_rows: dict[str, set[str]] = defaultdict(set)
+    for observation_id, assignment in assignments_by_id.items():
+        if assignment.cell_role == "revision_description":
+            revision_rows[assignment.cell_id].add(observation_id)
+    for row_observation_ids in revision_rows.values():
+        if row_observation_ids & preservation_ids:
+            preservation_ids.update(row_observation_ids)
+
+    return _LayoutSnapshotContext(
+        matches_by_page=dict(sorted(matches_by_page.items())),
+        assignments_by_observation_id=dict(
+            sorted(assignments_by_id.items())
+        ),
+        watermark_observation_ids=frozenset(watermark_ids),
+        engineering_preservation_observation_ids=frozenset(
+            preservation_ids
+        ),
+    )
+
+
+def _unique_text_observations_by_id(
+    pages: Sequence[Any],
+) -> Mapping[str, TextObservation]:
+    grouped: dict[str, list[TextObservation]] = defaultdict(list)
+    for page in pages:
+        for observation in getattr(page, "observations", ()):
+            grouped[observation.observation_id].append(observation)
+    return {
+        observation_id: observations[0]
+        for observation_id, observations in grouped.items()
+        if len(observations) == 1
+    }
+
+
+def _canonical_visual_line_ids(
+    visual: VisualObservation,
+    *,
+    all_text_by_id: Mapping[str, TextObservation],
+    selected_native_line_ids: frozenset[str],
+) -> tuple[str, ...] | None:
+    associated_ids = frozenset(visual.associated_text_observation_ids)
+    if not associated_ids:
+        return None
+    canonical_line_ids: set[str] = set()
+    for observation_id in associated_ids:
+        observation = all_text_by_id.get(observation_id)
+        if observation is None or observation.page_index != visual.page_index:
+            return None
+        if (
+            observation.source_type == "native"
+            and observation.observation_level == "line"
+        ):
+            if observation_id not in selected_native_line_ids:
+                return None
+            canonical_line_ids.add(observation_id)
+            continue
+        if (
+            observation.source_type != "native"
+            or observation.observation_level != "span"
+            or not observation.parent_region_id
+            or observation.parent_region_id not in associated_ids
+        ):
+            return None
+        parent = all_text_by_id.get(observation.parent_region_id)
+        if (
+            parent is None
+            or parent.page_index != visual.page_index
+            or parent.source_type != "native"
+            or parent.observation_level != "line"
+            or parent.observation_id not in selected_native_line_ids
+        ):
+            return None
+        canonical_line_ids.add(parent.observation_id)
+    return tuple(sorted(canonical_line_ids)) or None
+
+
+def _resolved_visual_coverage(
+    visual: VisualObservation,
+    *,
+    canonical_line_ids: tuple[str, ...] | None,
+    layout_context: _LayoutSnapshotContext,
+    text_coverage_by_id: Mapping[str, CoverageEntry],
+) -> CoverageEntry | None:
+    if canonical_line_ids is None:
+        return None
+    match = layout_context.matches_by_page.get(visual.page_index)
+    if match is None:
+        return None
+    dispositions: list[str] = []
+    for line_id in canonical_line_ids:
+        assignment = layout_context.assignments_by_observation_id.get(line_id)
+        coverage = text_coverage_by_id.get(line_id)
+        if (
+            assignment is None
+            or assignment.page_index != visual.page_index
+            or assignment.profile_id != match.profile_id
+            or line_id
+            in layout_context.engineering_preservation_observation_ids
+            or coverage is None
+            or coverage.disposition
+            not in {"reference_context", "non_inspection"}
+            or coverage.disposition_rule_version
+            != WELLI_LAYOUT_RULE_VERSION
+            or not (coverage.disposition_reason or "").startswith("welli_")
+        ):
+            return None
+        dispositions.append(str(coverage.disposition))
+    disposition = (
+        "non_inspection"
+        if set(dispositions) == {"non_inspection"}
+        else "reference_context"
+    )
+    return CoverageEntry(
+        observation_id=visual.observation_id,
+        disposition=disposition,
+        source_location_id=visual.observation_id,
+        coordinates=visual.bbox_pdf,
+        requires_confirmation=False,
+        disposition_reason="welli_layout_visual_context",
+        disposition_rule_version=WELLI_LAYOUT_RULE_VERSION,
+    )
+
+
 def candidate_snapshot_from_inventory(
     pages: Sequence[Any],
 ) -> CandidateSnapshot:
@@ -268,6 +492,11 @@ def candidate_snapshot_from_inventory(
         for visual_observation in visual_observations
         for observation_id in visual_observation.associated_text_observation_ids
     }
+    layout_context = _layout_snapshot_context(
+        pages,
+        selected_text_observations=observations,
+        visual_observations=visual_observations,
+    )
     candidates: list[dict[str, Any]] = []
     coverage_entries: list[CoverageEntry] = []
     duplicate_inputs: list[DuplicateCandidate] = []
@@ -313,6 +542,17 @@ def candidate_snapshot_from_inventory(
         decision = classify_primary_disposition(
             observation,
             has_visual_context=has_visual_context,
+            layout_assignment=(
+                layout_context.assignments_by_observation_id.get(
+                    observation.observation_id
+                )
+            ),
+            welli_watermark_observation_ids=(
+                layout_context.watermark_observation_ids
+            ),
+            engineering_preservation_observation_ids=(
+                layout_context.engineering_preservation_observation_ids
+            ),
         )
         if decision is None:
             if composite := _composite_at(local_observations, index):
@@ -335,6 +575,17 @@ def candidate_snapshot_from_inventory(
                     observation,
                     has_visual_context=has_visual_context,
                     repeated_overlay_observation_ids=repeated_overlay_ids,
+                    layout_assignment=(
+                        layout_context.assignments_by_observation_id.get(
+                            observation.observation_id
+                        )
+                    ),
+                    welli_watermark_observation_ids=(
+                        layout_context.watermark_observation_ids
+                    ),
+                    engineering_preservation_observation_ids=(
+                        layout_context.engineering_preservation_observation_ids
+                    ),
                 )
             coverage_entries.append(
                 CoverageEntry(
@@ -416,7 +667,31 @@ def candidate_snapshot_from_inventory(
         )
     )
 
+    text_coverage_by_id = {
+        entry.observation_id: entry for entry in coverage_entries
+    }
+    all_text_by_id = _unique_text_observations_by_id(pages)
+    selected_native_line_ids = frozenset(
+        observation.observation_id
+        for observation in observations
+        if observation.source_type == "native"
+        and observation.observation_level == "line"
+    )
+    required_visual_ids: list[str] = []
     for observation in visual_observations:
+        resolved = _resolved_visual_coverage(
+            observation,
+            canonical_line_ids=_canonical_visual_line_ids(
+                observation,
+                all_text_by_id=all_text_by_id,
+                selected_native_line_ids=selected_native_line_ids,
+            ),
+            layout_context=layout_context,
+            text_coverage_by_id=text_coverage_by_id,
+        )
+        if resolved is not None:
+            coverage_entries.append(resolved)
+            continue
         coverage_entries.append(
             CoverageEntry(
                 observation_id=observation.observation_id,
@@ -426,6 +701,7 @@ def candidate_snapshot_from_inventory(
                 requires_confirmation=True,
             )
         )
+        required_visual_ids.append(observation.observation_id)
 
     return CandidateSnapshot(
         candidates=tuple(candidates),
@@ -441,10 +717,7 @@ def candidate_snapshot_from_inventory(
             suggest_cross_view_duplicates(duplicate_inputs)
         ),
         source_signals=tuple(source_signals),
-        required_visual_observation_ids=tuple(
-            observation.observation_id
-            for observation in visual_observations
-        ),
+        required_visual_observation_ids=tuple(required_visual_ids),
         technical_requirements=tuple(
             decision.model_dump(mode="json")
             for decision in requirement_evaluation.decisions

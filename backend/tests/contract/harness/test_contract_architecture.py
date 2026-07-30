@@ -137,6 +137,21 @@ def test_contract_mirror_is_generated_from_the_only_p0_markdown_source() -> None
     assert all(row["current_status"] in {"passed", "failed", "blocked", "not_run"} for row in mirror["contracts"])
 
 
+def test_failure_proof_selector_matches_registered_contract() -> None:
+    mirror, _bindings, policies = _receipt_sources()
+    contract = next(
+        row
+        for row in mirror["contracts"]
+        if row["p0_contract_id"] == "P0-ACC-007"
+    )
+
+    assert (
+        contract["verification_selector"]
+        == policies["failure_severity_policy"]["failure_proof"]["selector"]
+        == RUNNER.NO_SILENT_SUCCESS_SELECTOR
+    )
+
+
 def test_run_schema_requires_immutable_evidence_members() -> None:
     schema = json.loads((HARNESS / "schemas/run.schema.json").read_text())
     required = set(schema["required"])

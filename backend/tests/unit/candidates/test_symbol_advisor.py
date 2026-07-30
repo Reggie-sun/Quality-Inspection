@@ -8,6 +8,7 @@ import pytest
 
 import app.candidates.symbol_review as symbol_review
 from app.candidates.coverage import CoverageEntry
+from app.candidates.local_symbol_resolution import resolve_visual_observation
 from app.candidates.symbol_review import (
     ValidatedSymbolDetection,
     VisualReviewDecision,
@@ -485,6 +486,7 @@ def _snapshot(
     page: PageInventory,
     *,
     candidates: tuple[dict[str, object], ...] = (),
+    required_visual_observation_ids: tuple[str, ...] | None = None,
 ) -> CandidateSnapshot:
     candidate_source_ids = {
         str(source_id)
@@ -528,7 +530,9 @@ def _snapshot(
         (),
         required_visual_observation_ids=tuple(
             item.observation_id for item in page.visual_observations
-        ),
+        )
+        if required_visual_observation_ids is None
+        else required_visual_observation_ids,
     )
 
 
@@ -2101,6 +2105,80 @@ def test_multiple_existing_candidate_projections_merge_or_conflict_stably() -> N
     )
 
 
+def test_nonfirst_local_projection_merges_with_same_page_vlm_decision() -> None:
+    owner = _text("owner", "Φ10", (40, 10, 52, 20))
+    unrelated = {
+        "candidate_id": "candidate-unrelated",
+        "payload": {
+            "candidate_id": "candidate-unrelated",
+            "item_type": "linear_dimension",
+            "raw_text": "5",
+            "normalized_text": "5",
+            "coordinates": owner.bbox_pdf,
+            "scope": "local_feature",
+            "quantity": None,
+            "nominal": "5",
+            "sub_requirements": [],
+            "balloon_required": True,
+            "requires_confirmation": False,
+        },
+        "source_location_ids": ["other"],
+    }
+    target = copy.deepcopy(unrelated)
+    target["candidate_id"] = "candidate-target"
+    target["payload"].update(
+        {
+            "candidate_id": "candidate-target",
+            "item_type": "diameter_dimension",
+            "raw_text": "Φ10",
+            "normalized_text": "Φ10",
+            "nominal": "10",
+            "feature_kind": "unknown",
+        }
+    )
+    target["source_location_ids"] = ["owner"]
+    local_visual = _visual("visual-local", (10, 10, 18, 20), ("owner",))
+    vlm_visual = _visual("visual-vlm", (22, 10, 30, 20), ("owner",))
+    local = resolve_visual_observation(
+        observation=local_visual,
+        family_hypotheses=("diameter",),
+        text_observations=(owner,),
+        candidates=(unrelated, target),
+        geometry_context=None,
+    )
+    assert local.projection is not None
+    assert local.projection.existing_candidate_index == 1
+
+    decisions = project_visual_page(
+        visual_observations=(local_visual, vlm_visual),
+        detections=(
+                ValidatedSymbolDetection(
+                    vlm_visual.observation_id,
+                    "diameter",
+                    vlm_visual.bbox_pdf,
+                    ("owner",),
+                    0.9,
+                ),
+        ),
+        rejection_codes={},
+        text_observations=(owner,),
+        candidates=(unrelated, target),
+        geometry_contexts={},
+        local_decisions=(local.projection,),
+    )
+
+    assert all(
+        decision.existing_candidate_index == 1
+        and decision.candidate_id == "candidate-target"
+        and decision.source_location_ids
+        == ("visual-local", "visual-vlm", "owner")
+        for decision in decisions
+    )
+    assert sum(
+        decision.candidate_envelope is not None for decision in decisions
+    ) == 1
+
+
 def test_rejected_detection_preserves_accepted_symbol_kinds() -> None:
     text = _text("text-1", "10", (24, 10, 36, 20))
     visual = _visual("visual-1", (10, 10, 20, 20), ("text-1",))
@@ -2284,3 +2362,96 @@ def test_unified_scheduler_is_deterministic_and_blocks_visual_overflow() -> None
         match="symbol_route_budget_exhausted",
     ):
         plan_visual_batches((wide_page,), _snapshot(wide_page))
+
+
+def test_visual_scheduler_only_plans_required_observations() -> None:
+    visuals = (
+        _visual("resolved-a", (10, 10, 20, 20), ()),
+        _visual("unresolved-b", (40, 10, 50, 20), ()),
+        _visual("resolved-c", (70, 10, 80, 20), ()),
+    )
+    page = _page((), visuals)
+    snapshot = _snapshot(
+        page,
+        required_visual_observation_ids=("unresolved-b",),
+    )
+
+    planned = plan_visual_batches((page,), snapshot)
+
+    assert tuple(
+        observation_id
+        for batch in planned[0]
+        for observation_id in batch.observation_ids
+    ) == ("unresolved-b",)
+
+
+def test_visual_scheduler_preserves_empty_page_batches_and_required_order() -> None:
+    visuals = (
+        _visual("resolved-a", (10, 10, 20, 20), ()),
+        _visual("unresolved-b", (40, 10, 50, 20), ()),
+        _visual("unresolved-c", (70, 10, 80, 20), ()),
+    )
+    page = _page((), visuals)
+
+    assert plan_visual_batches(
+        (page,),
+        _snapshot(page, required_visual_observation_ids=()),
+    ) == ((),)
+
+    planned = plan_visual_batches(
+        (page,),
+        _snapshot(
+            page,
+            required_visual_observation_ids=(
+                "unresolved-c",
+                "unresolved-b",
+            ),
+        ),
+    )
+    assert tuple(
+        observation_id
+        for batch in planned[0]
+        for observation_id in batch.observation_ids
+    ) == ("unresolved-b", "unresolved-c")
+
+
+def test_visual_scheduler_rejects_absent_required_observation() -> None:
+    page = _page((), (_visual("visual-present", (10, 10, 20, 20), ()),))
+
+    with pytest.raises(
+        ValueError,
+        match="^required visual observation is absent from pages$",
+    ):
+        plan_visual_batches(
+            (page,),
+            _snapshot(
+                page,
+                required_visual_observation_ids=("visual-missing",),
+            ),
+        )
+
+
+def test_visual_scheduler_budget_only_counts_required_observations() -> None:
+    overflow = tuple(
+        _visual(
+            f"visual-{index}",
+            (index * 1000.0, 10, index * 1000.0 + 3, 13),
+            (),
+        )
+        for index in range(17)
+    )
+    page = replace(
+        _page((), overflow),
+        width=17000,
+    )
+
+    planned = plan_visual_batches(
+        (page,),
+        _snapshot(
+            page,
+            required_visual_observation_ids=("visual-16",),
+        ),
+    )
+
+    assert len(planned[0]) == 1
+    assert planned[0][0].observation_ids == ("visual-16",)

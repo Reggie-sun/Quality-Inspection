@@ -97,6 +97,37 @@ def _project_source(
     return project, source_file
 
 
+def _project_source_with_routing_identity(
+    session: Session,
+    storage: LocalFileStorage,
+    tmp_path: Path,
+    *,
+    recognition_mode: str,
+    recognition_router_version: str,
+) -> tuple[Project, StoredFile]:
+    project = Project(
+        id=uuid.uuid4(),
+        state=ProjectState.PROCESSING,
+        recognition_mode=recognition_mode,
+        recognition_router_version=recognition_router_version,
+    )
+    content = _write_candidate_pdf(tmp_path / f"{project.id}.pdf")
+    stored = storage.write_verified(
+        f"projects/{project.id}/source.pdf",
+        content,
+        sha256(content).hexdigest(),
+    )
+    source_file = StoredFile(
+        resource_ref=stored.resource_ref,
+        sha256=stored.sha256,
+        size_bytes=stored.size_bytes,
+        mime_type="application/pdf",
+    )
+    session.add_all([project, source_file])
+    session.commit()
+    return project, source_file
+
+
 def _configure_task(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -216,6 +247,95 @@ def test_canonical_task_creates_one_review_working_copy_and_is_idempotent(
         )
     finally:
         verify.close()
+
+
+def test_worker_uses_frozen_project_mode_after_settings_change(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    setup = task_session_factory()
+    project, source = _project_source_with_routing_identity(
+        setup,
+        storage,
+        tmp_path,
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
+    setup.close()
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+    seen_modes: list[tuple[str, str]] = []
+    original_advisor = tasks.CandidateAdvisor
+    original_recognition = tasks.RuntimeRecognition
+
+    def recording_advisor(settings: Settings, *args, **kwargs):
+        seen_modes.append(("advisor", settings.symbol_recognition_mode))
+        return original_advisor(settings, *args, **kwargs)
+
+    def recording_recognition(settings: Settings, *args, **kwargs):
+        seen_modes.append(("recognition", settings.symbol_recognition_mode))
+        return original_recognition(settings, *args, **kwargs)
+
+    monkeypatch.setattr(tasks, "CandidateAdvisor", recording_advisor)
+    monkeypatch.setattr(tasks, "RuntimeRecognition", recording_recognition)
+
+    inventory_project.run(
+        str(project.id),
+        source.resource_ref,
+        f"product-process:{project.id}",
+    )
+
+    assert seen_modes == [
+        ("advisor", "production_uncertainty"),
+        ("recognition", "production_uncertainty"),
+    ]
+    assert external_calls == []
+
+
+def test_worker_rejects_corrupt_frozen_pair_before_provider_construction(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    setup = task_session_factory()
+    project, source = _project_source_with_routing_identity(
+        setup,
+        storage,
+        tmp_path,
+        recognition_mode="production_uncertainty",
+        recognition_router_version="legacy",
+    )
+    setup.close()
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+
+    def forbidden_advisor(*_args, **_kwargs):
+        external_calls.append("advisor-construction")
+        raise AssertionError("corrupt mode must fail before advisor construction")
+
+    monkeypatch.setattr(tasks, "CandidateAdvisor", forbidden_advisor)
+
+    with pytest.raises(ValueError, match="router version"):
+        inventory_project.run(
+            str(project.id),
+            source.resource_ref,
+            f"product-process:{project.id}",
+        )
+
+    assert external_calls == []
 
 
 def test_canonical_task_calls_vision_once_for_eligible_candidate(

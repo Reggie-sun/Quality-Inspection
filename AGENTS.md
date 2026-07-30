@@ -82,6 +82,7 @@ workflow spine、lane 和 planning 条件只由 `.agent/rules/workflow-lanes.md`
 - 不得顺带执行后续 Task，也不得因为后续依赖已经清楚而提前实现。
 - 同一 task 的同一 file group 同时只能有一个 writer。
 - reviewer、auditor 和 research 子代理必须保持只读。
+- 当 `collaboration.spawn_agent` schema 不暴露 `agent_type` / `profile` 时，不得据此断言 local profile 不可绑定：先确认 runtime 使用 `~/.codex/bin/codex-spawn-profile-fix`（或经同一 child rollout 三字段验证的等价实现），再用 `task_name="<profile>__<task>"` 和 `fork_turns="none"` 选择 task-name-safe profile；派发后必须从 child rollout metadata 核验实际 `agent_role` / `model` / `reasoning_effort`。只有此前缀通路不可用、profile 名称不符合 `task_name` 字符集或 live proof 失败时，才允许明示 generic fallback；不得静默改名，也不得把 task name 本身当成 profile 已加载的证据。
 - 不得用 synthetic fixture、旧 baseline 或自动生成结果冒充 current-four 的真实 live evidence。
 - 未通过正式 freeze 的 working copy 不得用于正式编号或正式导出。
 - PDF、Excel 和 manifest 不得混用不同的 `reviewed_result`。

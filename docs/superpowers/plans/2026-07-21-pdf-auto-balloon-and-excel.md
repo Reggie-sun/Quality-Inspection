@@ -1881,6 +1881,101 @@ Modify:
 - `frontend/src/copy/zhCN.ts`
 - `frontend/src/styles/workbench.css`
 
+### D7-T2 Symbol Recognition Production Routing Implementation Amendment — 2026-07-29
+
+- Selection record:
+  - Selected lane: `Heavy`.
+  - Selected current plan:
+    `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`.
+  - Activated design:
+    `docs/superpowers/specs/2026-07-29-symbol-recognition-production-routing-design.md`
+    at commit `4541c47dacb591f5c40cf3709d55d48163f82713`.
+  - User authorization: `执行,subagent`; after the user explicitly selected option
+    `A`, the pre-existing untracked `index.json` is preserved as-is and excluded
+    from every read/write/stage/commit operation in this amendment.
+  - Validation action: `amend -> continue`.
+  - The subordinate
+    `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+    owns only the exact `PRT-*` implementation detail below this amendment. It
+    remains subordinate and does not become a second current plan.
+- Problem boundary:
+  - proposal admission remains the high-recall inventory fact Owner;
+  - production routing must add an independent, reason-coded uncertainty decision
+    before visual batching or Provider construction;
+  - the current `plan_visual_batches()` all-observation route remains preserved as
+    `legacy_high_recall` until formal promotion evidence, but it may not be the
+    default of a newly promoted `production_uncertainty` project;
+  - `CandidateAdvisor` owns candidate、coverage and result-completeness semantics;
+    `build_automatic_result()` remains the only persistence Executor and may not
+    recompute those semantics.
+  - this amendment narrowly supersedes the old P0 exclusion of a generic
+    `preview pipeline` and generic cross-run Provider cache only for the
+    symbol-specific backend-owned preview and project-local content cache defined
+    by `PRT-4/PRT-6`; generic cache/preview frameworks remain out of scope.
+- Unchanged contracts:
+  - checked-in visual response schema、Qwen adapter validation、deterministic
+    projection、Coverage Veto、Quality Owner commands、review/freeze/balloon/export
+    ordering and immutable historical results remain in force;
+  - Provider、frontend、cache、telemetry and Harness remain Signal Providers or
+    executors, never business-semantic Owners;
+  - localized unresolved ROI may produce an immutable
+    `partial_review_required` automatic result; malformed/incompatible cache
+    records are quarantined and treated as misses, while missing/conflicting source
+    identity、invalid routing schema、failure to preserve new evidence provenance
+    or Quality Owner blockers remain fail closed.
+- Security and cache boundary:
+  - the repository currently has no tenant/security identity Owner;
+  - therefore cross-project cache activation is blocked. `PRT-4` may implement a
+    versioned project-local content-addressed namespace and compatible provenance,
+    but `P0-RES-008` may not claim same-tenant cross-project reuse until a separate
+    approved security contract supplies and verifies the scope identity;
+  - no global or cross-tenant cache fallback is permitted.
+- Writer ownership and order:
+  - parent agent is the plan/contract writer;
+  - each `PRT-*` code task has exactly one implementation writer, followed by an
+    independent spec-compliance reviewer and then a code-quality reviewer;
+  - production writers are sequential; explorer、reviewer and OSS research agents
+    remain read-only and may not delegate;
+  - each task uses RED -> minimal GREEN -> focused regression -> review -> exact
+    commit. No task consumes a later task's allowed files.
+- External-action boundary:
+  - this amendment does not authorize Provider live calls、PDF upload、formal live
+    Harness、production feature-flag promotion、runtime credential inspection or
+    `main` merge/push;
+  - offline fixtures、unit/integration/contract tests、local browser fixture smoke
+    and shadow report generation with `external_calls=0` are allowed.
+- Old-path action:
+  - current action is `preserve`;
+  - a separately authorized bounded canary may mark the all-observation route
+    `[REMOVAL_CANDIDATE]` at production promotion, bound to a fresh rollback drill;
+  - deletion requires two subsequent approved evaluation cycles to pass recall、
+    latency、partial-failure、cache、browser and Quality Owner gates and has a
+    deadline of the end of the second development cycle after promotion;
+  - `shadow_uncertainty` expires in the first development cycle after promotion;
+    the production `legacy_high_recall` flag expires in the second; the
+    `verification_high_recall` entry may remain only in tests/Harness;
+  - production routing must not fall back per ROI to `legacy_high_recall`, and no
+    dual final write is allowed.
+- First focused RED:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
+  backend/tests/unit/candidates/test_local_symbol_resolution.py \
+  backend/tests/unit/candidates/test_symbol_routing.py -q
+```
+
+- Rollback:
+  - revert `PRT-*` commits in reverse order while retaining historical results,
+    audit and cache provenance;
+  - reader-first schema compatibility must be preserved before any writer rollback;
+  - first post-rollback verification:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
+  backend/tests/unit/candidates/test_symbol_advisor.py \
+  backend/tests/integration/test_symbol_recognition_pipeline.py -q
+```
+
 ## Planning Preparation Stage — Completed Before Day 1
 
 本阶段是 `superpowers:writing-plans` 产物，不是 implementation task：
