@@ -1739,6 +1739,13 @@
   font-size: 10px;
 }
 
+.technical-requirement__actions .technical-requirement__confirm:not(:disabled) {
+  border-color: #1570ef;
+  background: #1570ef;
+  color: #ffffff;
+  font-weight: 700;
+}
+
 @media (max-width: 620px) {
   .review-selected-item__header {
     flex-direction: column;

@@ -2049,7 +2049,7 @@ describe("InspectionWorkbench", () => {
     )).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
     fireEvent.click(screen.getByRole("button", {
-      name: "匹配此检验项：25",
+      name: "确认匹配此检验项：25",
     }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({
