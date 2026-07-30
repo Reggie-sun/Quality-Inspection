@@ -183,6 +183,77 @@ class CandidateAdvisorFailure(RuntimeError):
         self.failure_category = failure_category
 
 
+def _recognition_preview_snapshot(
+    snapshot: CandidateSnapshot,
+    pages: Sequence[Any],
+    *,
+    stage: str,
+    cache_resolved: int = 0,
+    vlm_resolved: int = 0,
+    vlm_pending: int = 0,
+    unresolved: int = 0,
+) -> dict[str, object]:
+    text_sources_by_id = {
+        observation.observation_id: observation
+        for page in pages
+        for observation in page.observations
+    }
+    visual_sources_by_id = {
+        observation.observation_id: observation
+        for page in pages
+        for observation in page.visual_observations
+    }
+
+    def preview_source(signal: Any) -> dict[str, object]:
+        if signal.source_type != "visual":
+            source = text_sources_by_id[signal.source_location_id]
+            return {
+                "source_location_id": signal.source_location_id,
+                "source_type": signal.source_type,
+                "page_index": source.page_index,
+                "raw_text": source.raw_text,
+            }
+        visual = visual_sources_by_id[signal.source_location_id]
+        associated_raw_text = dict.fromkeys(
+            text_sources_by_id[observation_id].raw_text
+            for observation_id in visual.associated_text_observation_ids
+            if observation_id in text_sources_by_id
+        )
+        return {
+            "source_location_id": signal.source_location_id,
+            "source_type": signal.source_type,
+            "page_index": visual.page_index,
+            "raw_text": " ".join(associated_raw_text),
+        }
+
+    if stage == "local_ready":
+        vlm_pending = len(snapshot.required_visual_observation_ids)
+    return {
+        "schema_version": "recognition-preview/1",
+        "stage": stage,
+        "candidates": [
+            {
+                "candidate_id": candidate["candidate_id"],
+                "kind": candidate["payload"].get("item_type")
+                or candidate["payload"].get("coarse_type")
+                or "unknown",
+                "label": candidate["payload"].get("normalized_text")
+                or candidate["payload"].get("raw_text")
+                or "",
+            }
+            for candidate in snapshot.candidates
+        ],
+        "sources": [preview_source(signal) for signal in snapshot.source_signals],
+        "counts": {
+            "local_resolved": len(snapshot.candidates),
+            "cache_resolved": cache_resolved,
+            "vlm_pending": vlm_pending,
+            "vlm_resolved": vlm_resolved,
+            "unresolved": unresolved,
+        },
+    }
+
+
 def _localized_provider_failure_category(exc: Exception) -> str | None:
     category = getattr(exc, "failure_category", None)
     if category in LOCALIZED_PROVIDER_FAILURE_CATEGORIES:
@@ -1956,7 +2027,7 @@ class CandidateAdvisor:
         crop_bbox_pdf: tuple[float, float, float, float],
         padding_pdf: float,
         model: str,
-    ) -> tuple[VisionResult, object | None]:
+    ) -> tuple[VisionResult, object | None, bool]:
         del padding_pdf
         crop_sha256 = hashlib.sha256(crop_png).hexdigest()
         cache_key = _cache_key(
@@ -1978,7 +2049,7 @@ class CandidateAdvisor:
             model=model,
         )
         if cached is not None:
-            return cached, provider
+            return cached, provider, True
 
         if provider is None:
             provider = self._provider_factory(self._settings)
@@ -2061,7 +2132,7 @@ class CandidateAdvisor:
                 response_ref=cache_write.resource_ref,
             ),
         )
-        return result, provider
+        return result, provider, False
 
     def review(
         self,
@@ -2071,43 +2142,13 @@ class CandidateAdvisor:
         *,
         source_file_id: uuid.UUID | None = None,
     ) -> CandidateSnapshot:
+        local_preview = None
         if self._preview_sink is not None and source_file_id is not None:
-            sources_by_id = {
-                observation.observation_id: observation
-                for page in pages
-                for observation in page.observations
-            }
-            local_count = sum(1 for candidate in snapshot.candidates)
-            self._preview_sink.publish_local(
+            local_preview = self._preview_sink.publish_local(
                 source_file_id=source_file_id,
-                snapshot={
-                    "schema_version": "recognition-preview/1",
-                    "stage": "local_ready",
-                    "candidates": [
-                        {
-                            "candidate_id": candidate["candidate_id"],
-                            "kind": candidate["payload"].get("item_type") or candidate["payload"].get("coarse_type") or "unknown",
-                            "label": candidate["payload"].get("normalized_text") or candidate["payload"].get("raw_text") or "",
-                        }
-                        for candidate in snapshot.candidates
-                    ],
-                    "sources": [
-                        {
-                            "source_location_id": signal.source_location_id,
-                            "source_type": signal.source_type,
-                            "page_index": sources_by_id[signal.source_location_id].page_index,
-                            "raw_text": sources_by_id[signal.source_location_id].raw_text,
-                        }
-                        for signal in snapshot.source_signals
-                    ],
-                    "counts": {
-                        "local_resolved": local_count,
-                        "cache_resolved": 0,
-                        "vlm_pending": len(snapshot.required_visual_observation_ids),
-                        "vlm_resolved": 0,
-                        "unresolved": 0,
-                    },
-                },
+                snapshot=_recognition_preview_snapshot(
+                    snapshot, pages, stage="local_ready"
+                ),
             )
         required_visual_ids = frozenset(
             snapshot.required_visual_observation_ids
@@ -2475,6 +2516,8 @@ class CandidateAdvisor:
         coverage_entries = list(snapshot.coverage_entries)
         provider_call_ids = list(snapshot.provider_call_ids)
         source_signals = list(snapshot.source_signals)
+        cache_resolved = 0
+        vlm_resolved = 0
         observations = {
             observation.observation_id: observation
             for observation in selected_observations(pages)
@@ -2547,7 +2590,7 @@ class CandidateAdvisor:
                 outcome: VisualReviewOutcome,
                 evidence_context: VisualEvidenceContext | None = None,
             ) -> None:
-                nonlocal provider, visual_retry_available
+                nonlocal cache_resolved, provider, visual_retry_available, vlm_resolved
                 result = outcome.result
                 request_ids = outcome.provenance_request_ids
                 if uncertainty_mode != "production_uncertainty":
@@ -2577,6 +2620,10 @@ class CandidateAdvisor:
                     },
                     crop_bbox_pdf=crop_bbox_pdf,
                 )
+                if outcome.cache_hit:
+                    cache_resolved += len(accepted)
+                else:
+                    vlm_resolved += len(accepted)
                 accepted_by_page[page_position].extend(accepted)
                 rejection_sets = rejection_sets_by_page[page_position]
                 for rejected_item in rejected:
@@ -3256,7 +3303,7 @@ class CandidateAdvisor:
                     float(crop.x1),
                     float(crop.y1),
                 )
-                result, provider = self._review_result(
+                result, provider, cache_hit = self._review_result(
                     provider=provider,
                     route=route,
                     crop_png=crop_png,
@@ -3343,6 +3390,11 @@ class CandidateAdvisor:
                     "rejection_code": rejection_code,
                 }
                 provider_call_ids.append(result.request_id)
+                if rejection_code is None:
+                    if cache_hit:
+                        cache_resolved += 1
+                    else:
+                        vlm_resolved += 1
                 if route.candidate_index is not None:
                     candidate = dict(candidates[route.candidate_index])
                     if rejection_code is None and updated_payload is not None:
@@ -3387,7 +3439,7 @@ class CandidateAdvisor:
             if candidates_changed
             else snapshot.duplicate_relations
         )
-        return CandidateSnapshot(
+        reviewed_snapshot = CandidateSnapshot(
             candidates=tuple(candidates),
             coverage_entries=tuple(coverage_entries),
             expected_observation_ids=snapshot.expected_observation_ids,
@@ -3431,3 +3483,17 @@ class CandidateAdvisor:
             ),
             technical_requirements=technical_requirements,
         )
+        if local_preview is not None:
+            self._preview_sink.append_enrichment(
+                expected_head_version=local_preview.revision,
+                parent_revision_id=local_preview.id,
+                snapshot=_recognition_preview_snapshot(
+                    reviewed_snapshot,
+                    pages,
+                    stage="vlm_enriching",
+                    cache_resolved=cache_resolved,
+                    vlm_resolved=vlm_resolved,
+                    unresolved=len(localized_failure_stages),
+                ),
+            )
+        return reviewed_snapshot

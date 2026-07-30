@@ -75,10 +75,12 @@ class RecognitionPreviewService:
         existing = self.session.get(RecognitionPreviewHead, self.project_id)
         if existing is not None:
             return self.head()
+        normalized_snapshot = self._snapshot(snapshot)
         revision = RecognitionPreviewRevision(
             project_id=self.project_id, source_file_id=source_file_id, revision=1,
-            parent_revision_id=None, semantic_snapshot=self._snapshot(snapshot),
-            semantic_sha256=self._hash(self._snapshot(snapshot)), schema_version=str(snapshot["schema_version"]),
+            parent_revision_id=None, semantic_snapshot=normalized_snapshot,
+            semantic_sha256=self._hash(normalized_snapshot),
+            schema_version=normalized_snapshot["schema_version"],
         )
         self.session.add(revision)
         self.session.flush()
@@ -93,26 +95,28 @@ class RecognitionPreviewService:
         parent = self.session.get(RecognitionPreviewRevision, parent_revision_id)
         if parent is None:
             raise self.CasConflict("recognition preview parent is unavailable")
+        normalized_snapshot = self._snapshot(snapshot)
         revision = RecognitionPreviewRevision(
             project_id=self.project_id, source_file_id=parent.source_file_id,
             revision=parent.revision + 1, parent_revision_id=parent.id,
-            semantic_snapshot=self._snapshot(snapshot), semantic_sha256=self._hash(self._snapshot(snapshot)),
-            schema_version=str(snapshot["schema_version"]),
+            semantic_snapshot=normalized_snapshot,
+            semantic_sha256=self._hash(normalized_snapshot),
+            schema_version=normalized_snapshot["schema_version"],
         )
         try:
             with self.session.begin_nested():
                 self.session.add(revision)
                 self.session.flush()
+                outcome = self.session.execute(update(RecognitionPreviewHead).where(
+                    RecognitionPreviewHead.project_id == self.project_id,
+                    RecognitionPreviewHead.version == expected_head_version,
+                    RecognitionPreviewHead.revision_id == parent_revision_id,
+                    RecognitionPreviewHead.terminal_result_id.is_(None),
+                ).values(revision_id=revision.id, version=expected_head_version + 1))
+                if outcome.rowcount != 1:
+                    raise self.CasConflict("recognition preview compare-and-swap lost")
         except IntegrityError as error:
             raise self.CasConflict("recognition preview compare-and-swap lost") from error
-        outcome = self.session.execute(update(RecognitionPreviewHead).where(
-            RecognitionPreviewHead.project_id == self.project_id,
-            RecognitionPreviewHead.version == expected_head_version,
-            RecognitionPreviewHead.revision_id == parent_revision_id,
-            RecognitionPreviewHead.terminal_result_id.is_(None),
-        ).values(revision_id=revision.id, version=expected_head_version + 1))
-        if outcome.rowcount != 1:
-            raise self.CasConflict("recognition preview compare-and-swap lost")
         return revision
 
     def supersede_with_terminal(self, *, automatic_result_id: uuid.UUID) -> None:

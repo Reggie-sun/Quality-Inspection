@@ -140,7 +140,7 @@ class RecognitionPreviewCounts(BaseModel):
 class RecognitionPreviewSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str
+    schema_version: Literal["recognition-preview/1"]
     stage: Literal["local_ready", "vlm_enriching"]
     candidates: list[RecognitionPreviewCandidate]
     sources: list[RecognitionPreviewSource]

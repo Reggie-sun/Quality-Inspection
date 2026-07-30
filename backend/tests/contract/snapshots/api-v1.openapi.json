@@ -1433,6 +1433,7 @@
             "$ref": "#/components/schemas/RecognitionPreviewCounts"
           },
           "schema_version": {
+            "const": "recognition-preview/1",
             "title": "Schema Version",
             "type": "string"
           },

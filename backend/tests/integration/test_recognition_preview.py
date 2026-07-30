@@ -11,7 +11,10 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import event, func, inspect, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
@@ -98,6 +101,55 @@ def _migration_0012() -> ModuleType:
     return module
 
 
+def _alembic_config() -> Config:
+    backend = Path(__file__).resolve().parents[2]
+    return Config(str(backend / "alembic.ini"))
+
+
+def test_migration_0012_downgrade_normalizes_preview_processing_stages() -> None:
+    """Catches a 0012 downgrade that re-adds the old stage check before remapping rows."""
+    session = SessionLocal()
+    project_id = str(uuid.uuid4())
+    try:
+        session.add_all(
+            [
+                LogicalJob(
+                    project_id=project_id,
+                    logical_task_key="preview-stage-local",
+                    status="processing",
+                    processing_stage="local_ready",
+                ),
+                LogicalJob(
+                    project_id=project_id,
+                    logical_task_key="preview-stage-vlm",
+                    status="processing",
+                    processing_stage="vlm_enriching",
+                ),
+            ]
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    config = _alembic_config()
+    engine.dispose()
+    try:
+        command.downgrade(config, "0011")
+        with engine.connect() as connection:
+            stages = connection.execute(text(
+                "SELECT processing_stage FROM logical_jobs "
+                "WHERE project_id = :project_id ORDER BY logical_task_key"
+            ), {"project_id": project_id}).scalars().all()
+            assert stages == ["recognizing", "recognizing"]
+            constraints = inspect(connection).get_check_constraints("logical_jobs")
+            assert {
+                constraint["name"] for constraint in constraints
+            } >= {"ck_logical_jobs_processing_stage"}
+    finally:
+        command.upgrade(config, "head")
+        engine.dispose()
+
+
 def _preview_service(session: Session, project_id: uuid.UUID):
     # Import inside the test so every RED assertion remains collectible before
     # the PRT-6 production owner exists.
@@ -155,6 +207,29 @@ def test_local_snapshot_is_immutable_revision_one_and_the_canonical_head(
         b'"stage":"local_ready"}'
     ).hexdigest()
     assert preview.head().id == revision.id
+
+
+def test_preview_rejects_an_unknown_schema_version_before_persistence(
+    preview_context: PreviewContext,
+) -> None:
+    """Catches an immutable preview revision persisted with an unrecognized schema."""
+    project, source, _ = _seed_project(preview_context)
+    preview = _preview_service(preview_context.session, project.id)
+
+    with pytest.raises(ValidationError):
+        preview.publish_local(
+            source_file_id=source.id,
+            snapshot={**_local_snapshot(), "schema_version": "recognition-preview/999"},
+        )
+
+    assert preview_context.session.scalar(text(
+        "SELECT count(*) FROM recognition_preview_revisions "
+        "WHERE project_id = :project_id"
+    ), {"project_id": project.id}) == 0
+    assert preview_context.session.scalar(text(
+        "SELECT count(*) FROM recognition_preview_heads "
+        "WHERE project_id = :project_id"
+    ), {"project_id": project.id}) == 0
 
 
 def test_enrichment_creates_a_successor_without_changing_the_local_snapshot(
@@ -308,6 +383,105 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
         # PostgreSQL database. Step 1 destroys the whole disposable container;
         # this isolated evidence therefore remains safe and GREEN's immutable
         # revision trigger stays free to reject every DELETE.
+
+
+def test_terminal_cas_loss_rolls_back_its_unreachable_enrichment_revision() -> None:
+    """Catches an orphan revision when a losing caller commits after CasConflict."""
+    bootstrap = SessionLocal()
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    source = StoredFile(
+        resource_ref=f"asset://tests/{project.id}/source.pdf",
+        sha256="2" * 64,
+        size_bytes=1,
+        mime_type="application/pdf",
+    )
+    job = LogicalJob(
+        id=uuid.uuid4(),
+        project_id=str(project.id),
+        logical_task_key=f"preview-terminal-race:{project.id}",
+        status="succeeded",
+        processing_stage="preparing_review",
+    )
+    try:
+        bootstrap.add_all([project, source, job])
+        bootstrap.flush()
+        terminal = AutomaticResult(
+            project_id=project.id,
+            source_file_id=source.id,
+            logical_job_id=job.id,
+            inventory_ref=f"asset://tests/{project.id}/inventory.json",
+            candidates=[],
+            coverage={},
+            provider_call_ids=[],
+            schema_version="automatic-result/1",
+        )
+        bootstrap.add(terminal)
+        bootstrap.flush()
+        local = _preview_service(bootstrap, project.id).publish_local(
+            source_file_id=source.id,
+            snapshot=_local_snapshot(),
+        )
+        bootstrap.commit()
+
+        terminal_won = False
+
+        def commit_terminal_before_enrichment_head_cas(
+            _connection,
+            _cursor,
+            statement: str,
+            _parameters,
+            _context,
+            _executemany,
+        ) -> None:
+            nonlocal terminal_won
+            if terminal_won or not statement.lstrip().startswith(
+                "UPDATE recognition_preview_heads"
+            ) or "version" not in statement:
+                return
+            terminal_won = True
+            terminal_session = SessionLocal()
+            try:
+                _preview_service(terminal_session, project.id).supersede_with_terminal(
+                    automatic_result_id=terminal.id,
+                )
+                terminal_session.commit()
+            finally:
+                terminal_session.close()
+
+        event.listen(engine, "before_cursor_execute", commit_terminal_before_enrichment_head_cas)
+        loser = SessionLocal()
+        try:
+            service = _preview_service(loser, project.id)
+            with pytest.raises(service.CasConflict):
+                service.append_enrichment(
+                    expected_head_version=1,
+                    parent_revision_id=local.id,
+                    snapshot={**_local_snapshot(), "stage": "vlm_enriching"},
+                )
+            # A caller may handle the stale completion and still commit other work.
+            loser.commit()
+        finally:
+            loser.close()
+            event.remove(
+                engine,
+                "before_cursor_execute",
+                commit_terminal_before_enrichment_head_cas,
+            )
+
+        with engine.connect() as connection:
+            assert terminal_won
+            assert connection.scalar(text(
+                "SELECT count(*) FROM recognition_preview_revisions "
+                "WHERE project_id = :project_id"
+            ), {"project_id": project.id}) == 1
+            assert connection.scalar(text(
+                "SELECT count(*) FROM recognition_preview_revisions revision "
+                "LEFT JOIN recognition_preview_heads head ON head.revision_id = revision.id "
+                "WHERE revision.project_id = :project_id "
+                "AND revision.revision > 1 AND head.revision_id IS NULL"
+            ), {"project_id": project.id}) == 0
+    finally:
+        bootstrap.close()
 
 
 def test_postgres_rejects_direct_preview_revision_update_and_delete(

@@ -15,9 +15,9 @@ from sqlalchemy.orm import Session
 from app.candidates.advisor import CandidateAdvisorFailure
 from app.candidates.models import AutomaticResult
 from app.config import Settings
-from app.db import engine
+from app.db import SessionLocal, engine
 from app.errors.models import ErrorRecord
-from app.jobs.idempotency import LogicalJob
+from app.jobs.idempotency import LogicalJob, set_processing_stage
 from app.processing import tasks
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.processing.tasks import inventory_project
@@ -337,7 +337,7 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
             *,
             source_file_id: uuid.UUID,
             snapshot: Mapping[str, object],
-        ) -> None:
+        ) -> object:
             assert set(snapshot) == {
                 "schema_version",
                 "stage",
@@ -370,6 +370,20 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
                 for source in sources
             )
             local_submissions.append((source_file_id, snapshot))
+            return type("PreviewRevision", (), {
+                "id": uuid.UUID("00000000-0000-0000-0000-000000000701"),
+                "revision": 1,
+            })()
+
+        def append_enrichment(
+            self,
+            *,
+            expected_head_version: int,
+            parent_revision_id: uuid.UUID,
+            snapshot: Mapping[str, object],
+        ) -> object:
+            del expected_head_version, parent_revision_id, snapshot
+            return object()
 
         def supersede_with_terminal(
             self,
@@ -381,7 +395,9 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
     original_advisor = tasks.CandidateAdvisor
 
     def recording_advisor(*args, **kwargs):
-        assert kwargs["preview_sink"] is preview_sinks[0]
+        preview_sink = kwargs["preview_sink"]
+        assert isinstance(preview_sink, tasks._VisibleRecognitionPreviewSink)
+        assert preview_sink._project_id == project.id
         return original_advisor(*args, **kwargs)
 
     monkeypatch.setattr(tasks, "RecognitionPreviewService", RecordingPreviewService)
@@ -399,12 +415,147 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
         logical_task_key,
     )
 
-    assert len(preview_sinks) == 1
+    assert len(preview_sinks) == 2
     assert local_submissions and local_submissions[0][0] == source.id
     assert len(local_submissions) == 1
     assert len(terminal_result_ids) == 1
     assert first_result == retry_result
     assert external_calls == []
+
+
+def test_task_preview_composition_commits_each_preview_before_provider_stage() -> None:
+    """Catches task-owned preview writes hidden from the next-stage Session."""
+    bootstrap = SessionLocal()
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    source = StoredFile(
+        resource_ref=f"asset://tests/{project.id}/preview-source.pdf",
+        sha256="3" * 64,
+        size_bytes=1,
+        mime_type="application/pdf",
+    )
+    logical_task_key = f"preview-visible:{project.id}"
+    job = LogicalJob(
+        project_id=str(project.id),
+        logical_task_key=logical_task_key,
+        status="processing",
+        processing_stage="recognizing",
+    )
+    snapshot = {
+        "schema_version": "recognition-preview/1",
+        "stage": "local_ready",
+        "candidates": [
+            {"candidate_id": "candidate-1", "kind": "thread", "label": "M6"}
+        ],
+        "sources": [
+            {
+                "source_location_id": "source-1",
+                "source_type": "native",
+                "page_index": 0,
+                "raw_text": "M6",
+            }
+        ],
+        "counts": {
+            "local_resolved": 1,
+            "cache_resolved": 0,
+            "vlm_pending": 0,
+            "vlm_resolved": 0,
+            "unresolved": 0,
+        },
+    }
+    try:
+        bootstrap.add_all([project, source, job])
+        bootstrap.commit()
+        sink = tasks._VisibleRecognitionPreviewSink(
+            SessionLocal,
+            project_id=project.id,
+            logical_task_key=logical_task_key,
+        )
+        local = sink.publish_local(source_file_id=source.id, snapshot=snapshot)
+
+        # This is the provider-stage callback's independent Session.
+        observer = SessionLocal()
+        try:
+            from app.processing.recognition_preview import RecognitionPreviewService
+
+            observed_local = RecognitionPreviewService(
+                observer, project_id=project.id
+            ).head()
+            assert observed_local.id == local.id
+            assert observed_local.revision == 1
+            observed_job = observer.scalar(
+                select(LogicalJob).where(
+                    LogicalJob.project_id == str(project.id),
+                    LogicalJob.logical_task_key == logical_task_key,
+                )
+            )
+            assert observed_job is not None
+            assert observed_job.processing_stage == "local_ready"
+        finally:
+            observer.close()
+
+        enriched = sink.append_enrichment(
+            expected_head_version=local.revision,
+            parent_revision_id=local.id,
+            snapshot={
+                **snapshot,
+                "stage": "vlm_enriching",
+                "counts": {**snapshot["counts"], "vlm_resolved": 1},
+            },
+        )
+        observer = SessionLocal()
+        try:
+            from app.processing.recognition_preview import RecognitionPreviewService
+
+            observed_enriched = RecognitionPreviewService(
+                observer, project_id=project.id
+            ).head()
+            assert observed_enriched.id == enriched.id
+            assert observed_enriched.revision == 2
+            observed_job = observer.scalar(
+                select(LogicalJob).where(
+                    LogicalJob.project_id == str(project.id),
+                    LogicalJob.logical_task_key == logical_task_key,
+                )
+            )
+            assert observed_job is not None
+            assert observed_job.processing_stage == "vlm_enriching"
+        finally:
+            observer.close()
+
+        stage_session = SessionLocal()
+        try:
+            set_processing_stage(
+                stage_session,
+                job_id=job.id,
+                stage="recognizing",
+            )
+        finally:
+            stage_session.close()
+        with pytest.raises(tasks.LogicalJobStateError):
+            sink.append_enrichment(
+                expected_head_version=enriched.revision,
+                parent_revision_id=enriched.id,
+                snapshot={**snapshot, "stage": "vlm_enriching"},
+            )
+        observer = SessionLocal()
+        try:
+            from app.processing.recognition_preview import RecognitionPreviewService
+
+            assert RecognitionPreviewService(
+                observer, project_id=project.id
+            ).head().id == enriched.id
+            observed_job = observer.scalar(
+                select(LogicalJob).where(
+                    LogicalJob.project_id == str(project.id),
+                    LogicalJob.logical_task_key == logical_task_key,
+                )
+            )
+            assert observed_job is not None
+            assert observed_job.processing_stage == "recognizing"
+        finally:
+            observer.close()
+    finally:
+        bootstrap.close()
 
 
 def test_worker_rejects_corrupt_frozen_pair_before_provider_construction(

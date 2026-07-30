@@ -58,6 +58,10 @@ def downgrade() -> None:
     op.drop_table("recognition_preview_revisions")
     op.execute("DROP FUNCTION forbid_recognition_preview_revision_mutation()")
     op.drop_constraint("ck_logical_jobs_processing_stage", "logical_jobs", type_="check")
+    op.execute(
+        "UPDATE logical_jobs SET processing_stage = 'recognizing' "
+        "WHERE processing_stage IN ('local_ready', 'vlm_enriching')"
+    )
     op.create_check_constraint(
         "ck_logical_jobs_processing_stage",
         "logical_jobs",

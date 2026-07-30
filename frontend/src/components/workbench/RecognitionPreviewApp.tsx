@@ -19,10 +19,17 @@ export function RecognitionPreviewApp({
 
   useEffect(() => {
     let active = true;
+    setPreview(undefined);
     const path = `/api/v1/projects/${projectId}/recognition-preview`;
     const load = () => getJson<RecognitionPreview>(path)
       .then((value) => {
-        if (active) setPreview(value);
+        if (active) {
+          setPreview((current) => (
+            current === undefined || value.revision >= current.revision
+              ? value
+              : current
+          ));
+        }
       })
       .catch(() => undefined);
     void load();

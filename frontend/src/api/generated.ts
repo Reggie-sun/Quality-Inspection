@@ -564,8 +564,11 @@ export interface components {
       /** Candidates */
       candidates: components["schemas"]["RecognitionPreviewCandidate"][];
       counts: components["schemas"]["RecognitionPreviewCounts"];
-      /** Schema Version */
-      schema_version: string;
+      /**
+       * Schema Version
+       * @constant
+       */
+      schema_version: "recognition-preview/1";
       /** Sources */
       sources: components["schemas"]["RecognitionPreviewSource"][];
       /**

@@ -19,6 +19,7 @@ from app.candidates.advisor import (
     VisualExecutionIdentity,
 )
 from app.candidates.coverage import CoverageEntry
+from app.candidates.confidence import CandidateSourceSignal
 from app.candidates.duplicates import DuplicateRelation
 from app.candidates.local_symbol_resolution import LocalResolution
 from app.candidates.symbol_escalation_planner import (
@@ -267,13 +268,17 @@ class RecordingPreviewSink:
         self.local_submissions: list[
             tuple[Mapping[str, object], uuid.UUID]
         ] = []
+        self.enrichment_submissions: list[
+            tuple[int, uuid.UUID, Mapping[str, object]]
+        ] = []
+        self.events: list[str] = []
 
     def publish_local(
         self,
         *,
         snapshot: Mapping[str, object],
         source_file_id: uuid.UUID,
-    ) -> None:
+    ) -> SimpleNamespace:
         assert not isinstance(snapshot, CandidateSnapshot)
         assert set(snapshot) == {
             "schema_version",
@@ -309,6 +314,23 @@ class RecordingPreviewSink:
             for source in sources
         )
         self.local_submissions.append((snapshot, source_file_id))
+        self.events.append("local")
+        return SimpleNamespace(
+            id=uuid.UUID("00000000-0000-0000-0000-000000000602"),
+            revision=1,
+        )
+
+    def append_enrichment(
+        self,
+        *,
+        expected_head_version: int,
+        parent_revision_id: uuid.UUID,
+        snapshot: Mapping[str, object],
+    ) -> None:
+        self.enrichment_submissions.append(
+            (expected_head_version, parent_revision_id, snapshot)
+        )
+        self.events.append("enrichment")
 
 
 def _normalized_preview_snapshot(
@@ -562,6 +584,7 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
 ) -> None:
     """Catches Advisor enrichment that reaches a Provider before persisting local facts."""
     source, pages, snapshot = drawing_fixture(tmp_path, raw_text="Ra 3.2")
+    snapshot = replace(snapshot, provider_call_ids=("inbound-ocr-call",))
     sink = RecordingPreviewSink()
     source_file_id = uuid.UUID("00000000-0000-0000-0000-000000000601")
     expected_preview = _normalized_preview_snapshot(snapshot, pages)
@@ -569,6 +592,7 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
     class ProviderAfterLocal(RecordingVisionProvider):
         def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
             assert sink.local_submissions == [(expected_preview, source_file_id)]
+            assert sink.events == ["local"]
             return super().review_candidate(image, prompt)
 
     provider = ProviderAfterLocal(advisor_payload("Ra 3.2", "roughness", "Ra 3.2", True))
@@ -608,10 +632,141 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
     ]
     assert submitted_snapshot["counts"]["local_resolved"] == 1
     assert submitted_snapshot["counts"]["vlm_pending"] == 0
+    assert sink.events == ["local", "enrichment"]
+    assert sink.enrichment_submissions == [
+        (
+            1,
+            uuid.UUID("00000000-0000-0000-0000-000000000602"),
+            {
+                **_normalized_preview_snapshot(reviewed, pages),
+                "stage": "vlm_enriching",
+                "counts": {
+                    "local_resolved": 1,
+                    "cache_resolved": 0,
+                    "vlm_pending": 0,
+                    "vlm_resolved": 1,
+                    "unresolved": 0,
+                },
+            },
+        )
+    ]
     assert "provider_call_ids" not in submitted_snapshot
     assert "resource_ref" not in submitted_snapshot
     assert len(provider.images) == 1
-    assert reviewed.provider_call_ids == ("fixture-qwen-request-1",)
+    assert reviewed.provider_call_ids == (
+        "inbound-ocr-call",
+        "fixture-qwen-request-1",
+    )
+
+
+def test_preview_enrichment_projects_visual_sources_without_provider_data(
+    tmp_path: Path,
+) -> None:
+    """Catches visual source projection through a text-only observation map."""
+    _, pages, snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    enriched = replace(
+        snapshot,
+        provider_call_ids=("inbound-ocr-call",),
+        source_signals=(
+            *snapshot.source_signals,
+            CandidateSourceSignal(
+                source_location_id=visual.observation_id,
+                source_type="visual",
+                normalized_value=None,
+            ),
+        ),
+    )
+
+    payload = advisor_module._recognition_preview_snapshot(
+        enriched,
+        pages,
+        stage="vlm_enriching",
+    )
+
+    visual_source = next(
+        source for source in payload["sources"]
+        if source["source_location_id"] == visual.observation_id
+    )
+    assert visual_source == {
+        "source_location_id": visual.observation_id,
+        "source_type": "visual",
+        "page_index": visual.page_index,
+        "raw_text": "10",
+    }
+    assert payload["counts"] == {
+        "local_resolved": len(enriched.candidates),
+        "cache_resolved": 0,
+        "vlm_pending": 0,
+        "vlm_resolved": 0,
+        "unresolved": 0,
+    }
+
+
+def test_preview_enrichment_retains_localized_provider_failure_count(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches preview counts inferred from filtered review IDs after a VLM failure."""
+    source, pages, snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    sink = RecordingPreviewSink()
+    project_id = uuid.UUID("00000000-0000-0000-0000-000000000603")
+
+    monkeypatch.setattr(
+        advisor_module,
+        "check_deferred_vision_preflight",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_routing_decisions",
+        lambda _self, **kwargs: {
+            decision.visual_observation_id: "d" * 64
+            for decision in kwargs["decisions"]
+        },
+    )
+
+    def localized_transport_failure(_self: CandidateAdvisor, **_kwargs: object) -> object:
+        raise CandidateAdvisorFailure(
+            "fixture provider transport failure",
+            failure_category="transport",
+        )
+
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_visual_review_result",
+        localized_transport_failure,
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(project_id),
+        provider_factory=lambda _settings: object(),
+        preview_sink=sink,
+        symbol_session_factory=lambda: pytest.fail("unexpected persistence Session"),
+        require_symbol_persistence=True,
+    )
+
+    reviewed = advisor.review(
+        source,
+        pages,
+        snapshot,
+        source_file_id=project_id,
+    )
+
+    assert reviewed.completeness == "partial_review_required"
+    assert visual.observation_id not in reviewed.required_visual_observation_ids
+    assert sink.enrichment_submissions[0][2]["counts"] == {
+        "local_resolved": len(reviewed.candidates),
+        "cache_resolved": 0,
+        "vlm_pending": 0,
+        "vlm_resolved": 0,
+        "unresolved": 1,
+    }
 
 
 def test_production_locally_resolved_visual_skips_provider(
