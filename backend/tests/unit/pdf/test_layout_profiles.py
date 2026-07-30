@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import math
 
 import pytest
 
-from app.pdf.layout_profiles import match_welli_layout_profile
-from tests.helpers.welli_layout_fixture import make_welli_layout_fixture
+from app.pdf.layout_profiles import (
+    match_welli_layout_profile,
+    welli_same_page_watermark_observation_ids,
+)
+from tests.helpers.welli_layout_fixture import (
+    PROFILE_PAGE_SIZES_MM,
+    make_welli_layout_fixture,
+    welli_text_observation,
+)
 
 
 def _match(fixture):
@@ -160,3 +168,366 @@ def test_input_order_does_not_change_match() -> None:
     )
 
     assert _match(reordered) == _match(fixture)
+
+
+def _fixture_with_extra_observations(
+    observations,
+    *,
+    profile_id: str = "welli-a3-landscape/1",
+):
+    fixture = make_welli_layout_fixture(profile_id=profile_id)
+    return replace(
+        fixture,
+        observations=fixture.observations + tuple(observations),
+    )
+
+
+def _assignment_by_id(fixture):
+    match = _match(fixture)
+    assert match is not None
+    return match, {
+        assignment.observation_id: assignment
+        for assignment in match.assignments
+    }
+
+
+@pytest.mark.parametrize(
+    (
+        "observation_id",
+        "text",
+        "bbox_mm",
+        "expected_region",
+        "expected_role",
+        "expected_cell_id",
+    ),
+    (
+        (
+            "native:title-approval",
+            "张三",
+            (247.0, 246.0, 260.0, 250.0),
+            "title_block",
+            "title_approval_context",
+            "title-approval-context",
+        ),
+        (
+            "native:title-value",
+            "260508",
+            (340.0, 246.0, 355.0, 250.0),
+            "title_block",
+            "title_metadata_value",
+            "title-metadata-value",
+        ),
+        (
+            "native:revision-header",
+            "更改描述",
+            (340.0, 6.0, 360.0, 9.0),
+            "revision_table",
+            "revision_header",
+            "revision-header",
+        ),
+        (
+            "native:revision-marker-1",
+            "1",
+            (327.0, 12.0, 331.0, 16.0),
+            "revision_table",
+            "revision_marker",
+            "revision-marker-1",
+        ),
+        (
+            "native:revision-description-1",
+            "修订",
+            (340.0, 12.0, 355.0, 16.0),
+            "revision_table",
+            "revision_description",
+            "revision-description-1",
+        ),
+        (
+            "native:archive-label",
+            "描图",
+            (2.0, 208.0, 14.0, 211.0),
+            "archive_strip",
+            "archive_label",
+            "archive-label-2",
+        ),
+        (
+            "native:archive-record",
+            "王工",
+            (2.0, 214.0, 14.0, 218.0),
+            "archive_strip",
+            "archive_record",
+            "archive-record-2",
+        ),
+        (
+            "native:page-frame-top-1",
+            "1",
+            (103.0, 1.0, 107.0, 4.0),
+            "page_frame",
+            "page_frame_number",
+            "page-frame-top-1",
+        ),
+    ),
+)
+def test_native_lines_receive_stable_cell_assignments(
+    observation_id: str,
+    text: str,
+    bbox_mm: tuple[float, float, float, float],
+    expected_region: str,
+    expected_role: str,
+    expected_cell_id: str,
+) -> None:
+    observation = welli_text_observation(
+        observation_id=observation_id,
+        text=text,
+        bbox_mm=bbox_mm,
+        page_size_mm=PROFILE_PAGE_SIZES_MM["welli-a3-landscape/1"],
+    )
+    _, assignments = _assignment_by_id(
+        _fixture_with_extra_observations((observation,))
+    )
+
+    assignment = assignments[observation_id]
+    assert assignment.region_id == expected_region
+    assert assignment.cell_role == expected_role
+    assert assignment.cell_id == expected_cell_id
+    assert assignment.assignment_evidence_codes == (
+        "bbox_inside_role",
+        "center_in_role",
+        "horizontal_direction",
+        "single_role",
+    )
+
+
+def test_revision_marker_and_description_have_distinct_row_identity() -> None:
+    page_size = PROFILE_PAGE_SIZES_MM["welli-a3-landscape/1"]
+    observations = (
+        welli_text_observation(
+            observation_id="native:marker-1",
+            text="1",
+            bbox_mm=(327.0, 12.0, 331.0, 16.0),
+            page_size_mm=page_size,
+        ),
+        welli_text_observation(
+            observation_id="native:description-1",
+            text="change",
+            bbox_mm=(340.0, 12.0, 355.0, 16.0),
+            page_size_mm=page_size,
+        ),
+    )
+    _, assignments = _assignment_by_id(
+        _fixture_with_extra_observations(observations)
+    )
+
+    assert assignments["native:marker-1"].cell_id == "revision-marker-1"
+    assert (
+        assignments["native:description-1"].cell_id
+        == "revision-description-1"
+    )
+
+
+@pytest.mark.parametrize(
+    "bbox_mm",
+    (
+        (314.0, 246.0, 316.0, 250.0),
+        (334.5, 12.0, 337.0, 16.0),
+    ),
+)
+def test_bbox_crossing_two_roles_is_not_assigned(
+    bbox_mm: tuple[float, float, float, float],
+) -> None:
+    observation = welli_text_observation(
+        observation_id="native:cross-role",
+        text="25",
+        bbox_mm=bbox_mm,
+        page_size_mm=PROFILE_PAGE_SIZES_MM["welli-a3-landscape/1"],
+    )
+    _, assignments = _assignment_by_id(
+        _fixture_with_extra_observations((observation,))
+    )
+
+    assert observation.observation_id not in assignments
+
+
+def test_boundary_distance_inside_tolerance_is_preserved_as_evidence() -> None:
+    observation = welli_text_observation(
+        observation_id="native:edge-inside",
+        text="value",
+        bbox_mm=(405.5, 246.0, 414.5, 250.0),
+        page_size_mm=PROFILE_PAGE_SIZES_MM["welli-a3-landscape/1"],
+    )
+    _, assignments = _assignment_by_id(
+        _fixture_with_extra_observations((observation,))
+    )
+
+    assert assignments[observation.observation_id].boundary_distance_mm == (
+        pytest.approx(0.5)
+    )
+
+
+def test_negative_boundary_distance_does_not_create_assignment() -> None:
+    observation = welli_text_observation(
+        observation_id="native:outside-role",
+        text="value",
+        bbox_mm=(406.0, 246.0, 415.2, 250.0),
+        page_size_mm=PROFILE_PAGE_SIZES_MM["welli-a3-landscape/1"],
+    )
+    _, assignments = _assignment_by_id(
+        _fixture_with_extra_observations((observation,))
+    )
+
+    assert observation.observation_id not in assignments
+
+
+@pytest.mark.parametrize(
+    ("source_type", "observation_level", "angle", "parent_region_id"),
+    (
+        ("native", "span", 0.0, "native:parent"),
+        ("ocr", "region", 0.0, None),
+        ("native", "line", 2.1, None),
+        ("native", "line", 0.0, "native:unexpected-parent"),
+    ),
+)
+def test_non_line_or_conflicting_lineage_is_not_assigned(
+    source_type: str,
+    observation_level: str,
+    angle: float,
+    parent_region_id: str | None,
+) -> None:
+    observation = welli_text_observation(
+        observation_id="source:not-assignable",
+        text="value",
+        bbox_mm=(340.0, 246.0, 355.0, 250.0),
+        page_size_mm=PROFILE_PAGE_SIZES_MM["welli-a3-landscape/1"],
+        source_type=source_type,
+        observation_level=observation_level,
+        direction_angle_degrees=angle,
+        parent_region_id=parent_region_id,
+    )
+    _, assignments = _assignment_by_id(
+        _fixture_with_extra_observations((observation,))
+    )
+
+    assert observation.observation_id not in assignments
+
+
+def test_assignment_order_is_canonical() -> None:
+    page_size = PROFILE_PAGE_SIZES_MM["welli-a3-landscape/1"]
+    observations = (
+        welli_text_observation(
+            observation_id="native:z",
+            text="z",
+            bbox_mm=(340.0, 246.0, 355.0, 250.0),
+            page_size_mm=page_size,
+        ),
+        welli_text_observation(
+            observation_id="native:a",
+            text="a",
+            bbox_mm=(247.0, 246.0, 260.0, 250.0),
+            page_size_mm=page_size,
+        ),
+    )
+    fixture = _fixture_with_extra_observations(observations)
+    reordered = replace(
+        fixture,
+        observations=tuple(reversed(fixture.observations)),
+    )
+
+    assert _match(fixture) == _match(reordered)
+    assert tuple(
+        assignment.observation_id
+        for assignment in _match(fixture).assignments  # type: ignore[union-attr]
+    ) == tuple(
+        sorted(
+            assignment.observation_id
+            for assignment in _match(fixture).assignments  # type: ignore[union-attr]
+        )
+    )
+
+
+def _watermark_observations(
+    *,
+    x_positions: tuple[float, ...] = (50.0, 150.0, 250.0),
+    y_positions: tuple[float, ...] = (40.0, 120.0, 200.0),
+    text: str = "伟立机器人",
+    angle: float = -30.0,
+    source_level: str = "line",
+):
+    page_size = PROFILE_PAGE_SIZES_MM["welli-a3-landscape/1"]
+    observations = []
+    for row, y in enumerate(y_positions):
+        for column, x in enumerate(x_positions):
+            observations.append(
+                welli_text_observation(
+                    observation_id=f"native:watermark:{row}:{column}:{source_level}",
+                    text=text,
+                    bbox_mm=(x - 8.0, y - 2.0, x + 8.0, y + 2.0),
+                    page_size_mm=page_size,
+                    direction_angle_degrees=angle,
+                    direction=(math.cos(math.radians(angle)), math.sin(math.radians(angle))),
+                    observation_level=source_level,
+                    parent_region_id=(
+                        f"native:watermark:{row}:{column}:line"
+                        if source_level == "span"
+                        else None
+                    ),
+                )
+            )
+    return tuple(observations)
+
+
+def _watermark_ids(observations):
+    fixture = _fixture_with_extra_observations(observations)
+    match = _match(fixture)
+    assert match is not None
+    return welli_same_page_watermark_observation_ids(
+        profile_match=match,
+        observations=fixture.observations,
+    )
+
+
+def test_same_page_watermark_requires_exact_profile_grid() -> None:
+    observations = _watermark_observations()
+
+    assert _watermark_ids(observations) == frozenset(
+        observation.observation_id for observation in observations
+    )
+
+
+@pytest.mark.parametrize(
+    "observations",
+    (
+        _watermark_observations()[:-1],
+        _watermark_observations(text="伟立机器人有限公司"),
+        _watermark_observations(angle=0.0),
+        _watermark_observations(angle=-27.0),
+        _watermark_observations(
+            x_positions=(50.0,),
+            y_positions=tuple(20.0 + index * 20.0 for index in range(9)),
+        ),
+        _watermark_observations(
+            x_positions=(10.0, 110.0, 210.0, 310.0, 410.0),
+            y_positions=(40.0, 120.0),
+        ),
+        _watermark_observations(x_positions=(50.0, 120.0, 190.0)),
+    ),
+)
+def test_same_page_watermark_rejects_incomplete_or_wrong_grid(
+    observations,
+) -> None:
+    assert _watermark_ids(observations) == frozenset()
+
+
+def test_line_and_span_sources_do_not_double_count_watermarks() -> None:
+    lines = _watermark_observations()[:-1]
+    spans = _watermark_observations(source_level="span")
+
+    assert _watermark_ids(lines + spans) == frozenset()
+
+
+def test_watermark_requires_profile_match() -> None:
+    assert (
+        welli_same_page_watermark_observation_ids(
+            profile_match=None,
+            observations=_watermark_observations(),
+        )
+        == frozenset()
+    )

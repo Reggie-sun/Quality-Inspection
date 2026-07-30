@@ -5,7 +5,11 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from app.pdf.schemas import LayoutProfileMatch, TextObservation
+from app.pdf.schemas import (
+    LayoutProfileMatch,
+    ObservationRegionAssignment,
+    TextObservation,
+)
 
 
 MM_PER_PDF_POINT = 25.4 / 72.0
@@ -15,6 +19,11 @@ RULE_VERSION = "p0-a2-welli-layout/1"
 _AXIS_TOLERANCE_MM = 0.05
 _POSITION_CLUSTER_TOLERANCE_MM = 0.1
 _MIN_AXIS_SEGMENT_MM = 1.0
+_HORIZONTAL_ASSIGNMENT_ANGLE_TOLERANCE_DEGREES = 2.0
+_WATERMARK_ANGLE_DEGREES = -30.0
+_WATERMARK_ANGLE_TOLERANCE_DEGREES = 2.0
+_WATERMARK_SPACING_TOLERANCE_MM = 2.0
+_MIN_WATERMARK_NATIVE_LINE_COUNT = 9
 
 _TITLE_GRID_X_MM = (
     0.0,
@@ -109,11 +118,22 @@ class _SegmentMm:
         return abs(self.y1 - self.y0) <= _AXIS_TOLERANCE_MM
 
 
+@dataclass(frozen=True)
+class _RoleRectMm:
+    region_id: str
+    cell_role: str
+    cell_id: str
+    box: tuple[float, float, float, float]
+    expected_text: str | None = None
+    center_x_target_mm: float | None = None
+
+
 _PROFILES = (
     _Profile("welli-a3-landscape/1", 420.0, 297.0, (100.0, 80.0)),
     _Profile("welli-a4-portrait/1", 210.0, 297.0, (65.0, 80.0)),
     _Profile("welli-a3-portrait/1", 297.0, 420.0, (100.0, 90.0)),
 )
+_PROFILE_BY_ID = {profile.profile_id: profile for profile in _PROFILES}
 
 
 def _point_xy(point: Any) -> tuple[float, float]:
@@ -328,6 +348,225 @@ def _page_profile(
     return matches[0] if len(matches) == 1 else None
 
 
+def _role_rectangles(profile: _Profile) -> tuple[_RoleRectMm, ...]:
+    title_x0, title_y0, title_x1, title_y1 = profile.title_box
+    revision_x0, revision_y0, revision_x1, _ = profile.revision_box
+    archive_x0, archive_y0, archive_x1, _ = profile.archive_box
+    roles = [
+        _RoleRectMm(
+            "title_block",
+            "title_approval_context",
+            "title-approval-context",
+            (title_x0, title_y0, title_x0 + 80.0, title_y1),
+        ),
+        _RoleRectMm(
+            "title_block",
+            "title_metadata_value",
+            "title-metadata-value",
+            (title_x0 + 80.0, title_y0, title_x1, title_y1),
+        ),
+        _RoleRectMm(
+            "revision_table",
+            "revision_header",
+            "revision-header",
+            (revision_x0, revision_y0, revision_x1, revision_y0 + 5.0),
+        ),
+    ]
+    for row_index, row_y0 in enumerate((5.0, 15.0, 25.0), start=1):
+        roles.extend(
+            (
+                _RoleRectMm(
+                    "revision_table",
+                    "revision_marker",
+                    f"revision-marker-{row_index}",
+                    (
+                        revision_x0,
+                        revision_y0 + row_y0,
+                        revision_x0 + 10.0,
+                        revision_y0 + row_y0 + 10.0,
+                    ),
+                ),
+                _RoleRectMm(
+                    "revision_table",
+                    "revision_description",
+                    f"revision-description-{row_index}",
+                    (
+                        revision_x0 + 10.0,
+                        revision_y0 + row_y0,
+                        revision_x1,
+                        revision_y0 + row_y0 + 10.0,
+                    ),
+                ),
+            )
+        )
+    archive_rows = tuple(zip(_ARCHIVE_GRID_Y_MM, _ARCHIVE_GRID_Y_MM[1:]))
+    for row_index, (local_y0, local_y1) in enumerate(archive_rows):
+        record_index = row_index // 2 + 1
+        if row_index % 2 == 0:
+            cell_role = "archive_label"
+            cell_id = f"archive-label-{record_index}"
+        else:
+            cell_role = "archive_record"
+            cell_id = f"archive-record-{record_index}"
+        roles.append(
+            _RoleRectMm(
+                "archive_strip",
+                cell_role,
+                cell_id,
+                (
+                    archive_x0,
+                    archive_y0 + local_y0,
+                    archive_x1,
+                    archive_y0 + local_y1,
+                ),
+            )
+        )
+    for band, band_y0, band_y1 in (
+        ("top", 0.0, 5.0),
+        ("bottom", profile.height_mm - 5.0, profile.height_mm),
+    ):
+        roles.extend(
+            (
+                _RoleRectMm(
+                    "page_frame",
+                    "page_frame_number",
+                    f"page-frame-{band}-1",
+                    (0.0, band_y0, profile.width_mm / 2.0, band_y1),
+                    expected_text="1",
+                    center_x_target_mm=profile.width_mm / 4.0,
+                ),
+                _RoleRectMm(
+                    "page_frame",
+                    "page_frame_number",
+                    f"page-frame-{band}-2",
+                    (
+                        profile.width_mm / 2.0,
+                        band_y0,
+                        profile.width_mm,
+                        band_y1,
+                    ),
+                    expected_text="2",
+                    center_x_target_mm=profile.width_mm * 3.0 / 4.0,
+                ),
+            )
+        )
+    return tuple(roles)
+
+
+def _bbox_mm(observation: TextObservation) -> tuple[float, float, float, float]:
+    return tuple(  # type: ignore[return-value]
+        float(value) * MM_PER_PDF_POINT for value in observation.bbox_pdf
+    )
+
+
+def _horizontal_angle_matches(angle_degrees: float) -> bool:
+    normalized = (angle_degrees + 180.0) % 360.0 - 180.0
+    return abs(normalized) <= _HORIZONTAL_ASSIGNMENT_ANGLE_TOLERANCE_DEGREES
+
+
+def _role_boundary_distance(
+    bbox: tuple[float, float, float, float],
+    role: _RoleRectMm,
+) -> float:
+    x0, y0, x1, y1 = bbox
+    role_x0, role_y0, role_x1, role_y1 = role.box
+    return min(
+        x0 - role_x0,
+        y0 - role_y0,
+        role_x1 - x1,
+        role_y1 - y1,
+    )
+
+
+def _assignment_for_observation(
+    *,
+    profile: _Profile,
+    page_index: int,
+    observation: TextObservation,
+) -> ObservationRegionAssignment | None:
+    if (
+        observation.page_index != page_index
+        or observation.source_type != "native"
+        or observation.observation_level != "line"
+        or observation.parent_region_id is not None
+        or not _horizontal_angle_matches(observation.direction_angle_degrees)
+    ):
+        return None
+    bbox = _bbox_mm(observation)
+    x0, y0, x1, y1 = bbox
+    center_x = (x0 + x1) / 2.0
+    center_y = (y0 + y1) / 2.0
+    compact_text = _compact_text(observation.normalized_text)
+    matches: list[tuple[_RoleRectMm, float]] = []
+    for role in _role_rectangles(profile):
+        role_x0, role_y0, role_x1, role_y1 = role.box
+        if not (
+            role_x0 <= center_x <= role_x1
+            and role_y0 <= center_y <= role_y1
+        ):
+            continue
+        boundary_distance = _role_boundary_distance(bbox, role)
+        if boundary_distance < 0.0:
+            continue
+        if role.expected_text is not None:
+            if compact_text != role.expected_text:
+                continue
+            if role.center_x_target_mm is None or (
+                abs(center_x - role.center_x_target_mm) > GRID_TOLERANCE_MM
+            ):
+                continue
+        matches.append((role, boundary_distance))
+    if len(matches) != 1:
+        return None
+    role, boundary_distance = matches[0]
+    return ObservationRegionAssignment(
+        observation_id=observation.observation_id,
+        page_index=page_index,
+        profile_id=profile.profile_id,
+        region_id=role.region_id,  # type: ignore[arg-type]
+        cell_role=role.cell_role,
+        cell_id=role.cell_id,
+        assignment_evidence_codes=(
+            "bbox_inside_role",
+            "center_in_role",
+            "horizontal_direction",
+            "single_role",
+        ),
+        boundary_distance_mm=boundary_distance,
+        rule_version=RULE_VERSION,
+    )
+
+
+def _observation_assignments(
+    *,
+    profile: _Profile,
+    page_index: int,
+    observations: Sequence[TextObservation],
+) -> tuple[ObservationRegionAssignment, ...]:
+    assignments = tuple(
+        assignment
+        for observation in observations
+        if (
+            assignment := _assignment_for_observation(
+                profile=profile,
+                page_index=page_index,
+                observation=observation,
+            )
+        )
+        is not None
+    )
+    return tuple(
+        sorted(
+            assignments,
+            key=lambda item: (
+                item.observation_id,
+                item.region_id,
+                item.cell_id,
+            ),
+        )
+    )
+
+
 def match_welli_layout_profile(
     *,
     page_index: int,
@@ -384,9 +623,39 @@ def match_welli_layout_profile(
         match_state="high_confidence",
         geometry_evidence_codes=tuple(sorted(geometry_evidence)),
         text_anchor_evidence_codes=text_anchor_evidence,
-        assignments=(),
+        assignments=_observation_assignments(
+            profile=profile,
+            page_index=page_index,
+            observations=observations,
+        ),
         rule_version=RULE_VERSION,
     )
+
+
+def _angle_matches(actual: float, expected: float, tolerance: float) -> bool:
+    difference = (actual - expected + 180.0) % 360.0 - 180.0
+    return abs(difference) <= tolerance
+
+
+def _lattice_cell(
+    *,
+    x_mm: float,
+    y_mm: float,
+    origin_x_mm: float,
+    origin_y_mm: float,
+    spacing_x_mm: float,
+    spacing_y_mm: float,
+) -> tuple[int, int] | None:
+    column = round((x_mm - origin_x_mm) / spacing_x_mm)
+    row = round((y_mm - origin_y_mm) / spacing_y_mm)
+    expected_x = origin_x_mm + column * spacing_x_mm
+    expected_y = origin_y_mm + row * spacing_y_mm
+    if (
+        abs(x_mm - expected_x) > _WATERMARK_SPACING_TOLERANCE_MM
+        or abs(y_mm - expected_y) > _WATERMARK_SPACING_TOLERANCE_MM
+    ):
+        return None
+    return (column, row)
 
 
 def welli_same_page_watermark_observation_ids(
@@ -394,5 +663,60 @@ def welli_same_page_watermark_observation_ids(
     profile_match: LayoutProfileMatch | None,
     observations: Sequence[TextObservation],
 ) -> frozenset[str]:
-    del profile_match, observations
-    return frozenset()
+    if profile_match is None or profile_match.match_state != "high_confidence":
+        return frozenset()
+    profile = _PROFILE_BY_ID.get(profile_match.profile_id)
+    if profile is None:
+        return frozenset()
+    candidates = tuple(
+        sorted(
+            (
+                observation
+                for observation in observations
+                if observation.page_index == profile_match.page_index
+                and observation.source_type == "native"
+                and observation.observation_level == "line"
+                and observation.parent_region_id is None
+                and _compact_text(observation.normalized_text) == "伟立机器人"
+                and _angle_matches(
+                    observation.direction_angle_degrees,
+                    _WATERMARK_ANGLE_DEGREES,
+                    _WATERMARK_ANGLE_TOLERANCE_DEGREES,
+                )
+            ),
+            key=lambda item: item.observation_id,
+        )
+    )
+    if len(candidates) < _MIN_WATERMARK_NATIVE_LINE_COUNT:
+        return frozenset()
+
+    centers = tuple(
+        (
+            observation,
+            (bbox[0] + bbox[2]) / 2.0,
+            (bbox[1] + bbox[3]) / 2.0,
+        )
+        for observation in candidates
+        for bbox in (_bbox_mm(observation),)
+    )
+    origin_x = min(center[1] for center in centers)
+    origin_y = min(center[2] for center in centers)
+    spacing_x, spacing_y = profile.watermark_spacing_mm
+    cells: dict[tuple[int, int], TextObservation] = {}
+    for observation, center_x, center_y in centers:
+        cell = _lattice_cell(
+            x_mm=center_x,
+            y_mm=center_y,
+            origin_x_mm=origin_x,
+            origin_y_mm=origin_y,
+            spacing_x_mm=spacing_x,
+            spacing_y_mm=spacing_y,
+        )
+        if cell is None or cell in cells:
+            return frozenset()
+        cells[cell] = observation
+    if len(cells) < _MIN_WATERMARK_NATIVE_LINE_COUNT:
+        return frozenset()
+    if len({cell[0] for cell in cells}) < 2 or len({cell[1] for cell in cells}) < 3:
+        return frozenset()
+    return frozenset(observation.observation_id for observation in candidates)
