@@ -193,7 +193,13 @@ def test_technical_requirement_migration_downgrade_accepts_empty_evidence() -> N
         connection.execute(text(f"DROP SCHEMA {schema} CASCADE"))
 
 
-def test_technical_requirement_migration_downgrade_refuses_evidence() -> None:
+@pytest.mark.parametrize(
+    "table_name",
+    ["automatic_results", "review_working_copies"],
+)
+def test_technical_requirement_migration_downgrade_refuses_evidence(
+    table_name: str,
+) -> None:
     schema = f"test_0008_populated_{uuid.uuid4().hex}"
     migration = _migration_0008()
 
@@ -201,7 +207,7 @@ def test_technical_requirement_migration_downgrade_refuses_evidence() -> None:
         _create_0008_downgrade_fixture(connection, schema)
         connection.execute(
             text(
-                "INSERT INTO automatic_results "
+                f"INSERT INTO {table_name} "
                 "(id, technical_requirements) "
                 "VALUES (1, '[{\"requirement_id\": \"r1\"}]'::jsonb)"
             )
@@ -214,16 +220,21 @@ def test_technical_requirement_migration_downgrade_refuses_evidence() -> None:
         ):
             migration.downgrade()
 
-        assert {
-            column["name"]
-            for column in inspect(connection).get_columns(
-                "automatic_results",
-                schema=schema,
-            )
-        } == {"id", "technical_requirements"}
+        inspector = inspect(connection)
+        for persisted_table in (
+            "automatic_results",
+            "review_working_copies",
+        ):
+            assert {
+                column["name"]
+                for column in inspector.get_columns(
+                    persisted_table,
+                    schema=schema,
+                )
+            } == {"id", "technical_requirements"}
         assert connection.scalar(
             text(
-                "SELECT count(*) FROM automatic_results "
+                f"SELECT count(*) FROM {table_name} "
                 "WHERE technical_requirements <> '[]'::jsonb"
             )
         ) == 1

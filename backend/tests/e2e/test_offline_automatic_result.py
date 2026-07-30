@@ -256,6 +256,7 @@ def test_candidate_snapshot_reconstructs_and_matches_six_technical_requirements(
     [
         ("检查外观，不得有裂纹", "surface_integrity"),
         ("测量倒角，尺寸应为1×45°", "default_chamfer"),
+        ("检查焊缝不得有裂纹", "ambiguous"),
     ],
 )
 def test_candidate_snapshot_preserves_standalone_executable_requirements(

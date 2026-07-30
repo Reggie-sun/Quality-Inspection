@@ -973,10 +973,19 @@ class ReviewService:
             and item.get("active", True)
         }
         for requirement in technical_requirements:
-            if requirement.get("match_outcome") != "matched_items":
+            match_outcome = requirement.get("match_outcome")
+            if match_outcome == "matched_items":
+                current_ids = requirement.get("matched_candidate_ids")
+                if not isinstance(current_ids, list):
+                    continue
+            elif match_outcome == "global_scope":
+                generated_id = requirement.get("generated_candidate_id")
+                if not isinstance(generated_id, str):
+                    continue
+                current_ids = [generated_id]
+            else:
                 continue
-            current_ids = requirement.get("matched_candidate_ids")
-            if not isinstance(current_ids, list) or not any(
+            if not any(
                 target_id in replacements for target_id in current_ids
             ):
                 continue
@@ -994,7 +1003,10 @@ class ReviewService:
                 }
             )
             self._remove_requirement_projection(items, requirement_id)
-            if not remapped_ids:
+            if not remapped_ids or (
+                match_outcome == "global_scope"
+                and len(remapped_ids) != 1
+            ):
                 requirement.update(
                     {
                         "match_outcome": "unresolved",
@@ -1006,7 +1018,15 @@ class ReviewService:
                 )
                 self._reopen_requirement_coverage(coverage, requirement)
                 continue
-            requirement["matched_candidate_ids"] = remapped_ids
+            if match_outcome == "global_scope":
+                requirement.update(
+                    {
+                        "matched_candidate_ids": [],
+                        "generated_candidate_id": remapped_ids[0],
+                    }
+                )
+            else:
+                requirement["matched_candidate_ids"] = remapped_ids
             for target_id in remapped_ids:
                 target = active_items.get(target_id)
                 if target is None:

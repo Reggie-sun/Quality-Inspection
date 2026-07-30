@@ -428,6 +428,8 @@ def test_requirement_global_and_excluded_preserve_confirmed_values(
 def _confirm_requirement_target(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,
+    *,
+    item_ids: list[str] | None = None,
 ) -> ReviewWorkingCopy:
     return review_service.apply(
         working_copy.id,
@@ -437,9 +439,45 @@ def _confirm_requirement_target(
             "type": "set_technical_requirement_match",
             "requirement_id": "requirement-1",
             "outcome": "matched_items",
-            "matched_item_ids": ["i1"],
+            "matched_item_ids": item_ids or ["i1"],
         },
     )
+
+
+def _confirm_global_requirement(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+) -> tuple[ReviewWorkingCopy, str]:
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "global_scope",
+        },
+    )
+    generated_id = str(
+        saved.technical_requirements[0]["generated_candidate_id"]
+    )
+    return saved, generated_id
+
+
+def _assert_requirement_reopened(saved: ReviewWorkingCopy) -> None:
+    requirement = saved.technical_requirements[0]
+    assert requirement["match_outcome"] == "unresolved"
+    assert requirement["matched_candidate_ids"] == []
+    assert requirement["generated_candidate_id"] is None
+    assert requirement["review_required"] is True
+    assert requirement["review_status"] == "suggested"
+    requirement_coverage = next(
+        entry
+        for entry in saved.coverage["entries"]
+        if entry["observation_id"] == "requirement-source"
+    )
+    assert requirement_coverage["requires_confirmation"] is True
+    assert "confirmation_accepted" not in requirement_coverage
 
 
 def test_excluding_only_requirement_target_reopens_requirement_review(
@@ -471,6 +509,141 @@ def test_excluding_only_requirement_target_reopens_requirement_review(
     assert requirement_coverage["requires_confirmation"] is True
     assert "confirmation_accepted" not in requirement_coverage
     assert _item(saved, "i1")["technical_requirement_refs"] == []
+
+
+def test_retiring_one_of_multiple_requirement_targets_preserves_the_other(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed = _confirm_requirement_target(
+        review_service,
+        working_copy,
+        item_ids=["i1", "typed-1"],
+    )
+
+    saved = review_service.apply(
+        confirmed.id,
+        expected_version=confirmed.version,
+        operator_id="quality-1",
+        command={"type": "exclude", "item_id": "i1"},
+    )
+
+    requirement = saved.technical_requirements[0]
+    assert requirement["match_outcome"] == "matched_items"
+    assert requirement["matched_candidate_ids"] == ["typed-1"]
+    assert _item(saved, "typed-1")["technical_requirement_refs"] == [
+        "requirement-1"
+    ]
+    assert _item(saved, "i1")["technical_requirement_refs"] == []
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        {"type": "exclude"},
+        {"type": "resolve_confirmation", "accepted": False},
+    ],
+)
+def test_retiring_global_requirement_target_reopens_requirement_review(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+    command: dict[str, object],
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed, generated_id = _confirm_global_requirement(
+        review_service,
+        working_copy,
+    )
+
+    saved = review_service.apply(
+        confirmed.id,
+        expected_version=confirmed.version,
+        operator_id="quality-1",
+        command={**command, "item_id": generated_id},
+    )
+
+    _assert_requirement_reopened(saved)
+    assert _item(saved, generated_id)["technical_requirement_refs"] == []
+
+
+def test_merging_global_requirement_target_relinks_singular_generated_item(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed, generated_id = _confirm_global_requirement(
+        review_service,
+        working_copy,
+    )
+    with_peer = review_service.apply(
+        confirmed.id,
+        expected_version=confirmed.version,
+        operator_id="quality-1",
+        command={
+            "type": "add",
+            "item_type": "general_requirement",
+            "raw_text": "另一项全局要求",
+            "coordinates": [9, 10, 11, 12],
+            "scope": "global_requirement",
+            "balloon_required": False,
+        },
+    )
+    peer_id = str(with_peer.items[-1]["item_id"])
+
+    saved = review_service.apply(
+        with_peer.id,
+        expected_version=with_peer.version,
+        operator_id="quality-1",
+        command={
+            "type": "merge",
+            "item_ids": [generated_id, peer_id],
+            "raw_text": "合并后的全局要求",
+        },
+    )
+
+    merged = saved.items[-1]
+    requirement = saved.technical_requirements[0]
+    assert requirement["match_outcome"] == "global_scope"
+    assert requirement["generated_candidate_id"] == merged["item_id"]
+    assert requirement["matched_candidate_ids"] == []
+    assert merged["technical_requirement_refs"] == ["requirement-1"]
+    assert merged["balloon_required"] is False
+
+
+def test_splitting_global_requirement_target_reopens_singular_relation(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed, generated_id = _confirm_global_requirement(
+        review_service,
+        working_copy,
+    )
+
+    saved = review_service.apply(
+        confirmed.id,
+        expected_version=confirmed.version,
+        operator_id="quality-1",
+        command={
+            "type": "split",
+            "item_id": generated_id,
+            "parts": [
+                {"raw_text": "全局要求第一部分"},
+                {"raw_text": "全局要求第二部分"},
+            ],
+        },
+    )
+
+    _assert_requirement_reopened(saved)
+    assert all(
+        item.get("technical_requirement_refs") == []
+        for item in saved.items[-2:]
+    )
 
 
 def test_rejecting_requirement_target_reopens_requirement_review(

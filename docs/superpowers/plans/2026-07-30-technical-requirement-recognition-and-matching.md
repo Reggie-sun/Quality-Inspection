@@ -72,6 +72,18 @@
   replacement RED/green，再 migration downgrade evidence；completed reviewer 保持只读。
 - Focused verification:
   `micromamba run -n qi-p0 pytest backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/e2e/test_offline_automatic_result.py backend/tests/integration/test_schema.py -q`
+- First re-review evidence: child rollout
+  `019fb143-5f9e-7900-9453-57d7dfea9897` confirmed
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`，结论为
+  `reject`；确认原 fix 只覆盖 `matched_candidate_ids`，遗漏 `global_scope` 的
+  singular `generated_candidate_id` relation。
+- Second residual rule: target replacement 同时覆盖 `matched_items` 和
+  `global_scope`。global target replacement 为一个 active item 时保持
+  `global_scope` 并重写 `generated_candidate_id`；target 消失或 split 成多个 target
+  时不猜测 singular identity，转为 `unresolved` 并重开 source coverage confirmation。
+- Additional regression evidence: 四种 retirement/replacement command 的 global relation、
+  matched multi-target unaffected preservation、generic standalone fallback，以及两个
+  persistence table 的 nonempty migration downgrade refusal。
 
 ## Problem Boundary
 
