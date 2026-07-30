@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -25,6 +26,10 @@ class AutomaticResult(Base):
         UniqueConstraint(
             "logical_job_id",
             name="uq_automatic_results_logical_job_id",
+        ),
+        CheckConstraint(
+            "completeness IN ('complete', 'partial_review_required')",
+            name="ck_automatic_results_completeness",
         ),
     )
 
@@ -53,6 +58,34 @@ class AutomaticResult(Base):
     coverage: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     provider_call_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    completeness: Mapped[str] = mapped_column(
+        String(32),
+        default="complete",
+        server_default="complete",
+        nullable=False,
+    )
+    recognition_mode: Mapped[str] = mapped_column(
+        String(40),
+        default="legacy_high_recall",
+        server_default="legacy_high_recall",
+        nullable=False,
+    )
+    router_version: Mapped[str] = mapped_column(
+        String(64),
+        default="legacy",
+        server_default="legacy",
+        nullable=False,
+    )
+    recognition_summary: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default="{}",
+        nullable=False,
+    )
+    recognition_evidence_ref: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

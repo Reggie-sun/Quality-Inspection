@@ -102,7 +102,10 @@ from app.pdf.visual_observations import (
     reconstruct_visual_geometry_contexts,
 )
 from app.processing.automatic_result import CandidateSnapshot, selected_observations
-from app.providers.base import VisionResult
+from app.providers.base import (
+    LOCALIZED_PROVIDER_FAILURE_CATEGORIES,
+    VisionResult,
+)
 from app.providers.call_records import (
     ProviderCallRecord,
     persist_call_record,
@@ -159,7 +162,39 @@ _CACHE_FIELDS = {
 
 
 class CandidateAdvisorFailure(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_category: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        if (
+            failure_category is not None
+            and failure_category not in LOCALIZED_PROVIDER_FAILURE_CATEGORIES
+        ):
+            raise ValueError("CandidateAdvisor failure category is invalid")
+        self.failure_category = failure_category
+
+
+def _localized_provider_failure_category(exc: Exception) -> str | None:
+    category = getattr(exc, "failure_category", None)
+    if category in LOCALIZED_PROVIDER_FAILURE_CATEGORIES:
+        return category
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, (ConnectionError, OSError)):
+        return "transport"
+    return None
+
+
+def _provider_failure_stage(category: str) -> str:
+    return {
+        "timeout": "provider_timeout",
+        "transport": "provider_transport_failure",
+        "schema": "provider_schema_invalid",
+        "unavailable": "provider_unavailable",
+    }[category]
 
 
 @dataclass(frozen=True)
@@ -1573,7 +1608,13 @@ class CandidateAdvisor:
                 )
             except CapabilityUnavailable:
                 raise
-            except Exception:
+            except Exception as exc:
+                category = _localized_provider_failure_category(exc)
+                if category is not None:
+                    raise CandidateAdvisorFailure(
+                        "Visual symbol Advisor call failed",
+                        failure_category=category,
+                    ) from None
                 unexpected_failure = True
             duration_ms = max(
                 0,
@@ -1643,12 +1684,17 @@ class CandidateAdvisor:
             )
             persist_terminal_failure("provider_unavailable")
             raise
-        except CandidateAdvisorFailure:
+        except CandidateAdvisorFailure as exc:
+            failure_stage = (
+                _provider_failure_stage(exc.failure_category)
+                if exc.failure_category is not None
+                else "provider_transport_failure"
+            )
             append_attempt(
                 attempt_index=0,
-                event_code="provider_transport_failure",
+                event_code=failure_stage,
             )
-            persist_terminal_failure("provider_transport_failure")
+            persist_terminal_failure(failure_stage)
             raise
         request_ids: list[str] = []
         attempt_durations = [duration_ms]
@@ -1729,7 +1775,8 @@ class CandidateAdvisor:
             )
             persist_terminal_failure("provider_schema_invalid")
             raise CandidateAdvisorFailure(
-                "Visual symbol Advisor response is invalid"
+                "Visual symbol Advisor response is invalid",
+                failure_category="schema",
             ) from None
         if result is None:
             append_attempt(
@@ -2409,6 +2456,7 @@ class CandidateAdvisor:
         )
         candidates_changed = False
         visual_retry_available = True
+        localized_failure_stages: dict[str, str] = {}
         actual_visual_calls_by_page = {
             page.page_index: 0
             for page in pages
@@ -2746,7 +2794,31 @@ class CandidateAdvisor:
                             try:
                                 outcome = future.result()
                             except Exception as exc:
-                                worker_failures[completed_index] = exc
+                                category = (
+                                    exc.failure_category
+                                    if isinstance(exc, CandidateAdvisorFailure)
+                                    else None
+                                )
+                                if category in {
+                                    "timeout",
+                                    "transport",
+                                    "schema",
+                                }:
+                                    failure_stage = _provider_failure_stage(
+                                        category
+                                    )
+                                    localized_failure_stages.update(
+                                        {
+                                            observation_id: failure_stage
+                                            for observation_id in (
+                                                production_jobs[
+                                                    completed_index
+                                                ].observation_ids
+                                            )
+                                        }
+                                    )
+                                else:
+                                    worker_failures[completed_index] = exc
                             else:
                                 retry_coordinator.complete(outcome)
                                 outcomes[completed_index] = outcome
@@ -2784,7 +2856,19 @@ class CandidateAdvisor:
                     )
                 if worker_failures:
                     raise worker_failures[min(worker_failures)]
-                if any(outcome is None for outcome in outcomes):
+                localized_job_indexes = {
+                    index
+                    for index, job in enumerate(production_jobs)
+                    if any(
+                        observation_id in localized_failure_stages
+                        for observation_id in job.observation_ids
+                    )
+                }
+                if any(
+                    outcome is None
+                    and index not in localized_job_indexes
+                    for index, outcome in enumerate(outcomes)
+                ):
                     raise CandidateAdvisorFailure(
                         "Visual symbol execution outcome is missing"
                     )
@@ -2915,6 +2999,23 @@ class CandidateAdvisor:
                     advisor_review=review,
                 )
 
+            for observation_id, failure_stage in localized_failure_stages.items():
+                coverage_index = visual_coverage_indexes[observation_id]
+                visual = visual_observations[observation_id]
+                coverage_entries[coverage_index] = replace(
+                    coverage_entries[coverage_index],
+                    disposition="ambiguous",
+                    source_location_id=observation_id,
+                    coordinates=visual.bbox_pdf,
+                    candidate_id=None,
+                    requires_confirmation=True,
+                    advisor_review={
+                        "route": "visual_symbol",
+                        "schema_version": VISUAL_SCHEMA_VERSION,
+                        "failure_stage": failure_stage,
+                    },
+                )
+
             if replacement_by_candidate:
                 candidates = [
                     replacement_by_candidate.get(
@@ -3012,7 +3113,28 @@ class CandidateAdvisor:
                 and not any(visual_batches)
                 and not any(production_local_decisions)
             ):
-                return snapshot
+                return replace(
+                    snapshot,
+                    recognition_mode=(
+                        "production_uncertainty"
+                        if uncertainty_mode == "production_uncertainty"
+                        else "legacy_high_recall"
+                    ),
+                    router_version=(
+                        SYMBOL_ROUTER_VERSION
+                        if uncertainty_mode == "production_uncertainty"
+                        else "legacy"
+                    ),
+                    recognition_summary={
+                        "schema_version": "symbol-recognition-summary/1",
+                        "unresolved_roi_count": 0,
+                    },
+                    recognition_evidence_ref=(
+                        f"symbol-routing-evidence://{self._project_id}"
+                        if uncertainty_mode == "production_uncertainty"
+                        else None
+                    ),
+                )
 
             text_calls_by_page = {
                 page.page_index: 0
@@ -3189,6 +3311,36 @@ class CandidateAdvisor:
             source_signals=tuple(source_signals),
             provider_call_ids=tuple(provider_call_ids),
             required_visual_observation_ids=(
-                snapshot.required_visual_observation_ids
+                tuple(
+                    observation_id
+                    for observation_id in (
+                        snapshot.required_visual_observation_ids
+                    )
+                    if observation_id not in localized_failure_stages
+                )
+            ),
+            completeness=(
+                "partial_review_required"
+                if localized_failure_stages
+                else "complete"
+            ),
+            recognition_mode=(
+                "production_uncertainty"
+                if uncertainty_mode == "production_uncertainty"
+                else "legacy_high_recall"
+            ),
+            router_version=(
+                SYMBOL_ROUTER_VERSION
+                if uncertainty_mode == "production_uncertainty"
+                else "legacy"
+            ),
+            recognition_summary={
+                "schema_version": "symbol-recognition-summary/1",
+                "unresolved_roi_count": len(localized_failure_stages),
+            },
+            recognition_evidence_ref=(
+                f"symbol-routing-evidence://{self._project_id}"
+                if uncertainty_mode == "production_uncertainty"
+                else None
             ),
         )

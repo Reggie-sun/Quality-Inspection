@@ -4,6 +4,19 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 
+LOCALIZED_PROVIDER_FAILURE_CATEGORIES = frozenset(
+    {"timeout", "transport", "schema", "unavailable"}
+)
+
+
+class LocalizedProviderFailure(RuntimeError):
+    def __init__(self, failure_category: str) -> None:
+        if failure_category not in LOCALIZED_PROVIDER_FAILURE_CATEGORIES:
+            raise ValueError("localized Provider failure category is invalid")
+        super().__init__("visual symbol Provider request failed")
+        self.failure_category = failure_category
+
+
 @dataclass(frozen=True)
 class OcrObservation:
     raw_text: str

@@ -66,6 +66,11 @@ class CandidateSnapshot:
     source_signals: tuple[CandidateSourceSignal, ...] = ()
     provider_call_ids: tuple[str, ...] = ()
     required_visual_observation_ids: tuple[str, ...] = ()
+    completeness: str = "complete"
+    recognition_mode: str = "legacy_high_recall"
+    router_version: str = "legacy"
+    recognition_summary: Mapping[str, Any] | None = None
+    recognition_evidence_ref: str | None = None
 
 
 def _selected_observations(pages: Sequence[Any]) -> list[TextObservation]:
@@ -711,6 +716,11 @@ def build_automatic_result(
     provider_call_ids: Sequence[str],
     duplicate_relations: Sequence[DuplicateRelation] = (),
     schema_version: str = AUTOMATIC_RESULT_SCHEMA_VERSION,
+    completeness: str = "complete",
+    recognition_mode: str = "legacy_high_recall",
+    router_version: str = "legacy",
+    recognition_summary: Mapping[str, Any] | None = None,
+    recognition_evidence_ref: str | None = None,
 ) -> AutomaticResult:
     if coverage.blocking_count > 0 or not coverage.coverage_checked:
         raise CoverageBlocking(coverage.blocking_count)
@@ -718,6 +728,17 @@ def build_automatic_result(
         raise ValueError("inventory_ref must be non-blank")
     if not isinstance(schema_version, str) or not schema_version.strip():
         raise ValueError("schema_version must be non-blank")
+    if completeness not in {"complete", "partial_review_required"}:
+        raise ValueError("completeness is invalid")
+    if not isinstance(recognition_mode, str) or not recognition_mode.strip():
+        raise ValueError("recognition_mode must be non-blank")
+    if not isinstance(router_version, str) or not router_version.strip():
+        raise ValueError("router_version must be non-blank")
+    if recognition_evidence_ref is not None and (
+        not isinstance(recognition_evidence_ref, str)
+        or not recognition_evidence_ref.strip()
+    ):
+        raise ValueError("recognition_evidence_ref must be non-blank when set")
     if any(
         not isinstance(call_id, str) or not call_id.strip()
         for call_id in provider_call_ids
@@ -784,6 +805,13 @@ def build_automatic_result(
         coverage=_json_safe(coverage_payload),
         provider_call_ids=list(provider_call_ids),
         schema_version=schema_version,
+        completeness=completeness,
+        recognition_mode=recognition_mode,
+        router_version=router_version,
+        recognition_summary=_json_safe(
+            dict(recognition_summary) if recognition_summary is not None else {}
+        ),
+        recognition_evidence_ref=recognition_evidence_ref,
     )
     session.add(result)
     session.flush()

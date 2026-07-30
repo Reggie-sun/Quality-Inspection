@@ -13,6 +13,7 @@ from app.candidates.symbol_routing import (
     validate_frozen_symbol_routing_identity,
 )
 from app.errors.models import ErrorRecord
+from app.candidates.models import AutomaticResult
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
 from app.projects.schemas import (
@@ -161,10 +162,20 @@ class ProjectIntakeService:
             )
         )
         if working_copy is not None:
+            automatic_result = self.session.get(
+                AutomaticResult,
+                working_copy.raw_result_id,
+            )
             return self._status_response(
                 project_id,
                 include_project_id=include_project_id,
-                phase=ProjectPhase.READY_FOR_REVIEW,
+                phase=(
+                    ProjectPhase.PARTIAL_REVIEW_REQUIRED
+                    if automatic_result is not None
+                    and automatic_result.completeness
+                    == "partial_review_required"
+                    else ProjectPhase.READY_FOR_REVIEW
+                ),
                 workbench_ready=True,
             )
 

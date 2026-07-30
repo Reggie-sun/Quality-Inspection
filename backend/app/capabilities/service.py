@@ -55,7 +55,7 @@ class ProcessingPreflight:
         self._ocr_configured = ocr_configured
         self._vision_configured = vision_configured
 
-    def check(self) -> None:
+    def check(self, *, vision_required: bool = True) -> None:
         try:
             self._storage.probe()
         except Exception as exc:
@@ -88,7 +88,7 @@ class ProcessingPreflight:
                 "ocr_provider_unavailable",
                 "OCR Provider configuration is unavailable",
             )
-        if not _configured(self._vision_configured):
+        if vision_required and not _configured(self._vision_configured):
             raise CapabilityUnavailable(
                 "vision_provider_unavailable",
                 "Vision Provider configuration is unavailable",

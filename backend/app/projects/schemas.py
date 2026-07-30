@@ -10,6 +10,7 @@ class ProjectPhase(StrEnum):
     QUEUED = "queued"
     PROCESSING = "processing"
     READY_FOR_REVIEW = "ready_for_review"
+    PARTIAL_REVIEW_REQUIRED = "partial_review_required"
     FAILED = "failed"
 
 

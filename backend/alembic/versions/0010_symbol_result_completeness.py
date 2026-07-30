@@ -1,0 +1,78 @@
+"""Add immutable automatic-result recognition completeness.
+
+Revision ID: 0010
+Revises: 0009
+"""
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects import postgresql
+
+
+revision: str = "0010"
+down_revision: str | None = "0009"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.add_column(
+        "automatic_results",
+        sa.Column(
+            "completeness",
+            sa.String(length=32),
+            server_default="complete",
+            nullable=False,
+        ),
+    )
+    op.add_column(
+        "automatic_results",
+        sa.Column(
+            "recognition_mode",
+            sa.String(length=40),
+            server_default="legacy_high_recall",
+            nullable=False,
+        ),
+    )
+    op.add_column(
+        "automatic_results",
+        sa.Column(
+            "router_version",
+            sa.String(length=64),
+            server_default="legacy",
+            nullable=False,
+        ),
+    )
+    op.add_column(
+        "automatic_results",
+        sa.Column(
+            "recognition_summary",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'{}'::jsonb"),
+            nullable=False,
+        ),
+    )
+    op.add_column(
+        "automatic_results",
+        sa.Column("recognition_evidence_ref", sa.String(length=512), nullable=True),
+    )
+    op.create_check_constraint(
+        "ck_automatic_results_completeness",
+        "automatic_results",
+        "completeness IN ('complete', 'partial_review_required')",
+    )
+
+
+def downgrade() -> None:
+    op.drop_constraint(
+        "ck_automatic_results_completeness",
+        "automatic_results",
+        type_="check",
+    )
+    op.drop_column("automatic_results", "recognition_evidence_ref")
+    op.drop_column("automatic_results", "recognition_summary")
+    op.drop_column("automatic_results", "router_version")
+    op.drop_column("automatic_results", "recognition_mode")
+    op.drop_column("automatic_results", "completeness")

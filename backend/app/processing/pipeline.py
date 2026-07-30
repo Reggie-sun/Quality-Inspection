@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.capabilities.service import CapabilityUnavailable
+from app.capabilities.service import CapabilityUnavailable, ProcessingPreflight
 from app.candidates.advisor import CandidateAdvisorFailure
 from app.candidates.confidence import (
     ConfidenceDecisionContractError,
@@ -253,7 +253,15 @@ class InventoryPipeline:
                 job_id=job.id,
                 stage="parsing",
             )
-            self._preflight.check()
+            if isinstance(self._preflight, ProcessingPreflight):
+                self._preflight.check(
+                    vision_required=(
+                        project.recognition_mode
+                        != "production_uncertainty"
+                    )
+                )
+            else:
+                self._preflight.check()
             source_path = self._storage.resolve_resource_ref(source_ref)
             safe_source_ref = source_ref
             pages = tuple(self._inventory_builder(source_path))
@@ -320,6 +328,11 @@ class InventoryPipeline:
                     provider_call_ids=snapshot.provider_call_ids,
                     duplicate_relations=snapshot.duplicate_relations,
                     schema_version=AUTOMATIC_RESULT_SCHEMA_VERSION,
+                    completeness=snapshot.completeness,
+                    recognition_mode=snapshot.recognition_mode,
+                    router_version=snapshot.router_version,
+                    recognition_summary=snapshot.recognition_summary,
+                    recognition_evidence_ref=snapshot.recognition_evidence_ref,
                 )
             except ConfidenceDecisionContractError as exc:
                 raise ConfidencePolicyError(
@@ -367,7 +380,7 @@ class InventoryPipeline:
                 message="Vision candidate Advisor call failed",
                 stage="candidate_advisor",
                 location_ref=None,
-                cause_category="transient_provider_failure",
+                cause_category="processing_defect",
             )
             if existing is not None:
                 return existing

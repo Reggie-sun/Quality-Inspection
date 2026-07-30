@@ -13,7 +13,7 @@ from typing import Any
 import jsonschema
 from PIL import Image, UnidentifiedImageError
 
-from app.providers.base import VisionResult
+from app.providers.base import LocalizedProviderFailure, VisionResult
 from app.candidates.symbol_review import (
     VISUAL_SCHEMA_VERSION,
     VISUAL_SYMBOL_FAILURE_STAGES,
@@ -82,6 +82,7 @@ class VisualSymbolProviderError(RuntimeError):
             usage,
         )
         self.failure_stage = failure_stage
+        self.failure_category = "schema"
         self.diagnostic = self._validated_diagnostic(diagnostic)
 
     @staticmethod
@@ -418,30 +419,35 @@ class QwenVisionProvider:
         data_url = "data:image/png;base64," + base64.b64encode(
             canonical_image
         ).decode("ascii")
-        completion = self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": VISUAL_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                        {
-                            "type": "text",
-                            "text": prompt,
-                        },
-                    ],
+        try:
+            completion = self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": VISUAL_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                            {
+                                "type": "text",
+                                "text": prompt,
+                            },
+                        ],
+                    },
+                ],
+                tools=[_visual_symbol_tool()],
+                tool_choice={
+                    "type": "function",
+                    "function": {"name": VISUAL_TOOL_NAME},
                 },
-            ],
-            tools=[_visual_symbol_tool()],
-            tool_choice={
-                "type": "function",
-                "function": {"name": VISUAL_TOOL_NAME},
-            },
-            parallel_tool_calls=False,
-            temperature=0,
-            extra_body={"enable_thinking": False},
-        )
+                parallel_tool_calls=False,
+                temperature=0,
+                extra_body={"enable_thinking": False},
+            )
+        except TimeoutError:
+            raise LocalizedProviderFailure("timeout") from None
+        except (ConnectionError, OSError):
+            raise LocalizedProviderFailure("transport") from None
         request_id, usage = validate_visual_request_metadata(
             getattr(completion, "id", None),
             getattr(completion, "usage", None),
