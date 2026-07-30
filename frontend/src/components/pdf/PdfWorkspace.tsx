@@ -434,12 +434,12 @@ export function PdfWorkspace({
         <li>
           <i
             data-color="auto-accepted"
-            style={{ backgroundColor: "#c23b3b" }}
+            style={{ backgroundColor: "transparent" }}
           />
           {zhCN.pdf.autoAcceptedPendingNumber}
         </li>
         <li>
-          <i data-color="balloon" style={{ backgroundColor: "transparent" }} />
+          <i data-color="balloon" style={{ backgroundColor: "#dc2626" }} />
           {zhCN.pdf.formalBalloon}
         </li>
         <li><i data-color="candidate" />{zhCN.pdf.candidate}</li>

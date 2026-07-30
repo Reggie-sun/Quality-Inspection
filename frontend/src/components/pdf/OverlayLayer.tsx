@@ -452,12 +452,25 @@ export function OverlayLayer({
                 r={CANDIDATE_MARKER_RADIUS}
                 fill={
                   isAutoAccepted
-                    ? isSelected ? "#c23b3b" : "transparent"
+                    ? "transparent"
                     : isSelected ? "#2563EB" : "#EFF6FF"
                 }
                 stroke={isAutoAccepted ? "#c23b3b" : "#2563EB"}
-                strokeWidth={isSelected ? 2 : 1.5}
+                strokeWidth={isAutoAccepted ? 1.5 : isSelected ? 2 : 1.5}
               />
+              {isAutoAccepted && isSelected ? (
+                <circle
+                  className="pdf-overlay-selection-ring"
+                  cx={markerX}
+                  cy={markerY}
+                  r={CANDIDATE_MARKER_RADIUS + 2}
+                  fill="none"
+                  stroke="#2563eb"
+                  strokeWidth={2}
+                  aria-hidden="true"
+                  style={{ pointerEvents: "none" }}
+                />
+              ) : null}
               <text
                 x={markerX}
                 y={markerY}
@@ -467,7 +480,7 @@ export function OverlayLayer({
                 fontSize={8}
                 fill={
                   isAutoAccepted
-                    ? isSelected ? "#FFFFFF" : "#c23b3b"
+                    ? "#c23b3b"
                     : isSelected ? "#FFFFFF" : "#2563EB"
                 }
                 style={{ pointerEvents: "none" }}

@@ -472,8 +472,15 @@ describe("OverlayLayer", () => {
     const selectedAuto = screen.getByRole("button", {
       name: "自动通过气泡 1，待统一编号",
     });
-    expect(selectedAuto.querySelector("circle")?.getAttribute("fill")).toBe("#c23b3b");
-    expect(selectedAuto.querySelector("text")?.getAttribute("fill")).toBe("#FFFFFF");
+    expect(selectedAuto.querySelector("circle")?.getAttribute("fill"))
+      .toBe("transparent");
+    expect(selectedAuto.querySelector("text")?.getAttribute("fill"))
+      .toBe("#c23b3b");
+    const selectionRing = selectedAuto.querySelector(
+      ".pdf-overlay-selection-ring",
+    );
+    expect(selectionRing?.getAttribute("fill")).toBe("none");
+    expect(selectionRing?.getAttribute("stroke")).toBe("#2563eb");
   });
 
   test("正式 Balloon projection 继续使用既有正式样式与可访问名称", () => {

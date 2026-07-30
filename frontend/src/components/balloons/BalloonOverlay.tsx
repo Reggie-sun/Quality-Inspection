@@ -198,7 +198,7 @@ export function BalloonOverlay({
         cx={displayCenter[0]}
         cy={displayCenter[1]}
         r={radius}
-        fill={blocked ? "#fff1f2" : "white"}
+        fill={blocked ? "#fff1f2" : "#dc2626"}
         stroke={selected ? "#2563eb" : blocked ? "#b91c1c" : "#dc2626"}
         strokeWidth={selected ? 3 : 1.5}
       />
@@ -210,7 +210,7 @@ export function BalloonOverlay({
         fontFamily="DejaVu Sans"
         fontSize={GLYPH_FONT_SIZE_PDF}
         fontWeight={400}
-        fill={blocked ? "#991b1b" : "#0f172a"}
+        fill={blocked ? "#991b1b" : "#ffffff"}
         style={{ pointerEvents: "none" }}
       >
         {numberText}

@@ -13,6 +13,29 @@ import { BalloonToolbar } from "./BalloonToolbar";
 afterEach(cleanup);
 
 describe("BalloonOverlay", () => {
+  test("正常正式气泡使用实心红底和白色编号", () => {
+    render(
+      <svg aria-label="test overlay">
+        <BalloonOverlay
+          balloon={{
+            id: "formal-balloon",
+            itemId: "formal-item",
+            center: [50, 60],
+            number: 12,
+            status: "active",
+          }}
+          renderToPdfMatrix={[1, 0, 0, 1, 0, 0]}
+          selected={false}
+          onSelect={vi.fn()}
+        />
+      </svg>,
+    );
+
+    const formal = screen.getByRole("button", { name: "正式气泡 12" });
+    expect(formal.querySelector("circle")?.getAttribute("fill")).toBe("#dc2626");
+    expect(formal.querySelector("text")?.getAttribute("fill")).toBe("#ffffff");
+  });
+
   test("正式气泡 aria-label 包含正式前缀、编号与阻断后缀", () => {
     render(
       <svg aria-label="test overlay">
