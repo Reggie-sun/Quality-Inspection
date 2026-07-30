@@ -1,9 +1,12 @@
+import json
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pymupdf
 import pytest
 
+from app.pdf import inventory as inventory_module
 from app.pdf.classification import PageSignals, classify_page
 from app.pdf.inventory import _image_coverage, append_ocr_observations, build_inventory
 from app.pdf.schemas import (
@@ -13,6 +16,8 @@ from app.pdf.schemas import (
     VisualObservation,
 )
 from app.processing.automatic_result import candidate_snapshot_from_inventory
+from app.processing.pipeline import InventoryPipeline
+from app.storage.local import LocalFileStorage
 
 
 def _write_text_pdf(path: Path, *, rotate_text: bool = False) -> None:
@@ -323,6 +328,110 @@ def test_ocr_append_preserves_native_layout_sidecar(tmp_path: Path) -> None:
         item.observation_id != ocr.observation_id
         for item in extended.layout_profile_match.assignments
     )
+
+
+def test_build_inventory_calls_layout_matcher_once_per_page(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf_path = tmp_path / "layout-producer.pdf"
+    document = pymupdf.open()
+    for page_index in range(2):
+        page = document.new_page(width=595.0, height=842.0)
+        page.insert_text((72.0, 96.0), f"PAGE {page_index + 1}")
+        page.draw_rect(pymupdf.Rect(40.0, 50.0, 120.0, 100.0))
+    document.save(pdf_path)
+    document.close()
+    calls: list[dict[str, object]] = []
+
+    def match_spy(**kwargs):
+        calls.append(kwargs)
+        return LayoutProfileMatch(
+            page_index=kwargs["page_index"],
+            profile_id="welli-a4-portrait/1",
+            match_state="high_confidence",
+            geometry_evidence_codes=("body_frame", "revision_grid", "title_grid"),
+            text_anchor_evidence_codes=(
+                "revision_anchor_quorum",
+                "title_anchor_quorum",
+            ),
+            assignments=(),
+            rule_version="p0-a2-welli-layout/1",
+        )
+
+    monkeypatch.setattr(
+        inventory_module,
+        "match_welli_layout_profile",
+        match_spy,
+        raising=False,
+    )
+
+    pages = inventory_module.build_inventory(pdf_path)
+
+    assert len(calls) == 2
+    assert [call["page_index"] for call in calls] == [0, 1]
+    assert all(call["page_width_pt"] == pytest.approx(595.0) for call in calls)
+    assert all(call["page_height_pt"] == pytest.approx(842.0) for call in calls)
+    assert all(call["page_rotation"] == 0 for call in calls)
+    assert all(call["drawings"] for call in calls)
+    assert all(
+        all(item.source_type == "native" for item in call["observations"])
+        for call in calls
+    )
+    assert [page.layout_profile_match.page_index for page in pages] == [0, 1]
+    assert all("drawings" not in page.to_dict() for page in pages)
+
+
+def test_build_inventory_no_match_keeps_previous_serialized_shape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf_path = tmp_path / "layout-no-match.pdf"
+    _write_text_pdf(pdf_path)
+    monkeypatch.setattr(
+        inventory_module,
+        "match_welli_layout_profile",
+        lambda **_kwargs: None,
+        raising=False,
+    )
+
+    page = inventory_module.build_inventory(pdf_path)[0]
+
+    assert page.layout_profile_match is None
+    assert "layout_profile_match" not in page.to_dict()
+
+
+def test_inventory_storage_persists_additive_layout_sidecar(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "layout-storage.pdf"
+    _write_text_pdf(pdf_path)
+    page = build_inventory(pdf_path)[0]
+    match = LayoutProfileMatch(
+        page_index=0,
+        profile_id="welli-a4-portrait/1",
+        match_state="high_confidence",
+        geometry_evidence_codes=("body_frame", "revision_grid", "title_grid"),
+        text_anchor_evidence_codes=(
+            "revision_anchor_quorum",
+            "title_anchor_quorum",
+        ),
+        assignments=(),
+        rule_version="p0-a2-welli-layout/1",
+    )
+    storage = LocalFileStorage(tmp_path / "storage")
+    pipeline = InventoryPipeline(None, storage, None)  # type: ignore[arg-type]
+
+    resource_ref = pipeline._store_inventory(  # noqa: SLF001
+        "project-layout",
+        SimpleNamespace(id="job-layout"),  # type: ignore[arg-type]
+        (replace(page, layout_profile_match=match),),
+    )
+    payload = json.loads(storage.read_bytes(resource_ref))
+
+    assert payload["schema_version"] == "page-inventory/1"
+    assert payload["pages"][0]["layout_profile_match"]["profile_id"] == (
+        "welli-a4-portrait/1"
+    )
+    assert "drawings" not in payload["pages"][0]
 
 
 def test_inventory_preserves_pymupdf_cropbox_local_bbox(tmp_path: Path) -> None:
