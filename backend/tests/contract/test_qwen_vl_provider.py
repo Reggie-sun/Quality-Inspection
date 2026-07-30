@@ -11,6 +11,7 @@ from app.providers.qwen_vl import (
     QwenVisionProvider,
     parse_candidate_json,
 )
+from app.providers.base import LocalizedProviderFailure
 from app.providers.runtime import build_vision_provider
 
 
@@ -121,8 +122,12 @@ def test_qwen_response_requires_non_empty_request_id(qwen_fixture: dict) -> None
         chat=SimpleNamespace(completions=MissingIdCompletions())
     )
 
-    with pytest.raises(CandidateSchemaError, match="request ID"):
+    with pytest.raises(LocalizedProviderFailure) as raised:
         QwenVisionProvider(client).review_candidate(b"controlled", "Review")
+
+    assert raised.value.failure_category == "schema"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
 
 
 def test_runtime_factory_builds_beijing_workspace_client(monkeypatch) -> None:
