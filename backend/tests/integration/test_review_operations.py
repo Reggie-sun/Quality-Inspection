@@ -632,10 +632,12 @@ def test_merging_global_requirement_target_relinks_singular_generated_item(
     assert merged["balloon_required"] is False
 
 
+@pytest.mark.parametrize("global_first", [True, False])
 def test_global_requirement_merge_rejects_local_balloon_peer_in_any_order(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,
     db_session: Session,
+    global_first: bool,
 ) -> None:
     _set_technical_requirement_state(working_copy, db_session)
     confirmed, generated_id = _confirm_global_requirement(
@@ -656,6 +658,11 @@ def test_global_requirement_merge_rejects_local_balloon_peer_in_any_order(
         },
     )
     peer_id = str(with_peer.items[-1]["item_id"])
+    item_ids = (
+        [generated_id, peer_id]
+        if global_first
+        else [peer_id, generated_id]
+    )
 
     with pytest.raises(
         ValueError,
@@ -667,8 +674,70 @@ def test_global_requirement_merge_rejects_local_balloon_peer_in_any_order(
             operator_id="quality-1",
             command={
                 "type": "merge",
-                "item_ids": [peer_id, generated_id],
+                "item_ids": item_ids,
                 "raw_text": "非法的局部与全局合并",
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        {"type": "set_balloon_required", "balloon_required": True},
+        {"type": "edit", "fields": {"scope": "local_feature"}},
+    ],
+)
+def test_global_requirement_relation_rejects_non_global_or_balloon_commands(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+    command: dict[str, object],
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed, generated_id = _confirm_global_requirement(
+        review_service,
+        working_copy,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="global requirement target must remain global and unnumbered",
+    ):
+        review_service.apply(
+            confirmed.id,
+            expected_version=confirmed.version,
+            operator_id="quality-1",
+            command={**command, "item_id": generated_id},
+        )
+
+    db_session.expire_all()
+    unchanged = db_session.get(ReviewWorkingCopy, confirmed.id)
+    assert unchanged is not None
+    global_item = _item(unchanged, generated_id)
+    assert global_item["scope"] == "global_requirement"
+    assert global_item["balloon_required"] is False
+    assert unchanged.version == confirmed.version
+
+
+def test_manual_global_requirement_cannot_be_added_with_balloon(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="global requirement target must remain global and unnumbered",
+    ):
+        review_service.apply(
+            working_copy.id,
+            expected_version=working_copy.version,
+            operator_id="quality-1",
+            command={
+                "type": "add",
+                "item_type": "general_requirement",
+                "raw_text": "手工全局要求",
+                "coordinates": [9, 10, 11, 12],
+                "scope": "global_requirement",
+                "balloon_required": True,
             },
         )
 
@@ -750,6 +819,18 @@ def test_shared_requirement_source_stays_blocked_until_every_relation_resolves(
     assert "unresolved_confirmation" in _freeze_blockers_with_completed_sip(
         saved
     )
+
+    all_resolved, _ = _confirm_global_requirement(
+        review_service,
+        saved,
+    )
+    resolved_coverage = next(
+        entry
+        for entry in all_resolved.coverage["entries"]
+        if entry["observation_id"] == "requirement-source"
+    )
+    assert resolved_coverage["requires_confirmation"] is False
+    assert resolved_coverage["confirmation_accepted"] is True
 
 
 def test_rejecting_requirement_target_reopens_requirement_review(

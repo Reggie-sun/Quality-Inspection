@@ -204,6 +204,10 @@ class ReviewService:
             parsed,
             numbering_stale=working.numbering_stale,
         )
+        self._validate_requirement_target_invariants(
+            items,
+            technical_requirements,
+        )
         before_version = working.version
         after_version = before_version + 1
         updated_id = self.session.execute(
@@ -878,6 +882,43 @@ class ReviewService:
                 ReviewService._apply_requirement_suggestion(
                     item,
                     requirement,
+                )
+
+    @staticmethod
+    def _validate_requirement_target_invariants(
+        items: list[dict[str, Any]],
+        technical_requirements: list[dict[str, Any]],
+    ) -> None:
+        active_items = {
+            str(item["item_id"]): item
+            for item in items
+            if isinstance(item.get("item_id"), str)
+            and item.get("active", True)
+        }
+        for item in active_items.values():
+            if (
+                item.get("scope") == "global_requirement"
+                and item.get("balloon_required") is not False
+            ):
+                raise ValueError(
+                    "global requirement target must remain global and unnumbered"
+                )
+        for requirement in technical_requirements:
+            if requirement.get("match_outcome") != "global_scope":
+                continue
+            generated_id = requirement.get("generated_candidate_id")
+            target = (
+                active_items.get(generated_id)
+                if isinstance(generated_id, str)
+                else None
+            )
+            if (
+                target is None
+                or target.get("scope") != "global_requirement"
+                or target.get("balloon_required") is not False
+            ):
+                raise ValueError(
+                    "global requirement target must remain global and unnumbered"
                 )
 
     @staticmethod

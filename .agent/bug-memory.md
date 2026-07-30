@@ -18,7 +18,8 @@
   重开为 `unresolved` 并恢复 source coverage confirmation；其他 replacement 只重连
   active item 并重新投影 SIP suggestion。共享同一 observation 的 coverage gate 按全部
   requirements 重算；global merge 只接受 `global_requirement / balloon_required=false`
-  source，避免顺序依赖破坏无气泡合同。
+  source，并在所有 review command 完成后统一校验 active global item 与 global relation
+  target，避免 `Edit / Add / SetBalloonRequired` 等旁路破坏无气泡合同。
 - Regression check: `backend/tests/integration/test_review_operations.py`
 
 ## BUG-20260730-standalone-requirement-owner-replacement

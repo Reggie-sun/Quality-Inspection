@@ -94,6 +94,15 @@
   source requirements；任一 `review_required=true` 时 coverage 继续阻塞且不写 accepted
   verdict，全部解决后才关闭 gate。包含 global target 的 merge 仅允许全部 source 均为
   `scope=global_requirement` 且 `balloon_required=false`。
+- Closeout re-review evidence: child rollout
+  `019fb151-d30c-7f31-88ab-d4b12e320785` confirmed
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`，结论为
+  `reject`；确认 `Edit(scope)`、`SetBalloonRequired(true)` 和 manual Add 仍可能绕过
+  merge guard。
+- Final residual rule: `ReviewService.apply()` 在任何 command mutation 后、versioned write
+  前执行单一 invariant validation；所有 active `scope=global_requirement` item 必须
+  `balloon_required=false`，每条 confirmed `global_scope` relation 必须指向一个满足同一
+  invariant 的 active target。违规 command 整体拒绝，不递增 working-copy version。
 
 ## Problem Boundary
 
