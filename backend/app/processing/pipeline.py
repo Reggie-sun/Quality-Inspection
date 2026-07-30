@@ -41,6 +41,7 @@ from app.processing.automatic_result import (
     build_automatic_result,
     candidate_snapshot_from_inventory,
 )
+from app.providers.base import LOCALIZED_PROVIDER_FAILURE_CATEGORIES
 from app.projects.models import Project
 from app.projects.state import InvalidTransition, ProjectState, transition
 from app.storage.local import LocalFileStorage
@@ -380,7 +381,7 @@ class InventoryPipeline:
             if existing is not None:
                 return existing
             raise
-        except CandidateAdvisorFailure:
+        except CandidateAdvisorFailure as exc:
             existing = self._record_failure(
                 project,
                 job,
@@ -389,7 +390,12 @@ class InventoryPipeline:
                 message="Vision candidate Advisor call failed",
                 stage="candidate_advisor",
                 location_ref=None,
-                cause_category="processing_defect",
+                cause_category=(
+                    "transient_provider_failure"
+                    if exc.failure_category
+                    in LOCALIZED_PROVIDER_FAILURE_CATEGORIES
+                    else "processing_defect"
+                ),
             )
             if existing is not None:
                 return existing

@@ -448,10 +448,29 @@ def test_canonical_task_calls_vision_once_for_eligible_candidate(
         verify.close()
 
 
+@pytest.mark.parametrize(
+    ("provider_exception", "expected_category"),
+    (
+        (
+            lambda private_detail: RuntimeError(private_detail),
+            "transport",
+        ),
+        (
+            lambda _private_detail: CandidateAdvisorFailure(
+                "typed Provider response failure",
+                failure_category="schema",
+            ),
+            "schema",
+        ),
+    ),
+    ids=("generic-runtime", "typed-schema"),
+)
 def test_vision_failure_is_sanitized_without_result_layers(
     monkeypatch: pytest.MonkeyPatch,
     task_session_factory: Callable[[], Session],
     tmp_path: Path,
+    provider_exception: Callable[[str], Exception],
+    expected_category: str,
 ) -> None:
     storage = LocalFileStorage(tmp_path / "storage")
     setup = task_session_factory()
@@ -473,7 +492,7 @@ def test_vision_failure_is_sanitized_without_result_layers(
 
     class FailingVisionProvider:
         def review_candidate(self, _image: bytes, _prompt: str) -> VisionResult:
-            raise RuntimeError(private_detail)
+            raise provider_exception(private_detail)
 
     monkeypatch.setattr(
         tasks,
@@ -481,12 +500,13 @@ def test_vision_failure_is_sanitized_without_result_layers(
         lambda _settings: FailingVisionProvider(),
     )
 
-    with pytest.raises(CandidateAdvisorFailure):
+    with pytest.raises(CandidateAdvisorFailure) as raised:
         inventory_project.run(
             str(project.id),
             source.resource_ref,
             f"product-process:{project.id}",
         )
+    assert raised.value.failure_category == expected_category
 
     verify = task_session_factory()
     try:

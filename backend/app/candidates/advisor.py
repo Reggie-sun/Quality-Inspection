@@ -1986,6 +1986,16 @@ class CandidateAdvisor:
                 crop_png,
                 _review_prompt(route),
             )
+        except CapabilityUnavailable:
+            raise
+        except Exception as exc:
+            raise CandidateAdvisorFailure(
+                "Vision candidate Advisor call failed",
+                failure_category=(
+                    _localized_provider_failure_category(exc) or "transport"
+                ),
+            ) from None
+        try:
             suggestion = _validated_suggestion(raw_result.payload)
             if (
                 not isinstance(raw_result.request_id, str)
@@ -2001,7 +2011,7 @@ class CandidateAdvisor:
             raise
         except Exception:
             raise CandidateAdvisorFailure(
-                "Vision candidate Advisor call failed"
+                "Vision candidate Advisor response is invalid"
             ) from None
         duration_ms = max(0, (time.perf_counter_ns() - started) // 1_000_000)
 

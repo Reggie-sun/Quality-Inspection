@@ -2,6 +2,29 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260730-unclassified-vision-failure-category
+
+- Status: 已解决
+- First reported: 2026-07-30
+- Last reported: 2026-07-30
+- Recurrence: 1
+- Surface: `CandidateAdvisor` failure classification 与 `InventoryPipeline` error projection
+- Symptom: convergence 后 full backend suite 中，未分类的 Vision Provider `RuntimeError` 被记录为 `processing_defect`，旧 task-level contract 期望 `transient_provider_failure`。
+- Previously correct behavior: 已分类 timeout/transport/schema 进入 localized partial；systemic contract corruption 必须 fail closed。未分类 Provider runtime failure 的归属需由当前 plan/code/test 证据确认。
+- Reproduction: `backend/tests/integration/test_processing_entry_task.py::test_vision_failure_is_sanitized_without_result_layers` 在 merged HEAD `4fa73c2` 稳定失败于 `error.cause_category`。
+- Root cause: `_review_result()` 将 Provider 调用与本地 response validation
+  置于同一个 broad `except`，generic Provider `RuntimeError` 因而变成无类别
+  `CandidateAdvisorFailure`，随后被 pipeline 当作 `processing_defect`。
+- Fix: Provider 调用边界单独转换为 sanitised typed failure，保留已显式提供的
+  timeout/transport/schema/unavailable 类别，generic RuntimeError 才默认
+  `transport`；本地 response validation 保持无类别。`InventoryPipeline` 仅对
+  共享 Provider category 集合中的显式类别投影
+  `transient_provider_failure`，其余保持 `processing_defect`。
+- Regression check: `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_processing_entry_task.py::test_vision_failure_is_sanitized_without_result_layers -q`
+- Runtime proof: 未运行；当前任务禁止 live Provider/browser/PDF/Harness。
+- Change: `fix: preserve typed provider failure projection`; existing RED
+  已由 `1 passed` GREEN 验证，未创建 Provider/browser/PDF/Harness runtime proof。
+
 ## BUG-20260730-requirement-relation-retirement
 
 - First reported: 2026-07-30
