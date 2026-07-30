@@ -13,7 +13,7 @@
 ## Status
 
 - Date: `2026-07-30`
-- Status: `completed`
+- Status: `completed`（含 `A 内联逐条确认` amendment）
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-30-technical-requirement-recognition-and-matching.md`
@@ -33,8 +33,98 @@
   - frontend focused: `32 passed`
 - Writer ownership and order: 一个 write-capable executor 严格按 Task 1 → Task 7；
   同一 file group 不并发写
-- Next verification: none；implementation、runtime、parent verification 和 independent
-  reviewer gate 均已完成
+- Next verification: amendment 已通过 backend/frontend RED/GREEN、focused/full
+  tests、production build、无真实数据写入的 browser design QA 和 independent
+  reviewer gate；无剩余 blocker
+
+### A Inline Confirmation Flow Amendment
+
+- Approval evidence: 用户在 visual companion 中选择 `A 内联逐条确认`，随后选择
+  `完整闭环（推荐）`，明确授权同时补 Rule Owner 对
+  `未注公差按 GB/T 1804-m 级执行` 的识别。
+- Selected lane: `Standard` amendment；不改变稳定 API/schema、权限、migration、
+  runtime entry/config 或跨模块 data-integrity boundary。
+- Problem boundary: 让 explicit `GB/T 1804` shorthand 进入现有 deterministic
+  matching，并把 frontend immediate-action 列表替换为 inline draft → impact preview
+  → confirm-next → read-only terminal flow。
+- Single Owner:
+  - text classification/applicability 仍只由
+    `backend/app/candidates/technical_requirements.py` 拥有；
+  - persistence 仍只由 `set_technical_requirement_match` Review command 拥有；
+  - frontend 只拥有未持久化 draft 和状态呈现。
+- Old path to replace: `TechnicalRequirementPanel` 中
+  `确认当前匹配 / 确认匹配此检验项 / 设为全局要求 / 排除此要求`
+  一点即提交的分散按钮路径。
+- Unchanged contracts: 不自动写入 `GB/T 1804` 数值公差；不改变 technical requirement
+  schema、Review command、SIP confirmation、freeze、numbering、balloon 或 export
+  Owner；global requirement 继续无气泡。
+- Allowed paths:
+  - `backend/app/candidates/technical_requirements.py`
+  - `backend/tests/unit/candidates/test_technical_requirements.py`
+  - `frontend/src/components/workbench/TechnicalRequirementPanel.tsx`
+  - `frontend/src/components/workbench/TechnicalRequirementPanel.test.tsx`
+  - `frontend/src/components/workbench/InspectionWorkbench.tsx`
+  - `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+  - `frontend/src/copy/zhCN.ts`
+  - `frontend/src/styles/workbench.css`
+  - `frontend/e2e/technical-requirement-matching.spec.ts`
+  - `design-qa.md`
+  - `.agent/bug-memory.md`
+  - 本 spec/plan
+- Writer ownership and order: parent/main thread 单 writer；backend RED/GREEN 后再执行
+  frontend RED/GREEN；explorer/reviewer 始终只读。
+- Focused verification:
+  - `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py -q`
+  - `micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/TechnicalRequirementPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx`
+  - `micromamba run -n qi-p0 npm --prefix frontend test -- --run`
+  - `micromamba run -n qi-p0 npm --prefix frontend run build`
+  - Chrome MCP integrated smoke and Product Design comparison at the screenshot state.
+- Rollback: revert only the amendment commit；首先重跑 backend focused parser/evaluation
+  test，确认旧 ambiguity boundary 恢复，再跑 frontend focused tests。
+
+#### Amendment Task A1: Recognize Explicit GB/T 1804 Shorthand
+
+- [x] Add a unit test proving `未注公差按GB/T1804-m级执行` classifies as
+  `general_dimensional_tolerance` and matches only supported untoleranced dimensions.
+- [x] Run the focused unit test and verify RED is caused by the missing shorthand grammar.
+- [x] Make the smallest Rule Owner regex change; preserve the ambiguous result for incomplete
+  `未注公差按 GB/T 1804-m` text without `执行`.
+- [x] Run backend focused GREEN.
+
+#### Amendment Task A2: Replace Immediate Actions With Inline Sequential Confirmation
+
+- [x] Add component tests for draft-only selection, multi-item subset, impact preview, disabled
+  primary action, confirm-next progression, confirmed terminal summary, modify, and all-done
+  inspection handoff.
+- [x] Run the focused component test and verify RED is caused by the old immediate-action UI.
+- [x] Implement one active inline editor, local draft state, existing-command submission,
+  read-only terminal rows, and the inspection handoff without frontend rematching.
+- [x] Update copy and CSS to match the approved visual target and existing workbench tokens.
+- [x] Extend `InspectionWorkbench` coverage for the handoff/focus seam and the existing
+  dirty/save/freeze gate.
+- [x] Run focused GREEN, full frontend tests, build, browser design QA, and independent review.
+
+#### Amendment Closeout
+
+- Backend RED/GREEN: target shorthand initially remained `ambiguous`; the minimal Rule
+  Owner grammar change then passed `32` focused parser tests and the combined unit/offline
+  automatic-result slice passed `93` tests against the existing PostgreSQL container.
+- Frontend RED/GREEN: old immediate-submit UI and missing dirty integration produced the
+  expected failures; the final focused panel/workbench slice passed `44` tests and the
+  full frontend suite passed `257` tests.
+- Save/freeze boundary: technical-requirement drafts now participate in the existing
+  workbench dirty gate, block prepare/finalize, use the existing return dialog, and save
+  before metadata and the remaining draft handles.
+- Production build: PASS；保留既有 `>500 kB` chunk warning。
+- Browser/Product Design QA: PASS；在用户批准的 Playwright CDP fallback 中使用
+  intercepted workbench/command routes验证 draft、影响预览、dirty return gate、
+  terminal、修改与检验项 handoff；console error/warning、HTTP `>=400` 和 unexpected
+  request failure 均为 `0`，真实项目写入为 `0`。
+- E2E: Playwright spec collection PASS；真实写入型 E2E 未执行，因为本轮验证不应
+  改写用户现有项目。
+- Independent reviewer: child rollout
+  `019fb21e-b59c-7741-97ac-229d960d910a` 最终 verdict `accept`；初审发现的
+  dirty/freeze blocker 与复审发现的 multi-draft 保存顺序 concern 均已关闭。
 
 ### Task 7 Reviewer Residual Amendment
 

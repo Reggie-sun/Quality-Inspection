@@ -150,6 +150,12 @@ test("真实工程 PDF 自动识别六条技术要求并持久化匹配与 SIP �
 
   const panel = page.getByRole("region", { name: "技术要求匹配" });
   await expect(panel).toBeVisible();
+  const expandRequirements = panel.getByRole("button", {
+    name: "展开技术要求",
+  });
+  if (await expandRequirements.isVisible()) {
+    await expandRequirements.click();
+  }
   for (const text of [
     /未标注倒角\s*C0\.5/,
     /锐边去毛刺/,
@@ -160,6 +166,44 @@ test("真实工程 PDF 自动识别六条技术要求并持久化匹配与 SIP �
   ]) {
     await expect(panel.getByText(text)).toBeVisible();
   }
+  for (const requirement of requirements.filter(
+    (item) => item.review_required,
+  )) {
+    const entry = panel.locator("li").filter({
+      hasText: requirement.raw_text,
+    });
+    const commandResponse = page.waitForResponse((candidate) => (
+      candidate.request().method() === "POST"
+      && candidate.url().includes("/review/commands")
+    ));
+    const refreshResponse = page.waitForResponse((candidate) => (
+      candidate.request().method() === "GET"
+      && candidate.url().includes("/workbench")
+    ));
+    if (
+      requirement.match_outcome === "matched_items"
+      && requirement.matched_candidate_ids.length > 0
+    ) {
+      await entry.getByRole("radio", {
+        name: "应用到系统建议的检验项",
+      }).click();
+    } else if (requirement.match_outcome === "global_scope") {
+      await entry.getByRole("radio", {
+        name: "作为全局 SIP 要求",
+      }).click();
+    } else {
+      throw new Error(
+        `技术要求 ${requirement.requirement_id} 没有可直接确认的建议，需人工处理后再继续 E2E`,
+      );
+    }
+    await entry.getByRole("button", {
+      name: "确认并处理下一条",
+    }).click();
+    expect((await commandResponse).ok()).toBe(true);
+    expect((await refreshResponse).ok()).toBe(true);
+  }
+  await expect(panel.getByText("已确认 6")).toBeVisible();
+  await panel.getByRole("button", { name: "展开技术要求" }).click();
 
   const dimensional = requirements.find(
     (item) => item.subtype === "general_dimensional_tolerance",
@@ -169,11 +213,11 @@ test("真实工程 PDF 自动识别六条技术要求并持久化匹配与 SIP �
   }
   const matchedItemId = dimensional.matched_candidate_ids[0];
   const dimensionalEntry = panel.locator("li").filter({
-    hasText: "GB/T1804-m",
+    hasText: /GB\s*\/\s*T\s*1804-m/,
   });
   await dimensionalEntry.getByRole("button", {
-    name: /^查看匹配检验项：/,
-  }).first().click();
+    name: "查看关联项",
+  }).click();
   await expect(page.locator(
     `[role="row"][data-item-id="${matchedItemId}"]`,
   )).toHaveAttribute("data-selected", "true");
@@ -189,35 +233,15 @@ test("真实工程 PDF 自动识别六条技术要求并持久化匹配与 SIP �
     )?.sip_detail_fields_confirmed,
   ).toBe(true);
 
-  const geometricEntry = panel.locator("li").filter({
-    hasText: "GB/T1184-k",
-  });
-  const details = geometricEntry.locator("details");
-  if (!(await details.evaluate((element) => element.hasAttribute("open")))) {
-    await details.locator("summary").click();
-  }
-  const overrideResponse = page.waitForResponse((candidate) => (
-    candidate.request().method() === "POST"
-    && candidate.url().includes("/review/commands")
-  ));
-  const overrideRefresh = page.waitForResponse((candidate) => (
-    candidate.request().method() === "GET"
-    && candidate.url().includes("/workbench")
-  ));
-  await details.getByRole("button", {
-    name: /^确认匹配此检验项：/,
-  }).first().click();
-  expect((await overrideResponse).ok()).toBe(true);
-  expect((await overrideRefresh).ok()).toBe(true);
-
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByRole("region", { name: "技术要求匹配" })).toBeVisible();
   const persisted = await workbench(page, identity.projectId);
   const persistedGeometric = (
     persisted.working_copy.technical_requirements ?? []
   ).find((item) => item.subtype === "general_geometric_tolerance");
-  expect(persistedGeometric?.match_outcome).toBe("matched_items");
-  expect(persistedGeometric?.matched_candidate_ids).toHaveLength(1);
+  expect(persistedGeometric?.match_outcome).toBe("global_scope");
+  expect(persistedGeometric?.review_status).toBe("confirmed");
+  expect(persistedGeometric?.review_required).toBe(false);
   expect(
     persisted.working_copy.items.find(
       (item) => item.item_id === matchedItemId,

@@ -12,6 +12,7 @@ import type {
   ExportArtifactKind,
   ExportJob,
   PostJson,
+  ReviewWorkingCopyView,
 } from "../../api/types";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 
@@ -2049,8 +2050,12 @@ describe("InspectionWorkbench", () => {
       "inspection-pane--with-technical-requirements",
     )).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
+    fireEvent.click(screen.getByRole("radio", {
+      name: "只应用到部分检验项",
+    }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "25" }));
     fireEvent.click(screen.getByRole("button", {
-      name: "确认匹配此检验项：25",
+      name: "确认并处理下一条",
     }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({
@@ -2127,7 +2132,7 @@ describe("InspectionWorkbench", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
     fireEvent.click(screen.getByRole("button", {
-      name: "查看匹配检验项：100",
+      name: "查看系统建议关联项（1 项）",
     }));
 
     expect(screen.getByRole("button", { name: "筛选全部" })
@@ -2300,5 +2305,103 @@ describe("InspectionWorkbench", () => {
       type: "set_sip_metadata",
       material_name: "保存后返回",
     }));
+  });
+
+  test("技术要求草稿阻止自动准备，并通过保存返回门禁提交", async () => {
+    const onReset = vi.fn();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const onPrepareReview = vi.fn().mockResolvedValue(undefined);
+    const workingCopy: ReviewWorkingCopyView = {
+      id: "technical-requirement-draft-working-copy",
+      project_id: "project",
+      raw_result_id: "raw",
+      version: 1,
+      items: [],
+      coverage: { blocking_count: 0, review_required_count: 0 },
+      technical_requirements: [{
+        requirement_id: "global-requirement",
+        ordinal: 1,
+        raw_text: "锐边去毛刺",
+        normalized_text: "锐边去毛刺",
+        source_location_ids: ["source-global"],
+        page_index: 0,
+        category: "standalone_check",
+        subtype: "deburr",
+        parsed_parameters: {},
+        match_outcome: "global_scope",
+        matched_candidate_ids: [],
+        generated_candidate_id: "global-deburr",
+        rule_version: "technical-requirement/1",
+        review_required: false,
+        review_status: "confirmed",
+      }],
+      numbering_stale: false,
+      items_frozen_at: null,
+      items_frozen_by: null,
+      items_frozen_version: null,
+      sip_metadata: {
+        material_code: "MAT-001",
+        material_name: "上座",
+        drawing_number: "JS26032501",
+        material: "SUS304",
+        revision: "A1",
+      },
+    };
+    const view = render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={workingCopy}
+        onSave={onSave}
+        onReset={onReset}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改" }));
+    fireEvent.click(screen.getByRole("button", { name: "更改处理方式" }));
+    fireEvent.click(screen.getByRole("radio", { name: "排除此要求" }));
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    fireEvent.change(within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }), { target: { value: "技术要求联动草稿" } });
+
+    view.rerender(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={workingCopy}
+        onSave={onSave}
+        onReset={onReset}
+        onPrepareReview={onPrepareReview}
+      />,
+    );
+    expect(onPrepareReview).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+    expect(screen.getByRole("dialog", { name: "返回图纸列表？" }))
+      .not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+
+    await waitFor(() => expect(onReset).toHaveBeenCalledOnce());
+    expect(onSave).toHaveBeenNthCalledWith(1, {
+      type: "set_technical_requirement_match",
+      requirement_id: "global-requirement",
+      outcome: "excluded",
+    });
+    expect(onSave).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      type: "set_sip_metadata",
+      material_name: "技术要求联动草稿",
+    }));
+    expect(onPrepareReview).not.toHaveBeenCalled();
   });
 });

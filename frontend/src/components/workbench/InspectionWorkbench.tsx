@@ -193,6 +193,10 @@ export function InspectionWorkbench({
   const [reviewDraftDirty, setReviewDraftDirty] = useState(false);
   const [sourceDraftDirty, setSourceDraftDirty] = useState(false);
   const [selectedSipDraftDirty, setSelectedSipDraftDirty] = useState(false);
+  const [
+    technicalRequirementDraftDirty,
+    setTechnicalRequirementDraftDirty,
+  ] = useState(false);
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
   const [selectionBlocked, setSelectionBlocked] = useState(false);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
@@ -200,6 +204,7 @@ export function InspectionWorkbench({
   const reviewDraftSaveRef = useRef<DraftSaveHandle>(null);
   const sourceDraftSaveRef = useRef<DraftSaveHandle>(null);
   const selectedSipDraftSaveRef = useRef<DraftSaveHandle>(null);
+  const technicalRequirementDraftSaveRef = useRef<DraftSaveHandle>(null);
   const returnActionRef = useRef<HTMLButtonElement>(null);
   const saveAndReturnRef = useRef<HTMLButtonElement>(null);
   const prepareAttemptRef = useRef<string | undefined>(undefined);
@@ -253,6 +258,7 @@ export function InspectionWorkbench({
     reviewDraftDirty
     || sourceDraftDirty
     || selectedSipDraftDirty
+    || technicalRequirementDraftDirty
     || metadataDraftDirty;
   const displayedSaveState = saving
     ? zhCN.workbench.saving
@@ -365,15 +371,24 @@ export function InspectionWorkbench({
   };
   const saveAndReturnToDrawingList = async (): Promise<void> => {
     if (returnSaving || onReset === undefined) return;
-    const draftSaveHandles = [
+    const remainingDraftSaveHandles = [
       reviewDraftSaveRef.current,
       sourceDraftSaveRef.current,
       selectedSipDraftSaveRef.current,
     ];
     setReturnSaving(true);
     try {
+      const technicalRequirementSaved = await saveDraftHandlesInOrder([
+        technicalRequirementDraftSaveRef.current,
+      ]);
+      if (!technicalRequirementSaved) {
+        setSaveState(zhCN.workbench.saveFailed);
+        return;
+      }
       if (metadataDraftDirty && !(await confirmMetadata())) return;
-      const saved = await saveDraftHandlesInOrder(draftSaveHandles);
+      const saved = await saveDraftHandlesInOrder(
+        remainingDraftSaveHandles,
+      );
       if (!saved) {
         setSaveState(zhCN.workbench.saveFailed);
         return;
@@ -601,6 +616,8 @@ export function InspectionWorkbench({
               return selectItem(itemId);
             }}
             onCommand={submitCommand}
+            onDraftChange={setTechnicalRequirementDraftDirty}
+            draftSaveRef={technicalRequirementDraftSaveRef}
           />
           <div
             className="inspection-review-workspace"

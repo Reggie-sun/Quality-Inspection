@@ -148,6 +148,11 @@ def test_reconstructs_real_drawing_column_amid_interleaved_title_block_text() ->
             "general_dimensional_tolerance",
         ),
         (
+            "未注公差按GB/T 1804-m级执行",
+            "applicability_rule",
+            "general_dimensional_tolerance",
+        ),
+        (
             "未注形位公差按GB/T 1184-k执行",
             "applicability_rule",
             "general_geometric_tolerance",
@@ -267,6 +272,25 @@ def test_standard_reference_is_parsed_without_numeric_conversion() -> None:
     assert decision.sip_suggestion.key_dimension is None
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "未注公差按 GB/T 1804-m",
+        "未注公差按 GB/T 1804-x级执行",
+        "未注公差按 ISO 2768-m级执行",
+        "未注公差按 GB/T 1184-k级执行",
+    ],
+)
+def test_general_tolerance_shorthand_without_complete_1804_evidence_is_ambiguous(
+    text: str,
+) -> None:
+    decision = classify_technical_requirement_entry(entry_for(text))
+
+    assert decision.category == "ambiguous"
+    assert decision.subtype == "ambiguous"
+    assert decision.match_outcome == "unresolved"
+
+
 def envelope(
     candidate_id: str,
     *,
@@ -304,6 +328,35 @@ def test_general_dimensional_tolerance_matches_only_untoleranced_dimensions() ->
         candidates,
     )
 
+    assert decision.match_outcome == "matched_items"
+    assert decision.matched_candidate_ids == ["linear"]
+    assert candidates[0]["payload"].get("upper_tolerance") is None
+    assert candidates[0]["payload"].get("lower_tolerance") is None
+
+
+def test_general_dimensional_shorthand_matches_only_untoleranced_dimensions() -> None:
+    candidates = (
+        envelope("linear", item_type="linear_dimension", nominal="25"),
+        envelope(
+            "explicit",
+            item_type="linear_dimension",
+            nominal="30",
+            upper_tolerance="0.1",
+            lower_tolerance="-0.1",
+        ),
+        envelope("thread", item_type="thread", thread_spec="M6"),
+    )
+
+    decision = evaluate_requirement(
+        entry_for("未注公差按GB/T 1804-m级执行"),
+        candidates,
+    )
+
+    assert decision.subtype == "general_dimensional_tolerance"
+    assert decision.parsed_parameters == {
+        "standard_code": "GB/T 1804",
+        "tolerance_class": "m",
+    }
     assert decision.match_outcome == "matched_items"
     assert decision.matched_candidate_ids == ["linear"]
     assert candidates[0]["payload"].get("upper_tolerance") is None
