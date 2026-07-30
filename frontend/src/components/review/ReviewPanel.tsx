@@ -610,8 +610,9 @@ export function ReviewPanel({
                         field.label,
                         selectedItem.raw_text,
                       )}
-                      disabled={disabled || !isEditingSelected}
+                      disabled={disabled}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
+                      onFocus={beginEditingSelected}
                       onChange={(event) =>
                         setCoreValue(
                           selectedItem.item_id,
@@ -630,8 +631,9 @@ export function ReviewPanel({
                         field.label,
                         selectedItem.raw_text,
                       )}
-                      disabled={disabled || !isEditingSelected}
+                      disabled={disabled}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
+                      onFocus={beginEditingSelected}
                       onChange={(event) =>
                         setCoreValue(
                           selectedItem.item_id,
@@ -654,9 +656,9 @@ export function ReviewPanel({
                       )}
                       disabled={disabled}
                       inputMode={field.kind === "decimal" ? "decimal" : undefined}
-                      readOnly={!isEditingSelected}
                       type="text"
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
+                      onFocus={beginEditingSelected}
                       onChange={(event) =>
                         setCoreValue(
                           selectedItem.item_id,
