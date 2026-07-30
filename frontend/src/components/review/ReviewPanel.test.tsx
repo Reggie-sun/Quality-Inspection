@@ -1,3 +1,4 @@
+import { createRef } from "react";
 import {
   act,
   cleanup,
@@ -10,6 +11,7 @@ import {
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { CandidateType, ReviewItem } from "../../api/types";
+import type { DraftSaveHandle } from "../workbench/draftSave";
 import { ReviewPanel } from "./ReviewPanel";
 
 
@@ -1529,5 +1531,39 @@ describe("ReviewPanel", () => {
     expect(screen.queryByText(
       "typed_schema_complete、coverage_unchecked",
     )).toBeNull();
+  });
+
+  test("显式 draft save handle 保存新增检验项草稿", async () => {
+    const draftSaveRef = createRef<DraftSaveHandle>();
+    const onCommand = vi.fn().mockResolvedValue(true);
+    const onDraftChange = vi.fn();
+    render(
+      <ReviewPanel
+        items={[]}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        draftSaveRef={draftSaveRef}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("新增检验项原始标注"), {
+      target: { value: "M10" },
+    });
+    fireEvent.change(screen.getByLabelText("新增检验项坐标"), {
+      target: { value: "1,2,3,4" },
+    });
+
+    let saved = false;
+    await act(async () => {
+      saved = await draftSaveRef.current!.saveDrafts();
+    });
+
+    expect(saved).toBe(true);
+    expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({
+      type: "add",
+      raw_text: "M10",
+      coordinates: [1, 2, 3, 4],
+    }));
+    expect(onDraftChange).toHaveBeenLastCalledWith(false);
   });
 });

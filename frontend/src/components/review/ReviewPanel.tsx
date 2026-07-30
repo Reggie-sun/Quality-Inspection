@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { Ref } from "react";
 
 import type {
   CandidateType,
@@ -7,6 +14,7 @@ import type {
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
+import type { DraftSaveHandle } from "../workbench/draftSave";
 import type { InspectionItemPresentation } from "../workbench/inspectionItemPresentation";
 
 
@@ -21,6 +29,7 @@ type ReviewPanelProps = {
   onSelectItem?: (itemId: string) => void;
   pageIndex?: number;
   onDraftChange?: (dirty: boolean) => void;
+  draftSaveRef?: Ref<DraftSaveHandle>;
 };
 
 type CoreFieldKey =
@@ -168,6 +177,7 @@ export function ReviewPanel({
   onSelectItem,
   pageIndex = 0,
   onDraftChange,
+  draftSaveRef,
 }: ReviewPanelProps) {
   const [rawTexts, setRawTexts] = useState<Record<string, string>>(() =>
     Object.fromEntries(items.map((item) => [item.item_id, item.raw_text])),
@@ -414,7 +424,7 @@ export function ReviewPanel({
     }));
   };
 
-  const editItem = async (item: ReviewItem) => {
+  const editItem = async (item: ReviewItem): Promise<boolean> => {
     const submittedSignature = itemDraftSignature(item);
     const preSubmitPersistedSignature = persistedItemSignature(item);
     const preSubmitSnapshotGeneration =
@@ -424,7 +434,7 @@ export function ReviewPanel({
     };
     if (item.coarse_type !== undefined) {
       const coordinates = parseCoordinates(complexCoordinates[item.item_id] ?? "");
-      if (coordinates === null) return;
+      if (coordinates === null) return false;
       Object.assign(fields, {
         coordinates,
         coarse_type: coarseTypes[item.item_id] ?? item.coarse_type,
@@ -436,7 +446,7 @@ export function ReviewPanel({
         const value = coreValues[item.item_id]?.[field.key] ?? "";
         if (value.trim() === "" && item[field.key] === undefined) continue;
         const parsed = parseCoreValue(field, value);
-        if (!parsed.valid) return;
+        if (!parsed.valid) return false;
         fields[field.key] = parsed.value;
       }
     }
@@ -445,7 +455,7 @@ export function ReviewPanel({
       item_id: item.item_id,
       fields,
     });
-    if (outcome === false) return;
+    if (outcome === false) return false;
     const latestItemsSnapshot = latestItemsSnapshotRef.current;
     const latestItem = latestItemsSnapshot.items.find(
       (candidate) => candidate.item_id === item.item_id,
@@ -484,6 +494,7 @@ export function ReviewPanel({
         current === item.item_id ? undefined : current,
       );
     }
+    return true;
   };
 
   const resetManualItem = () => {
@@ -494,9 +505,9 @@ export function ReviewPanel({
     setManualBalloonRequired(true);
     setManualDraftDirty(false);
   };
-  const addManualItem = async () => {
+  const addManualItem = async (): Promise<boolean> => {
     const coordinates = parseCoordinates(manualCoordinates);
-    if (manualRawText.trim() === "" || coordinates === null) return;
+    if (manualRawText.trim() === "" || coordinates === null) return false;
     const outcome = await onCommand({
       type: "add",
       raw_text: manualRawText,
@@ -506,23 +517,24 @@ export function ReviewPanel({
       balloon_required: manualBalloonRequired,
       page_index: pageIndex,
     });
-    if (outcome === false) return;
+    if (outcome === false) return false;
     resetManualItem();
+    return true;
   };
 
-  const splitItem = async (item: ReviewItem) => {
+  const splitItem = async (item: ReviewItem): Promise<boolean> => {
     const parts = (splitTexts[item.item_id] ?? "")
       .split("|")
       .map((rawText) => rawText.trim())
       .filter(Boolean)
       .map((raw_text) => ({ raw_text }));
-    if (parts.length < 2) return;
+    if (parts.length < 2) return false;
     const outcome = await onCommand({
       type: "split",
       item_id: item.item_id,
       parts,
     });
-    if (outcome === false) return;
+    if (outcome === false) return false;
     setSplitTexts((current) => ({
       ...current,
       [item.item_id]: "",
@@ -530,6 +542,7 @@ export function ReviewPanel({
     setDirtySplitIds((current) =>
       current.filter((candidate) => candidate !== item.item_id),
     );
+    return true;
   };
   const cancelExclude = () => {
     if (excludeSubmitting) return;
@@ -552,6 +565,21 @@ export function ReviewPanel({
       setExcludeSubmitting(false);
     }
   };
+
+  useImperativeHandle(draftSaveRef, () => ({
+    saveDrafts: async () => {
+      for (const itemId of [...dirtyItemIds]) {
+        const item = activeItems.find((candidate) => candidate.item_id === itemId);
+        if (item === undefined || !(await editItem(item))) return false;
+      }
+      for (const itemId of [...dirtySplitIds]) {
+        const item = activeItems.find((candidate) => candidate.item_id === itemId);
+        if (item === undefined || !(await splitItem(item))) return false;
+      }
+      if (manualDraftDirty && !(await addManualItem())) return false;
+      return true;
+    },
+  }));
 
   return (
     <section className="review-panel" aria-label={zhCN.review.region}>

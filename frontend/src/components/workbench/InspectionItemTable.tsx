@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { Ref } from "react";
 
 import type {
   BalloonOverlay,
@@ -7,6 +14,7 @@ import type {
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
+import type { DraftSaveHandle } from "./draftSave";
 import {
   INSPECTION_ITEM_STATUS_LABELS,
   INSPECTION_ITEM_TYPE_LABELS,
@@ -34,6 +42,7 @@ type InspectionItemTableProps = {
     command: ReviewCommand,
   ) => boolean | void | Promise<boolean | void>;
   onDraftChange?: (dirty: boolean) => void;
+  draftSaveRef?: Ref<DraftSaveHandle>;
 };
 
 export type PendingSourceReview = {
@@ -105,6 +114,7 @@ export function InspectionItemTable({
   onSelectSource,
   onCommand,
   onDraftChange,
+  draftSaveRef,
 }: InspectionItemTableProps) {
   const [statusFilter, setStatusFilter] = useState<ItemStatus | "all">("all");
   const [page, setPage] = useState(1);
@@ -251,6 +261,43 @@ export function InspectionItemTable({
         observationId !== selectedSource.observationId),
     );
   };
+  const saveSourceDraft = async (
+    source: PendingSourceReview,
+  ): Promise<boolean> => {
+    const draft = sourceDrafts[source.observationId] ?? sourceDraft(source);
+    if (
+      draft.itemType === ""
+      || source.pageIndex === undefined
+      || draft.rawText.trim() === ""
+    ) return false;
+    const succeeded = await commandSucceeded(onCommand, {
+      type: "promote_source",
+      observation_id: source.observationId,
+      raw_text: draft.rawText,
+      item_type: draft.itemType,
+      scope: draft.scope,
+      balloon_required: draft.balloonRequired,
+      page_index: source.pageIndex,
+    });
+    if (succeeded) {
+      setDirtySourceIds((current) =>
+        current.filter((observationId) => observationId !== source.observationId),
+      );
+    }
+    return succeeded;
+  };
+
+  useImperativeHandle(draftSaveRef, () => ({
+    saveDrafts: async () => {
+      for (const observationId of [...dirtySourceIds]) {
+        const source = pendingSources.find(
+          (candidate) => candidate.observationId === observationId,
+        );
+        if (source === undefined || !(await saveSourceDraft(source))) return false;
+      }
+      return true;
+    },
+  }));
 
   return (
     <section
@@ -607,20 +654,7 @@ export function InspectionItemTable({
                     || selectedSourceDraft.rawText.trim() === ""
                   }
                   onClick={async () => {
-                    if (
-                      selectedSourceDraft.itemType === ""
-                      || selectedSource.pageIndex === undefined
-                    ) return;
-                    const succeeded = await commandSucceeded(onCommand, {
-                      type: "promote_source",
-                      observation_id: selectedSource.observationId,
-                      raw_text: selectedSourceDraft.rawText,
-                      item_type: selectedSourceDraft.itemType,
-                      scope: selectedSourceDraft.scope,
-                      balloon_required: selectedSourceDraft.balloonRequired,
-                      page_index: selectedSource.pageIndex,
-                    });
-                    if (succeeded) clearSelectedSourceDirty();
+                    await saveSourceDraft(selectedSource);
                   }}
                 >
                   {zhCN.inspection.promoteSource}

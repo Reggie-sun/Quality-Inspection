@@ -3,7 +3,9 @@ import type {
   ReviewCommand,
   ReviewItem,
 } from "../../api/types";
+import type { Ref } from "react";
 import { zhCN } from "../../copy/zhCN";
+import type { DraftSaveHandle } from "./draftSave";
 import { SelectedSipDetailFields } from "./SelectedSipDetailFields";
 
 
@@ -30,6 +32,7 @@ export type SipInformationPanelProps = {
     command: ReviewCommand,
   ) => boolean | void | Promise<boolean | void>;
   onSelectedSipDraftChange?: (dirty: boolean) => void;
+  selectedSipDraftSaveRef?: Ref<DraftSaveHandle>;
 };
 
 
@@ -46,6 +49,7 @@ export function SipInformationPanel({
   onCancelMetadata,
   onCommand,
   onSelectedSipDraftChange,
+  selectedSipDraftSaveRef,
 }: SipInformationPanelProps) {
   const selectedItemActive = selectedItem?.active === true;
 
@@ -148,6 +152,7 @@ export function SipInformationPanel({
           disabled={disabled}
           onCommand={onCommand}
           onDraftChange={onSelectedSipDraftChange}
+          draftSaveRef={selectedSipDraftSaveRef}
         />
       </section>
     </section>

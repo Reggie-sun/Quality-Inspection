@@ -1,4 +1,6 @@
+import { createRef } from "react";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,6 +10,7 @@ import {
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { ReviewItem } from "../../api/types";
+import type { DraftSaveHandle } from "./draftSave";
 import {
   SipInformationPanel,
   type MetadataDraft,
@@ -217,4 +220,28 @@ test("项目和当前检验项子区是具名可访问区域", () => {
   expect(within(region).getByRole("region", {
     name: "当前检验项",
   })).toBeTruthy();
+});
+
+test("向当前检验项转发显式 draft save handle", async () => {
+  const selectedSipDraftSaveRef = createRef<DraftSaveHandle>();
+  const onCommand = vi.fn().mockResolvedValue(true);
+  renderPanel({
+    onCommand,
+    selectedSipDraftSaveRef,
+  });
+
+  fireEvent.change(screen.getByRole("textbox", { name: "检验方法：M6" }), {
+    target: { value: "三针法" },
+  });
+  await act(async () => {
+    expect(
+      await selectedSipDraftSaveRef.current!.saveDrafts(),
+    ).toBe(true);
+  });
+
+  expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({
+    type: "set_sip_detail_fields",
+    item_id: "item-1",
+    inspection_method: "三针法",
+  }));
 });

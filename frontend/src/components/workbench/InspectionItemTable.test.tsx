@@ -1,4 +1,6 @@
+import { createRef } from "react";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
+import type { DraftSaveHandle } from "./draftSave";
 import { InspectionItemTable } from "./InspectionItemTable";
 
 
@@ -1009,4 +1012,54 @@ test("全部筛选保留自动通过项的选择身份", () => {
     .not.toBeNull();
   fireEvent.click(row);
   expect(onSelectItem).toHaveBeenCalledWith("auto-editable");
+});
+
+test("显式 draft save handle 保存待判定来源草稿", async () => {
+  const draftSaveRef = createRef<DraftSaveHandle>();
+  const onCommand = vi.fn().mockResolvedValue(true);
+  const onDraftChange = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "source-draft-observation",
+        sourceId: "source-draft",
+        rawText: "M8",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="all"
+      selectedSourceId="source-draft"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={onCommand}
+      onDraftChange={onDraftChange}
+      draftSaveRef={draftSaveRef}
+    />,
+  );
+
+  fireEvent.change(screen.getByRole("textbox", { name: "原始标注" }), {
+    target: { value: "M8 通" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+    target: { value: "thread" },
+  });
+
+  let saved = false;
+  await act(async () => {
+    saved = await draftSaveRef.current!.saveDrafts();
+  });
+
+  expect(saved).toBe(true);
+  expect(onCommand).toHaveBeenCalledWith({
+    type: "promote_source",
+    observation_id: "source-draft-observation",
+    raw_text: "M8 通",
+    item_type: "thread",
+    scope: "local_feature",
+    balloon_required: true,
+    page_index: 0,
+  });
+  expect(onDraftChange).toHaveBeenLastCalledWith(false);
 });
