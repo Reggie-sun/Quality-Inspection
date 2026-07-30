@@ -145,3 +145,33 @@
   candidate 3、6、82 并显示“待选择气泡”；冻结/生成/确认仍按顺序禁用，
   无横向溢出，console error / warning 为 `0 / 0`
 - Change: `fix: keep bubble decisions in review queue`
+
+## BUG-20260730-quantity-hidden-from-review
+
+- Status: 已解决
+- First reported: 2026-07-30
+- Last reported: 2026-07-30
+- Recurrence: 1
+- Surface: 工程图数量前缀解析结果、检验项审核编辑与 Review command
+- Symptom: `3 × M10 通`、`6 × ⌀12 通` 等候选项在后端仍保留
+  `quantity`，但审核详情“解析结果”不展示数量，也无法人工修正
+- Previously correct behavior: typed inspection item 的解析结果首项展示可编辑数量；
+  保存时作为正整数 `quantity` 随同既有 `edit` command 提交
+- Reproduction: `ReviewItem.quantity=4` 时，当前
+  `ReviewPanel.test.tsx` 反向断言“审核详情不展示数量字段”
+- Root cause: commit `723fc45` 只从 `ReviewPanel` 删除 `QUANTITY_FIELD`、
+  integer 解析和 number input；Candidate schema、parser、working copy 与前端
+  `ReviewItem` 类型仍保留既有 `quantity` owner
+- Fix: 在 `ReviewPanel` 恢复既有 `quantity` 核心字段、nullable 正整数解析与
+  number input，并继续通过唯一 `edit` command 保存；未改 Candidate schema、
+  review persistence、分组合并语义或 SIP 导出模板
+- Regression check: TDD RED 先由数量显示和保存用例复现；`ReviewPanel`
+  `32/32` 通过，覆盖正整数、清空为 `null`、`0` 与 `1.5` 不提交；
+  frontend 全量 `221/221` 通过，`npm run build` 成功；quantity grouping
+  `2/2` 与 review typed edit / merge `2/2` 通过
+- Runtime proof: Chrome MCP 在真实项目
+  `fb0572f9-4401-4d05-95ae-fde26b28d1d3` 选中
+  `3 x M10 通`，解析结果显示数量 `3`、螺纹规格 `M10`、通孔“是”，
+  quantity input 为 `min=1 / step=1`；页面无横向溢出，
+  console error / warning 为 `0 / 0`
+- Change: `fix(frontend): restore inspection quantity field`

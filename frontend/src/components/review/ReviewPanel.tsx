@@ -24,6 +24,7 @@ type ReviewPanelProps = {
 };
 
 type CoreFieldKey =
+  | "quantity"
   | "nominal"
   | "upper_tolerance"
   | "lower_tolerance"
@@ -38,7 +39,7 @@ type CoreFieldKey =
 type CoreField = {
   key: CoreFieldKey;
   label: string;
-  kind: "decimal" | "text" | "boolean" | "feature_kind";
+  kind: "decimal" | "integer" | "text" | "boolean" | "feature_kind";
 };
 
 type AcknowledgedItemDraft = {
@@ -47,33 +48,44 @@ type AcknowledgedItemDraft = {
   snapshotGeneration: number;
 };
 
+const QUANTITY_FIELD: CoreField = {
+  key: "quantity",
+  label: zhCN.review.fields.quantity,
+  kind: "integer",
+};
+
 const CORE_FIELDS: Record<CandidateType, CoreField[]> = {
   linear_dimension: [
+    QUANTITY_FIELD,
     { key: "nominal", label: zhCN.review.fields.nominal, kind: "decimal" },
     { key: "upper_tolerance", label: zhCN.review.fields.upperTolerance, kind: "decimal" },
     { key: "lower_tolerance", label: zhCN.review.fields.lowerTolerance, kind: "decimal" },
   ],
   diameter_dimension: [
+    QUANTITY_FIELD,
     { key: "nominal", label: zhCN.review.fields.diameter, kind: "decimal" },
     { key: "feature_kind", label: zhCN.review.fields.featureKind, kind: "feature_kind" },
     { key: "depth", label: zhCN.review.fields.depth, kind: "decimal" },
     { key: "through", label: zhCN.review.fields.through, kind: "boolean" },
   ],
   thread: [
+    QUANTITY_FIELD,
     { key: "thread_spec", label: zhCN.review.fields.threadSpec, kind: "text" },
     { key: "thread_depth", label: zhCN.review.fields.threadDepth, kind: "decimal" },
     { key: "through", label: zhCN.review.fields.through, kind: "boolean" },
   ],
   radius: [
+    QUANTITY_FIELD,
     { key: "radius_value", label: zhCN.review.fields.radius, kind: "decimal" },
   ],
   angle: [
+    QUANTITY_FIELD,
     { key: "angle_value", label: zhCN.review.fields.angle, kind: "decimal" },
     { key: "upper_tolerance", label: zhCN.review.fields.upperTolerance, kind: "decimal" },
     { key: "lower_tolerance", label: zhCN.review.fields.lowerTolerance, kind: "decimal" },
   ],
-  general_requirement: [],
-  composite: [],
+  general_requirement: [QUANTITY_FIELD],
+  composite: [QUANTITY_FIELD],
 };
 
 function coreFieldsFor(itemType: unknown): CoreField[] {
@@ -113,6 +125,13 @@ function parseCoreValue(
 ): { valid: boolean; value: unknown } {
   const trimmed = value.trim();
   if (trimmed === "") return { valid: true, value: null };
+  if (field.kind === "integer") {
+    const parsed = Number(trimmed);
+    return {
+      valid: Number.isInteger(parsed) && parsed >= 1,
+      value: parsed,
+    };
+  }
   if (field.kind === "boolean") {
     return {
       valid: trimmed === "true" || trimmed === "false",
@@ -656,7 +675,9 @@ export function ReviewPanel({
                       )}
                       disabled={disabled}
                       inputMode={field.kind === "decimal" ? "decimal" : undefined}
-                      type="text"
+                      type={field.kind === "integer" ? "number" : "text"}
+                      min={field.kind === "integer" ? 1 : undefined}
+                      step={field.kind === "integer" ? 1 : undefined}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
                       onFocus={beginEditingSelected}
                       onChange={(event) =>
