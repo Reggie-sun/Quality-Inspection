@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 import struct
 from dataclasses import replace
 from pathlib import Path
@@ -81,9 +82,14 @@ class RecordingOcrProvider:
 
 class SourceBoundPreviewSink:
     def __init__(self) -> None:
-        self.local_submissions: list[tuple[str, object]] = []
+        self.local_submissions: list[tuple[uuid.UUID, object]] = []
 
-    def publish_local(self, *, source_file_id: str, snapshot: object) -> None:
+    def publish_local(
+        self,
+        *,
+        source_file_id: uuid.UUID,
+        snapshot: object,
+    ) -> None:
         self.local_submissions.append((source_file_id, snapshot))
 
 
@@ -98,7 +104,7 @@ class SourceBoundAdvisor:
         pages: tuple[object, ...],
         snapshot: object,
         *,
-        source_file_id: str,
+        source_file_id: uuid.UUID,
     ) -> object:
         assert pages
         self._preview_sink.publish_local(
@@ -319,7 +325,7 @@ def test_runtime_recognition_forwards_exact_source_identity_to_advisor(
     pdf_path = tmp_path / "source-bound.pdf"
     _write_pdf(pdf_path, native_text="M6")
     provider = RecordingOcrProvider()
-    source_file_id = "stored-source-exact"
+    source_file_id = uuid.UUID("00000000-0000-0000-0000-000000000601")
     sink = SourceBoundPreviewSink()
     advisor = SourceBoundAdvisor(sink)
     recognition = RuntimeRecognition(

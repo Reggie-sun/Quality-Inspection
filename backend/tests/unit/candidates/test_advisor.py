@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+import uuid
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -262,13 +263,13 @@ class FailingIfCalledVisionProvider:
 
 class RecordingPreviewSink:
     def __init__(self) -> None:
-        self.local_submissions: list[tuple[CandidateSnapshot, str]] = []
+        self.local_submissions: list[tuple[CandidateSnapshot, uuid.UUID]] = []
 
     def publish_local(
         self,
         *,
         snapshot: CandidateSnapshot,
-        source_file_id: str,
+        source_file_id: uuid.UUID,
     ) -> None:
         self.local_submissions.append((snapshot, source_file_id))
 
@@ -483,10 +484,11 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
     """Catches Advisor enrichment that reaches a Provider before persisting local facts."""
     source, pages, snapshot = drawing_fixture(tmp_path, raw_text="M6")
     sink = RecordingPreviewSink()
+    source_file_id = uuid.UUID("00000000-0000-0000-0000-000000000601")
 
     class ProviderAfterLocal(RecordingVisionProvider):
         def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
-            assert sink.local_submissions == [(snapshot, "stored-source-exact")]
+            assert sink.local_submissions == [(snapshot, source_file_id)]
             return super().review_candidate(image, prompt)
 
     provider = ProviderAfterLocal(advisor_payload("M6", "thread", "M6", True))
@@ -502,10 +504,10 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
         source,
         pages,
         snapshot,
-        source_file_id="stored-source-exact",
+        source_file_id=source_file_id,
     )
 
-    assert sink.local_submissions == [(snapshot, "stored-source-exact")]
+    assert sink.local_submissions == [(snapshot, source_file_id)]
     assert sink.local_submissions[0][0].provider_call_ids == ()
     assert len(provider.images) == 1
     assert reviewed.provider_call_ids == ("fixture-qwen-request-1",)

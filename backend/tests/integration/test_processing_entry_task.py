@@ -307,7 +307,13 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
     """Catches task wiring that bypasses the persistence-only preview Owner."""
     storage = LocalFileStorage(tmp_path / "storage")
     setup = task_session_factory()
-    project, source = _project_source(setup, storage, tmp_path)
+    project, source = _project_source_with_routing_identity(
+        setup,
+        storage,
+        tmp_path,
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
     setup.close()
     external_calls: list[str] = []
     _configure_task(
@@ -316,12 +322,22 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
         storage_root=storage.root,
         external_calls=external_calls,
     )
-    preview_sinks: list[object] = []
+    preview_sinks: list[RecordingPreviewService] = []
+    local_submissions: list[tuple[uuid.UUID, object]] = []
 
     class RecordingPreviewService:
-        def __init__(self, session: Session) -> None:
+        def __init__(self, session: Session, *, project_id: uuid.UUID) -> None:
             assert session.bind is not None
+            assert project_id == project.id
             preview_sinks.append(self)
+
+        def publish_local(
+            self,
+            *,
+            source_file_id: uuid.UUID,
+            snapshot: object,
+        ) -> None:
+            local_submissions.append((source_file_id, snapshot))
 
     original_advisor = tasks.CandidateAdvisor
 
@@ -332,13 +348,22 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
     monkeypatch.setattr(tasks, "RecognitionPreviewService", RecordingPreviewService)
     monkeypatch.setattr(tasks, "CandidateAdvisor", recording_advisor)
 
-    inventory_project.run(
+    logical_task_key = f"preview-process:{project.id}"
+    first_result = inventory_project.run(
         str(project.id),
         source.resource_ref,
-        f"preview-process:{project.id}",
+        logical_task_key,
+    )
+    retry_result = inventory_project.run(
+        str(project.id),
+        source.resource_ref,
+        logical_task_key,
     )
 
     assert len(preview_sinks) == 1
+    assert local_submissions and local_submissions[0][0] == source.id
+    assert len(local_submissions) == 1
+    assert first_result == retry_result
     assert external_calls == []
 
 

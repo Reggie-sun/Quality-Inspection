@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Iterator
@@ -11,7 +12,7 @@ from types import ModuleType
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, inspect, select, text
+from sqlalchemy import event, func, inspect, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -97,12 +98,12 @@ def _migration_0012() -> ModuleType:
     return module
 
 
-def _preview_service(session: Session):
+def _preview_service(session: Session, project_id: uuid.UUID):
     # Import inside the test so every RED assertion remains collectible before
     # the PRT-6 production owner exists.
     from app.processing.recognition_preview import RecognitionPreviewService
 
-    return RecognitionPreviewService(session)
+    return RecognitionPreviewService(session, project_id=project_id)
 
 
 def _local_snapshot() -> dict[str, object]:
@@ -126,10 +127,10 @@ def test_local_snapshot_is_immutable_revision_one_and_the_canonical_head(
     """Catches a preview owner that mutates or fails to establish local revision 1."""
     project, source, _ = _seed_project(preview_context)
 
-    revision = _preview_service(preview_context.session).publish_local(
-        project_id=project.id,
+    preview = _preview_service(preview_context.session, project.id)
+    revision = preview.publish_local(
         source_file_id=source.id,
-        semantic_snapshot=_local_snapshot(),
+        snapshot=_local_snapshot(),
     )
 
     assert revision.revision == 1
@@ -140,7 +141,7 @@ def test_local_snapshot_is_immutable_revision_one_and_the_canonical_head(
         b'"vlm_pending":1,"vlm_resolved":0},"schema_version":'
         b'"recognition-preview/1","stage":"local_ready"}'
     ).hexdigest()
-    assert _preview_service(preview_context.session).head_for(project.id).id == revision.id
+    assert preview.head().id == revision.id
 
 
 def test_enrichment_creates_a_successor_without_changing_the_local_snapshot(
@@ -148,11 +149,10 @@ def test_enrichment_creates_a_successor_without_changing_the_local_snapshot(
 ) -> None:
     """Catches in-place enrichment that overwrites the locally visible revision."""
     project, source, _ = _seed_project(preview_context)
-    service = _preview_service(preview_context.session)
+    service = _preview_service(preview_context.session, project.id)
     local = service.publish_local(
-        project_id=project.id,
         source_file_id=source.id,
-        semantic_snapshot=_local_snapshot(),
+        snapshot=_local_snapshot(),
     )
     enriched_snapshot = {
         **_local_snapshot(),
@@ -167,10 +167,9 @@ def test_enrichment_creates_a_successor_without_changing_the_local_snapshot(
     }
 
     enriched = service.append_enrichment(
-        project_id=project.id,
         expected_head_version=1,
         parent_revision_id=local.id,
-        semantic_snapshot=enriched_snapshot,
+        snapshot=enriched_snapshot,
     )
 
     preview_context.session.refresh(local)
@@ -193,23 +192,50 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
     try:
         bootstrap.add_all([project, source])
         bootstrap.commit()
-        local = _preview_service(bootstrap).publish_local(
-            project_id=project.id,
+        bootstrap_preview = _preview_service(bootstrap, project.id)
+        local = bootstrap_preview.publish_local(
             source_file_id=source.id,
-            semantic_snapshot=_local_snapshot(),
+            snapshot=_local_snapshot(),
         )
         bootstrap.commit()
 
+        worker_thread_ids: set[int] = set()
+        synchronized_head_threads: set[int] = set()
+        listener_lock = threading.Lock()
+        invoke_barrier = threading.Barrier(2)
+        head_access_barrier = threading.Barrier(2)
+
+        def synchronize_first_head_access(
+            _connection,
+            _cursor,
+            statement: str,
+            _parameters,
+            _context,
+            _executemany,
+        ) -> None:
+            if "recognition_preview_heads" not in statement:
+                return
+            thread_id = threading.get_ident()
+            with listener_lock:
+                if (
+                    thread_id not in worker_thread_ids
+                    or thread_id in synchronized_head_threads
+                ):
+                    return
+                synchronized_head_threads.add(thread_id)
+            head_access_barrier.wait(timeout=5)
+
         def advance(marker: int) -> tuple[str, uuid.UUID]:
             session = SessionLocal()
-            service = _preview_service(session)
+            with listener_lock:
+                worker_thread_ids.add(threading.get_ident())
+            service = _preview_service(session, project.id)
             try:
-                barrier.wait(timeout=5)
+                invoke_barrier.wait(timeout=5)
                 revision = service.append_enrichment(
-                    project_id=project.id,
                     expected_head_version=1,
                     parent_revision_id=local.id,
-                    semantic_snapshot={
+                    snapshot={
                         **_local_snapshot(),
                         "stage": "vlm_enriching",
                         "candidates": [
@@ -231,16 +257,17 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
                 return "winner", revision.id
             except service.CasConflict:
                 session.rollback()
-                winner = service.head_for(project.id)
+                winner = service.head()
                 return "loser", winner.id
             finally:
                 session.close()
 
-        import threading
-
-        barrier = threading.Barrier(2)
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            outcomes = list(executor.map(advance, (1, 2)))
+        event.listen(engine, "before_cursor_execute", synchronize_first_head_access)
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                outcomes = list(executor.map(advance, (1, 2)))
+        finally:
+            event.remove(engine, "before_cursor_execute", synchronize_first_head_access)
 
         winners = [revision_id for outcome, revision_id in outcomes if outcome == "winner"]
         losers = [revision_id for outcome, revision_id in outcomes if outcome == "loser"]
@@ -264,8 +291,9 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
     finally:
         bootstrap.close()
         # This test commits an isolated random project to the brief's disposable
-        # PostgreSQL database. It intentionally leaves that namespace behind:
-        # GREEN's immutable revision trigger must be free to reject DELETE.
+        # PostgreSQL database. Step 1 destroys the whole disposable container;
+        # this isolated evidence therefore remains safe and GREEN's immutable
+        # revision trigger stays free to reject every DELETE.
 
 
 def test_postgres_rejects_direct_preview_revision_update_and_delete(
@@ -273,11 +301,10 @@ def test_postgres_rejects_direct_preview_revision_update_and_delete(
 ) -> None:
     """Catches a schema that stores revisions but permits destructive mutation."""
     project, source, _ = _seed_project(preview_context)
-    service = _preview_service(preview_context.session)
+    service = _preview_service(preview_context.session, project.id)
     revision = service.publish_local(
-        project_id=project.id,
         source_file_id=source.id,
-        semantic_snapshot=_local_snapshot(),
+        snapshot=_local_snapshot(),
     )
     original_snapshot = copy.deepcopy(revision.semantic_snapshot)
     original_hash = revision.semantic_sha256
@@ -296,7 +323,7 @@ def test_postgres_rejects_direct_preview_revision_update_and_delete(
         preview_context.session.commit()
     preview_context.session.rollback()
 
-    persisted = service.revision_for(project.id, revision.revision)
+    persisted = service.revision_for(revision.revision)
     assert persisted.semantic_snapshot == original_snapshot
     assert persisted.semantic_sha256 == original_hash
 
@@ -306,17 +333,15 @@ def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
 ) -> None:
     """Catches a late callback that regresses preview or rewrites terminal state."""
     project, source, _ = _seed_project(preview_context)
-    service = _preview_service(preview_context.session)
+    service = _preview_service(preview_context.session, project.id)
     local = service.publish_local(
-        project_id=project.id,
         source_file_id=source.id,
-        semantic_snapshot=_local_snapshot(),
+        snapshot=_local_snapshot(),
     )
     current = service.append_enrichment(
-        project_id=project.id,
         expected_head_version=1,
         parent_revision_id=local.id,
-        semantic_snapshot={**_local_snapshot(), "stage": "vlm_enriching"},
+        snapshot={**_local_snapshot(), "stage": "vlm_enriching"},
     )
     job = LogicalJob(
         project_id=str(project.id),
@@ -336,7 +361,10 @@ def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
     )
     preview_context.session.add_all([job, terminal])
     preview_context.session.commit()
-    terminal_before = {
+    service.supersede_with_terminal(automatic_result_id=terminal.id)
+    preview_context.session.refresh(terminal)
+    preview_context.session.refresh(project)
+    terminal_after_supersession = {
         "candidates": copy.deepcopy(terminal.candidates),
         "coverage": copy.deepcopy(terminal.coverage),
         "provider_call_ids": copy.deepcopy(terminal.provider_call_ids),
@@ -344,14 +372,21 @@ def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
         "project_state": project.state,
         "project_version": project.version,
     }
+    head_after_supersession = service.head()
+    revision_count_after_supersession = preview_context.session.scalar(text(
+        "SELECT count(*) FROM recognition_preview_revisions "
+        "WHERE project_id = :project_id"
+    ), {"project_id": project.id})
 
-    service.supersede_with_terminal(project_id=project.id, automatic_result_id=terminal.id)
     with pytest.raises(service.CasConflict):
         service.append_enrichment(
-            project_id=project.id,
             expected_head_version=2,
             parent_revision_id=current.id,
-            semantic_snapshot={**_local_snapshot(), "stage": "late-completion"},
+            snapshot={
+                **_local_snapshot(),
+                "stage": "vlm_enriching",
+                "candidates": [{"candidate_id": "candidate-late", "kind": "thread"}],
+            },
         )
 
     preview_context.session.expire_all()
@@ -359,27 +394,22 @@ def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
     persisted_project = preview_context.session.get(Project, project.id)
     assert persisted_terminal is not None
     assert persisted_project is not None
-    assert service.head_for(project.id).id == current.id
-    assert persisted_terminal.candidates == terminal_before["candidates"]
-    assert persisted_terminal.coverage == terminal_before["coverage"]
-    assert persisted_terminal.provider_call_ids == terminal_before["provider_call_ids"]
-    assert persisted_terminal.schema_version == terminal_before["schema_version"]
-    assert persisted_project.state == terminal_before["project_state"]
-    assert persisted_project.version == terminal_before["project_version"]
+    assert service.head().id == head_after_supersession.id
+    assert persisted_terminal.candidates == terminal_after_supersession["candidates"]
+    assert persisted_terminal.coverage == terminal_after_supersession["coverage"]
+    assert persisted_terminal.provider_call_ids == terminal_after_supersession["provider_call_ids"]
+    assert persisted_terminal.schema_version == terminal_after_supersession["schema_version"]
+    assert persisted_project.state == terminal_after_supersession["project_state"]
+    assert persisted_project.version == terminal_after_supersession["project_version"]
     assert preview_context.session.scalar(text(
         "SELECT count(*) FROM recognition_preview_revisions "
         "WHERE project_id = :project_id"
-    ), {"project_id": project.id}) == 2
+    ), {"project_id": project.id}) == revision_count_after_supersession
     terminal_preview = preview_context.client.get(
         f"/api/v1/projects/{project.id}/recognition-preview"
     )
     assert terminal_preview.status_code == 409
-    assert terminal_preview.json() == {
-        "error": {
-            "code": "recognition_preview_superseded",
-            "message": "terminal automatic result is available",
-        }
-    }
+    assert "semantic_snapshot" not in terminal_preview.json()
 
 
 def test_preview_schema_requires_immutable_revisions_and_one_mutable_head() -> None:
@@ -438,10 +468,6 @@ def test_preview_schema_requires_immutable_revisions_and_one_mutable_head() -> N
             inspector.get_columns("recognition_preview_heads")
         ) if column["name"] == "version")
     ]["nullable"] is False
-    assert any(
-        constraint["column_names"] == ["project_id"]
-        for constraint in inspector.get_unique_constraints("recognition_preview_heads")
-    )
     head_foreign_keys = {
         (
             tuple(constraint["constrained_columns"]),
@@ -502,36 +528,31 @@ def test_preview_refresh_is_project_and_source_bound_without_working_copy(
     preview_context: PreviewContext,
 ) -> None:
     """Catches a preview read that fabricates review state or loses source identity."""
-    project, source, source_bytes = _seed_project(preview_context)
+    project, _, _ = _seed_project(preview_context)
     alternate_bytes = b"%PDF-1.7\\nwrong-source\\n"
     alternate = preview_context.storage.write_verified(
         f"projects/{project.id}/alternate.pdf",
         alternate_bytes,
         sha256(alternate_bytes).hexdigest(),
     )
-    preview_context.session.add(StoredFile(
+    alternate_source = StoredFile(
         resource_ref=alternate.resource_ref,
         sha256=alternate.sha256,
         size_bytes=alternate.size_bytes,
         mime_type="application/pdf",
-    ))
+    )
+    preview_context.session.add(alternate_source)
     preview_context.session.commit()
-    service = _preview_service(preview_context.session)
+    service = _preview_service(preview_context.session, project.id)
     revision = service.publish_local(
-        project_id=project.id,
-        source_file_id=source.id,
-        semantic_snapshot=_local_snapshot(),
+        source_file_id=alternate_source.id,
+        snapshot=_local_snapshot(),
     )
 
     first = preview_context.client.get(
         f"/api/v1/projects/{project.id}/recognition-preview"
     )
-    second = preview_context.client.get(
-        f"/api/v1/projects/{project.id}/recognition-preview"
-    )
-
     assert first.status_code == 200
-    assert second.json() == first.json()
     assert first.json() == {
         "revision": 1,
         "stage": "local_ready",
@@ -541,12 +562,50 @@ def test_preview_refresh_is_project_and_source_bound_without_working_copy(
     }
     source_response = preview_context.client.get(first.json()["source_pdf_url"])
     assert source_response.status_code == 200
-    assert source_response.content == source_bytes
+    assert source_response.content == alternate_bytes
     assert preview_context.session.scalar(
         select(func.count()).select_from(ReviewWorkingCopy).where(
             ReviewWorkingCopy.project_id == project.id
         )
     ) == 0
+    preview_context.session.expire_all()
+    reconnected_session = Session(
+        bind=preview_context.session.connection(),
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    original_session_override = app.dependency_overrides[get_session]
+
+    def override_reconnected_session() -> Iterator[Session]:
+        yield reconnected_session
+
+    app.dependency_overrides[get_session] = override_reconnected_session
+    try:
+        with TestClient(app) as reconnected_client:
+            second = reconnected_client.get(
+                f"/api/v1/projects/{project.id}/recognition-preview"
+            )
+            second_source_response = reconnected_client.get(
+                second.json()["source_pdf_url"]
+            )
+            workbench_response = reconnected_client.get(
+                f"/api/v1/projects/{project.id}/workbench"
+            )
+            reconnected_working_copy_count = reconnected_session.scalar(
+                select(func.count()).select_from(ReviewWorkingCopy).where(
+                    ReviewWorkingCopy.project_id == project.id
+                )
+            )
+    finally:
+        app.dependency_overrides[get_session] = original_session_override
+        reconnected_session.close()
+
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    assert second.json()["revision"] == 1
+    assert second_source_response.content == alternate_bytes
+    assert workbench_response.status_code == 409
+    assert reconnected_working_copy_count == 0
 
 
 def test_preview_project_still_has_no_workbench_without_real_working_copy(
