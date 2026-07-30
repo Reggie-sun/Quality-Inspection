@@ -1160,9 +1160,17 @@ one explicit legacy byte-compatibility assertion.
 - Modify: `backend/app/candidates/models.py`
 - Create: `backend/alembic/versions/0009_symbol_routing_evidence.py`
 - Modify: `backend/app/candidates/advisor.py`
+- Modify: `backend/app/processing/tasks.py`
 - Create: `backend/tests/unit/candidates/test_symbol_cache.py`
 - Create: `backend/tests/integration/test_symbol_routing_evidence.py`
+- Modify: `backend/tests/integration/test_schema.py`
 - Modify: `backend/tests/contract/test_provider_call_records.py`
+
+`backend/app/processing/tasks.py` is the existing composition root and must
+inject the project-scoped cache/evidence services; `CandidateAdvisor` and its
+worker threads must not acquire a hidden global session or share the task
+session. `backend/tests/integration/test_schema.py` owns the current exact-table
+contract and must be amended with migration `0009`.
 
 - [ ] **Step 1: RED evidence/cache tests**
 
@@ -1217,9 +1225,10 @@ git diff --check
 git add backend/app/candidates/symbol_cache.py \
   backend/app/candidates/routing_evidence.py backend/app/candidates/models.py \
   backend/alembic/versions/0009_symbol_routing_evidence.py \
-  backend/app/candidates/advisor.py \
+  backend/app/candidates/advisor.py backend/app/processing/tasks.py \
   backend/tests/unit/candidates/test_symbol_cache.py \
   backend/tests/integration/test_symbol_routing_evidence.py \
+  backend/tests/integration/test_schema.py \
   backend/tests/contract/test_provider_call_records.py
 git commit -m "feat: persist symbol routing evidence"
 ```
