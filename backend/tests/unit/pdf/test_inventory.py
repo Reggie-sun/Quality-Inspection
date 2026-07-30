@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pymupdf
@@ -6,7 +6,12 @@ import pytest
 
 from app.pdf.classification import PageSignals, classify_page
 from app.pdf.inventory import _image_coverage, append_ocr_observations, build_inventory
-from app.pdf.schemas import TextObservation, VisualObservation
+from app.pdf.schemas import (
+    LayoutProfileMatch,
+    ObservationRegionAssignment,
+    TextObservation,
+    VisualObservation,
+)
 from app.processing.automatic_result import candidate_snapshot_from_inventory
 
 
@@ -162,6 +167,161 @@ def test_visual_observations_are_additive_and_survive_ocr_append(
     assert all(
         visual.observation_id not in candidate["source_location_ids"]
         for candidate in snapshot.candidates
+    )
+
+
+def test_page_inventory_omits_absent_layout_profile_match(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "layout-absent.pdf"
+    _write_text_pdf(pdf_path)
+
+    payload = build_inventory(pdf_path)[0].to_dict()
+
+    assert "layout_profile_match" not in payload
+    assert "visual_observations" not in payload
+
+
+def test_page_inventory_serializes_versioned_layout_assignment(
+    tmp_path: Path,
+) -> None:
+    pdf_path = tmp_path / "layout-match.pdf"
+    _write_text_pdf(pdf_path)
+    original = build_inventory(pdf_path)[0]
+    native_line = next(
+        item
+        for item in original.observations
+        if item.source_type == "native" and item.observation_level == "line"
+    )
+    assignment = ObservationRegionAssignment(
+        observation_id=native_line.observation_id,
+        page_index=0,
+        profile_id="welli-a3-landscape/1",
+        region_id="revision_table",
+        cell_role="revision_description",
+        cell_id="revision-description-3",
+        assignment_evidence_codes=(
+            "bbox_inside_role",
+            "center_in_role",
+            "horizontal_direction",
+            "single_role",
+        ),
+        boundary_distance_mm=2.1,
+        rule_version="p0-a2-welli-layout/1",
+    )
+    match = LayoutProfileMatch(
+        page_index=0,
+        profile_id="welli-a3-landscape/1",
+        match_state="high_confidence",
+        geometry_evidence_codes=("archive_grid", "body_frame", "revision_grid"),
+        text_anchor_evidence_codes=(
+            "archive_anchor",
+            "revision_anchor_quorum",
+        ),
+        assignments=(assignment,),
+        rule_version="p0-a2-welli-layout/1",
+    )
+
+    payload = replace(original, layout_profile_match=match).to_dict()
+
+    assert payload["layout_profile_match"]["assignments"][0]["cell_id"] == (
+        "revision-description-3"
+    )
+    assert payload["layout_profile_match"]["geometry_evidence_codes"] == (
+        "archive_grid",
+        "body_frame",
+        "revision_grid",
+    )
+    assert payload["layout_profile_match"]["assignments"][0][
+        "assignment_evidence_codes"
+    ] == (
+        "bbox_inside_role",
+        "center_in_role",
+        "horizontal_direction",
+        "single_role",
+    )
+
+
+def test_layout_profile_evidence_is_immutable() -> None:
+    assignment = ObservationRegionAssignment(
+        observation_id="native:p0:b1:l2:line",
+        page_index=0,
+        profile_id="welli-a3-landscape/1",
+        region_id="revision_table",
+        cell_role="revision_description",
+        cell_id="revision-description-3",
+        assignment_evidence_codes=("bbox_inside_role",),
+        boundary_distance_mm=2.1,
+        rule_version="p0-a2-welli-layout/1",
+    )
+    match = LayoutProfileMatch(
+        page_index=0,
+        profile_id="welli-a3-landscape/1",
+        match_state="high_confidence",
+        geometry_evidence_codes=("revision_grid",),
+        text_anchor_evidence_codes=("revision_anchor_quorum",),
+        assignments=(assignment,),
+        rule_version="p0-a2-welli-layout/1",
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        assignment.cell_id = "changed"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        match.assignments = ()  # type: ignore[misc]
+
+
+def test_ocr_append_preserves_native_layout_sidecar(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "layout-ocr.pdf"
+    _write_text_pdf(pdf_path)
+    original = build_inventory(pdf_path)[0]
+    native_line = next(
+        item
+        for item in original.observations
+        if item.source_type == "native" and item.observation_level == "line"
+    )
+    assignment = ObservationRegionAssignment(
+        observation_id=native_line.observation_id,
+        page_index=0,
+        profile_id="welli-a4-portrait/1",
+        region_id="title_block",
+        cell_role="title_metadata_value",
+        cell_id="title-metadata-value-1",
+        assignment_evidence_codes=("bbox_inside_role", "center_in_role"),
+        boundary_distance_mm=2.0,
+        rule_version="p0-a2-welli-layout/1",
+    )
+    match = LayoutProfileMatch(
+        page_index=0,
+        profile_id="welli-a4-portrait/1",
+        match_state="high_confidence",
+        geometry_evidence_codes=("body_frame", "title_grid"),
+        text_anchor_evidence_codes=(
+            "revision_anchor_quorum",
+            "title_anchor_quorum",
+        ),
+        assignments=(assignment,),
+        rule_version="p0-a2-welli-layout/1",
+    )
+    page = replace(original, layout_profile_match=match)
+    ocr = TextObservation(
+        observation_id="ocr:layout-append",
+        source_type="ocr",
+        observation_level="region",
+        raw_text="25",
+        normalized_text="25",
+        page_index=0,
+        bbox_pdf=(70.0, 80.0, 140.0, 100.0),
+        bbox_normalized=(70.0 / 595.0, 80.0 / 842.0, 140.0 / 595.0, 100.0 / 842.0),
+        direction=(1.0, 0.0),
+        direction_angle_degrees=0.0,
+        confidence=0.93,
+    )
+
+    extended = append_ocr_observations(page, (ocr,))
+
+    assert extended.layout_profile_match is match
+    assert extended.layout_profile_match.assignments == (assignment,)
+    assert all(
+        item.observation_id != ocr.observation_id
+        for item in extended.layout_profile_match.assignments
     )
 
 
