@@ -1,7 +1,8 @@
 import { createRoot } from "react-dom/client";
 
 import { QualityInspectionApp } from "./app/QualityInspectionApp";
-import { beginAnotherDrawing } from "./app/localContext";
+import { clearCurrentProjectId } from "./app/localContext";
+import { touchLocalDrawing } from "./app/localDrawingRegistry";
 import { ProjectWorkbenchApp } from "./components/workbench/ProjectWorkbenchApp";
 import "./styles/app.css";
 
@@ -28,7 +29,8 @@ createRoot(root).render(
         projectId={projectId}
         operatorId={operatorId}
         onReset={() => {
-          beginAnotherDrawing();
+          touchLocalDrawing(projectId, "未命名图纸.pdf");
+          clearCurrentProjectId();
           window.location.assign("/");
         }}
       />
