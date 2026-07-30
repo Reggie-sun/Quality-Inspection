@@ -2355,8 +2355,6 @@ class CandidateAdvisor:
                     )
                     for page in pages
                 )
-                if any(visual_batches):
-                    check_deferred_vision_preflight()
             else:
                 production_local_decisions = [[] for _ in pages]
                 local_resolution_evidence_by_observation = {}
@@ -2410,6 +2408,12 @@ class CandidateAdvisor:
             excluded_source_ids=locally_resolved_text_ids,
             excluded_candidate_ids=locally_resolved_candidate_ids,
         )
+        provider_required = any(visual_batches) or bool(routes)
+        if (
+            uncertainty_mode == "production_uncertainty"
+            and provider_required
+        ):
+            check_deferred_vision_preflight()
         model = self._settings.qwen_model.strip()
         provider: object | None = None
         candidates = [dict(candidate) for candidate in snapshot.candidates]

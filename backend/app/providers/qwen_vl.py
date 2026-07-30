@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import jsonschema
+from openai import APIConnectionError, APITimeoutError
 from PIL import Image, UnidentifiedImageError
 
 from app.providers.base import LocalizedProviderFailure, VisionResult
@@ -444,9 +445,9 @@ class QwenVisionProvider:
                 temperature=0,
                 extra_body={"enable_thinking": False},
             )
-        except TimeoutError:
+        except (APITimeoutError, TimeoutError):
             raise LocalizedProviderFailure("timeout") from None
-        except (ConnectionError, OSError):
+        except (APIConnectionError, ConnectionError, OSError):
             raise LocalizedProviderFailure("transport") from None
         request_id, usage = validate_visual_request_metadata(
             getattr(completion, "id", None),
