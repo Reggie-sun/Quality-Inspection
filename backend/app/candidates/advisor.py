@@ -92,7 +92,10 @@ from app.candidates.symbol_review import (
     visual_cache_key,
     visual_review_prompt,
 )
-from app.capabilities.service import CapabilityUnavailable
+from app.capabilities.service import (
+    CapabilityUnavailable,
+    check_deferred_vision_preflight,
+)
 from app.config import Settings
 from app.pdf.coordinates import BBox
 from app.pdf.schemas import TextObservation, VisualObservation
@@ -1744,14 +1747,17 @@ class CandidateAdvisor:
                 )
                 persist_terminal_failure("provider_unavailable")
                 raise
-            except CandidateAdvisorFailure:
+            except CandidateAdvisorFailure as exc:
+                failure_stage = (
+                    _provider_failure_stage(exc.failure_category)
+                    if exc.failure_category is not None
+                    else "provider_transport_failure"
+                )
                 append_attempt(
                     attempt_index=1,
-                    event_code="provider_transport_failure",
+                    event_code=failure_stage,
                 )
-                persist_terminal_failure(
-                    "provider_transport_failure"
-                )
+                persist_terminal_failure(failure_stage)
                 raise
             attempt_durations.append(duration_ms)
             retry_count = 1
@@ -2349,6 +2355,8 @@ class CandidateAdvisor:
                     )
                     for page in pages
                 )
+                if any(visual_batches):
+                    check_deferred_vision_preflight()
             else:
                 production_local_decisions = [[] for _ in pages]
                 local_resolution_evidence_by_observation = {}

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +24,27 @@ APPROVED_BALLOON_FONT_SHA256 = (
 APPROVED_BALLOON_FONT_LICENSE_SHA256 = (
     "63d3ba759d12804c5b31a9d5940d855c1820d1f5999e6b0872eb1c7ff045fbc9"
 )
+_DEFERRED_VISION_PREFLIGHT: ContextVar[Callable[[], None] | None] = (
+    ContextVar("deferred_vision_preflight", default=None)
+)
+
+
+@contextmanager
+def deferred_vision_preflight(
+    check: Callable[[], None],
+) -> Iterator[None]:
+    token = _DEFERRED_VISION_PREFLIGHT.set(check)
+    try:
+        yield
+    finally:
+        _DEFERRED_VISION_PREFLIGHT.reset(token)
+
+
+def check_deferred_vision_preflight() -> None:
+    check = _DEFERRED_VISION_PREFLIGHT.get()
+    if check is not None:
+        check()
+
 
 class CapabilityUnavailable(RuntimeError):
     def __init__(self, code: str, detail: str) -> None:
@@ -88,7 +112,11 @@ class ProcessingPreflight:
                 "ocr_provider_unavailable",
                 "OCR Provider configuration is unavailable",
             )
-        if vision_required and not _configured(self._vision_configured):
+        if vision_required:
+            self.check_vision()
+
+    def check_vision(self) -> None:
+        if not _configured(self._vision_configured):
             raise CapabilityUnavailable(
                 "vision_provider_unavailable",
                 "Vision Provider configuration is unavailable",

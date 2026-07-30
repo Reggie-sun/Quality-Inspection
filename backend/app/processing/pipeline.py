@@ -10,7 +10,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.capabilities.service import CapabilityUnavailable, ProcessingPreflight
+from app.capabilities.service import (
+    CapabilityUnavailable,
+    ProcessingPreflight,
+    deferred_vision_preflight,
+)
 from app.candidates.advisor import CandidateAdvisorFailure
 from app.candidates.confidence import (
     ConfidenceDecisionContractError,
@@ -247,6 +251,7 @@ class InventoryPipeline:
         safe_source_ref: str | None = None
         inventory_ref: str | None = None
         candidate_advisor_started = False
+        deferred_vision_check: Callable[[], None] | None = None
         try:
             set_processing_stage(
                 self._session,
@@ -254,12 +259,11 @@ class InventoryPipeline:
                 stage="parsing",
             )
             if isinstance(self._preflight, ProcessingPreflight):
-                self._preflight.check(
-                    vision_required=(
-                        project.recognition_mode
-                        != "production_uncertainty"
-                    )
-                )
+                if project.recognition_mode == "production_uncertainty":
+                    self._preflight.check(vision_required=False)
+                    deferred_vision_check = self._preflight.check_vision
+                else:
+                    self._preflight.check()
             else:
                 self._preflight.check()
             source_path = self._storage.resolve_resource_ref(source_ref)
@@ -295,7 +299,11 @@ class InventoryPipeline:
             if source_file is None:
                 raise ValueError("source file metadata does not exist")
             candidate_advisor_started = True
-            snapshot = self._candidate_snapshot_builder(pages)
+            if deferred_vision_check is None:
+                snapshot = self._candidate_snapshot_builder(pages)
+            else:
+                with deferred_vision_preflight(deferred_vision_check):
+                    snapshot = self._candidate_snapshot_builder(pages)
             coverage = check_coverage(
                 snapshot.coverage_entries,
                 expected_observation_ids=snapshot.expected_observation_ids,
@@ -417,6 +425,20 @@ class InventoryPipeline:
                 return existing
             raise
         except CapabilityUnavailable as exc:
+            if exc.code == "vision_provider_unavailable":
+                existing = self._record_failure(
+                    project,
+                    job,
+                    state=None,
+                    code=exc.code,
+                    message=exc.detail,
+                    stage="preflight",
+                    location_ref=None,
+                    cause_category="invalid_configuration",
+                )
+                if existing is not None:
+                    return existing
+                raise
             if candidate_advisor_started:
                 existing = self._record_failure(
                     project,
