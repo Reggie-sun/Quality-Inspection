@@ -1051,18 +1051,37 @@ head, downgrades to `0007`, cleans up the disposable targets, then runs
 
 **Files:**
 
+- Modify: `backend/app/candidates/local_symbol_resolution.py`
 - Modify: `backend/app/candidates/advisor.py`
 - Modify: `backend/app/processing/runtime_recognition.py`
 - Modify: `backend/app/candidates/symbol_review.py`
+- Modify: `backend/tests/unit/candidates/test_local_symbol_resolution.py`
 - Modify: `backend/tests/unit/candidates/test_advisor.py`
 - Modify: `backend/tests/unit/candidates/test_symbol_advisor.py`
 - Modify: `backend/tests/integration/test_symbol_recognition_pipeline.py`
 - Modify: `backend/tests/e2e/test_symbol_recognition.py`
 
+**PRT-3 pre-implementation boundary (`2026-07-30`):**
+
+Read-only call-chain mapping proved that production currently has no Owner that
+prepares `family_hypotheses` for `resolve_visual_observation()`.
+`VisualObservation.proposal_kind` is intentionally generic, and test fixture
+label maps or Provider output cannot become pre-VLM evidence. Before Advisor
+integration, add one deterministic helper in the existing Local Resolution
+Owner. It replays the frozen nine-family resolver with identical immutable local
+inputs and returns only families that already produce a complete local
+resolution. Zero positives remain unknown and escalate; multiple positives
+remain a conflict and escalate. It never invents a learned classifier or turns
+counterbore/GD&T near-misses into local success. This bounded amendment adds the
+local resolver and its unit test to PRT-3; it does not change the PRT-1 matrix,
+Provider schema or final-write ownership.
+
 - [ ] **Step 1: RED zero-call and mixed-route tests**
 
 Prove:
 
+- deterministic family-hypothesis preparation is label-free, replay-stable and
+  returns only complete local positives;
 - locally resolved observations construct no Provider and produce zero visual calls;
 - only escalated observations reach the planner;
 - mixed local/escalated results retain exact source/coverage;
@@ -1081,6 +1100,7 @@ Run and require the new zero-call/concurrency assertions to fail:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
+  backend/tests/unit/candidates/test_local_symbol_resolution.py \
   backend/tests/unit/candidates/test_advisor.py \
   backend/tests/unit/candidates/test_symbol_advisor.py \
   backend/tests/integration/test_symbol_recognition_pipeline.py \
@@ -1099,6 +1119,11 @@ submission and merges completed results by stable escalation-group order.
 It imports `MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE` from the escalation contract Owner,
 retires the legacy advisor-local `16/page` constant and carries the exact
 observation-member and primary/retry identities into attempt accounting.
+`local_symbol_resolution.py` remains the only family-preparation Owner: Advisor
+passes the same observation/text/candidate/geometry facts to its deterministic
+helper and then to `resolve_visual_observation()`. Advisor must not parse fixture
+labels、guess a family from project/runtime identity or use Provider output to
+backfill pre-VLM hypotheses.
 
 - [ ] **Step 3: Verify and commit**
 
@@ -1109,9 +1134,11 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/contract/test_provider_call_records.py \
   backend/tests/contract/test_qwen_symbol_provider.py -q
 git diff --check
-git add backend/app/candidates/advisor.py \
+git add backend/app/candidates/local_symbol_resolution.py \
+  backend/app/candidates/advisor.py \
   backend/app/processing/runtime_recognition.py \
   backend/app/candidates/symbol_review.py \
+  backend/tests/unit/candidates/test_local_symbol_resolution.py \
   backend/tests/unit/candidates/test_advisor.py \
   backend/tests/unit/candidates/test_symbol_advisor.py \
   backend/tests/integration/test_symbol_recognition_pipeline.py \
