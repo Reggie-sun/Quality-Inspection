@@ -403,6 +403,78 @@ def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
     assert raised.value.__context__ is None
 
 
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_category"),
+    (
+        ("timeout", "timeout"),
+        ("transport", "transport"),
+        ("schema", "schema"),
+    ),
+)
+def test_qwen_localized_failures_expose_sanitized_stable_categories(
+    failure_kind: str,
+    expected_category: str,
+) -> None:
+    """PRT-5 classifies local Provider failures without leaking raw detail."""
+    private_marker = "/srv/private/customer.pdf token=do-not-leak"
+
+    class LocalizedFailureCompletions:
+        @staticmethod
+        def create(**_kwargs):
+            if failure_kind == "timeout":
+                raise TimeoutError(private_marker)
+            if failure_kind == "transport":
+                raise ConnectionError(private_marker)
+            return SimpleNamespace(
+                id="fixture-qwen-localized-schema",
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                _visual_tool_call(
+                                    json.dumps(
+                                        {
+                                            "schema_version": (
+                                                "visual-symbol-review/2"
+                                            ),
+                                            "detections": [
+                                                {"private": private_marker}
+                                            ],
+                                        }
+                                    )
+                                )
+                            ],
+                        )
+                    )
+                ],
+                usage={"total_tokens": 4},
+            )
+
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=LocalizedFailureCompletions()
+            )
+        )
+    )
+    failure: Exception | None = None
+    try:
+        provider.review_symbols(_png(text=None), "safe prompt")
+    except Exception as exc:
+        failure = exc
+
+    assert failure is not None
+    category = getattr(
+        failure,
+        "failure_category",
+        getattr(failure, "category", None),
+    )
+    assert category == expected_category
+    assert private_marker not in str(failure)
+    assert private_marker not in repr(vars(failure))
+
+
 def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
     private_marker = "private-marker-provider-response"
     arguments = json.dumps(

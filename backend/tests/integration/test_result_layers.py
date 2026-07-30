@@ -126,6 +126,55 @@ def test_raw_result_is_immutable(
     ) is not None
 
 
+def test_legacy_result_reads_as_complete(
+    raw_result: AutomaticResult,
+    db_session: Session,
+) -> None:
+    """PRT-5 keeps reader-first compatibility for pre-completeness rows."""
+    result_id = raw_result.id
+    db_session.expunge(raw_result)
+
+    persisted = db_session.get(AutomaticResult, result_id)
+
+    assert persisted is not None
+    assert getattr(persisted, "completeness", None) == "complete"
+
+
+def test_partial_result_is_immutable_and_creates_exactly_one_working_copy(
+    raw_result: AutomaticResult,
+    db_session: Session,
+) -> None:
+    """PRT-5 persists one reviewable partial result without a second copy."""
+    setattr(raw_result, "completeness", "partial_review_required")
+    db_session.commit()
+    service = ReviewService(db_session)
+
+    first = service.create_from_raw(raw_result.id)
+    second = service.create_from_raw(raw_result.id)
+
+    assert second.id == first.id
+    result_id = raw_result.id
+    db_session.expunge(raw_result)
+    persisted = db_session.get(AutomaticResult, result_id)
+    assert persisted is not None
+    assert getattr(persisted, "completeness", None) == (
+        "partial_review_required"
+    )
+
+
+def test_partial_result_completeness_is_immutable(
+    raw_result: AutomaticResult,
+    db_session: Session,
+) -> None:
+    """PRT-5 completeness is part of the immutable automatic-result fact."""
+    setattr(raw_result, "completeness", "partial_review_required")
+    db_session.commit()
+    setattr(raw_result, "completeness", "complete")
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+
 def test_working_copy_is_versioned(
     raw_result: AutomaticResult,
     db_session: Session,

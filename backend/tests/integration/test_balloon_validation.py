@@ -9,11 +9,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.balloons.placement import BALLOON_RADIUS_PDF, circle_intersects_box
+from app.balloons.service import ItemSetNotFrozen
 from app.balloons.validator import validate_balloons
+from app.candidates.models import AutomaticResult
 from app.db import engine
 from app.exports.models import ExportJob
 from app.review.models import ReviewedResult
-from app.review.service import ReviewConfirmationBlocked
+from app.review.service import FreezeBlocked, ReviewConfirmationBlocked
 from test_balloon_service import make_balloon_context
 
 
@@ -149,6 +151,69 @@ def test_unresolved_hard_collision_blocks_confirm_and_export(
 
     assert "manual_required" in error.value.blockers
     assert "circle_overlap" in error.value.blockers
+    assert db_session.scalar(
+        select(func.count())
+        .select_from(ReviewedResult)
+        .where(ReviewedResult.project_id == context.working_copy.project_id)
+    ) == 0
+    assert db_session.scalar(
+        select(func.count())
+        .select_from(ExportJob)
+        .where(ExportJob.project_id == context.working_copy.project_id)
+    ) == 0
+
+
+def test_unresolved_partial_result_blocks_balloon_confirm_and_export_chain(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    """PRT-5 unresolved partial evidence creates no downstream formal facts."""
+    context = make_balloon_context(db_session, tmp_path, frozen=False)
+    raw = db_session.get(
+        AutomaticResult,
+        context.working_copy.raw_result_id,
+    )
+    assert raw is not None
+    setattr(raw, "completeness", "partial_review_required")
+    coverage = dict(context.working_copy.coverage)
+    coverage["entries"] = [
+        {
+            "observation_id": "partial-visual",
+            "source_location_id": "partial-visual",
+            "disposition": "ambiguous",
+            "coordinates": [10, 20, 30, 40],
+            "requires_confirmation": True,
+        }
+    ]
+    coverage["review_required_count"] = 1
+    context.working_copy.coverage = coverage
+    db_session.commit()
+
+    with pytest.raises(FreezeBlocked) as freeze_error:
+        context.review_service.freeze_items(
+            context.working_copy.id,
+            expected_version=context.working_copy.version,
+            operator_id="quality-1",
+        )
+    assert freeze_error.value.blockers == ("unresolved_confirmation",)
+
+    with pytest.raises(ItemSetNotFrozen):
+        context.balloon_service.generate_formal(
+            context.working_copy.project_id,
+            expected_version=context.working_copy.version,
+            operator_id="quality-1",
+        )
+    with pytest.raises(FreezeBlocked) as confirm_error:
+        context.review_service.confirm(
+            context.working_copy.id,
+            expected_version=context.working_copy.version,
+            operator_id="quality-1",
+        )
+    assert confirm_error.value.blockers == ("item_set_not_frozen",)
+
+    assert context.balloon_service.list_for_project(
+        context.working_copy.project_id
+    ) == []
     assert db_session.scalar(
         select(func.count())
         .select_from(ReviewedResult)

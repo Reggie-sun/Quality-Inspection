@@ -25,7 +25,6 @@ from app.candidates.symbol_review import (
     VisualReviewDecision,
     plan_visual_batches,
 )
-from app.capabilities.service import CapabilityUnavailable
 from app.config import Settings
 from app.db import engine
 from app.errors.models import ErrorRecord
@@ -578,6 +577,138 @@ def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
     assert raw.coverage["coverage_checked"] is True
 
 
+def test_one_localized_provider_failure_preserves_sibling_results_as_partial(
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    """PRT-5 localizes one transport failure without discarding siblings."""
+    source, _manifest = build_symbol_fixture(tmp_path / "partial-fixture")
+    pages = tuple(build_inventory(source))
+    initial = candidate_snapshot_from_inventory(pages)
+    failed_observation_id = pages[-1].visual_observations[-1].observation_id
+    successful = _fixture_provider(source)
+
+    class OneTransportFailureProvider:
+        failed_calls = 0
+
+        def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
+            request = json.loads(prompt)
+            if failed_observation_id in request["visual_observation_ids"]:
+                self.failed_calls += 1
+                raise ConnectionError(
+                    "/srv/private/customer.pdf token=do-not-leak"
+                )
+            return successful.review_symbols(image, prompt)
+
+        def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
+            return successful.review_candidate(image, prompt)
+
+    provider = OneTransportFailureProvider()
+    monkeypatch.setattr(
+        advisor_module,
+        "prepare_local_family_hypotheses",
+        lambda **_kwargs: (),
+    )
+    reviewed: CandidateSnapshot | None = None
+    try:
+        reviewed = CandidateAdvisor(
+            Settings(
+                qwen_model="qwen3-vl-plus",
+                symbol_recognition_mode="production_uncertainty",
+            ),
+            LocalFileStorage(tmp_path / "partial-provider-storage"),
+            project_id="partial-transport",
+            provider_factory=lambda _settings: provider,
+        ).review(source, pages, initial)
+    except CandidateAdvisorFailure:
+        pass
+
+    assert reviewed is not None
+    assert getattr(reviewed, "completeness", None) == (
+        "partial_review_required"
+    )
+    assert provider.failed_calls == 1
+    assert successful.symbol_calls > 0
+    assert {
+        entry.observation_id for entry in reviewed.coverage_entries
+    } == set(initial.expected_observation_ids)
+    failed_entry = next(
+        entry
+        for entry in reviewed.coverage_entries
+        if entry.observation_id == failed_observation_id
+    )
+    assert failed_entry.requires_confirmation is True
+    assert failed_entry.advisor_review is not None
+    assert "do-not-leak" not in repr(failed_entry.advisor_review)
+
+    project, raw, working = _persist_snapshot(
+        db_session,
+        LocalFileStorage(tmp_path / "partial-result-storage"),
+        reviewed,
+    )
+    assert getattr(raw, "completeness", None) == "partial_review_required"
+    assert working.raw_result_id == raw.id
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(AutomaticResult)
+            .where(AutomaticResult.project_id == project.id)
+        )
+        == 1
+    )
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(ReviewWorkingCopy)
+            .where(ReviewWorkingCopy.project_id == project.id)
+        )
+        == 1
+    )
+
+
+def test_invalid_cache_provenance_is_quarantined_and_recomputed(
+    tmp_path: Path,
+) -> None:
+    """PRT-5 treats unusable cache provenance as a miss, not a fatal result."""
+    source, _manifest = build_symbol_fixture(tmp_path / "cache-fixture")
+    pages = tuple(build_inventory(source))
+    initial = candidate_snapshot_from_inventory(pages)
+    storage = LocalFileStorage(tmp_path / "cache-storage")
+    project_id = "cache-quarantine"
+    first_provider = _fixture_provider(source)
+    CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        storage,
+        project_id=project_id,
+        provider_factory=lambda _settings: first_provider,
+    ).review(source, pages, initial)
+    audit_path = next(
+        storage.root.glob(
+            f"projects/{project_id}/provider-calls/qwen-symbol/*.json"
+        )
+    )
+    audit_path.unlink()
+    replacement_provider = _fixture_provider(source)
+
+    reviewed: CandidateSnapshot | None = None
+    try:
+        reviewed = CandidateAdvisor(
+            Settings(qwen_model="qwen3-vl-plus"),
+            storage,
+            project_id=project_id,
+            provider_factory=lambda _settings: replacement_provider,
+        ).review(source, pages, initial)
+    except CandidateAdvisorFailure:
+        pass
+
+    assert reviewed is not None
+    assert replacement_provider.symbol_calls > 0
+    assert set(reviewed.expected_observation_ids) == set(
+        initial.expected_observation_ids
+    )
+
+
 def test_shadow_uncertainty_uses_legacy_final_write_without_extra_provider(
     monkeypatch: pytest.MonkeyPatch,
     db_session: Session,
@@ -1013,24 +1144,6 @@ def test_roughness_gdt_and_datum_project_without_schema_expansion(
     ("failure_case", "expected_code", "expected_stage", "expected_category"),
     (
         (
-            "provider_unavailable",
-            "vision_provider_call_failed",
-            "candidate_advisor",
-            "transient_provider_failure",
-        ),
-        (
-            "invalid_root_schema",
-            "vision_provider_call_failed",
-            "candidate_advisor",
-            "transient_provider_failure",
-        ),
-        (
-            "invalid_cache_audit",
-            "vision_provider_call_failed",
-            "candidate_advisor",
-            "transient_provider_failure",
-        ),
-        (
             "visual_crop_oversize",
             "visual_crop_oversize",
             "candidate_advisor",
@@ -1048,21 +1161,39 @@ def test_roughness_gdt_and_datum_project_without_schema_expansion(
             "coverage",
             "processing_defect",
         ),
+        (
+            "missing_source_identity",
+            "inventory_processing_failed",
+            "page_inventory",
+            "processing_defect",
+        ),
+        (
+            "invalid_routing_schema",
+            None,
+            "candidate_advisor",
+            "processing_defect",
+        ),
+        (
+            "evidence_persistence_failed",
+            None,
+            "candidate_advisor",
+            "processing_defect",
+        ),
     ),
 )
-def test_visual_provider_failure_prevents_ready_for_edit(
+def test_systemic_symbol_failure_creates_no_result(
+    monkeypatch: pytest.MonkeyPatch,
     db_session: Session,
     tmp_path: Path,
     failure_case: str,
-    expected_code: str,
+    expected_code: str | None,
     expected_stage: str,
     expected_category: str,
 ) -> None:
-    """INT-04 fails closed before either result layer exists."""
+    """PRT-5 systemic scheduling/coverage corruption remains fail-closed."""
     advisor_failure_cases = {
-        "provider_unavailable",
-        "invalid_root_schema",
-        "invalid_cache_audit",
+        "invalid_routing_schema",
+        "evidence_persistence_failed",
     }
     source_payload = b"fixture-pdf"
     if failure_case in advisor_failure_cases:
@@ -1076,7 +1207,15 @@ def test_visual_provider_failure_prevents_ready_for_edit(
     private_detail = "/srv/private/customer.pdf credential=do-not-leak"
     inventory_pages: tuple[object, ...] = (SupportedPageStub(),)
 
-    if failure_case == "coverage_conflict":
+    if failure_case == "missing_source_identity":
+        db_session.delete(source)
+        db_session.commit()
+
+        def candidate_builder(_pages: tuple[object, ...]) -> CandidateSnapshot:
+            raise AssertionError("missing source reached CandidateAdvisor")
+
+        expected_exception = ValueError
+    elif failure_case == "coverage_conflict":
         conflict = _snapshot(
             candidates=(),
             entries=(
@@ -1116,90 +1255,35 @@ def test_visual_provider_failure_prevents_ready_for_edit(
     else:
         visual_pages = tuple(build_inventory(source_path))
         inventory_pages = visual_pages
-        initial = candidate_snapshot_from_inventory(visual_pages)
-
-        if failure_case == "provider_unavailable":
-
-            def provider_factory(_settings: Settings) -> object:
-                raise CapabilityUnavailable(
-                    "vision_provider_unavailable",
-                    private_detail,
-                )
-
-            expected_exception = CapabilityUnavailable
-        elif failure_case == "invalid_root_schema":
-
-            class InvalidRootSchemaProvider:
-                @staticmethod
-                def review_symbols(
-                    _image: bytes,
-                    _prompt: str,
-                ) -> VisionResult:
-                    return VisionResult(
-                        request_id="fixture-invalid-schema",
-                        payload={"schema_version": "visual-symbol-review/2"},
-                        usage={},
-                    )
-
-                @staticmethod
-                def review_candidate(
-                    _image: bytes,
-                    _prompt: str,
-                ) -> VisionResult:
-                    raise AssertionError(
-                        "invalid visual root schema reached text review"
-                    )
-
-            invalid_schema_provider = InvalidRootSchemaProvider()
-
-            def provider_factory(_settings: Settings) -> object:
-                return invalid_schema_provider
-
-            expected_exception = CandidateAdvisorFailure
-        else:
-            valid_provider = _fixture_provider(source_path)
-            CandidateAdvisor(
-                Settings(qwen_model="qwen3-vl-plus"),
-                storage,
-                project_id=str(project.id),
-                provider_factory=lambda _settings: valid_provider,
-            ).review(source_path, visual_pages, initial)
-            audit_path = next(
-                storage.root.glob(
-                    f"projects/{project.id}/provider-calls/"
-                    "qwen-symbol/*.json"
-                )
+        if failure_case == "invalid_routing_schema":
+            monkeypatch.setattr(
+                advisor_module,
+                "route_visual_observation",
+                lambda _resolution: object(),
             )
-            audit_path.unlink()
 
-            class MustNotCallProvider:
-                @staticmethod
-                def review_symbols(
-                    _image: bytes,
-                    _prompt: str,
-                ) -> VisionResult:
-                    raise AssertionError("invalid cache reached visual Provider")
-
-                @staticmethod
-                def review_candidate(
-                    _image: bytes,
-                    _prompt: str,
-                ) -> VisionResult:
-                    raise AssertionError("invalid cache reached text Provider")
-
-            must_not_call = MustNotCallProvider()
-
-            def provider_factory(_settings: Settings) -> object:
-                return must_not_call
-
-            expected_exception = CandidateAdvisorFailure
+            def symbol_session_factory() -> Session:
+                raise AssertionError(
+                    "invalid routing reached evidence persistence"
+                )
+        else:
+            def symbol_session_factory() -> Session:
+                raise RuntimeError("routing evidence persistence unavailable")
 
         advisor = CandidateAdvisor(
-            Settings(qwen_model="qwen3-vl-plus"),
+            Settings(
+                qwen_model="qwen3-vl-plus",
+                symbol_recognition_mode="production_uncertainty",
+            ),
             storage,
             project_id=str(project.id),
-            provider_factory=provider_factory,
+            provider_factory=lambda _settings: (_ for _ in ()).throw(
+                AssertionError("systemic corruption reached Provider")
+            ),
+            symbol_session_factory=symbol_session_factory,
+            require_symbol_persistence=True,
         )
+        expected_exception = CandidateAdvisorFailure
 
         def candidate_builder(
             current_pages: tuple[object, ...],
@@ -1232,24 +1316,18 @@ def test_visual_provider_failure_prevents_ready_for_edit(
     )
     assert error is not None
     assert job is not None
-    assert {
-        "code": error.code,
-        "stage": error.stage,
-        "category": error.cause_category,
-        "severity": error.severity,
-    } == {
-        "code": expected_code,
-        "stage": expected_stage,
-        "category": expected_category,
-        "severity": "blocking",
-    }
+    if expected_code is not None:
+        assert error.code == expected_code
+    assert error.stage == expected_stage
+    assert error.cause_category == expected_category
+    assert error.severity == "blocking"
     if failure_case == "coverage_conflict":
         assert error.location_ref is not None
         assert error.location_ref.startswith(
             f"asset://projects/{project.id}/inventory/"
         )
         assert storage.resolve_resource_ref(error.location_ref).is_file()
-    else:
+    elif failure_case != "missing_source_identity":
         assert error.location_ref is None
     assert private_detail not in error.message
     assert db_session.get(Project, project.id).state == ProjectState.PROCESSING_FAILED

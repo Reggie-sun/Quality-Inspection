@@ -59,6 +59,7 @@ def _seed_project_status(
     project_state: str = "processing",
     job_status: str | None = None,
     has_working_copy: bool = False,
+    result_completeness: str | None = None,
     processing_stage: str | None = None,
     error: dict[str, str] | None = None,
 ) -> uuid.UUID:
@@ -106,6 +107,8 @@ def _seed_project_status(
                 provider_call_ids=[],
                 schema_version="automatic-result/1",
             )
+            if result_completeness is not None:
+                setattr(raw, "completeness", result_completeness)
             session.add(raw)
             session.flush()
             if has_working_copy:
@@ -443,6 +446,33 @@ def test_working_copy_wins_over_stale_blocking_error(
     assert response.json()["phase"] == "ready_for_review"
     assert response.json()["workbench_ready"] is True
     assert response.json()["retryable"] is False
+
+
+def test_partial_result_projects_terminal_review_required_status(
+    status_context: StatusContext,
+) -> None:
+    """PRT-5 exposes terminal partial completeness without Provider detail."""
+    project_id = _seed_project_status(
+        status_context.session,
+        project_state="editing",
+        job_status="succeeded",
+        has_working_copy=True,
+        result_completeness="partial_review_required",
+    )
+
+    response = status_context.client.get(
+        f"/api/v1/projects/{project_id}/status"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "phase": "partial_review_required",
+        "workbench_ready": True,
+        "retryable": False,
+    }
+    assert "provider" not in response.text.lower()
+    assert "resource_ref" not in response.text
+    assert "asset://" not in response.text
 
 
 def test_unknown_project_uses_sanitized_not_found_envelope(

@@ -144,7 +144,10 @@ def test_unresolved_confirmation_blocks_freeze(
     db_session: Session,
     working_copy: ReviewWorkingCopy,
 ) -> None:
-    """P0-REV-013: every confirmation must be explicitly resolved."""
+    """PRT-5 unresolved partial evidence, not the label alone, blocks freeze."""
+    raw = db_session.get(AutomaticResult, working_copy.raw_result_id)
+    assert raw is not None
+    setattr(raw, "completeness", "partial_review_required")
     items = copy.deepcopy(working_copy.items)
     items[0]["requires_confirmation"] = True
     working_copy.items = items
@@ -159,6 +162,25 @@ def test_unresolved_confirmation_blocks_freeze(
 
     assert error.value.code == "unresolved_confirmation"
     assert error.value.blockers == ("unresolved_confirmation",)
+
+
+def test_partial_label_alone_does_not_add_a_freeze_blocker(
+    db_session: Session,
+    working_copy: ReviewWorkingCopy,
+) -> None:
+    """PRT-5 keeps the confirmation Veto separate from completeness status."""
+    raw = db_session.get(AutomaticResult, working_copy.raw_result_id)
+    assert raw is not None
+    setattr(raw, "completeness", "partial_review_required")
+    db_session.commit()
+
+    frozen = ReviewService(db_session).freeze_items(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+    )
+
+    assert frozen.items_frozen_at is not None
 
 
 def test_source_only_confirmation_blocks_freeze(

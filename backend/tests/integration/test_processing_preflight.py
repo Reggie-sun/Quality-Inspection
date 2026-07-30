@@ -59,6 +59,18 @@ class RecordingCelery:
         )
 
 
+def _check_with_vision_requirement(
+    preflight: ProcessingPreflight,
+    *,
+    vision_required: bool,
+) -> bool:
+    try:
+        preflight.check(vision_required=vision_required)
+    except TypeError:
+        return False
+    return True
+
+
 def test_missing_qwen_config_blocks_new_processing() -> None:
     """P0-RUN-003 checks capabilities in order and blocks missing Vision config."""
     events: list[str] = []
@@ -74,6 +86,53 @@ def test_missing_qwen_config_blocks_new_processing() -> None:
         preflight.check()
 
     assert error.value.code == "vision_provider_unavailable"
+    assert events == ["storage", "redis", "celery-inspect", "celery-ping"]
+
+
+def test_zero_escalation_route_defers_only_vision_preflight() -> None:
+    """PRT-5 keeps infrastructure/OCR checks while Vision is unnecessary."""
+    events: list[str] = []
+    preflight = ProcessingPreflight(
+        RecordingStorage(events),
+        RecordingRedis(events),
+        RecordingCelery(events),
+        ocr_configured=True,
+        vision_configured=False,
+    )
+
+    supported = _check_with_vision_requirement(
+        preflight,
+        vision_required=False,
+    )
+
+    assert supported is True
+    assert events == ["storage", "redis", "celery-inspect", "celery-ping"]
+
+
+def test_zero_escalation_route_still_requires_ocr_preflight() -> None:
+    """PRT-5 does not turn the Vision deferral into a general bypass."""
+    events: list[str] = []
+    preflight = ProcessingPreflight(
+        RecordingStorage(events),
+        RecordingRedis(events),
+        RecordingCelery(events),
+        ocr_configured=False,
+        vision_configured=False,
+    )
+
+    error: CapabilityUnavailable | None = None
+    try:
+        supported = _check_with_vision_requirement(
+            preflight,
+            vision_required=False,
+        )
+    except CapabilityUnavailable as exc:
+        supported = True
+        error = exc
+
+    assert supported is True
+    assert error is not None
+    assert error.code == "ocr_provider_unavailable"
     assert events == ["storage", "redis", "celery-inspect", "celery-ping"]
 
 
