@@ -2001,6 +2001,9 @@ class CandidateAdvisor:
         pages: Sequence[Any],
         snapshot: CandidateSnapshot,
     ) -> CandidateSnapshot:
+        required_visual_ids = frozenset(
+            snapshot.required_visual_observation_ids
+        )
         production_local_decisions: list[list[VisualReviewDecision]] = [
             [] for _ in pages
         ]
@@ -2035,12 +2038,18 @@ class CandidateAdvisor:
                     pdf_path,
                     pages,
                 )
+                if item.observation_id in required_visual_ids
             }
             requests: list[EscalationRequest] = []
             routing_blocked = False
             try:
                 for page_position, page in enumerate(pages):
                     for observation in page.visual_observations:
+                        if (
+                            observation.observation_id
+                            not in required_visual_ids
+                        ):
+                            continue
                         local_resolution = resolve_visual_observation(
                             observation=observation,
                             family_hypotheses=(
@@ -2369,6 +2378,7 @@ class CandidateAdvisor:
             observation.observation_id: observation
             for page in pages
             for observation in page.visual_observations
+            if observation.observation_id in required_visual_ids
         }
         visual_coverage_indexes = {
             entry.observation_id: index
@@ -2376,7 +2386,11 @@ class CandidateAdvisor:
             if entry.observation_id in visual_observations
         }
         contexts = (
-            production_contexts
+            {
+                observation_id: item
+                for observation_id, item in production_contexts.items()
+                if observation_id in required_visual_ids
+            }
             if production_contexts is not None
             else {
                 item.observation_id: item
@@ -2385,6 +2399,7 @@ class CandidateAdvisor:
                     if any(visual_batches)
                     else ()
                 )
+                if item.observation_id in required_visual_ids
             }
         )
         source_sha256 = (
@@ -2815,7 +2830,12 @@ class CandidateAdvisor:
             for page_position, page in enumerate(pages):
                 visual_decisions.extend(
                     project_visual_page(
-                        visual_observations=page.visual_observations,
+                        visual_observations=tuple(
+                            observation
+                            for observation in page.visual_observations
+                            if observation.observation_id
+                            in required_visual_ids
+                        ),
                         detections=tuple(
                             accepted_by_page[page_position]
                         ),

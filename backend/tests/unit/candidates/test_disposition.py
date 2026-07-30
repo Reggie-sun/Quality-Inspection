@@ -2,11 +2,12 @@ import pytest
 
 from app.candidates.disposition import (
     PRIMARY_DISPOSITION_RULE_VERSION,
+    WELLI_LAYOUT_RULE_VERSION,
     classify_primary_disposition,
     classify_technical_requirement,
     repeated_page_overlay_observation_ids,
 )
-from app.pdf.schemas import TextObservation
+from app.pdf.schemas import ObservationRegionAssignment, TextObservation
 
 
 def _observation(
@@ -29,6 +30,36 @@ def _observation(
         direction=(1.0, 0.0),
         direction_angle_degrees=0.0,
         confidence=None,
+    )
+
+
+def _layout_assignment(
+    observation: TextObservation,
+    *,
+    region_id: str,
+    cell_role: str,
+    cell_id: str,
+    boundary_distance_mm: float = 2.0,
+    physical_page_outer_edge: bool = False,
+) -> ObservationRegionAssignment:
+    evidence_codes = (
+        "bbox_inside_role",
+        "center_in_role",
+        "horizontal_direction",
+        "single_role",
+    )
+    if physical_page_outer_edge:
+        evidence_codes += ("physical_page_outer_edge",)
+    return ObservationRegionAssignment(
+        observation_id=observation.observation_id,
+        page_index=observation.page_index,
+        profile_id="welli-a3-landscape/1",
+        region_id=region_id,  # type: ignore[arg-type]
+        cell_role=cell_role,
+        cell_id=cell_id,
+        assignment_evidence_codes=evidence_codes,
+        boundary_distance_mm=boundary_distance_mm,
+        rule_version=WELLI_LAYOUT_RULE_VERSION,
     )
 
 
@@ -277,6 +308,344 @@ def test_repeated_overlay_excludes_engineering_semantics(raw_text: str) -> None:
     )
 
     assert repeated == frozenset()
+
+
+@pytest.mark.parametrize(
+    (
+        "raw_text",
+        "region_id",
+        "cell_role",
+        "cell_id",
+        "expected_disposition",
+        "expected_reason",
+    ),
+    (
+        (
+            "QX-ABC",
+            "title_block",
+            "title_metadata_value",
+            "title-metadata-value",
+            "reference_context",
+            "welli_title_metadata_value",
+        ),
+        (
+            "张三",
+            "title_block",
+            "title_approval_context",
+            "title-approval-context",
+            "reference_context",
+            "welli_title_approval_context",
+        ),
+        (
+            "更改文件号",
+            "title_block",
+            "title_metadata_value",
+            "title-metadata-value",
+            "non_inspection",
+            "welli_title_fixed_label",
+        ),
+        (
+            "更改描述",
+            "revision_table",
+            "revision_header",
+            "revision-header",
+            "non_inspection",
+            "welli_revision_header",
+        ),
+        (
+            "1",
+            "revision_table",
+            "revision_marker",
+            "revision-marker-1",
+            "reference_context",
+            "welli_revision_marker",
+        ),
+        (
+            "修订说明",
+            "revision_table",
+            "revision_description",
+            "revision-description-1",
+            "reference_context",
+            "welli_revision_description",
+        ),
+        (
+            "描图",
+            "archive_strip",
+            "archive_label",
+            "archive-label-2",
+            "non_inspection",
+            "welli_archive_label",
+        ),
+        (
+            "王工",
+            "archive_strip",
+            "archive_record",
+            "archive-record-2",
+            "reference_context",
+            "welli_archive_record",
+        ),
+        (
+            "1",
+            "page_frame",
+            "page_frame_number",
+            "page-frame-top-1",
+            "non_inspection",
+            "welli_page_frame_number",
+        ),
+    ),
+)
+def test_welli_layout_decision_table(
+    raw_text: str,
+    region_id: str,
+    cell_role: str,
+    cell_id: str,
+    expected_disposition: str,
+    expected_reason: str,
+) -> None:
+    observation = _observation(raw_text, observation_id=f"welli:{cell_id}")
+    assignment = _layout_assignment(
+        observation,
+        region_id=region_id,
+        cell_role=cell_role,
+        cell_id=cell_id,
+    )
+
+    decision = classify_primary_disposition(
+        observation,
+        layout_assignment=assignment,
+    )
+
+    assert decision is not None
+    assert decision.disposition == expected_disposition
+    assert decision.reason == expected_reason
+    assert decision.rule_version == WELLI_LAYOUT_RULE_VERSION
+    assert decision.requires_confirmation is False
+
+
+def test_exact_existing_rule_precedes_welli_layout_decision() -> None:
+    observation = _observation("设计", observation_id="welli:existing-label")
+    assignment = _layout_assignment(
+        observation,
+        region_id="title_block",
+        cell_role="title_approval_context",
+        cell_id="title-approval-context",
+    )
+
+    decision = classify_primary_disposition(
+        observation,
+        layout_assignment=assignment,
+    )
+
+    assert decision is not None
+    assert decision.reason == "exact_metadata_label"
+    assert decision.rule_version == PRIMARY_DISPOSITION_RULE_VERSION
+
+
+def test_revision_marker_exact_row_overrides_visual_context() -> None:
+    observation = _observation("2", observation_id="welli:revision-marker-2")
+    assignment = _layout_assignment(
+        observation,
+        region_id="revision_table",
+        cell_role="revision_marker",
+        cell_id="revision-marker-2",
+    )
+
+    decision = classify_primary_disposition(
+        observation,
+        has_visual_context=True,
+        layout_assignment=assignment,
+        engineering_preservation_observation_ids={observation.observation_id},
+    )
+
+    assert decision is not None
+    assert decision.disposition == "reference_context"
+    assert decision.reason == "welli_revision_marker"
+
+
+@pytest.mark.parametrize(
+    "raw_text",
+    (
+        "Φ20",
+        "检查焊缝不得有裂纹",
+        "3.2",
+        "其余",
+    ),
+)
+def test_engineering_preservation_set_vetoes_layout_disposition(
+    raw_text: str,
+) -> None:
+    observation = _observation(
+        raw_text,
+        observation_id=f"welli:preserved:{raw_text}",
+    )
+    assignment = _layout_assignment(
+        observation,
+        region_id="revision_table",
+        cell_role="revision_description",
+        cell_id="revision-description-3",
+    )
+
+    assert (
+        classify_primary_disposition(
+            observation,
+            layout_assignment=assignment,
+            engineering_preservation_observation_ids={
+                observation.observation_id
+            },
+        )
+        is None
+    )
+
+
+def test_revision_description_row_preservation_vetoes_all_lines() -> None:
+    remainder = _observation("其余", observation_id="welli:remainder")
+    dimension = _observation("3.2", observation_id="welli:dimension")
+    preservation_ids = {
+        remainder.observation_id,
+        dimension.observation_id,
+    }
+
+    for observation in (remainder, dimension):
+        assignment = _layout_assignment(
+            observation,
+            region_id="revision_table",
+            cell_role="revision_description",
+            cell_id="revision-description-3",
+        )
+        assert (
+            classify_primary_disposition(
+                observation,
+                layout_assignment=assignment,
+                engineering_preservation_observation_ids=preservation_ids,
+            )
+            is None
+        )
+
+
+def test_layout_boundary_inside_one_millimetre_is_not_filtered() -> None:
+    observation = _observation("plain prose", observation_id="welli:edge")
+    assignment = _layout_assignment(
+        observation,
+        region_id="revision_table",
+        cell_role="revision_description",
+        cell_id="revision-description-1",
+        boundary_distance_mm=0.999,
+    )
+
+    assert (
+        classify_primary_disposition(
+            observation,
+            layout_assignment=assignment,
+        )
+        is None
+    )
+
+
+def test_exact_page_frame_control_number_can_touch_physical_page_edge() -> None:
+    observation = _observation("1", observation_id="welli:page-frame-bottom-1")
+    assignment = _layout_assignment(
+        observation,
+        region_id="page_frame",
+        cell_role="page_frame_number",
+        cell_id="page-frame-bottom-1",
+        boundary_distance_mm=0.0,
+        physical_page_outer_edge=True,
+    )
+
+    decision = classify_primary_disposition(
+        observation,
+        has_visual_context=True,
+        layout_assignment=assignment,
+    )
+
+    assert decision is not None
+    assert decision.disposition == "non_inspection"
+    assert decision.reason == "welli_page_frame_number"
+    assert decision.rule_version == WELLI_LAYOUT_RULE_VERSION
+
+
+def test_exact_page_frame_control_number_at_internal_band_boundary_is_not_filtered() -> None:
+    observation = _observation("1", observation_id="welli:page-frame-inner-1")
+    assignment = _layout_assignment(
+        observation,
+        region_id="page_frame",
+        cell_role="page_frame_number",
+        cell_id="page-frame-bottom-1",
+        boundary_distance_mm=0.0,
+    )
+
+    decision = classify_primary_disposition(
+        observation,
+        has_visual_context=True,
+        layout_assignment=assignment,
+    )
+
+    assert decision is None
+
+
+@pytest.mark.parametrize(
+    ("cell_role", "cell_id", "raw_text"),
+    (
+        ("unknown", "unknown-cell", "plain"),
+        ("revision_marker", "revision-marker-2", "1"),
+        ("archive_label", "archive-label-2", "校描"),
+    ),
+)
+def test_unknown_or_conflicting_layout_evidence_yields(
+    cell_role: str,
+    cell_id: str,
+    raw_text: str,
+) -> None:
+    observation = _observation(raw_text, observation_id="welli:conflict")
+    assignment = _layout_assignment(
+        observation,
+        region_id="revision_table",
+        cell_role=cell_role,
+        cell_id=cell_id,
+    )
+
+    assert (
+        classify_primary_disposition(
+            observation,
+            layout_assignment=assignment,
+        )
+        is None
+    )
+
+
+def test_same_page_welli_watermark_precedes_remaining_generic_rules() -> None:
+    observation = _observation(
+        "伟立机器人",
+        observation_id="welli:watermark",
+    )
+
+    decision = classify_primary_disposition(
+        observation,
+        welli_watermark_observation_ids={observation.observation_id},
+    )
+
+    assert decision is not None
+    assert decision.disposition == "non_inspection"
+    assert decision.reason == "welli_same_page_watermark"
+    assert decision.rule_version == WELLI_LAYOUT_RULE_VERSION
+
+
+def test_engineering_preservation_vetoes_same_page_watermark() -> None:
+    observation = _observation(
+        "伟立机器人",
+        observation_id="welli:preserved-watermark",
+    )
+
+    assert (
+        classify_primary_disposition(
+            observation,
+            welli_watermark_observation_ids={observation.observation_id},
+            engineering_preservation_observation_ids={
+                observation.observation_id
+            },
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(

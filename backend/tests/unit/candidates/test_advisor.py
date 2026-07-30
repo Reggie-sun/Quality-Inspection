@@ -1985,6 +1985,212 @@ def test_clear_native_candidate_does_not_construct_provider(
     assert reviewed.candidates[0]["source_truth_preserved"] is True
 
 
+@pytest.mark.parametrize(
+    "symbol_recognition_mode",
+    (
+        "legacy_high_recall",
+        "shadow_uncertainty",
+        "production_uncertainty",
+    ),
+)
+def test_resolved_visual_does_not_construct_provider_or_mutate_snapshot(
+    tmp_path: Path,
+    symbol_recognition_mode: str,
+) -> None:
+    source, pages, snapshot = visual_diameter_fixture(tmp_path)
+    visual_id = pages[0].visual_observations[0].observation_id
+    coverage_entries = tuple(
+        replace(
+            entry,
+            disposition="reference_context",
+            requires_confirmation=False,
+            disposition_reason=(
+                "welli_layout_visual_context"
+                if entry.observation_id == visual_id
+                else "fixture_resolved_text"
+            ),
+            disposition_rule_version="welli-layout-disposition/1",
+        )
+        for entry in snapshot.coverage_entries
+    )
+    resolved_snapshot = replace(
+        snapshot,
+        coverage_entries=coverage_entries,
+        required_visual_observation_ids=(),
+    )
+    constructed: list[str] = []
+
+    def forbidden_factory(_settings: Settings):
+        constructed.append("provider")
+        raise AssertionError("resolved visual constructed the Provider")
+
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode=symbol_recognition_mode,
+        ),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id="project-test",
+        provider_factory=forbidden_factory,
+    )
+
+    reviewed = advisor.review(source, pages, resolved_snapshot)
+
+    assert reviewed == resolved_snapshot
+    assert constructed == []
+    assert reviewed.candidates == resolved_snapshot.candidates
+    assert reviewed.source_signals == resolved_snapshot.source_signals
+    assert reviewed.provider_call_ids == resolved_snapshot.provider_call_ids
+    visual_coverage = next(
+        entry
+        for entry in reviewed.coverage_entries
+        if entry.observation_id == visual_id
+    )
+    assert visual_coverage.advisor_review is None
+    assert visual_coverage.disposition_reason == (
+        "welli_layout_visual_context"
+    )
+
+
+def test_mixed_visual_review_only_projects_required_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, original_pages, _snapshot = visual_diameter_fixture(tmp_path)
+    original_context = advisor_module.reconstruct_visual_geometry_contexts(
+        source,
+        original_pages,
+    )[0]
+    original_visual = original_pages[0].visual_observations[0]
+    resolved_visual = replace(
+        original_visual,
+        observation_id="resolved-a",
+    )
+    unresolved_visual = replace(
+        original_visual,
+        observation_id="unresolved-b",
+        bbox_pdf=tuple(value + 12 for value in original_visual.bbox_pdf),
+        bbox_normalized=tuple(
+            value + 0.05 for value in original_visual.bbox_normalized
+        ),
+    )
+    pages = (
+        replace(
+            original_pages[0],
+            visual_observations=(resolved_visual, unresolved_visual),
+        ),
+    )
+    snapshot = candidate_snapshot_from_inventory(pages)
+    coverage_entries = tuple(
+        replace(
+            entry,
+            disposition="reference_context",
+            requires_confirmation=False,
+            disposition_reason=(
+                "welli_layout_visual_context"
+                if entry.observation_id == resolved_visual.observation_id
+                else "fixture_resolved_text"
+            ),
+            disposition_rule_version="welli-layout-disposition/1",
+        )
+        if entry.observation_id != unresolved_visual.observation_id
+        else entry
+        for entry in snapshot.coverage_entries
+    )
+    snapshot = replace(
+        snapshot,
+        coverage_entries=coverage_entries,
+        required_visual_observation_ids=(
+            unresolved_visual.observation_id,
+        ),
+    )
+    resolved_before = next(
+        entry
+        for entry in snapshot.coverage_entries
+        if entry.observation_id == resolved_visual.observation_id
+    )
+    resolved_bytes = json.dumps(
+        resolved_before.to_dict(),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    projected_ids: list[str] = []
+    original_project = advisor_module.project_visual_page
+
+    def recording_project(**kwargs):
+        projected_ids.extend(
+            item.observation_id
+            for item in kwargs["visual_observations"]
+        )
+        return original_project(**kwargs)
+
+    monkeypatch.setattr(
+        advisor_module,
+        "project_visual_page",
+        recording_project,
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "reconstruct_visual_geometry_contexts",
+        lambda _source, _pages: (
+            replace(
+                original_context,
+                observation_id=resolved_visual.observation_id,
+            ),
+            replace(
+                original_context,
+                observation_id=unresolved_visual.observation_id,
+                line_bbox_pdf=tuple(
+                    value + 12
+                    for value in original_context.line_bbox_pdf
+                ),
+            ),
+        ),
+    )
+
+    class RequiredVisualProvider(UnifiedRecordingProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.visual_request_ids: list[tuple[str, ...]] = []
+
+        def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
+            request = json.loads(prompt)
+            self.visual_request_ids.append(
+                tuple(request["visual_observation_ids"])
+            )
+            return super().review_symbols(image, prompt)
+
+    provider = RequiredVisualProvider()
+    reviewed = candidate_advisor(tmp_path, provider).review(
+        source,
+        pages,
+        snapshot,
+    )
+
+    assert provider.call_order == ["visual"]
+    assert provider.visual_request_ids == [("unresolved-b",)]
+    assert projected_ids == ["unresolved-b"]
+    resolved_after = next(
+        entry
+        for entry in reviewed.coverage_entries
+        if entry.observation_id == resolved_visual.observation_id
+    )
+    assert json.dumps(
+        resolved_after.to_dict(),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode() == resolved_bytes
+    unresolved_after = next(
+        entry
+        for entry in reviewed.coverage_entries
+        if entry.observation_id == unresolved_visual.observation_id
+    )
+    assert unresolved_after.advisor_review is not None
+    assert unresolved_after.advisor_review["rejection_code"] == (
+        "visual_no_detection"
+    )
+
+
 def test_ambiguous_native_observation_still_emits_one_source_signal(
     tmp_path: Path,
 ) -> None:
