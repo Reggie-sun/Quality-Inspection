@@ -243,6 +243,51 @@ def test_completed_duplicate_skips_preflight_and_pdf_read(
     ) == automatic_result_ref(winner)
 
 
+def test_preview_retry_reuses_the_first_local_revision_and_canonical_head(
+    transactional_db_session: Session,
+) -> None:
+    """Catches retry wiring that creates a second local preview revision."""
+    from app.processing.recognition_preview import RecognitionPreviewService
+
+    session = transactional_db_session
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    source_file = StoredFile(
+        resource_ref=f"asset://projects/{project.id}/source.pdf",
+        sha256="4" * 64,
+        size_bytes=1,
+        mime_type="application/pdf",
+    )
+    session.add_all([project, source_file])
+    session.commit()
+    snapshot = {
+        "schema_version": "recognition-preview/1",
+        "stage": "local_ready",
+        "candidates": [{"candidate_id": "candidate-1", "kind": "thread"}],
+    }
+    preview = RecognitionPreviewService(session)
+
+    first = preview.publish_local(
+        project_id=project.id,
+        source_file_id=source_file.id,
+        semantic_snapshot=snapshot,
+    )
+    retry = preview.publish_local(
+        project_id=project.id,
+        source_file_id=source_file.id,
+        semantic_snapshot=snapshot,
+    )
+
+    assert retry.id == first.id
+    assert retry.revision == 1
+    assert preview.head_for(project.id).id == first.id
+    assert session.scalar(
+        select(func.count())
+        .select_from(text("recognition_preview_revisions"))
+        .where(text("project_id = :project_id")),
+        {"project_id": project.id},
+    ) == 1
+
+
 def test_inventory_only_completion_is_not_a_pipeline_winner(
     db_session: Session,
 ) -> None:

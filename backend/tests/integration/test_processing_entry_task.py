@@ -299,6 +299,49 @@ def test_worker_uses_frozen_project_mode_after_settings_change(
     assert external_calls == []
 
 
+def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    """Catches task wiring that bypasses the persistence-only preview Owner."""
+    storage = LocalFileStorage(tmp_path / "storage")
+    setup = task_session_factory()
+    project, source = _project_source(setup, storage, tmp_path)
+    setup.close()
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+    preview_sinks: list[object] = []
+
+    class RecordingPreviewService:
+        def __init__(self, session: Session) -> None:
+            assert session.bind is not None
+            preview_sinks.append(self)
+
+    original_advisor = tasks.CandidateAdvisor
+
+    def recording_advisor(*args, **kwargs):
+        assert kwargs["preview_sink"] is preview_sinks[0]
+        return original_advisor(*args, **kwargs)
+
+    monkeypatch.setattr(tasks, "RecognitionPreviewService", RecordingPreviewService)
+    monkeypatch.setattr(tasks, "CandidateAdvisor", recording_advisor)
+
+    inventory_project.run(
+        str(project.id),
+        source.resource_ref,
+        f"preview-process:{project.id}",
+    )
+
+    assert len(preview_sinks) == 1
+    assert external_calls == []
+
+
 def test_worker_rejects_corrupt_frozen_pair_before_provider_construction(
     monkeypatch: pytest.MonkeyPatch,
     task_session_factory: Callable[[], Session],

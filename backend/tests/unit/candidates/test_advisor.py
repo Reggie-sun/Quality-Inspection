@@ -260,6 +260,20 @@ class FailingIfCalledVisionProvider:
         raise AssertionError("cache hit constructed one external call")
 
 
+class RecordingPreviewSink:
+    def __init__(self) -> None:
+        self.local_snapshots: list[CandidateSnapshot] = []
+
+    def publish_local(
+        self,
+        *,
+        snapshot: CandidateSnapshot,
+        source_path: Path,
+    ) -> None:
+        assert source_path.name == "drawing.pdf"
+        self.local_snapshots.append(snapshot)
+
+
 def drawing_fixture(
     tmp_path: Path,
     *,
@@ -462,6 +476,35 @@ def _canonical_snapshot_bytes(snapshot: CandidateSnapshot) -> bytes:
             ),
         }
     )
+
+
+def test_advisor_publishes_local_snapshot_before_provider_enrichment(
+    tmp_path: Path,
+) -> None:
+    """Catches Advisor enrichment that reaches a Provider before persisting local facts."""
+    source, pages, snapshot = drawing_fixture(tmp_path, raw_text="M6")
+    sink = RecordingPreviewSink()
+
+    class ProviderAfterLocal(RecordingVisionProvider):
+        def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
+            assert sink.local_snapshots == [snapshot]
+            return super().review_candidate(image, prompt)
+
+    provider = ProviderAfterLocal(advisor_payload("M6", "thread", "M6", True))
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id="project-test",
+        provider_factory=lambda _settings: provider,
+        preview_sink=sink,
+    )
+
+    reviewed = advisor.review(source, pages, snapshot)
+
+    assert sink.local_snapshots == [snapshot]
+    assert sink.local_snapshots[0].provider_call_ids == ()
+    assert len(provider.images) == 1
+    assert reviewed.provider_call_ids == ("fixture-qwen-request-1",)
 
 
 def test_production_locally_resolved_visual_skips_provider(

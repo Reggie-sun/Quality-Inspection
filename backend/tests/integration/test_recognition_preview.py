@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Iterator
 from dataclasses import dataclass
 from hashlib import sha256
@@ -9,11 +11,12 @@ from types import ModuleType
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, inspect, select
+from sqlalchemy import delete, func, inspect, select, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.candidates.models import AutomaticResult
-from app.db import engine
+from app.db import SessionLocal, engine
 from app.jobs.idempotency import LogicalJob
 from app.main import app
 from app.projects.models import Project
@@ -177,33 +180,118 @@ def test_enrichment_creates_a_successor_without_changing_the_local_snapshot(
     assert local.semantic_sha256 != enriched.semantic_sha256
 
 
-def test_only_one_writer_can_advance_an_expected_preview_head(
+def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
+    """Catches a CAS implementation that only works inside one SQLAlchemy Session."""
+    bootstrap = SessionLocal()
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    source = StoredFile(
+        resource_ref=f"asset://tests/{project.id}/source.pdf",
+        sha256="1" * 64,
+        size_bytes=1,
+        mime_type="application/pdf",
+    )
+    preview_created = False
+    try:
+        bootstrap.add_all([project, source])
+        bootstrap.commit()
+        local = _preview_service(bootstrap).publish_local(
+            project_id=project.id,
+            source_file_id=source.id,
+            semantic_snapshot=_local_snapshot(),
+        )
+        bootstrap.commit()
+        preview_created = True
+
+        def advance(stage: str) -> tuple[str, uuid.UUID]:
+            session = SessionLocal()
+            service = _preview_service(session)
+            try:
+                barrier.wait(timeout=5)
+                revision = service.append_enrichment(
+                    project_id=project.id,
+                    expected_head_version=1,
+                    parent_revision_id=local.id,
+                    semantic_snapshot={**_local_snapshot(), "stage": stage},
+                )
+                session.commit()
+                return "winner", revision.id
+            except service.CasConflict:
+                session.rollback()
+                winner = service.head_for(project.id)
+                return "loser", winner.id
+            finally:
+                session.close()
+
+        import threading
+
+        barrier = threading.Barrier(2)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = list(executor.map(advance, ("vlm_enriching", "cache_ready")))
+
+        winners = [revision_id for outcome, revision_id in outcomes if outcome == "winner"]
+        losers = [revision_id for outcome, revision_id in outcomes if outcome == "loser"]
+        assert len(winners) == 1
+        assert losers == winners
+        with engine.connect() as connection:
+            assert connection.scalar(text(
+                "SELECT count(*) FROM recognition_preview_revisions "
+                "WHERE project_id = :project_id"
+            ), {"project_id": project.id}) == 2
+            assert connection.scalar(text(
+                "SELECT count(*) FROM recognition_preview_heads "
+                "WHERE project_id = :project_id"
+            ), {"project_id": project.id}) == 1
+            assert connection.scalar(text(
+                "SELECT count(*) FROM recognition_preview_revisions revision "
+                "LEFT JOIN recognition_preview_heads head ON head.revision_id = revision.id "
+                "WHERE revision.project_id = :project_id "
+                "AND revision.revision > 1 AND head.revision_id IS NULL"
+            ), {"project_id": project.id}) == 0
+    finally:
+        bootstrap.close()
+        with engine.begin() as connection:
+            if preview_created:
+                connection.execute(text(
+                    "DELETE FROM recognition_preview_heads WHERE project_id = :project_id"
+                ), {"project_id": project.id})
+                connection.execute(text(
+                    "DELETE FROM recognition_preview_revisions WHERE project_id = :project_id"
+                ), {"project_id": project.id})
+            connection.execute(delete(Project).where(Project.id == project.id))
+            connection.execute(delete(StoredFile).where(StoredFile.id == source.id))
+
+
+def test_postgres_rejects_direct_preview_revision_update_and_delete(
     preview_context: PreviewContext,
 ) -> None:
-    """Catches a lost-update race that accepts two successors for one head version."""
+    """Catches a schema that stores revisions but permits destructive mutation."""
     project, source, _ = _seed_project(preview_context)
     service = _preview_service(preview_context.session)
-    local = service.publish_local(
+    revision = service.publish_local(
         project_id=project.id,
         source_file_id=source.id,
         semantic_snapshot=_local_snapshot(),
     )
-    winner = service.append_enrichment(
-        project_id=project.id,
-        expected_head_version=1,
-        parent_revision_id=local.id,
-        semantic_snapshot={**_local_snapshot(), "stage": "vlm_enriching"},
-    )
+    original_snapshot = copy.deepcopy(revision.semantic_snapshot)
+    original_hash = revision.semantic_sha256
 
-    with pytest.raises(service.CasConflict):
-        service.append_enrichment(
-            project_id=project.id,
-            expected_head_version=1,
-            parent_revision_id=local.id,
-            semantic_snapshot={**_local_snapshot(), "stage": "late-writer"},
-        )
+    with pytest.raises(DBAPIError):
+        preview_context.session.execute(text(
+            "UPDATE recognition_preview_revisions "
+            "SET semantic_snapshot = '{\"tampered\":true}'::jsonb WHERE id = :id"
+        ), {"id": revision.id})
+        preview_context.session.commit()
+    preview_context.session.rollback()
+    with pytest.raises(DBAPIError):
+        preview_context.session.execute(text(
+            "DELETE FROM recognition_preview_revisions WHERE id = :id"
+        ), {"id": revision.id})
+        preview_context.session.commit()
+    preview_context.session.rollback()
 
-    assert service.head_for(project.id).id == winner.id
+    persisted = service.revision_for(project.id, revision.revision)
+    assert persisted.semantic_snapshot == original_snapshot
+    assert persisted.semantic_sha256 == original_hash
 
 
 def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
@@ -241,6 +329,14 @@ def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
     )
     preview_context.session.add_all([job, terminal])
     preview_context.session.commit()
+    terminal_before = {
+        "candidates": copy.deepcopy(terminal.candidates),
+        "coverage": copy.deepcopy(terminal.coverage),
+        "provider_call_ids": copy.deepcopy(terminal.provider_call_ids),
+        "schema_version": terminal.schema_version,
+        "project_state": project.state,
+        "project_version": project.version,
+    }
 
     service.supersede_with_terminal(project_id=project.id, automatic_result_id=terminal.id)
     with pytest.raises(service.CasConflict):
@@ -251,8 +347,32 @@ def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
             semantic_snapshot={**_local_snapshot(), "stage": "late-completion"},
         )
 
+    preview_context.session.expire_all()
+    persisted_terminal = preview_context.session.get(AutomaticResult, terminal.id)
+    persisted_project = preview_context.session.get(Project, project.id)
+    assert persisted_terminal is not None
+    assert persisted_project is not None
     assert service.head_for(project.id).id == current.id
-    assert preview_context.session.get(AutomaticResult, terminal.id) is not None
+    assert persisted_terminal.candidates == terminal_before["candidates"]
+    assert persisted_terminal.coverage == terminal_before["coverage"]
+    assert persisted_terminal.provider_call_ids == terminal_before["provider_call_ids"]
+    assert persisted_terminal.schema_version == terminal_before["schema_version"]
+    assert persisted_project.state == terminal_before["project_state"]
+    assert persisted_project.version == terminal_before["project_version"]
+    assert preview_context.session.scalar(text(
+        "SELECT count(*) FROM recognition_preview_revisions "
+        "WHERE project_id = :project_id"
+    ), {"project_id": project.id}) == 2
+    terminal_preview = preview_context.client.get(
+        f"/api/v1/projects/{project.id}/recognition-preview"
+    )
+    assert terminal_preview.status_code == 409
+    assert terminal_preview.json() == {
+        "error": {
+            "code": "recognition_preview_superseded",
+            "message": "terminal automatic result is available",
+        }
+    }
 
 
 def test_preview_schema_requires_immutable_revisions_and_one_mutable_head() -> None:
@@ -268,14 +388,51 @@ def test_preview_schema_requires_immutable_revisions_and_one_mutable_head() -> N
         "id", "project_id", "source_file_id", "revision", "parent_revision_id",
         "semantic_snapshot", "semantic_sha256", "schema_version",
     } <= revision_columns
+    assert inspector.get_pk_constraint("recognition_preview_revisions")["constrained_columns"] == ["id"]
+    assert {
+        tuple(constraint["column_names"] or ())
+        for constraint in inspector.get_unique_constraints("recognition_preview_revisions")
+    } >= {("project_id", "revision")}
+    revision_foreign_keys = {
+        (
+            tuple(constraint["constrained_columns"]),
+            constraint["referred_table"],
+            tuple(constraint["referred_columns"]),
+        )
+        for constraint in inspector.get_foreign_keys("recognition_preview_revisions")
+    }
+    assert revision_foreign_keys >= {
+        (("project_id",), "projects", ("id",)),
+        (("source_file_id",), "stored_files", ("id",)),
+        (("parent_revision_id",), "recognition_preview_revisions", ("id",)),
+    }
     head_columns = {
         column["name"] for column in inspector.get_columns("recognition_preview_heads")
     }
     assert {"project_id", "revision_id", "version", "terminal_result_id"} <= head_columns
+    assert inspector.get_pk_constraint("recognition_preview_heads")["constrained_columns"] == ["project_id"]
+    assert inspector.get_columns("recognition_preview_heads")[
+        next(index for index, column in enumerate(
+            inspector.get_columns("recognition_preview_heads")
+        ) if column["name"] == "version")
+    ]["nullable"] is False
     assert any(
         constraint["column_names"] == ["project_id"]
         for constraint in inspector.get_unique_constraints("recognition_preview_heads")
     )
+    head_foreign_keys = {
+        (
+            tuple(constraint["constrained_columns"]),
+            constraint["referred_table"],
+            tuple(constraint["referred_columns"]),
+        )
+        for constraint in inspector.get_foreign_keys("recognition_preview_heads")
+    }
+    assert head_foreign_keys >= {
+        (("project_id",), "projects", ("id",)),
+        (("revision_id",), "recognition_preview_revisions", ("id",)),
+        (("terminal_result_id",), "automatic_results", ("id",)),
+    }
 
 
 def test_recognition_preview_schema_is_owned_by_0012_after_0011() -> None:
@@ -344,6 +501,25 @@ def test_preview_refresh_is_project_and_source_bound_without_working_copy(
     source_response = preview_context.client.get(first.json()["source_pdf_url"])
     assert source_response.status_code == 200
     assert source_response.content == source_bytes
+    assert preview_context.session.scalar(
+        select(func.count()).select_from(ReviewWorkingCopy).where(
+            ReviewWorkingCopy.project_id == project.id
+        )
+    ) == 0
+
+
+def test_preview_project_still_has_no_workbench_without_real_working_copy(
+    preview_context: PreviewContext,
+) -> None:
+    """Catches preview routing that silently synthesizes a ReviewWorkingCopy."""
+    project, _, _ = _seed_project(preview_context)
+
+    response = preview_context.client.get(
+        f"/api/v1/projects/{project.id}/workbench"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "project_workbench_unavailable"
     assert preview_context.session.scalar(
         select(func.count()).select_from(ReviewWorkingCopy).where(
             ReviewWorkingCopy.project_id == project.id

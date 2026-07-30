@@ -79,6 +79,23 @@ class RecordingOcrProvider:
         )
 
 
+class SourceBoundAdvisor:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Path, str, object]] = []
+
+    def review(
+        self,
+        source_path: Path,
+        pages: tuple[object, ...],
+        snapshot: object,
+        *,
+        source_file_id: str,
+    ) -> object:
+        assert pages
+        self.calls.append((source_path, source_file_id, snapshot))
+        return snapshot
+
+
 def _recognition(
     provider: RecordingOcrProvider,
     factory_calls: list[str],
@@ -280,6 +297,30 @@ def test_ambiguous_ocr_observation_still_emits_one_source_signal(
     assert len(
         {signal.source_location_id for signal in snapshot.source_signals}
     ) == len(snapshot.source_signals)
+
+
+def test_runtime_recognition_forwards_exact_source_identity_to_advisor(
+    tmp_path: Path,
+) -> None:
+    """Catches a runtime path that loses preview source identity or publishes itself."""
+    pdf_path = tmp_path / "source-bound.pdf"
+    _write_pdf(pdf_path, native_text="M6")
+    provider = RecordingOcrProvider()
+    advisor = SourceBoundAdvisor()
+    recognition = RuntimeRecognition(
+        Settings(storage_root=Path("/tmp/not-used")),
+        provider_factory=lambda _settings: provider,
+        advisor=advisor,
+    )
+
+    pages = recognition.build_inventory(pdf_path)
+    snapshot = recognition.build_candidate_snapshot(
+        pages,
+        source_file_id="stored-source-exact",
+    )
+
+    assert advisor.calls == [(pdf_path, "stored-source-exact", snapshot)]
+    assert provider.calls == []
 
 
 def test_supported_full_page_hybrid_uses_bounded_local_ocr_crops(
