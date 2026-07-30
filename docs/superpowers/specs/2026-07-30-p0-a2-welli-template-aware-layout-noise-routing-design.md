@@ -3,7 +3,7 @@
 ## Status And Authority
 
 - Date: `2026-07-30`
-- Status: `proposed`
+- Status: `approved for implementation planning`
 - Selected lane: `Heavy`
 - Verified base: `main@f9c8c2d`
 - Scope: WELLI 固定工程图模板的 Native/high-confidence layout matching、
@@ -21,8 +21,8 @@
 但规则必须以“模板确认 + 单元格角色 + 工程语义保留”为边界，不能把整块表格矩形
 一律删除。
 
-本文获用户和 Quality Owner 批准后，仍需把它吸收到唯一 current implementation
-plan，锁定 task、allowed paths、TDD、回滚和验收命令，才能开始实现。
+本文已获用户批准进入 implementation planning；仍需通过 implementation plan
+approval gate，锁定 task、allowed paths、TDD、回滚和验收命令，才能开始实现。
 
 ## Selection Record
 
@@ -47,8 +47,9 @@ plan，锁定 task、allowed paths、TDD、回滚和验收命令，才能开始�
   observation identity/bbox/source relation、Coverage 完整性、candidate/item
   identity、confidence/review、formal numbering、balloon placement、reviewed
   result 和 export 均不改变。
-- Provider boundary: 本任务的预期 VLM 调用数为 `0`。固定表格噪声不应消耗
-  Vision Advisor；未来 VLM 只处理规则与 grouping 后仍 unresolved 的局部工程标注。
+- Provider boundary: layout-resolved 固定表格噪声的预期 VLM 调用数为 `0`；
+  其他 unresolved visual sources 继续现有 Advisor path 并单独计数。未来新增 VLM
+  能力仍只处理规则与 grouping 后 unresolved 的局部工程标注。
 - First future verification: 对一组合成 WELLI page inputs
   （observations + drawings + page size）和一组明确不匹配的 inputs
   运行纯函数测试；匹配页的 revision marker 进入
@@ -278,7 +279,7 @@ PageInventory
   |  TextObservation + optional versioned layout sidecar
   v
 Observation Region/Cell Assignment
-  |  observation_id -> region_id/cell_role/evidence
+  |  observation_id -> region_id/cell_role/cell_id/evidence
   v
 Technical Requirement Existing Classifier
   |  matched requirement -> existing global requirement candidate
@@ -300,6 +301,11 @@ Remaining P0-A1-R1 Number/Roman/Repeated-Text Rules
 Existing composite/grouping/parser/coarse fallback
   v
 CandidateSnapshot + complete Coverage Ledger
+  |  text dispositions + layout-resolved visual dispositions
+  |  required_visual_observation_ids = unresolved visual sources only
+  v
+Visual batch planner / CandidateAdvisor
+  |  schedules and projects required visual IDs only
   v
 Existing confidence/review/balloon/export path
 ```
@@ -314,6 +320,8 @@ Existing confidence/review/balloon/export path
 | Primary Disposition Owner | final per-observation rule decision | formal item/review/number/export |
 | Candidate Snapshot Owner | orchestration and one Coverage write per selected source | profile geometry definitions duplicated inline |
 | Coverage Owner | source identity, disposition, reason/version, confirmation state | silently dropping observations |
+| Visual Batch Planner | 只调度 `required_visual_observation_ids` | 把 layout-resolved visual source 重新升级为 VLM request |
+| CandidateAdvisor | 只投影已调度的 unresolved visual sources | 覆盖 layout-resolved visual Coverage disposition |
 | VLM Advisor | future local suggestion only | profile match、formal coordinates、final disposition or business write |
 
 ## Layout Profile Contract
@@ -470,14 +478,17 @@ assignment 范围。
 
 1. bbox center 位于一个 unexpanded base cell 或一个明确的 same-role merged-cell
    union 内；
-2. 完整 bbox 位于该 role rectangle 向外扩展 `1 mm` 的范围内；
+2. 完整 bbox 位于该 unexpanded role union 内；
 3. line 接触的所有 base cells 具有相同 role；
 4. 不存在第二个 role 同时满足；
 5. title/revision/archive/page-frame line 的 direction angle 为 `0° ±2°`；
 6. line/parent relation、bbox 和 profile page_index 无冲突。
 
-若 line 跨越不同 role、只靠 bbox overlap 命中、落在 grid tolerance band、merged
-cell role 不唯一或 title optional `x=93` 造成两种解释，则不创建 assignment。
+若 line 越过 role union、跨越不同 role、只靠 bbox overlap 命中、merged cell role
+不唯一或 title optional `x=93` 造成两种解释，则不创建 assignment。
+`boundary_distance_mm` 为相对 unexpanded role union 的 signed inward distance；
+assignment 中只允许非负值。`0..1 mm` 表示位于 grid tolerance band 内侧，
+assignment 可保留用于诊断，但 disposition 必须 veto；负值一律不创建 assignment。
 不得用“center 落进整块 title/revision rectangle”替代 cell assignment。
 
 ### Match Gate
@@ -533,6 +544,7 @@ class ObservationRegionAssignment:
         "page_frame",
     ]
     cell_role: str
+    cell_id: str
     assignment_evidence_codes: tuple[str, ...]
     boundary_distance_mm: float
     rule_version: str
@@ -559,6 +571,20 @@ path。
 这些 sidecar 只提供 evidence。最终 business trace 继续写入现有
 `CoverageEntry.disposition_reason/disposition_rule_version`。不得把
 `TextObservation.parent_region_id` 改成 layout region。
+
+`cell_id` 是同一 profile 内稳定的 cell identity，例如：
+
+```text
+revision-marker-1
+revision-description-1
+revision-marker-2
+revision-description-2
+revision-marker-3
+revision-description-3
+```
+
+row-level engineering veto 必须按 `cell_id` 聚合，不能在 Candidate Snapshot 重新
+硬编码 revision geometry，也不能从 diagnostic evidence code 反解析业务 identity。
 
 该 optional additive field 实现 `PDF-007` 已定义的 region identity/evidence，不新增
 业务 Owner、数据库 column 或 public API。successor plan 必须同步现有 page-inventory
@@ -642,6 +668,60 @@ p0-a2-welli-layout/1
 `reference_context` 不是 candidate，也不是不可恢复删除；它必须保留 source location
 和 Coverage relation，未来可以被 item/group 引用。
 
+## Layout-Resolved Visual Observation Contract
+
+固定表格文字附近的 triangle、cell border 或其他 vector context 可能已经形成
+`VisualObservation`。只改变 text disposition 不足以阻止这些 visual sources 进入
+Advisor。
+
+Candidate Snapshot 必须为每个 visual source执行以下确定性关系判定：
+
+1. `associated_text_observation_ids` 非空；
+2. 先把合法 Native span relation canonicalize 到已选中的 Native line：
+   - span 与 parent line 同页；
+   - `span.parent_region_id` 指向该 parent line；
+   - visual 同时显式关联 span 和 parent line；
+   - parent line 是 Candidate Snapshot 当前 selected observation；
+3. orphan、跨页、parent 未被同一 visual 关联或 parent identity 冲突的 span 不能折叠，
+   整个 visual relation 保持 unresolved；
+4. 去重后的 canonical Native line IDs 都在同一 high-confidence layout match 中；
+5. 每个 canonical line 都已有非候选的 layout-safe decision；
+6. 任一 canonical line 不在 engineering-preservation set；
+7. 不存在 candidate/ambiguous/missing/conflicting text relation。
+
+canonical relation projection 只解决现有 visual proposal 的 line/span source lineage；
+它不为 span 新建 Coverage entry，不修改 `associated_text_observation_ids`，也不改变
+Candidate Snapshot 仍以 Native line 为正式 text grain 的合同。
+
+全部满足时：
+
+- 若所有关联 text 都是 `non_inspection`，visual source 也为
+  `non_inspection/welli_layout_visual_context`；
+- 否则 visual source 为
+  `reference_context/welli_layout_visual_context`；
+- visual source 仍保留自己的 identity、bbox、Coverage entry 和 relation；
+- visual ID 不进入 `required_visual_observation_ids`。
+
+任一条件不满足时，visual source 保持现有
+`ambiguous/requires_confirmation=true`，并继续进入
+`required_visual_observation_ids`。
+
+下游必须机械遵守该集合：
+
+```text
+plan_visual_batches()
+  -> only required_visual_observation_ids
+
+CandidateAdvisor visual projection
+  -> only scheduled/required visual observations
+
+layout-resolved visual observations
+  -> preserve existing Coverage decision
+```
+
+不得仅在 batch planner 过滤后，又让 `project_visual_page()` 以
+`visual_no_detection` 覆盖这些 source。
+
 ## Same-Page Watermark Contract
 
 只有同一 page 上的 Native observations 同时满足以下条件，才判为
@@ -697,8 +777,9 @@ exact 技术要求 heading
 rule 处理：
 
 ```text
-expected VisionLlmProvider construction = 0
-expected VisionLlmProvider calls = 0
+layout-resolved source eligible Provider batches = 0
+layout-resolved source attributable Provider calls = 0
+unresolved source Provider calls = existing path, reported separately
 ```
 
 ### Future Advisor Seam
@@ -740,9 +821,12 @@ VLM 不得：
 | `backend/app/pdf/inventory.py` | 在 raw drawings 尚可用时调用 matcher；只保存 reduced evidence |
 | `backend/app/candidates/disposition.py` | 消费 assignment，提交 template-aware primary disposition；内部 decision 支持 `reference_context` |
 | `backend/app/processing/automatic_result.py` | 只消费 inventory 已保存的 match/assignments，并在现有 path 中编排；不得重读 PDF |
+| `backend/app/candidates/symbol_review.py` | visual batch planner 只调度 snapshot 明确 required 的 visual IDs |
+| `backend/app/candidates/advisor.py` | 只 project required visual IDs，保留 layout-resolved Coverage |
 | `backend/tests/unit/pdf/test_inventory.py` | sidecar producer/serialization/no-match compatibility |
 | `backend/tests/unit/pdf/test_layout_profiles.py` | profile、tolerance、anchor quorum、cell assignment、no-match tests |
 | `backend/tests/unit/candidates/test_disposition.py` | decision table、engineering exception、watermark and precedence tests |
+| `backend/tests/unit/candidates/test_symbol_advisor.py` | required-visual scheduling 和 resolved-visual non-projection |
 | `backend/tests/e2e/test_offline_automatic_result.py` | candidate/Coverage integration、fallback determinism |
 
 P0-A2 不应修改：
@@ -774,6 +858,11 @@ P0-A2 不应修改：
 12. revision description 的真实 split-line `其余` + `3.2` bundle 触发整行 veto，
     两个 observation 均不进入 table noise disposition。
 13. unmatched page 的 snapshot 与 P0-A1-R1 baseline byte-identical。
+14. layout-resolved visual source 保留 Coverage identity/disposition，不进入
+    `required_visual_observation_ids`、VLM batch 或 Advisor projection。
+15. unresolved/mixed-relation visual source 仍为 `ambiguous` 且必须进入 required set。
+16. 真实 `line + child spans` visual relation 可稳定折叠到 selected Native line；
+    orphan、跨页、parent 未显式关联或 identity 冲突的 span 必须 fail closed。
 
 ### Current Corpus Diagnostic Gate
 
@@ -792,6 +881,8 @@ scanned/unsupported pages 必须保持明确 residual，不得伪装成功。
    `ambiguous`；不得成为 table noise。
 7. 所有原有 selected observations 仍恰有 Coverage entry；blocking coverage 不增加。
 8. 相同 code/input 连续两次 canonical snapshot byte-identical。
+9. 与已路由 title/revision/archive/page-frame noise 关联的 visual sources 不进入
+   Provider batch；其他 unresolved visual sources 的 required coverage 不减少。
 
 上述 gate 证明 deterministic prefilter 行为，不证明正式 candidate precision、
 post-Advisor precision、reviewed result 或交付文件正确性。
@@ -838,7 +929,9 @@ Coverage Veto、confidence/review、formal numbering 和 export contract 均必�
 - non-inspection false-negative audit；
 - Coverage completeness；
 - repeat determinism；
-- Provider construction/calls，预期为 `0/0`。
+- layout-resolved source 的 eligible Provider batches 预期为 `0`；Advisor focused
+  test 证明没有 call 可归因于这些 source；
+- 其他 unresolved sources 的 Provider call 数单独报告，不得混入上述零调用结论。
 
 不得混入人工修改后的 working copy 或 ReviewedResult。
 
@@ -884,7 +977,7 @@ P0-A2 不修改正式交付，因此只有后续运行完整 review/freeze/ballo
 | 整块 revision table 过滤导致真实标注丢失 | cell role + engineering-preservation gate；锁定 `其余 3.2` regression |
 | 只按页面尺寸误匹配其他模板 | geometry + anchor quorum；歧义直接 no-match |
 | line/span 重复造成重复 disposition | assignment 按 observation identity；Coverage 仍逐 observation，评测另按 group 去重 |
-| visual context 让 revision marker 回到 parser | confirmed marker cell 对 revision-control triangle 使用明确 precedence |
+| visual context 让 revision marker 回到 parser 或 VLM | confirmed marker cell 对 text 使用明确 precedence，并让 layout-resolved visual ID 同步退出 required/batch/projection |
 | watermark rule误删正常文字 | exact text + angle + count + 2×3 grid；不做 substring/generalized watermark |
 | 模板 revision 漂移 | versioned profile；边界 conflict no-match；不得自动放宽 tolerance |
 | 当前 corpus 过拟合 | in-sample 标签；必须用 holdout/negative pages 才能推广 |
