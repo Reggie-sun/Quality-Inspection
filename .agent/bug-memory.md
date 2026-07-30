@@ -52,3 +52,25 @@
 - Regression check: `ReviewPanel.test.tsx` 中的测试 `直径尺寸字段支持修改按钮和直接点击两种编辑入口` 会在点击修改按钮前断言两个 input 不含 `readonly`、两个 select 不含 `disabled`，并覆盖按钮入口和直接 focus 入口
 - Runtime proof: `npm test -- --run` 通过 205/205；`npm run build` 通过；在已保存检验项 64 上执行 Chrome smoke，确认字段为白色且可编辑、focus 后进入编辑态、取消后回滚，并且 page console 无 error/warn
 - Change: `603702b`
+
+## BUG-20260730-alembic-0008-revision-collision
+
+- Status: 已解决
+- First reported: 2026-07-30
+- Last reported: 2026-07-30
+- Recurrence: 1
+- Surface: `GET /api/v1/projects/{project_id}/status`、`backend/app/projects/models.py`、`backend/alembic/versions/`
+- Symptom: API hot reload 后能正常启动且 health 为 200，但 project status 持续返回 `500 project_status_failed`
+- Previously correct behavior: 同一 project 在 reload 前返回 200；processing failure 应投影为 sanitized `200 failed`
+- Reproduction: live DB 标记 `alembic_version=0008`，`automatic_results` 和 `review_working_copies` 已有 feature-only technical-requirements columns，但 `projects` 只有 `id/state/version`；当前 ORM 查询稳定触发 PostgreSQL `UndefinedColumn`
+- Root cause: feature-only technical-requirements migration 与 symbol-routing migration 曾复用 revision `0008`；live DB 记录了前者，integrated graph 把 `0008` 解释为后者，Alembic 因相同 revision ID 跳过了 symbol-routing DDL
+- Fix: 将 integrated `0010_technical_requirements.py` 收敛为 collided-state
+  reconciliation Owner：用 Inspector 只补缺失的 canonical symbol-routing fields、
+  constraint 和 technical columns；既有对象与 JSONB evidence 保持不变，downgrade
+  仍只拥有 technical columns。
+- Regression check: `backend/tests/integration/test_migration_reconciliation.py`
+  在隔离 schema 中锁定 `0008 → 0009 → 0010` graph，顺序执行真实 `0009/0010`
+  migration，验证既有 project backfill、technical sentinel 数据保全和 `0010` 幂等性。
+- Runtime proof: live DB 从 `0008` 升至 `0010`；同一 project status 返回 sanitized
+  HTTP 200、`phase=failed`、`vision_provider_call_failed`；`/api/v1/health` 返回 200。
+- Change: focused Alembic revision-collision recovery commit
