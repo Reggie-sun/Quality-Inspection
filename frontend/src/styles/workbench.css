@@ -648,11 +648,16 @@
 
 .inspection-table-section--compact .inspection-table__head,
 .inspection-table-section--compact .inspection-table__row {
-  grid-template-columns: 34px minmax(90px, 1fr) minmax(72px, 0.75fr);
+  grid-template-columns: 28px minmax(0, 1fr) 52px;
+  gap: 4px;
 }
 
 .inspection-table-section--compact .inspection-table__body {
   max-height: none;
+}
+
+.inspection-table-section--compact .geometry-state strong {
+  font-size: 10px;
 }
 
 .inspection-table__row {
