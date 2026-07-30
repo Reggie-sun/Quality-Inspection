@@ -180,7 +180,7 @@ describe("ReviewPanel", () => {
     expect(screen.queryByLabelText("识别原文：48")).toBeNull();
   });
 
-  test("复杂检验项仅展示结构化信息且不渲染识别原文和空解析分组", () => {
+  test("复杂项信息默认隐藏并在点击修改后显示", () => {
     render(
       <ReviewPanel
         items={[{
@@ -196,10 +196,19 @@ describe("ReviewPanel", () => {
       />,
     );
 
-    const complexDetails = screen.getByRole("group", { name: "复杂项信息" });
-
     expect(screen.queryByText("识别原文")).toBeNull();
     expect(screen.queryByLabelText("识别原文：Ra 3.2")).toBeNull();
+    expect(screen.queryByRole("group", { name: "复杂项信息" })).toBeNull();
+    expect(screen.queryByLabelText("坐标：Ra 3.2")).toBeNull();
+    expect(screen.queryByLabelText("粗分类：Ra 3.2")).toBeNull();
+    expect(screen.queryByText("待人工确认")).toBeNull();
+    expect(screen.queryByRole("group", { name: "解析结果" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：Ra 3.2",
+    }));
+
+    const complexDetails = screen.getByRole("group", { name: "复杂项信息" });
     expect(within(complexDetails).queryByRole("textbox", {
       name: "原始标注：Ra 3.2",
     })).toBeNull();
@@ -216,7 +225,6 @@ describe("ReviewPanel", () => {
     expect(confirmationStatus.classList.contains(
       "review-field-group__confirmation-status",
     )).toBe(true);
-    expect(screen.queryByRole("group", { name: "解析结果" })).toBeNull();
   });
 
   test("P0-UI-006 keeps merge out of details and exposes seven single-item command types", () => {
@@ -297,6 +305,9 @@ describe("ReviewPanel", () => {
     rerender(
       <ReviewPanel items={items} onCommand={onCommand} selectedItemId="typed-1" />,
     );
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10 ±0.02",
+    }));
     fireEvent.change(screen.getByLabelText("基本尺寸：10 ±0.02"), {
       target: { value: "12.50" },
     });
@@ -310,6 +321,9 @@ describe("ReviewPanel", () => {
     rerender(
       <ReviewPanel items={items} onCommand={onCommand} selectedItemId="complex-1" />,
     );
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：Ra 3.2",
+    }));
     fireEvent.change(screen.getByLabelText("坐标：Ra 3.2"), {
       target: { value: "11,12,13,14" },
     });
@@ -543,7 +557,7 @@ describe("ReviewPanel", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
-  test("点击字段即可编辑且撤销修改会回滚未保存草稿", async () => {
+  test("点击修改才可编辑且取消修改会回滚未保存草稿", async () => {
     let resolveCommand: (outcome: boolean) => void = () => undefined;
     const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
       resolveCommand = resolve;
@@ -569,37 +583,37 @@ describe("ReviewPanel", () => {
       "button",
       { name: "保存修改检验项：10" },
     );
-    const undo = screen.getByRole(
+    const edit = screen.getByRole(
       "button",
-      { name: "撤销修改检验项：10" },
+      { name: "修改检验项：10" },
     );
 
     expect(screen.queryByRole("textbox", {
       name: "原始标注：10",
     })).toBeNull();
-    expect(screen.queryByRole("button", {
-      name: "编辑内容检验项：10",
-    })).toBeNull();
     expect(nominal.hasAttribute("disabled")).toBe(false);
-    expect(nominal.hasAttribute("readonly")).toBe(false);
-    expect(undo.hasAttribute("disabled")).toBe(true);
+    expect(nominal.hasAttribute("readonly")).toBe(true);
     expect(save.hasAttribute("disabled")).toBe(true);
 
-    fireEvent.focus(nominal);
+    fireEvent.click(edit);
+    const cancel = screen.getByRole(
+      "button",
+      { name: "取消修改检验项：10" },
+    );
     expect(nominal.hasAttribute("readonly")).toBe(false);
     expect(save.hasAttribute("disabled")).toBe(true);
 
     fireEvent.change(nominal, { target: { value: "11" } });
-    expect(undo.hasAttribute("disabled")).toBe(false);
     expect(save.hasAttribute("disabled")).toBe(false);
-    fireEvent.click(undo);
+    fireEvent.click(cancel);
     expect((nominal as HTMLInputElement).value).toBe("10");
-    expect(nominal.hasAttribute("readonly")).toBe(false);
-    expect(undo.hasAttribute("disabled")).toBe(true);
+    expect(nominal.hasAttribute("readonly")).toBe(true);
     expect(save.hasAttribute("disabled")).toBe(true);
     expect(onCommand).not.toHaveBeenCalled();
 
-    fireEvent.focus(nominal);
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10",
+    }));
     fireEvent.change(nominal, { target: { value: "11" } });
     fireEvent.click(save);
 
@@ -628,7 +642,7 @@ describe("ReviewPanel", () => {
     await act(async () => resolveCommand(true));
 
     await waitFor(() => {
-      expect(nominal.hasAttribute("readonly")).toBe(false);
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
     expect((nominal as HTMLInputElement).value).toBe("11");
@@ -661,6 +675,9 @@ describe("ReviewPanel", () => {
       "button",
       { name: "保存修改检验项：尺寸" },
     );
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：尺寸",
+    }));
     fireEvent.change(nominal, { target: { value: "02" } });
     expect(save.hasAttribute("disabled")).toBe(false);
     fireEvent.click(save);
@@ -683,7 +700,7 @@ describe("ReviewPanel", () => {
 
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("2");
-      expect(nominal.hasAttribute("readonly")).toBe(false);
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -716,6 +733,9 @@ describe("ReviewPanel", () => {
       "button",
       { name: "保存修改检验项：尺寸" },
     );
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：尺寸",
+    }));
     fireEvent.change(nominal, { target: { value: "02" } });
     fireEvent.click(save);
 
@@ -731,17 +751,20 @@ describe("ReviewPanel", () => {
 
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("2");
-      expect(nominal.hasAttribute("readonly")).toBe(false);
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
 
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：尺寸",
+    }));
     fireEvent.change(nominal, { target: { value: "02" } });
     fireEvent.click(save);
     await act(async () => resolveCommand(true));
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("02");
-      expect(nominal.hasAttribute("readonly")).toBe(false);
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
 
@@ -782,6 +805,9 @@ describe("ReviewPanel", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：位置度",
+    }));
     const coordinates = screen.getByRole("textbox", { name: "坐标：位置度" });
     const save = screen.getByRole(
       "button",
@@ -808,8 +834,7 @@ describe("ReviewPanel", () => {
     await act(async () => resolveCommand(true));
 
     await waitFor(() => {
-      expect((coordinates as HTMLInputElement).value).toBe("1,2,3,4");
-      expect(coordinates.hasAttribute("readonly")).toBe(false);
+      expect(screen.queryByRole("group", { name: "复杂项信息" })).toBeNull();
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -838,6 +863,9 @@ describe("ReviewPanel", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：同值位置度",
+    }));
     const coordinates = screen.getByRole(
       "textbox",
       { name: "坐标：同值位置度" },
@@ -860,8 +888,7 @@ describe("ReviewPanel", () => {
     await act(async () => resolveCommand(true));
 
     await waitFor(() => {
-      expect((coordinates as HTMLInputElement).value).toBe("1,2,3,4");
-      expect(coordinates.hasAttribute("readonly")).toBe(false);
+      expect(screen.queryByRole("group", { name: "复杂项信息" })).toBeNull();
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -897,6 +924,9 @@ describe("ReviewPanel", () => {
       "button",
       { name: "保存修改检验项：服务器原值" },
     );
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：服务器原值",
+    }));
     fireEvent.change(nominal, { target: { value: "11" } });
     fireEvent.click(save);
 
@@ -904,7 +934,7 @@ describe("ReviewPanel", () => {
     await act(async () => resolveCommand(true));
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("11");
-      expect(nominal.hasAttribute("readonly")).toBe(false);
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
 
@@ -912,7 +942,7 @@ describe("ReviewPanel", () => {
 
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("12");
-      expect(nominal.hasAttribute("readonly")).toBe(false);
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -943,6 +973,9 @@ describe("ReviewPanel", () => {
       "button",
       { name: "保存修改检验项：10" },
     );
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10",
+    }));
     fireEvent.change(nominal, { target: { value: "11" } });
     expect(onDraftChange).toHaveBeenLastCalledWith(true);
 
@@ -950,7 +983,7 @@ describe("ReviewPanel", () => {
 
     await waitFor(() => {
       expect(onCommand).toHaveBeenCalledTimes(1);
-      expect(nominal.hasAttribute("readonly")).toBe(false);
+      expect(nominal.hasAttribute("readonly")).toBe(true);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -961,6 +994,9 @@ describe("ReviewPanel", () => {
     expect(save.hasAttribute("disabled")).toBe(true);
     expect(onDraftChange).toHaveBeenLastCalledWith(false);
 
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10",
+    }));
     fireEvent.change(nominal, { target: { value: "10" } });
     expect((nominal as HTMLInputElement).value).toBe("10");
     expect(save.hasAttribute("disabled")).toBe(false);
@@ -971,7 +1007,7 @@ describe("ReviewPanel", () => {
     expect(onDraftChange).toHaveBeenLastCalledWith(false);
   });
 
-  test("切换所选检验项后字段仍可直接编辑", () => {
+  test("切换所选检验项后需要重新点击修改", () => {
     const items: ReviewItem[] = [
       {
         item_id: "item-a",
@@ -1000,6 +1036,13 @@ describe("ReviewPanel", () => {
     expect(
       screen.getByRole("textbox", { name: "基本尺寸：A" })
         .hasAttribute("readonly"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：A",
+    }));
+    expect(
+      screen.getByRole("textbox", { name: "基本尺寸：A" })
+        .hasAttribute("readonly"),
     ).toBe(false);
 
     rerender(
@@ -1009,6 +1052,13 @@ describe("ReviewPanel", () => {
         selectedItemId="item-b"
       />,
     );
+    expect(
+      screen.getByRole("textbox", { name: "基本尺寸：B" })
+        .hasAttribute("readonly"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：B",
+    }));
     expect(
       screen.getByRole("textbox", { name: "基本尺寸：B" })
         .hasAttribute("readonly"),
@@ -1022,7 +1072,7 @@ describe("ReviewPanel", () => {
       />,
     );
     const nominal = screen.getByRole("textbox", { name: "基本尺寸：A" });
-    expect(nominal.hasAttribute("readonly")).toBe(false);
+    expect(nominal.hasAttribute("readonly")).toBe(true);
   });
 
   test("修改命令显式失败时保留本地草稿和编辑模式", async () => {
@@ -1046,6 +1096,9 @@ describe("ReviewPanel", () => {
       "button",
       { name: "保存修改检验项：10" },
     );
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：10",
+    }));
     fireEvent.change(nominal, { target: { value: "11" } });
     fireEvent.click(save);
 
@@ -1198,8 +1251,8 @@ describe("ReviewPanel", () => {
     expect(screen.getByRole("button", { name: "排除检验项：新型标注" }))
       .not.toBeNull();
     expect(screen.getByRole("button", {
-      name: "撤销修改检验项：新型标注",
-    }).hasAttribute("disabled")).toBe(true);
+      name: "修改检验项：新型标注",
+    }).hasAttribute("disabled")).toBe(false);
     expect(screen.getByRole("button", {
       name: "保存修改检验项：新型标注",
     }).hasAttribute("disabled")).toBe(true);
