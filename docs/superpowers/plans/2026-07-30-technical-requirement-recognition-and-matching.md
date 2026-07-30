@@ -33,8 +33,8 @@
   - frontend focused: `32 passed`
 - Writer ownership and order: 一个 write-capable executor 严格按 Task 1 → Task 7；
   同一 file group 不并发写
-- Next verification: 提供包含六条技术要求的 approved real PDF，并设置
-  `QI_MVP_E2E_PDF`，继续 Task 7 Playwright / Chrome runtime acceptance
+- Next verification: 绑定本地 `reviewer` profile 完成 Task 7 independent
+  reviewer gate；implementation、real-PDF runtime 和 parent verification 已通过
 
 ## Problem Boundary
 
@@ -1106,7 +1106,7 @@ Expected: 新 assertions 在缺少完整 cross-layer wiring 时 FAIL；如果直
 - [x] **Step 4: 运行 focused backend suite 和 contracts**
 
 ```bash
-micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py backend/tests/contract/test_automatic_result.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_excel_export.py backend/tests/e2e/test_offline_automatic_result.py -q
+micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py backend/tests/unit/candidates/test_advisor.py backend/tests/contract/test_automatic_result.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_excel_export.py backend/tests/e2e/test_offline_automatic_result.py -q
 python .agent/harness/scripts/check-contracts.py
 ```
 
@@ -1138,7 +1138,15 @@ Execution note (`2026-07-30`):
 
 **Files:**
 
+- Create: `.agent/real-pdf-inputs.env`
 - Create: `frontend/e2e/technical-requirement-matching.spec.ts`
+- Modify: `backend/app/candidates/technical_requirements.py`
+- Modify: `backend/app/candidates/advisor.py`
+- Modify: `backend/tests/unit/candidates/test_technical_requirements.py`
+- Modify: `backend/tests/unit/candidates/test_advisor.py`
+- Modify: `frontend/src/components/workbench/InspectionWorkbench.tsx`
+- Modify: `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- Modify: `frontend/src/styles/workbench.css`
 - Modify: `docs/superpowers/plans/2026-07-30-technical-requirement-recognition-and-matching.md`
 
 - [x] **Step 1: 确认 approved real PDF precondition**
@@ -1153,7 +1161,7 @@ test -f "$QI_MVP_E2E_PDF"
 Expected: 两项均成功，且 PDF 确实包含本设计的六条技术要求。若只有截图或 PDF 不含
 这些要求，runtime acceptance 标记 `blocked`，不得用 synthetic fixture 替代。
 
-- [ ] **Step 2: 写 Playwright acceptance**
+- [x] **Step 2: 写 Playwright acceptance**
 
 测试必须上传真实 PDF，并断言：
 
@@ -1188,7 +1196,7 @@ expect(
 完成一个 target navigation、一个 match override、一个 SIP confirm，并刷新页面证明
 server persistence。
 
-- [ ] **Step 3: 启动 source-mounted runtime 并运行 Playwright**
+- [x] **Step 3: 启动 source-mounted runtime 并运行 Playwright**
 
 使用仓库现有入口：
 
@@ -1213,7 +1221,7 @@ QI_MVP_BASE_URL=http://127.0.0.1:5173 QI_MVP_E2E_PDF="$QI_MVP_E2E_PDF" micromamb
 Expected: PASS。保留测试输出和必要截图在现有 Playwright output 位置，不创建新的
 evidence convention。
 
-- [ ] **Step 4: 使用 Chrome MCP 做 integrated visual QA**
+- [x] **Step 4: 使用 Chrome MCP 做 integrated visual QA**
 
 检查：
 
@@ -1231,6 +1239,21 @@ evidence convention。
 
 必须完整读取并执行 skill，覆盖当前 feature flow。报告实际 runtime URL、操作、console
 errors、network failures 和截图证据；不能把 Playwright 单测等同于 smoke test。
+
+Task 7 runtime evidence (`2026-07-30`):
+
+- approved input 固定在 `.agent/real-pdf-inputs.env`；选定 PDF 为
+  `BK20101401-09L1000#引拔梁(400W)#C1.PDF`，原生文本包含六条要求；
+- fresh upload project `9bd28a2a-6706-4bbb-9be8-fe49ac62fa3a`，
+  `automatic-result://fbfa3eae-9f7b-4c7b-856b-a396de65f722`；
+- Playwright fresh upload + target navigation + SIP confirm + match override +
+  reload persistence：`1 passed (4.1m)`；
+- Chrome MCP desktop viewport：requirement count `6`，技术要求列表
+  `scrollHeight > clientHeight`，与下方 workspace 无 overlap；匹配目标跳转后
+  自动切换“全部”并选中目标；console warning/error 为 `0`，status/lock/workbench/
+  source-pdf 四个请求均为 `200`；
+- smoke screenshot：`/tmp/qi-techreq-playwright-pass-20260730/`
+  `technical-requirement-matching.png`。
 
 - [ ] **Step 6: 独立 reviewer gate**
 
@@ -1263,7 +1286,7 @@ Minimal follow-up:
 Run:
 
 ```bash
-micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py backend/tests/contract/test_automatic_result.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_excel_export.py backend/tests/e2e/test_offline_automatic_result.py -q
+micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py backend/tests/unit/candidates/test_advisor.py backend/tests/contract/test_automatic_result.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_excel_export.py backend/tests/e2e/test_offline_automatic_result.py -q
 micromamba run -n qi-p0 npm --prefix frontend test -- --run
 micromamba run -n qi-p0 npm --prefix frontend run build
 python .agent/harness/scripts/check-contracts.py
@@ -1285,15 +1308,20 @@ Expected: 全部 PASS；build 仅允许明确报告的既有 warning。
 
 Task 7 checkpoint (`2026-07-30`):
 
-- approved real PDF precondition: BLOCKED；process env 与 `.env` 均未提供
-  `QI_MVP_E2E_PDF`，未创建 synthetic Playwright 替代证据；
-- `auto-feature-smoke-test` API/focused verification: PASS（backend
-  `227 passed`）；Chrome MCP smoke: BLOCKED（缺少 approved real PDF）；
-- parent verification: frontend `208 passed`，production build PASS，保留既有
-  `>500 kB` chunk warning；contract mirror 与 `git diff --check` PASS；
+- approved real PDF precondition: PASS；用户提供的两个目录固定在
+  `.agent/real-pdf-inputs.env`，未写入 `AGENTS.md`；
+- runtime root-cause fixes: PASS；真实图框文字不再截断技术要求区块，
+  `CandidateAdvisor` 改变候选集合后由 Technical Requirement Rule Owner
+  清理旧 relation 并对最终候选重新匹配；
+- `auto-feature-smoke-test`: PASS；fresh real-PDF Playwright `1 passed
+  (4.1m)`，Chrome MCP integrated visual QA PASS；
+- parent verification: backend `250 passed`，frontend `209 passed`，
+  production build PASS，保留既有 `>500 kB` chunk warning；contract mirror 与
+  `git diff --check` PASS；
 - independent reviewer gate: BLOCKED；当前 collaboration tool 无法显式绑定本地
   `reviewer` profile/model，按已批准的主线程串行约束未启动 generic child；
-- Task 7 Steps 2–4、6、8 仍未完成，plan 保持 `in_progress`。
+- Task 7 Steps 1–5、7 已完成；Steps 6、8 仍未完成，plan 保持
+  `in_progress`。
 
 如果 real PDF 或 reviewer gate blocked，保持 `Status: in_progress` 并记录唯一 blocker，
 不得用文档勾选替代实际证据。
