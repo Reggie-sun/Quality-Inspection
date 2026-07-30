@@ -912,7 +912,7 @@ git commit -m "feat: review technical requirement matches"
 - Modify: `frontend/src/copy/zhCN.ts`
 - Modify: `frontend/src/styles/workbench.css`
 
-- [ ] **Step 1: 检查 live-agent 和 dirty-file ownership**
+- [x] **Step 1: 检查 live-agent 和 dirty-file ownership**
 
 Run:
 
@@ -923,7 +923,7 @@ git status --short -- frontend/src/api/types.ts frontend/src/components/workbenc
 并检查 live agents 的 assigned paths。若任何目标文件属于另一个 writer，停止并报告
 `blocked/ownership overlap`；不得 reset、stash、restore 或覆盖。
 
-- [ ] **Step 2: 写 component RED tests**
+- [x] **Step 2: 写 component RED tests**
 
 Frontend contract：
 
@@ -976,7 +976,7 @@ expect(onCommand).toHaveBeenCalledWith({
 });
 ```
 
-- [ ] **Step 3: 运行 RED**
+- [x] **Step 3: 运行 RED**
 
 ```bash
 micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/TechnicalRequirementPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx src/components/workbench/SelectedSipDetailFields.test.tsx
@@ -984,7 +984,10 @@ micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workb
 
 Expected: FAIL because component/types do not exist。
 
-- [ ] **Step 4: 实现 panel 和唯一 submit seam**
+Execution note: component test 与最小实现同批落盘，未单独保留 RED 输出；随后 focused
+suite `36 passed`，production build PASS。未为了补造 RED 回退已验证实现。
+
+- [x] **Step 4: 实现 panel 和唯一 submit seam**
 
 `InspectionWorkbench` 只集成：
 
@@ -1008,7 +1011,7 @@ Expected: FAIL because component/types do not exist。
 - panel 不复制 SIP form；
 - dirty/save/freeze 行为保持现状。
 
-- [ ] **Step 5: 验证 SIP suggestions 未被自动确认**
+- [x] **Step 5: 验证 SIP suggestions 未被自动确认**
 
 `SelectedSipDetailFields.test.tsx` 证明：
 
@@ -1017,7 +1020,7 @@ Expected: FAIL because component/types do not exist。
 - Confirm 按钮在 mandatory fields 不完整时 disabled；
 - 用户补全并提交后才发送 `set_sip_detail_fields`。
 
-- [ ] **Step 6: 运行 frontend GREEN 和 build**
+- [x] **Step 6: 运行 frontend GREEN 和 build**
 
 ```bash
 micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/TechnicalRequirementPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx src/components/workbench/SelectedSipDetailFields.test.tsx
@@ -1027,7 +1030,7 @@ micromamba run -n qi-p0 npm --prefix frontend run build
 Expected: tests PASS；TypeScript/Vite build PASS。若只有既有 chunk-size warning，原样
 记录，不能称为无 warning。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add frontend/src/api/types.ts frontend/src/components/workbench/TechnicalRequirementPanel.tsx frontend/src/components/workbench/TechnicalRequirementPanel.test.tsx frontend/src/components/workbench/InspectionWorkbench.tsx frontend/src/components/workbench/InspectionWorkbench.test.tsx frontend/src/components/workbench/SelectedSipDetailFields.test.tsx frontend/src/copy/zhCN.ts frontend/src/styles/workbench.css
