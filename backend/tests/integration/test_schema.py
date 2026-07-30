@@ -21,6 +21,10 @@ def test_core_migration_creates_only_planned_tables() -> None:
         "reviewed_results",
         "export_jobs",
         "export_artifacts",
+        "symbol_routing_decisions",
+        "symbol_escalation_attempt_events",
+        "symbol_escalation_outcomes",
+        "visual_symbol_cache_entries",
     }
 
 
@@ -117,6 +121,116 @@ def test_automatic_result_schema_and_immutability_trigger() -> None:
             )
         )
     assert triggers == {"prevent_automatic_result_update_delete"}
+
+
+def test_symbol_routing_evidence_schema_is_exact_and_immutable() -> None:
+    inspector = inspect(engine)
+    expected_columns = {
+        "symbol_routing_decisions": {
+            "id",
+            "project_id",
+            "visual_observation_id",
+            "escalation_group_id",
+            "escalation_group_member_index",
+            "local_resolution_ref",
+            "schema_version",
+            "router_version",
+            "input_sha256",
+            "disposition",
+            "local_resolution_reason_codes",
+            "escalation_reason_codes",
+            "block_reason_codes",
+            "requires_confirmation",
+            "decision_sha256",
+            "created_at",
+        },
+        "symbol_escalation_attempt_events": {
+            "id",
+            "project_id",
+            "escalation_group_id",
+            "routing_decision_sha256",
+            "attempt_index",
+            "event_code",
+            "cache_entry_id",
+            "provider_request_id",
+            "event_sha256",
+            "created_at",
+        },
+        "symbol_escalation_outcomes": {
+            "id",
+            "project_id",
+            "escalation_group_id",
+            "routing_decision_sha256",
+            "schema_version",
+            "outcome_code",
+            "observation_outcomes",
+            "attempt_event_sha256s",
+            "terminal",
+            "outcome_sha256",
+            "created_at",
+        },
+        "visual_symbol_cache_entries": {
+            "id",
+            "project_id",
+            "cache_key",
+            "cache_schema_version",
+            "identity_sha256",
+            "identity",
+            "response",
+            "response_sha256",
+            "producer_request_id",
+            "producer_call_record_ref",
+            "producer_provenance",
+            "provenance_sha256",
+            "created_at",
+        },
+    }
+    for table, columns in expected_columns.items():
+        assert {
+            column["name"] for column in inspector.get_columns(table)
+        } == columns
+
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints(
+            "symbol_routing_decisions"
+        )
+    } == {"uq_symbol_routing_decision_observation"}
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints(
+            "symbol_escalation_attempt_events"
+        )
+    } == {
+        "uq_symbol_escalation_attempt_event",
+        "uq_symbol_escalation_attempt_hash",
+    }
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints(
+            "symbol_escalation_outcomes"
+        )
+    } == {"uq_symbol_escalation_outcome_group"}
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints(
+            "visual_symbol_cache_entries"
+        )
+    } == {"uq_visual_symbol_cache_project_key"}
+
+    with engine.connect() as connection:
+        for table in expected_columns:
+            triggers = set(
+                connection.scalars(
+                    text(
+                        "SELECT tgname FROM pg_trigger "
+                        "WHERE tgrelid = to_regclass(:table_name) "
+                        "AND NOT tgisinternal"
+                    ),
+                    {"table_name": table},
+                )
+            )
+            assert triggers == {f"prevent_{table}_update_delete"}
 
 
 def test_review_schema_has_exact_current_persistence_shape() -> None:

@@ -116,6 +116,8 @@ def inventory_project(
             storage,
             project_id=project_id,
             provider_factory=VISION_PROVIDER_FACTORY,
+            symbol_session_factory=SessionLocal,
+            require_symbol_persistence=True,
         )
         recognition = RuntimeRecognition(
             settings,
