@@ -649,7 +649,8 @@
 .inspection-table-section--compact .inspection-table__head,
 .inspection-table-section--compact .inspection-table__row {
   grid-template-columns: 28px minmax(0, 1fr) 52px;
-  gap: 4px;
+  gap: 3px;
+  padding-inline: 3px;
 }
 
 .inspection-table-section--compact .inspection-table__body {
