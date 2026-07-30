@@ -20,7 +20,11 @@ from app.candidates.confidence import (
     validate_confidence_decision,
 )
 from app.candidates.coverage import CoverageEntry, CoverageReport
-from app.candidates.disposition import classify_technical_requirement
+from app.candidates.disposition import (
+    classify_primary_disposition,
+    classify_technical_requirement,
+    repeated_page_overlay_observation_ids,
+)
 from app.candidates.duplicates import (
     DuplicateCandidate,
     DuplicateRelation,
@@ -176,6 +180,7 @@ def candidate_snapshot_from_inventory(
     pages: Sequence[Any],
 ) -> CandidateSnapshot:
     observations = _selected_observations(pages)
+    repeated_overlay_ids = repeated_page_overlay_observation_ids(observations)
     visual_observations = selected_visual_observations(pages)
     candidates: list[dict[str, Any]] = []
     coverage_entries: list[CoverageEntry] = []
@@ -222,6 +227,23 @@ def candidate_snapshot_from_inventory(
         )
         if requirement is not None:
             candidate = requirement
+        elif decision := classify_primary_disposition(
+            observation,
+            repeated_overlay_observation_ids=repeated_overlay_ids,
+        ):
+            coverage_entries.append(
+                CoverageEntry(
+                    observation_id=observation.observation_id,
+                    disposition=decision.disposition,
+                    source_location_id=observation.observation_id,
+                    coordinates=observation.bbox_pdf,
+                    requires_confirmation=decision.requires_confirmation,
+                    disposition_reason=decision.reason,
+                    disposition_rule_version=decision.rule_version,
+                )
+            )
+            index += 1
+            continue
         elif composite := _composite_at(observations, index):
             candidate, members = composite
         else:

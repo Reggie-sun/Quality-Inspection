@@ -136,6 +136,29 @@ def test_confirmation_is_reviewable_without_becoming_blocking() -> None:
     assert report.coverage_checked is True
 
 
+def test_rule_disposition_evidence_is_serialized_without_changing_legacy_rows() -> None:
+    ruled = CoverageEntry(
+        "o1",
+        "non_inspection",
+        "source-1",
+        (1, 2, 3, 4),
+        disposition_reason="exact_metadata_label",
+        disposition_rule_version="p0-a1-v1",
+    )
+    legacy = CoverageEntry(
+        "o2",
+        "ambiguous",
+        "source-2",
+        (5, 6, 7, 8),
+        requires_confirmation=True,
+    )
+
+    assert ruled.to_dict()["disposition_reason"] == "exact_metadata_label"
+    assert ruled.to_dict()["disposition_rule_version"] == "p0-a1-v1"
+    assert "disposition_reason" not in legacy.to_dict()
+    assert "disposition_rule_version" not in legacy.to_dict()
+
+
 def _visual_review(
     *,
     rejection_code: str | None = None,

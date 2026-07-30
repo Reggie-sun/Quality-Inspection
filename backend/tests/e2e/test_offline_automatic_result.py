@@ -66,9 +66,12 @@ def db_session() -> Iterator[Session]:
         connection.close()
 
 
-def _page(observation: TextObservation) -> PageInventory:
+def _page_with_observations(
+    page_index: int,
+    observations: tuple[TextObservation, ...],
+) -> PageInventory:
     return PageInventory(
-        page_index=0,
+        page_index=page_index,
         width=100.0,
         height=100.0,
         rotation=0,
@@ -79,10 +82,45 @@ def _page(observation: TextObservation) -> PageInventory:
         unsupported_reason=None,
         classification_confidence=1.0,
         classification_rule_version="fixture/1",
-        classification_evidence={"native_char_count": len(observation.raw_text)},
+        classification_evidence={
+            "native_char_count": sum(
+                len(observation.raw_text) for observation in observations
+            )
+        },
         pdf_to_render_matrix=(1, 0, 0, 1, 0, 0),
         render_to_pdf_matrix=(1, 0, 0, 1, 0, 0),
-        observations=(observation,),
+        observations=observations,
+    )
+
+
+def _page(observation: TextObservation) -> PageInventory:
+    return _page_with_observations(observation.page_index, (observation,))
+
+
+def _text_observation(
+    raw_text: str,
+    *,
+    observation_id: str | None = None,
+    page_index: int = 0,
+    bbox_normalized: tuple[float, float, float, float] = (
+        0.01,
+        0.02,
+        0.03,
+        0.04,
+    ),
+) -> TextObservation:
+    return TextObservation(
+        observation_id=observation_id or f"observation-{page_index}-{raw_text}",
+        source_type="native",
+        observation_level="line",
+        raw_text=raw_text,
+        normalized_text=raw_text,
+        page_index=page_index,
+        bbox_pdf=(1, 2, 3, 4),
+        bbox_normalized=bbox_normalized,
+        direction=(1.0, 0.0),
+        direction_angle_degrees=0.0,
+        confidence=None,
     )
 
 
@@ -164,6 +202,106 @@ def test_plain_text_is_not_misclassified_as_roughness(text: str) -> None:
     assert snapshot.candidates == ()
     assert len(snapshot.coverage_entries) == 1
     assert snapshot.coverage_entries[0].disposition == "ambiguous"
+
+
+@pytest.mark.parametrize(
+    ("raw_text", "expected_reason"),
+    [
+        ("设计", "exact_metadata_label"),
+        ("1:10", "drawing_scale"),
+        ("A-A", "section_view_label"),
+    ],
+)
+def test_candidate_snapshot_prefilters_exact_drawing_noise(
+    raw_text: str,
+    expected_reason: str,
+) -> None:
+    observation = _text_observation(raw_text)
+
+    snapshot = candidate_snapshot_from_inventory((_page(observation),))
+
+    assert snapshot.candidates == ()
+    assert snapshot.expected_observation_ids == (observation.observation_id,)
+    assert len(snapshot.coverage_entries) == 1
+    entry = snapshot.coverage_entries[0]
+    assert entry.disposition == "non_inspection"
+    assert entry.requires_confirmation is False
+    assert entry.disposition_reason == expected_reason
+    assert entry.disposition_rule_version == "p0-a1-v1"
+
+
+@pytest.mark.parametrize(
+    ("raw_text", "expected_reason"),
+    [
+        ("25", "standalone_number"),
+        ("II", "standalone_roman_label"),
+    ],
+)
+def test_candidate_snapshot_keeps_context_free_labels_reviewable(
+    raw_text: str,
+    expected_reason: str,
+) -> None:
+    observation = _text_observation(raw_text)
+
+    snapshot = candidate_snapshot_from_inventory((_page(observation),))
+
+    assert snapshot.candidates == ()
+    assert len(snapshot.coverage_entries) == 1
+    entry = snapshot.coverage_entries[0]
+    assert entry.disposition == "ambiguous"
+    assert entry.requires_confirmation is True
+    assert entry.disposition_reason == expected_reason
+    assert entry.disposition_rule_version == "p0-a1-v1"
+
+
+def test_candidate_snapshot_filters_only_confirmed_cross_page_overlay() -> None:
+    first = _text_observation(
+        "CONFIDENTIAL",
+        observation_id="watermark-page-0",
+        page_index=0,
+        bbox_normalized=(0.1, 0.1, 0.2, 0.2),
+    )
+    second = _text_observation(
+        "CONFIDENTIAL",
+        observation_id="watermark-page-1",
+        page_index=1,
+        bbox_normalized=(0.11, 0.1, 0.21, 0.2),
+    )
+
+    snapshot = candidate_snapshot_from_inventory(
+        (_page(first), _page(second))
+    )
+
+    assert snapshot.candidates == ()
+    assert snapshot.expected_observation_ids == (
+        first.observation_id,
+        second.observation_id,
+    )
+    assert tuple(entry.disposition for entry in snapshot.coverage_entries) == (
+        "non_inspection",
+        "non_inspection",
+    )
+    assert {
+        entry.disposition_reason for entry in snapshot.coverage_entries
+    } == {"repeated_page_overlay"}
+
+
+@pytest.mark.parametrize(
+    "raw_text",
+    ["Φ20", "M6", "R5", "25±0.02", "检查焊缝不得有裂纹"],
+)
+def test_candidate_snapshot_preserves_engineering_semantics(raw_text: str) -> None:
+    observation = _text_observation(raw_text)
+
+    snapshot = candidate_snapshot_from_inventory((_page(observation),))
+
+    assert len(snapshot.candidates) == 1
+    assert len(snapshot.coverage_entries) == 1
+    entry = snapshot.coverage_entries[0]
+    assert entry.disposition == "candidate"
+    assert entry.candidate_id == snapshot.candidates[0]["candidate_id"]
+    assert entry.disposition_reason is None
+    assert entry.disposition_rule_version is None
 
 
 def test_offline_provider_fixtures_freeze_one_automatic_result(
