@@ -32,7 +32,7 @@ from app.candidates.technical_requirements import (
 )
 from app.config import Settings
 from app.pdf.inventory import build_inventory
-from app.pdf.schemas import TextObservation, VisualObservation
+from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
 from app.pdf.visual_observations import (
     VisualBatch,
     reconstruct_visual_geometry_contexts,
@@ -291,12 +291,35 @@ class RecordingPreviewSink:
             "vlm_resolved",
             "unresolved",
         }
+        candidates = snapshot["candidates"]
+        sources = snapshot["sources"]
+        assert isinstance(candidates, list)
+        assert isinstance(sources, list)
+        assert all(
+            set(candidate) == {"candidate_id", "kind", "label"}
+            for candidate in candidates
+        )
+        assert all(
+            set(source) == {
+                "source_location_id",
+                "source_type",
+                "page_index",
+                "raw_text",
+            }
+            for source in sources
+        )
         self.local_submissions.append((snapshot, source_file_id))
 
 
 def _normalized_preview_snapshot(
     snapshot: CandidateSnapshot,
+    pages: tuple[PageInventory, ...],
 ) -> Mapping[str, object]:
+    observations = {
+        observation.observation_id: observation
+        for page in pages
+        for observation in page.observations
+    }
     return {
         "schema_version": "recognition-preview/1",
         "stage": "local_ready",
@@ -304,6 +327,8 @@ def _normalized_preview_snapshot(
             {
                 "candidate_id": candidate["candidate_id"],
                 "kind": candidate["payload"]["item_type"],
+                "label": candidate["payload"].get("normalized_text")
+                or candidate["payload"]["raw_text"],
             }
             for candidate in snapshot.candidates
         ],
@@ -311,13 +336,15 @@ def _normalized_preview_snapshot(
             {
                 "source_location_id": signal.source_location_id,
                 "source_type": signal.source_type,
+                "page_index": observations[signal.source_location_id].page_index,
+                "raw_text": observations[signal.source_location_id].raw_text,
             }
             for signal in snapshot.source_signals
         ],
         "counts": {
             "local_resolved": len(snapshot.candidates),
             "cache_resolved": 0,
-            "vlm_pending": len(snapshot.candidates),
+            "vlm_pending": len(snapshot.required_visual_observation_ids),
             "vlm_resolved": 0,
             "unresolved": 0,
         },
@@ -535,7 +562,7 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
     source, pages, snapshot = drawing_fixture(tmp_path, raw_text="M6")
     sink = RecordingPreviewSink()
     source_file_id = uuid.UUID("00000000-0000-0000-0000-000000000601")
-    expected_preview = _normalized_preview_snapshot(snapshot)
+    expected_preview = _normalized_preview_snapshot(snapshot, pages)
 
     class ProviderAfterLocal(RecordingVisionProvider):
         def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
@@ -562,6 +589,23 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
     submitted_snapshot = sink.local_submissions[0][0]
     assert submitted_snapshot["candidates"] == expected_preview["candidates"]
     assert submitted_snapshot["sources"] == expected_preview["sources"]
+    assert submitted_snapshot["candidates"] == [
+        {
+            "candidate_id": snapshot.candidates[0]["candidate_id"],
+            "kind": "thread",
+            "label": "M6",
+        }
+    ]
+    assert submitted_snapshot["sources"] == [
+        {
+            "source_location_id": snapshot.source_signals[0].source_location_id,
+            "source_type": "native",
+            "page_index": 0,
+            "raw_text": "M6",
+        }
+    ]
+    assert submitted_snapshot["counts"]["local_resolved"] == 1
+    assert submitted_snapshot["counts"]["vlm_pending"] == 0
     assert "provider_call_ids" not in submitted_snapshot
     assert "resource_ref" not in submitted_snapshot
     assert len(provider.images) == 1

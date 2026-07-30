@@ -351,6 +351,23 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
                 "vlm_resolved",
                 "unresolved",
             }
+            candidates = snapshot["candidates"]
+            sources = snapshot["sources"]
+            assert isinstance(candidates, list)
+            assert isinstance(sources, list)
+            assert all(
+                set(candidate) == {"candidate_id", "kind", "label"}
+                for candidate in candidates
+            )
+            assert all(
+                set(source) == {
+                    "source_location_id",
+                    "source_type",
+                    "page_index",
+                    "raw_text",
+                }
+                for source in sources
+            )
             local_submissions.append((source_file_id, snapshot))
 
     original_advisor = tasks.CandidateAdvisor

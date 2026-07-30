@@ -11,7 +11,11 @@ import pytest
 
 from app.config import Settings
 from app.pdf.inventory import build_inventory as build_native_inventory
-from app.pdf.schemas import LayoutProfileMatch, ObservationRegionAssignment
+from app.pdf.schemas import (
+    LayoutProfileMatch,
+    ObservationRegionAssignment,
+    PageInventory,
+)
 from app.processing import runtime_recognition as runtime_recognition_module
 from app.processing.automatic_result import CandidateSnapshot
 from app.processing.runtime_recognition import RuntimeRecognition
@@ -106,6 +110,23 @@ class SourceBoundPreviewSink:
             "vlm_resolved",
             "unresolved",
         }
+        candidates = snapshot["candidates"]
+        sources = snapshot["sources"]
+        assert isinstance(candidates, list)
+        assert isinstance(sources, list)
+        assert all(
+            set(candidate) == {"candidate_id", "kind", "label"}
+            for candidate in candidates
+        )
+        assert all(
+            set(source) == {
+                "source_location_id",
+                "source_type",
+                "page_index",
+                "raw_text",
+            }
+            for source in sources
+        )
         self.local_submissions.append((source_file_id, snapshot))
 
 
@@ -117,12 +138,17 @@ class SourceBoundAdvisor:
     def review(
         self,
         source_path: Path,
-        pages: tuple[object, ...],
+        pages: tuple[PageInventory, ...],
         snapshot: CandidateSnapshot,
         *,
         source_file_id: uuid.UUID,
     ) -> CandidateSnapshot:
         assert pages
+        observations = {
+            observation.observation_id: observation
+            for page in pages
+            for observation in page.observations
+        }
         normalized_snapshot: Mapping[str, object] = {
             "schema_version": "recognition-preview/1",
             "stage": "local_ready",
@@ -130,6 +156,8 @@ class SourceBoundAdvisor:
                 {
                     "candidate_id": candidate["candidate_id"],
                     "kind": candidate["payload"]["item_type"],
+                    "label": candidate["payload"].get("normalized_text")
+                    or candidate["payload"]["raw_text"],
                 }
                 for candidate in snapshot.candidates
             ],
@@ -137,13 +165,15 @@ class SourceBoundAdvisor:
                 {
                     "source_location_id": signal.source_location_id,
                     "source_type": signal.source_type,
+                    "page_index": observations[signal.source_location_id].page_index,
+                    "raw_text": observations[signal.source_location_id].raw_text,
                 }
                 for signal in snapshot.source_signals
             ],
             "counts": {
                 "local_resolved": len(snapshot.candidates),
                 "cache_resolved": 0,
-                "vlm_pending": len(snapshot.candidates),
+                "vlm_pending": len(snapshot.required_visual_observation_ids),
                 "vlm_resolved": 0,
                 "unresolved": 0,
             },
@@ -382,36 +412,58 @@ def test_runtime_recognition_forwards_exact_source_identity_to_advisor(
     )
 
     assert advisor.calls == [(pdf_path, source_file_id, snapshot)]
+    expected_snapshot: Mapping[str, object] = {
+        "schema_version": "recognition-preview/1",
+        "stage": "local_ready",
+        "candidates": [
+            {
+                "candidate_id": candidate["candidate_id"],
+                "kind": candidate["payload"]["item_type"],
+                "label": candidate["payload"].get("normalized_text")
+                or candidate["payload"]["raw_text"],
+            }
+            for candidate in snapshot.candidates
+        ],
+        "sources": [
+            {
+                "source_location_id": signal.source_location_id,
+                "source_type": signal.source_type,
+                "page_index": next(
+                    observation.page_index
+                    for page in pages
+                    for observation in page.observations
+                    if observation.observation_id == signal.source_location_id
+                ),
+                "raw_text": next(
+                    observation.raw_text
+                    for page in pages
+                    for observation in page.observations
+                    if observation.observation_id == signal.source_location_id
+                ),
+            }
+            for signal in snapshot.source_signals
+        ],
+        "counts": {
+            "local_resolved": len(snapshot.candidates),
+            "cache_resolved": 0,
+            "vlm_pending": len(snapshot.required_visual_observation_ids),
+            "vlm_resolved": 0,
+            "unresolved": 0,
+        },
+    }
     assert sink.local_submissions == [
         (
             source_file_id,
-            {
-                "schema_version": "recognition-preview/1",
-                "stage": "local_ready",
-                "candidates": [
-                    {
-                        "candidate_id": candidate["candidate_id"],
-                        "kind": candidate["payload"]["item_type"],
-                    }
-                    for candidate in snapshot.candidates
-                ],
-                "sources": [
-                    {
-                        "source_location_id": signal.source_location_id,
-                        "source_type": signal.source_type,
-                    }
-                    for signal in snapshot.source_signals
-                ],
-                "counts": {
-                    "local_resolved": len(snapshot.candidates),
-                    "cache_resolved": 0,
-                    "vlm_pending": len(snapshot.candidates),
-                    "vlm_resolved": 0,
-                    "unresolved": 0,
-                },
-            },
+            expected_snapshot,
         )
     ]
+    assert expected_snapshot["counts"] == {
+        "local_resolved": 1,
+        "cache_resolved": 0,
+        "vlm_pending": 0,
+        "vlm_resolved": 0,
+        "unresolved": 0,
+    }
     assert provider.calls == []
 
 

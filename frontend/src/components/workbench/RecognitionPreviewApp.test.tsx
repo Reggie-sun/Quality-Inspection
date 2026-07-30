@@ -18,8 +18,17 @@ test("recognition preview renders canonical backend state with GET-only read-onl
       stage: "vlm_enriching",
       source_pdf_url: "/api/v1/projects/project-preview/source-pdf",
       semantic_snapshot: {
-        candidates: [{ label: "M6" }],
-        sources: [{ page_index: 0, raw_text: "M6" }],
+        schema_version: "recognition-preview/1",
+        stage: "vlm_enriching",
+        candidates: [{ candidate_id: "candidate-1", kind: "thread", label: "M6" }],
+        sources: [{ source_location_id: "source-1", source_type: "native", page_index: 0, raw_text: "螺纹 M6" }],
+        counts: {
+          local_resolved: 1,
+          cache_resolved: 1,
+          vlm_pending: 1,
+          vlm_resolved: 0,
+          unresolved: 0,
+        },
       },
       counts: {
         local_resolved: 1,
@@ -40,6 +49,7 @@ test("recognition preview renders canonical backend state with GET-only read-onl
   expect(screen.getByText("版本 2")).not.toBeNull();
   expect(screen.getByText("正在进行视觉增强")).not.toBeNull();
   expect(screen.getByText("M6")).not.toBeNull();
+  expect(screen.getByText("螺纹 M6")).not.toBeNull();
   expect(screen.getByText("本地已解析：1")).not.toBeNull();
   expect(screen.getByText("缓存已解析：1")).not.toBeNull();
   expect(screen.getByText("视觉处理中：1")).not.toBeNull();
@@ -59,7 +69,19 @@ test("recognition preview refreshes canonical state without rendering private di
       revision: request,
       stage: request === 1 ? "local_ready" : "vlm_enriching",
       source_pdf_url: "/api/v1/projects/project-preview/source-pdf",
-      semantic_snapshot: { candidates: [], sources: [] },
+      semantic_snapshot: {
+        schema_version: "recognition-preview/1",
+        stage: request === 1 ? "local_ready" : "vlm_enriching",
+        candidates: [],
+        sources: [],
+        counts: {
+          local_resolved: 1,
+          cache_resolved: 0,
+          vlm_pending: request === 1 ? 1 : 0,
+          vlm_resolved: request === 1 ? 0 : 1,
+          unresolved: 0,
+        },
+      },
       counts: {
         local_resolved: 1,
         cache_resolved: 0,

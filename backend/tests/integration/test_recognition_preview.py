@@ -110,14 +110,21 @@ def _local_snapshot() -> Mapping[str, object]:
     return {
         "schema_version": "recognition-preview/1",
         "stage": "local_ready",
-        "candidates": [{"candidate_id": "candidate-1", "kind": "thread"}],
+        "candidates": [
+            {"candidate_id": "candidate-1", "kind": "thread", "label": "M6"}
+        ],
         "sources": [
-            {"source_location_id": "source-1", "source_type": "native"}
+            {
+                "source_location_id": "source-1",
+                "source_type": "native",
+                "page_index": 0,
+                "raw_text": "M6",
+            }
         ],
         "counts": {
             "local_resolved": 1,
             "cache_resolved": 0,
-            "vlm_pending": 1,
+            "vlm_pending": 0,
             "vlm_resolved": 0,
             "unresolved": 0,
         },
@@ -138,12 +145,14 @@ def test_local_snapshot_is_immutable_revision_one_and_the_canonical_head(
 
     assert revision.revision == 1
     assert revision.parent_revision_id is None
+    assert revision.semantic_snapshot == _local_snapshot()
     assert revision.semantic_sha256 == sha256(
-        b'{"candidates":[{"candidate_id":"candidate-1","kind":"thread"}],'
+        b'{"candidates":[{"candidate_id":"candidate-1","kind":"thread","label":"M6"}],'
         b'"counts":{"cache_resolved":0,"local_resolved":1,"unresolved":0,'
-        b'"vlm_pending":1,"vlm_resolved":0},"schema_version":'
-        b'"recognition-preview/1","sources":[{"source_location_id":"source-1",'
-        b'"source_type":"native"}],"stage":"local_ready"}'
+        b'"vlm_pending":0,"vlm_resolved":0},"schema_version":'
+        b'"recognition-preview/1","sources":[{"page_index":0,"raw_text":"M6",'
+        b'"source_location_id":"source-1","source_type":"native"}],'
+        b'"stage":"local_ready"}'
     ).hexdigest()
     assert preview.head().id == revision.id
 
@@ -246,6 +255,7 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
                             {
                                 "candidate_id": f"candidate-{marker}",
                                 "kind": "thread",
+                                "label": f"M6-{marker}",
                             }
                         ],
                         "counts": {
@@ -389,7 +399,13 @@ def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
             snapshot={
                 **_local_snapshot(),
                 "stage": "vlm_enriching",
-                "candidates": [{"candidate_id": "candidate-late", "kind": "thread"}],
+                "candidates": [
+                    {
+                        "candidate_id": "candidate-late",
+                        "kind": "thread",
+                        "label": "M6 late",
+                    }
+                ],
             },
         )
 
