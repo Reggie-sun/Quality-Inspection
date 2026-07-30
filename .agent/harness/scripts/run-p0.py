@@ -47,7 +47,7 @@ SYMBOL_RECOGNITION_SELECTOR = (
 LIVE_EVIDENCE_ARTIFACT = "live-run-evidence.json"
 LIVE_EVIDENCE_SCHEMA_VERSION = "live-run-evidence/2"
 HUMAN_VERDICT_ARTIFACT = "artifacts/human-verdict.json"
-NO_SILENT_SUCCESS_SELECTOR = "phase://failure/no-silent-success"
+NO_SILENT_SUCCESS_CONTRACT_ID = "P0-ACC-007"
 NO_SILENT_SUCCESS_TEST = "backend/tests/e2e/test_no_silent_success.py"
 NO_SILENT_SUCCESS_REPORT = "reports/no-silent-success.json"
 NO_SILENT_SUCCESS_JUNIT = "reports/no-silent-success.junit.xml"
@@ -157,6 +157,20 @@ def _new_run_id() -> str:
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _registered_contract_selector(p0_contract_id: str) -> str:
+    mirror = _load_json(MIRROR_PATH)
+    matches = [
+        row["verification_selector"]
+        for row in mirror["contracts"]
+        if row["p0_contract_id"] == p0_contract_id
+    ]
+    if len(matches) != 1 or not isinstance(matches[0], str) or not matches[0]:
+        raise RuntimeError(
+            f"{p0_contract_id} must register exactly one verification selector"
+        )
+    return matches[0]
 
 
 def _write_json(path: Path, document: Any) -> None:
@@ -357,9 +371,12 @@ def _phase_outcome(
     mode: str,
     run_dir: Path,
 ) -> tuple[int | None, str, str, list[str]]:
+    no_silent_success_selector = _registered_contract_selector(
+        NO_SILENT_SUCCESS_CONTRACT_ID
+    )
     # P0-ACC-007 remains a failure-mode proof, but a full live gate must reuse
     # it inside the already-open run instead of spawning a nested task run.
-    if selector == NO_SILENT_SUCCESS_SELECTOR and mode == "live":
+    if selector == no_silent_success_selector and mode == "live":
         return _failure_phase_outcome(selector, run_dir)
     parsed = urlsplit(selector)
     requested_mode = parsed.netloc
@@ -371,7 +388,7 @@ def _phase_outcome(
             f"phase mode mismatch: runner={mode} selector={requested_mode}",
             [],
         )
-    if selector == NO_SILENT_SUCCESS_SELECTOR:
+    if selector == no_silent_success_selector:
         return _failure_phase_outcome(selector, run_dir)
     if requested_mode == "live":
         return _live_phase_outcome(selector, run_dir)
