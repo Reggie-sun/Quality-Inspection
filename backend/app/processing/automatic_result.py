@@ -102,6 +102,7 @@ def _validate_terminal_recognition_provenance(
     if (
         recognition_mode in _ROUTED_RECOGNITION_MODES
         or recognition_summary is not None
+        or completeness == "partial_review_required"
     ):
         if not isinstance(recognition_summary, Mapping):
             raise ValueError("recognition_summary must be one object")

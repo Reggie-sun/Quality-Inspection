@@ -227,7 +227,7 @@ def _terminal_provenance_result(
     coverage: object,
     recognition_mode: str,
     router_version: str,
-    recognition_summary: dict[str, object],
+    recognition_summary: dict[str, object] | None,
     recognition_evidence_ref: str | None,
     completeness: str = "complete",
 ) -> AutomaticResult:
@@ -325,6 +325,36 @@ def test_terminal_result_rejects_inconsistent_completeness_summary(
             recognition_evidence_ref=(
                 f"symbol-routing-evidence://{project.id}"
             ),
+        )
+
+    assert db_session.scalar(
+        select(AutomaticResult).where(AutomaticResult.logical_job_id == job.id)
+    ) is None
+    assert db_session.get(LogicalJob, job.id).status == "pending"  # type: ignore[union-attr]
+    assert db_session.get(Project, project.id).state == ProjectState.PROCESSING  # type: ignore[union-attr]
+
+
+def test_terminal_result_requires_summary_for_partial_completeness(
+    db_session: Session,
+) -> None:
+    project, source_file, job, coverage = _fresh_process_inputs(
+        db_session,
+        recognition_mode="legacy_high_recall",
+        recognition_router_version="legacy",
+    )
+
+    with pytest.raises(ValueError, match="recognition_summary"):
+        _terminal_provenance_result(
+            db_session,
+            project=project,
+            source_file=source_file,
+            job=job,
+            coverage=coverage,
+            completeness="partial_review_required",
+            recognition_mode="legacy_high_recall",
+            router_version="legacy",
+            recognition_summary=None,
+            recognition_evidence_ref=None,
         )
 
     assert db_session.scalar(
