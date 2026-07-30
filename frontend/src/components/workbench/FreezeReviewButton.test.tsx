@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import type { ProjectWorkbenchResponse } from "../../api/types";
+import type { ProjectWorkbenchView } from "../../api/types";
 import { ProjectWorkbenchApp } from "./ProjectWorkbenchApp";
 
 
@@ -30,7 +30,7 @@ function pdfFixture() {
   };
 }
 
-function response(version = 3): ProjectWorkbenchResponse {
+function response(version = 3): ProjectWorkbenchView {
   return {
     project: { id: "project-real", state: "editing", version: 1 },
     working_copy: {

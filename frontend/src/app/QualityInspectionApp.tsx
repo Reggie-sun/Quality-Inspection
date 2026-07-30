@@ -236,7 +236,7 @@ export function QualityInspectionApp({
         });
         return;
       }
-      if (result.project_id === undefined) {
+      if (result.project_id == null) {
         setScreen({
           kind: "fatal",
           file,

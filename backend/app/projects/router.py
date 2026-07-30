@@ -6,7 +6,6 @@ from collections.abc import Iterator
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,10 +21,13 @@ from app.candidates.models import AutomaticResult
 from app.candidates.symbol_routing import symbol_routing_identity
 from app.config import Settings, get_settings
 from app.db import SessionLocal
+from app.errors.api import api_error, error_responses
+from app.errors.schemas import ErrorSeverity
 from app.exports.router import _export_payload
 from app.exports.service import ExportService
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
+from app.projects.schemas import ProjectStatusResponse, ProjectWorkbenchResponse
 from app.projects.service import (
     InvalidPdf,
     ProjectDispatchFailed,
@@ -96,7 +98,19 @@ ProjectServiceDependency = Annotated[
 ]
 
 
-@router.post("", status_code=202)
+@router.post(
+    "",
+    status_code=202,
+    operation_id="QI-API-PRJ-001",
+    response_model=ProjectStatusResponse,
+    responses=error_responses(
+        {
+            422: ("invalid_pdf", "request_validation_failed"),
+            500: ("project_intake_failed", "internal_server_error"),
+            503: ("project_dispatch_failed",),
+        }
+    ),
+)
 async def create_project(
     request: Request,
     file: Annotated[UploadFile, File()],
@@ -117,19 +131,41 @@ async def create_project(
     except InvalidPdf:
         return _error(422, "invalid_pdf", "uploaded file is not a valid PDF")
     except ProjectDispatchFailed as error:
-        return JSONResponse(
-            status_code=503,
-            content=jsonable_encoder(error.status),
+        return api_error(
+            503,
+            "project_dispatch_failed",
+            "project dispatch failed",
+            severity="blocking",
+            stage="dispatch",
+            cause_category="transient_dispatch_failure",
+            project_id=error.status.project_id,
+            retryable=error.status.retryable,
+            phase=error.status.phase,
+            workbench_ready=error.status.workbench_ready,
         )
     except Exception:
-        return _error(500, "project_intake_failed", "project intake failed")
-    return JSONResponse(
-        status_code=202,
-        content=jsonable_encoder(result),
-    )
+        return _error(
+            500,
+            "project_intake_failed",
+            "project intake failed",
+            severity="fatal",
+        )
+    return result
 
 
-@router.get("/{project_id}/status")
+@router.get(
+    "/{project_id}/status",
+    operation_id="QI-API-PRJ-002",
+    response_model=ProjectStatusResponse,
+    response_model_exclude_none=True,
+    responses=error_responses(
+        {
+            404: ("project_not_found",),
+            422: ("request_validation_failed",),
+            500: ("project_status_failed", "internal_server_error"),
+        }
+    ),
+)
 def get_project_status(
     project_id: uuid.UUID,
     service: ProjectServiceDependency,
@@ -139,13 +175,28 @@ def get_project_status(
     except ProjectNotFound:
         return _error(404, "project_not_found", "project was not found")
     except Exception:
-        return _error(500, "project_status_failed", "project status unavailable")
-    return JSONResponse(
-        content=jsonable_encoder(result, exclude_none=True),
-    )
+        return _error(
+            500,
+            "project_status_failed",
+            "project status unavailable",
+            severity="fatal",
+        )
+    return result
 
 
-@router.get("/{project_id}/workbench")
+@router.get(
+    "/{project_id}/workbench",
+    operation_id="QI-API-PRJ-003",
+    response_model=ProjectWorkbenchResponse,
+    responses=error_responses(
+        {
+            404: ("project_not_found",),
+            409: ("project_workbench_unavailable",),
+            422: ("request_validation_failed",),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def get_workbench(
     project_id: uuid.UUID,
     session: SessionDependency,
@@ -157,10 +208,33 @@ def get_workbench(
         return _error(404, "project_not_found", str(error))
     except ProjectWorkbenchUnavailable as error:
         return _error(409, "project_workbench_unavailable", str(error))
-    return JSONResponse(jsonable_encoder(payload))
+    return payload
 
 
-@router.get("/{project_id}/source-pdf")
+@router.get(
+    "/{project_id}/source-pdf",
+    operation_id="QI-API-PRJ-004",
+    response_model=None,
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Original project PDF.",
+            "content": {
+                "application/pdf": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            },
+        },
+        **error_responses(
+            {
+                404: ("project_not_found",),
+                409: ("project_source_pdf_unavailable",),
+                422: ("request_validation_failed",),
+                500: ("internal_server_error",),
+            }
+        ),
+    },
+)
 def get_source_pdf(
     project_id: uuid.UUID,
     session: SessionDependency,
@@ -451,8 +525,17 @@ def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
     }
 
 
-def _error(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={"error": {"code": code, "message": message}},
+def _error(
+    status_code: int,
+    code: str,
+    message: str,
+    *,
+    severity: ErrorSeverity = "blocking",
+) -> JSONResponse:
+    return api_error(
+        status_code,
+        code,
+        message,
+        severity=severity,
+        stage="project_api",
     )

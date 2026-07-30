@@ -8,15 +8,16 @@ from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app.capabilities.service import CapabilityUnavailable
 from app.config import get_settings
 from app.db import SessionLocal
+from app.errors.api import api_error, error_responses
+from app.errors.schemas import ErrorSeverity
 from app.exports.models import ExportArtifact, ExportJob
-from app.exports.schemas import CreateExportRequest
+from app.exports.schemas import CreateExportRequest, ExportResponse
 from app.exports.service import (
     ExportInProgress,
     ExportInputUnavailable,
@@ -56,7 +57,33 @@ def get_export_service(
 ExportServiceDependency = Annotated[ExportService, Depends(get_export_service)]
 
 
-@router.post("/projects/{project_id}/exports")
+@router.post(
+    "/projects/{project_id}/exports",
+    operation_id="QI-API-EXP-001",
+    response_model=ExportResponse,
+    responses=error_responses(
+        {
+            404: ("reviewed_result_not_found",),
+            409: (
+                "export_in_progress",
+                "export_preflight_failed",
+                "export_template_unavailable",
+                "export_template_mapping_unavailable",
+                "export_font_unavailable",
+                "export_font_license_unavailable",
+                "export_template_mapping_hash_mismatch",
+                "export_template_hash_mismatch",
+                "export_template_registration_invalid",
+                "export_template_invalid",
+                "export_template_sheet_missing",
+                "export_font_hash_mismatch",
+                "export_font_license_hash_mismatch",
+            ),
+            422: ("request_validation_failed",),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def create_export(
     project_id: uuid.UUID,
     body: CreateExportRequest,
@@ -72,10 +99,21 @@ def create_export(
         return _error(409, "export_in_progress", str(error))
     except (ExportInputUnavailable, OSError, ValueError) as error:
         return _error(409, "export_preflight_failed", str(error))
-    return JSONResponse(jsonable_encoder(_export_payload(service, export)))
+    return _export_payload(service, export)
 
 
-@router.get("/exports/{export_id}")
+@router.get(
+    "/exports/{export_id}",
+    operation_id="QI-API-EXP-002",
+    response_model=ExportResponse,
+    responses=error_responses(
+        {
+            404: ("export_not_found",),
+            422: ("request_validation_failed",),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def get_export(
     export_id: uuid.UUID,
     service: ExportServiceDependency,
@@ -84,10 +122,39 @@ def get_export(
         export = service.get(export_id)
     except ExportNotFound as error:
         return _error(404, "export_not_found", str(error))
-    return JSONResponse(jsonable_encoder(_export_payload(service, export)))
+    return _export_payload(service, export)
 
 
-@router.get("/exports/{export_id}/downloads/{kind}")
+@router.get(
+    "/exports/{export_id}/downloads/{kind}",
+    operation_id="QI-API-EXP-003",
+    response_model=None,
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Published export artifact.",
+            "content": {
+                "application/pdf": {
+                    "schema": {"type": "string", "format": "binary"}
+                },
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                    "schema": {"type": "string", "format": "binary"}
+                },
+                "application/json": {
+                    "schema": {"type": "string", "format": "binary"}
+                },
+            },
+        },
+        **error_responses(
+            {
+                404: ("export_artifact_not_found",),
+                409: ("export_artifact_unavailable",),
+                422: ("request_validation_failed",),
+                500: ("internal_server_error",),
+            }
+        ),
+    },
+)
 def download_export(
     export_id: uuid.UUID,
     kind: str,
@@ -161,8 +228,17 @@ def _artifact_payload(artifact: ExportArtifact) -> dict[str, object]:
     }
 
 
-def _error(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={"error": {"code": code, "message": message}},
+def _error(
+    status_code: int,
+    code: str,
+    message: str,
+    *,
+    severity: ErrorSeverity = "blocking",
+) -> JSONResponse:
+    return api_error(
+        status_code,
+        code,
+        message,
+        severity=severity,
+        stage="export_api",
     )

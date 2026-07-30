@@ -8,7 +8,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type { PostJson } from "../../api/types";
+import type {
+  ExportArtifactKind,
+  ExportJob,
+  PostJson,
+} from "../../api/types";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 
 
@@ -18,6 +22,31 @@ function openAuxiliaryPanel(): void {
   fireEvent.click(screen.getByRole("button", {
     name: "展开导出与处理信息",
   }));
+}
+
+function successfulExport(): ExportJob {
+  const artifact = (kind: ExportArtifactKind) => ({
+    kind,
+    sha256: `${kind}-sha256`,
+    size_bytes: 1,
+    reviewed_result_id: "reviewed-1",
+    downloadable: true,
+  });
+  return {
+    id: "export-success",
+    project_id: "project-1",
+    reviewed_result_id: "reviewed-1",
+    status: "success",
+    error_id: null,
+    template_version: "template/1",
+    mapping_version: "mapping/1",
+    renderer_version: "renderer/1",
+    artifacts: [
+      artifact("ballooned_pdf"),
+      artifact("sip_excel"),
+      artifact("manifest"),
+    ],
+  };
 }
 
 const duplicateExampleItems = [
@@ -831,17 +860,7 @@ describe("InspectionWorkbench", () => {
         projectState="reviewed"
         projectId="project-1"
         reviewedResultId="reviewed-1"
-        initialExport={{
-          id: "export-success",
-          project_id: "project-1",
-          reviewed_result_id: "reviewed-1",
-          status: "success",
-          artifacts: [
-            { kind: "ballooned_pdf", downloadable: true },
-            { kind: "sip_excel", downloadable: true },
-            { kind: "manifest", downloadable: true },
-          ],
-        }}
+        initialExport={successfulExport()}
         exportPost={vi.fn()}
         onSave={vi.fn().mockResolvedValue(undefined)}
       />,
@@ -868,17 +887,7 @@ describe("InspectionWorkbench", () => {
   });
 
   test("生成正式文件后收起再展开仍保留三份下载", async () => {
-    const exportPost = vi.fn().mockResolvedValue({
-      id: "export-success",
-      project_id: "project-1",
-      reviewed_result_id: "reviewed-1",
-      status: "success",
-      artifacts: [
-        { kind: "ballooned_pdf", downloadable: true },
-        { kind: "sip_excel", downloadable: true },
-        { kind: "manifest", downloadable: true },
-      ],
-    });
+    const exportPost = vi.fn().mockResolvedValue(successfulExport());
     render(
       <InspectionWorkbench
         pdfDocument={null}
@@ -941,17 +950,7 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(exportButton);
     expect(exportPost).toHaveBeenCalledOnce();
 
-    resolveExport({
-      id: "export-success",
-      project_id: "project-1",
-      reviewed_result_id: "reviewed-1",
-      status: "success",
-      artifacts: [
-        { kind: "ballooned_pdf", downloadable: true },
-        { kind: "sip_excel", downloadable: true },
-        { kind: "manifest", downloadable: true },
-      ],
-    });
+    resolveExport(successfulExport());
     await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(3));
   });
 

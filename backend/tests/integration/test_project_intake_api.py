@@ -218,6 +218,10 @@ def test_create_project_rejects_invalid_upload_without_orphans_or_dispatch(
         "error": {
             "code": "invalid_pdf",
             "message": "uploaded file is not a valid PDF",
+            "severity": "blocking",
+            "stage": "project_api",
+            "location_ref": None,
+            "cause_category": "validation",
         }
     }
     assert intake_context.dispatch.calls == []
@@ -270,17 +274,20 @@ def test_dispatch_failure_is_sanitized_retryable_and_durable(
 
     assert response.status_code == 503
     payload = response.json()
-    project_id = uuid.UUID(payload["project_id"])
+    project_id = uuid.UUID(payload["error"]["project_id"])
     assert payload == {
-        "project_id": str(project_id),
-        "phase": "failed",
-        "workbench_ready": False,
-        "retryable": True,
         "error": {
             "code": "project_dispatch_failed",
+            "message": "project dispatch failed",
+            "severity": "blocking",
             "stage": "dispatch",
+            "location_ref": None,
+            "cause_category": "transient_dispatch_failure",
+            "project_id": str(project_id),
+            "retryable": True,
+            "phase": "failed",
+            "workbench_ready": False,
         },
-        "stage": None,
     }
     project = intake_context.session.get(Project, project_id)
     error = intake_context.session.scalar(
@@ -340,6 +347,10 @@ def test_database_failure_deletes_only_the_new_source_and_is_sanitized(
         "error": {
             "code": "project_intake_failed",
             "message": "project intake failed",
+            "severity": "fatal",
+            "stage": "project_api",
+            "location_ref": None,
+            "cause_category": "internal",
         }
     }
     assert intake_context.dispatch.calls == []

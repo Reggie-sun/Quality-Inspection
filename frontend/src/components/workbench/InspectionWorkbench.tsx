@@ -9,7 +9,7 @@ import type {
   PostJson,
   ReviewCommand,
   ReviewItem,
-  ReviewWorkingCopy,
+  ReviewWorkingCopyView,
 } from "../../api/types";
 import { projectStateCopy, zhCN } from "../../copy/zhCN";
 import { BalloonToolbar } from "../balloons/BalloonToolbar";
@@ -46,7 +46,7 @@ type InspectionWorkbenchProps = {
   pageTransforms?: PdfPageTransform[];
   items: ReviewItem[];
   onSave: (command: ReviewCommand) => Promise<void>;
-  workingCopy?: ReviewWorkingCopy;
+  workingCopy?: ReviewWorkingCopyView;
   balloonBlockers?: string[];
   busy?: boolean;
   onFreeze?: () => void;
@@ -80,7 +80,7 @@ type InspectionWorkbenchProps = {
 const NO_SELECTED_REVIEW_ITEM_ID = "__no_selected_review_item__";
 
 
-function metadataDraft(workingCopy?: ReviewWorkingCopy): MetadataDraft {
+function metadataDraft(workingCopy?: ReviewWorkingCopyView): MetadataDraft {
   return {
     material_code: workingCopy?.sip_metadata?.material_code ?? "",
     material_name: workingCopy?.sip_metadata?.material_name ?? "",

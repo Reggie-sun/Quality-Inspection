@@ -5,7 +5,8 @@ import { ApiError, getJson, postJson } from "../../api/client";
 import type {
   BalloonOverlay,
   PdfDocumentLike,
-  ProjectWorkbenchResponse,
+  ProjectWorkbenchView,
+  ProjectWorkbenchTransport,
   ReviewCommand,
 } from "../../api/types";
 import { applyBalloonCommand, generateBalloons } from "../../features/balloons/api";
@@ -53,7 +54,7 @@ export function ProjectWorkbenchApp({
   loadPdf = loadPdfDocument,
   onReset,
 }: ProjectWorkbenchAppProps) {
-  const [snapshot, setSnapshot] = useState<ProjectWorkbenchResponse>();
+  const [snapshot, setSnapshot] = useState<ProjectWorkbenchView>();
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentLike | null>(null);
   const [busy, setBusy] = useState(false);
   const [startupBlocked, setStartupBlocked] = useState(false);
@@ -67,9 +68,10 @@ export function ProjectWorkbenchApp({
   );
 
   const refresh = useCallback(async () => {
-    const loaded = await getJson<ProjectWorkbenchResponse>(
+    const transport = await getJson<ProjectWorkbenchTransport>(
       `/api/v1/projects/${projectId}/workbench`,
     );
+    const loaded = transport as ProjectWorkbenchView;
     const controlledSource = `/api/v1/projects/${projectId}/source-pdf`;
     if (
       loaded.project.id !== projectId ||

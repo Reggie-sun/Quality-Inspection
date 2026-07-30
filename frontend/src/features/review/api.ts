@@ -1,4 +1,10 @@
-import type { PostJson, ReviewWorkingCopy } from "../../api/types";
+import type {
+  PostJson,
+  ReviewedResultResponse,
+  ReviewLockResponse,
+  ReviewWorkingCopyView,
+  ReviewWorkingCopyTransport,
+} from "../../api/types";
 
 
 function operatorHeaders(operatorId: string): Record<string, string> {
@@ -10,8 +16,8 @@ export function acquireReviewLock(
   post: PostJson,
   projectId: string,
   operatorId: string,
-): Promise<{ project_id: string; operator_id: string; expires_at?: string }> {
-  return post(
+): Promise<ReviewLockResponse> {
+  return post<ReviewLockResponse>(
     `/api/v1/projects/${projectId}/review/lock`,
     { ttl_seconds: 300 },
     operatorHeaders(operatorId),
@@ -24,12 +30,12 @@ export function freezeReviewItems(
   projectId: string,
   operatorId: string,
   expectedVersion: number,
-): Promise<ReviewWorkingCopy> {
-  return post(
+): Promise<ReviewWorkingCopyView> {
+  return post<ReviewWorkingCopyTransport>(
     `/api/v1/projects/${projectId}/review/freeze-items`,
     { expected_version: expectedVersion },
     operatorHeaders(operatorId),
-  );
+  ).then((transport) => transport as ReviewWorkingCopyView);
 }
 
 
@@ -38,8 +44,8 @@ export function confirmReviewedResult(
   projectId: string,
   operatorId: string,
   expectedVersion: number,
-): Promise<{ id: string }> {
-  return post(
+): Promise<ReviewedResultResponse> {
+  return post<ReviewedResultResponse>(
     `/api/v1/projects/${projectId}/review/confirm`,
     { expected_version: expectedVersion },
     operatorHeaders(operatorId),

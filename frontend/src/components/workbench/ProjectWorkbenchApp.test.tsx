@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import type { ProjectWorkbenchResponse } from "../../api/types";
+import type { ProjectWorkbenchView } from "../../api/types";
 import { ProjectWorkbenchApp } from "./ProjectWorkbenchApp";
 
 
@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 
-function reviewedResponse(): ProjectWorkbenchResponse {
+function reviewedResponse(): ProjectWorkbenchView {
   return {
     project: { id: "project-real", state: "reviewed", version: 1 },
     working_copy: {
@@ -86,13 +86,34 @@ function reviewedResponse(): ProjectWorkbenchResponse {
       reviewed_result_id: "reviewed-secret-uuid",
       status: "success",
       error_id: null,
+      template_version: "template/1",
+      mapping_version: "mapping/1",
+      renderer_version: "renderer/1",
       artifacts: [
-        { kind: "ballooned_pdf", downloadable: true },
-        { kind: "sip_excel", downloadable: true },
-        { kind: "manifest", downloadable: true },
+        {
+          kind: "ballooned_pdf",
+          sha256: "pdf-sha256",
+          size_bytes: 1,
+          reviewed_result_id: "reviewed-secret-uuid",
+          downloadable: true,
+        },
+        {
+          kind: "sip_excel",
+          sha256: "excel-sha256",
+          size_bytes: 1,
+          reviewed_result_id: "reviewed-secret-uuid",
+          downloadable: true,
+        },
+        {
+          kind: "manifest",
+          sha256: "manifest-sha256",
+          size_bytes: 1,
+          reviewed_result_id: "reviewed-secret-uuid",
+          downloadable: true,
+        },
       ],
     },
-  } as ProjectWorkbenchResponse;
+  } as ProjectWorkbenchView;
 }
 
 

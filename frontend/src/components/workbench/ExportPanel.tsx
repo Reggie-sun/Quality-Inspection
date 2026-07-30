@@ -50,7 +50,6 @@ export function ExportPanel({
 
   const canExport = reviewedResultId !== undefined && balloonBlockers.length === 0;
   const exportInFlight = busy
-    || exportJob?.status === "pending"
     || exportJob?.status === "running";
   const downloadableKinds = new Set(
     exportJob?.artifacts

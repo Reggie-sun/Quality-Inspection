@@ -1,9 +1,9 @@
-import type { BalloonOverlay, ReviewWorkingCopy } from "../../api/types";
+import type { BalloonOverlay, ReviewWorkingCopyView } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
 
 
 type FreezeReviewButtonProps = {
-  workingCopy: ReviewWorkingCopy;
+  workingCopy: ReviewWorkingCopyView;
   balloons: BalloonOverlay[];
   balloonBlockers: string[];
   busy?: boolean;
@@ -13,7 +13,7 @@ type FreezeReviewButtonProps = {
 };
 
 
-function hasResolvedReview(workingCopy: ReviewWorkingCopy): boolean {
+function hasResolvedReview(workingCopy: ReviewWorkingCopyView): boolean {
   const blocking = Number(workingCopy.coverage.blocking_count ?? 0);
   const unresolved = Number(workingCopy.coverage.review_required_count ?? 0);
   return (

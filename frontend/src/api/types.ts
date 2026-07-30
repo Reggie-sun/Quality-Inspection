@@ -1,3 +1,6 @@
+import type { components } from "./generated";
+
+
 export type PdfCoordinates = [number, number, number, number];
 export type PdfMatrix = [number, number, number, number, number, number];
 
@@ -73,13 +76,7 @@ export type PdfDocumentLike = {
 };
 
 export type CandidateType =
-  | "linear_dimension"
-  | "diameter_dimension"
-  | "thread"
-  | "radius"
-  | "angle"
-  | "general_requirement"
-  | "composite";
+  components["schemas"]["Add"]["item_type"];
 
 export type ReviewItem = {
   item_id: string;
@@ -124,58 +121,7 @@ export type ReviewItem = {
 };
 
 export type ReviewCommand =
-  | { type: "keep"; item_id: string }
-  | { type: "exclude"; item_id: string }
-  | { type: "edit"; item_id: string; fields: Record<string, unknown> }
-  | {
-      type: "add";
-      raw_text: string;
-      item_type: CandidateType;
-      coordinates: PdfCoordinates;
-      scope: "local_feature" | "global_requirement";
-      balloon_required: boolean;
-      page_index?: number;
-    }
-  | { type: "merge"; item_ids: string[]; raw_text: string }
-  | { type: "split"; item_id: string; parts: Array<{ raw_text: string }> }
-  | { type: "resolve_confirmation"; item_id: string; accepted: boolean }
-  | { type: "set_balloon_required"; item_id: string; balloon_required: boolean }
-  | {
-      type: "promote_source";
-      observation_id: string;
-      raw_text: string;
-      item_type: CandidateType;
-      scope: "local_feature" | "global_requirement";
-      balloon_required: boolean;
-      page_index: number;
-    }
-  | { type: "ignore_source"; observation_id: string }
-  | { type: "ignore_sources"; observation_ids: string[] }
-  | {
-      type: "set_sip_detail_fields";
-      item_id: string;
-      inspection_item: string;
-      inspection_standard: string;
-      inspection_method: string;
-      key_dimension: string;
-      inspection_role: string;
-      source_page: number;
-      remarks: string;
-    }
-  | {
-      type: "set_sip_metadata";
-      material_code: string;
-      material_name: string;
-      drawing_number: string;
-      material: string;
-      revision: string;
-    }
-  | {
-      type: "set_technical_requirement_match";
-      requirement_id: string;
-      outcome: "matched_items" | "global_scope" | "excluded";
-      matched_item_ids?: string[];
-    };
+  components["schemas"]["ReviewCommandRequest"]["command"];
 
 export type TechnicalRequirement = {
   requirement_id: string;
@@ -199,19 +145,32 @@ export type TechnicalRequirement = {
   review_status?: "suggested" | "confirmed" | "excluded";
 };
 
-export type ReviewWorkingCopy = {
-  id: string;
-  project_id: string;
-  raw_result_id: string;
-  version: number;
+export type ReviewWorkingCopyTransport =
+  components["schemas"]["ReviewWorkingCopyResponse"];
+
+export type ReviewLockResponse =
+  components["schemas"]["ReviewLockResponse"];
+
+export type ReviewedResultResponse =
+  components["schemas"]["ReviewedResultResponse"];
+
+type ReviewWorkingCopyProjectionTransport =
+  components["schemas"]["ReviewWorkingCopyProjection"];
+
+// UI view: narrows opaque JSON records and permits incomplete local fixtures.
+// API clients must receive ReviewWorkingCopyTransport before adapting to this view.
+export type ReviewWorkingCopyView = Omit<
+  ReviewWorkingCopyProjectionTransport,
+  | "items"
+  | "coverage"
+  | "technical_requirements"
+  | "sip_metadata"
+  | "manual_review_count"
+> & {
   items: ReviewItem[];
   coverage: ReviewCoverage;
   technical_requirements?: TechnicalRequirement[];
   manual_review_count?: number;
-  numbering_stale: boolean;
-  items_frozen_at: string | null;
-  items_frozen_by: string | null;
-  items_frozen_version: number | null;
   sip_metadata?: {
     material_code?: string;
     material_name?: string;
@@ -239,105 +198,64 @@ export type ReviewCoverage = {
   relations?: Array<Record<string, unknown>>;
 };
 
-export type ProjectWorkbenchPage = {
-  page_index: number;
-  width: number;
-  height: number;
-  pdf_to_render_matrix: PdfMatrix;
-  render_to_pdf_matrix: PdfMatrix;
-};
+export type ProjectWorkbenchPage =
+  components["schemas"]["ProjectWorkbenchPageResponse"];
 
-export type ProjectWorkbenchCandidate = {
-  id: string;
-  item_id: string;
-  page_index: number;
-  bbox_pdf: PdfCoordinates;
+type ProjectWorkbenchCandidateTransport =
+  components["schemas"]["ProjectWorkbenchCandidateResponse"];
+
+export type ProjectWorkbenchCandidateView = Omit<
+  ProjectWorkbenchCandidateTransport,
+  "confidence_band" | "review_disposition" | "status"
+> & {
   confidence_band?: ConfidenceBand | null;
   review_disposition?: ReviewDisposition | null;
   status?: string | null;
 };
 
-export type ProjectWorkbenchSource = {
-  id: string;
-  item_ids: string[];
-  page_index: number;
-  bbox_pdf: PdfCoordinates;
+type ProjectWorkbenchSourceTransport =
+  components["schemas"]["ProjectWorkbenchSourceResponse"];
+
+export type ProjectWorkbenchSourceView = Omit<
+  ProjectWorkbenchSourceTransport,
+  "raw_text" | "source_type"
+> & {
   raw_text?: string;
+  source_type?: string;
 };
 
-export type BalloonRecord = {
-  id: string;
-  project_id: string;
-  inspection_item_id: string;
-  source_location_id: string;
-  page_index: number;
-  suggested_number: number;
-  formal_number: number | null;
-  sort_order: number;
-  anchor_bbox_pdf: PdfCoordinates;
-  leader_target_pdf: [number, number];
-  center_pdf: [number, number];
-  placement_status: "placed" | "manual_required";
-  collision_flags: string[];
-  status: "active" | "deleted";
-  version: number;
+export type BalloonRecord =
+  components["schemas"]["BalloonResponse"];
+
+export type ProjectWorkbenchTransport =
+  components["schemas"]["ProjectWorkbenchResponse"];
+
+export type ProjectWorkbenchView = Omit<
+  ProjectWorkbenchTransport,
+  "working_copy" | "candidates" | "sources"
+> & {
+  working_copy: ReviewWorkingCopyView;
+  candidates: ProjectWorkbenchCandidateView[];
+  sources: ProjectWorkbenchSourceView[];
 };
 
-export type ProjectWorkbenchResponse = {
-  project: { id: string; state: string; version: number };
-  working_copy: ReviewWorkingCopy;
-  pages: ProjectWorkbenchPage[];
-  candidates: ProjectWorkbenchCandidate[];
-  sources: ProjectWorkbenchSource[];
-  balloons: BalloonRecord[];
-  balloon_blockers: string[];
-  source_pdf_url: string;
-  reviewed_result_id: string | null;
-  latest_export: ExportJob | null;
-};
+export type ExportArtifactKind =
+  components["schemas"]["ExportArtifactResponse"]["kind"];
 
-export type ExportArtifactKind = "ballooned_pdf" | "sip_excel" | "manifest";
+export type ExportArtifact =
+  components["schemas"]["ExportArtifactResponse"];
 
-export type ExportArtifact = {
-  kind: ExportArtifactKind;
-  sha256?: string;
-  size_bytes?: number;
-  reviewed_result_id?: string;
-  downloadable: boolean;
-};
-
-export type ExportJob = {
-  id: string;
-  project_id: string;
-  reviewed_result_id: string;
-  status: "pending" | "running" | "success" | "failed";
-  error_id?: string | null;
-  artifacts: ExportArtifact[];
-};
+export type ExportJob =
+  components["schemas"]["ExportResponse"];
 
 export type ProjectPhase =
-  | "queued"
-  | "processing"
-  | "ready_for_review"
-  | "failed";
+  components["schemas"]["ProjectPhase"];
 
 export type ProcessingStage =
-  | "queued"
-  | "parsing"
-  | "recognizing"
-  | "preparing_review";
+  components["schemas"]["ProcessingStage"];
 
-export type ProjectStatus = {
-  project_id?: string;
-  phase: ProjectPhase;
-  stage?: ProcessingStage | null;
-  workbench_ready: boolean;
-  retryable: boolean;
-  error: {
-    code: string;
-    stage: string;
-  } | null;
-};
+export type ProjectStatus =
+  components["schemas"]["ProjectStatusResponse"];
 
 export type GetJson = <Result>(
   path: string,

@@ -19,6 +19,7 @@ HardCollisionFlag: TypeAlias = Literal[
     "source_text_overlap",
     "unreadable_number",
     "invalid_leader",
+    "forbidden_overlap",
 ]
 
 
@@ -72,3 +73,28 @@ BalloonCommandRequest = Annotated[
     ],
     Field(discriminator="type"),
 ]
+
+
+class BalloonResponse(BalloonCommandBase):
+    id: uuid.UUID
+    project_id: uuid.UUID
+    inspection_item_id: str
+    source_location_id: str
+    page_index: int
+    suggested_number: int
+    formal_number: int | None
+    sort_order: int
+    anchor_bbox_pdf: BBox
+    leader_target_pdf: PdfPoint
+    center_pdf: PdfPoint
+    placement_status: PlacementStatus
+    collision_flags: list[HardCollisionFlag]
+    status: Literal["active", "deleted"]
+    version: int
+
+
+class BalloonCollectionResponse(BalloonCommandBase):
+    balloons: list[BalloonResponse]
+
+
+BalloonCommandResponse = Union[BalloonResponse, BalloonCollectionResponse]
