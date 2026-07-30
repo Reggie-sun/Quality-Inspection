@@ -372,7 +372,7 @@ git commit -m "feat: add technical requirement persistence"
 - Create: `backend/app/candidates/technical_requirements.py`
 - Create: `backend/tests/unit/candidates/test_technical_requirements.py`
 
-- [ ] **Step 1: 写 reconstruction 和 sample classification RED tests**
+- [x] **Step 1: 写 reconstruction 和 sample classification RED tests**
 
 测试 helper 明确用当前 `TextObservation`：
 
@@ -441,7 +441,7 @@ def test_classifies_approved_sample(text: str, subtype: str) -> None:
 - 相同文本不同 source identity 得到不同 `requirement_id`；
 - unknown standard 为 `unsupported/review_required`。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run:
 
@@ -452,7 +452,7 @@ micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requ
 Expected: FAIL with
 `ModuleNotFoundError: No module named 'app.candidates.technical_requirements'`。
 
-- [ ] **Step 3: 实现 exact contract types**
+- [x] **Step 3: 实现 exact contract types**
 
 核心 contract：
 
@@ -513,7 +513,7 @@ class TechnicalRequirementDecision(BaseModel):
 `requirement_id` 使用 `stable_candidate_id()`，输入必须包含 source IDs 和 segment
 indexes，不得只使用 raw text。
 
-- [ ] **Step 4: 实现 block reconstruction 和 classification**
+- [x] **Step 4: 实现 block reconstruction 和 classification**
 
 规则顺序固定：
 
@@ -536,7 +536,7 @@ CLASSIFICATION_RULES = (
 - method/role 不进入 suggestion；
 - standalone suggestions 只填 source 能证明的 item/standard/page/remarks。
 
-- [ ] **Step 5: 运行 unit GREEN**
+- [x] **Step 5: 运行 unit GREEN**
 
 Run:
 
@@ -546,7 +546,7 @@ micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requ
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/app/candidates/technical_requirements.py backend/tests/unit/candidates/test_technical_requirements.py
