@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.candidates.advisor import CandidateAdvisor
-from app.candidates.coverage import CoverageEntry
+from app.candidates.coverage import CoverageEntry, check_coverage
 from app.candidates.confidence import CandidateSourceSignal
 from app.candidates.models import AutomaticResult
 from app.candidates.duplicates import DuplicateRelation
@@ -24,7 +24,13 @@ from app.config import Settings
 from app.db import engine
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
-from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
+from app.pdf.schemas import (
+    LayoutProfileMatch,
+    ObservationRegionAssignment,
+    PageInventory,
+    TextObservation,
+    VisualObservation,
+)
 from app.processing.automatic_result import (
     CandidateSnapshot,
     CoverageBlocking,
@@ -69,11 +75,16 @@ def db_session() -> Iterator[Session]:
 def _page_with_observations(
     page_index: int,
     observations: tuple[TextObservation, ...],
+    *,
+    visual_observations: tuple[VisualObservation, ...] = (),
+    layout_profile_match: LayoutProfileMatch | None = None,
+    width: float = 100.0,
+    height: float = 100.0,
 ) -> PageInventory:
     return PageInventory(
         page_index=page_index,
-        width=100.0,
-        height=100.0,
+        width=width,
+        height=height,
         rotation=0,
         page_type="vector",
         processing_route="native",
@@ -90,6 +101,8 @@ def _page_with_observations(
         pdf_to_render_matrix=(1, 0, 0, 1, 0, 0),
         render_to_pdf_matrix=(1, 0, 0, 1, 0, 0),
         observations=observations,
+        visual_observations=visual_observations,
+        layout_profile_match=layout_profile_match,
     )
 
 
@@ -108,19 +121,89 @@ def _text_observation(
         0.03,
         0.04,
     ),
+    bbox_pdf: tuple[float, float, float, float] = (1, 2, 3, 4),
+    source_type: str = "native",
+    observation_level: str = "line",
+    parent_region_id: str | None = None,
+    direction_angle_degrees: float = 0.0,
+    direction: tuple[float, float] = (1.0, 0.0),
 ) -> TextObservation:
     return TextObservation(
         observation_id=observation_id or f"observation-{page_index}-{raw_text}",
-        source_type="native",
-        observation_level="line",
+        source_type=source_type,
+        observation_level=observation_level,
         raw_text=raw_text,
         normalized_text=raw_text,
         page_index=page_index,
-        bbox_pdf=(1, 2, 3, 4),
+        bbox_pdf=bbox_pdf,
         bbox_normalized=bbox_normalized,
-        direction=(1.0, 0.0),
-        direction_angle_degrees=0.0,
-        confidence=None,
+        direction=direction,
+        direction_angle_degrees=direction_angle_degrees,
+        confidence=None if source_type == "native" else 0.9,
+        parent_region_id=parent_region_id,
+    )
+
+
+def _layout_assignment(
+    observation: TextObservation,
+    *,
+    region_id: str,
+    cell_role: str,
+    cell_id: str,
+    boundary_distance_mm: float = 2.0,
+) -> ObservationRegionAssignment:
+    return ObservationRegionAssignment(
+        observation_id=observation.observation_id,
+        page_index=observation.page_index,
+        profile_id="welli-a3-landscape/1",
+        region_id=region_id,  # type: ignore[arg-type]
+        cell_role=cell_role,
+        cell_id=cell_id,
+        assignment_evidence_codes=(
+            "bbox_inside_role",
+            "center_in_role",
+            "horizontal_direction",
+            "single_role",
+        ),
+        boundary_distance_mm=boundary_distance_mm,
+        rule_version="p0-a2-welli-layout/1",
+    )
+
+
+def _layout_match(
+    page_index: int,
+    assignments: tuple[ObservationRegionAssignment, ...],
+) -> LayoutProfileMatch:
+    return LayoutProfileMatch(
+        page_index=page_index,
+        profile_id="welli-a3-landscape/1",
+        match_state="high_confidence",
+        geometry_evidence_codes=("body_frame", "revision_grid", "title_grid"),
+        text_anchor_evidence_codes=(
+            "revision_anchor_quorum",
+            "title_anchor_quorum",
+        ),
+        assignments=assignments,
+        rule_version="p0-a2-welli-layout/1",
+    )
+
+
+def _visual_observation(
+    observation_id: str,
+    associated_text_observation_ids: tuple[str, ...],
+    *,
+    page_index: int = 0,
+) -> VisualObservation:
+    return VisualObservation(
+        observation_id=observation_id,
+        source_type="visual",
+        observation_level="annotation_context",
+        page_index=page_index,
+        bbox_pdf=(0.5, 1.0, 4.0, 5.0),
+        bbox_normalized=(0.005, 0.01, 0.04, 0.05),
+        proposal_kind="text_adjacent_vector_context",
+        geometry_sha256="a" * 64,
+        associated_text_observation_ids=associated_text_observation_ids,
     )
 
 
@@ -457,6 +540,492 @@ def test_candidate_snapshot_preserves_engineering_semantics(raw_text: str) -> No
     assert entry.candidate_id == snapshot.candidates[0]["candidate_id"]
     assert entry.disposition_reason is None
     assert entry.disposition_rule_version is None
+
+
+def test_matched_revision_marker_and_visual_leave_candidate_path() -> None:
+    marker = _text_observation("1", observation_id="welli:revision-marker-1")
+    assignment = _layout_assignment(
+        marker,
+        region_id="revision_table",
+        cell_role="revision_marker",
+        cell_id="revision-marker-1",
+    )
+    visual = _visual_observation(
+        "visual:revision-marker-1",
+        (marker.observation_id,),
+    )
+    page = _page_with_observations(
+        0,
+        (marker,),
+        visual_observations=(visual,),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+    coverage = {
+        entry.observation_id: entry for entry in snapshot.coverage_entries
+    }
+
+    assert snapshot.candidates == ()
+    assert coverage[marker.observation_id].disposition == "reference_context"
+    assert coverage[marker.observation_id].disposition_reason == (
+        "welli_revision_marker"
+    )
+    assert coverage[visual.observation_id].disposition == "reference_context"
+    assert coverage[visual.observation_id].disposition_reason == (
+        "welli_layout_visual_context"
+    )
+    assert snapshot.required_visual_observation_ids == ()
+
+
+@pytest.mark.parametrize(
+    (
+        "raw_text",
+        "region_id",
+        "cell_role",
+        "cell_id",
+        "expected_disposition",
+        "expected_reason",
+    ),
+    (
+        (
+            "QX-ABC",
+            "title_block",
+            "title_metadata_value",
+            "title-metadata-value",
+            "reference_context",
+            "welli_title_metadata_value",
+        ),
+        (
+            "1",
+            "page_frame",
+            "page_frame_number",
+            "page-frame-top-1",
+            "non_inspection",
+            "welli_page_frame_number",
+        ),
+    ),
+)
+def test_matched_layout_text_routes_before_parser(
+    raw_text: str,
+    region_id: str,
+    cell_role: str,
+    cell_id: str,
+    expected_disposition: str,
+    expected_reason: str,
+) -> None:
+    observation = _text_observation(
+        raw_text,
+        observation_id=f"welli:{cell_id}",
+    )
+    assignment = _layout_assignment(
+        observation,
+        region_id=region_id,
+        cell_role=cell_role,
+        cell_id=cell_id,
+    )
+    page = _page_with_observations(
+        0,
+        (observation,),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+
+    assert snapshot.candidates == ()
+    entry = snapshot.coverage_entries[0]
+    assert entry.disposition == expected_disposition
+    assert entry.disposition_reason == expected_reason
+    assert entry.disposition_rule_version == "p0-a2-welli-layout/1"
+
+
+def test_same_page_welli_watermark_routes_all_native_lines() -> None:
+    points_per_mm = 72.0 / 25.4
+    observations = tuple(
+        _text_observation(
+            "伟立机器人",
+            observation_id=f"welli:watermark:{row}:{column}",
+            bbox_pdf=(
+                (x_mm - 8.0) * points_per_mm,
+                (y_mm - 2.0) * points_per_mm,
+                (x_mm + 8.0) * points_per_mm,
+                (y_mm + 2.0) * points_per_mm,
+            ),
+            direction_angle_degrees=-30.0,
+            direction=(0.8660254038, -0.5),
+        )
+        for row, y_mm in enumerate((40.0, 120.0, 200.0))
+        for column, x_mm in enumerate((50.0, 150.0, 250.0))
+    )
+    page = _page_with_observations(
+        0,
+        observations,
+        layout_profile_match=_layout_match(0, ()),
+        width=420.0 * points_per_mm,
+        height=297.0 * points_per_mm,
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+
+    assert snapshot.candidates == ()
+    assert {
+        (
+            entry.disposition,
+            entry.disposition_reason,
+            entry.disposition_rule_version,
+        )
+        for entry in snapshot.coverage_entries
+    } == {
+        (
+            "non_inspection",
+            "welli_same_page_watermark",
+            "p0-a2-welli-layout/1",
+        )
+    }
+
+
+def test_revision_description_engineering_evidence_preserves_entire_row() -> None:
+    dimension = replace(
+        _text_observation("3.2", observation_id="welli:dimension"),
+        bbox_pdf=(10.0, 10.0, 20.0, 14.0),
+    )
+    remainder = replace(
+        _text_observation("其余", observation_id="welli:remainder"),
+        bbox_pdf=(22.0, 10.0, 32.0, 14.0),
+    )
+    assignments = tuple(
+        _layout_assignment(
+            observation,
+            region_id="revision_table",
+            cell_role="revision_description",
+            cell_id="revision-description-3",
+        )
+        for observation in (dimension, remainder)
+    )
+    page = _page_with_observations(
+        0,
+        (dimension, remainder),
+        layout_profile_match=_layout_match(0, assignments),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+    coverage = {
+        entry.observation_id: entry for entry in snapshot.coverage_entries
+    }
+
+    assert coverage[dimension.observation_id].disposition == "candidate"
+    assert coverage[remainder.observation_id].disposition == "ambiguous"
+    assert all(
+        entry.disposition_reason != "welli_revision_description"
+        for entry in snapshot.coverage_entries
+    )
+
+
+def test_technical_requirement_precedes_overlapping_layout_assignment() -> None:
+    observation = _text_observation(
+        "检查焊缝不得有裂纹",
+        observation_id="welli:requirement",
+    )
+    assignment = _layout_assignment(
+        observation,
+        region_id="title_block",
+        cell_role="title_metadata_value",
+        cell_id="title-metadata-value",
+    )
+    page = _page_with_observations(
+        0,
+        (observation,),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+
+    assert len(snapshot.candidates) == 1
+    assert snapshot.candidates[0]["payload"]["item_type"] == (
+        "general_requirement"
+    )
+    assert snapshot.coverage_entries[0].disposition == "candidate"
+
+
+def test_ocr_observation_appended_after_match_gets_no_layout_decision() -> None:
+    observation = _text_observation(
+        "25",
+        observation_id="ocr:after-layout",
+        source_type="ocr",
+        observation_level="region",
+    )
+    invalid_assignment = _layout_assignment(
+        observation,
+        region_id="title_block",
+        cell_role="title_metadata_value",
+        cell_id="title-metadata-value",
+    )
+    page = _page_with_observations(
+        0,
+        (observation,),
+        layout_profile_match=_layout_match(0, (invalid_assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+
+    assert len(snapshot.candidates) == 1
+    assert snapshot.coverage_entries[0].disposition == "candidate"
+    assert snapshot.coverage_entries[0].disposition_rule_version is None
+
+
+def test_no_sidecar_snapshot_is_byte_compatible() -> None:
+    observation = _text_observation("25", observation_id="no-sidecar")
+    page = _page(observation)
+
+    baseline = candidate_snapshot_from_inventory((page,))
+    explicit_none = candidate_snapshot_from_inventory(
+        (replace(page, layout_profile_match=None),)
+    )
+
+    assert explicit_none == baseline
+
+
+@pytest.mark.parametrize(
+    ("cell_role", "cell_id", "raw_text", "expected_disposition"),
+    (
+        (
+            "revision_header",
+            "revision-header",
+            "更改描述",
+            "non_inspection",
+        ),
+        (
+            "title_metadata_value",
+            "title-metadata-value",
+            "QX-ABC",
+            "reference_context",
+        ),
+    ),
+)
+def test_valid_line_and_child_span_visual_relation_is_resolved(
+    cell_role: str,
+    cell_id: str,
+    raw_text: str,
+    expected_disposition: str,
+) -> None:
+    line = _text_observation(raw_text, observation_id=f"line:{cell_id}")
+    span = _text_observation(
+        raw_text,
+        observation_id=f"span:{cell_id}",
+        observation_level="span",
+        parent_region_id=line.observation_id,
+    )
+    region_id = (
+        "revision_table"
+        if cell_role == "revision_header"
+        else "title_block"
+    )
+    assignment = _layout_assignment(
+        line,
+        region_id=region_id,
+        cell_role=cell_role,
+        cell_id=cell_id,
+    )
+    visual = _visual_observation(
+        f"visual:{cell_id}",
+        (line.observation_id, span.observation_id),
+    )
+    page = _page_with_observations(
+        0,
+        (line, span),
+        visual_observations=(visual,),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+    visual_entry = next(
+        entry
+        for entry in snapshot.coverage_entries
+        if entry.observation_id == visual.observation_id
+    )
+
+    assert visual_entry.disposition == expected_disposition
+    assert visual_entry.disposition_reason == "welli_layout_visual_context"
+    assert visual_entry.requires_confirmation is False
+    assert snapshot.required_visual_observation_ids == ()
+
+
+@pytest.mark.parametrize(
+    ("parent_region_id", "associated_mode"),
+    (
+        (None, "line-and-span"),
+        ("line:layout", "span-only"),
+        ("line:other", "line-and-span"),
+    ),
+)
+def test_invalid_child_span_relation_keeps_visual_required(
+    parent_region_id: str | None,
+    associated_mode: str,
+) -> None:
+    line = _text_observation("QX-ABC", observation_id="line:layout")
+    span = _text_observation(
+        "QX-ABC",
+        observation_id="span:layout",
+        observation_level="span",
+        parent_region_id=parent_region_id,
+    )
+    assignment = _layout_assignment(
+        line,
+        region_id="title_block",
+        cell_role="title_metadata_value",
+        cell_id="title-metadata-value",
+    )
+    associated = (
+        (span.observation_id,)
+        if associated_mode == "span-only"
+        else (line.observation_id, span.observation_id)
+    )
+    visual = _visual_observation("visual:invalid-span", associated)
+    page = _page_with_observations(
+        0,
+        (line, span),
+        visual_observations=(visual,),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+    visual_entry = next(
+        entry
+        for entry in snapshot.coverage_entries
+        if entry.observation_id == visual.observation_id
+    )
+
+    assert visual_entry.disposition == "ambiguous"
+    assert visual_entry.requires_confirmation is True
+    assert snapshot.required_visual_observation_ids == (
+        visual.observation_id,
+    )
+
+
+def test_cross_page_span_parent_keeps_visual_required() -> None:
+    parent = _text_observation(
+        "QX-ABC",
+        observation_id="line:cross-page",
+        page_index=1,
+    )
+    span = _text_observation(
+        "QX-ABC",
+        observation_id="span:cross-page",
+        page_index=0,
+        observation_level="span",
+        parent_region_id=parent.observation_id,
+    )
+    visual = _visual_observation(
+        "visual:cross-page",
+        (parent.observation_id, span.observation_id),
+        page_index=0,
+    )
+    page_zero = _page_with_observations(
+        0,
+        (span,),
+        visual_observations=(visual,),
+        layout_profile_match=_layout_match(0, ()),
+    )
+    assignment = _layout_assignment(
+        parent,
+        region_id="title_block",
+        cell_role="title_metadata_value",
+        cell_id="title-metadata-value",
+    )
+    page_one = _page_with_observations(
+        1,
+        (parent,),
+        layout_profile_match=_layout_match(1, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page_zero, page_one))
+
+    assert snapshot.required_visual_observation_ids == (
+        visual.observation_id,
+    )
+
+
+def test_mixed_layout_and_engineering_visual_relation_stays_required() -> None:
+    layout_line = _text_observation(
+        "QX-ABC",
+        observation_id="line:layout-safe",
+    )
+    engineering_line = _text_observation(
+        "M6",
+        observation_id="line:engineering",
+    )
+    assignment = _layout_assignment(
+        layout_line,
+        region_id="title_block",
+        cell_role="title_metadata_value",
+        cell_id="title-metadata-value",
+    )
+    visual = _visual_observation(
+        "visual:mixed",
+        (layout_line.observation_id, engineering_line.observation_id),
+    )
+    page = _page_with_observations(
+        0,
+        (layout_line, engineering_line),
+        visual_observations=(visual,),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+
+    assert snapshot.required_visual_observation_ids == (
+        visual.observation_id,
+    )
+    visual_entry = next(
+        entry
+        for entry in snapshot.coverage_entries
+        if entry.observation_id == visual.observation_id
+    )
+    assert visual_entry.disposition == "ambiguous"
+
+
+def test_layout_snapshot_writes_exactly_one_coverage_per_selected_source() -> None:
+    line = _text_observation("QX-ABC", observation_id="line:exact-once")
+    span = _text_observation(
+        "QX-ABC",
+        observation_id="span:exact-once",
+        observation_level="span",
+        parent_region_id=line.observation_id,
+    )
+    assignment = _layout_assignment(
+        line,
+        region_id="title_block",
+        cell_role="title_metadata_value",
+        cell_id="title-metadata-value",
+    )
+    resolved = _visual_observation(
+        "visual:resolved",
+        (line.observation_id, span.observation_id),
+    )
+    unresolved = _visual_observation("visual:unresolved", ())
+    page = _page_with_observations(
+        0,
+        (line, span),
+        visual_observations=(resolved, unresolved),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+
+    coverage_ids = tuple(
+        entry.observation_id for entry in snapshot.coverage_entries
+    )
+    assert coverage_ids == snapshot.expected_observation_ids
+    assert len(coverage_ids) == len(set(coverage_ids))
+    assert span.observation_id not in coverage_ids
+    report = check_coverage(
+        snapshot.coverage_entries,
+        expected_observation_ids=snapshot.expected_observation_ids,
+    )
+    assert report.blocking_count == 0
+    assert snapshot.required_visual_observation_ids == (
+        unresolved.observation_id,
+    )
 
 
 def test_offline_provider_fixtures_freeze_one_automatic_result(
