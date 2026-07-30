@@ -6,6 +6,17 @@ import { touchLocalDrawing } from "./app/localDrawingRegistry";
 import { ProjectWorkbenchApp } from "./components/workbench/ProjectWorkbenchApp";
 import "./styles/app.css";
 
+
+export function returnFromCompatibilityLink(
+  projectId: string,
+  navigate: (path: string) => void = (path) => window.location.assign(path),
+): void {
+  touchLocalDrawing(projectId, "未命名图纸.pdf");
+  clearCurrentProjectId();
+  navigate("/");
+}
+
+
 const root = document.getElementById("root");
 
 if (root === null) {
@@ -28,11 +39,7 @@ createRoot(root).render(
       <ProjectWorkbenchApp
         projectId={projectId}
         operatorId={operatorId}
-        onReset={() => {
-          touchLocalDrawing(projectId, "未命名图纸.pdf");
-          clearCurrentProjectId();
-          window.location.assign("/");
-        }}
+        onReset={() => returnFromCompatibilityLink(projectId)}
       />
     )
     : <QualityInspectionApp />,
