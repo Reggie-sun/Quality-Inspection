@@ -43,6 +43,11 @@ class AutomaticResult(Base):
     inventory_ref: Mapped[str] = mapped_column(String(512), nullable=False)
     candidates: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     coverage: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    technical_requirements: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=False,
+    )
     provider_call_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
