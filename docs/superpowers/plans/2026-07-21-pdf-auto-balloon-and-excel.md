@@ -2181,6 +2181,23 @@ python .agent/harness/scripts/check-contracts.py
 
 The executor records the run ID printed by the selected row. After projecting that sealed run into `current_status`, run the same three sync commands again and validate the task receipt with `python .agent/harness/scripts/generate-receipt.py --check-run <literal-run-id>`; never resolve `<literal-run-id>` through a mutable `latest` pointer.
 
+### API contract closure amendment — 2026-07-30
+
+本节只为现有 FastAPI surface 建立 transport contract closure，不创建第二套业务事实源，不改变 Section 10.1、既有业务语义、state transition、Owner、任务顺序、sealed Harness run 或 receipt。
+
+- Selected lane: `Heavy`；本次显式收敛稳定 API/schema，并需要 backend contract、frontend drift、breaking-change 与 failure-path verification。
+- Selected plan: 本文件仍是唯一 current implementation plan；`docs/contracts/MAIN_CONTRACT_MATRIX.md` 继续唯一拥有长期业务语义，`docs/contracts/API_SURFACE_INDEX.md` 只能是由 route/Pydantic/OpenAPI 与 global contract mapping 派生的人类可读索引。
+- Selection evidence: 当前正式 surface 为 16 个 FastAPI operations；16/16 未显式声明 `response_model`，15 个 JSON success response 在 OpenAPI 中缺少 schema，两个 binary response 被投影为 JSON；framework validation/unhandled failures 尚未统一为 `SYS-004` envelope；frontend transport types 为手写且已出现 enum/nullability 漂移；仓库尚无 OpenAPI snapshot、breaking diff 或 generated TypeScript gate。
+- Validation action: `amend` 后 `continue`。先以 contract tests 取得预期 RED，再以最小 transport-only changes 取得 GREEN；不得借此修改 service、domain state、idempotency、concurrency、export publication 或 Provider semantics。
+- Problem boundary and single Owners: FastAPI route + Pydantic schema 是实际传输合同；OpenAPI 是唯一机器可读投影；frontend transport types 必须从该投影生成。长期业务语义仍只由 main contract matrix 拥有，API index、snapshot、generated TypeScript、diff tool 和 tests 都不是业务 Owner。
+- Old path action: replace handwritten frontend transport declarations with generated aliases while preserving existing API clients and UI-local types；replace per-router error JSON construction and framework-default error bodies with one Pydantic error envelope；不得保留第二套 editable transport schema。现有 methods、paths、success status、business error codes 与 route-to-service call paths保持不变。
+- Allowed paths: `backend/app/main.py`、`backend/app/{projects,review,balloons,exports}/router.py`、对应 `schemas.py`、新建 `backend/app/errors/api.py` 与 `backend/app/errors/schemas.py`、`backend/tests/contract/**`、必要的既有 API integration tests、`frontend/src/api/{types.ts,generated.ts}`、直接依赖 transport types 的 frontend API consumer/tests、`frontend/package.json`、lockfile、`Makefile`、API contract check scripts、OpenAPI v1 baseline、`docs/contracts/API_SURFACE_INDEX.md` 和本 amendment。不得修改业务 service、repository、migration、`.agent/harness/runs/**`、receipt 或 contract mirror。
+- Stable IDs and compatibility: operations 使用 `QI-API-SYS-001`、`QI-API-PRJ-001..004`、`QI-API-REV-001..005`、`QI-API-BAL-001..003`、`QI-API-EXP-001..003`。同一 API major 内，operation/path/method 删除或重命名、request/response property type 变化、request/response required 增加、enum 收缩和 success/error status 删除或变化均为 breaking；只能通过显式 major-version migration 批准，不得自动更新 baseline 绕过 gate。
+- Snapshot and drift gates: corrected `app.openapi()` 是 snapshot source；snapshot test 必须锁定 16 个 operations、stable IDs、14 个 JSON response schemas、两个 binary media types、统一 error schemas 与 exact canonical baseline。breaking gate 比较 approved baseline 与 current projection；frontend check 从同一 projection 重新生成 TypeScript 并要求 zero diff，不手工复制 Pydantic fields。
+- Rollback and failure boundary: rollback 只 revert 本 amendment 对应的 API closure commits，保留现有业务数据与历史 evidence；rollback 后第一项验证为当前 backend API integration suite。任何未建模 response、snapshot drift、frontend drift、breaking diff、错误 envelope 分叉或既有 API integration regression 都阻止 closure。
+- Writer ownership and order: parent 是唯一 writer；先 plan amendment，再 contract RED tests，再 backend projection/error GREEN，再 snapshot/breaking gate，再 generated frontend types/index，最后独立只读 review。既有完成的 explorers 保持只读且不再写 workspace。
+- First next verification: `micromamba run -n qi-p0 pytest backend/tests/contract/test_openapi_contract.py backend/tests/contract/test_error_envelope.py -q`，预期因缺少 stable operation IDs、explicit response models、统一 envelope 和 approved baseline 而失败。
+
 ## Seven-Day Delivery Map
 
 | Day | Task IDs | Working, testable increment |
