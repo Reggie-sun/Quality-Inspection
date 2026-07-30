@@ -13,7 +13,7 @@
 ## Status
 
 - Date: `2026-07-30`
-- Status: `review_requested`
+- Status: `in_progress`
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-30-technical-requirement-recognition-and-matching.md`
@@ -22,12 +22,19 @@
 - Selection evidence: 用户批准“语义拆解匹配 + SIP 填充”、“规则 Owner + 辅助识别”
   和“不自动换算 `GB/T 1804/1184` 数值”的边界
 - Validation action: `replan`
-- Production authorization: 用户的“继续”授权创建本 plan；开始 production
-  implementation 前仍需选择本 plan 的 execution mode
+- Production authorization: 用户已选择 `A 主线程串行执行`，并授权创建独立
+  worktree
+- Execution branch: `feature/technical-requirement-matching`
+- Execution worktree:
+  `/home/reggie/vscode_folder/Quality_Inspection/.worktrees/technical-requirement-matching`
+- Baseline verification:
+  - backend unit/contract: `72 passed`
+  - backend schema: `6 passed`
+  - frontend focused: `32 passed`
 - Writer ownership and order: 一个 write-capable executor 严格按 Task 1 → Task 7；
   同一 file group 不并发写
-- Next verification: plan self-review、placeholder scan、`git diff --check`；用户选择
-  execution mode 后先执行 Task 1 RED
+- Next verification: Task 1 `github-oss-fusion` 受限 prior-art 检查，然后执行
+  schema RED
 
 ## Problem Boundary
 
@@ -151,7 +158,7 @@ export。
 - Modify: `backend/app/review/models.py`
 - Modify: `backend/tests/integration/test_schema.py`
 
-- [ ] **Step 1: 使用 `github-oss-fusion` 做受限 prior-art 检查**
+- [x] **Step 1: 使用 `github-oss-fusion` 做受限 prior-art 检查**
 
 只研究：
 
@@ -169,7 +176,29 @@ License/scope check:
 Local validation:
 ```
 
-- [ ] **Step 2: 写 schema RED tests**
+Task 1 prior-art record (`2026-07-30`)：
+
+```text
+Repositories inspected:
+- mindee/doctr: README, doctr/io/elements.py, tests/common/test_io_exporters.py, LICENSE
+- zeroSteiner/rule-engine: README.rst, engine/rule.py, engine/context.py, tests/engine.py, LICENSE
+- sqlalchemy/alembic: docs/build/ops.rst, tests/test_postgresql.py, LICENSE
+Ideas fused:
+- 把原文、confidence、geometry/source location 一起保留为可导出的 requirement provenance
+- 未知字段、缺失 target 和非法 relation 明确失败，不把 resolver error 当作 no-match
+- migration 使用显式 Column/JSONB；upgrade 与 downgrade 各自有数据库 shape/data gate
+Ideas skipped:
+- 不引入 docTR、rule-engine 或其他新依赖
+- 不复制第三方 OCR/layout pipeline、表达式语法、标准数值表或 prompt
+- 不把通用 Alembic autogenerate 逻辑搬入项目 migration
+License/scope check:
+- docTR Apache-2.0、rule-engine BSD-3-Clause、Alembic MIT
+- 仅融合结构和测试思路，无源代码复制
+Local validation:
+- baseline backend 78 passed；frontend focused 32 passed
+```
+
+- [x] **Step 2: 写 schema RED tests**
 
 把 expected columns 改为包含 `technical_requirements`：
 
@@ -226,7 +255,7 @@ micromamba run -n qi-p0 pytest backend/tests/integration/test_schema.py -q
 Expected: FAIL，两个 exact-column assertions 都缺
 `technical_requirements`，不是数据库连接失败。
 
-- [ ] **Step 3: 实现 migration 和 model fields**
+- [x] **Step 3: 实现 migration 和 model fields**
 
 `0008_technical_requirements.py` 使用：
 
@@ -293,7 +322,7 @@ technical_requirements: Mapped[list[dict[str, Any]]] = mapped_column(
 )
 ```
 
-- [ ] **Step 4: 升级 schema 并验证 exact shape**
+- [x] **Step 4: 升级 schema 并验证 exact shape**
 
 Run:
 
@@ -304,7 +333,7 @@ micromamba run -n qi-p0 pytest backend/tests/integration/test_schema.py -q
 
 Expected: migration 到 `0008`，`test_schema.py` PASS。
 
-- [ ] **Step 5: 最小更新 durable contracts**
+- [x] **Step 5: 最小更新 durable contracts**
 
 只更新既有 rows：
 
@@ -318,7 +347,7 @@ Expected: migration 到 `0008`，`test_schema.py` PASS。
 
 不得新增第二组 contract IDs，不改变 P0 status counts。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 Run:
 
