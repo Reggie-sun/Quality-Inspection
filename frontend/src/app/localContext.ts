@@ -1,5 +1,6 @@
 const LOCAL_OPERATOR_KEY = "qi.local-operator-id";
 const CURRENT_PROJECT_KEY = "qi.current-project-id";
+const RETURN_TO_WORKBENCH_KEY = "qi.can-return-to-workbench";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -63,4 +64,19 @@ export function clearCurrentProjectId(
   storage: Storage = window.sessionStorage,
 ): void {
   storage.removeItem(CURRENT_PROJECT_KEY);
+}
+
+
+export function beginAnotherDrawing(
+  storage: Storage = window.sessionStorage,
+): void {
+  storage.removeItem(CURRENT_PROJECT_KEY);
+  storage.setItem(RETURN_TO_WORKBENCH_KEY, "true");
+}
+
+
+export function canReturnToPreviousWorkbench(
+  storage: Storage = window.sessionStorage,
+): boolean {
+  return storage.getItem(RETURN_TO_WORKBENCH_KEY) === "true";
 }

@@ -465,6 +465,63 @@ changed files:
 - Remaining P2: 0.
 - final result: passed
 
+## Compact Workbench Header — 2026-07-30
+
+### Comparison Target
+
+- Source visual truth: `/home/reggie/微信图片_20260730150201_13865_40.png`、
+  `/tmp/codex-clipboard-D2uBpP.png`、`/tmp/codex-clipboard-2MNi15.png` 和
+  `/tmp/codex-clipboard-MWOd5Q.png`。
+- Implementation capture:
+  `.local/design-qa/review-compact-header-implementation-final.png`。
+- Combined comparison:
+  `.local/design-qa/review-compact-header-comparison.png`。
+- State: 121 个检验项的真实审核工作台，当前状态“审核中”。
+
+### Viewport And Normalization
+
+- implementation pixels / CSS viewport: `1565 x 958`。
+- `devicePixelRatio`: `1`。
+- source pixels: full `2432 x 1104`；区域参考分别为 `1598 x 80`、`206 x 52`、
+  `1816 x 113`。
+- Source 是“现状 + 指定删除/压缩区域”，不是等尺寸终稿 mock；组合图按等宽列展示，
+  判断以删除步骤条、顶部最多两行和增加图纸视野这三个明确目标为准。
+
+### Full And Focused Comparison
+
+- 原品牌/五步流程条已从审核工作台移除。
+- 新顶部只有两个逻辑行：第一行“项目摘要 + 处理另一份图纸”，第二行三个审核动作。
+- 紧凑顶部高 `86.5px`，工作区从 `y=102.5px` 开始；图纸区当前可见高度为 `849px`。
+- 摘要无横向溢出：`scrollWidth=1390`、`clientWidth=1390`。
+- 审核操作无横向溢出：`scrollWidth=1514`、`clientWidth=1514`。
+- DOM 中不存在旧 `.workflow-steps`。
+
+### Required Fidelity Surfaces
+
+- Fonts and typography: 沿用既有中文字体栈；摘要标签 `10px`、值 `12px`，没有换行。
+- Spacing and layout rhythm: 两行间距 `6px`、工作区上间距 `8px`，没有新增空白带。
+- Colors and visual tokens: 沿用现有背景、边框、文字和工程蓝 token。
+- Image quality and assets: 未新增或替换图纸、图标、品牌素材；PDF 与 overlay 保持原实现。
+- Copy and content: 摘要、保存状态和三个审核动作保持不变；上传入口新增“返回当前图纸”。
+
+### Interaction And Browser Evidence
+
+- Chrome 实测“处理另一份图纸”进入上传入口，入口显示“返回当前图纸”。
+- 点击“返回当前图纸”后恢复原兼容链接工作台及同一份图纸。
+- 首轮 smoke 发现同文档 history entry 只恢复 URL、不重新挂载页面；随后改为 session
+  中只保存无标识返回标记，并使用真实页面导航建立可返回历史。
+- post-fix Chrome smoke 通过；console error / warning 为 `0 / 0`。
+
+### Verification And Result
+
+- focused tests: `63/63` passed。
+- full frontend tests: `20` files，`222/222` passed。
+- production build: passed；仅保留既有 Vite large-chunk warning。
+- API verification: not applicable，本轮未修改 API 或 backend。
+- Remaining P0 / P1 / P2: `0 / 0 / 0`。
+- P3: PDF 工具栏在左栏较窄时沿用既有横向滚动，不影响本次顶部压缩目标。
+- final result: passed
+
 ## Compact Technical Requirements Summary — 2026-07-30
 
 ### Grounding

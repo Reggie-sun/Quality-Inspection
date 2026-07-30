@@ -15,6 +15,7 @@ import { ProjectWorkbenchApp } from "../components/workbench/ProjectWorkbenchApp
 import { projectErrorCopy, projectErrorGuidance, zhCN } from "../copy/zhCN";
 import { projectApi, type ProjectApi } from "../features/projects/api";
 import {
+  canReturnToPreviousWorkbench,
   clearCurrentProjectId,
   getCurrentProjectId,
   getOrCreateLocalOperatorId,
@@ -151,6 +152,8 @@ export function QualityInspectionApp({
   pollIntervalMs = 1_500,
 }: QualityInspectionAppProps) {
   const [screen, setScreen] = useState<ProductScreen>(initialScreen);
+  const [returnProjectId, setReturnProjectId] = useState<string>();
+  const [historyReturnAvailable] = useState(canReturnToPreviousWorkbench);
   const [selectedFile, setSelectedFile] = useState<File>();
   const [selectionError, setSelectionError] = useState<string>();
   const [statusError, setStatusError] = useState(false);
@@ -227,7 +230,7 @@ export function QualityInspectionApp({
       const result = await api.createProject(file, controller.signal);
       if (controller.signal.aborted) return;
       if (result.phase === "failed") {
-        clearCurrentProjectId();
+        if (returnProjectId === undefined) clearCurrentProjectId();
         setScreen({
           kind: "fatal",
           file,
@@ -246,6 +249,7 @@ export function QualityInspectionApp({
         return;
       }
       setCurrentProjectId(result.project_id);
+      setReturnProjectId(undefined);
       setScreen(result.phase === "ready_for_review" && result.workbench_ready
         ? { kind: "ready", projectId: result.project_id }
         : {
@@ -256,7 +260,7 @@ export function QualityInspectionApp({
           });
     } catch (caught) {
       if (controller.signal.aborted) return;
-      clearCurrentProjectId();
+      if (returnProjectId === undefined) clearCurrentProjectId();
       setScreen({
         kind: "fatal",
         file,
@@ -266,7 +270,7 @@ export function QualityInspectionApp({
     } finally {
       if (uploadAbort.current === controller) uploadAbort.current = undefined;
     }
-  }, [api]);
+  }, [api, returnProjectId]);
 
   const selectFile = (file: File | undefined) => {
     setSelectionError(undefined);
@@ -279,7 +283,7 @@ export function QualityInspectionApp({
       setSelectionError(projectErrorCopy("invalid_pdf"));
       return;
     }
-    clearCurrentProjectId();
+    if (returnProjectId === undefined) clearCurrentProjectId();
     setStatusError(false);
     setSelectedFile(file);
     setScreen({ kind: "idle" });
@@ -295,11 +299,33 @@ export function QualityInspectionApp({
   };
   const reset = () => {
     uploadAbort.current?.abort();
-    clearCurrentProjectId();
+    if (returnProjectId === undefined) clearCurrentProjectId();
     setSelectedFile(undefined);
     setSelectionError(undefined);
     setStatusError(false);
     setScreen({ kind: "idle" });
+  };
+  const startAnother = () => {
+    if (screen.kind !== "ready") return;
+    uploadAbort.current?.abort();
+    setReturnProjectId(screen.projectId);
+    setSelectedFile(undefined);
+    setSelectionError(undefined);
+    setStatusError(false);
+    setScreen({ kind: "idle" });
+  };
+  const returnToCurrentProject = () => {
+    if (returnProjectId === undefined) {
+      if (historyReturnAvailable) window.history.back();
+      return;
+    }
+    uploadAbort.current?.abort();
+    setCurrentProjectId(returnProjectId);
+    setSelectedFile(undefined);
+    setSelectionError(undefined);
+    setStatusError(false);
+    setScreen({ kind: "ready", projectId: returnProjectId });
+    setReturnProjectId(undefined);
   };
   const openFilePicker = () => {
     if (fileInput.current === null) return;
@@ -316,7 +342,7 @@ export function QualityInspectionApp({
       reset();
       return;
     }
-    clearCurrentProjectId();
+    if (returnProjectId === undefined) clearCurrentProjectId();
     void beginUpload(screen.file);
   };
 
@@ -326,7 +352,7 @@ export function QualityInspectionApp({
         <ProjectWorkbenchApp
           projectId={screen.projectId}
           operatorId={operatorId}
-          onReset={reset}
+          onReset={startAnother}
         />
       </div>
     );
@@ -343,7 +369,13 @@ export function QualityInspectionApp({
 
   return (
     <main className="product-shell" aria-busy={busy}>
-      <ProductHeader />
+      <ProductHeader action={
+        returnProjectId === undefined && !historyReturnAvailable ? undefined : (
+        <button className="button" type="button" onClick={returnToCurrentProject}>
+          返回当前图纸
+        </button>
+        )
+      } />
       <ProcessRail screen={screen} />
 
       <div className="upload-layout">

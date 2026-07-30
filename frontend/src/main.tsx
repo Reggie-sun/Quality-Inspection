@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 
 import { QualityInspectionApp } from "./app/QualityInspectionApp";
+import { beginAnotherDrawing } from "./app/localContext";
 import { ProjectWorkbenchApp } from "./components/workbench/ProjectWorkbenchApp";
 import "./styles/app.css";
 
@@ -26,7 +27,10 @@ createRoot(root).render(
       <ProjectWorkbenchApp
         projectId={projectId}
         operatorId={operatorId}
-        onReset={() => window.location.assign("/")}
+        onReset={() => {
+          beginAnotherDrawing();
+          window.location.assign("/");
+        }}
       />
     )
     : <QualityInspectionApp />,

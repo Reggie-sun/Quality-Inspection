@@ -5,6 +5,7 @@ import { ApiError } from "../api/client";
 import type { ProjectStatus } from "../api/types";
 import type { ProjectApi } from "../features/projects/api";
 import { QualityInspectionApp } from "./QualityInspectionApp";
+import { beginAnotherDrawing } from "./localContext";
 
 
 vi.mock("../components/workbench/ProjectWorkbenchApp", () => ({
@@ -148,6 +149,33 @@ test("上传后显示处理进度并自动进入现有工作台", async () => {
   expect(window.location.pathname).toBe("/");
   expect(window.location.search).toBe("");
   expect(document.body.textContent).not.toContain(PROJECT_ID);
+});
+
+test("处理另一份图纸时保留当前项目并可直接返回", async () => {
+  window.sessionStorage.setItem("qi.current-project-id", PROJECT_ID);
+  const getProjectStatus = vi.fn().mockResolvedValue(status("ready_for_review"));
+  render(<QualityInspectionApp api={fakeApi(undefined, getProjectStatus)} />);
+
+  expect(await screen.findByRole("heading", { name: "检验项目审核" })).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "处理另一份图纸" }));
+
+  expect(screen.getByLabelText("选择工程 PDF")).not.toBeNull();
+  expect(window.sessionStorage.getItem("qi.current-project-id")).toBe(PROJECT_ID);
+
+  fireEvent.click(screen.getByRole("button", { name: "返回当前图纸" }));
+
+  expect(await screen.findByRole("heading", { name: "检验项目审核" })).not.toBeNull();
+  expect(window.sessionStorage.getItem("qi.current-project-id")).toBe(PROJECT_ID);
+});
+
+test("兼容工作台返回入口通过浏览器历史回到原图纸", () => {
+  beginAnotherDrawing();
+  const back = vi.spyOn(window.history, "back").mockImplementation(() => undefined);
+
+  render(<QualityInspectionApp api={fakeApi()} />);
+  fireEvent.click(screen.getByRole("button", { name: "返回当前图纸" }));
+
+  expect(back).toHaveBeenCalledOnce();
 });
 
 

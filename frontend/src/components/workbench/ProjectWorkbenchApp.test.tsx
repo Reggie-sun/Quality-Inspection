@@ -227,32 +227,17 @@ test("就绪页头部横向组合纯文字品牌、真实阶段和重新处理�
     />,
   );
 
-  const header = await screen.findByRole("banner", {
-    name: "工程图纸检验流程",
+  const compactHeader = await screen.findByRole("group", {
+    name: "项目与审核操作",
   });
-  expect(within(header).getByText("智检通")).not.toBeNull();
-  expect(within(header).getByText("工程图纸智能检验")).not.toBeNull();
-  expect(header.querySelector("img, svg")).toBeNull();
-
-  const stages = within(header).getByRole("navigation", {
+  expect(screen.queryByRole("navigation", {
     name: "检验处理阶段",
-  });
-  for (const label of [
-    "PDF文件上传",
-    "识别检验项",
-    "确认检验项",
-    "调整气泡位置",
-    "生成PDF与SIP",
-  ]) {
-    expect(within(stages).getByText(label)).not.toBeNull();
-  }
-  expect(
-    within(stages).getByRole("listitem", {
-      name: "文件导出，当前阶段",
-    }).getAttribute("aria-current"),
-  ).toBe("step");
+  })).toBeNull();
+  expect(screen.queryByRole("banner", {
+    name: "工程图纸检验流程",
+  })).toBeNull();
 
-  fireEvent.click(within(header).getByRole("button", {
+  fireEvent.click(within(compactHeader).getByRole("button", {
     name: "处理另一份图纸",
   }));
   expect(onReset).toHaveBeenCalledOnce();

@@ -75,6 +75,7 @@ type InspectionWorkbenchProps = {
   exportPost?: PostJson;
   operatorId?: string;
   actionState?: string;
+  onReset?: () => void;
 };
 
 const NO_SELECTED_REVIEW_ITEM_ID = "__no_selected_review_item__";
@@ -117,6 +118,7 @@ export function InspectionWorkbench({
   initialExport,
   exportPost,
   actionState,
+  onReset,
 }: InspectionWorkbenchProps) {
   const [saveState, setSaveState] = useState<string>(zhCN.workbench.saved);
   const [saving, setSaving] = useState(false);
@@ -330,70 +332,87 @@ export function InspectionWorkbench({
   return (
     <main className="workbench-shell">
       <section
-        className="project-summary"
-        role="region"
-        aria-label={zhCN.workbench.projectSummary}
+        className="workbench-compact-header"
+        role="group"
+        aria-label="项目与审核操作"
       >
-        <dl>
-          <div>
-            <dt>{zhCN.workbench.productName}</dt>
-            <dd>{metadata.material_name || zhCN.workbench.unknown}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.drawingNumber}</dt>
-            <dd>{metadata.drawing_number || zhCN.workbench.unknown}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.revision}</dt>
-            <dd>{metadata.revision || zhCN.workbench.unknown}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.drawingType}</dt>
-            <dd>{zhCN.workbench.unknown}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.totalItems}</dt>
-            <dd>{items.length}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.reviewedItems}</dt>
-            <dd>{reviewedCount}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.confirmedItems}</dt>
-            <dd>{confirmedCount}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.currentState}</dt>
-            <dd>{projectStateCopy(projectState)}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.saveStatus}</dt>
-            <dd role="status" aria-live="polite" aria-atomic="true">
-              {visibleSaveState}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      {workingCopy === undefined
-        || onFreeze === undefined
-        || onGenerate === undefined
-        || onConfirm === undefined
-        ? null
-        : (
-          <section className="review-actions" aria-label="审核流程操作">
-            <FreezeReviewButton
-              workingCopy={workingCopy}
-              balloons={balloons}
-              balloonBlockers={balloonBlockers}
-              busy={busy || saving || finalized || localDraftDirty}
-              onFreeze={onFreeze}
-              onGenerate={onGenerate}
-              onConfirm={onConfirm}
-            />
+        <div className="workbench-compact-header__summary-row">
+          <section
+            className="project-summary"
+            role="region"
+            aria-label={zhCN.workbench.projectSummary}
+          >
+            <dl>
+              <div>
+                <dt>{zhCN.workbench.productName}</dt>
+                <dd>{metadata.material_name || zhCN.workbench.unknown}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.drawingNumber}</dt>
+                <dd>{metadata.drawing_number || zhCN.workbench.unknown}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.revision}</dt>
+                <dd>{metadata.revision || zhCN.workbench.unknown}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.drawingType}</dt>
+                <dd>{zhCN.workbench.unknown}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.totalItems}</dt>
+                <dd>{items.length}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.reviewedItems}</dt>
+                <dd>{reviewedCount}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.confirmedItems}</dt>
+                <dd>{confirmedCount}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.currentState}</dt>
+                <dd>{projectStateCopy(projectState)}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.saveStatus}</dt>
+                <dd role="status" aria-live="polite" aria-atomic="true">
+                  {visibleSaveState}
+                </dd>
+              </div>
+            </dl>
           </section>
-        )}
+          {onReset === undefined ? null : (
+            <button
+              type="button"
+              className="workbench-reset-action"
+              onClick={onReset}
+            >
+              {zhCN.upload.another}
+            </button>
+          )}
+        </div>
+
+        {workingCopy === undefined
+          || onFreeze === undefined
+          || onGenerate === undefined
+          || onConfirm === undefined
+          ? null
+          : (
+            <section className="review-actions" aria-label="审核流程操作">
+              <FreezeReviewButton
+                workingCopy={workingCopy}
+                balloons={balloons}
+                balloonBlockers={balloonBlockers}
+                busy={busy || saving || finalized || localDraftDirty}
+                onFreeze={onFreeze}
+                onGenerate={onGenerate}
+                onConfirm={onConfirm}
+              />
+            </section>
+          )}
+      </section>
 
       <div className="workbench-layout">
         <section

@@ -1,6 +1,8 @@
 import { beforeEach, expect, test } from "vitest";
 
 import {
+  beginAnotherDrawing,
+  canReturnToPreviousWorkbench,
   clearCurrentProjectId,
   getCurrentProjectId,
   getOrCreateLocalOperatorId,
@@ -60,4 +62,17 @@ test("无效的 session 项目不会被复用", () => {
 
   expect(getCurrentProjectId()).toBeUndefined();
   expect(window.sessionStorage.getItem("qi.current-project-id")).toBeNull();
+});
+
+
+test("兼容链接进入新图纸入口时只在 session 中保留无标识的返回标记", () => {
+  window.history.replaceState({}, "", "/?project_id=current");
+  setCurrentProjectId(PROJECT_ID);
+
+  beginAnotherDrawing();
+
+  expect(canReturnToPreviousWorkbench()).toBe(true);
+  expect(getCurrentProjectId()).toBeUndefined();
+  expect(window.sessionStorage.getItem("qi.can-return-to-workbench")).toBe("true");
+  expect(window.sessionStorage.length).toBe(1);
 });

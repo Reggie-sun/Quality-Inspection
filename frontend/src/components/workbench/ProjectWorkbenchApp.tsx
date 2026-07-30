@@ -26,7 +26,6 @@ import {
   isAutoAcceptedCandidateProjection,
 } from "./inspectionItemPresentation";
 import { InspectionWorkbench } from "./InspectionWorkbench";
-import { WorkbenchWorkflowHeader } from "./WorkbenchWorkflowHeader";
 
 
 const LOCK_RENEWAL_MS = 240_000;
@@ -156,14 +155,6 @@ export function ProjectWorkbenchApp({
     () => deriveCandidateNumbers(snapshot?.working_copy.items ?? []),
     [snapshot?.working_copy.items],
   );
-  const activeStage = snapshot?.latest_export?.status === "success"
-    || reviewedResultId !== undefined
-    ? 4
-    : snapshot?.balloons.some((balloon) => balloon.status !== "deleted")
-      || snapshot?.working_copy.items_frozen_at != null
-      ? 3
-      : 2;
-
   const run = async (
     nextStatus: string,
     action: () => Promise<unknown>,
@@ -216,24 +207,19 @@ export function ProjectWorkbenchApp({
 
   if (error !== undefined && snapshot === undefined) {
     return (
-      <>
-        <WorkbenchWorkflowHeader activeStage={activeStage} onReset={onReset} />
-        <main role="alert">{error}</main>
-      </>
+      <main className="workbench-shell" role="alert">{error}</main>
     );
   }
   if (snapshot === undefined) {
     return (
-      <>
-        <WorkbenchWorkflowHeader activeStage={activeStage} onReset={onReset} />
-        <main aria-busy="true">{zhCN.workbench.loading}</main>
-      </>
+      <main className="workbench-shell" aria-busy="true">
+        {zhCN.workbench.loading}
+      </main>
     );
   }
 
   return (
     <>
-      <WorkbenchWorkflowHeader activeStage={activeStage} onReset={onReset} />
       {error === undefined ? null : <p role="alert">{error}</p>}
       <InspectionWorkbench
         pdfDocument={pdfDocument}
@@ -284,6 +270,7 @@ export function ProjectWorkbenchApp({
         operatorId={operatorId}
         actionState={status}
         busy={busy || startupBlocked || lockBlocked}
+        onReset={onReset}
         onSave={save}
         onFreeze={() => void run(
           zhCN.balloon.freeze,

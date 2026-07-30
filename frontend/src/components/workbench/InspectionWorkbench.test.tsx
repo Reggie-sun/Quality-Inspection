@@ -65,6 +65,55 @@ const duplicateExampleItems = [
 ];
 
 describe("InspectionWorkbench", () => {
+  test("项目摘要、切换图纸与审核操作只占两行", () => {
+    const onReset = vi.fn();
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "working-1",
+          project_id: "project-1",
+          raw_result_id: "raw-1",
+          version: 1,
+          created_at: "2026-07-30T00:00:00Z",
+          updated_at: "2026-07-30T00:00:00Z",
+          manual_review_count: 0,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onFreeze={vi.fn()}
+        onGenerate={vi.fn()}
+        onConfirm={vi.fn()}
+        onReset={onReset}
+      />,
+    );
+
+    const compactHeader = screen.getByRole("group", {
+      name: "项目与审核操作",
+    });
+    expect(compactHeader.children).toHaveLength(2);
+    expect(within(compactHeader).getByRole("region", {
+      name: "项目摘要",
+    })).not.toBeNull();
+    expect(within(compactHeader).getByRole("region", {
+      name: "审核流程操作",
+    })).not.toBeNull();
+
+    fireEvent.click(within(compactHeader).getByRole("button", {
+      name: "处理另一份图纸",
+    }));
+    expect(onReset).toHaveBeenCalledOnce();
+  });
+
   test("审核界面不向用户暴露重复项合并工具", () => {
     render(
       <InspectionWorkbench
@@ -496,10 +545,17 @@ describe("InspectionWorkbench", () => {
     );
 
     const shell = screen.getByRole("main");
+    const compactHeader = screen.getByRole("group", {
+      name: "项目与审核操作",
+    });
     const projectSummary = screen.getByRole("region", { name: "项目摘要" });
     const children = Array.from(shell.children);
 
-    expect(children.indexOf(projectSummary)).toBe(0);
+    expect(children.indexOf(compactHeader)).toBe(0);
+    expect(within(compactHeader).getByRole("region", {
+      name: "项目摘要",
+    })).toBe(projectSummary);
+    expect(compactHeader.children).toHaveLength(1);
     expect(screen.queryByRole("region", { name: "审核流程操作" })).toBeNull();
     expect(screen.queryByText("工程图纸检验工作台")).toBeNull();
     expect(screen.queryByRole("heading", { name: "检验项目审核" })).toBeNull();
