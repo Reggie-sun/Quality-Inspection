@@ -402,6 +402,73 @@ changed files:
 - Remaining P2: 0.
 - final result: passed
 
+## Compact Technical Requirements Summary — 2026-07-30
+
+### Grounding
+
+- source visual truth:
+  `/home/reggie/.codex/generated_images/019fb105-64e7-76a0-ab43-0f5f3378a37d/call_n8jBaK7qp76BOgCqnBEtiMhe.png`
+- source pixels: `1054x1493`
+- rendered implementation:
+  `/tmp/quality-inspection-technical-summary-collapsed-500x710.png`
+- implementation pixels / CSS size / density: `500x710 / 500x710 / DPR 1`
+- browser and viewport: `Google Chrome / 1565x958`
+- component state: 真实 `main` 项目的右侧检验项审核栏；7 个汇总状态保持单排，技术要求默认
+  折叠，检验项列表与详情保持双栏。
+- normalization: source 是按 `501x710` 组件比例生成的约 2 倍密度概念图；同一比较输入按
+  等宽归一到约 `500x710` 内容区域。implementation 使用浏览器原生 element capture，
+  不包含页面其余区域或浏览器 chrome。
+
+### Full And Focused Comparison
+
+- Full-view evidence: source 与 implementation 已在同一 comparison input 中打开。两者都按
+  “单排状态汇总 → 紧凑技术要求摘要 → 检验项列表/详情主工作区”组织；主工作区占据剩余
+  高度，列表保留序号、检验项原文/类型和状态，详情保留原有审核操作。
+- Focused evidence: element capture 本身就是 `500x710` 的右栏 focused region，文字、状态、
+  边界和主区域比例均可直接判断，因此无需再裁出更小区域。
+- Data-dependent differences: source 使用示意的 `121 / 185 / 待确认 1 / 检验项 49`；
+  implementation 使用真实项目的 `120 / 184 / 待确认 3 / 检验项 3`，属于运行数据差异，
+  不属于设计漂移。真实页面额外保留“160 条待确认来源”操作，这是用户要求不能省略的既有
+  审核内容。
+
+### Required Fidelity Surfaces
+
+- Fonts and typography: 沿用现有中文系统字体、工程软件的紧凑字号和粗细层级；汇总数字、
+  标题、状态与辅助文案层级清晰，无新增字体或错误截断。
+- Spacing and layout rhythm: 默认技术要求高度为 `57px`；在 `500x710` 右栏中，检验项主
+  工作区高度为 `546px`。展开技术要求时面板上限为 `280px`，列表内部滚动，主工作区仍有
+  `323px` 可用高度。
+- Colors and visual tokens: 继续复用白色、浅灰边框、工程蓝与橙色待确认语义；没有新增渐变、
+  阴影体系或脱离现有产品风格的 token。
+- Image quality and assets: 本次没有新增 Logo、图标、插画、CSS art 或替代资产；PDF 和气泡
+  图层未修改。
+- Copy and content: 折叠摘要明确显示“5 条”“待确认 3”和“展开”；展开后原有 5 条技术
+  要求、匹配状态、目标跳转和调整匹配操作完整保留。
+- Accessibility and interaction: 使用原生 button，提供 `aria-expanded`、`aria-controls`
+  和随状态变化的“展开技术要求 / 收起技术要求”可访问名称；Chrome 展开、收起均通过。
+
+### Comparison History
+
+- Initial P1: 用户运行截图中的技术要求始终展开并占约 `220px`，形成第三个竞争滚动区，
+  检验项列表和详情只剩约一半高度。
+- Fix: 技术要求改为默认折叠摘要；父级网格从比例行改为 `auto auto minmax(0, 1fr) auto`；
+  展开态限制为 `min(280px, 40vh)` 并保留内部滚动。
+- Post-fix evidence: 同一真实项目和 `500x710` 右栏 capture 中，默认技术要求为 `57px`，
+  主工作区为 `546px`；展开态为 `280px`，主工作区为 `323px`。同图比较未发现仍可执行的
+  P0/P1/P2 差异。
+
+### Verification And Result
+
+- focused tests: `TechnicalRequirementPanel.test.tsx` 与
+  `InspectionWorkbench.test.tsx`，`32/32` passed。
+- full frontend tests: `20` files，`210/210` passed。
+- production build: passed；仅保留既有 Vite large-chunk warning。
+- primary interactions: 默认折叠、展开、收起、内容恢复、状态卡单排、列表状态可见。
+- console errors / warnings: `0 / 0`。
+- remaining P0 / P1 / P2: `0 / 0 / 0`。
+- P3 follow-up polish: none required for this scope.
+- final result: passed
+
 ## Qwen Vision Runtime And Remaining-Risk Closure — 2026-07-24
 
 ### Scope And Grounding

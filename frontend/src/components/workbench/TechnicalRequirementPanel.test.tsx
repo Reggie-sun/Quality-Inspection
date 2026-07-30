@@ -69,6 +69,16 @@ test("显示 matched、global 和 unresolved 技术要求状态", () => {
     />,
   );
 
+  expect(screen.getByRole("button", { name: "展开技术要求" })
+    .getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByText("3 条")).not.toBeNull();
+  expect(screen.getByText("待确认 1")).not.toBeNull();
+  expect(screen.queryByText("未注尺寸公差按 GB/T 1804-m 执行")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
+
+  expect(screen.getByRole("button", { name: "收起技术要求" })
+    .getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("未注尺寸公差按 GB/T 1804-m 执行")).not.toBeNull();
   expect(screen.getByText("已匹配 2 项")).not.toBeNull();
   expect(screen.getByText("全局要求")).not.toBeNull();
@@ -101,6 +111,7 @@ test("matched target 复用 selection，override 复用 review command", () => {
     />,
   );
 
+  fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
   fireEvent.click(screen.getByRole("button", {
     name: "查看匹配检验项：25",
   }));

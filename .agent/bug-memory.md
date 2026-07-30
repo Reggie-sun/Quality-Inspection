@@ -97,3 +97,28 @@
 - Runtime proof: live DB 从 `0008` 升至 `0010`；同一 project status 返回 sanitized
   HTTP 200、`phase=failed`、`vision_provider_call_failed`；`/api/v1/health` 返回 200。
 - Change: focused Alembic revision-collision recovery commit
+
+## BUG-20260730-technical-requirements-dominates-review-workspace
+
+- Status: 已解决
+- First reported: 2026-07-30
+- Last reported: 2026-07-30
+- Recurrence: 1
+- Surface: `frontend/src/components/workbench/InspectionWorkbench.tsx`、`TechnicalRequirementPanel` 与 `frontend/src/styles/workbench.css`
+- Symptom: 技术要求以高占比独立滚动区插在状态汇总和检验项工作区之间，导致右栏形成三个竞争高度的滚动区；检验项列表和当前检验项详情被压缩，主要审核任务层级混乱
+- Previously correct behavior: 技术要求应作为审核辅助信息保持可访问，但默认不占用主要审核工作区；检验项列表与详情双栏应获得主要可用高度
+- Reproduction: `main@42bcbf7` 的已保存项目在窄右栏状态下稳定显示高约 220px 的技术要求列表，下面的检验项列表与详情只剩约一半视口高度
+- Root cause: `c724db2` 将技术要求列表作为常驻展开内容插入审核栏，随后 `aa6a939` 又为
+  `.inspection-pane--with-technical-requirements` 分配
+  `minmax(120px, 0.75fr)` 的独立比例行；辅助信息因此始终与检验项主工作区竞争高度。
+- Fix: 技术要求默认显示紧凑摘要，保留总数、待确认数和可访问的展开/收起按钮；父级网格
+  改为 `auto auto minmax(0, 1fr) auto`，展开态限制为 `min(280px, 40vh)` 并在内部滚动，
+  原有要求文本、状态、目标跳转和匹配命令不变。
+- Regression check:
+  `npm run test -- --run src/components/workbench/TechnicalRequirementPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx`
+  返回 `32/32` passed；覆盖默认折叠、计数、待确认数、展开后内容和既有命令。
+- Runtime proof: Chrome 在真实 `main` 项目、`1565x958` viewport 下测得右栏
+  `500x710`；默认技术要求 `57px`、检验项主工作区 `546px`，展开技术要求 `280px` 后
+  主工作区仍为 `323px`；7 个状态卡单排，列表行保留序号、原文/类型和完整状态，
+  console error / warning 为 `0 / 0`。
+- Change: `ui: prioritize inspection review workspace`

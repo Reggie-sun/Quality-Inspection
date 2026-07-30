@@ -1952,6 +1952,7 @@ describe("InspectionWorkbench", () => {
     expect(screen.getByRole("region", { name: "检验项审核" }).classList.contains(
       "inspection-pane--with-technical-requirements",
     )).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
     fireEvent.click(screen.getByRole("button", {
       name: "匹配此检验项：25",
     }));
@@ -2025,6 +2026,7 @@ describe("InspectionWorkbench", () => {
       .getAttribute("data-active")).toBe("true");
     expect(screen.queryByRole("row", { name: /100/ })).toBeNull();
 
+    fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
     fireEvent.click(screen.getByRole("button", {
       name: "查看匹配检验项：100",
     }));
