@@ -375,7 +375,7 @@ describe("PdfWorkspace", () => {
       .toContain("正式气泡候选项来源标注已排除");
   });
 
-  test("图例以同一红色色相区分自动通过实心气泡与正式空心气泡", () => {
+  test("图例以同一红色色相区分自动通过空心气泡与正式实心气泡", () => {
     render(
       <PdfWorkspace
         pdfDocument={null}
@@ -392,8 +392,8 @@ describe("PdfWorkspace", () => {
       "[data-color='auto-accepted']",
     );
     const formal = legend.querySelector<HTMLElement>("[data-color='balloon']");
-    expect(provisional?.style.backgroundColor).toBe("rgb(194, 59, 59)");
-    expect(formal?.style.backgroundColor).toBe("transparent");
+    expect(provisional?.style.backgroundColor).toBe("transparent");
+    expect(formal?.style.backgroundColor).toBe("rgb(220, 38, 38)");
   });
 
   test("辅助区使用导出与处理文案并在收起后保持挂载", () => {
