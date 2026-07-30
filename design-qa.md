@@ -471,11 +471,12 @@ changed files:
 
 - Source visual truth: `/home/reggie/微信图片_20260730150201_13865_40.png`、
   `/tmp/codex-clipboard-D2uBpP.png`、`/tmp/codex-clipboard-2MNi15.png` 和
-  `/tmp/codex-clipboard-MWOd5Q.png`。
+  `/tmp/codex-clipboard-MWOd5Q.png`；定稿按钮删除参考为
+  `/tmp/codex-clipboard-Fdo9q1.png`。
 - Implementation capture:
-  `.local/design-qa/review-compact-header-implementation-final.png`。
+  `.local/design-qa/review-compact-header-no-finalization-final.png`。
 - Combined comparison:
-  `.local/design-qa/review-compact-header-comparison.png`。
+  `.local/design-qa/review-finalization-controls-comparison.png`。
 - State: 121 个检验项的真实审核工作台，当前状态“审核中”。
 
 ### Viewport And Normalization
@@ -490,32 +491,39 @@ changed files:
 ### Full And Focused Comparison
 
 - 原品牌/五步流程条已从审核工作台移除。
-- 新顶部只有两个逻辑行：第一行“项目摘要 + 处理另一份图纸”，第二行三个审核动作。
-- 紧凑顶部高 `86.5px`，工作区从 `y=102.5px` 开始；图纸区当前可见高度为 `849px`。
+- 新顶部只有一个逻辑行：“项目摘要 + 处理另一份图纸”；三个审核定稿按钮已从 DOM
+  和 production source 直接移除。
+- 紧凑顶部高 `44.5px`，工作区从 `y=60.5px` 开始；图纸区当前可见高度为 `891px`，
+  PDF scroll frame 高 `786px`。
 - 摘要无横向溢出：`scrollWidth=1390`、`clientWidth=1390`。
-- 审核操作无横向溢出：`scrollWidth=1514`、`clientWidth=1514`。
+- 页面无横向溢出：`document.scrollWidth=1565`、`document.clientWidth=1565`。
 - DOM 中不存在旧 `.workflow-steps`。
 
 ### Required Fidelity Surfaces
 
 - Fonts and typography: 沿用既有中文字体栈；摘要标签 `10px`、值 `12px`，没有换行。
-- Spacing and layout rhythm: 两行间距 `6px`、工作区上间距 `8px`，没有新增空白带。
+- Spacing and layout rhythm: 顶部单行、工作区上间距 `8px`，没有新增空白带。
 - Colors and visual tokens: 沿用现有背景、边框、文字和工程蓝 token。
 - Image quality and assets: 未新增或替换图纸、图标、品牌素材；PDF 与 overlay 保持原实现。
-- Copy and content: 摘要、保存状态和三个审核动作保持不变；上传入口新增“返回当前图纸”。
+- Copy and content: 摘要、保存状态保持不变；上传入口保留“返回当前图纸”；不再显示
+  “冻结检验项 / 生成气泡 / 确认审核结果”。
 
 ### Interaction And Browser Evidence
 
 - Chrome 实测“处理另一份图纸”进入上传入口，入口显示“返回当前图纸”。
 - 点击“返回当前图纸”后恢复原兼容链接工作台及同一份图纸。
+- Chrome 实测三个审核定稿按钮不存在，header 只有一个 child，页面无横向溢出。
+- 尚未满足 SIP/检验项确认条件时不触发 backend freeze；页面保持可编辑且 console 无
+  error / warning。完成条件后由既有 canonical backend APIs 自动 freeze + generate，
+  首次显式导出时才 confirm，保留导出前气泡调整窗口。
 - 首轮 smoke 发现同文档 history entry 只恢复 URL、不重新挂载页面；随后改为 session
   中只保存无标识返回标记，并使用真实页面导航建立可返回历史。
 - post-fix Chrome smoke 通过；console error / warning 为 `0 / 0`。
 
 ### Verification And Result
 
-- focused tests: `63/63` passed。
-- full frontend tests: `20` files，`222/222` passed。
+- focused tests: `50/50` passed。
+- full frontend tests: `20` files，`224/224` passed。
 - production build: passed；仅保留既有 Vite large-chunk warning。
 - API verification: not applicable，本轮未修改 API 或 backend。
 - Remaining P0 / P1 / P2: `0 / 0 / 0`。

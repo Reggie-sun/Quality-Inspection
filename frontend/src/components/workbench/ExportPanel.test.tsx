@@ -105,6 +105,36 @@ test("P0-UI-004 gates export and exposes exactly three atomic backend downloads"
   ]);
 });
 
+test("首次导出先在后台确认审核结果，再提交同一 reviewed result 导出", async () => {
+  const postMock = vi.fn().mockResolvedValue(exportJob("running"));
+  const post = postMock as unknown as PostJson;
+  const confirmReview = vi.fn().mockResolvedValue("reviewed-1");
+  render(
+    <ExportPanel
+      projectId="project-1"
+      reviewedResultId={undefined}
+      canFinalize
+      balloonBlockers={[]}
+      post={post}
+      onConfirmReview={confirmReview}
+    />,
+  );
+
+  const action = screen.getByRole("button", { name: "生成正式文件" });
+  expect(action.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(action);
+
+  await waitFor(() => expect(confirmReview).toHaveBeenCalledOnce());
+  expect(post).toHaveBeenCalledWith(
+    "/api/v1/projects/project-1/exports",
+    { reviewed_result_id: "reviewed-1" },
+    {},
+  );
+  expect(confirmReview.mock.invocationCallOrder[0]).toBeLessThan(
+    postMock.mock.invocationCallOrder[0],
+  );
+});
+
 test("恢复投影如实渲染导出中、失败和三产物原子下载", () => {
   const post = vi.fn() as unknown as PostJson;
   const { rerender } = render(

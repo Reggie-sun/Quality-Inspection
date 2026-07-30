@@ -47,10 +47,24 @@ function response(version = 3): ProjectWorkbenchView {
           source_location_ids: ["s1"],
           balloon_required: true,
           requires_confirmation: false,
+          inspection_item: "螺纹",
+          inspection_standard: "图纸要求",
+          inspection_method: "螺纹规",
+          key_dimension: "M6",
+          inspection_role: "质量检验员",
+          source_page: 1,
+          sip_detail_fields_confirmed: true,
           active: true,
         },
       ],
       coverage: { blocking_count: 0, review_required_count: 0 },
+      sip_metadata: {
+        material_code: "MAT-001",
+        material_name: "上座",
+        drawing_number: "JS26032501",
+        material: "SUS304",
+        revision: "A1",
+      },
       numbering_stale: false,
       items_frozen_at: null,
       items_frozen_by: null,
@@ -77,9 +91,10 @@ function response(version = 3): ProjectWorkbenchView {
   };
 }
 
-test("P0-UI-008 Save does not freeze and project identity drives real APIs", async () => {
+test("P0-UI-008 Save 提交语义命令后由后台继续准备正式气泡", async () => {
   const calls: Array<{ path: string; init?: RequestInit }> = [];
   let current = response();
+  current.working_copy.items[0].requires_confirmation = true;
   const fetchMock = vi.fn(async (path: RequestInfo | URL, init?: RequestInit) => {
     const value = String(path);
     calls.push({ path: value, init });
@@ -117,8 +132,9 @@ test("P0-UI-008 Save does not freeze and project identity drives real APIs", asy
     "/api/v1/projects/project-real/source-pdf",
   );
   fireEvent.click(screen.getByRole("button", { name: "保留检验项：M6" }));
-  expect(screen.getByRole("button", { name: "冻结检验项" }).hasAttribute("disabled"))
-    .toBe(true);
+  expect(screen.queryByRole("button", { name: "冻结检验项" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "生成气泡" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "确认审核结果" })).toBeNull();
 
   await waitFor(() => {
     expect(screen.getByText("审核修改已提交")).not.toBeNull();
@@ -130,7 +146,10 @@ test("P0-UI-008 Save does not freeze and project identity drives real APIs", asy
     expected_version: 3,
     command: { type: "keep", item_id: "i1" },
   });
-  expect(calls.some((call) => call.path.endsWith("/review/freeze-items"))).toBe(false);
+  await waitFor(() => {
+    expect(calls.some((call) => call.path.endsWith("/review/freeze-items"))).toBe(true);
+    expect(calls.some((call) => call.path.endsWith("/balloons/generate"))).toBe(true);
+  });
   expect(calls.some((call) => call.path.endsWith("/review/confirm"))).toBe(false);
   expect(document.body.textContent).not.toContain("asset://");
 });
@@ -195,6 +214,53 @@ test("P0-UI-008 failed API Save stays failed and preserves the pending command",
     .toHaveLength(2);
 });
 
+test("后台准备尚有审核 blocker 时保持可编辑且不显示伪故障", async () => {
+  const fetchMock = vi.fn(async (path: RequestInfo | URL) => {
+    const value = String(path);
+    if (value.endsWith("/review/lock")) {
+      return new Response(JSON.stringify({ operator_id: "operator-real" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (value.endsWith("/review/freeze-items")) {
+      return new Response(JSON.stringify({
+        error: {
+          code: "unresolved_confirmation",
+          message: "review item set cannot be frozen",
+          blockers: ["unresolved_confirmation"],
+        },
+      }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify(response()), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue(pdfFixture())}
+    />,
+  );
+
+  await waitFor(() => {
+    expect(fetchMock.mock.calls.some(
+      ([path]) => String(path).endsWith("/review/freeze-items"),
+    )).toBe(true);
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("button", { name: "保留检验项：M6" })
+    .hasAttribute("disabled")).toBe(false);
+  expect(screen.queryByRole("button", { name: "冻结检验项" })).toBeNull();
+});
+
 test("审核锁续期失败保持 fail-closed，续期恢复后重新启用操作", async () => {
   let rejectRenewal = false;
   const fetchMock = vi.fn(async (path: RequestInfo | URL) => {
@@ -246,7 +312,7 @@ test("审核锁续期失败保持 fail-closed，续期恢复后重新启用操�
   });
 });
 
-test("P0-UI-008 Freeze, generate and Confirm remain explicit ordered actions", async () => {
+test("P0-UI-008 后台自动冻结并生成，首次导出时才确认", async () => {
   let current = response();
   const paths: string[] = [];
   vi.stubGlobal(
@@ -308,8 +374,25 @@ test("P0-UI-008 Freeze, generate and Confirm remain explicit ordered actions", a
         current = {
           ...current,
           project: { ...current.project, state: "reviewed" },
+          reviewed_result_id: "reviewed-real",
         };
         return new Response(JSON.stringify({ id: "reviewed-real" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (value.endsWith("/exports")) {
+        return new Response(JSON.stringify({
+          id: "export-real",
+          project_id: "project-real",
+          reviewed_result_id: "reviewed-real",
+          status: "running",
+          error_id: null,
+          template_version: "template/1",
+          mapping_version: "mapping/1",
+          renderer_version: "renderer/1",
+          artifacts: [],
+        }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -328,23 +411,27 @@ test("P0-UI-008 Freeze, generate and Confirm remain explicit ordered actions", a
       loadPdf={vi.fn().mockResolvedValue(pdfFixture())}
     />,
   );
-  fireEvent.click(await screen.findByRole("button", { name: "冻结检验项" }));
   await waitFor(() => {
-    expect(screen.getByRole("button", { name: "生成气泡" }).hasAttribute("disabled"))
-      .toBe(false);
+    expect(paths.filter((path) => path.includes("/review/freeze-items")))
+      .toHaveLength(1);
+    expect(paths.filter((path) => path.includes("/balloons/generate")))
+      .toHaveLength(1);
   });
+  expect(screen.queryByRole("button", { name: "冻结检验项" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "生成气泡" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "确认审核结果" })).toBeNull();
   expect(screen.getByRole("button", { name: "保留检验项：M6" }).hasAttribute("disabled"))
     .toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "生成气泡" }));
-  await waitFor(() => {
-    expect(
-      screen.getByRole("button", { name: "确认审核结果" }).hasAttribute("disabled"),
-    ).toBe(false);
-  });
-  fireEvent.click(screen.getByRole("button", { name: "确认审核结果" }));
+  expect(paths.filter((path) => path.includes("/review/confirm"))).toHaveLength(0);
 
-  await screen.findByText("审核结果已确认");
-  await screen.findByText("已审核");
+  fireEvent.click(screen.getByRole("button", {
+    name: "展开导出与处理信息",
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "生成正式文件" }));
+  await waitFor(() => {
+    expect(paths.filter((path) => path.includes("/review/confirm"))).toHaveLength(1);
+    expect(paths.filter((path) => path.endsWith("/exports"))).toHaveLength(1);
+  });
   expect(screen.getByRole("button", { name: "重新编号" }).hasAttribute("disabled"))
     .toBe(true);
   expect(paths.filter((path) => path.includes("/review/freeze-items"))).toHaveLength(1);
@@ -355,5 +442,8 @@ test("P0-UI-008 Freeze, generate and Confirm remain explicit ordered actions", a
   );
   expect(paths.findIndex((path) => path.includes("balloons/generate"))).toBeLessThan(
     paths.findIndex((path) => path.includes("review/confirm")),
+  );
+  expect(paths.findIndex((path) => path.includes("review/confirm"))).toBeLessThan(
+    paths.findIndex((path) => path.endsWith("/exports")),
   );
 });

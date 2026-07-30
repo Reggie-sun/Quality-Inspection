@@ -6,9 +6,7 @@
 }
 
 .workbench-compact-header {
-  display: grid;
-  grid-template-rows: auto auto;
-  gap: 6px;
+  display: block;
 }
 
 .workbench-compact-header__summary-row {
@@ -45,17 +43,6 @@
   color: var(--qi-text);
 }
 
-.review-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 7px;
-  min-height: 32px;
-  margin-top: 0;
-  padding: 0 2px;
-  overflow-x: auto;
-}
-
 .primary-action {
   border-color: var(--qi-blue);
   background: var(--qi-blue);
@@ -67,18 +54,6 @@
   border-color: var(--qi-blue-hover);
   background: var(--qi-blue-hover);
   color: #ffffff;
-}
-
-.review-finalization {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-}
-
-.review-finalization button {
-  min-height: 32px;
-  padding-block: 5px;
-  white-space: nowrap;
 }
 
 .project-summary {
@@ -163,7 +138,7 @@
 
 .inspection-pane {
   grid-template-rows: auto minmax(0, 1fr) auto;
-  height: calc(100vh - 126px);
+  height: calc(100vh - 84px);
   min-height: 0;
   max-height: none;
   overflow: hidden;
@@ -178,7 +153,7 @@
 }
 
 .workbench-aside {
-  max-height: calc(100vh - 126px);
+  max-height: calc(100vh - 84px);
   min-height: 570px;
   overflow: auto;
 }
@@ -297,7 +272,7 @@
 
 .pdf-scroll-frame {
   min-height: 520px;
-  max-height: calc(100vh - 214px);
+  max-height: calc(100vh - 172px);
   overflow: auto;
   border: 1px solid #cbd5e1;
   background: var(--qi-workspace);

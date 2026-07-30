@@ -16,7 +16,6 @@ import { BalloonToolbar } from "../balloons/BalloonToolbar";
 import { PdfWorkspace } from "../pdf/PdfWorkspace";
 import { ReviewPanel } from "../review/ReviewPanel";
 import { ExportPanel } from "./ExportPanel";
-import { FreezeReviewButton } from "./FreezeReviewButton";
 import {
   InspectionItemTable,
   type PendingSourceReview,
@@ -49,9 +48,8 @@ type InspectionWorkbenchProps = {
   workingCopy?: ReviewWorkingCopyView;
   balloonBlockers?: string[];
   busy?: boolean;
-  onFreeze?: () => void;
-  onGenerate?: () => void;
-  onConfirm?: () => void;
+  onPrepareReview?: () => Promise<void>;
+  onConfirmReview?: () => Promise<string>;
   onMoveBalloon?: (
     balloonId: string,
     expectedVersion: number,
@@ -79,6 +77,62 @@ type InspectionWorkbenchProps = {
 };
 
 const NO_SELECTED_REVIEW_ITEM_ID = "__no_selected_review_item__";
+const SIP_METADATA_FIELDS = [
+  "material_code",
+  "material_name",
+  "drawing_number",
+  "material",
+  "revision",
+] as const;
+const SIP_DETAIL_TEXT_FIELDS = [
+  "inspection_item",
+  "inspection_standard",
+  "inspection_method",
+  "key_dimension",
+  "inspection_role",
+] as const;
+
+
+function hasResolvedReview(workingCopy: ReviewWorkingCopyView): boolean {
+  const blocking = Number(workingCopy.coverage.blocking_count ?? 0);
+  const unresolved = Number(workingCopy.coverage.review_required_count ?? 0);
+  const metadata = workingCopy.sip_metadata;
+  const metadataConfirmed =
+    metadata !== undefined
+    && Object.keys(metadata).length === SIP_METADATA_FIELDS.length
+    && SIP_METADATA_FIELDS.every(
+      (field) => typeof metadata[field] === "string" && metadata[field]!.trim() !== "",
+    );
+  return (
+    blocking === 0
+    && unresolved === 0
+    && metadataConfirmed
+    && workingCopy.items
+      .filter((item) => item.active)
+      .every(
+        (item) =>
+          item.requires_confirmation !== true
+          && item.balloon_required !== null
+          && item.balloon_required !== undefined
+          && item.sip_detail_fields_confirmed === true
+          && SIP_DETAIL_TEXT_FIELDS.every(
+            (field) => typeof item[field] === "string" && item[field]!.trim() !== "",
+          )
+          && Number.isInteger(item.source_page)
+          && Number(item.source_page) >= 1,
+      )
+  );
+}
+
+
+function hasContinuousFormalNumbers(balloons: BalloonOverlay[]): boolean {
+  const numbers = balloons
+    .filter((balloon) => balloon.status !== "deleted")
+    .map((balloon) => balloon.number)
+    .sort((left, right) => left - right);
+  return numbers.length > 0
+    && numbers.every((number, index) => number === index + 1);
+}
 
 
 function metadataDraft(workingCopy?: ReviewWorkingCopyView): MetadataDraft {
@@ -104,9 +158,8 @@ export function InspectionWorkbench({
   workingCopy,
   balloonBlockers = [],
   busy = false,
-  onFreeze,
-  onGenerate,
-  onConfirm,
+  onPrepareReview,
+  onConfirmReview,
   onMoveBalloon,
   onDeleteBalloon,
   onRebuildBalloon,
@@ -138,6 +191,7 @@ export function InspectionWorkbench({
   const [selectedSipDraftDirty, setSelectedSipDraftDirty] = useState(false);
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
   const [selectionBlocked, setSelectionBlocked] = useState(false);
+  const prepareAttemptRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (metadataDraftDirty) return;
     setMetadata(metadataDraft(workingCopy));
@@ -207,6 +261,47 @@ export function InspectionWorkbench({
     saving
     || busy
     || reviewImmutable;
+  const frozen = workingCopy?.items_frozen_at != null;
+  const activeBalloonCount = balloons.filter(
+    (balloon) => balloon.status !== "deleted",
+  ).length;
+  const canPrepareReview =
+    workingCopy !== undefined
+    && !finalized
+    && !busy
+    && !saving
+    && !localDraftDirty
+    && hasResolvedReview(workingCopy)
+    && (!frozen || activeBalloonCount === 0);
+  const canFinalize =
+    workingCopy !== undefined
+    && frozen
+    && !workingCopy.numbering_stale
+    && balloonBlockers.length === 0
+    && hasContinuousFormalNumbers(balloons)
+    && !busy
+    && !saving
+    && !localDraftDirty;
+  useEffect(() => {
+    if (!canPrepareReview || onPrepareReview === undefined || workingCopy === undefined) {
+      return;
+    }
+    const attemptKey = [
+      workingCopy.id,
+      workingCopy.version,
+      frozen ? "frozen" : "editable",
+      activeBalloonCount,
+    ].join(":");
+    if (prepareAttemptRef.current === attemptKey) return;
+    prepareAttemptRef.current = attemptKey;
+    void onPrepareReview().catch(() => undefined);
+  }, [
+    activeBalloonCount,
+    canPrepareReview,
+    frozen,
+    onPrepareReview,
+    workingCopy,
+  ]);
   const submitCommand = async (command: ReviewCommand): Promise<boolean> => {
     if (
       savingRef.current
@@ -295,9 +390,11 @@ export function InspectionWorkbench({
       <ExportPanel
         projectId={projectId}
         reviewedResultId={reviewedResultId}
+        canFinalize={canFinalize}
         balloonBlockers={balloonBlockers}
         post={exportPost}
         initialExport={initialExport}
+        onConfirmReview={onConfirmReview}
       />
     );
   const metadataValues: Array<readonly [string, string | undefined]> = [
@@ -394,24 +491,6 @@ export function InspectionWorkbench({
           )}
         </div>
 
-        {workingCopy === undefined
-          || onFreeze === undefined
-          || onGenerate === undefined
-          || onConfirm === undefined
-          ? null
-          : (
-            <section className="review-actions" aria-label="审核流程操作">
-              <FreezeReviewButton
-                workingCopy={workingCopy}
-                balloons={balloons}
-                balloonBlockers={balloonBlockers}
-                busy={busy || saving || finalized || localDraftDirty}
-                onFreeze={onFreeze}
-                onGenerate={onGenerate}
-                onConfirm={onConfirm}
-              />
-            </section>
-          )}
       </section>
 
       <div className="workbench-layout">

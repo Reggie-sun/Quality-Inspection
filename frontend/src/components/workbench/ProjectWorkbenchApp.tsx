@@ -29,6 +29,11 @@ import { InspectionWorkbench } from "./InspectionWorkbench";
 
 
 const LOCK_RENEWAL_MS = 240_000;
+const PREPARATION_NOT_READY_CODES = new Set([
+  "coverage_blocking",
+  "unresolved_confirmation",
+  "balloon_required_unconfirmed",
+]);
 
 export type PdfLoader = (sourceUrl: string) => Promise<PdfDocumentLike>;
 
@@ -204,6 +209,69 @@ export function ProjectWorkbenchApp({
     operatorId,
     command,
   ));
+  const prepareReview = async (): Promise<void> => {
+    if (busy || startupBlocked || lockBlocked || snapshot === undefined) return;
+    setBusy(true);
+    setError(undefined);
+    setStatus(zhCN.balloon.generate);
+    try {
+      if (snapshot.working_copy.items_frozen_at == null) {
+        await freezeReviewItems(
+          postJson,
+          projectId,
+          operatorId,
+          snapshot.working_copy.version,
+        );
+      }
+      if (snapshot.balloons.every((balloon) => balloon.status === "deleted")) {
+        await generateBalloons(
+          postJson,
+          projectId,
+          operatorId,
+          snapshot.working_copy.version,
+        );
+      }
+      await refresh();
+      setStatus(zhCN.workbench.balloonsGenerated);
+    } catch (caught) {
+      if (
+        caught instanceof ApiError
+        && PREPARATION_NOT_READY_CODES.has(caught.code)
+      ) {
+        setStatus(undefined);
+        return;
+      }
+      setError(safeError(caught));
+      throw caught;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirmReviewForExport = async (): Promise<string> => {
+    if (reviewedResultId !== undefined) return reviewedResultId;
+    let nextReviewedResultId: string | undefined;
+    const confirmed = await run(
+      zhCN.balloon.confirm,
+      async () => {
+        if (snapshot === undefined) {
+          throw new Error("project workbench is not loaded");
+        }
+        const reviewed = await confirmReviewedResult(
+          postJson,
+          projectId,
+          operatorId,
+          snapshot.working_copy.version,
+        );
+        nextReviewedResultId = reviewed.id;
+        setReviewedResultId(reviewed.id);
+      },
+      zhCN.workbench.reviewedConfirmed,
+    );
+    if (!confirmed || nextReviewedResultId === undefined) {
+      throw new Error("review confirmation failed");
+    }
+    return nextReviewedResultId;
+  };
 
   if (error !== undefined && snapshot === undefined) {
     return (
@@ -272,39 +340,8 @@ export function ProjectWorkbenchApp({
         busy={busy || startupBlocked || lockBlocked}
         onReset={onReset}
         onSave={save}
-        onFreeze={() => void run(
-          zhCN.balloon.freeze,
-          () => freezeReviewItems(
-            postJson,
-            projectId,
-            operatorId,
-            snapshot.working_copy.version,
-          ),
-          zhCN.workbench.itemsFrozen,
-        )}
-        onGenerate={() => void run(
-          zhCN.balloon.generate,
-          () => generateBalloons(
-            postJson,
-            projectId,
-            operatorId,
-            snapshot.working_copy.version,
-          ),
-          zhCN.workbench.balloonsGenerated,
-        )}
-        onConfirm={() => void run(
-          zhCN.balloon.confirm,
-          async () => {
-            const reviewed = await confirmReviewedResult(
-              postJson,
-              projectId,
-              operatorId,
-              snapshot.working_copy.version,
-            );
-            setReviewedResultId(reviewed.id);
-          },
-          zhCN.workbench.reviewedConfirmed,
-        )}
+        onPrepareReview={prepareReview}
+        onConfirmReview={confirmReviewForExport}
         onMoveBalloon={(balloonId, expectedVersion, centerPdf) => void balloonCommand(
           zhCN.workbench.movingBalloon,
           {

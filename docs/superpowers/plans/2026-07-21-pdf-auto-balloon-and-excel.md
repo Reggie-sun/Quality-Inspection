@@ -31,6 +31,18 @@
 - Unchanged contract: Provider 不是正式语义 Owner；frontend 不产生 formal result；三产物不允许部分发布；P1/P2 全部保持未实现。
 - Focused verification: 每个 task 的最后一个 test command；Day 7 使用 current-four live receipt 收口。
 
+### Workbench background finalization amendment — 2026-07-30
+
+- Selected lane: `Standard`。本次只调整 React workbench 对既有 canonical backend APIs 的调用时机与可见控件，需要 frontend smoke，但不新增或改变 API/schema、backend Owner、runtime entry 或数据完整性边界。
+- Selected plan: 本文件仍是唯一 current plan；这是用户在已完成工作台上的原地交互修订，不创建新 task、第二份 plan 或并行 workflow。
+- Selection evidence: 用户明确要求前端直接删除“冻结检验项 / 生成气泡 / 确认审核结果”，并选择“检验项完成后自动冻结并生成，首次导出时自动确认”。
+- Problem boundary and single Owner: frontend 仍只是 Executor；`ReviewService.freeze_items()`、`BalloonService.generate_formal()`、`ReviewService.confirm()` 与 export orchestrator 继续分别提交正式 backend 结果。前端只在既有 blockers 清零且无本地未保存编辑时按顺序调用这些 Owner。
+- Old path action: 可见 `FreezeReviewButton` 三按钮入口选择 `remove`；没有真实 consumer 阻止删除，不保留隐藏按钮、替代控件、legacy path 或第二套手动 finalization。既有三个 backend endpoints 选择 `preserve`，因为新的自动 Executor 与 API/integration tests 仍是其真实 consumer。
+- Unchanged contract: item semantic edits → freeze → generate/adjust balloons → validate → immutable confirm → atomic export 的顺序不变；自动生成后仍保留人工拖动窗口；Confirm 只在首次显式导出时发生，backend blockers、lock/version conflict 和 structured failure 继续 fail closed。
+- Allowed paths: `frontend/src/components/workbench/{ProjectWorkbenchApp,InspectionWorkbench,ExportPanel,FreezeReviewButton}*`、必要的同目录纯判断 helper、`frontend/src/styles/workbench.css`、对应 frontend tests、`design-qa.md` 与本文件。不得修改 backend、generated API/schema、export artifact contract 或无关 workbench 功能。
+- Writer ownership and order: 主线程是唯一 writer；先 RED tests，再移除按钮并实现自动调用，随后 focused/full frontend tests、production build、Chrome active/failure surface smoke、focused diff review 和单独 commit。
+- Next verification: `npm test -- --run src/components/workbench/reviewFinalization.test.ts src/components/workbench/ProjectWorkbenchApp.test.tsx src/components/workbench/ExportPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx`；预期旧实现因仍渲染三按钮、不会自动 prepare、导出前不会 confirm 而失败。
+
 ### Day 2 continuation amendment — 2026-07-21
 
 本节是对同一 current plan 的原地修订，不创建第二套 plan。修订依据是 D1-T1～D1-T3 的实际接口、当前 `a859fb8` 后继 worktree、fresh D1 task receipts，以及 `0715095` 已带入的 approved design spec。

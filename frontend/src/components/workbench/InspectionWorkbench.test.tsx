@@ -65,7 +65,7 @@ const duplicateExampleItems = [
 ];
 
 describe("InspectionWorkbench", () => {
-  test("项目摘要、切换图纸与审核操作只占两行", () => {
+  test("顶部只保留项目摘要与切换图纸，不暴露后台定稿步骤", () => {
     const onReset = vi.fn();
     render(
       <InspectionWorkbench
@@ -90,9 +90,6 @@ describe("InspectionWorkbench", () => {
           items_frozen_version: null,
         }}
         onSave={vi.fn().mockResolvedValue(undefined)}
-        onFreeze={vi.fn()}
-        onGenerate={vi.fn()}
-        onConfirm={vi.fn()}
         onReset={onReset}
       />,
     );
@@ -100,13 +97,13 @@ describe("InspectionWorkbench", () => {
     const compactHeader = screen.getByRole("group", {
       name: "项目与审核操作",
     });
-    expect(compactHeader.children).toHaveLength(2);
+    expect(compactHeader.children).toHaveLength(1);
     expect(within(compactHeader).getByRole("region", {
       name: "项目摘要",
     })).not.toBeNull();
-    expect(within(compactHeader).getByRole("region", {
-      name: "审核流程操作",
-    })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "冻结检验项" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "生成气泡" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "确认审核结果" })).toBeNull();
 
     fireEvent.click(within(compactHeader).getByRole("button", {
       name: "处理另一份图纸",
@@ -683,9 +680,6 @@ describe("InspectionWorkbench", () => {
         exportPost={vi.fn()}
         operatorId="hidden-operator-uuid"
         onSave={vi.fn().mockResolvedValue(undefined)}
-        onFreeze={vi.fn()}
-        onGenerate={vi.fn()}
-        onConfirm={vi.fn()}
       />,
     );
 
@@ -729,12 +723,7 @@ describe("InspectionWorkbench", () => {
         "确认审核结果",
         "生成正式文件",
       ].includes(label ?? ""));
-    expect(actionLabels).toEqual([
-      "冻结检验项",
-      "生成气泡",
-      "确认审核结果",
-      "生成正式文件",
-    ]);
+    expect(actionLabels).toEqual(["生成正式文件"]);
   });
 
   test("检验项列表与编辑合并为同一紧凑工作区并保持操作顺序", () => {
@@ -994,6 +983,7 @@ describe("InspectionWorkbench", () => {
 
     openAuxiliaryPanel();
     fireEvent.click(screen.getByRole("button", { name: "生成正式文件" }));
+    await waitFor(() => expect(exportPost).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole("button", {
       name: "收起导出与处理信息",
     }));
@@ -1550,9 +1540,6 @@ describe("InspectionWorkbench", () => {
           items_frozen_version: null,
         }}
         onSave={onSave}
-        onFreeze={vi.fn()}
-        onGenerate={vi.fn()}
-        onConfirm={vi.fn()}
       />,
     );
 
@@ -1582,9 +1569,7 @@ describe("InspectionWorkbench", () => {
 
   test("确认当前有效项只提交一次批量来源命令", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
-    const onFreeze = vi.fn();
-    const onGenerate = vi.fn();
-    const onConfirm = vi.fn();
+    const onPrepareReview = vi.fn().mockResolvedValue(undefined);
     const items = [{
       item_id: "item-1",
       item_type: "thread" as const,
@@ -1647,9 +1632,7 @@ describe("InspectionWorkbench", () => {
           items_frozen_version: null,
         }}
         onSave={onSave}
-        onFreeze={onFreeze}
-        onGenerate={onGenerate}
-        onConfirm={onConfirm}
+        onPrepareReview={onPrepareReview}
       />,
     );
 
@@ -1661,9 +1644,7 @@ describe("InspectionWorkbench", () => {
       type: "ignore_sources",
       observation_ids: ["batch-observation-1", "batch-observation-2"],
     });
-    expect(onFreeze).not.toHaveBeenCalled();
-    expect(onGenerate).not.toHaveBeenCalled();
-    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onPrepareReview).not.toHaveBeenCalled();
   });
 
   test("来源 promote 保存失败后保留选择和草稿供重试", async () => {
