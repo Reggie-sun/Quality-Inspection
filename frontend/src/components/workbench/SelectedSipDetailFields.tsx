@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useImperativeHandle, useState } from "react";
+import type { Ref } from "react";
 
 import type {
   BalloonOverlay,
@@ -6,6 +7,7 @@ import type {
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
+import type { DraftSaveHandle } from "./draftSave";
 import { inspectionItemPresentation } from "./inspectionItemPresentation";
 
 
@@ -17,6 +19,7 @@ type SelectedSipDetailFieldsProps = {
     command: ReviewCommand,
   ) => boolean | void | Promise<boolean | void>;
   onDraftChange?: (dirty: boolean) => void;
+  draftSaveRef?: Ref<DraftSaveHandle>;
 };
 
 type DetailDraft = {
@@ -61,6 +64,7 @@ export function SelectedSipDetailFields({
   disabled = false,
   onCommand,
   onDraftChange,
+  draftSaveRef,
 }: SelectedSipDetailFieldsProps) {
   const baseline = detailDraft(item, balloon);
   const [drafts, setDrafts] = useState<Record<string, DetailDraft>>(
@@ -84,6 +88,52 @@ export function SelectedSipDetailFields({
     onDraftChange?.(dirtyItemIds.length > 0);
   }, [dirtyItemIds, onDraftChange]);
 
+  const clearDraft = (itemId: string) => {
+    setDirtyItemIds((current) =>
+      current.filter((candidate) => candidate !== itemId),
+    );
+  };
+  const saveDetailDraft = async (itemId: string): Promise<boolean> => {
+    const itemDraft = drafts[itemId];
+    if (itemDraft === undefined) return false;
+    const requiredValues = [
+      itemDraft.inspectionItem,
+      itemDraft.inspectionStandard,
+      itemDraft.inspectionMethod,
+      itemDraft.keyDimension,
+      itemDraft.inspectionRole,
+      itemDraft.sourcePage,
+    ];
+    const sourcePage = Number(itemDraft.sourcePage);
+    if (
+      requiredValues.some((value) => value.trim() === "")
+      || !Number.isInteger(sourcePage)
+      || sourcePage < 1
+    ) return false;
+    const succeeded = await commandSucceeded(onCommand, {
+      type: "set_sip_detail_fields",
+      item_id: itemId,
+      inspection_item: itemDraft.inspectionItem,
+      inspection_standard: itemDraft.inspectionStandard,
+      inspection_method: itemDraft.inspectionMethod,
+      key_dimension: itemDraft.keyDimension,
+      inspection_role: itemDraft.inspectionRole,
+      source_page: sourcePage,
+      remarks: itemDraft.remarks,
+    });
+    if (succeeded) clearDraft(itemId);
+    return succeeded;
+  };
+
+  useImperativeHandle(draftSaveRef, () => ({
+    saveDrafts: async () => {
+      for (const itemId of [...dirtyItemIds]) {
+        if (!(await saveDetailDraft(itemId))) return false;
+      }
+      return true;
+    },
+  }));
+
   if (item === undefined || !item.active) return null;
 
   const updateDraft = (change: Partial<DetailDraft>) => {
@@ -101,9 +151,7 @@ export function SelectedSipDetailFields({
     );
   };
   const clearSelectedDraft = () => {
-    setDirtyItemIds((current) =>
-      current.filter((candidate) => candidate !== item.item_id),
-    );
+    clearDraft(item.item_id);
   };
 
   return (
@@ -165,18 +213,7 @@ export function SelectedSipDetailFields({
             draft.sourcePage,
           ].some((value) => value.trim() === "")}
           onClick={async () => {
-            const succeeded = await commandSucceeded(onCommand, {
-              type: "set_sip_detail_fields",
-              item_id: item.item_id,
-              inspection_item: draft.inspectionItem,
-              inspection_standard: draft.inspectionStandard,
-              inspection_method: draft.inspectionMethod,
-              key_dimension: draft.keyDimension,
-              inspection_role: draft.inspectionRole,
-              source_page: Number(draft.sourcePage),
-              remarks: draft.remarks,
-            });
-            if (succeeded) clearSelectedDraft();
+            await saveDetailDraft(item.item_id);
           }}
         >
           {zhCN.inspection.confirmSip}

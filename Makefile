@@ -2,7 +2,7 @@ QA_DEV_COMPOSE = docker compose -p quality-inspection-qa -f compose.yaml -f comp
 LOCAL_API_PORT ?= 8000
 LOCAL_FRONTEND_PORT ?= 5173
 
-.PHONY: check-contracts test-backend test-frontend verify-p0-offline verify-p0-live qa-dev-config qa-dev-up qa-dev-down qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
+.PHONY: check-contracts check-api-contracts test-backend test-frontend verify-p0-offline verify-p0-live qa-dev-config qa-dev-up qa-dev-down qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
 
 dev-local-api:
 	@docker compose stop api >/dev/null 2>&1 || true
@@ -32,6 +32,12 @@ qa-dev-restart-worker:
 
 check-contracts:
 	python .agent/harness/scripts/check-contracts.py
+
+check-api-contracts:
+	@test -n "$(API_CONTRACT_BASE_REF)" || (echo "API_CONTRACT_BASE_REF must name the prior approved Git revision" >&2; exit 2)
+	micromamba run -n qi-p0 pytest backend/tests/contract/test_openapi_contract.py backend/tests/contract/test_error_envelope.py backend/tests/contract/test_openapi_breaking_gate.py -q
+	cd backend && micromamba run -n qi-p0 python -m app.contracts.openapi --baseline tests/contract/snapshots/api-v1.openapi.json --baseline-ref "$(API_CONTRACT_BASE_REF)"
+	npm --prefix frontend run api:check
 
 test-backend:
 	micromamba run -n qi-p0 pytest backend/tests -q

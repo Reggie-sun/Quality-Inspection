@@ -9,9 +9,11 @@ import { createExport, exportDownloadPath } from "../../features/exports/api";
 type ExportPanelProps = {
   projectId: string;
   reviewedResultId?: string;
+  canFinalize?: boolean;
   balloonBlockers: string[];
   post: PostJson;
   initialExport?: ExportJob | null;
+  onConfirmReview?: () => Promise<string>;
 };
 
 const DOWNLOADS: Array<{ kind: ExportArtifactKind; label: string }> = [
@@ -33,9 +35,11 @@ const DOWNLOADS: Array<{ kind: ExportArtifactKind; label: string }> = [
 export function ExportPanel({
   projectId,
   reviewedResultId,
+  canFinalize = false,
   balloonBlockers,
   post,
   initialExport,
+  onConfirmReview,
 }: ExportPanelProps) {
   const [exportJob, setExportJob] = useState<ExportJob | undefined>(
     initialExport ?? undefined,
@@ -48,9 +52,13 @@ export function ExportPanel({
     setError(undefined);
   }, [initialExport]);
 
-  const canExport = reviewedResultId !== undefined && balloonBlockers.length === 0;
+  const canExport =
+    balloonBlockers.length === 0
+    && (
+      reviewedResultId !== undefined
+      || (canFinalize && onConfirmReview !== undefined)
+    );
   const exportInFlight = busy
-    || exportJob?.status === "pending"
     || exportJob?.status === "running";
   const downloadableKinds = new Set(
     exportJob?.artifacts
@@ -60,7 +68,7 @@ export function ExportPanel({
   const atomicSuccess = exportJob?.status === "success"
     && DOWNLOADS.every(({ kind }) => downloadableKinds.has(kind))
     && downloadableKinds.size === DOWNLOADS.length;
-  const status = reviewedResultId === undefined
+  const status = reviewedResultId === undefined && !canFinalize
     ? zhCN.export.notReviewed
     : balloonBlockers.length > 0
       ? zhCN.export.blocked
@@ -94,11 +102,19 @@ export function ExportPanel({
         className="primary-action"
         disabled={!canExport || exportInFlight}
         onClick={() => {
-          if (reviewedResultId === undefined || exportInFlight) return;
+          if (!canExport || exportInFlight) return;
           setBusy(true);
           setError(undefined);
           setExportJob(undefined);
-          void createExport(post, projectId, reviewedResultId)
+          const reviewed = reviewedResultId !== undefined
+            ? Promise.resolve(reviewedResultId)
+            : onConfirmReview?.();
+          if (reviewed === undefined) {
+            setBusy(false);
+            return;
+          }
+          void reviewed
+            .then((resultId) => createExport(post, projectId, resultId))
             .then(setExportJob)
             .catch((caught) => {
               setError(

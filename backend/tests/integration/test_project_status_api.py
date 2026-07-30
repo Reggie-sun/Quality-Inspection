@@ -522,6 +522,10 @@ def test_unknown_project_uses_sanitized_not_found_envelope(
         "error": {
             "code": "project_not_found",
             "message": "project was not found",
+            "severity": "blocking",
+            "stage": "project_api",
+            "location_ref": None,
+            "cause_category": "not_found",
         }
     }
     assert str(missing) not in response.text

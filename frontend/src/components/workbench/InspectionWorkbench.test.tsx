@@ -8,7 +8,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import type { PostJson } from "../../api/types";
+import type {
+  ExportArtifactKind,
+  ExportJob,
+  PostJson,
+} from "../../api/types";
 import { InspectionWorkbench } from "./InspectionWorkbench";
 
 
@@ -18,6 +22,31 @@ function openAuxiliaryPanel(): void {
   fireEvent.click(screen.getByRole("button", {
     name: "展开导出与处理信息",
   }));
+}
+
+function successfulExport(): ExportJob {
+  const artifact = (kind: ExportArtifactKind) => ({
+    kind,
+    sha256: `${kind}-sha256`,
+    size_bytes: 1,
+    reviewed_result_id: "reviewed-1",
+    downloadable: true,
+  });
+  return {
+    id: "export-success",
+    project_id: "project-1",
+    reviewed_result_id: "reviewed-1",
+    status: "success",
+    error_id: null,
+    template_version: "template/1",
+    mapping_version: "mapping/1",
+    renderer_version: "renderer/1",
+    artifacts: [
+      artifact("ballooned_pdf"),
+      artifact("sip_excel"),
+      artifact("manifest"),
+    ],
+  };
 }
 
 const duplicateExampleItems = [
@@ -36,6 +65,111 @@ const duplicateExampleItems = [
 ];
 
 describe("InspectionWorkbench", () => {
+  test("刷新后默认选中全部并展示自动通过与待人工审核项", () => {
+    const items = [
+      {
+        item_id: "auto-item",
+        item_type: "linear_dimension" as const,
+        raw_text: "10",
+        status: "auto_accepted",
+        requires_confirmation: false,
+        acceptance_source: "confidence_policy" as const,
+        confidence_decision: {
+          band: "high" as const,
+          review_disposition: "auto_accepted" as const,
+          policy_version: "candidate-confidence/1" as const,
+          evidence_codes: ["typed_schema_complete"],
+        },
+        balloon_required: true,
+        active: true,
+      },
+      {
+        item_id: "review-item",
+        item_type: "linear_dimension" as const,
+        raw_text: "20",
+        status: "pending",
+        requires_confirmation: true,
+        active: true,
+      },
+    ];
+
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "refresh-default-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 1 },
+          manual_review_count: 1,
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "筛选全部" })
+      .getAttribute("data-active")).toBe("true");
+    expect(screen.getByRole("row", { name: /10/ })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /20/ })).not.toBeNull();
+  });
+
+  test("顶部只保留项目摘要与返回列表且无草稿时直接返回", () => {
+    const onReset = vi.fn();
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "working-1",
+          project_id: "project-1",
+          raw_result_id: "raw-1",
+          version: 1,
+          created_at: "2026-07-30T00:00:00Z",
+          updated_at: "2026-07-30T00:00:00Z",
+          manual_review_count: 0,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+        onReset={onReset}
+      />,
+    );
+
+    const compactHeader = screen.getByRole("group", {
+      name: "项目与审核操作",
+    });
+    expect(compactHeader.children).toHaveLength(1);
+    expect(within(compactHeader).getByRole("region", {
+      name: "项目摘要",
+    })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "冻结检验项" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "生成气泡" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "确认审核结果" })).toBeNull();
+
+    fireEvent.click(within(compactHeader).getByRole("button", {
+      name: "回到图纸列表",
+    }));
+    expect(onReset).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   test("审核界面不向用户暴露重复项合并工具", () => {
     render(
       <InspectionWorkbench
@@ -467,10 +601,17 @@ describe("InspectionWorkbench", () => {
     );
 
     const shell = screen.getByRole("main");
+    const compactHeader = screen.getByRole("group", {
+      name: "项目与审核操作",
+    });
     const projectSummary = screen.getByRole("region", { name: "项目摘要" });
     const children = Array.from(shell.children);
 
-    expect(children.indexOf(projectSummary)).toBe(0);
+    expect(children.indexOf(compactHeader)).toBe(0);
+    expect(within(compactHeader).getByRole("region", {
+      name: "项目摘要",
+    })).toBe(projectSummary);
+    expect(compactHeader.children).toHaveLength(1);
     expect(screen.queryByRole("region", { name: "审核流程操作" })).toBeNull();
     expect(screen.queryByText("工程图纸检验工作台")).toBeNull();
     expect(screen.queryByRole("heading", { name: "检验项目审核" })).toBeNull();
@@ -598,9 +739,6 @@ describe("InspectionWorkbench", () => {
         exportPost={vi.fn()}
         operatorId="hidden-operator-uuid"
         onSave={vi.fn().mockResolvedValue(undefined)}
-        onFreeze={vi.fn()}
-        onGenerate={vi.fn()}
-        onConfirm={vi.fn()}
       />,
     );
 
@@ -644,12 +782,7 @@ describe("InspectionWorkbench", () => {
         "确认审核结果",
         "生成正式文件",
       ].includes(label ?? ""));
-    expect(actionLabels).toEqual([
-      "冻结检验项",
-      "生成气泡",
-      "确认审核结果",
-      "生成正式文件",
-    ]);
+    expect(actionLabels).toEqual(["生成正式文件"]);
   });
 
   test("检验项列表与编辑合并为同一紧凑工作区并保持操作顺序", () => {
@@ -831,17 +964,7 @@ describe("InspectionWorkbench", () => {
         projectState="reviewed"
         projectId="project-1"
         reviewedResultId="reviewed-1"
-        initialExport={{
-          id: "export-success",
-          project_id: "project-1",
-          reviewed_result_id: "reviewed-1",
-          status: "success",
-          artifacts: [
-            { kind: "ballooned_pdf", downloadable: true },
-            { kind: "sip_excel", downloadable: true },
-            { kind: "manifest", downloadable: true },
-          ],
-        }}
+        initialExport={successfulExport()}
         exportPost={vi.fn()}
         onSave={vi.fn().mockResolvedValue(undefined)}
       />,
@@ -868,17 +991,7 @@ describe("InspectionWorkbench", () => {
   });
 
   test("生成正式文件后收起再展开仍保留三份下载", async () => {
-    const exportPost = vi.fn().mockResolvedValue({
-      id: "export-success",
-      project_id: "project-1",
-      reviewed_result_id: "reviewed-1",
-      status: "success",
-      artifacts: [
-        { kind: "ballooned_pdf", downloadable: true },
-        { kind: "sip_excel", downloadable: true },
-        { kind: "manifest", downloadable: true },
-      ],
-    });
+    const exportPost = vi.fn().mockResolvedValue(successfulExport());
     render(
       <InspectionWorkbench
         pdfDocument={null}
@@ -929,6 +1042,7 @@ describe("InspectionWorkbench", () => {
 
     openAuxiliaryPanel();
     fireEvent.click(screen.getByRole("button", { name: "生成正式文件" }));
+    await waitFor(() => expect(exportPost).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole("button", {
       name: "收起导出与处理信息",
     }));
@@ -941,17 +1055,7 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(exportButton);
     expect(exportPost).toHaveBeenCalledOnce();
 
-    resolveExport({
-      id: "export-success",
-      project_id: "project-1",
-      reviewed_result_id: "reviewed-1",
-      status: "success",
-      artifacts: [
-        { kind: "ballooned_pdf", downloadable: true },
-        { kind: "sip_excel", downloadable: true },
-        { kind: "manifest", downloadable: true },
-      ],
-    });
+    resolveExport(successfulExport());
     await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(3));
   });
 
@@ -1495,9 +1599,6 @@ describe("InspectionWorkbench", () => {
           items_frozen_version: null,
         }}
         onSave={onSave}
-        onFreeze={vi.fn()}
-        onGenerate={vi.fn()}
-        onConfirm={vi.fn()}
       />,
     );
 
@@ -1527,9 +1628,7 @@ describe("InspectionWorkbench", () => {
 
   test("确认当前有效项只提交一次批量来源命令", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
-    const onFreeze = vi.fn();
-    const onGenerate = vi.fn();
-    const onConfirm = vi.fn();
+    const onPrepareReview = vi.fn().mockResolvedValue(undefined);
     const items = [{
       item_id: "item-1",
       item_type: "thread" as const,
@@ -1592,9 +1691,7 @@ describe("InspectionWorkbench", () => {
           items_frozen_version: null,
         }}
         onSave={onSave}
-        onFreeze={onFreeze}
-        onGenerate={onGenerate}
-        onConfirm={onConfirm}
+        onPrepareReview={onPrepareReview}
       />,
     );
 
@@ -1606,9 +1703,7 @@ describe("InspectionWorkbench", () => {
       type: "ignore_sources",
       observation_ids: ["batch-observation-1", "batch-observation-2"],
     });
-    expect(onFreeze).not.toHaveBeenCalled();
-    expect(onGenerate).not.toHaveBeenCalled();
-    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onPrepareReview).not.toHaveBeenCalled();
   });
 
   test("来源 promote 保存失败后保留选择和草稿供重试", async () => {
@@ -1828,13 +1923,12 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "筛选待人工审核" })
+    expect(screen.getByRole("button", { name: "筛选全部" })
       .getAttribute("data-active")).toBe("true");
+    expect(screen.getByRole("row", { name: /10/ })).not.toBeNull();
     expect(screen.getByRole("row", { name: /20/ })).not.toBeNull();
     expect(screen.getByRole("row", { name: /25/ })).not.toBeNull();
-    expect(screen.queryByRole("row", { name: /10/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
     const autoAcceptedRow = screen.getByRole("row", { name: /10/ });
     expect(autoAcceptedRow.textContent).toContain("自动通过");
     fireEvent.click(autoAcceptedRow);
@@ -1844,7 +1938,7 @@ describe("InspectionWorkbench", () => {
     expect(screen.queryByText("typed_schema_complete")).toBeNull();
   });
 
-  test("全自动通过结果在默认人工队列中不预选详情，切到全部后才可选择编辑", () => {
+  test("全自动通过结果在默认全部筛选中可直接选择编辑", () => {
     const items = [{
       item_id: "only-auto-item",
       item_type: "linear_dimension" as const,
@@ -1886,15 +1980,13 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "筛选待人工审核" })
+    expect(screen.getByRole("button", { name: "筛选全部" })
       .getAttribute("data-active")).toBe("true");
-    expect(screen.getByText("没有符合条件的检验项。")).not.toBeNull();
     expect(screen.queryByRole("article", {
       name: /检验项/,
     })).toBeNull();
     expect(screen.queryByRole("textbox", { name: "基本尺寸：30" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
     const row = screen.getByRole("row", { name: /30/ });
     expect(row.getAttribute("data-selected")).toBe("false");
     fireEvent.click(row);
@@ -1958,7 +2050,7 @@ describe("InspectionWorkbench", () => {
     )).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
     fireEvent.click(screen.getByRole("button", {
-      name: "匹配此检验项：25",
+      name: "确认匹配此检验项：25",
     }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({
@@ -1969,7 +2061,7 @@ describe("InspectionWorkbench", () => {
     }));
   });
 
-  test("技术要求匹配项跳转会展示默认人工队列外的目标", () => {
+  test("技术要求匹配项跳转会从其他筛选恢复全部并选中目标", () => {
     const items = [{
       item_id: "auto-dimension-100",
       item_type: "linear_dimension" as const,
@@ -2026,6 +2118,9 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
+    expect(screen.getByRole("button", { name: "筛选全部" })
+      .getAttribute("data-active")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "筛选待人工审核" }));
     expect(screen.getByRole("button", { name: "筛选待人工审核" })
       .getAttribute("data-active")).toBe("true");
     expect(screen.queryByRole("row", { name: /100/ })).toBeNull();
@@ -2039,5 +2134,171 @@ describe("InspectionWorkbench", () => {
       .getAttribute("data-active")).toBe("true");
     expect(screen.getByRole("row", { name: /100/ })
       .getAttribute("data-selected")).toBe("true");
+  });
+
+  test("有草稿时返回列表提供保存、不保存和取消三种选择", () => {
+    const onReset = vi.fn();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "return-dialog-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "上座",
+            drawing_number: "JS26032501",
+            material: "SUS304",
+            revision: "A1",
+          },
+        }}
+        onSave={onSave}
+        onReset={onReset}
+      />,
+    );
+
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    const productName = within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }) as HTMLInputElement;
+    fireEvent.change(productName, { target: { value: "未保存名称" } });
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+
+    const dialog = screen.getByRole("dialog", { name: "返回图纸列表？" });
+    expect(within(dialog).getByRole("button", { name: "保存并返回" }))
+      .toBe(document.activeElement);
+    expect(within(dialog).getByRole("button", { name: "不保存返回" }))
+      .not.toBeNull();
+    expect(within(dialog).getByRole("button", { name: "取消" })).not.toBeNull();
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(productName.value).toBe("未保存名称");
+    expect(onReset).not.toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+    fireEvent.click(screen.getByRole("button", { name: "不保存返回" }));
+    expect(onReset).toHaveBeenCalledOnce();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  test("保存并返回失败时留在工作台并保留草稿", async () => {
+    const onReset = vi.fn();
+    const onSave = vi.fn().mockRejectedValue(new Error("save failed"));
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "return-failed-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "上座",
+            drawing_number: "JS26032501",
+            material: "SUS304",
+            revision: "A1",
+          },
+        }}
+        onSave={onSave}
+        onReset={onReset}
+      />,
+    );
+
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    const productName = within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }) as HTMLInputElement;
+    fireEvent.change(productName, { target: { value: "失败后保留" } });
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(screen.getByRole("dialog", { name: "返回图纸列表？" }))
+      .not.toBeNull();
+    expect(productName.value).toBe("失败后保留");
+    expect(onReset).not.toHaveBeenCalled();
+  });
+
+  test("全部草稿保存成功后才返回列表", async () => {
+    const onReset = vi.fn();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "return-success-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "上座",
+            drawing_number: "JS26032501",
+            material: "SUS304",
+            revision: "A1",
+          },
+        }}
+        onSave={onSave}
+        onReset={onReset}
+      />,
+    );
+
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    fireEvent.change(within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }), { target: { value: "保存后返回" } });
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+
+    await waitFor(() => expect(onReset).toHaveBeenCalledOnce());
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      type: "set_sip_metadata",
+      material_name: "保存后返回",
+    }));
   });
 });

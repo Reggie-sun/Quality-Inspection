@@ -1,3 +1,4 @@
+import { createRef } from "react";
 import {
   act,
   cleanup,
@@ -10,6 +11,7 @@ import {
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { CandidateType, ReviewItem } from "../../api/types";
+import type { DraftSaveHandle } from "../workbench/draftSave";
 import { ReviewPanel } from "./ReviewPanel";
 
 
@@ -112,30 +114,145 @@ describe("ReviewPanel", () => {
     })).toBeNull();
   });
 
-  test("审核详情不展示数量字段", () => {
+  test("审核详情展示识别到的数量字段", () => {
     render(
       <ReviewPanel
         items={[{
-          item_id: "quantity-hidden",
-          item_type: "linear_dimension",
-          raw_text: "4 × 48",
-          quantity: 4,
-          nominal: "48",
+          item_id: "quantity-visible",
+          item_type: "thread",
+          raw_text: "3 × M10 通",
+          quantity: 3,
+          thread_spec: "M10",
+          through: true,
           active: true,
         }]}
         onCommand={vi.fn()}
-        selectedItemId="quantity-hidden"
+        selectedItemId="quantity-visible"
       />,
     );
 
     const parsedResult = screen.getByRole("group", { name: "解析结果" });
 
-    expect(within(parsedResult).queryByRole("spinbutton", {
-      name: "数量：4 × 48",
-    })).toBeNull();
+    expect(within(parsedResult).getByRole("spinbutton", {
+      name: "数量：3 × M10 通",
+    }).getAttribute("value")).toBe("3");
     expect(within(parsedResult).getByRole("textbox", {
-      name: "基本尺寸：4 × 48",
+      name: "螺纹规格：3 × M10 通",
     })).not.toBeNull();
+    expect((within(parsedResult).getByRole("combobox", {
+      name: "通孔：3 × M10 通",
+    }) as HTMLSelectElement).value).toBe("true");
+  });
+
+  test("修改数量后以正整数随既有 edit command 保存", async () => {
+    const onCommand = vi.fn();
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "quantity-edit",
+          item_type: "thread",
+          raw_text: "3 × M10 通",
+          quantity: 3,
+          thread_spec: "M10",
+          through: true,
+          active: true,
+        }]}
+        onCommand={onCommand}
+        selectedItemId="quantity-edit"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：3 × M10 通",
+    }));
+    fireEvent.change(screen.getByRole("spinbutton", {
+      name: "数量：3 × M10 通",
+    }), { target: { value: "6" } });
+    fireEvent.click(screen.getByRole("button", {
+      name: "保存修改检验项：3 × M10 通",
+    }));
+
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
+      type: "edit",
+      item_id: "quantity-edit",
+      fields: {
+        raw_text: "3 × M10 通",
+        quantity: 6,
+        thread_spec: "M10",
+        through: true,
+      },
+    }));
+  });
+
+  test("清空数量后以 null 随既有 edit command 保存", async () => {
+    const onCommand = vi.fn();
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "quantity-clear",
+          item_type: "thread",
+          raw_text: "3 × M10 通",
+          quantity: 3,
+          thread_spec: "M10",
+          through: true,
+          active: true,
+        }]}
+        onCommand={onCommand}
+        selectedItemId="quantity-clear"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：3 × M10 通",
+    }));
+    fireEvent.change(screen.getByRole("spinbutton", {
+      name: "数量：3 × M10 通",
+    }), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", {
+      name: "保存修改检验项：3 × M10 通",
+    }));
+
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
+      type: "edit",
+      item_id: "quantity-clear",
+      fields: {
+        raw_text: "3 × M10 通",
+        quantity: null,
+        thread_spec: "M10",
+        through: true,
+      },
+    }));
+  });
+
+  test.each(["0", "1.5"])("数量为无效正整数 %s 时不提交", async (quantity) => {
+    const onCommand = vi.fn();
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: `quantity-invalid-${quantity}`,
+          item_type: "thread",
+          raw_text: "3 × M10 通",
+          quantity: 3,
+          thread_spec: "M10",
+          through: true,
+          active: true,
+        }]}
+        onCommand={onCommand}
+        selectedItemId={`quantity-invalid-${quantity}`}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：3 × M10 通",
+    }));
+    fireEvent.change(screen.getByRole("spinbutton", {
+      name: "数量：3 × M10 通",
+    }), { target: { value: quantity } });
+    fireEvent.click(screen.getByRole("button", {
+      name: "保存修改检验项：3 × M10 通",
+    }));
+
+    await waitFor(() => expect(onCommand).not.toHaveBeenCalled());
   });
 
   test("原文与解析结果不同时也不展示识别原文", () => {
@@ -1414,5 +1531,39 @@ describe("ReviewPanel", () => {
     expect(screen.queryByText(
       "typed_schema_complete、coverage_unchecked",
     )).toBeNull();
+  });
+
+  test("显式 draft save handle 保存新增检验项草稿", async () => {
+    const draftSaveRef = createRef<DraftSaveHandle>();
+    const onCommand = vi.fn().mockResolvedValue(true);
+    const onDraftChange = vi.fn();
+    render(
+      <ReviewPanel
+        items={[]}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        draftSaveRef={draftSaveRef}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("新增检验项原始标注"), {
+      target: { value: "M10" },
+    });
+    fireEvent.change(screen.getByLabelText("新增检验项坐标"), {
+      target: { value: "1,2,3,4" },
+    });
+
+    let saved = false;
+    await act(async () => {
+      saved = await draftSaveRef.current!.saveDrafts();
+    });
+
+    expect(saved).toBe(true);
+    expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({
+      type: "add",
+      raw_text: "M10",
+      coordinates: [1, 2, 3, 4],
+    }));
+    expect(onDraftChange).toHaveBeenLastCalledWith(false);
   });
 });

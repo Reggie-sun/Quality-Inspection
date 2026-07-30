@@ -2,23 +2,51 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, test, vi } from "vitest";
 
 import { ApiError } from "../../api/client";
-import type { PostJson } from "../../api/types";
+import type {
+  ExportArtifactKind,
+  ExportJob,
+  PostJson,
+} from "../../api/types";
 import { ExportPanel } from "./ExportPanel";
 
 
 afterEach(cleanup);
 
-test("P0-UI-004 gates export and exposes exactly three atomic backend downloads", async () => {
-  const post = vi.fn().mockResolvedValue({
-    id: "export-1",
+function exportArtifact(kind: ExportArtifactKind) {
+  return {
+    kind,
+    sha256: `${kind}-sha256`,
+    size_bytes: 1,
+    reviewed_result_id: "reviewed-1",
+    downloadable: true,
+  };
+}
+
+function exportJob(
+  status: ExportJob["status"],
+  artifacts: ExportJob["artifacts"] = [],
+): ExportJob {
+  return {
+    id: `export-${status}`,
     project_id: "project-1",
     reviewed_result_id: "reviewed-1",
-    status: "success",
-    artifacts: [
-      { kind: "ballooned_pdf", downloadable: true },
-      { kind: "sip_excel", downloadable: true },
-      { kind: "manifest", downloadable: true },
-    ],
+    status,
+    error_id: status === "failed" ? "internal-error-id" : null,
+    template_version: "template/1",
+    mapping_version: "mapping/1",
+    renderer_version: "renderer/1",
+    artifacts,
+  };
+}
+
+test("P0-UI-004 gates export and exposes exactly three atomic backend downloads", async () => {
+  const post = vi.fn().mockResolvedValue({
+    ...exportJob("success", [
+      exportArtifact("ballooned_pdf"),
+      exportArtifact("sip_excel"),
+      exportArtifact("manifest"),
+    ]),
+    id: "export-1",
   }) as unknown as PostJson;
   const { rerender } = render(
     <ExportPanel
@@ -77,6 +105,36 @@ test("P0-UI-004 gates export and exposes exactly three atomic backend downloads"
   ]);
 });
 
+test("首次导出先在后台确认审核结果，再提交同一 reviewed result 导出", async () => {
+  const postMock = vi.fn().mockResolvedValue(exportJob("running"));
+  const post = postMock as unknown as PostJson;
+  const confirmReview = vi.fn().mockResolvedValue("reviewed-1");
+  render(
+    <ExportPanel
+      projectId="project-1"
+      reviewedResultId={undefined}
+      canFinalize
+      balloonBlockers={[]}
+      post={post}
+      onConfirmReview={confirmReview}
+    />,
+  );
+
+  const action = screen.getByRole("button", { name: "生成正式文件" });
+  expect(action.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(action);
+
+  await waitFor(() => expect(confirmReview).toHaveBeenCalledOnce());
+  expect(post).toHaveBeenCalledWith(
+    "/api/v1/projects/project-1/exports",
+    { reviewed_result_id: "reviewed-1" },
+    {},
+  );
+  expect(confirmReview.mock.invocationCallOrder[0]).toBeLessThan(
+    postMock.mock.invocationCallOrder[0],
+  );
+});
+
 test("恢复投影如实渲染导出中、失败和三产物原子下载", () => {
   const post = vi.fn() as unknown as PostJson;
   const { rerender } = render(
@@ -85,13 +143,7 @@ test("恢复投影如实渲染导出中、失败和三产物原子下载", () =>
       reviewedResultId="reviewed-1"
       balloonBlockers={[]}
       post={post}
-      initialExport={{
-        id: "export-running",
-        project_id: "project-1",
-        reviewed_result_id: "reviewed-1",
-        status: "running",
-        artifacts: [],
-      }}
+      initialExport={exportJob("running")}
     />,
   );
 
@@ -104,14 +156,7 @@ test("恢复投影如实渲染导出中、失败和三产物原子下载", () =>
       reviewedResultId="reviewed-1"
       balloonBlockers={[]}
       post={post}
-      initialExport={{
-        id: "export-failed",
-        project_id: "project-1",
-        reviewed_result_id: "reviewed-1",
-        status: "failed",
-        error_id: "internal-error-id",
-        artifacts: [],
-      }}
+      initialExport={exportJob("failed")}
     />,
   );
   expect(screen.getByText("生成失败")).not.toBeNull();
@@ -123,33 +168,21 @@ test("恢复投影如实渲染导出中、失败和三产物原子下载", () =>
       reviewedResultId="reviewed-1"
       balloonBlockers={[]}
       post={post}
-      initialExport={{
-        id: "export-success",
-        project_id: "project-1",
-        reviewed_result_id: "reviewed-1",
-        status: "success",
-        artifacts: [
-          { kind: "ballooned_pdf", downloadable: true },
-          { kind: "sip_excel", downloadable: true },
-          { kind: "manifest", downloadable: true },
-        ],
-      }}
+      initialExport={exportJob("success", [
+        exportArtifact("ballooned_pdf"),
+        exportArtifact("sip_excel"),
+        exportArtifact("manifest"),
+      ])}
     />,
   );
   expect(screen.getByText("可下载")).not.toBeNull();
   expect(screen.getAllByRole("link")).toHaveLength(3);
 });
 
-test.each(["pending", "running"] as const)(
-  "恢复 %s 投影时禁用生成按钮且不重复提交",
-  (status) => {
-    const post = vi.fn().mockResolvedValue({
-      id: `export-${status}`,
-      project_id: "project-1",
-      reviewed_result_id: "reviewed-1",
-      status,
-      artifacts: [],
-    }) as unknown as PostJson;
+test("恢复 running 投影时禁用生成按钮且不重复提交", () => {
+    const post = (
+      vi.fn().mockResolvedValue(exportJob("running"))
+    ) as unknown as PostJson;
     render(
       <ExportPanel
         projectId="project-1"
@@ -157,11 +190,8 @@ test.each(["pending", "running"] as const)(
         balloonBlockers={[]}
         post={post}
         initialExport={{
-          id: `export-${status}`,
-          project_id: "project-1",
-          reviewed_result_id: "reviewed-1",
-          status,
-          artifacts: [],
+          ...exportJob("running"),
+          id: "export-running",
         }}
       />,
     );
@@ -170,8 +200,7 @@ test.each(["pending", "running"] as const)(
     expect(button.hasAttribute("disabled")).toBe(true);
     fireEvent.click(button);
     expect(post).not.toHaveBeenCalled();
-  },
-);
+});
 
 test("未知导出状态和错误代码只显示安全中文文案", async () => {
   const post = vi.fn().mockRejectedValue(
@@ -184,11 +213,9 @@ test("未知导出状态和错误代码只显示安全中文文案", async () =>
       balloonBlockers={[]}
       post={post}
       initialExport={{
+        ...exportJob("failed"),
         id: "export-future",
-        project_id: "project-1",
-        reviewed_result_id: "reviewed-1",
         status: "future_export_status" as never,
-        artifacts: [],
       }}
     />,
   );

@@ -1,4 +1,6 @@
+import { createRef } from "react";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,10 +10,27 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
+import type { DraftSaveHandle } from "./draftSave";
 import { InspectionItemTable } from "./InspectionItemTable";
 
 
-afterEach(cleanup);
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+  Element.prototype,
+  "scrollIntoView",
+);
+
+afterEach(() => {
+  cleanup();
+  if (originalScrollIntoView === undefined) {
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  } else {
+    Object.defineProperty(
+      Element.prototype,
+      "scrollIntoView",
+      originalScrollIntoView,
+    );
+  }
+});
 
 test("P0-UI-004 keeps the dense list and drawing selection on one item identity", () => {
   const onSelectItem = vi.fn();
@@ -169,7 +188,12 @@ test("紧凑分页只在 DOM 渲染当前页检验项", () => {
   expect(screen.getByRole("row", { name: /检验标注 51/ })).not.toBeNull();
 });
 
-test("外部选择第 51 项时自动跳到第二页并显示选中行", () => {
+test("外部选择第 51 项时自动跳到第二页并将选中行滚入视野", async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
   const items = Array.from({ length: 51 }, (_, index) => ({
     item_id: `internal-${index}`,
     raw_text: `检验标注 ${index + 1}`,
@@ -186,6 +210,7 @@ test("外部选择第 51 项时自动跳到第二页并显示选中行", () => {
   const { container, rerender } = render(
     <InspectionItemTable {...props} selectedItemId="internal-0" />,
   );
+  scrollIntoView.mockClear();
 
   rerender(<InspectionItemTable {...props} selectedItemId="internal-50" />);
 
@@ -194,6 +219,12 @@ test("外部选择第 51 项时自动跳到第二页并显示选中行", () => {
   expect(selectedRow.getAttribute("data-selected")).toBe("true");
   expect(container.querySelectorAll("[role='row'][data-item-id]").length)
     .toBeLessThanOrEqual(50);
+  await waitFor(() => {
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      block: "nearest",
+      inline: "nearest",
+    });
+  });
 });
 
 test("未知后端枚举只显示安全中文占位，表头不使用 inline style", () => {
@@ -981,4 +1012,54 @@ test("全部筛选保留自动通过项的选择身份", () => {
     .not.toBeNull();
   fireEvent.click(row);
   expect(onSelectItem).toHaveBeenCalledWith("auto-editable");
+});
+
+test("显式 draft save handle 保存待判定来源草稿", async () => {
+  const draftSaveRef = createRef<DraftSaveHandle>();
+  const onCommand = vi.fn().mockResolvedValue(true);
+  const onDraftChange = vi.fn();
+  render(
+    <InspectionItemTable
+      items={[]}
+      balloons={[]}
+      pendingSources={[{
+        observationId: "source-draft-observation",
+        sourceId: "source-draft",
+        rawText: "M8",
+        coordinates: [1, 2, 3, 4],
+        pageIndex: 0,
+      }]}
+      filter="all"
+      selectedSourceId="source-draft"
+      onSelectItem={vi.fn()}
+      onSelectSource={vi.fn()}
+      onCommand={onCommand}
+      onDraftChange={onDraftChange}
+      draftSaveRef={draftSaveRef}
+    />,
+  );
+
+  fireEvent.change(screen.getByRole("textbox", { name: "原始标注" }), {
+    target: { value: "M8 通" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+    target: { value: "thread" },
+  });
+
+  let saved = false;
+  await act(async () => {
+    saved = await draftSaveRef.current!.saveDrafts();
+  });
+
+  expect(saved).toBe(true);
+  expect(onCommand).toHaveBeenCalledWith({
+    type: "promote_source",
+    observation_id: "source-draft-observation",
+    raw_text: "M8 通",
+    item_type: "thread",
+    scope: "local_feature",
+    balloon_required: true,
+    page_index: 0,
+  });
+  expect(onDraftChange).toHaveBeenLastCalledWith(false);
 });

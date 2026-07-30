@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
 from typing import Annotated, Any, Literal, Union
 
 from pydantic import (
@@ -200,6 +202,47 @@ class FreezeItemsRequest(CommandBase):
 
 class ConfirmReviewRequest(CommandBase):
     expected_version: int = Field(ge=1)
+
+
+class ReviewLockResponse(CommandBase):
+    project_id: uuid.UUID
+    operator_id: str
+    expires_at: datetime
+
+
+class ReviewWorkingCopyProjection(CommandBase):
+    id: uuid.UUID
+    project_id: uuid.UUID
+    raw_result_id: uuid.UUID
+    version: int
+    items: list[dict[str, Any]]
+    coverage: dict[str, Any]
+    technical_requirements: list[dict[str, Any]]
+    sip_metadata: dict[str, Any]
+    numbering_stale: bool
+    items_frozen_at: datetime | None
+    items_frozen_by: str | None
+    items_frozen_version: int | None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    manual_review_count: int
+
+
+class ReviewWorkingCopyResponse(ReviewWorkingCopyProjection):
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReviewedResultResponse(CommandBase):
+    id: uuid.UUID
+    project_id: uuid.UUID
+    working_copy_id: uuid.UUID
+    working_version: int
+    items: list[dict[str, Any]]
+    balloons: list[dict[str, Any]]
+    sip_metadata: dict[str, Any]
+    schema_version: str
+    created_at: datetime
 
 _REVIEW_COMMAND_ADAPTER = TypeAdapter(ReviewCommand)
 COMPLEX_EDITABLE_FIELDS = {

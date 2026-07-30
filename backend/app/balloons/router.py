@@ -5,13 +5,14 @@ from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.balloons.models import Balloon
 from app.balloons.schemas import (
     BalloonCommandRequest,
+    BalloonCommandResponse,
+    BalloonCollectionResponse,
     DeleteBalloon,
     GenerateBalloonsRequest,
     MoveBalloon,
@@ -29,6 +30,8 @@ from app.balloons.service import (
     ItemSetNotFrozen,
 )
 from app.db import SessionLocal
+from app.errors.api import api_error, error_responses
+from app.errors.schemas import ErrorSeverity
 from app.review.locks import LockConflict, LockRequired
 
 
@@ -54,24 +57,49 @@ def get_balloon_service(session: SessionDependency) -> BalloonService:
 BalloonServiceDependency = Annotated[BalloonService, Depends(get_balloon_service)]
 
 
-@router.get("/{project_id}/balloons")
+@router.get(
+    "/{project_id}/balloons",
+    operation_id="QI-API-BAL-001",
+    response_model=BalloonCollectionResponse,
+    responses=error_responses(
+        {
+            422: ("request_validation_failed",),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def list_balloons(
     project_id: uuid.UUID,
     service: BalloonServiceDependency,
 ) -> JSONResponse:
-    return JSONResponse(
-        jsonable_encoder(
-            {
-                "balloons": [
-                    _balloon(balloon)
-                    for balloon in service.list_for_project(project_id)
-                ]
-            }
-        )
-    )
+    return {
+        "balloons": [
+            _balloon(balloon)
+            for balloon in service.list_for_project(project_id)
+        ]
+    }
 
 
-@router.post("/{project_id}/balloons/generate")
+@router.post(
+    "/{project_id}/balloons/generate",
+    operation_id="QI-API-BAL-002",
+    response_model=BalloonCollectionResponse,
+    responses=error_responses(
+        {
+            404: ("review_working_copy_not_found",),
+            409: (
+                "review_item_set_not_frozen",
+                "balloon_version_conflict",
+                "review_lock_conflict",
+                "balloon_source_unavailable",
+                "balloon_order_conflict",
+                "review_already_confirmed",
+            ),
+            422: ("balloon_command_invalid", "request_validation_failed"),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def generate_balloons(
     project_id: uuid.UUID,
     body: GenerateBalloonsRequest,
@@ -100,14 +128,28 @@ def generate_balloons(
         return _error(404, "review_working_copy_not_found", str(error))
     except ValueError as error:
         return _error(422, "balloon_command_invalid", str(error))
-    return JSONResponse(
-        jsonable_encoder(
-            {"balloons": [_balloon(balloon) for balloon in balloons]}
-        )
-    )
+    return {"balloons": [_balloon(balloon) for balloon in balloons]}
 
 
-@router.post("/{project_id}/balloons/commands")
+@router.post(
+    "/{project_id}/balloons/commands",
+    operation_id="QI-API-BAL-003",
+    response_model=BalloonCommandResponse,
+    responses=error_responses(
+        {
+            404: ("balloon_not_found",),
+            409: (
+                "balloon_version_conflict",
+                "review_lock_conflict",
+                "balloon_source_unavailable",
+                "balloon_order_conflict",
+                "review_already_confirmed",
+            ),
+            422: ("balloon_command_invalid", "request_validation_failed"),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def apply_balloon_command(
     project_id: uuid.UUID,
     body: BalloonCommandRequest,
@@ -122,11 +164,7 @@ def apply_balloon_command(
                 expected_versions=body.expected_versions,
                 operator_id=operator_id,
             )
-            return JSONResponse(
-                jsonable_encoder(
-                    {"balloons": [_balloon(balloon) for balloon in balloons]}
-                )
-            )
+            return {"balloons": [_balloon(balloon) for balloon in balloons]}
 
         balloon = service.get(body.balloon_id)
         if balloon.project_id != project_id:
@@ -173,15 +211,24 @@ def apply_balloon_command(
         return _error(404, "balloon_not_found", str(error))
     except ValueError as error:
         return _error(422, "balloon_command_invalid", str(error))
-    return JSONResponse(jsonable_encoder(_balloon(saved)))
+    return _balloon(saved)
 
 
 def _balloon(balloon: Balloon) -> dict[str, object]:
     return balloon.snapshot()
 
 
-def _error(status_code: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={"error": {"code": code, "message": message}},
+def _error(
+    status_code: int,
+    code: str,
+    message: str,
+    *,
+    severity: ErrorSeverity = "blocking",
+) -> JSONResponse:
+    return api_error(
+        status_code,
+        code,
+        message,
+        severity=severity,
+        stage="balloon_api",
     )

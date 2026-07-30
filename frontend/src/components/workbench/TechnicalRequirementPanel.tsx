@@ -49,7 +49,7 @@ export function TechnicalRequirementPanel({
   const itemById = new Map(activeItems.map((item) => [item.item_id, item]));
   const pendingCount = requirements.filter(
     (requirement) =>
-      requirement.match_outcome === "unresolved"
+      requirement.review_required
       && requirement.review_status !== "excluded",
   ).length;
 
@@ -102,6 +102,17 @@ export function TechnicalRequirementPanel({
                 item.item_type !== "general_requirement"
                 && !requirement.matched_candidate_ids.includes(item.item_id),
             );
+            const needsConfirmation = (
+              requirement.review_required
+              && requirement.review_status !== "excluded"
+            );
+            const canConfirmCurrentMatch = (
+              needsConfirmation
+              && requirement.match_outcome === "matched_items"
+              && currentTargets.length > 0
+              && currentTargets.length
+                === requirement.matched_candidate_ids.length
+            );
             return (
               <li
                 key={requirement.requirement_id}
@@ -133,6 +144,42 @@ export function TechnicalRequirementPanel({
                     ))}
                   </div>
                 )}
+                {canConfirmCurrentMatch ? (
+                  <div className="technical-requirement__actions">
+                    <button
+                      type="button"
+                      className="technical-requirement__confirm"
+                      disabled={disabled}
+                      onClick={() => onCommand({
+                        type: "set_technical_requirement_match",
+                        requirement_id: requirement.requirement_id,
+                        outcome: "matched_items",
+                        matched_item_ids: requirement.matched_candidate_ids,
+                      })}
+                    >
+                      {zhCN.technicalRequirements.confirmCurrentMatch(
+                        requirement.matched_candidate_ids.length,
+                      )}
+                    </button>
+                  </div>
+                ) : null}
+                {needsConfirmation
+                  && requirement.match_outcome === "global_scope" ? (
+                    <div className="technical-requirement__actions">
+                      <button
+                        type="button"
+                        className="technical-requirement__confirm"
+                        disabled={disabled}
+                        onClick={() => onCommand({
+                          type: "set_technical_requirement_match",
+                          requirement_id: requirement.requirement_id,
+                          outcome: "global_scope",
+                        })}
+                      >
+                        {zhCN.technicalRequirements.confirmGlobal}
+                      </button>
+                    </div>
+                  ) : null}
                 <details
                   className="technical-requirement__override"
                   open={

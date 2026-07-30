@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { Ref } from "react";
 
 import type {
   CandidateType,
@@ -7,6 +14,7 @@ import type {
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
+import type { DraftSaveHandle } from "../workbench/draftSave";
 import type { InspectionItemPresentation } from "../workbench/inspectionItemPresentation";
 
 
@@ -21,9 +29,11 @@ type ReviewPanelProps = {
   onSelectItem?: (itemId: string) => void;
   pageIndex?: number;
   onDraftChange?: (dirty: boolean) => void;
+  draftSaveRef?: Ref<DraftSaveHandle>;
 };
 
 type CoreFieldKey =
+  | "quantity"
   | "nominal"
   | "upper_tolerance"
   | "lower_tolerance"
@@ -38,7 +48,7 @@ type CoreFieldKey =
 type CoreField = {
   key: CoreFieldKey;
   label: string;
-  kind: "decimal" | "text" | "boolean" | "feature_kind";
+  kind: "decimal" | "integer" | "text" | "boolean" | "feature_kind";
 };
 
 type AcknowledgedItemDraft = {
@@ -47,33 +57,44 @@ type AcknowledgedItemDraft = {
   snapshotGeneration: number;
 };
 
+const QUANTITY_FIELD: CoreField = {
+  key: "quantity",
+  label: zhCN.review.fields.quantity,
+  kind: "integer",
+};
+
 const CORE_FIELDS: Record<CandidateType, CoreField[]> = {
   linear_dimension: [
+    QUANTITY_FIELD,
     { key: "nominal", label: zhCN.review.fields.nominal, kind: "decimal" },
     { key: "upper_tolerance", label: zhCN.review.fields.upperTolerance, kind: "decimal" },
     { key: "lower_tolerance", label: zhCN.review.fields.lowerTolerance, kind: "decimal" },
   ],
   diameter_dimension: [
+    QUANTITY_FIELD,
     { key: "nominal", label: zhCN.review.fields.diameter, kind: "decimal" },
     { key: "feature_kind", label: zhCN.review.fields.featureKind, kind: "feature_kind" },
     { key: "depth", label: zhCN.review.fields.depth, kind: "decimal" },
     { key: "through", label: zhCN.review.fields.through, kind: "boolean" },
   ],
   thread: [
+    QUANTITY_FIELD,
     { key: "thread_spec", label: zhCN.review.fields.threadSpec, kind: "text" },
     { key: "thread_depth", label: zhCN.review.fields.threadDepth, kind: "decimal" },
     { key: "through", label: zhCN.review.fields.through, kind: "boolean" },
   ],
   radius: [
+    QUANTITY_FIELD,
     { key: "radius_value", label: zhCN.review.fields.radius, kind: "decimal" },
   ],
   angle: [
+    QUANTITY_FIELD,
     { key: "angle_value", label: zhCN.review.fields.angle, kind: "decimal" },
     { key: "upper_tolerance", label: zhCN.review.fields.upperTolerance, kind: "decimal" },
     { key: "lower_tolerance", label: zhCN.review.fields.lowerTolerance, kind: "decimal" },
   ],
-  general_requirement: [],
-  composite: [],
+  general_requirement: [QUANTITY_FIELD],
+  composite: [QUANTITY_FIELD],
 };
 
 function coreFieldsFor(itemType: unknown): CoreField[] {
@@ -113,6 +134,13 @@ function parseCoreValue(
 ): { valid: boolean; value: unknown } {
   const trimmed = value.trim();
   if (trimmed === "") return { valid: true, value: null };
+  if (field.kind === "integer") {
+    const parsed = Number(trimmed);
+    return {
+      valid: Number.isInteger(parsed) && parsed >= 1,
+      value: parsed,
+    };
+  }
   if (field.kind === "boolean") {
     return {
       valid: trimmed === "true" || trimmed === "false",
@@ -149,6 +177,7 @@ export function ReviewPanel({
   onSelectItem,
   pageIndex = 0,
   onDraftChange,
+  draftSaveRef,
 }: ReviewPanelProps) {
   const [rawTexts, setRawTexts] = useState<Record<string, string>>(() =>
     Object.fromEntries(items.map((item) => [item.item_id, item.raw_text])),
@@ -395,7 +424,7 @@ export function ReviewPanel({
     }));
   };
 
-  const editItem = async (item: ReviewItem) => {
+  const editItem = async (item: ReviewItem): Promise<boolean> => {
     const submittedSignature = itemDraftSignature(item);
     const preSubmitPersistedSignature = persistedItemSignature(item);
     const preSubmitSnapshotGeneration =
@@ -405,7 +434,7 @@ export function ReviewPanel({
     };
     if (item.coarse_type !== undefined) {
       const coordinates = parseCoordinates(complexCoordinates[item.item_id] ?? "");
-      if (coordinates === null) return;
+      if (coordinates === null) return false;
       Object.assign(fields, {
         coordinates,
         coarse_type: coarseTypes[item.item_id] ?? item.coarse_type,
@@ -417,7 +446,7 @@ export function ReviewPanel({
         const value = coreValues[item.item_id]?.[field.key] ?? "";
         if (value.trim() === "" && item[field.key] === undefined) continue;
         const parsed = parseCoreValue(field, value);
-        if (!parsed.valid) return;
+        if (!parsed.valid) return false;
         fields[field.key] = parsed.value;
       }
     }
@@ -426,7 +455,7 @@ export function ReviewPanel({
       item_id: item.item_id,
       fields,
     });
-    if (outcome === false) return;
+    if (outcome === false) return false;
     const latestItemsSnapshot = latestItemsSnapshotRef.current;
     const latestItem = latestItemsSnapshot.items.find(
       (candidate) => candidate.item_id === item.item_id,
@@ -465,6 +494,7 @@ export function ReviewPanel({
         current === item.item_id ? undefined : current,
       );
     }
+    return true;
   };
 
   const resetManualItem = () => {
@@ -475,9 +505,9 @@ export function ReviewPanel({
     setManualBalloonRequired(true);
     setManualDraftDirty(false);
   };
-  const addManualItem = async () => {
+  const addManualItem = async (): Promise<boolean> => {
     const coordinates = parseCoordinates(manualCoordinates);
-    if (manualRawText.trim() === "" || coordinates === null) return;
+    if (manualRawText.trim() === "" || coordinates === null) return false;
     const outcome = await onCommand({
       type: "add",
       raw_text: manualRawText,
@@ -487,23 +517,24 @@ export function ReviewPanel({
       balloon_required: manualBalloonRequired,
       page_index: pageIndex,
     });
-    if (outcome === false) return;
+    if (outcome === false) return false;
     resetManualItem();
+    return true;
   };
 
-  const splitItem = async (item: ReviewItem) => {
+  const splitItem = async (item: ReviewItem): Promise<boolean> => {
     const parts = (splitTexts[item.item_id] ?? "")
       .split("|")
       .map((rawText) => rawText.trim())
       .filter(Boolean)
       .map((raw_text) => ({ raw_text }));
-    if (parts.length < 2) return;
+    if (parts.length < 2) return false;
     const outcome = await onCommand({
       type: "split",
       item_id: item.item_id,
       parts,
     });
-    if (outcome === false) return;
+    if (outcome === false) return false;
     setSplitTexts((current) => ({
       ...current,
       [item.item_id]: "",
@@ -511,6 +542,7 @@ export function ReviewPanel({
     setDirtySplitIds((current) =>
       current.filter((candidate) => candidate !== item.item_id),
     );
+    return true;
   };
   const cancelExclude = () => {
     if (excludeSubmitting) return;
@@ -533,6 +565,21 @@ export function ReviewPanel({
       setExcludeSubmitting(false);
     }
   };
+
+  useImperativeHandle(draftSaveRef, () => ({
+    saveDrafts: async () => {
+      for (const itemId of [...dirtyItemIds]) {
+        const item = activeItems.find((candidate) => candidate.item_id === itemId);
+        if (item === undefined || !(await editItem(item))) return false;
+      }
+      for (const itemId of [...dirtySplitIds]) {
+        const item = activeItems.find((candidate) => candidate.item_id === itemId);
+        if (item === undefined || !(await splitItem(item))) return false;
+      }
+      if (manualDraftDirty && !(await addManualItem())) return false;
+      return true;
+    },
+  }));
 
   return (
     <section className="review-panel" aria-label={zhCN.review.region}>
@@ -656,7 +703,9 @@ export function ReviewPanel({
                       )}
                       disabled={disabled}
                       inputMode={field.kind === "decimal" ? "decimal" : undefined}
-                      type="text"
+                      type={field.kind === "integer" ? "number" : "text"}
+                      min={field.kind === "integer" ? 1 : undefined}
+                      step={field.kind === "integer" ? 1 : undefined}
                       value={coreValues[selectedItem.item_id]?.[field.key] ?? ""}
                       onFocus={beginEditingSelected}
                       onChange={(event) =>

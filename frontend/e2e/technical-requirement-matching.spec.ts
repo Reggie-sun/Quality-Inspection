@@ -205,7 +205,7 @@ test("真实工程 PDF 自动识别六条技术要求并持久化匹配与 SIP �
     && candidate.url().includes("/workbench")
   ));
   await details.getByRole("button", {
-    name: /^匹配此检验项：/,
+    name: /^确认匹配此检验项：/,
   }).first().click();
   expect((await overrideResponse).ok()).toBe(true);
   expect((await overrideRefresh).ok()).toBe(true);

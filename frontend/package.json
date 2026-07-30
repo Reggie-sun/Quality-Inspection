@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "test": "vitest --dir src",
     "e2e": "playwright test",
-    "e2e:list": "playwright test --list"
+    "e2e:list": "playwright test --list",
+    "api:generate": "openapi-typescript ../backend/tests/contract/snapshots/api-v1.openapi.json -o src/api/generated.ts",
+    "api:check": "openapi-typescript ../backend/tests/contract/snapshots/api-v1.openapi.json | diff -u src/api/generated.ts -"
   },
   "dependencies": {
     "pdfjs-dist": "^4.10.38",
@@ -22,8 +24,12 @@
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.1",
     "jsdom": "^26.1.0",
+    "openapi-typescript": "6.7.6",
     "typescript": "^5.8.3",
     "vite": "^6.1.0",
     "vitest": "^3.1.0"
+  },
+  "overrides": {
+    "undici": "6.28.0"
   }
 }

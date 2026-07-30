@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import type { ProjectWorkbenchResponse } from "../../api/types";
+import type { ProjectWorkbenchView } from "../../api/types";
 import { ProjectWorkbenchApp } from "./ProjectWorkbenchApp";
 
 
@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 
-function reviewedResponse(): ProjectWorkbenchResponse {
+function reviewedResponse(): ProjectWorkbenchView {
   return {
     project: { id: "project-real", state: "reviewed", version: 1 },
     working_copy: {
@@ -86,13 +86,34 @@ function reviewedResponse(): ProjectWorkbenchResponse {
       reviewed_result_id: "reviewed-secret-uuid",
       status: "success",
       error_id: null,
+      template_version: "template/1",
+      mapping_version: "mapping/1",
+      renderer_version: "renderer/1",
       artifacts: [
-        { kind: "ballooned_pdf", downloadable: true },
-        { kind: "sip_excel", downloadable: true },
-        { kind: "manifest", downloadable: true },
+        {
+          kind: "ballooned_pdf",
+          sha256: "pdf-sha256",
+          size_bytes: 1,
+          reviewed_result_id: "reviewed-secret-uuid",
+          downloadable: true,
+        },
+        {
+          kind: "sip_excel",
+          sha256: "excel-sha256",
+          size_bytes: 1,
+          reviewed_result_id: "reviewed-secret-uuid",
+          downloadable: true,
+        },
+        {
+          kind: "manifest",
+          sha256: "manifest-sha256",
+          size_bytes: 1,
+          reviewed_result_id: "reviewed-secret-uuid",
+          downloadable: true,
+        },
       ],
     },
-  } as ProjectWorkbenchResponse;
+  } as ProjectWorkbenchView;
 }
 
 
@@ -206,33 +227,18 @@ test("就绪页头部横向组合纯文字品牌、真实阶段和重新处理�
     />,
   );
 
-  const header = await screen.findByRole("banner", {
-    name: "工程图纸检验流程",
+  const compactHeader = await screen.findByRole("group", {
+    name: "项目与审核操作",
   });
-  expect(within(header).getByText("智检通")).not.toBeNull();
-  expect(within(header).getByText("工程图纸智能检验")).not.toBeNull();
-  expect(header.querySelector("img, svg")).toBeNull();
-
-  const stages = within(header).getByRole("navigation", {
+  expect(screen.queryByRole("navigation", {
     name: "检验处理阶段",
-  });
-  for (const label of [
-    "PDF文件上传",
-    "识别检验项",
-    "确认检验项",
-    "调整气泡位置",
-    "生成PDF与SIP",
-  ]) {
-    expect(within(stages).getByText(label)).not.toBeNull();
-  }
-  expect(
-    within(stages).getByRole("listitem", {
-      name: "文件导出，当前阶段",
-    }).getAttribute("aria-current"),
-  ).toBe("step");
+  })).toBeNull();
+  expect(screen.queryByRole("banner", {
+    name: "工程图纸检验流程",
+  })).toBeNull();
 
-  fireEvent.click(within(header).getByRole("button", {
-    name: "处理另一份图纸",
+  fireEvent.click(within(compactHeader).getByRole("button", {
+    name: "回到图纸列表",
   }));
   expect(onReset).toHaveBeenCalledOnce();
 });
@@ -447,4 +453,87 @@ test("candidate 单边自动投影不得绕过 working item 完整合同", async
     })).toBeNull();
     expect(screen.getByRole("row", { name: new RegExp(rawText) })).not.toBeNull();
   }
+});
+
+test("保存并返回的连续命令使用每次刷新后的最新 working copy version", async () => {
+  let currentVersion = 7;
+  const expectedVersions: number[] = [];
+  const snapshot = reviewedResponse();
+  snapshot.project.state = "editing";
+  snapshot.working_copy.items = [];
+  snapshot.working_copy.version = currentVersion;
+  snapshot.working_copy.coverage = {
+    blocking_count: 1,
+    review_required_count: 0,
+  };
+  snapshot.working_copy.items_frozen_at = null;
+  snapshot.working_copy.items_frozen_by = null;
+  snapshot.working_copy.items_frozen_version = null;
+  snapshot.balloons = [];
+  snapshot.reviewed_result_id = null;
+  snapshot.latest_export = null;
+
+  const fetchMock = vi.fn(async (
+    path: RequestInfo | URL,
+    init?: RequestInit,
+  ) => {
+    if (String(path).endsWith("/review/lock")) {
+      return new Response(JSON.stringify({ operator_id: "operator-real" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (String(path).endsWith("/review/commands")) {
+      const body = JSON.parse(String(init?.body)) as {
+        expected_version: number;
+      };
+      expectedVersions.push(body.expected_version);
+      currentVersion += 1;
+      return new Response(JSON.stringify({ version: currentVersion }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({
+      ...snapshot,
+      working_copy: {
+        ...snapshot.working_copy,
+        version: currentVersion,
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const onReset = vi.fn();
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+      onReset={onReset}
+    />,
+  );
+
+  const sipRegion = await screen.findByRole("region", { name: "SIP 信息" });
+  fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+    selector: "summary",
+  }));
+  fireEvent.change(within(sipRegion).getByRole("textbox", {
+    name: "产品名称",
+  }), { target: { value: "连续保存名称" } });
+  fireEvent.change(screen.getByLabelText("新增检验项原始标注"), {
+    target: { value: "M10" },
+  });
+  fireEvent.change(screen.getByLabelText("新增检验项坐标"), {
+    target: { value: "1,2,3,4" },
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+
+  await waitFor(() => expect(onReset).toHaveBeenCalledOnce());
+  expect(expectedVersions).toEqual([7, 8]);
 });

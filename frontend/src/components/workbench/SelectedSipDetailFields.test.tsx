@@ -1,4 +1,6 @@
+import { createRef } from "react";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,6 +10,7 @@ import {
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { ReviewItem } from "../../api/types";
+import type { DraftSaveHandle } from "./draftSave";
 import { SelectedSipDetailFields } from "./SelectedSipDetailFields";
 
 
@@ -244,4 +247,35 @@ test("技术要求建议只预填可证明字段，补全后才允许确认", as
     source_page: 1,
     remarks: "锐边去毛刺",
   }));
+});
+
+test("显式 draft save handle 保存当前检验项 SIP 草稿", async () => {
+  const draftSaveRef = createRef<DraftSaveHandle>();
+  const onCommand = vi.fn().mockResolvedValue(true);
+  const onDraftChange = vi.fn();
+  render(
+    <SelectedSipDetailFields
+      item={reviewItem("sip-handle", "M20")}
+      onCommand={onCommand}
+      onDraftChange={onDraftChange}
+      draftSaveRef={draftSaveRef}
+    />,
+  );
+
+  fireEvent.change(screen.getByRole("textbox", { name: "检验方法：M20" }), {
+    target: { value: "三针法" },
+  });
+
+  let saved = false;
+  await act(async () => {
+    saved = await draftSaveRef.current!.saveDrafts();
+  });
+
+  expect(saved).toBe(true);
+  expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({
+    type: "set_sip_detail_fields",
+    item_id: "sip-handle",
+    inspection_method: "三针法",
+  }));
+  expect(onDraftChange).toHaveBeenLastCalledWith(false);
 });

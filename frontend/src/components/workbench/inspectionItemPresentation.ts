@@ -1,7 +1,7 @@
 import type {
   BalloonOverlay,
   CandidateType,
-  ProjectWorkbenchCandidate,
+  ProjectWorkbenchCandidateView,
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
@@ -116,7 +116,7 @@ export function isBalloonDecisionPending(item: ReviewItem): boolean {
 
 export function isAutoAcceptedCandidateProjection(
   item: ReviewItem,
-  candidate: ProjectWorkbenchCandidate,
+  candidate: ProjectWorkbenchCandidateView,
 ): boolean {
   return isAutoAcceptedItem(item)
     && candidate.confidence_band === "high"

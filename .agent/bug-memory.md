@@ -2,6 +2,44 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260730-technical-requirement-confirm-action-missing
+
+- Status: 已解决
+- First reported: 2026-07-30
+- Last reported: 2026-07-30
+- Recurrence: 1
+- Surface: `frontend/src/components/workbench/TechnicalRequirementPanel.tsx` 的待确认技术要求操作区
+- Symptom: 技术要求摘要显示“待确认 1”，展开后的对应要求也显示“待确认”，但界面没有可见的确认按钮，用户无法明确完成该要求的确认操作
+- Previously correct behavior: 待确认技术要求必须提供可见、可理解的确认入口，并继续由既有 review command Owner 提交状态变更
+- Reproduction: 用户截图中技术要求总数为 5、待确认数为 1；展开后第 4 条要求显示“待确认”，只出现“调整匹配”和匹配检验项，没有确认按钮
+- Root cause: `set_technical_requirement_match` 本身就是单条技术要求的确认
+  Owner，但 `TechnicalRequirementPanel` 只把它投影为“匹配此检验项”，同时仅按
+  `match_outcome="unresolved"` 统计待确认；因此 unresolved 要求没有可识别的
+  “确认”动作，自动已有 `matched_items / global_scope` 建议且仍
+  `review_required=true` 的要求也没有确认当前建议的入口。
+- Fix: 待确认计数改用 canonical `review_required`；unresolved 候选动作明确为
+  “确认匹配此检验项”；已有 matched 建议可一次性原样确认全部 target，global
+  建议可明确确认；所有动作继续复用唯一 `set_technical_requirement_match`
+  command seam。确认主按钮只在 enabled 时使用蓝色强调，disabled 状态回到统一灰态。
+- Regression check: TDD RED 先稳定失败于缺少“确认匹配此检验项”和自动建议未计入
+  待确认；`npm run test -- --run src/components/workbench/TechnicalRequirementPanel.test.tsx`
+  返回 `3/3`，`npm run test -- --run src/components/workbench/InspectionWorkbench.test.tsx`
+  返回 `32/32`，frontend 全量 `npm run test -- --run` 返回 `226/226`，
+  `npm run build` 成功。
+- Runtime proof: Chrome MCP 连续返回 `Transport closed`；改用同一
+  `127.0.0.1:9222` Chrome 的 Playwright CDP 连接，在真实项目
+  `fb0572f9-4401-4d05-95ae-fde26b28d1d3` 验证第 4 条待确认要求已显示
+  “确认匹配此检验项”按钮且可用，页面 console error / warning 为 `0 / 0`；
+  DOM-only 状态检查确认 enabled 为蓝色、disabled 为统一灰色且
+  `cursor=not-allowed`。未点击真实确认命令，避免替用户选择并持久化技术要求关系。
+- Change: `fix(frontend): make requirement confirmation explicit`
+- Selected lane: `Lite`
+- Selected plan: `BUG-20260730-technical-requirement-confirm-action-missing` ad hoc bug task；不切换七天 P0 implementation plan
+- Selection evidence: 单个 workbench 前端交互面，当前未发现稳定 API/schema、runtime config 或跨模块 data-integrity boundary 变化
+- Validation action: `continue`；先验证 root-cause hypothesis，再执行 TDD RED/GREEN、focused test、build 与 Chrome MCP smoke
+- Writer ownership and order: 父 agent 唯一 writer；只读 explorer 不修改任何文件
+- Next verification: 已完成 focused/full tests、build、independent review 与无数据写入的 live browser smoke
+
 ## BUG-20260730-unclassified-vision-failure-category
 
 - Status: 已解决
@@ -145,3 +183,33 @@
   candidate 3、6、82 并显示“待选择气泡”；冻结/生成/确认仍按顺序禁用，
   无横向溢出，console error / warning 为 `0 / 0`
 - Change: `fix: keep bubble decisions in review queue`
+
+## BUG-20260730-quantity-hidden-from-review
+
+- Status: 已解决
+- First reported: 2026-07-30
+- Last reported: 2026-07-30
+- Recurrence: 1
+- Surface: 工程图数量前缀解析结果、检验项审核编辑与 Review command
+- Symptom: `3 × M10 通`、`6 × ⌀12 通` 等候选项在后端仍保留
+  `quantity`，但审核详情“解析结果”不展示数量，也无法人工修正
+- Previously correct behavior: typed inspection item 的解析结果首项展示可编辑数量；
+  保存时作为正整数 `quantity` 随同既有 `edit` command 提交
+- Reproduction: `ReviewItem.quantity=4` 时，当前
+  `ReviewPanel.test.tsx` 反向断言“审核详情不展示数量字段”
+- Root cause: commit `723fc45` 只从 `ReviewPanel` 删除 `QUANTITY_FIELD`、
+  integer 解析和 number input；Candidate schema、parser、working copy 与前端
+  `ReviewItem` 类型仍保留既有 `quantity` owner
+- Fix: 在 `ReviewPanel` 恢复既有 `quantity` 核心字段、nullable 正整数解析与
+  number input，并继续通过唯一 `edit` command 保存；未改 Candidate schema、
+  review persistence、分组合并语义或 SIP 导出模板
+- Regression check: TDD RED 先由数量显示和保存用例复现；`ReviewPanel`
+  `32/32` 通过，覆盖正整数、清空为 `null`、`0` 与 `1.5` 不提交；
+  frontend 全量 `221/221` 通过，`npm run build` 成功；quantity grouping
+  `2/2` 与 review typed edit / merge `2/2` 通过
+- Runtime proof: Chrome MCP 在真实项目
+  `fb0572f9-4401-4d05-95ae-fde26b28d1d3` 选中
+  `3 x M10 通`，解析结果显示数量 `3`、螺纹规格 `M10`、通孔“是”，
+  quantity input 为 `min=1 / step=1`；页面无横向溢出，
+  console error / warning 为 `0 / 0`
+- Change: `fix(frontend): restore inspection quantity field`

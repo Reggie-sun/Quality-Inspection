@@ -5,18 +5,22 @@ from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
+from app.errors.api import api_error, error_responses
+from app.errors.schemas import ErrorSeverity
 from app.review.locks import LockConflict, LockRequired, acquire_lock
 from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.schemas import (
     ConfirmReviewRequest,
     FreezeItemsRequest,
     LockRequest,
+    ReviewedResultResponse,
     ReviewCommandRequest,
+    ReviewLockResponse,
+    ReviewWorkingCopyResponse,
 )
 from app.review.service import (
     FreezeBlocked,
@@ -51,7 +55,19 @@ def get_review_service(session: SessionDependency) -> ReviewService:
 ReviewServiceDependency = Annotated[ReviewService, Depends(get_review_service)]
 
 
-@router.post("/{project_id}/review/lock")
+@router.post(
+    "/{project_id}/review/lock",
+    operation_id="QI-API-REV-001",
+    response_model=ReviewLockResponse,
+    responses=error_responses(
+        {
+            404: ("project_not_found",),
+            409: ("review_lock_conflict",),
+            422: ("request_validation_failed",),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def lock_review(
     project_id: uuid.UUID,
     body: LockRequest,
@@ -69,18 +85,25 @@ def lock_review(
         return _error(409, "review_lock_conflict", str(error))
     except LookupError as error:
         return _error(404, "project_not_found", str(error))
-    return JSONResponse(
-        jsonable_encoder(
-            {
-                "project_id": lock.project_id,
-                "operator_id": lock.operator_id,
-                "expires_at": lock.expires_at,
-            }
-        )
-    )
+    return {
+        "project_id": lock.project_id,
+        "operator_id": lock.operator_id,
+        "expires_at": lock.expires_at,
+    }
 
 
-@router.get("/{project_id}/review/working-copy")
+@router.get(
+    "/{project_id}/review/working-copy",
+    operation_id="QI-API-REV-002",
+    response_model=ReviewWorkingCopyResponse,
+    responses=error_responses(
+        {
+            404: ("review_working_copy_not_found",),
+            422: ("request_validation_failed",),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def get_working_copy(
     project_id: uuid.UUID,
     service: ReviewServiceDependency,
@@ -89,10 +112,26 @@ def get_working_copy(
         working = service.get_for_project(project_id)
     except ReviewNotFound as error:
         return _error(404, "review_working_copy_not_found", str(error))
-    return JSONResponse(jsonable_encoder(_working_copy(working)))
+    return _working_copy(working)
 
 
-@router.post("/{project_id}/review/commands")
+@router.post(
+    "/{project_id}/review/commands",
+    operation_id="QI-API-REV-003",
+    response_model=ReviewWorkingCopyResponse,
+    responses=error_responses(
+        {
+            404: ("review_working_copy_not_found",),
+            409: (
+                "review_version_conflict",
+                "review_items_frozen",
+                "review_lock_conflict",
+            ),
+            422: ("review_command_invalid", "request_validation_failed"),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def apply_command(
     project_id: uuid.UUID,
     body: ReviewCommandRequest,
@@ -117,10 +156,29 @@ def apply_command(
         return _error(404, "review_working_copy_not_found", str(error))
     except ValueError as error:
         return _error(422, "review_command_invalid", str(error))
-    return JSONResponse(jsonable_encoder(_working_copy(saved)))
+    return _working_copy(saved)
 
 
-@router.post("/{project_id}/review/freeze-items")
+@router.post(
+    "/{project_id}/review/freeze-items",
+    operation_id="QI-API-REV-004",
+    response_model=ReviewWorkingCopyResponse,
+    responses=error_responses(
+        {
+            404: ("review_working_copy_not_found",),
+            409: (
+                "review_version_conflict",
+                "coverage_blocking",
+                "unresolved_confirmation",
+                "balloon_required_unconfirmed",
+                "review_items_frozen",
+                "review_lock_conflict",
+            ),
+            422: ("review_operator_invalid", "request_validation_failed"),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def freeze_items(
     project_id: uuid.UUID,
     body: FreezeItemsRequest,
@@ -151,10 +209,42 @@ def freeze_items(
         return _error(404, "review_working_copy_not_found", str(error))
     except ValueError as error:
         return _error(422, "review_operator_invalid", str(error))
-    return JSONResponse(jsonable_encoder(_working_copy(frozen)))
+    return _working_copy(frozen)
 
 
-@router.post("/{project_id}/review/confirm")
+@router.post(
+    "/{project_id}/review/confirm",
+    operation_id="QI-API-REV-005",
+    response_model=ReviewedResultResponse,
+    responses=error_responses(
+        {
+            404: ("review_working_copy_not_found",),
+            409: (
+                "review_version_conflict",
+                "item_set_not_frozen",
+                "numbering_stale",
+                "sip_metadata_unconfirmed",
+                "sip_detail_fields_unconfirmed",
+                "missing_required_balloon",
+                "item_balloon_disconnect",
+                "manual_required",
+                "unreadable_number",
+                "outside_cropbox",
+                "owner_glyph_outside_circle",
+                "protected_overlap",
+                "source_text_overlap",
+                "invalid_leader",
+                "circle_overlap",
+                "glyph_overlap",
+                "glyph_circle_overlap",
+                "duplicate_or_gapped_number",
+                "review_lock_conflict",
+            ),
+            422: ("review_confirmation_invalid", "request_validation_failed"),
+            500: ("internal_server_error",),
+        }
+    ),
+)
 def confirm_review(
     project_id: uuid.UUID,
     body: ConfirmReviewRequest,
@@ -183,7 +273,7 @@ def confirm_review(
         return _error(404, "review_working_copy_not_found", str(error))
     except ValueError as error:
         return _error(422, "review_confirmation_invalid", str(error))
-    return JSONResponse(jsonable_encoder(_reviewed_result(reviewed)))
+    return _reviewed_result(reviewed)
 
 
 def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
@@ -227,9 +317,14 @@ def _error(
     status_code: int,
     code: str,
     message: str,
+    severity: ErrorSeverity = "blocking",
     **details: object,
 ) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={"error": {"code": code, "message": message, **details}},
+    return api_error(
+        status_code,
+        code,
+        message,
+        severity=severity,
+        stage="review_api",
+        blockers=details.get("blockers"),
     )

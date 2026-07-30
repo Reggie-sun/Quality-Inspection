@@ -1,0 +1,3562 @@
+{
+  "components": {
+    "schemas": {
+      "Add": {
+        "additionalProperties": false,
+        "properties": {
+          "balloon_required": {
+            "title": "Balloon Required",
+            "type": "boolean"
+          },
+          "coordinates": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Coordinates",
+            "type": "array"
+          },
+          "item_type": {
+            "enum": [
+              "linear_dimension",
+              "diameter_dimension",
+              "thread",
+              "radius",
+              "angle",
+              "general_requirement",
+              "composite"
+            ],
+            "title": "Item Type",
+            "type": "string"
+          },
+          "page_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Index"
+          },
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "local_feature",
+              "global_requirement"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "type": {
+            "const": "add",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "raw_text",
+          "item_type",
+          "coordinates",
+          "scope",
+          "balloon_required"
+        ],
+        "title": "Add",
+        "type": "object"
+      },
+      "BalloonCollectionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "balloons": {
+            "items": {
+              "$ref": "#/components/schemas/BalloonResponse"
+            },
+            "title": "Balloons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "balloons"
+        ],
+        "title": "BalloonCollectionResponse",
+        "type": "object"
+      },
+      "BalloonResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor_bbox_pdf": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Anchor Bbox Pdf",
+            "type": "array"
+          },
+          "center_pdf": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Center Pdf",
+            "type": "array"
+          },
+          "collision_flags": {
+            "items": {
+              "enum": [
+                "circle_overlap",
+                "glyph_overlap",
+                "glyph_circle_overlap",
+                "owner_glyph_outside_circle",
+                "outside_cropbox",
+                "protected_overlap",
+                "source_text_overlap",
+                "unreadable_number",
+                "invalid_leader",
+                "forbidden_overlap"
+              ],
+              "type": "string"
+            },
+            "title": "Collision Flags",
+            "type": "array"
+          },
+          "formal_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formal Number"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "inspection_item_id": {
+            "title": "Inspection Item Id",
+            "type": "string"
+          },
+          "leader_target_pdf": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Leader Target Pdf",
+            "type": "array"
+          },
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "placement_status": {
+            "enum": [
+              "placed",
+              "manual_required"
+            ],
+            "title": "Placement Status",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "source_location_id": {
+            "title": "Source Location Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "deleted"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suggested_number": {
+            "title": "Suggested Number",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "inspection_item_id",
+          "source_location_id",
+          "page_index",
+          "suggested_number",
+          "formal_number",
+          "sort_order",
+          "anchor_bbox_pdf",
+          "leader_target_pdf",
+          "center_pdf",
+          "placement_status",
+          "collision_flags",
+          "status",
+          "version"
+        ],
+        "title": "BalloonResponse",
+        "type": "object"
+      },
+      "Body_QI-API-PRJ-001": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_QI-API-PRJ-001",
+        "type": "object"
+      },
+      "ConfirmReviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version"
+        ],
+        "title": "ConfirmReviewRequest",
+        "type": "object"
+      },
+      "CreateExportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reviewed_result_id": {
+            "format": "uuid",
+            "title": "Reviewed Result Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reviewed_result_id"
+        ],
+        "title": "CreateExportRequest",
+        "type": "object"
+      },
+      "DeleteBalloon": {
+        "additionalProperties": false,
+        "properties": {
+          "balloon_id": {
+            "format": "uuid",
+            "title": "Balloon Id",
+            "type": "string"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "type": {
+            "const": "delete",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "balloon_id",
+          "expected_version"
+        ],
+        "title": "DeleteBalloon",
+        "type": "object"
+      },
+      "Edit": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "additionalProperties": true,
+            "minProperties": 1,
+            "title": "Fields",
+            "type": "object"
+          },
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "edit",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_id",
+          "fields"
+        ],
+        "title": "Edit",
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "blockers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blockers"
+          },
+          "cause_category": {
+            "title": "Cause Category",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "location_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Ref"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "retryable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retryable"
+          },
+          "severity": {
+            "enum": [
+              "fatal",
+              "blocking",
+              "review_required",
+              "warning",
+              "informational"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "workbench_ready": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workbench Ready"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "severity",
+          "stage",
+          "location_ref",
+          "cause_category"
+        ],
+        "title": "ErrorDetail",
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "Exclude": {
+        "additionalProperties": false,
+        "properties": {
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "exclude",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_id"
+        ],
+        "title": "Exclude",
+        "type": "object"
+      },
+      "ExportArtifactResponse": {
+        "properties": {
+          "downloadable": {
+            "title": "Downloadable",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "ballooned_pdf",
+              "sip_excel",
+              "manifest"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "reviewed_result_id": {
+            "format": "uuid",
+            "title": "Reviewed Result Id",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "sha256",
+          "size_bytes",
+          "reviewed_result_id",
+          "downloadable"
+        ],
+        "title": "ExportArtifactResponse",
+        "type": "object"
+      },
+      "ExportResponse": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ExportArtifactResponse"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "error_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "mapping_version": {
+            "title": "Mapping Version",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "renderer_version": {
+            "title": "Renderer Version",
+            "type": "string"
+          },
+          "reviewed_result_id": {
+            "format": "uuid",
+            "title": "Reviewed Result Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "success",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "template_version": {
+            "title": "Template Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "reviewed_result_id",
+          "status",
+          "error_id",
+          "template_version",
+          "mapping_version",
+          "renderer_version",
+          "artifacts"
+        ],
+        "title": "ExportResponse",
+        "type": "object"
+      },
+      "FreezeItemsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version"
+        ],
+        "title": "FreezeItemsRequest",
+        "type": "object"
+      },
+      "GenerateBalloonsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version"
+        ],
+        "title": "GenerateBalloonsRequest",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "app_name": {
+            "title": "App Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "app_name"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "IgnoreSource": {
+        "additionalProperties": false,
+        "properties": {
+          "observation_id": {
+            "minLength": 1,
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "ignore_source",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "observation_id"
+        ],
+        "title": "IgnoreSource",
+        "type": "object"
+      },
+      "IgnoreSources": {
+        "additionalProperties": false,
+        "properties": {
+          "observation_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Observation Ids",
+            "type": "array"
+          },
+          "type": {
+            "const": "ignore_sources",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "observation_ids"
+        ],
+        "title": "IgnoreSources",
+        "type": "object"
+      },
+      "Keep": {
+        "additionalProperties": false,
+        "properties": {
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "keep",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_id"
+        ],
+        "title": "Keep",
+        "type": "object"
+      },
+      "LockRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ttl_seconds": {
+            "default": 300,
+            "maximum": 3600.0,
+            "minimum": 1.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "LockRequest",
+        "type": "object"
+      },
+      "Merge": {
+        "additionalProperties": false,
+        "properties": {
+          "item_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "title": "Item Ids",
+            "type": "array"
+          },
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "merge",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_ids",
+          "raw_text"
+        ],
+        "title": "Merge",
+        "type": "object"
+      },
+      "MoveBalloon": {
+        "additionalProperties": false,
+        "properties": {
+          "balloon_id": {
+            "format": "uuid",
+            "title": "Balloon Id",
+            "type": "string"
+          },
+          "center_pdf": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Center Pdf",
+            "type": "array"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "type": {
+            "const": "move",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "balloon_id",
+          "expected_version",
+          "center_pdf"
+        ],
+        "title": "MoveBalloon",
+        "type": "object"
+      },
+      "ProcessingStage": {
+        "enum": [
+          "queued",
+          "parsing",
+          "recognizing",
+          "preparing_review"
+        ],
+        "title": "ProcessingStage",
+        "type": "string"
+      },
+      "ProjectError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "stage"
+        ],
+        "title": "ProjectError",
+        "type": "object"
+      },
+      "ProjectPhase": {
+        "enum": [
+          "queued",
+          "processing",
+          "ready_for_review",
+          "partial_review_required",
+          "failed"
+        ],
+        "title": "ProjectPhase",
+        "type": "string"
+      },
+      "ProjectState": {
+        "enum": [
+          "processing",
+          "ready_for_edit",
+          "editing",
+          "reviewed",
+          "exporting",
+          "export_succeeded",
+          "processing_failed",
+          "export_failed",
+          "unsupported_input"
+        ],
+        "title": "ProjectState",
+        "type": "string"
+      },
+      "ProjectStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phase": {
+            "$ref": "#/components/schemas/ProjectPhase"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProcessingStage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workbench_ready": {
+            "title": "Workbench Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "phase",
+          "workbench_ready",
+          "retryable",
+          "error"
+        ],
+        "title": "ProjectStatusResponse",
+        "type": "object"
+      },
+      "ProjectWorkbenchCandidateResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox_pdf": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Bbox Pdf",
+            "type": "array"
+          },
+          "confidence_band": {
+            "anyOf": [
+              {
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Band"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "review_disposition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "auto_accepted",
+                  "review_required"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Disposition"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "id",
+          "item_id",
+          "page_index",
+          "bbox_pdf",
+          "confidence_band",
+          "review_disposition",
+          "status"
+        ],
+        "title": "ProjectWorkbenchCandidateResponse",
+        "type": "object"
+      },
+      "ProjectWorkbenchPageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "title": "Height",
+            "type": "number"
+          },
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "pdf_to_render_matrix": {
+            "maxItems": 6,
+            "minItems": 6,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Pdf To Render Matrix",
+            "type": "array"
+          },
+          "render_to_pdf_matrix": {
+            "maxItems": 6,
+            "minItems": 6,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Render To Pdf Matrix",
+            "type": "array"
+          },
+          "width": {
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "page_index",
+          "width",
+          "height",
+          "pdf_to_render_matrix",
+          "render_to_pdf_matrix"
+        ],
+        "title": "ProjectWorkbenchPageResponse",
+        "type": "object"
+      },
+      "ProjectWorkbenchResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "balloon_blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Balloon Blockers",
+            "type": "array"
+          },
+          "balloons": {
+            "items": {
+              "$ref": "#/components/schemas/BalloonResponse"
+            },
+            "title": "Balloons",
+            "type": "array"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectWorkbenchCandidateResponse"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "latest_export": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectWorkbenchPageResponse"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/WorkbenchProjectResponse"
+          },
+          "reviewed_result_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Result Id"
+          },
+          "source_pdf_url": {
+            "title": "Source Pdf Url",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectWorkbenchSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "working_copy": {
+            "$ref": "#/components/schemas/ReviewWorkingCopyProjection"
+          }
+        },
+        "required": [
+          "project",
+          "working_copy",
+          "pages",
+          "candidates",
+          "sources",
+          "balloons",
+          "balloon_blockers",
+          "source_pdf_url",
+          "reviewed_result_id",
+          "latest_export"
+        ],
+        "title": "ProjectWorkbenchResponse",
+        "type": "object"
+      },
+      "ProjectWorkbenchSourceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox_pdf": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Bbox Pdf",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "item_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Item Ids",
+            "type": "array"
+          },
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "source_type": {
+            "enum": [
+              "text",
+              "visual"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "item_ids",
+          "page_index",
+          "bbox_pdf",
+          "raw_text",
+          "source_type"
+        ],
+        "title": "ProjectWorkbenchSourceResponse",
+        "type": "object"
+      },
+      "PromoteSource": {
+        "additionalProperties": false,
+        "properties": {
+          "balloon_required": {
+            "title": "Balloon Required",
+            "type": "boolean"
+          },
+          "item_type": {
+            "enum": [
+              "linear_dimension",
+              "diameter_dimension",
+              "thread",
+              "radius",
+              "angle",
+              "general_requirement",
+              "composite"
+            ],
+            "title": "Item Type",
+            "type": "string"
+          },
+          "observation_id": {
+            "minLength": 1,
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "page_index": {
+            "minimum": 0.0,
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "raw_text": {
+            "minLength": 1,
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "local_feature",
+              "global_requirement"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "type": {
+            "const": "promote_source",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "observation_id",
+          "raw_text",
+          "item_type",
+          "scope",
+          "balloon_required",
+          "page_index"
+        ],
+        "title": "PromoteSource",
+        "type": "object"
+      },
+      "RebuildBalloon": {
+        "additionalProperties": false,
+        "properties": {
+          "balloon_id": {
+            "format": "uuid",
+            "title": "Balloon Id",
+            "type": "string"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "type": {
+            "const": "rebuild",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "balloon_id",
+          "expected_version"
+        ],
+        "title": "RebuildBalloon",
+        "type": "object"
+      },
+      "RenumberBalloons": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Expected Versions",
+            "type": "object"
+          },
+          "ordered_balloon_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Ordered Balloon Ids",
+            "type": "array"
+          },
+          "type": {
+            "const": "renumber",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "ordered_balloon_ids",
+          "expected_versions"
+        ],
+        "title": "RenumberBalloons",
+        "type": "object"
+      },
+      "ReorderBalloon": {
+        "additionalProperties": false,
+        "properties": {
+          "balloon_id": {
+            "format": "uuid",
+            "title": "Balloon Id",
+            "type": "string"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "sort_order": {
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "type": {
+            "const": "reorder",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "balloon_id",
+          "expected_version",
+          "sort_order"
+        ],
+        "title": "ReorderBalloon",
+        "type": "object"
+      },
+      "ResolveConfirmation": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "resolve_confirmation",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_id",
+          "accepted"
+        ],
+        "title": "ResolveConfirmation",
+        "type": "object"
+      },
+      "ReviewCommandRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "discriminator": {
+              "mapping": {
+                "add": "#/components/schemas/Add",
+                "edit": "#/components/schemas/Edit",
+                "exclude": "#/components/schemas/Exclude",
+                "ignore_source": "#/components/schemas/IgnoreSource",
+                "ignore_sources": "#/components/schemas/IgnoreSources",
+                "keep": "#/components/schemas/Keep",
+                "merge": "#/components/schemas/Merge",
+                "promote_source": "#/components/schemas/PromoteSource",
+                "resolve_confirmation": "#/components/schemas/ResolveConfirmation",
+                "set_balloon_required": "#/components/schemas/SetBalloonRequired",
+                "set_sip_detail_fields": "#/components/schemas/SetSipDetailFields",
+                "set_sip_metadata": "#/components/schemas/SetSipMetadata",
+                "set_technical_requirement_match": "#/components/schemas/SetTechnicalRequirementMatch",
+                "split": "#/components/schemas/Split"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Keep"
+              },
+              {
+                "$ref": "#/components/schemas/Exclude"
+              },
+              {
+                "$ref": "#/components/schemas/Edit"
+              },
+              {
+                "$ref": "#/components/schemas/Add"
+              },
+              {
+                "$ref": "#/components/schemas/PromoteSource"
+              },
+              {
+                "$ref": "#/components/schemas/IgnoreSource"
+              },
+              {
+                "$ref": "#/components/schemas/IgnoreSources"
+              },
+              {
+                "$ref": "#/components/schemas/Merge"
+              },
+              {
+                "$ref": "#/components/schemas/Split"
+              },
+              {
+                "$ref": "#/components/schemas/ResolveConfirmation"
+              },
+              {
+                "$ref": "#/components/schemas/SetBalloonRequired"
+              },
+              {
+                "$ref": "#/components/schemas/SetSipDetailFields"
+              },
+              {
+                "$ref": "#/components/schemas/SetSipMetadata"
+              },
+              {
+                "$ref": "#/components/schemas/SetTechnicalRequirementMatch"
+              }
+            ],
+            "title": "Command"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version",
+          "command"
+        ],
+        "title": "ReviewCommandRequest",
+        "type": "object"
+      },
+      "ReviewLockResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "operator_id": {
+            "title": "Operator Id",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "operator_id",
+          "expires_at"
+        ],
+        "title": "ReviewLockResponse",
+        "type": "object"
+      },
+      "ReviewWorkingCopyProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "items_frozen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Frozen At"
+          },
+          "items_frozen_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Frozen By"
+          },
+          "items_frozen_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Frozen Version"
+          },
+          "manual_review_count": {
+            "title": "Manual Review Count",
+            "type": "integer"
+          },
+          "numbering_stale": {
+            "title": "Numbering Stale",
+            "type": "boolean"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "raw_result_id": {
+            "format": "uuid",
+            "title": "Raw Result Id",
+            "type": "string"
+          },
+          "sip_metadata": {
+            "additionalProperties": true,
+            "title": "Sip Metadata",
+            "type": "object"
+          },
+          "technical_requirements": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Technical Requirements",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "raw_result_id",
+          "version",
+          "items",
+          "coverage",
+          "technical_requirements",
+          "sip_metadata",
+          "numbering_stale",
+          "items_frozen_at",
+          "items_frozen_by",
+          "items_frozen_version",
+          "manual_review_count"
+        ],
+        "title": "ReviewWorkingCopyProjection",
+        "type": "object"
+      },
+      "ReviewWorkingCopyResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "coverage": {
+            "additionalProperties": true,
+            "title": "Coverage",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "items_frozen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Frozen At"
+          },
+          "items_frozen_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Frozen By"
+          },
+          "items_frozen_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items Frozen Version"
+          },
+          "manual_review_count": {
+            "title": "Manual Review Count",
+            "type": "integer"
+          },
+          "numbering_stale": {
+            "title": "Numbering Stale",
+            "type": "boolean"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "raw_result_id": {
+            "format": "uuid",
+            "title": "Raw Result Id",
+            "type": "string"
+          },
+          "sip_metadata": {
+            "additionalProperties": true,
+            "title": "Sip Metadata",
+            "type": "object"
+          },
+          "technical_requirements": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Technical Requirements",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "raw_result_id",
+          "version",
+          "items",
+          "coverage",
+          "technical_requirements",
+          "sip_metadata",
+          "numbering_stale",
+          "items_frozen_at",
+          "items_frozen_by",
+          "items_frozen_version",
+          "created_at",
+          "updated_at",
+          "manual_review_count"
+        ],
+        "title": "ReviewWorkingCopyResponse",
+        "type": "object"
+      },
+      "ReviewedResultResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "balloons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Balloons",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sip_metadata": {
+            "additionalProperties": true,
+            "title": "Sip Metadata",
+            "type": "object"
+          },
+          "working_copy_id": {
+            "format": "uuid",
+            "title": "Working Copy Id",
+            "type": "string"
+          },
+          "working_version": {
+            "title": "Working Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "working_copy_id",
+          "working_version",
+          "items",
+          "balloons",
+          "sip_metadata",
+          "schema_version",
+          "created_at"
+        ],
+        "title": "ReviewedResultResponse",
+        "type": "object"
+      },
+      "SetBalloonRequired": {
+        "additionalProperties": false,
+        "properties": {
+          "balloon_required": {
+            "title": "Balloon Required",
+            "type": "boolean"
+          },
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "set_balloon_required",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_id",
+          "balloon_required"
+        ],
+        "title": "SetBalloonRequired",
+        "type": "object"
+      },
+      "SetSipDetailFields": {
+        "additionalProperties": false,
+        "properties": {
+          "inspection_item": {
+            "minLength": 1,
+            "title": "Inspection Item",
+            "type": "string"
+          },
+          "inspection_method": {
+            "minLength": 1,
+            "title": "Inspection Method",
+            "type": "string"
+          },
+          "inspection_role": {
+            "minLength": 1,
+            "title": "Inspection Role",
+            "type": "string"
+          },
+          "inspection_standard": {
+            "minLength": 1,
+            "title": "Inspection Standard",
+            "type": "string"
+          },
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "key_dimension": {
+            "minLength": 1,
+            "title": "Key Dimension",
+            "type": "string"
+          },
+          "remarks": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Remarks",
+            "type": "string"
+          },
+          "source_page": {
+            "minimum": 1.0,
+            "title": "Source Page",
+            "type": "integer"
+          },
+          "type": {
+            "const": "set_sip_detail_fields",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_id",
+          "inspection_item",
+          "inspection_standard",
+          "inspection_method",
+          "key_dimension",
+          "inspection_role",
+          "source_page"
+        ],
+        "title": "SetSipDetailFields",
+        "type": "object"
+      },
+      "SetSipMetadata": {
+        "additionalProperties": false,
+        "properties": {
+          "drawing_number": {
+            "minLength": 1,
+            "title": "Drawing Number",
+            "type": "string"
+          },
+          "material": {
+            "minLength": 1,
+            "title": "Material",
+            "type": "string"
+          },
+          "material_code": {
+            "minLength": 1,
+            "title": "Material Code",
+            "type": "string"
+          },
+          "material_name": {
+            "minLength": 1,
+            "title": "Material Name",
+            "type": "string"
+          },
+          "revision": {
+            "minLength": 1,
+            "title": "Revision",
+            "type": "string"
+          },
+          "type": {
+            "const": "set_sip_metadata",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "material_code",
+          "material_name",
+          "drawing_number",
+          "material",
+          "revision"
+        ],
+        "title": "SetSipMetadata",
+        "type": "object"
+      },
+      "SetTechnicalRequirementMatch": {
+        "additionalProperties": false,
+        "properties": {
+          "matched_item_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Matched Item Ids",
+            "type": "array"
+          },
+          "outcome": {
+            "enum": [
+              "matched_items",
+              "global_scope",
+              "excluded"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "requirement_id": {
+            "minLength": 1,
+            "title": "Requirement Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "set_technical_requirement_match",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "requirement_id",
+          "outcome"
+        ],
+        "title": "SetTechnicalRequirementMatch",
+        "type": "object"
+      },
+      "Split": {
+        "additionalProperties": false,
+        "properties": {
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "$ref": "#/components/schemas/SplitPart"
+            },
+            "minItems": 2,
+            "title": "Parts",
+            "type": "array"
+          },
+          "type": {
+            "const": "split",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_id",
+          "parts"
+        ],
+        "title": "Split",
+        "type": "object"
+      },
+      "SplitPart": {
+        "additionalProperties": false,
+        "properties": {
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "raw_text"
+        ],
+        "title": "SplitPart",
+        "type": "object"
+      },
+      "WorkbenchProjectResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ProjectState"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "version"
+        ],
+        "title": "WorkbenchProjectResponse",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Quality Inspection",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/exports/{export_id}": {
+      "get": {
+        "operationId": "QI-API-EXP-002",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "export_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Export Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "export_not_found"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Get Export",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/v1/exports/{export_id}/downloads/{kind}": {
+      "get": {
+        "operationId": "QI-API-EXP-003",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "export_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Export Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Published export artifact."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "export_artifact_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "export_artifact_unavailable"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Download Export",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "QI-API-SYS-001",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Health"
+      }
+    },
+    "/api/v1/projects": {
+      "post": {
+        "operationId": "QI-API-PRJ-001",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_QI-API-PRJ-001"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "invalid_pdf",
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "project_intake_failed",
+              "internal_server_error"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Required dispatch or service is unavailable.",
+            "x-stable-error-codes": [
+              "project_dispatch_failed"
+            ]
+          }
+        },
+        "summary": "Create Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/balloons": {
+      "get": {
+        "operationId": "QI-API-BAL-001",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalloonCollectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "List Balloons",
+        "tags": [
+          "balloons"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/balloons/commands": {
+      "post": {
+        "operationId": "QI-API-BAL-003",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-QI-Operator",
+            "required": true,
+            "schema": {
+              "title": "X-Qi-Operator",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "delete": "#/components/schemas/DeleteBalloon",
+                    "move": "#/components/schemas/MoveBalloon",
+                    "rebuild": "#/components/schemas/RebuildBalloon",
+                    "renumber": "#/components/schemas/RenumberBalloons",
+                    "reorder": "#/components/schemas/ReorderBalloon"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MoveBalloon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DeleteBalloon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RebuildBalloon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReorderBalloon"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RenumberBalloons"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BalloonResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BalloonCollectionResponse"
+                    }
+                  ],
+                  "title": "Response Qi-Api-Bal-003"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "balloon_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "balloon_version_conflict",
+              "review_lock_conflict",
+              "balloon_source_unavailable",
+              "balloon_order_conflict",
+              "review_already_confirmed"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "balloon_command_invalid",
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Apply Balloon Command",
+        "tags": [
+          "balloons"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/balloons/generate": {
+      "post": {
+        "operationId": "QI-API-BAL-002",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-QI-Operator",
+            "required": true,
+            "schema": {
+              "title": "X-Qi-Operator",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateBalloonsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalloonCollectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "review_working_copy_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "review_item_set_not_frozen",
+              "balloon_version_conflict",
+              "review_lock_conflict",
+              "balloon_source_unavailable",
+              "balloon_order_conflict",
+              "review_already_confirmed"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "balloon_command_invalid",
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Generate Balloons",
+        "tags": [
+          "balloons"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/exports": {
+      "post": {
+        "operationId": "QI-API-EXP-001",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "reviewed_result_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "export_in_progress",
+              "export_preflight_failed",
+              "export_template_unavailable",
+              "export_template_mapping_unavailable",
+              "export_font_unavailable",
+              "export_font_license_unavailable",
+              "export_template_mapping_hash_mismatch",
+              "export_template_hash_mismatch",
+              "export_template_registration_invalid",
+              "export_template_invalid",
+              "export_template_sheet_missing",
+              "export_font_hash_mismatch",
+              "export_font_license_hash_mismatch"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Create Export",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/review/commands": {
+      "post": {
+        "operationId": "QI-API-REV-003",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-QI-Operator",
+            "required": true,
+            "schema": {
+              "title": "X-Qi-Operator",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewWorkingCopyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "review_working_copy_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "review_version_conflict",
+              "review_items_frozen",
+              "review_lock_conflict"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "review_command_invalid",
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Apply Command",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/review/confirm": {
+      "post": {
+        "operationId": "QI-API-REV-005",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-QI-Operator",
+            "required": true,
+            "schema": {
+              "title": "X-Qi-Operator",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewedResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "review_working_copy_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "review_version_conflict",
+              "item_set_not_frozen",
+              "numbering_stale",
+              "sip_metadata_unconfirmed",
+              "sip_detail_fields_unconfirmed",
+              "missing_required_balloon",
+              "item_balloon_disconnect",
+              "manual_required",
+              "unreadable_number",
+              "outside_cropbox",
+              "owner_glyph_outside_circle",
+              "protected_overlap",
+              "source_text_overlap",
+              "invalid_leader",
+              "circle_overlap",
+              "glyph_overlap",
+              "glyph_circle_overlap",
+              "duplicate_or_gapped_number",
+              "review_lock_conflict"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "review_confirmation_invalid",
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Confirm Review",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/review/freeze-items": {
+      "post": {
+        "operationId": "QI-API-REV-004",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-QI-Operator",
+            "required": true,
+            "schema": {
+              "title": "X-Qi-Operator",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FreezeItemsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewWorkingCopyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "review_working_copy_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "review_version_conflict",
+              "coverage_blocking",
+              "unresolved_confirmation",
+              "balloon_required_unconfirmed",
+              "review_items_frozen",
+              "review_lock_conflict"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "review_operator_invalid",
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Freeze Items",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/review/lock": {
+      "post": {
+        "operationId": "QI-API-REV-001",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-QI-Operator",
+            "required": true,
+            "schema": {
+              "title": "X-Qi-Operator",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewLockResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "review_lock_conflict"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Lock Review",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/review/working-copy": {
+      "get": {
+        "operationId": "QI-API-REV-002",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewWorkingCopyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "review_working_copy_not_found"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Get Working Copy",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/source-pdf": {
+      "get": {
+        "operationId": "QI-API-PRJ-004",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Original project PDF."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "project_source_pdf_unavailable"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Get Source Pdf",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/status": {
+      "get": {
+        "operationId": "QI-API-PRJ-002",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "project_status_failed",
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Get Project Status",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/workbench": {
+      "get": {
+        "operationId": "QI-API-PRJ-003",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectWorkbenchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "project_workbench_unavailable"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Get Workbench",
+        "tags": [
+          "projects"
+        ]
+      }
+    }
+  }
+}

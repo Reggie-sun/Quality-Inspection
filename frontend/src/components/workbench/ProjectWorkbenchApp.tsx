@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDocument } from "pdfjs-dist";
 
 import { ApiError, getJson, postJson } from "../../api/client";
 import type {
   BalloonOverlay,
   PdfDocumentLike,
-  ProjectWorkbenchResponse,
+  ProjectWorkbenchView,
+  ProjectWorkbenchTransport,
   ReviewCommand,
 } from "../../api/types";
 import { applyBalloonCommand, generateBalloons } from "../../features/balloons/api";
@@ -25,10 +26,14 @@ import {
   isAutoAcceptedCandidateProjection,
 } from "./inspectionItemPresentation";
 import { InspectionWorkbench } from "./InspectionWorkbench";
-import { WorkbenchWorkflowHeader } from "./WorkbenchWorkflowHeader";
 
 
 const LOCK_RENEWAL_MS = 240_000;
+const PREPARATION_NOT_READY_CODES = new Set([
+  "coverage_blocking",
+  "unresolved_confirmation",
+  "balloon_required_unconfirmed",
+]);
 
 export type PdfLoader = (sourceUrl: string) => Promise<PdfDocumentLike>;
 
@@ -53,7 +58,7 @@ export function ProjectWorkbenchApp({
   loadPdf = loadPdfDocument,
   onReset,
 }: ProjectWorkbenchAppProps) {
-  const [snapshot, setSnapshot] = useState<ProjectWorkbenchResponse>();
+  const [snapshot, setSnapshot] = useState<ProjectWorkbenchView>();
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentLike | null>(null);
   const [busy, setBusy] = useState(false);
   const [startupBlocked, setStartupBlocked] = useState(false);
@@ -61,15 +66,17 @@ export function ProjectWorkbenchApp({
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const [reviewedResultId, setReviewedResultId] = useState<string>();
+  const snapshotRef = useRef<ProjectWorkbenchView | undefined>(undefined);
 
   const safeError = (caught: unknown) => (
     caught instanceof ApiError ? apiErrorCopy(caught.code) : zhCN.errors.fallback
   );
 
   const refresh = useCallback(async () => {
-    const loaded = await getJson<ProjectWorkbenchResponse>(
+    const transport = await getJson<ProjectWorkbenchTransport>(
       `/api/v1/projects/${projectId}/workbench`,
     );
+    const loaded = transport as ProjectWorkbenchView;
     const controlledSource = `/api/v1/projects/${projectId}/source-pdf`;
     if (
       loaded.project.id !== projectId ||
@@ -78,6 +85,7 @@ export function ProjectWorkbenchApp({
     ) {
       throw new Error("project workbench identity mismatch");
     }
+    snapshotRef.current = loaded;
     setSnapshot(loaded);
     setReviewedResultId(loaded.reviewed_result_id ?? undefined);
     return loaded;
@@ -154,14 +162,6 @@ export function ProjectWorkbenchApp({
     () => deriveCandidateNumbers(snapshot?.working_copy.items ?? []),
     [snapshot?.working_copy.items],
   );
-  const activeStage = snapshot?.latest_export?.status === "success"
-    || reviewedResultId !== undefined
-    ? 4
-    : snapshot?.balloons.some((balloon) => balloon.status !== "deleted")
-      || snapshot?.working_copy.items_frozen_at != null
-      ? 3
-      : 2;
-
   const run = async (
     nextStatus: string,
     action: () => Promise<unknown>,
@@ -188,12 +188,15 @@ export function ProjectWorkbenchApp({
     const saved = await run(
       zhCN.workbench.saving,
       async () => {
-        if (snapshot === undefined) throw new Error("project workbench is not loaded");
+        const currentSnapshot = snapshotRef.current;
+        if (currentSnapshot === undefined) {
+          throw new Error("project workbench is not loaded");
+        }
         await saveWorkingCopy(
           postJson,
           projectId,
           operatorId,
-          snapshot.working_copy.version,
+          currentSnapshot.working_copy.version,
           command,
         );
       },
@@ -211,27 +214,85 @@ export function ProjectWorkbenchApp({
     operatorId,
     command,
   ));
+  const prepareReview = async (): Promise<void> => {
+    if (busy || startupBlocked || lockBlocked || snapshot === undefined) return;
+    setBusy(true);
+    setError(undefined);
+    setStatus(zhCN.balloon.generate);
+    try {
+      if (snapshot.working_copy.items_frozen_at == null) {
+        await freezeReviewItems(
+          postJson,
+          projectId,
+          operatorId,
+          snapshot.working_copy.version,
+        );
+      }
+      if (snapshot.balloons.every((balloon) => balloon.status === "deleted")) {
+        await generateBalloons(
+          postJson,
+          projectId,
+          operatorId,
+          snapshot.working_copy.version,
+        );
+      }
+      await refresh();
+      setStatus(zhCN.workbench.balloonsGenerated);
+    } catch (caught) {
+      if (
+        caught instanceof ApiError
+        && PREPARATION_NOT_READY_CODES.has(caught.code)
+      ) {
+        setStatus(undefined);
+        return;
+      }
+      setError(safeError(caught));
+      throw caught;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirmReviewForExport = async (): Promise<string> => {
+    if (reviewedResultId !== undefined) return reviewedResultId;
+    let nextReviewedResultId: string | undefined;
+    const confirmed = await run(
+      zhCN.balloon.confirm,
+      async () => {
+        if (snapshot === undefined) {
+          throw new Error("project workbench is not loaded");
+        }
+        const reviewed = await confirmReviewedResult(
+          postJson,
+          projectId,
+          operatorId,
+          snapshot.working_copy.version,
+        );
+        nextReviewedResultId = reviewed.id;
+        setReviewedResultId(reviewed.id);
+      },
+      zhCN.workbench.reviewedConfirmed,
+    );
+    if (!confirmed || nextReviewedResultId === undefined) {
+      throw new Error("review confirmation failed");
+    }
+    return nextReviewedResultId;
+  };
 
   if (error !== undefined && snapshot === undefined) {
     return (
-      <>
-        <WorkbenchWorkflowHeader activeStage={activeStage} onReset={onReset} />
-        <main role="alert">{error}</main>
-      </>
+      <main className="workbench-shell" role="alert">{error}</main>
     );
   }
   if (snapshot === undefined) {
     return (
-      <>
-        <WorkbenchWorkflowHeader activeStage={activeStage} onReset={onReset} />
-        <main aria-busy="true">{zhCN.workbench.loading}</main>
-      </>
+      <main className="workbench-shell" aria-busy="true">
+        {zhCN.workbench.loading}
+      </main>
     );
   }
 
   return (
     <>
-      <WorkbenchWorkflowHeader activeStage={activeStage} onReset={onReset} />
       {error === undefined ? null : <p role="alert">{error}</p>}
       <InspectionWorkbench
         pdfDocument={pdfDocument}
@@ -282,40 +343,10 @@ export function ProjectWorkbenchApp({
         operatorId={operatorId}
         actionState={status}
         busy={busy || startupBlocked || lockBlocked}
+        onReset={onReset}
         onSave={save}
-        onFreeze={() => void run(
-          zhCN.balloon.freeze,
-          () => freezeReviewItems(
-            postJson,
-            projectId,
-            operatorId,
-            snapshot.working_copy.version,
-          ),
-          zhCN.workbench.itemsFrozen,
-        )}
-        onGenerate={() => void run(
-          zhCN.balloon.generate,
-          () => generateBalloons(
-            postJson,
-            projectId,
-            operatorId,
-            snapshot.working_copy.version,
-          ),
-          zhCN.workbench.balloonsGenerated,
-        )}
-        onConfirm={() => void run(
-          zhCN.balloon.confirm,
-          async () => {
-            const reviewed = await confirmReviewedResult(
-              postJson,
-              projectId,
-              operatorId,
-              snapshot.working_copy.version,
-            );
-            setReviewedResultId(reviewed.id);
-          },
-          zhCN.workbench.reviewedConfirmed,
-        )}
+        onPrepareReview={prepareReview}
+        onConfirmReview={confirmReviewForExport}
         onMoveBalloon={(balloonId, expectedVersion, centerPdf) => void balloonCommand(
           zhCN.workbench.movingBalloon,
           {

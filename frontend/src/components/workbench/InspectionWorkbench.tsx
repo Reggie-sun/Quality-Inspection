@@ -9,18 +9,21 @@ import type {
   PostJson,
   ReviewCommand,
   ReviewItem,
-  ReviewWorkingCopy,
+  ReviewWorkingCopyView,
 } from "../../api/types";
 import { projectStateCopy, zhCN } from "../../copy/zhCN";
 import { BalloonToolbar } from "../balloons/BalloonToolbar";
 import { PdfWorkspace } from "../pdf/PdfWorkspace";
 import { ReviewPanel } from "../review/ReviewPanel";
 import { ExportPanel } from "./ExportPanel";
-import { FreezeReviewButton } from "./FreezeReviewButton";
 import {
   InspectionItemTable,
   type PendingSourceReview,
 } from "./InspectionItemTable";
+import {
+  saveDraftHandlesInOrder,
+  type DraftSaveHandle,
+} from "./draftSave";
 import {
   inspectionItemPresentation,
   isReviewRequiredItem,
@@ -46,12 +49,11 @@ type InspectionWorkbenchProps = {
   pageTransforms?: PdfPageTransform[];
   items: ReviewItem[];
   onSave: (command: ReviewCommand) => Promise<void>;
-  workingCopy?: ReviewWorkingCopy;
+  workingCopy?: ReviewWorkingCopyView;
   balloonBlockers?: string[];
   busy?: boolean;
-  onFreeze?: () => void;
-  onGenerate?: () => void;
-  onConfirm?: () => void;
+  onPrepareReview?: () => Promise<void>;
+  onConfirmReview?: () => Promise<string>;
   onMoveBalloon?: (
     balloonId: string,
     expectedVersion: number,
@@ -75,12 +77,69 @@ type InspectionWorkbenchProps = {
   exportPost?: PostJson;
   operatorId?: string;
   actionState?: string;
+  onReset?: () => void;
 };
 
 const NO_SELECTED_REVIEW_ITEM_ID = "__no_selected_review_item__";
+const SIP_METADATA_FIELDS = [
+  "material_code",
+  "material_name",
+  "drawing_number",
+  "material",
+  "revision",
+] as const;
+const SIP_DETAIL_TEXT_FIELDS = [
+  "inspection_item",
+  "inspection_standard",
+  "inspection_method",
+  "key_dimension",
+  "inspection_role",
+] as const;
 
 
-function metadataDraft(workingCopy?: ReviewWorkingCopy): MetadataDraft {
+function hasResolvedReview(workingCopy: ReviewWorkingCopyView): boolean {
+  const blocking = Number(workingCopy.coverage.blocking_count ?? 0);
+  const unresolved = Number(workingCopy.coverage.review_required_count ?? 0);
+  const metadata = workingCopy.sip_metadata;
+  const metadataConfirmed =
+    metadata !== undefined
+    && Object.keys(metadata).length === SIP_METADATA_FIELDS.length
+    && SIP_METADATA_FIELDS.every(
+      (field) => typeof metadata[field] === "string" && metadata[field]!.trim() !== "",
+    );
+  return (
+    blocking === 0
+    && unresolved === 0
+    && metadataConfirmed
+    && workingCopy.items
+      .filter((item) => item.active)
+      .every(
+        (item) =>
+          item.requires_confirmation !== true
+          && item.balloon_required !== null
+          && item.balloon_required !== undefined
+          && item.sip_detail_fields_confirmed === true
+          && SIP_DETAIL_TEXT_FIELDS.every(
+            (field) => typeof item[field] === "string" && item[field]!.trim() !== "",
+          )
+          && Number.isInteger(item.source_page)
+          && Number(item.source_page) >= 1,
+      )
+  );
+}
+
+
+function hasContinuousFormalNumbers(balloons: BalloonOverlay[]): boolean {
+  const numbers = balloons
+    .filter((balloon) => balloon.status !== "deleted")
+    .map((balloon) => balloon.number)
+    .sort((left, right) => left - right);
+  return numbers.length > 0
+    && numbers.every((number, index) => number === index + 1);
+}
+
+
+function metadataDraft(workingCopy?: ReviewWorkingCopyView): MetadataDraft {
   return {
     material_code: workingCopy?.sip_metadata?.material_code ?? "",
     material_name: workingCopy?.sip_metadata?.material_name ?? "",
@@ -103,9 +162,8 @@ export function InspectionWorkbench({
   workingCopy,
   balloonBlockers = [],
   busy = false,
-  onFreeze,
-  onGenerate,
-  onConfirm,
+  onPrepareReview,
+  onConfirmReview,
   onMoveBalloon,
   onDeleteBalloon,
   onRebuildBalloon,
@@ -117,6 +175,7 @@ export function InspectionWorkbench({
   initialExport,
   exportPost,
   actionState,
+  onReset,
 }: InspectionWorkbenchProps) {
   const [saveState, setSaveState] = useState<string>(zhCN.workbench.saved);
   const [saving, setSaving] = useState(false);
@@ -127,7 +186,7 @@ export function InspectionWorkbench({
   const [selectedBalloonId, setSelectedBalloonId] = useState<string>();
   const [selectedSourceId, setSelectedSourceId] = useState<string>();
   const [pageIndex, setPageIndex] = useState(0);
-  const [filter, setFilter] = useState<InspectionFilter>("review_required");
+  const [filter, setFilter] = useState<InspectionFilter>("all");
   const [metadata, setMetadata] = useState<MetadataDraft>(
     () => metadataDraft(workingCopy),
   );
@@ -136,6 +195,14 @@ export function InspectionWorkbench({
   const [selectedSipDraftDirty, setSelectedSipDraftDirty] = useState(false);
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
   const [selectionBlocked, setSelectionBlocked] = useState(false);
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [returnSaving, setReturnSaving] = useState(false);
+  const reviewDraftSaveRef = useRef<DraftSaveHandle>(null);
+  const sourceDraftSaveRef = useRef<DraftSaveHandle>(null);
+  const selectedSipDraftSaveRef = useRef<DraftSaveHandle>(null);
+  const returnActionRef = useRef<HTMLButtonElement>(null);
+  const saveAndReturnRef = useRef<HTMLButtonElement>(null);
+  const prepareAttemptRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (metadataDraftDirty) return;
     setMetadata(metadataDraft(workingCopy));
@@ -143,6 +210,9 @@ export function InspectionWorkbench({
   useEffect(() => {
     if (!reviewDraftDirty) setSelectionBlocked(false);
   }, [reviewDraftDirty]);
+  useEffect(() => {
+    if (returnDialogOpen) saveAndReturnRef.current?.focus();
+  }, [returnDialogOpen]);
   const candidateNumbers = useMemo(() => {
     const lookup = new Map<string, number>();
     for (const candidate of candidates) {
@@ -204,7 +274,49 @@ export function InspectionWorkbench({
   const reviewCommandsDisabled =
     saving
     || busy
+    || returnSaving
     || reviewImmutable;
+  const frozen = workingCopy?.items_frozen_at != null;
+  const activeBalloonCount = balloons.filter(
+    (balloon) => balloon.status !== "deleted",
+  ).length;
+  const canPrepareReview =
+    workingCopy !== undefined
+    && !finalized
+    && !busy
+    && !saving
+    && !localDraftDirty
+    && hasResolvedReview(workingCopy)
+    && (!frozen || activeBalloonCount === 0);
+  const canFinalize =
+    workingCopy !== undefined
+    && frozen
+    && !workingCopy.numbering_stale
+    && balloonBlockers.length === 0
+    && hasContinuousFormalNumbers(balloons)
+    && !busy
+    && !saving
+    && !localDraftDirty;
+  useEffect(() => {
+    if (!canPrepareReview || onPrepareReview === undefined || workingCopy === undefined) {
+      return;
+    }
+    const attemptKey = [
+      workingCopy.id,
+      workingCopy.version,
+      frozen ? "frozen" : "editable",
+      activeBalloonCount,
+    ].join(":");
+    if (prepareAttemptRef.current === attemptKey) return;
+    prepareAttemptRef.current = attemptKey;
+    void onPrepareReview().catch(() => undefined);
+  }, [
+    activeBalloonCount,
+    canPrepareReview,
+    frozen,
+    onPrepareReview,
+    workingCopy,
+  ]);
   const submitCommand = async (command: ReviewCommand): Promise<boolean> => {
     if (
       savingRef.current
@@ -226,16 +338,51 @@ export function InspectionWorkbench({
       setSaving(false);
     }
   };
-  const confirmMetadata = async (): Promise<void> => {
+  const confirmMetadata = async (): Promise<boolean> => {
     const saved = await submitCommand({
       type: "set_sip_metadata",
       ...metadata,
     });
     if (saved) setMetadataDraftDirty(false);
+    return saved;
   };
   const cancelMetadata = (): void => {
     setMetadata(metadataDraft(workingCopy));
     setMetadataDraftDirty(false);
+  };
+  const requestReturnToDrawingList = (): void => {
+    if (onReset === undefined) return;
+    if (!localDraftDirty) {
+      onReset();
+      return;
+    }
+    setReturnDialogOpen(true);
+  };
+  const cancelReturnToDrawingList = (): void => {
+    if (returnSaving) return;
+    setReturnDialogOpen(false);
+    window.setTimeout(() => returnActionRef.current?.focus(), 0);
+  };
+  const saveAndReturnToDrawingList = async (): Promise<void> => {
+    if (returnSaving || onReset === undefined) return;
+    const draftSaveHandles = [
+      reviewDraftSaveRef.current,
+      sourceDraftSaveRef.current,
+      selectedSipDraftSaveRef.current,
+    ];
+    setReturnSaving(true);
+    try {
+      if (metadataDraftDirty && !(await confirmMetadata())) return;
+      const saved = await saveDraftHandlesInOrder(draftSaveHandles);
+      if (!saved) {
+        setSaveState(zhCN.workbench.saveFailed);
+        return;
+      }
+      setReturnDialogOpen(false);
+      onReset();
+    } finally {
+      setReturnSaving(false);
+    }
   };
   const reviewedCount = items.filter(
     (item) => item.active && item.status === "kept",
@@ -293,9 +440,11 @@ export function InspectionWorkbench({
       <ExportPanel
         projectId={projectId}
         reviewedResultId={reviewedResultId}
+        canFinalize={canFinalize}
         balloonBlockers={balloonBlockers}
         post={exportPost}
         initialExport={initialExport}
+        onConfirmReview={onConfirmReview}
       />
     );
   const metadataValues: Array<readonly [string, string | undefined]> = [
@@ -330,70 +479,70 @@ export function InspectionWorkbench({
   return (
     <main className="workbench-shell">
       <section
-        className="project-summary"
-        role="region"
-        aria-label={zhCN.workbench.projectSummary}
+        className="workbench-compact-header"
+        role="group"
+        aria-label="项目与审核操作"
       >
-        <dl>
-          <div>
-            <dt>{zhCN.workbench.productName}</dt>
-            <dd>{metadata.material_name || zhCN.workbench.unknown}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.drawingNumber}</dt>
-            <dd>{metadata.drawing_number || zhCN.workbench.unknown}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.revision}</dt>
-            <dd>{metadata.revision || zhCN.workbench.unknown}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.drawingType}</dt>
-            <dd>{zhCN.workbench.unknown}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.totalItems}</dt>
-            <dd>{items.length}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.reviewedItems}</dt>
-            <dd>{reviewedCount}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.confirmedItems}</dt>
-            <dd>{confirmedCount}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.currentState}</dt>
-            <dd>{projectStateCopy(projectState)}</dd>
-          </div>
-          <div>
-            <dt>{zhCN.workbench.saveStatus}</dt>
-            <dd role="status" aria-live="polite" aria-atomic="true">
-              {visibleSaveState}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      {workingCopy === undefined
-        || onFreeze === undefined
-        || onGenerate === undefined
-        || onConfirm === undefined
-        ? null
-        : (
-          <section className="review-actions" aria-label="审核流程操作">
-            <FreezeReviewButton
-              workingCopy={workingCopy}
-              balloons={balloons}
-              balloonBlockers={balloonBlockers}
-              busy={busy || saving || finalized || localDraftDirty}
-              onFreeze={onFreeze}
-              onGenerate={onGenerate}
-              onConfirm={onConfirm}
-            />
+        <div className="workbench-compact-header__summary-row">
+          <section
+            className="project-summary"
+            role="region"
+            aria-label={zhCN.workbench.projectSummary}
+          >
+            <dl>
+              <div>
+                <dt>{zhCN.workbench.productName}</dt>
+                <dd>{metadata.material_name || zhCN.workbench.unknown}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.drawingNumber}</dt>
+                <dd>{metadata.drawing_number || zhCN.workbench.unknown}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.revision}</dt>
+                <dd>{metadata.revision || zhCN.workbench.unknown}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.drawingType}</dt>
+                <dd>{zhCN.workbench.unknown}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.totalItems}</dt>
+                <dd>{items.length}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.reviewedItems}</dt>
+                <dd>{reviewedCount}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.confirmedItems}</dt>
+                <dd>{confirmedCount}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.currentState}</dt>
+                <dd>{projectStateCopy(projectState)}</dd>
+              </div>
+              <div>
+                <dt>{zhCN.workbench.saveStatus}</dt>
+                <dd role="status" aria-live="polite" aria-atomic="true">
+                  {visibleSaveState}
+                </dd>
+              </div>
+            </dl>
           </section>
-        )}
+          {onReset === undefined ? null : (
+            <button
+              ref={returnActionRef}
+              type="button"
+              className="workbench-reset-action"
+              onClick={requestReturnToDrawingList}
+            >
+              {zhCN.workbench.returnToDrawingList}
+            </button>
+          )}
+        </div>
+
+      </section>
 
       <div className="workbench-layout">
         <section
@@ -473,6 +622,7 @@ export function InspectionWorkbench({
                 onSelectSource={selectSource}
                 onCommand={submitCommand}
                 onDraftChange={setSourceDraftDirty}
+                draftSaveRef={sourceDraftSaveRef}
               />
             </div>
             <div className="inspection-review-workspace__detail">
@@ -485,6 +635,7 @@ export function InspectionWorkbench({
                 pageIndex={pageIndex}
                 onCommand={submitCommand}
                 onDraftChange={setReviewDraftDirty}
+                draftSaveRef={reviewDraftSaveRef}
               />
               <SipInformationPanel
                 metadata={metadata}
@@ -502,6 +653,7 @@ export function InspectionWorkbench({
                 onCancelMetadata={cancelMetadata}
                 onCommand={submitCommand}
                 onSelectedSipDraftChange={setSelectedSipDraftDirty}
+                selectedSipDraftSaveRef={selectedSipDraftSaveRef}
               />
             </div>
           </div>
@@ -522,6 +674,77 @@ export function InspectionWorkbench({
         </section>
 
       </div>
+      {returnDialogOpen ? (
+        <div className="workbench-return-dialog-backdrop">
+          <section
+            className="workbench-return-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="workbench-return-dialog-title"
+            aria-describedby="workbench-return-dialog-description"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelReturnToDrawingList();
+                return;
+              }
+              if (event.key !== "Tab") return;
+              const buttons = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  "button:not(:disabled)",
+                ),
+              );
+              if (buttons.length === 0) return;
+              const first = buttons[0];
+              const last = buttons[buttons.length - 1];
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }}
+          >
+            <h2 id="workbench-return-dialog-title">
+              {zhCN.workbench.returnDialogTitle}
+            </h2>
+            <p id="workbench-return-dialog-description">
+              {zhCN.workbench.returnDialogDescription}
+            </p>
+            <div className="workbench-return-dialog__actions">
+              <button
+                ref={saveAndReturnRef}
+                type="button"
+                className="workbench-return-dialog__primary"
+                disabled={returnSaving}
+                onClick={() => void saveAndReturnToDrawingList()}
+              >
+                {returnSaving
+                  ? zhCN.workbench.saving
+                  : zhCN.workbench.saveAndReturn}
+              </button>
+              <button
+                type="button"
+                disabled={returnSaving}
+                onClick={() => {
+                  setReturnDialogOpen(false);
+                  onReset?.();
+                }}
+              >
+                {zhCN.workbench.discardAndReturn}
+              </button>
+              <button
+                type="button"
+                disabled={returnSaving}
+                onClick={cancelReturnToDrawingList}
+              >
+                {zhCN.workbench.cancelReturn}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
