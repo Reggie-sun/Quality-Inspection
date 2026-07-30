@@ -24,7 +24,7 @@ from app.config import Settings
 from app.db import engine
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
-from app.pdf.schemas import PageInventory, TextObservation
+from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
 from app.processing.automatic_result import (
     CandidateSnapshot,
     CoverageBlocking,
@@ -227,21 +227,48 @@ def test_candidate_snapshot_prefilters_exact_drawing_noise(
     assert entry.disposition == "non_inspection"
     assert entry.requires_confirmation is False
     assert entry.disposition_reason == expected_reason
-    assert entry.disposition_rule_version == "p0-a1-v1"
+    assert entry.disposition_rule_version == "p0-a1-r1"
 
 
-@pytest.mark.parametrize(
-    ("raw_text", "expected_reason"),
-    [
-        ("25", "standalone_number"),
-        ("II", "standalone_roman_label"),
-    ],
-)
-def test_candidate_snapshot_keeps_context_free_labels_reviewable(
-    raw_text: str,
-    expected_reason: str,
-) -> None:
-    observation = _text_observation(raw_text)
+def test_candidate_snapshot_preserves_body_standalone_number() -> None:
+    observation = _text_observation(
+        "25",
+        bbox_normalized=(0.40, 0.40, 0.44, 0.42),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((_page(observation),))
+
+    assert len(snapshot.candidates) == 1
+    assert snapshot.candidates[0]["payload"]["item_type"] == "linear_dimension"
+    assert len(snapshot.coverage_entries) == 1
+    entry = snapshot.coverage_entries[0]
+    assert entry.disposition == "candidate"
+    assert entry.candidate_id == snapshot.candidates[0]["candidate_id"]
+    assert entry.requires_confirmation is False
+
+
+def test_candidate_snapshot_excludes_page_frame_number() -> None:
+    observation = _text_observation(
+        "1",
+        bbox_normalized=(0.24, 0.00, 0.26, 0.015),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((_page(observation),))
+
+    assert snapshot.candidates == ()
+    assert len(snapshot.coverage_entries) == 1
+    entry = snapshot.coverage_entries[0]
+    assert entry.disposition == "non_inspection"
+    assert entry.requires_confirmation is False
+    assert entry.disposition_reason == "page_frame_number"
+    assert entry.disposition_rule_version == "p0-a1-r1"
+
+
+def test_candidate_snapshot_keeps_title_block_number_reviewable() -> None:
+    observation = _text_observation(
+        "260710",
+        bbox_normalized=(0.70, 0.83, 0.76, 0.86),
+    )
 
     snapshot = candidate_snapshot_from_inventory((_page(observation),))
 
@@ -250,8 +277,49 @@ def test_candidate_snapshot_keeps_context_free_labels_reviewable(
     entry = snapshot.coverage_entries[0]
     assert entry.disposition == "ambiguous"
     assert entry.requires_confirmation is True
-    assert entry.disposition_reason == expected_reason
-    assert entry.disposition_rule_version == "p0-a1-v1"
+    assert entry.disposition_reason == "title_block_number"
+    assert entry.disposition_rule_version == "p0-a1-r1"
+
+
+def test_candidate_snapshot_keeps_roman_label_reviewable() -> None:
+    observation = _text_observation("II")
+
+    snapshot = candidate_snapshot_from_inventory((_page(observation),))
+
+    assert snapshot.candidates == ()
+    assert len(snapshot.coverage_entries) == 1
+    entry = snapshot.coverage_entries[0]
+    assert entry.disposition == "ambiguous"
+    assert entry.requires_confirmation is True
+    assert entry.disposition_reason == "standalone_roman_label"
+    assert entry.disposition_rule_version == "p0-a1-r1"
+
+
+def test_candidate_snapshot_preserves_visual_page_frame_number() -> None:
+    observation = _text_observation(
+        "1",
+        bbox_normalized=(0.24, 0.00, 0.26, 0.015),
+    )
+    visual = VisualObservation(
+        observation_id="visual-page-frame-number",
+        source_type="visual",
+        observation_level="annotation_context",
+        page_index=0,
+        bbox_pdf=(0.5, 1.0, 3.5, 5.0),
+        bbox_normalized=(0.005, 0.01, 0.035, 0.05),
+        proposal_kind="text_adjacent_vector_context",
+        geometry_sha256="a" * 64,
+        associated_text_observation_ids=(observation.observation_id,),
+    )
+    page = replace(_page(observation), visual_observations=(visual,))
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+
+    assert len(snapshot.candidates) == 1
+    assert snapshot.candidates[0]["payload"]["item_type"] == "linear_dimension"
+    assert tuple(
+        entry.disposition for entry in snapshot.coverage_entries
+    ) == ("candidate", "ambiguous")
 
 
 def test_candidate_snapshot_filters_only_confirmed_cross_page_overlay() -> None:
