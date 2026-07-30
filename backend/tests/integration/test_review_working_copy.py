@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.candidates.models import AutomaticResult
+from app.candidates.schemas import stable_candidate_id
 from app.db import engine
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
@@ -88,6 +89,7 @@ def _make_raw_result(
     db_session: Session,
     *,
     candidates: list[dict[str, object]] | None = None,
+    technical_requirements: list[dict[str, object]] | None = None,
     schema_version: str = "automatic-result/1",
 ) -> AutomaticResult:
     project_id = uuid.uuid4()
@@ -109,6 +111,7 @@ def _make_raw_result(
             "entries": [],
             "relations": [],
         },
+        technical_requirements=technical_requirements or [],
         provider_call_ids=[],
         schema_version=schema_version,
     )
@@ -135,6 +138,121 @@ def _make_raw_result(
     db_session.add(result)
     db_session.commit()
     return result
+
+
+def _requirement(
+    requirement_id: str,
+    raw_text: str,
+    *,
+    subtype: str,
+    match_outcome: str,
+    matched_candidate_ids: list[str],
+    generated_candidate_id: str | None,
+    inspection_item: str,
+    inspection_standard: str,
+) -> dict[str, object]:
+    return {
+        "requirement_id": requirement_id,
+        "ordinal": 1,
+        "raw_text": raw_text,
+        "normalized_text": raw_text,
+        "source_location_ids": [f"source-{requirement_id}"],
+        "page_index": 0,
+        "coordinates": [[1.0, 2.0, 11.0, 12.0]],
+        "category": (
+            "standalone_check"
+            if subtype == "deburr"
+            else "applicability_rule"
+        ),
+        "subtype": subtype,
+        "parsed_parameters": {},
+        "match_outcome": match_outcome,
+        "matched_candidate_ids": matched_candidate_ids,
+        "generated_candidate_id": generated_candidate_id,
+        "rule_id": f"technical-requirement:{subtype}",
+        "rule_version": "technical-requirement/1",
+        "review_required": True,
+        "sip_suggestion": {
+            "inspection_item": inspection_item,
+            "inspection_standard": inspection_standard,
+            "key_dimension": None,
+            "source_page": 1,
+            "remarks": raw_text,
+        },
+    }
+
+
+def test_review_bootstrap_projects_requirement_suggestions_without_confirming(
+    db_session: Session,
+) -> None:
+    dimension = _raw_candidate("linear")
+    dimension["payload"].update(
+        {
+            "item_type": "linear_dimension",
+            "raw_text": "25",
+            "normalized_text": "25",
+            "nominal": "25",
+        }
+    )
+    deburr_requirement_id = "requirement-deburr"
+    deburr_candidate_id = stable_candidate_id(
+        "technical-requirement-candidate",
+        deburr_requirement_id,
+    )
+    deburr_candidate = _raw_candidate(deburr_candidate_id)
+    deburr_candidate["payload"].update(
+        {
+            "item_type": "general_requirement",
+            "raw_text": "锐边去毛刺",
+            "normalized_text": "锐边去毛刺",
+            "scope": "global_requirement",
+            "balloon_required": False,
+            "requires_confirmation": True,
+        }
+    )
+    dimensional = _requirement(
+        "requirement-dimensional",
+        "未注尺寸公差按GB/T 1804-m执行",
+        subtype="general_dimensional_tolerance",
+        match_outcome="matched_items",
+        matched_candidate_ids=["linear"],
+        generated_candidate_id=None,
+        inspection_item="未注尺寸公差",
+        inspection_standard="GB/T 1804-m",
+    )
+    deburr = _requirement(
+        deburr_requirement_id,
+        "锐边去毛刺",
+        subtype="deburr",
+        match_outcome="global_scope",
+        matched_candidate_ids=[],
+        generated_candidate_id=deburr_candidate_id,
+        inspection_item="去毛刺与锐边检查",
+        inspection_standard="锐边去毛刺",
+    )
+    raw_result = _make_raw_result(
+        db_session,
+        candidates=[dimension, deburr_candidate],
+        technical_requirements=[dimensional, deburr],
+    )
+
+    working = ReviewService(db_session).create_from_raw(raw_result.id)
+
+    assert len(working.technical_requirements) == 2
+    items = {item["item_id"]: item for item in working.items}
+    deburr_item = items[deburr_candidate_id]
+    assert deburr_item["inspection_item"] == "去毛刺与锐边检查"
+    assert deburr_item["inspection_standard"] == "锐边去毛刺"
+    assert deburr_item["sip_detail_fields_confirmed"] is False
+    assert deburr_item["balloon_required"] is False
+    dimension_item = items["linear"]
+    assert dimension_item["inspection_standard"] == "GB/T 1804-m"
+    assert dimension_item.get("upper_tolerance") is None
+    assert dimension_item.get("lower_tolerance") is None
+    assert dimension_item["sip_detail_fields_confirmed"] is False
+    assert dimension_item["sip_suggestion_provenance"][
+        "inspection_standard"
+    ] == "requirement-dimensional"
 
 
 def test_original_is_immutable_and_current_is_separate(

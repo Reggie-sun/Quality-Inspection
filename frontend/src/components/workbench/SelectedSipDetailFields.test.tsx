@@ -190,3 +190,58 @@ test("待判定来源式空 item 状态不提交 SIP command", () => {
     }) as HTMLInputElement).value,
   ).toBe("三针法");
 });
+
+test("技术要求建议只预填可证明字段，补全后才允许确认", async () => {
+  const onCommand = vi.fn();
+  render(
+    <SelectedSipDetailFields
+      item={reviewItem("suggested-requirement", "锐边去毛刺", {
+        item_type: "general_requirement",
+        inspection_item: "去毛刺与锐边检查",
+        inspection_standard: "锐边去毛刺",
+        inspection_method: "",
+        key_dimension: "",
+        inspection_role: "",
+        source_page: 1,
+        remarks: "锐边去毛刺",
+        sip_detail_fields_confirmed: false,
+      })}
+      onCommand={onCommand}
+    />,
+  );
+
+  expect((screen.getByRole("textbox", {
+    name: "检验项目：锐边去毛刺",
+  }) as HTMLInputElement).value).toBe("去毛刺与锐边检查");
+  expect((screen.getByRole("textbox", {
+    name: "检验标准：锐边去毛刺",
+  }) as HTMLInputElement).value).toBe("锐边去毛刺");
+  const confirm = screen.getByRole("button", {
+    name: "确认当前检验项 SIP",
+  }) as HTMLButtonElement;
+  expect(confirm.disabled).toBe(true);
+
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "检验方法：锐边去毛刺",
+  }), { target: { value: "目视" } });
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "关键尺寸：锐边去毛刺",
+  }), { target: { value: "否" } });
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "检验角色：锐边去毛刺",
+  }), { target: { value: "IPQC" } });
+  expect(confirm.disabled).toBe(false);
+  fireEvent.click(confirm);
+
+  await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
+    type: "set_sip_detail_fields",
+    item_id: "suggested-requirement",
+    inspection_item: "去毛刺与锐边检查",
+    inspection_standard: "锐边去毛刺",
+    inspection_method: "目视",
+    key_dimension: "否",
+    inspection_role: "IPQC",
+    source_page: 1,
+    remarks: "锐边去毛刺",
+  }));
+});

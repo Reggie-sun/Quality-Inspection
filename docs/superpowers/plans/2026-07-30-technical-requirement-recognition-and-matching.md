@@ -13,7 +13,7 @@
 ## Status
 
 - Date: `2026-07-30`
-- Status: `review_requested`
+- Status: `completed`
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-30-technical-requirement-recognition-and-matching.md`
@@ -21,13 +21,91 @@
   `docs/superpowers/specs/2026-07-30-technical-requirement-recognition-and-matching-design.md`
 - Selection evidence: 用户批准“语义拆解匹配 + SIP 填充”、“规则 Owner + 辅助识别”
   和“不自动换算 `GB/T 1804/1184` 数值”的边界
-- Validation action: `replan`
-- Production authorization: 用户的“继续”授权创建本 plan；开始 production
-  implementation 前仍需选择本 plan 的 execution mode
+- Validation action: `close`
+- Production authorization: 用户已选择 `A 主线程串行执行`，并授权创建独立
+  worktree
+- Execution branch: `feature/technical-requirement-matching`
+- Execution worktree:
+  `/home/reggie/vscode_folder/Quality_Inspection/.worktrees/technical-requirement-matching`
+- Baseline verification:
+  - backend unit/contract: `72 passed`
+  - backend schema: `6 passed`
+  - frontend focused: `32 passed`
 - Writer ownership and order: 一个 write-capable executor 严格按 Task 1 → Task 7；
   同一 file group 不并发写
-- Next verification: plan self-review、placeholder scan、`git diff --check`；用户选择
-  execution mode 后先执行 Task 1 RED
+- Next verification: none；implementation、runtime、parent verification 和 independent
+  reviewer gate 均已完成
+
+### Task 7 Reviewer Residual Amendment
+
+- Review evidence: child rollout
+  `019fb12e-f516-71a1-aefd-afcaaa74a453` 已确认实际加载
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`，结论为
+  `reject`。
+- Confirmed residual 1: `Exclude / Merge / Split` 会停用原 review item，但不会
+  同事务更新 `technical_requirements` relation，可能留下 inactive target 并让
+  requirement 在 freeze/export 前静默丢失。
+- Confirmed residual 2: 新 Rule Owner 只重建带 `技术要求` 标题的编号块，没有接管
+  被删除旧 classifier 的 title-block 外 standalone executable requirement 行为。
+- Review item 3 disposition: `.agent/real-pdf-inputs.env` 的真实本机路径来自用户明确
+  要求的 hardcoded `.agent` 输入，不含 credential；本轮不擅自删除或改写，重新 review
+  时作为 intentional local-path boundary 明示，保留其 portability/privacy 风险。
+- Review concerns 4 disposition: `ReviewPanel.tsx` 和 workspace ratio commits 是同分支
+  上既存用户并发改动，不属于本 amendment 的 writer ownership；不 reset、revert 或
+  顺手重写。
+- Allowed paths:
+  - `backend/app/candidates/technical_requirements.py`
+  - `backend/app/candidates/disposition.py`
+  - `backend/app/processing/automatic_result.py`
+  - `backend/app/review/service.py`
+  - `backend/tests/e2e/test_offline_automatic_result.py`
+  - `backend/tests/integration/test_review_operations.py`
+  - `backend/tests/integration/test_review_freeze.py`
+  - `backend/tests/integration/test_schema.py`
+  - `.agent/bug-memory.md`
+  - 本 plan
+- Unchanged contract: 单一 Technical Requirement Rule Owner、`automatic-result/2`、
+  confirmed-only reviewed result、freeze/export identity、global requirement 无气泡，
+  以及不自动写入 `GB/T 1804/1184` 数值公差。
+- Writer ownership and order: 主线程单 writer；先 relation RED/green，再 standalone
+  replacement RED/green，再 migration downgrade evidence；completed reviewer 保持只读。
+- Focused verification:
+  `micromamba run -n qi-p0 pytest backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/e2e/test_offline_automatic_result.py backend/tests/integration/test_schema.py -q`
+- First re-review evidence: child rollout
+  `019fb143-5f9e-7900-9453-57d7dfea9897` confirmed
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`，结论为
+  `reject`；确认原 fix 只覆盖 `matched_candidate_ids`，遗漏 `global_scope` 的
+  singular `generated_candidate_id` relation。
+- Second residual rule: target replacement 同时覆盖 `matched_items` 和
+  `global_scope`。global target replacement 为一个 active item 时保持
+  `global_scope` 并重写 `generated_candidate_id`；target 消失或 split 成多个 target
+  时不猜测 singular identity，转为 `unresolved` 并重开 source coverage confirmation。
+- Additional regression evidence: 四种 retirement/replacement command 的 global relation、
+  matched multi-target unaffected preservation、generic standalone fallback，以及两个
+  persistence table 的 nonempty migration downgrade refusal。
+- Second re-review evidence: child rollout
+  `019fb14a-d97d-7e30-9f24-05e03d582708` confirmed
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`，结论为
+  `reject`；确认 multiline observation 可承载多条 requirement，coverage gate 必须按
+  同 source 全部 requirement 重算；并确认 global merge 必须拒绝 local/balloon source，
+  不能让 source order 改写 global 无气泡合同。
+- Third residual rule: requirement relation transition 后，对受影响 observation 收集全部
+  source requirements；任一 `review_required=true` 时 coverage 继续阻塞且不写 accepted
+  verdict，全部解决后才关闭 gate。包含 global target 的 merge 仅允许全部 source 均为
+  `scope=global_requirement` 且 `balloon_required=false`。
+- Closeout re-review evidence: child rollout
+  `019fb151-d30c-7f31-88ab-d4b12e320785` confirmed
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`，结论为
+  `reject`；确认 `Edit(scope)`、`SetBalloonRequired(true)` 和 manual Add 仍可能绕过
+  merge guard。
+- Final residual rule: `ReviewService.apply()` 在任何 command mutation 后、versioned write
+  前执行单一 invariant validation；所有 active `scope=global_requirement` item 必须
+  `balloon_required=false`，每条 confirmed `global_scope` relation 必须指向一个满足同一
+  invariant 的 active target。违规 command 整体拒绝，不递增 working-copy version。
+- Final reviewer evidence: child rollout
+  `019fb158-51d6-7c22-95c8-be85ffbaa12f` confirmed
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`；
+  verdict `accept`，无 blocking 或 non-blocking finding。
 
 ## Problem Boundary
 
@@ -81,7 +159,7 @@ export。
 
 ### New Files
 
-- `backend/alembic/versions/0008_technical_requirements.py`
+- `backend/alembic/versions/0010_technical_requirements.py`
   - 两个 JSONB column 的 upgrade、data-safe downgrade。
 - `backend/app/candidates/technical_requirements.py`
   - 唯一 reconstruction、classification、matching、validation Owner。
@@ -146,12 +224,12 @@ export。
 **Files:**
 
 - Modify: `docs/contracts/MAIN_CONTRACT_MATRIX.md`
-- Create: `backend/alembic/versions/0008_technical_requirements.py`
+- Create: `backend/alembic/versions/0010_technical_requirements.py`
 - Modify: `backend/app/candidates/models.py`
 - Modify: `backend/app/review/models.py`
 - Modify: `backend/tests/integration/test_schema.py`
 
-- [ ] **Step 1: 使用 `github-oss-fusion` 做受限 prior-art 检查**
+- [x] **Step 1: 使用 `github-oss-fusion` 做受限 prior-art 检查**
 
 只研究：
 
@@ -169,7 +247,29 @@ License/scope check:
 Local validation:
 ```
 
-- [ ] **Step 2: 写 schema RED tests**
+Task 1 prior-art record (`2026-07-30`)：
+
+```text
+Repositories inspected:
+- mindee/doctr: README, doctr/io/elements.py, tests/common/test_io_exporters.py, LICENSE
+- zeroSteiner/rule-engine: README.rst, engine/rule.py, engine/context.py, tests/engine.py, LICENSE
+- sqlalchemy/alembic: docs/build/ops.rst, tests/test_postgresql.py, LICENSE
+Ideas fused:
+- 把原文、confidence、geometry/source location 一起保留为可导出的 requirement provenance
+- 未知字段、缺失 target 和非法 relation 明确失败，不把 resolver error 当作 no-match
+- migration 使用显式 Column/JSONB；upgrade 与 downgrade 各自有数据库 shape/data gate
+Ideas skipped:
+- 不引入 docTR、rule-engine 或其他新依赖
+- 不复制第三方 OCR/layout pipeline、表达式语法、标准数值表或 prompt
+- 不把通用 Alembic autogenerate 逻辑搬入项目 migration
+License/scope check:
+- docTR Apache-2.0、rule-engine BSD-3-Clause、Alembic MIT
+- 仅融合结构和测试思路，无源代码复制
+Local validation:
+- baseline backend 78 passed；frontend focused 32 passed
+```
+
+- [x] **Step 2: 写 schema RED tests**
 
 把 expected columns 改为包含 `technical_requirements`：
 
@@ -226,9 +326,9 @@ micromamba run -n qi-p0 pytest backend/tests/integration/test_schema.py -q
 Expected: FAIL，两个 exact-column assertions 都缺
 `technical_requirements`，不是数据库连接失败。
 
-- [ ] **Step 3: 实现 migration 和 model fields**
+- [x] **Step 3: 实现 migration 和 model fields**
 
-`0008_technical_requirements.py` 使用：
+`0010_technical_requirements.py` 使用：
 
 ```python
 """Add technical requirement persistence.
@@ -244,8 +344,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 
-revision: str = "0008"
-down_revision: str | None = "0007"
+revision: str = "0010"
+down_revision: str | None = "0009"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -293,7 +393,7 @@ technical_requirements: Mapped[list[dict[str, Any]]] = mapped_column(
 )
 ```
 
-- [ ] **Step 4: 升级 schema 并验证 exact shape**
+- [x] **Step 4: 升级 schema 并验证 exact shape**
 
 Run:
 
@@ -304,7 +404,7 @@ micromamba run -n qi-p0 pytest backend/tests/integration/test_schema.py -q
 
 Expected: migration 到 `0008`，`test_schema.py` PASS。
 
-- [ ] **Step 5: 最小更新 durable contracts**
+- [x] **Step 5: 最小更新 durable contracts**
 
 只更新既有 rows：
 
@@ -318,7 +418,7 @@ Expected: migration 到 `0008`，`test_schema.py` PASS。
 
 不得新增第二组 contract IDs，不改变 P0 status counts。
 
-- [ ] **Step 6: 验证并提交**
+- [x] **Step 6: 验证并提交**
 
 Run:
 
@@ -332,7 +432,7 @@ Expected: contract checker PASS，diff check 无输出。
 Commit:
 
 ```bash
-git add docs/contracts/MAIN_CONTRACT_MATRIX.md backend/alembic/versions/0008_technical_requirements.py backend/app/candidates/models.py backend/app/review/models.py backend/tests/integration/test_schema.py
+git add docs/contracts/MAIN_CONTRACT_MATRIX.md backend/alembic/versions/0010_technical_requirements.py backend/app/candidates/models.py backend/app/review/models.py backend/tests/integration/test_schema.py
 git commit -m "feat: add technical requirement persistence"
 ```
 
@@ -343,7 +443,7 @@ git commit -m "feat: add technical requirement persistence"
 - Create: `backend/app/candidates/technical_requirements.py`
 - Create: `backend/tests/unit/candidates/test_technical_requirements.py`
 
-- [ ] **Step 1: 写 reconstruction 和 sample classification RED tests**
+- [x] **Step 1: 写 reconstruction 和 sample classification RED tests**
 
 测试 helper 明确用当前 `TextObservation`：
 
@@ -412,7 +512,7 @@ def test_classifies_approved_sample(text: str, subtype: str) -> None:
 - 相同文本不同 source identity 得到不同 `requirement_id`；
 - unknown standard 为 `unsupported/review_required`。
 
-- [ ] **Step 2: 运行 RED**
+- [x] **Step 2: 运行 RED**
 
 Run:
 
@@ -423,7 +523,7 @@ micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requ
 Expected: FAIL with
 `ModuleNotFoundError: No module named 'app.candidates.technical_requirements'`。
 
-- [ ] **Step 3: 实现 exact contract types**
+- [x] **Step 3: 实现 exact contract types**
 
 核心 contract：
 
@@ -484,7 +584,7 @@ class TechnicalRequirementDecision(BaseModel):
 `requirement_id` 使用 `stable_candidate_id()`，输入必须包含 source IDs 和 segment
 indexes，不得只使用 raw text。
 
-- [ ] **Step 4: 实现 block reconstruction 和 classification**
+- [x] **Step 4: 实现 block reconstruction 和 classification**
 
 规则顺序固定：
 
@@ -507,7 +607,7 @@ CLASSIFICATION_RULES = (
 - method/role 不进入 suggestion；
 - standalone suggestions 只填 source 能证明的 item/standard/page/remarks。
 
-- [ ] **Step 5: 运行 unit GREEN**
+- [x] **Step 5: 运行 unit GREEN**
 
 Run:
 
@@ -517,7 +617,7 @@ micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requ
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/app/candidates/technical_requirements.py backend/tests/unit/candidates/test_technical_requirements.py
@@ -536,7 +636,7 @@ git commit -m "feat: classify technical requirements"
 - Modify: `backend/tests/contract/test_automatic_result.py`
 - Modify: `backend/tests/e2e/test_offline_automatic_result.py`
 
-- [ ] **Step 1: 写 deterministic matching RED tests**
+- [x] **Step 1: 写 deterministic matching RED tests**
 
 首版 matching contract：
 
@@ -586,7 +686,7 @@ def test_default_chamfer_and_general_gdt_fail_safe_to_global_scope() -> None:
 - matched refs 双向一致；
 - unresolved 不创建 candidate。
 
-- [ ] **Step 2: 写 snapshot 和 persistence RED tests**
+- [x] **Step 2: 写 snapshot 和 persistence RED tests**
 
 `CandidateSnapshot` 新增：
 
@@ -631,7 +731,7 @@ micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requ
 
 Expected: FAIL because snapshot/result writer does not yet carry requirements。
 
-- [ ] **Step 3: 实现 two-phase snapshot**
+- [x] **Step 3: 实现 two-phase snapshot**
 
 `candidate_snapshot_from_inventory()` 顺序固定：
 
@@ -665,7 +765,7 @@ evaluation = evaluate_technical_requirements(
 - safe matched rule 为 `reference_context/requires_confirmation=false`；
 - technical requirement generated candidate 进入既有 confidence policy。
 
-- [ ] **Step 4: 退役旧 active path**
+- [x] **Step 4: 退役旧 active path**
 
 删除：
 
@@ -686,7 +786,7 @@ rg -n "classify_technical_requirement|technical_requirements" backend/app backen
 Expected: 没有旧 function 或 call site；production classification 只指向
 `app.candidates.technical_requirements`。
 
-- [ ] **Step 5: 持久化并验证 cross references**
+- [x] **Step 5: 持久化并验证 cross references**
 
 `build_automatic_result()` 增加：
 
@@ -715,7 +815,7 @@ technical_requirements=snapshot.technical_requirements,
 unknown rule version、duplicate requirement ID、missing target ID、non-canonical target order
 必须 fail closed 为 contract error。
 
-- [ ] **Step 6: 运行 focused GREEN 和 owner inventory**
+- [x] **Step 6: 运行 focused GREEN 和 owner inventory**
 
 Run:
 
@@ -726,7 +826,7 @@ rg -n "classify_technical_requirement" backend/app backend/tests
 
 Expected: tests PASS；`rg` 无旧 symbol。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add backend/app/candidates/technical_requirements.py backend/app/candidates/disposition.py backend/app/processing/automatic_result.py backend/app/processing/pipeline.py backend/tests/unit/candidates/test_technical_requirements.py backend/tests/contract/test_automatic_result.py backend/tests/e2e/test_offline_automatic_result.py
@@ -745,7 +845,7 @@ git commit -m "feat: match technical requirements to candidates"
 - Modify: `backend/tests/integration/test_review_operations.py`
 - Modify: `backend/tests/integration/test_project_workbench_api.py`
 
-- [ ] **Step 1: 写 bootstrap RED test**
+- [x] **Step 1: 写 bootstrap RED test**
 
 ```python
 def test_review_bootstrap_projects_requirement_suggestions_without_confirming() -> None:
@@ -772,7 +872,7 @@ assert dimension["sip_detail_fields_confirmed"] is False
 assert dimension["sip_suggestion_provenance"]["inspection_standard"] == requirement_id
 ```
 
-- [ ] **Step 2: 写 match override command RED tests**
+- [x] **Step 2: 写 match override command RED tests**
 
 Command contract：
 
@@ -806,7 +906,7 @@ Integration tests prove：
 - command and requirement update commit atomically；
 - frozen working copy rejects command。
 
-- [ ] **Step 3: 运行 RED**
+- [x] **Step 3: 运行 RED**
 
 ```bash
 micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_project_workbench_api.py -q
@@ -814,7 +914,7 @@ micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py back
 
 Expected: FAIL because model/API/service do not project requirements。
 
-- [ ] **Step 4: 实现 bootstrap 和 suggestion provenance**
+- [x] **Step 4: 实现 bootstrap 和 suggestion provenance**
 
 `ReviewService.create_from_raw()` 先构造 items，再投影：
 
@@ -840,7 +940,7 @@ suggestion rules：
 - global/standalone requirement 使用 stable generated item ID；
 - automatic immutable decision 深拷贝到 working-copy requirement state。
 
-- [ ] **Step 5: 实现 transactional override**
+- [x] **Step 5: 实现 transactional override**
 
 在 `_apply_command()` 中把 `technical_requirements` 作为同一 deep-copy aggregate
 传入，保存时与 items/coverage 一次提交。不要新增独立 endpoint 或 frontend-local
@@ -855,7 +955,7 @@ API `_working_copy()` 增加：
 `manual_review_count()` 不能把一个 matched requirement 与 target item 重复计数；
 unresolved requirement 仍由 coverage entry 计数。
 
-- [ ] **Step 6: 运行 GREEN**
+- [x] **Step 6: 运行 GREEN**
 
 ```bash
 micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_project_workbench_api.py -q
@@ -863,7 +963,7 @@ micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py back
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add backend/app/review/schemas.py backend/app/review/service.py backend/app/review/router.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_project_workbench_api.py
@@ -883,7 +983,7 @@ git commit -m "feat: review technical requirement matches"
 - Modify: `frontend/src/copy/zhCN.ts`
 - Modify: `frontend/src/styles/workbench.css`
 
-- [ ] **Step 1: 检查 live-agent 和 dirty-file ownership**
+- [x] **Step 1: 检查 live-agent 和 dirty-file ownership**
 
 Run:
 
@@ -894,7 +994,7 @@ git status --short -- frontend/src/api/types.ts frontend/src/components/workbenc
 并检查 live agents 的 assigned paths。若任何目标文件属于另一个 writer，停止并报告
 `blocked/ownership overlap`；不得 reset、stash、restore 或覆盖。
 
-- [ ] **Step 2: 写 component RED tests**
+- [x] **Step 2: 写 component RED tests**
 
 Frontend contract：
 
@@ -947,7 +1047,7 @@ expect(onCommand).toHaveBeenCalledWith({
 });
 ```
 
-- [ ] **Step 3: 运行 RED**
+- [x] **Step 3: 运行 RED**
 
 ```bash
 micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/TechnicalRequirementPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx src/components/workbench/SelectedSipDetailFields.test.tsx
@@ -955,7 +1055,10 @@ micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workb
 
 Expected: FAIL because component/types do not exist。
 
-- [ ] **Step 4: 实现 panel 和唯一 submit seam**
+Execution note: component test 与最小实现同批落盘，未单独保留 RED 输出；随后 focused
+suite `36 passed`，production build PASS。未为了补造 RED 回退已验证实现。
+
+- [x] **Step 4: 实现 panel 和唯一 submit seam**
 
 `InspectionWorkbench` 只集成：
 
@@ -979,7 +1082,7 @@ Expected: FAIL because component/types do not exist。
 - panel 不复制 SIP form；
 - dirty/save/freeze 行为保持现状。
 
-- [ ] **Step 5: 验证 SIP suggestions 未被自动确认**
+- [x] **Step 5: 验证 SIP suggestions 未被自动确认**
 
 `SelectedSipDetailFields.test.tsx` 证明：
 
@@ -988,7 +1091,7 @@ Expected: FAIL because component/types do not exist。
 - Confirm 按钮在 mandatory fields 不完整时 disabled；
 - 用户补全并提交后才发送 `set_sip_detail_fields`。
 
-- [ ] **Step 6: 运行 frontend GREEN 和 build**
+- [x] **Step 6: 运行 frontend GREEN 和 build**
 
 ```bash
 micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/TechnicalRequirementPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx src/components/workbench/SelectedSipDetailFields.test.tsx
@@ -998,7 +1101,7 @@ micromamba run -n qi-p0 npm --prefix frontend run build
 Expected: tests PASS；TypeScript/Vite build PASS。若只有既有 chunk-size warning，原样
 记录，不能称为无 warning。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add frontend/src/api/types.ts frontend/src/components/workbench/TechnicalRequirementPanel.tsx frontend/src/components/workbench/TechnicalRequirementPanel.test.tsx frontend/src/components/workbench/InspectionWorkbench.tsx frontend/src/components/workbench/InspectionWorkbench.test.tsx frontend/src/components/workbench/SelectedSipDetailFields.test.tsx frontend/src/copy/zhCN.ts frontend/src/styles/workbench.css
@@ -1014,7 +1117,7 @@ git commit -m "feat: show technical requirement matches"
 - Modify: `backend/tests/integration/test_review_freeze.py`
 - Modify: `backend/tests/e2e/test_offline_automatic_result.py`
 
-- [ ] **Step 1: 写 cross-layer RED tests**
+- [x] **Step 1: 写 cross-layer RED tests**
 
 必须证明：
 
@@ -1051,7 +1154,7 @@ assert all(
 
 `rule_version` 只能进入 provenance/diagnostic，不污染 SIP 业务单元格。
 
-- [ ] **Step 2: 运行 RED 或确认已有实现直接满足**
+- [x] **Step 2: 运行 RED 或确认已有实现直接满足**
 
 ```bash
 micromamba run -n qi-p0 pytest backend/tests/integration/test_excel_export.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_review_freeze.py backend/tests/e2e/test_offline_automatic_result.py -q
@@ -1060,7 +1163,7 @@ micromamba run -n qi-p0 pytest backend/tests/integration/test_excel_export.py ba
 Expected: 新 assertions 在缺少完整 cross-layer wiring 时 FAIL；如果直接 PASS，记录
 它证明现有 Owner 无需 production 修改，不为了制造 GREEN 而改代码。
 
-- [ ] **Step 3: 只修复真实 boundary gap**
+- [x] **Step 3: 只修复真实 boundary gap**
 
 允许修改 production export/balloon code 的条件：
 
@@ -1071,16 +1174,16 @@ Expected: 新 assertions 在缺少完整 cross-layer wiring 时 FAIL；如果直
 若没有这些 failure，不修改 `backend/app/exports/**` 或
 `backend/app/balloons/**`。
 
-- [ ] **Step 4: 运行 focused backend suite 和 contracts**
+- [x] **Step 4: 运行 focused backend suite 和 contracts**
 
 ```bash
-micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py backend/tests/contract/test_automatic_result.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_excel_export.py backend/tests/e2e/test_offline_automatic_result.py -q
+micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py backend/tests/unit/candidates/test_advisor.py backend/tests/contract/test_automatic_result.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_excel_export.py backend/tests/e2e/test_offline_automatic_result.py -q
 python .agent/harness/scripts/check-contracts.py
 ```
 
 Expected: 全部 PASS。
 
-- [ ] **Step 5: 提交 tests 和必要的最小修复**
+- [x] **Step 5: 提交 tests 和必要的最小修复**
 
 如果无 production gap：
 
@@ -1092,14 +1195,32 @@ git commit -m "test: cover technical requirement export boundaries"
 如果有 production gap，只额外 stage 实际修复文件，并在 commit 前用
 `git diff --cached --name-only` 核对。
 
+Execution note (`2026-07-30`):
+
+- cross-layer suite `59 passed`；focused backend suite `227 passed`；
+- contract mirror PASS：`unclassified=0`、`mirror_drift=0`、
+  `bindings_drift=0`；
+- existing export、balloon 和 freeze Owners 直接满足边界，未修改 production；
+- freeze 对外继续使用稳定的 `unresolved_confirmation`，测试同时证明内部精确
+  原因为 `sip_detail_fields_unconfirmed`；
+- commit: `15a2e00`.
+
 ## Task 7: Real-PDF Browser Acceptance, Smoke Test, And Independent Review
 
 **Files:**
 
+- Create: `.agent/real-pdf-inputs.env`
 - Create: `frontend/e2e/technical-requirement-matching.spec.ts`
+- Modify: `backend/app/candidates/technical_requirements.py`
+- Modify: `backend/app/candidates/advisor.py`
+- Modify: `backend/tests/unit/candidates/test_technical_requirements.py`
+- Modify: `backend/tests/unit/candidates/test_advisor.py`
+- Modify: `frontend/src/components/workbench/InspectionWorkbench.tsx`
+- Modify: `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- Modify: `frontend/src/styles/workbench.css`
 - Modify: `docs/superpowers/plans/2026-07-30-technical-requirement-recognition-and-matching.md`
 
-- [ ] **Step 1: 确认 approved real PDF precondition**
+- [x] **Step 1: 确认 approved real PDF precondition**
 
 复用现有 E2E input contract：
 
@@ -1111,7 +1232,7 @@ test -f "$QI_MVP_E2E_PDF"
 Expected: 两项均成功，且 PDF 确实包含本设计的六条技术要求。若只有截图或 PDF 不含
 这些要求，runtime acceptance 标记 `blocked`，不得用 synthetic fixture 替代。
 
-- [ ] **Step 2: 写 Playwright acceptance**
+- [x] **Step 2: 写 Playwright acceptance**
 
 测试必须上传真实 PDF，并断言：
 
@@ -1146,7 +1267,7 @@ expect(
 完成一个 target navigation、一个 match override、一个 SIP confirm，并刷新页面证明
 server persistence。
 
-- [ ] **Step 3: 启动 source-mounted runtime 并运行 Playwright**
+- [x] **Step 3: 启动 source-mounted runtime 并运行 Playwright**
 
 使用仓库现有入口：
 
@@ -1171,7 +1292,7 @@ QI_MVP_BASE_URL=http://127.0.0.1:5173 QI_MVP_E2E_PDF="$QI_MVP_E2E_PDF" micromamb
 Expected: PASS。保留测试输出和必要截图在现有 Playwright output 位置，不创建新的
 evidence convention。
 
-- [ ] **Step 4: 使用 Chrome MCP 做 integrated visual QA**
+- [x] **Step 4: 使用 Chrome MCP 做 integrated visual QA**
 
 检查：
 
@@ -1185,12 +1306,27 @@ evidence convention。
 
 发现 bug 时回到对应 task 做最小修复并重跑 focused tests。
 
-- [ ] **Step 5: 使用 `auto-feature-smoke-test`**
+- [x] **Step 5: 使用 `auto-feature-smoke-test`**
 
 必须完整读取并执行 skill，覆盖当前 feature flow。报告实际 runtime URL、操作、console
 errors、network failures 和截图证据；不能把 Playwright 单测等同于 smoke test。
 
-- [ ] **Step 6: 独立 reviewer gate**
+Task 7 runtime evidence (`2026-07-30`):
+
+- approved input 固定在 `.agent/real-pdf-inputs.env`；选定 PDF 为
+  `BK20101401-09L1000#引拔梁(400W)#C1.PDF`，原生文本包含六条要求；
+- fresh upload project `9bd28a2a-6706-4bbb-9be8-fe49ac62fa3a`，
+  `automatic-result://fbfa3eae-9f7b-4c7b-856b-a396de65f722`；
+- Playwright fresh upload + target navigation + SIP confirm + match override +
+  reload persistence：`1 passed (4.1m)`；
+- Chrome MCP desktop viewport：requirement count `6`，技术要求列表
+  `scrollHeight > clientHeight`，与下方 workspace 无 overlap；匹配目标跳转后
+  自动切换“全部”并选中目标；console warning/error 为 `0`，status/lock/workbench/
+  source-pdf 四个请求均为 `200`；
+- smoke screenshot：`/tmp/qi-techreq-playwright-pass-20260730/`
+  `technical-requirement-matching.png`。
+
+- [x] **Step 6: 独立 reviewer gate**
 
 按仓库规则选择并绑定本地 `reviewer` profile，reviewer 只读，范围为本 plan commits 和
 以下问题：
@@ -1216,12 +1352,12 @@ Minimal follow-up:
 当前子代理工具若仍不能显式绑定 required profile/model，不得悄悄启动 generic child。
 应先报告 tool limitation；没有独立 review evidence 时不得 claim reviewer gate passed。
 
-- [ ] **Step 7: Parent final verification**
+- [x] **Step 7: Parent final verification**
 
 Run:
 
 ```bash
-micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py backend/tests/contract/test_automatic_result.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_excel_export.py backend/tests/e2e/test_offline_automatic_result.py -q
+micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py backend/tests/unit/candidates/test_advisor.py backend/tests/contract/test_automatic_result.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_excel_export.py backend/tests/e2e/test_offline_automatic_result.py -q
 micromamba run -n qi-p0 npm --prefix frontend test -- --run
 micromamba run -n qi-p0 npm --prefix frontend run build
 python .agent/harness/scripts/check-contracts.py
@@ -1230,7 +1366,7 @@ git diff --check
 
 Expected: 全部 PASS；build 仅允许明确报告的既有 warning。
 
-- [ ] **Step 8: Close plan only when runtime and review gates pass**
+- [x] **Step 8: Close plan only when runtime and review gates pass**
 
 把本 plan `Status` 改为 `completed`，记录：
 
@@ -1240,6 +1376,51 @@ Expected: 全部 PASS；build 仅允许明确报告的既有 warning。
 - `auto-feature-smoke-test` result；
 - independent reviewer verdict；
 - remaining non-blocking risk。
+
+Task 7 checkpoint (`2026-07-30`):
+
+- approved real PDF precondition: PASS；用户提供的两个目录固定在
+  `.agent/real-pdf-inputs.env`，未写入 `AGENTS.md`；
+- runtime root-cause fixes: PASS；真实图框文字不再截断技术要求区块，
+  `CandidateAdvisor` 改变候选集合后由 Technical Requirement Rule Owner
+  清理旧 relation 并对最终候选重新匹配；
+- `auto-feature-smoke-test`: PASS；fresh real-PDF Playwright `1 passed
+  (4.1m)`，Chrome MCP integrated visual QA PASS；
+- parent final verification: 隔离 PostgreSQL backend `1060 passed`，
+  frontend `210 passed`，
+  production build PASS，保留既有 `>500 kB` chunk warning；contract mirror 与
+  `git diff --check` PASS；
+- compatibility profile binding: PASS；按 RAG 已验证 selector 使用
+  `task_name="reviewer__..."`、`fork_turns="none"`，并从 child rollout metadata
+  核验实际 `agent_role/model/reasoning_effort`；
+- independent reviewer gate: PASS；最终 rollout
+  `019fb158-51d6-7c22-95c8-be85ffbaa12f` verdict `accept`，无 finding；
+- residual fix commits:
+  `69b6b0b`、`e3a7e6a`、`7ae04c1`、`966ad20`；
+- Task 7 Steps 1–8 全部完成，plan 状态关闭为 `completed`。
+
+Main integration checkpoint (`2026-07-30`):
+
+- integrated source: `main@e029d41`；6 个初始 textual conflicts 均保留 WELLI/layout/
+  symbol routing 与 Technical Requirement Rule Owner 两侧语义；
+- migration graph: 技术要求 migration 从冲突的 `0008` 顺延为
+  `0010_technical_requirements.py`，接在 symbol routing `0009` 后，
+  `alembic heads` 为单一 `0010`；
+- migration deployment caveat: fresh chain 已验证；若任何持久环境曾执行
+  feature-only revision `0008`，部署前必须盘点 `alembic_version` 与 column shape，
+  并走专门恢复流程，不能盲目 `stamp` 或直接升级；
+- pre-existing main Harness blocker: `P0-ACC-007` contract selector 曾与
+  failure-proof policy/runner 不一致；latest main 将带
+  `recognition_mode=production_uncertainty` query 的 selector 定为 canonical，
+  runner 从 contract mirror 读取并消费，contract checker 强制 policy/mirror 一致；
+- integrated verification: 隔离 PostgreSQL backend `1409 passed`，frontend
+  `210 passed`，production build PASS，Harness `134 passed`，contract mirror 和
+  bindings drift 全零；
+- read-only merge mapper: rollout `019fb16c-7d5f-7ee3-8708-1a9a79f93810`
+  核验冲突两侧语义与 Harness selector Owner；最终 merge 仍由父 agent 裁决。
+- independent merge reviewer: rollout
+  `019fb179-aba1-7110-9f14-65b6d38868aa` verdict `accept with concerns`，
+  无 blocking issue；checkpoint SHA 已修正，持久数据库 migration 风险已记录。
 
 如果 real PDF 或 reviewer gate blocked，保持 `Status: in_progress` 并记录唯一 blocker，
 不得用文档勾选替代实际证据。

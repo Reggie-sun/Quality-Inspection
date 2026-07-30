@@ -899,8 +899,40 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
     committed_db_session: Session,
     tmp_path: Path,
 ) -> None:
-    """PRT-5 retains local, cache, and VLM siblings around one failed ROI."""
+    """PRT-5 retains siblings and requirement evidence around one failed ROI."""
     matrix = _partial_matrix_input(tmp_path, monkeypatch)
+    requirement = {
+        "requirement_id": "prt5-localized-requirement",
+        "ordinal": 1,
+        "raw_text": "局部失败仍需保留技术要求",
+        "normalized_text": "局部失败仍需保留技术要求",
+        "source_location_ids": ["technical-requirement-source"],
+        "page_index": 0,
+        "coordinates": [[10.0, 10.0, 20.0, 20.0]],
+        "category": "ambiguous",
+        "subtype": "ambiguous",
+        "parsed_parameters": {},
+        "match_outcome": "unresolved",
+        "matched_candidate_ids": [],
+        "generated_candidate_id": None,
+        "rule_id": "technical-requirement/ambiguous",
+        "rule_version": "technical-requirement/1",
+        "review_required": True,
+        "sip_suggestion": {
+            "inspection_item": None,
+            "inspection_standard": None,
+            "key_dimension": None,
+            "source_page": 1,
+            "remarks": "需人工确认",
+        },
+    }
+    matrix = replace(
+        matrix,
+        snapshot=replace(
+            matrix.snapshot,
+            technical_requirements=(requirement,),
+        ),
+    )
     storage = LocalFileStorage(tmp_path / f"partial-{failure_family}")
     db_session = committed_db_session
     project, source_file = _store_project_source(
@@ -1045,6 +1077,8 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
         "partial_review_required"
     )
     assert getattr(raw, "completeness", None) == "partial_review_required"
+    assert reviewed.technical_requirements == (requirement,)
+    assert raw.technical_requirements == [requirement]
     assert {
         entry.observation_id for entry in reviewed.coverage_entries
     } == set(matrix.snapshot.expected_observation_ids)
@@ -1178,6 +1212,13 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
     first = service.create_from_raw(raw.id)
     second = service.create_from_raw(raw.id)
     assert first.id == second.id
+    assert [
+        entry["requirement_id"] for entry in first.technical_requirements
+    ] == [requirement["requirement_id"]]
+    assert first.technical_requirements[0]["raw_text"] == requirement[
+        "raw_text"
+    ]
+    assert first.technical_requirements[0]["match_outcome"] == "unresolved"
     assert (
         db_session.scalar(
             select(func.count())

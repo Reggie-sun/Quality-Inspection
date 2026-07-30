@@ -65,6 +65,13 @@ def _reviewed_items() -> list[dict[str, object]]:
             "key_dimension": "否",
             "inspection_role": "FQC",
             "source_page": 2,
+            "technical_requirement_refs": ["technical-requirement-2"],
+            "sip_suggestion_provenance": {
+                "inspection_standard": {
+                    "requirement_id": "technical-requirement-2",
+                    "rule_version": "technical-requirement/1",
+                }
+            },
         },
     ]
 
@@ -157,6 +164,29 @@ def test_general_requirement_number_is_blank(tmp_path: Path) -> None:
         detail_sheet = workbook[registration.sheet]
         assert detail_sheet["A6"].value == "1"
         assert detail_sheet["A7"].value in (None, "")
+    finally:
+        workbook.close()
+
+
+def test_general_requirement_exports_confirmed_business_values_only(
+    tmp_path: Path,
+) -> None:
+    content, registration, _ = _render(tmp_path)
+    workbook = load_workbook(BytesIO(content), data_only=False)
+    try:
+        detail_sheet = workbook[registration.sheet]
+        assert detail_sheet["A7"].value in (None, "")
+        assert detail_sheet["C7"].value == "不得有锐边"
+        visible_business_cells = (
+            cell.value
+            for row in detail_sheet.iter_rows()
+            for cell in row
+            if isinstance(cell.value, str)
+        )
+        assert all(
+            "technical-requirement/1" not in cell_value
+            for cell_value in visible_business_cells
+        )
     finally:
         workbook.close()
 

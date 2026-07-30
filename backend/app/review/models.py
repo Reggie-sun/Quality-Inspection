@@ -39,6 +39,11 @@ class ReviewWorkingCopy(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     coverage: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    technical_requirements: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        default=list,
+        nullable=False,
+    )
     sip_metadata: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         default=dict,

@@ -189,6 +189,33 @@ def test_source_only_confirmation_blocks_freeze(
     assert error.value.blockers == ("unresolved_confirmation",)
 
 
+def test_unconfirmed_technical_requirement_suggestion_blocks_freeze(
+    db_session: Session,
+    working_copy: ReviewWorkingCopy,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    items[0]["sip_detail_fields_confirmed"] = False
+    items[0]["sip_suggestion_provenance"] = {
+        "inspection_standard": {
+            "requirement_id": "technical-requirement-5",
+            "rule_version": "technical-requirement/1",
+        }
+    }
+    working_copy.items = items
+    db_session.commit()
+
+    assert ReviewService._sip_confirmation_blockers(
+        working_copy.items,
+        working_copy.sip_metadata,
+    ) == ["sip_detail_fields_unconfirmed"]
+    with pytest.raises(FreezeBlocked, match="unresolved_confirmation"):
+        ReviewService(db_session).freeze_items(
+            working_copy.id,
+            expected_version=working_copy.version,
+            operator_id="quality-1",
+        )
+
+
 def test_freeze_reports_only_the_three_exact_blockers(
     db_session: Session,
     working_copy: ReviewWorkingCopy,

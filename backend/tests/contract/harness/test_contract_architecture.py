@@ -8,6 +8,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -47,6 +48,18 @@ def _load_stage_module() -> ModuleType:
 def _load_provider_contract_module() -> ModuleType:
     path = HARNESS / "scripts/run-provider-contracts.py"
     spec = importlib.util.spec_from_file_location("test_run_provider_contracts", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_contract_checker_module() -> ModuleType:
+    path = HARNESS / "scripts/check-contracts.py"
+    spec = importlib.util.spec_from_file_location(
+        "test_check_contracts",
+        path,
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -135,6 +148,38 @@ def test_contract_mirror_is_generated_from_the_only_p0_markdown_source() -> None
     assert mirror["source"] == str(TRACE.relative_to(ROOT))
     assert mirror["global_source"] == str(GLOBAL.relative_to(ROOT))
     assert all(row["current_status"] in {"passed", "failed", "blocked", "not_run"} for row in mirror["contracts"])
+
+
+def test_contract_check_rejects_failure_proof_selector_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker = _load_contract_checker_module()
+    policy = yaml.safe_load(
+        (HARNESS / "policy/failure-severity-policy.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    policy["failure_proof"]["selector"] = (
+        "phase://failure/no-silent-success?recognition_mode=stale"
+    )
+    stale_policy = tmp_path / "failure-severity-policy.yaml"
+    stale_policy.write_text(
+        yaml.safe_dump(policy, sort_keys=False),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        checker,
+        "FAILURE_SEVERITY_POLICY_PATH",
+        stale_policy,
+        raising=False,
+    )
+
+    with pytest.raises(
+        checker.ContractCheckError,
+        match="failure proof selector drift",
+    ):
+        checker.check()
 
 
 def test_run_schema_requires_immutable_evidence_members() -> None:

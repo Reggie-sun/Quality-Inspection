@@ -96,6 +96,9 @@ from app.capabilities.service import (
     CapabilityUnavailable,
     check_deferred_vision_preflight,
 )
+from app.candidates.technical_requirements import (
+    reconcile_technical_requirements,
+)
 from app.config import Settings
 from app.pdf.coordinates import BBox
 from app.pdf.schemas import TextObservation, VisualObservation
@@ -2811,11 +2814,14 @@ class CandidateAdvisor:
                                     if isinstance(exc, CandidateAdvisorFailure)
                                     else None
                                 )
-                                if category in {
+                                if (
+                                    self._require_symbol_persistence
+                                    and category in {
                                     "timeout",
                                     "transport",
                                     "schema",
-                                }:
+                                    }
+                                ):
                                     failure_stage = _provider_failure_stage(
                                         category
                                     )
@@ -3310,6 +3316,18 @@ class CandidateAdvisor:
         finally:
             document.close()
 
+        technical_requirements = snapshot.technical_requirements
+        if candidates_changed and technical_requirements:
+            reconciliation = reconcile_technical_requirements(
+                technical_requirements,
+                candidates,
+            )
+            candidates = list(reconciliation.candidates)
+            technical_requirements = tuple(
+                decision.model_dump(mode="json")
+                for decision in reconciliation.decisions
+            )
+
         duplicate_relations = (
             _duplicate_relations(candidates, observations)
             if candidates_changed
@@ -3355,4 +3373,5 @@ class CandidateAdvisor:
                 if uncertainty_mode == "production_uncertainty"
                 else None
             ),
+            technical_requirements=technical_requirements,
         )

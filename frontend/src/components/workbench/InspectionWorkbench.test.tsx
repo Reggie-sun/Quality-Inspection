@@ -687,6 +687,9 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(screen.getByRole("row", { name: /M6/ }));
 
     const reviewRegion = screen.getByRole("region", { name: "检验项审核" });
+    expect(reviewRegion.classList.contains(
+      "inspection-pane--with-technical-requirements",
+    )).toBe(false);
     const recognitionSummary = screen.getByRole("region", { name: "识别汇总" });
     const workspace = screen.getByRole("group", {
       name: "检验项列表与编辑",
@@ -1896,5 +1899,139 @@ describe("InspectionWorkbench", () => {
     expect(screen.getByRole("article", {
       name: "检验项 — · 线性尺寸",
     })).not.toBeNull();
+  });
+
+  test("技术要求面板复用唯一保存命令 seam", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const items = [{
+      item_id: "dimension-25",
+      item_type: "linear_dimension" as const,
+      raw_text: "25",
+      nominal: "25",
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "technical-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 1 },
+          technical_requirements: [{
+            requirement_id: "requirement-5",
+            ordinal: 5,
+            raw_text: "未注尺寸公差按 GB/T 1804-m 执行",
+            normalized_text: "未注尺寸公差按 GB/T 1804-m 执行",
+            source_location_ids: ["source-5"],
+            page_index: 0,
+            category: "applicability_rule",
+            subtype: "general_dimensional_tolerance",
+            parsed_parameters: {},
+            match_outcome: "unresolved",
+            matched_candidate_ids: [],
+            rule_version: "technical-requirement/1",
+            review_required: true,
+          }],
+          manual_review_count: 1,
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "检验项审核" }).classList.contains(
+      "inspection-pane--with-technical-requirements",
+    )).toBe(true);
+    fireEvent.click(screen.getByRole("button", {
+      name: "匹配此检验项：25",
+    }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
+      type: "set_technical_requirement_match",
+      requirement_id: "requirement-5",
+      outcome: "matched_items",
+      matched_item_ids: ["dimension-25"],
+    }));
+  });
+
+  test("技术要求匹配项跳转会展示默认人工队列外的目标", () => {
+    const items = [{
+      item_id: "auto-dimension-100",
+      item_type: "linear_dimension" as const,
+      raw_text: "100",
+      nominal: "100",
+      status: "auto_accepted",
+      requires_confirmation: false,
+      acceptance_source: "confidence_policy" as const,
+      confidence_decision: {
+        band: "high" as const,
+        review_disposition: "auto_accepted" as const,
+        policy_version: "candidate-confidence/1" as const,
+        evidence_codes: ["typed_schema_complete"],
+      },
+      balloon_required: true,
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "technical-navigation-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          technical_requirements: [{
+            requirement_id: "requirement-5",
+            ordinal: 5,
+            raw_text: "未注尺寸公差按 GB/T 1804-m 执行",
+            normalized_text: "未注尺寸公差按 GB/T 1804-m 执行",
+            source_location_ids: ["source-5"],
+            page_index: 0,
+            category: "applicability_rule",
+            subtype: "general_dimensional_tolerance",
+            parsed_parameters: {},
+            match_outcome: "matched_items",
+            matched_candidate_ids: ["auto-dimension-100"],
+            rule_version: "technical-requirement/1",
+            review_required: true,
+          }],
+          manual_review_count: 0,
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "筛选待人工审核" })
+      .getAttribute("data-active")).toBe("true");
+    expect(screen.queryByRole("row", { name: /100/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "查看匹配检验项：100",
+    }));
+
+    expect(screen.getByRole("button", { name: "筛选全部" })
+      .getAttribute("data-active")).toBe("true");
+    expect(screen.getByRole("row", { name: /100/ })
+      .getAttribute("data-selected")).toBe("true");
   });
 });

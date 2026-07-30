@@ -41,6 +41,7 @@ from app.processing.runtime_recognition import RuntimeRecognition
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.providers.base import VisionResult
+from app.review.service import ReviewService
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -211,6 +212,34 @@ def _visual_observation(
     )
 
 
+def _approved_requirement_page() -> PageInventory:
+    def line(
+        observation_id: str,
+        raw_text: str,
+        y0: float,
+    ) -> TextObservation:
+        return replace(
+            _text_observation(raw_text, observation_id=observation_id),
+            bbox_pdf=(10.0, y0, 90.0, y0 + 4.0),
+            bbox_normalized=(0.10, y0 / 100.0, 0.90, (y0 + 4.0) / 100.0),
+        )
+
+    return _page_with_observations(
+        0,
+        (
+            line("local-dimension", "25", 10),
+            line("technical-heading", "技术要求:", 25),
+            line("requirement-1", "1.未标注倒角C0.5", 32),
+            line("requirement-2", "2.锐边去毛刺", 39),
+            line("requirement-3a", "3.零件表面不应有划痕、擦", 46),
+            line("requirement-3b", "伤等损伤零件外观的缺陷", 51),
+            line("requirement-4", "4.表面阳极氧化亮光银色处理", 58),
+            line("requirement-5", "5.未注尺寸公差按GB/T 1804-m执行", 65),
+            line("requirement-6", "6.未注形位公差按GB/T 1184-k执行", 72),
+        ),
+    )
+
+
 def _source(
     db_session: Session,
     storage: LocalFileStorage,
@@ -265,6 +294,123 @@ def test_candidate_snapshot_source_signals_default_and_preserve() -> None:
         populated,
         provider_call_ids=("provider-call-1",),
     ).source_signals == (signal,)
+
+
+def test_candidate_snapshot_reconstructs_and_matches_six_technical_requirements() -> None:
+    snapshot = candidate_snapshot_from_inventory((_approved_requirement_page(),))
+
+    assert len(snapshot.technical_requirements) == 6
+    assert {
+        requirement["subtype"]
+        for requirement in snapshot.technical_requirements
+    } == {
+        "default_chamfer",
+        "deburr",
+        "surface_integrity",
+        "surface_treatment",
+        "general_dimensional_tolerance",
+        "general_geometric_tolerance",
+    }
+    assert all(
+        candidate["payload"]["raw_text"] != "技术要求"
+        for candidate in snapshot.candidates
+    )
+    dimension = next(
+        candidate
+        for candidate in snapshot.candidates
+        if candidate["candidate_id"]
+        == snapshot.technical_requirements[4]["matched_candidate_ids"][0]
+    )
+    global_requirement = next(
+        candidate["payload"]
+        for candidate in snapshot.candidates
+        if candidate["payload"].get("scope") == "global_requirement"
+    )
+    assert global_requirement["balloon_required"] is False
+    assert global_requirement.get("formal_number") is None
+    assert dimension["payload"].get("upper_tolerance") is None
+    assert dimension["payload"].get("lower_tolerance") is None
+    assert dimension["technical_requirement_refs"] == [
+        snapshot.technical_requirements[4]["requirement_id"]
+    ]
+    assert len(snapshot.coverage_entries) == len(
+        snapshot.expected_observation_ids
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw_text", "expected_subtype"),
+    [
+        ("检查外观，不得有裂纹", "surface_integrity"),
+        ("测量倒角，尺寸应为1×45°", "default_chamfer"),
+        ("检查焊缝不得有裂纹", "ambiguous"),
+    ],
+)
+def test_candidate_snapshot_preserves_standalone_executable_requirements(
+    raw_text: str,
+    expected_subtype: str,
+) -> None:
+    """Owner replacement retains executable requirements outside a note block."""
+    observation = _text_observation(
+        raw_text,
+        observation_id=f"standalone-{expected_subtype}",
+    )
+
+    snapshot = candidate_snapshot_from_inventory((_page(observation),))
+
+    assert len(snapshot.technical_requirements) == 1
+    requirement = snapshot.technical_requirements[0]
+    assert requirement["ordinal"] is None
+    assert requirement["subtype"] == expected_subtype
+    assert requirement["match_outcome"] == "global_scope"
+    assert requirement["source_location_ids"] == [observation.observation_id]
+    generated = next(
+        candidate
+        for candidate in snapshot.candidates
+        if candidate["candidate_id"] == requirement["generated_candidate_id"]
+    )
+    assert generated["payload"]["item_type"] == "general_requirement"
+    assert generated["payload"]["balloon_required"] is False
+
+
+def test_pipeline_freezes_technical_requirement_decisions(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    storage = LocalFileStorage(tmp_path)
+    source_file = _source(db_session, storage, project, raw_text="25")
+    page = _approved_requirement_page()
+
+    result_ref = InventoryPipeline(
+        db_session,
+        storage,
+        PassingPreflight(),
+        inventory_builder=lambda _path: (page,),
+    ).run(
+        str(project.id),
+        source_file.resource_ref,
+        "process:technical-requirements",
+    )
+
+    result = db_session.scalar(
+        select(AutomaticResult).where(AutomaticResult.project_id == project.id)
+    )
+    assert result is not None
+    assert result_ref == f"automatic-result://{result.id}"
+    assert len(result.technical_requirements) == 6
+    assert result.technical_requirements[4]["match_outcome"] == "matched_items"
+    working = ReviewService(db_session).create_from_raw(result.id)
+    requirement = result.technical_requirements[4]
+    matched_dimension = next(
+        item
+        for item in working.items
+        if item["item_id"] in requirement["matched_candidate_ids"]
+    )
+    assert matched_dimension.get("upper_tolerance") is None
+    assert matched_dimension.get("lower_tolerance") is None
+    assert matched_dimension["inspection_standard"] == "GB/T 1804-m"
+    assert matched_dimension["sip_detail_fields_confirmed"] is False
 
 
 @pytest.mark.parametrize("text", ("DRAFT", "DRAWING", "GENERAL"))

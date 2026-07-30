@@ -1581,6 +1581,14 @@ def test_full_p0_live_reuses_failure_proof_inside_the_same_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = _load_module("qi_run_p0_live_failure", HARNESS / "scripts/run-p0.py")
+    mirror = json.loads(
+        (HARNESS / "contracts/p0-contracts.json").read_text(encoding="utf-8")
+    )
+    registered_selector = next(
+        row["verification_selector"]
+        for row in mirror["contracts"]
+        if row["p0_contract_id"] == "P0-ACC-007"
+    )
     expected = (0, "passed", "controlled failure proof", ["reports/proof.json"])
     monkeypatch.setattr(
         runner,
@@ -1589,7 +1597,7 @@ def test_full_p0_live_reuses_failure_proof_inside_the_same_run(
     )
 
     assert runner._phase_outcome(
-        runner.NO_SILENT_SUCCESS_SELECTOR,
+        registered_selector,
         "live",
         tmp_path,
     ) == expected

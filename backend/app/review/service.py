@@ -15,7 +15,7 @@ from app.candidates.confidence import (
     validate_confidence_decision,
 )
 from app.candidates.models import AutomaticResult
-from app.candidates.schemas import Candidate
+from app.candidates.schemas import Candidate, stable_candidate_id
 from app.projects.models import Project
 from app.projects.state import ProjectState, transition
 from app.review.locks import require_active_lock
@@ -34,6 +34,7 @@ from app.review.schemas import (
     SetBalloonRequired,
     SetSipDetailFields,
     SetSipMetadata,
+    SetTechnicalRequirementMatch,
     SIP_DETAIL_FIELDS,
     SIP_METADATA_FIELDS,
     SIP_OPTIONAL_DETAIL_FIELDS,
@@ -140,15 +141,24 @@ class ReviewService:
         elif current_state != ProjectState.EDITING:
             raise ValueError(f"project {project.id} is not ready for review")
 
+        items = [
+            self._current_item(candidate, raw_result.schema_version)
+            for candidate in raw_result.candidates
+        ]
+        technical_requirements = copy.deepcopy(
+            raw_result.technical_requirements
+        )
+        self._project_technical_requirements(
+            technical_requirements,
+            items,
+        )
         working = ReviewWorkingCopy(
             project_id=raw_result.project_id,
             raw_result_id=raw_result.id,
             version=1,
-            items=[
-                self._current_item(candidate, raw_result.schema_version)
-                for candidate in raw_result.candidates
-            ],
+            items=items,
             coverage=self._review_coverage(raw_result.coverage),
+            technical_requirements=technical_requirements,
             sip_metadata={},
             numbering_stale=False,
         )
@@ -182,13 +192,21 @@ class ReviewService:
 
         items = copy.deepcopy(working.items)
         coverage = copy.deepcopy(working.coverage)
+        technical_requirements = copy.deepcopy(
+            working.technical_requirements
+        )
         sip_metadata = copy.deepcopy(working.sip_metadata)
         target_ids, numbering_stale = self._apply_command(
             items,
             coverage,
+            technical_requirements,
             sip_metadata,
             parsed,
             numbering_stale=working.numbering_stale,
+        )
+        self._validate_requirement_target_invariants(
+            items,
+            technical_requirements,
         )
         before_version = working.version
         after_version = before_version + 1
@@ -202,6 +220,7 @@ class ReviewService:
             .values(
                 items=items,
                 coverage=coverage,
+                technical_requirements=technical_requirements,
                 sip_metadata=sip_metadata,
                 numbering_stale=numbering_stale,
                 version=after_version,
@@ -488,6 +507,9 @@ class ReviewService:
             ),
             "active": True,
         }
+        refs = candidate.get("technical_requirement_refs")
+        if isinstance(refs, list) and all(isinstance(ref, str) for ref in refs):
+            current["technical_requirement_refs"] = list(refs)
         if validated_decision is not None:
             current["confidence_decision"] = copy.deepcopy(
                 candidate["confidence_decision"]
@@ -545,6 +567,7 @@ class ReviewService:
         self,
         items: list[dict[str, Any]],
         coverage: dict[str, Any],
+        technical_requirements: list[dict[str, Any]],
         sip_metadata: dict[str, Any],
         command: ReviewCommand,
         *,
@@ -557,6 +580,12 @@ class ReviewService:
         if isinstance(command, Exclude):
             item = self._active_item(items, command.item_id)
             self._complete_manual_item(item, coverage, accepted=False)
+            self._remap_requirement_targets(
+                items,
+                coverage,
+                technical_requirements,
+                {command.item_id: ()},
+            )
             return [command.item_id], True
         if isinstance(command, Edit):
             item = self._active_item(items, command.item_id)
@@ -597,6 +626,22 @@ class ReviewService:
                 source.get("item_type") != item_type for source in source_items
             ):
                 raise ValueError("merge requires the same simple item type")
+            global_target_ids = {
+                requirement.get("generated_candidate_id")
+                for requirement in technical_requirements
+                if requirement.get("match_outcome") == "global_scope"
+            }
+            if any(
+                item_id in global_target_ids
+                for item_id in command.item_ids
+            ) and any(
+                source.get("scope") != "global_requirement"
+                or source.get("balloon_required") is not False
+                for source in source_items
+            ):
+                raise ValueError(
+                    "global requirement merge requires global unnumbered items"
+                )
             merged_id = str(uuid.uuid4())
             merged = copy.deepcopy(source_items[0])
             self._clear_sip_detail_fields(merged)
@@ -622,6 +667,15 @@ class ReviewService:
                 source["status"] = "superseded"
                 source["active"] = False
             items.append(merged)
+            self._remap_requirement_targets(
+                items,
+                coverage,
+                technical_requirements,
+                {
+                    source_id: (merged_id,)
+                    for source_id in command.item_ids
+                },
+            )
             return [*command.item_ids, merged_id], True
         if isinstance(command, Split):
             source = self._active_item(items, command.item_id)
@@ -653,6 +707,12 @@ class ReviewService:
                 )
                 split_item.pop("confidence_decision", None)
                 items.append(split_item)
+            self._remap_requirement_targets(
+                items,
+                coverage,
+                technical_requirements,
+                {command.item_id: tuple(split_ids)},
+            )
             return [command.item_id, *split_ids], True
         if isinstance(command, PromoteSource):
             entry = self._pending_source_entry(
@@ -747,6 +807,13 @@ class ReviewService:
                 command.item_id,
                 command.accepted,
             )
+            if not command.accepted:
+                self._remap_requirement_targets(
+                    items,
+                    coverage,
+                    technical_requirements,
+                    {command.item_id: ()},
+                )
             return [command.item_id], numbering_stale or not command.accepted
         if isinstance(command, SetBalloonRequired):
             item = self._active_item(items, command.item_id)
@@ -759,7 +826,16 @@ class ReviewService:
             for field in (*SIP_DETAIL_FIELDS, *SIP_OPTIONAL_DETAIL_FIELDS):
                 item[field] = values[field]
             item[_SIP_DETAIL_CONFIRMED] = True
+            item.pop("sip_suggestion_provenance", None)
             return [command.item_id], numbering_stale
+        if isinstance(command, SetTechnicalRequirementMatch):
+            return self._set_technical_requirement_match(
+                items,
+                coverage,
+                technical_requirements,
+                command,
+                numbering_stale=numbering_stale,
+            )
         if isinstance(command, SetSipMetadata):
             values = command.model_dump(mode="json")
             sip_metadata.clear()
@@ -778,6 +854,396 @@ class ReviewService:
             if item["item_id"] == item_id and item.get("active", True):
                 return item
         raise ReviewNotFound(f"active review item {item_id} was not found")
+
+    @staticmethod
+    def _project_technical_requirements(
+        technical_requirements: list[dict[str, Any]],
+        items: list[dict[str, Any]],
+    ) -> None:
+        item_by_id = {
+            str(item["item_id"]): item
+            for item in items
+            if isinstance(item.get("item_id"), str)
+        }
+        for requirement in technical_requirements:
+            requirement_id = requirement.get("requirement_id")
+            if not isinstance(requirement_id, str):
+                continue
+            requirement.setdefault("review_status", "suggested")
+            target_ids = list(requirement.get("matched_candidate_ids", []))
+            generated_id = requirement.get("generated_candidate_id")
+            if isinstance(generated_id, str):
+                target_ids.append(generated_id)
+            for target_id in target_ids:
+                item = item_by_id.get(str(target_id))
+                if item is None:
+                    continue
+                ReviewService._add_requirement_ref(item, requirement_id)
+                ReviewService._apply_requirement_suggestion(
+                    item,
+                    requirement,
+                )
+
+    @staticmethod
+    def _validate_requirement_target_invariants(
+        items: list[dict[str, Any]],
+        technical_requirements: list[dict[str, Any]],
+    ) -> None:
+        active_items = {
+            str(item["item_id"]): item
+            for item in items
+            if isinstance(item.get("item_id"), str)
+            and item.get("active", True)
+        }
+        for item in active_items.values():
+            if (
+                item.get("scope") == "global_requirement"
+                and item.get("balloon_required") is not False
+            ):
+                raise ValueError(
+                    "global requirement target must remain global and unnumbered"
+                )
+        for requirement in technical_requirements:
+            if requirement.get("match_outcome") != "global_scope":
+                continue
+            generated_id = requirement.get("generated_candidate_id")
+            target = (
+                active_items.get(generated_id)
+                if isinstance(generated_id, str)
+                else None
+            )
+            if (
+                target is None
+                or target.get("scope") != "global_requirement"
+                or target.get("balloon_required") is not False
+            ):
+                raise ValueError(
+                    "global requirement target must remain global and unnumbered"
+                )
+
+    @staticmethod
+    def _add_requirement_ref(
+        item: dict[str, Any],
+        requirement_id: str,
+    ) -> None:
+        refs = item.setdefault("technical_requirement_refs", [])
+        if not isinstance(refs, list):
+            refs = []
+        item["technical_requirement_refs"] = sorted(
+            {
+                ref
+                for ref in [*refs, requirement_id]
+                if isinstance(ref, str)
+            }
+        )
+
+    @staticmethod
+    def _apply_requirement_suggestion(
+        item: dict[str, Any],
+        requirement: dict[str, Any],
+    ) -> None:
+        if item.get(_SIP_DETAIL_CONFIRMED) is True:
+            return
+        suggestion = requirement.get("sip_suggestion")
+        requirement_id = requirement.get("requirement_id")
+        if not isinstance(suggestion, dict) or not isinstance(
+            requirement_id,
+            str,
+        ):
+            return
+        provenance = item.setdefault("sip_suggestion_provenance", {})
+        if not isinstance(provenance, dict):
+            provenance = {}
+            item["sip_suggestion_provenance"] = provenance
+        for field in (
+            "inspection_item",
+            "inspection_standard",
+            "key_dimension",
+            "source_page",
+            "remarks",
+        ):
+            value = suggestion.get(field)
+            if value is None or item.get(field) not in (None, ""):
+                continue
+            item[field] = copy.deepcopy(value)
+            provenance[field] = requirement_id
+        item.setdefault(_SIP_DETAIL_CONFIRMED, False)
+
+    @staticmethod
+    def _requirement(
+        technical_requirements: list[dict[str, Any]],
+        requirement_id: str,
+    ) -> dict[str, Any]:
+        matches = [
+            requirement
+            for requirement in technical_requirements
+            if requirement.get("requirement_id") == requirement_id
+        ]
+        if len(matches) != 1:
+            raise ReviewNotFound(
+                f"technical requirement {requirement_id} was not found"
+            )
+        return matches[0]
+
+    @staticmethod
+    def _remove_requirement_projection(
+        items: list[dict[str, Any]],
+        requirement_id: str,
+    ) -> None:
+        generated_id = stable_candidate_id(
+            "technical-requirement-candidate",
+            requirement_id,
+        )
+        for item in items:
+            refs = item.get("technical_requirement_refs")
+            if isinstance(refs, list):
+                item["technical_requirement_refs"] = [
+                    ref for ref in refs if ref != requirement_id
+                ]
+            provenance = item.get("sip_suggestion_provenance")
+            if (
+                isinstance(provenance, dict)
+                and item.get(_SIP_DETAIL_CONFIRMED) is not True
+            ):
+                for field, source_requirement_id in list(provenance.items()):
+                    if source_requirement_id != requirement_id:
+                        continue
+                    item.pop(field, None)
+                    provenance.pop(field, None)
+                if not provenance:
+                    item.pop("sip_suggestion_provenance", None)
+            if item.get("item_id") == generated_id:
+                item["active"] = False
+                item["status"] = "superseded"
+
+    def _remap_requirement_targets(
+        self,
+        items: list[dict[str, Any]],
+        coverage: dict[str, Any],
+        technical_requirements: list[dict[str, Any]],
+        replacements: dict[str, tuple[str, ...]],
+    ) -> None:
+        active_items = {
+            str(item["item_id"]): item
+            for item in items
+            if isinstance(item.get("item_id"), str)
+            and item.get("active", True)
+        }
+        for requirement in technical_requirements:
+            match_outcome = requirement.get("match_outcome")
+            if match_outcome == "matched_items":
+                current_ids = requirement.get("matched_candidate_ids")
+                if not isinstance(current_ids, list):
+                    continue
+            elif match_outcome == "global_scope":
+                generated_id = requirement.get("generated_candidate_id")
+                if not isinstance(generated_id, str):
+                    continue
+                current_ids = [generated_id]
+            else:
+                continue
+            if not any(
+                target_id in replacements for target_id in current_ids
+            ):
+                continue
+            requirement_id = requirement.get("requirement_id")
+            if not isinstance(requirement_id, str):
+                continue
+            remapped_ids = sorted(
+                {
+                    remapped_id
+                    for target_id in current_ids
+                    for remapped_id in replacements.get(
+                        target_id,
+                        (target_id,),
+                    )
+                }
+            )
+            self._remove_requirement_projection(items, requirement_id)
+            if not remapped_ids or (
+                match_outcome == "global_scope"
+                and len(remapped_ids) != 1
+            ):
+                requirement.update(
+                    {
+                        "match_outcome": "unresolved",
+                        "matched_candidate_ids": [],
+                        "generated_candidate_id": None,
+                        "review_required": True,
+                        "review_status": "suggested",
+                    }
+                )
+                self._sync_requirement_coverage(
+                    coverage,
+                    technical_requirements,
+                    requirement,
+                )
+                continue
+            if match_outcome == "global_scope":
+                requirement.update(
+                    {
+                        "matched_candidate_ids": [],
+                        "generated_candidate_id": remapped_ids[0],
+                    }
+                )
+            else:
+                requirement["matched_candidate_ids"] = remapped_ids
+            for target_id in remapped_ids:
+                target = active_items.get(target_id)
+                if target is None:
+                    raise ReviewNotFound(
+                        f"active review item {target_id} was not found"
+                    )
+                self._add_requirement_ref(target, requirement_id)
+                self._apply_requirement_suggestion(target, requirement)
+            self._sync_requirement_coverage(
+                coverage,
+                technical_requirements,
+                requirement,
+            )
+
+    @staticmethod
+    def _sync_requirement_coverage(
+        coverage: dict[str, Any],
+        technical_requirements: list[dict[str, Any]],
+        requirement: dict[str, Any],
+    ) -> None:
+        source_ids = set(requirement.get("source_location_ids", []))
+        for entry in ReviewService._coverage_entries(coverage):
+            observation_id = entry.get("observation_id")
+            if observation_id not in source_ids:
+                continue
+            source_requirements = [
+                candidate
+                for candidate in technical_requirements
+                if observation_id in candidate.get("source_location_ids", [])
+            ]
+            requires_confirmation = any(
+                candidate.get("review_required") is True
+                for candidate in source_requirements
+            )
+            entry["requires_confirmation"] = requires_confirmation
+            if requires_confirmation:
+                entry.pop("confirmation_accepted", None)
+            else:
+                entry["confirmation_accepted"] = any(
+                    candidate.get("review_status") == "confirmed"
+                    for candidate in source_requirements
+                )
+        ReviewService._refresh_review_required_count(coverage)
+
+    @staticmethod
+    def _global_requirement_item(
+        items: list[dict[str, Any]],
+        requirement: dict[str, Any],
+    ) -> dict[str, Any]:
+        requirement_id = str(requirement["requirement_id"])
+        item_id = stable_candidate_id(
+            "technical-requirement-candidate",
+            requirement_id,
+        )
+        for item in items:
+            if item.get("item_id") == item_id:
+                item["active"] = True
+                item["status"] = "pending"
+                return item
+        coordinates = requirement.get("coordinates")
+        coordinate = (
+            list(coordinates[0])
+            if isinstance(coordinates, list) and coordinates
+            else None
+        )
+        item = {
+            "item_id": item_id,
+            "item_type": "general_requirement",
+            "raw_text": requirement.get("raw_text", ""),
+            "normalized_text": requirement.get("normalized_text", ""),
+            "coordinates": coordinate,
+            "scope": "global_requirement",
+            "balloon_required": False,
+            "requires_confirmation": True,
+            "source_location_ids": list(
+                requirement.get("source_location_ids", [])
+            ),
+            "source_type": "automatic",
+            "status": "pending",
+            "acceptance_source": None,
+            "active": True,
+        }
+        items.append(item)
+        return item
+
+    def _set_technical_requirement_match(
+        self,
+        items: list[dict[str, Any]],
+        coverage: dict[str, Any],
+        technical_requirements: list[dict[str, Any]],
+        command: SetTechnicalRequirementMatch,
+        *,
+        numbering_stale: bool,
+    ) -> tuple[list[str], bool]:
+        requirement = self._requirement(
+            technical_requirements,
+            command.requirement_id,
+        )
+        targets = [
+            self._active_item(items, item_id)
+            for item_id in command.matched_item_ids
+        ]
+        self._remove_requirement_projection(
+            items,
+            command.requirement_id,
+        )
+
+        target_ids: list[str] = [command.requirement_id]
+        if command.outcome == "matched_items":
+            ordered_ids = sorted(command.matched_item_ids)
+            requirement.update(
+                {
+                    "match_outcome": "matched_items",
+                    "matched_candidate_ids": ordered_ids,
+                    "generated_candidate_id": None,
+                    "review_required": False,
+                    "review_status": "confirmed",
+                }
+            )
+            for target in targets:
+                self._add_requirement_ref(target, command.requirement_id)
+                self._apply_requirement_suggestion(target, requirement)
+            target_ids.extend(ordered_ids)
+        elif command.outcome == "global_scope":
+            item = self._global_requirement_item(items, requirement)
+            generated_id = str(item["item_id"])
+            requirement.update(
+                {
+                    "match_outcome": "global_scope",
+                    "matched_candidate_ids": [],
+                    "generated_candidate_id": generated_id,
+                    "review_required": False,
+                    "review_status": "confirmed",
+                }
+            )
+            self._add_requirement_ref(item, command.requirement_id)
+            self._apply_requirement_suggestion(item, requirement)
+            target_ids.append(generated_id)
+            numbering_stale = True
+        else:
+            requirement.update(
+                {
+                    "match_outcome": "unresolved",
+                    "matched_candidate_ids": [],
+                    "generated_candidate_id": None,
+                    "review_required": False,
+                    "review_status": "excluded",
+                }
+            )
+            numbering_stale = True
+        self._sync_requirement_coverage(
+            coverage,
+            technical_requirements,
+            requirement,
+        )
+        return target_ids, numbering_stale
 
     @staticmethod
     def _mark_manual_acceptance(item: dict[str, Any]) -> None:
@@ -867,6 +1333,7 @@ class ReviewService:
             _SIP_DETAIL_CONFIRMED,
         ):
             item.pop(field, None)
+        item.pop("sip_suggestion_provenance", None)
 
     @staticmethod
     def _sip_confirmation_blockers(

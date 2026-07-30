@@ -33,6 +33,7 @@ import {
   SipInformationPanel,
   type MetadataDraft,
 } from "./SipInformationPanel";
+import { TechnicalRequirementPanel } from "./TechnicalRequirementPanel";
 import "../../styles/workbench.css";
 
 
@@ -425,7 +426,12 @@ export function InspectionWorkbench({
         </section>
 
         <section
-          className="inspection-pane"
+          className={[
+            "inspection-pane",
+            (workingCopy?.technical_requirements?.length ?? 0) > 0
+              ? "inspection-pane--with-technical-requirements"
+              : "",
+          ].filter(Boolean).join(" ")}
           aria-label={zhCN.workbench.reviewRegion}
           role="region"
         >
@@ -436,6 +442,16 @@ export function InspectionWorkbench({
             manualReviewCount={workingCopy?.manual_review_count ?? 0}
             filter={filter}
             onFilterChange={setFilter}
+          />
+          <TechnicalRequirementPanel
+            requirements={workingCopy?.technical_requirements ?? []}
+            items={items}
+            disabled={reviewCommandsDisabled}
+            onSelectItem={(itemId) => {
+              setFilter("all");
+              return selectItem(itemId);
+            }}
+            onCommand={submitCommand}
           />
           <div
             className="inspection-review-workspace"

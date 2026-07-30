@@ -301,5 +301,6 @@ def test_review_routes_require_operator_and_save_without_freeze(
         )
         assert fetched.status_code == 200
         assert fetched.json()["id"] == str(working_copy.id)
+        assert fetched.json()["technical_requirements"] == []
     finally:
         app.dependency_overrides.clear()

@@ -335,6 +335,7 @@ class InventoryPipeline:
                     coverage=coverage,
                     provider_call_ids=snapshot.provider_call_ids,
                     duplicate_relations=snapshot.duplicate_relations,
+                    technical_requirements=snapshot.technical_requirements,
                     schema_version=AUTOMATIC_RESULT_SCHEMA_VERSION,
                     completeness=snapshot.completeness,
                     recognition_mode=snapshot.recognition_mode,

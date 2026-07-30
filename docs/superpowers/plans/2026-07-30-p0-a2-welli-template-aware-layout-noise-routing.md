@@ -13,7 +13,7 @@
 ## Status And Authority
 
 - Date: `2026-07-30`
-- Status: `proposed; implementation not authorized`
+- Status: `accepted / complete`
 - Lane: `Heavy`
 - Parent plan:
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
@@ -22,16 +22,18 @@
 - Design checkpoint: `4b13193`
 - Verified base: `main@f9c8c2d`
 - Planning worktree:
-  `.worktrees/welli-template-layout-filtering-spec`
+  `.worktrees/welli-template-layout-filtering-spec`（merge 后已删除）
 - Planning branch:
-  `codex/welli-template-layout-filtering-spec`
-- Execution authorization: 本文件只定义 subordinate implementation sequence；
-  不替换 parent plan，不授权生产代码、Provider call、runtime config、database
-  migration、Harness receipt、merge、review freeze 或 export。
+  `codex/welli-template-layout-filtering-spec`（merge 后已删除）
+- Execution authorization: 用户已批准本 subordinate implementation sequence；
+  Tasks 1–9 已按顺序执行，implementation 经 integration checkpoint `3d00d15`
+  合入本地 `main`。本计划不替换 parent plan，也未授权或执行 live Provider call、
+  runtime config、database schema/migration 修改、Harness receipt、review freeze 或
+  export。
 
-本计划是 parent plan 下的有界 successor work package。实施前必须由用户明确批准本
-计划并指定继续方式。实施时每个 Task 只能按顺序执行；不得因为后续接入点已明确而
-提前修改后续文件。
+本计划作为 parent plan 下的有界 successor work package 已完成。各 Task 的执行证据、
+验证结果、review 结论和剩余边界记录在 `Execution Results`；checkbox 表示对应步骤
+已有执行证据，不扩大原计划范围。
 
 ## Planning Amendments From Real-Code Mapping
 
@@ -241,7 +243,7 @@ routing 未发布，可通过 revert inventory integration commit 回到 sidecar
 - Modify: `backend/app/pdf/schemas.py`
 - Modify: `backend/tests/unit/pdf/test_inventory.py`
 
-- [ ] **Step 1: Write serialization and immutability tests**
+- [x] **Step 1: Write serialization and immutability tests**
 
 增加精确测试：
 
@@ -287,7 +289,7 @@ def test_page_inventory_serializes_versioned_layout_assignment() -> None:
 - `append_ocr_observations()` 保留同一个 sidecar value；
 - 追加 OCR 后 assignments 只包含原有 Native line IDs。
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run from `backend/`:
 
@@ -300,7 +302,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 Expected RED: `LayoutProfileMatch` / `ObservationRegionAssignment` import 不存在，
 或 `PageInventory` 不接受 `layout_profile_match`。
 
-- [ ] **Step 3: Add the minimum schema**
+- [x] **Step 3: Add the minimum schema**
 
 在 `backend/app/pdf/schemas.py` 增加：
 
@@ -349,11 +351,11 @@ if self.layout_profile_match is None:
 
 不得改变 `TextObservation` 或 `VisualObservation` shape。
 
-- [ ] **Step 4: Run the focused test and verify GREEN**
+- [x] **Step 4: Run the focused test and verify GREEN**
 
 Run Step 2 command. Expected: all pass.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add backend/app/pdf/schemas.py \
@@ -369,7 +371,7 @@ git commit -m "feat: add immutable PDF layout evidence sidecar"
 - Create: `backend/tests/helpers/welli_layout_fixture.py`
 - Create: `backend/tests/unit/pdf/test_layout_profiles.py`
 
-- [ ] **Step 1: Add a deterministic synthetic WELLI fixture**
+- [x] **Step 1: Add a deterministic synthetic WELLI fixture**
 
 用 PyMuPDF `page.new_shape()`、`draw_line()`、`draw_rect()`、`finish()` 和
 `commit()` 构建最小 test-only page。fixture 必须能分别开关：
@@ -383,7 +385,7 @@ git commit -m "feat: add immutable PDF layout evidence sidecar"
 
 fixture 只创建测试输入，不复制真实 PDF 或 host absolute path。
 
-- [ ] **Step 2: Write matcher gate tests**
+- [x] **Step 2: Write matcher gate tests**
 
 锁定以下矩阵：
 
@@ -418,7 +420,7 @@ match = match_welli_layout_profile(
 Expected result 只允许 `LayoutProfileMatch(high_confidence)` 或 `None`，不增加
 medium/low state。
 
-- [ ] **Step 3: Run tests and verify RED**
+- [x] **Step 3: Run tests and verify RED**
 
 Run from `backend/`:
 
@@ -430,7 +432,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 
 Expected RED: `app.pdf.layout_profiles` 不存在。
 
-- [ ] **Step 4: Implement the physical profile and geometry reader**
+- [x] **Step 4: Implement the physical profile and geometry reader**
 
 新模块公开面固定为：
 
@@ -479,11 +481,11 @@ title_anchor_quorum
 
 matcher 不读取 filename、basename、source hash、page allowlist 或 corpus identity。
 
-- [ ] **Step 5: Run matcher tests and verify GREEN**
+- [x] **Step 5: Run matcher tests and verify GREEN**
 
 Run Step 3 command. Expected: all pass.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 git add backend/app/pdf/layout_profiles.py \
@@ -500,7 +502,7 @@ git commit -m "feat: match versioned WELLI drawing layouts"
 - Modify: `backend/tests/helpers/welli_layout_fixture.py`
 - Modify: `backend/tests/unit/pdf/test_layout_profiles.py`
 
-- [ ] **Step 1: Write cell assignment tests**
+- [x] **Step 1: Write cell assignment tests**
 
 每个 assignment 必须满足：
 
@@ -528,7 +530,7 @@ page/profile/lineage has no conflict
 - Native span、OCR observation 不 assignment；
 - input order 改变时 assignments 的 canonical serialization 不变。
 
-- [ ] **Step 2: Write watermark tests**
+- [x] **Step 2: Write watermark tests**
 
 正例必须同时满足 exact text、angle、minimum count 和 2D spacing grid：
 
@@ -551,7 +553,7 @@ assert ids == frozenset(expected_native_line_ids)
 - line/span 同源不能重复计数；
 - `profile_match=None`。
 
-- [ ] **Step 3: Run tests and verify RED**
+- [x] **Step 3: Run tests and verify RED**
 
 Run from `backend/`:
 
@@ -564,7 +566,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 Expected RED: matcher 尚未返回 cell assignments，watermark helper 尚未实现完整
 grid contract。
 
-- [ ] **Step 4: Implement assignments and watermark evidence**
+- [x] **Step 4: Implement assignments and watermark evidence**
 
 使用 profile 内 role rectangles 和 stable cell IDs。assignment evidence 至少能区分：
 
@@ -585,11 +587,11 @@ watermark 只迭代 `source_type=="native"` 且
 `observation_level=="line"` 的 observations；按 profile spacing 聚类 unique centers，
 不得使用 span 数量凑 `>=9`。
 
-- [ ] **Step 5: Run tests and verify GREEN**
+- [x] **Step 5: Run tests and verify GREEN**
 
 Run Step 3 command. Expected: all pass.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```bash
 git add backend/app/pdf/layout_profiles.py \
@@ -607,7 +609,7 @@ git commit -m "feat: assign WELLI cells and watermark evidence"
 - Modify: `backend/tests/unit/pdf/test_runtime_ocr.py`
 - Modify only if required by RED: `backend/tests/integration/test_pdf_inventory.py`
 
-- [ ] **Step 1: Write producer and persistence tests**
+- [x] **Step 1: Write producer and persistence tests**
 
 用 monkeypatch/spy 锁定：
 
@@ -620,7 +622,7 @@ git commit -m "feat: assign WELLI cells and watermark evidence"
 - `append_ocr_observations()` 保留 sidecar，不调用 matcher；
 - OCR observations 不被追加进已有 assignments。
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run from `backend/`:
 
@@ -634,7 +636,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 
 Expected RED: `build_inventory()` 未调用 matcher，matched sidecar 为空。
 
-- [ ] **Step 3: Add the single producer call**
+- [x] **Step 3: Add the single producer call**
 
 在 `page.get_drawings()` 和 Native observations 均可用、`PageInventory` 构造前调用：
 
@@ -658,11 +660,11 @@ layout_profile_match=layout_profile_match
 不修改 `append_ocr_observations()` 的 `replace(...)` 实现，除非 RED 证明 sidecar 被
 丢失；预期只补回归测试。
 
-- [ ] **Step 4: Run tests and verify GREEN**
+- [x] **Step 4: Run tests and verify GREEN**
 
 Run Step 2 command. Expected: all pass.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
 
 ```bash
 git add backend/app/pdf/inventory.py \
@@ -682,7 +684,7 @@ stage。
 - Modify: `backend/app/candidates/disposition.py`
 - Modify: `backend/tests/unit/candidates/test_disposition.py`
 
-- [ ] **Step 1: Write the decision table tests**
+- [x] **Step 1: Write the decision table tests**
 
 扩展 internal decision literal：
 
@@ -719,7 +721,7 @@ parser fallback
 revision marker `1/2/3` 即使 `has_visual_context=True` 也必须由 confirmed marker cell
 处理。其他工程 visual context 保留现有 yield。
 
-- [ ] **Step 2: Write engineering-preservation tests**
+- [x] **Step 2: Write engineering-preservation tests**
 
 单 observation preservation evidence：
 
@@ -743,7 +745,7 @@ revision-description-3:
 
 不得用 filename、hash、page index、observation ID 或 exact combined text 作例外。
 
-- [ ] **Step 3: Run tests and verify RED**
+- [x] **Step 3: Run tests and verify RED**
 
 Run from `backend/`:
 
@@ -756,7 +758,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 Expected RED: internal decision 不支持 `reference_context`，classifier 不接收 layout
 evidence，revision marker 仍因 visual context 返回 `None`。
 
-- [ ] **Step 4: Implement the minimum layout decision API**
+- [x] **Step 4: Implement the minimum layout decision API**
 
 保持现有 `PRIMARY_DISPOSITION_RULE_VERSION="p0-a1-r1"` 供旧规则使用；layout decisions
 显式使用：
@@ -784,11 +786,11 @@ layout helper 只返回 decision，不写 Coverage、candidate 或 inventory。�
 不是 high-confidence sidecar 的成员、boundary 不安全或 observation 在 preservation
 set 中，返回 `None`。
 
-- [ ] **Step 5: Run tests and verify GREEN**
+- [x] **Step 5: Run tests and verify GREEN**
 
 Run Step 3 command. Expected: all pass.
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 ```bash
 git add backend/app/candidates/disposition.py \
@@ -803,7 +805,7 @@ git commit -m "feat: route WELLI cells through primary disposition"
 - Modify: `backend/app/processing/automatic_result.py`
 - Modify: `backend/tests/e2e/test_offline_automatic_result.py`
 
-- [ ] **Step 1: Add matched-page snapshot fixtures**
+- [x] **Step 1: Add matched-page snapshot fixtures**
 
 扩展现有 `_page_with_observations()` / `_text_observation()` test helpers，使测试可以附加：
 
@@ -814,7 +816,7 @@ git commit -m "feat: route WELLI cells through primary disposition"
 
 不要改变现有 unmatched fixtures 的默认 shape。
 
-- [ ] **Step 2: Write failing text routing tests**
+- [x] **Step 2: Write failing text routing tests**
 
 至少锁定：
 
@@ -846,7 +848,7 @@ unmatched page
   -> snapshot canonical bytes unchanged
 ```
 
-- [ ] **Step 3: Write failing visual routing tests**
+- [x] **Step 3: Write failing visual routing tests**
 
 构造三个 cases：
 
@@ -873,7 +875,7 @@ unmatched page
 - parent ID 存在但不是 selected Native line；
 - 同一 span relation 映射到冲突 parent identity。
 
-- [ ] **Step 4: Run snapshot tests and verify RED**
+- [x] **Step 4: Run snapshot tests and verify RED**
 
 Run from `backend/`:
 
@@ -886,7 +888,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 Expected RED: current snapshot 未消费 layout sidecar，所有 visual IDs 仍为
 `ambiguous` 且 required。
 
-- [ ] **Step 5: Precompute immutable page layout context**
+- [x] **Step 5: Precompute immutable page layout context**
 
 在 `candidate_snapshot_from_inventory()` 开始处按 page 建立：
 
@@ -903,7 +905,7 @@ row 较早 observation 的结果。Candidate Snapshot 不重开 PDF、不读取 
 调用 primary classifier 时传递当前 observation 的 evidence。Coverage 继续逐 source
 写一次，并保存 layout reason/version。
 
-- [ ] **Step 6: Derive visual dispositions from final text decisions**
+- [x] **Step 6: Derive visual dispositions from final text decisions**
 
 text loop 完成后先建立：
 
@@ -959,11 +961,11 @@ p0-a2-welli-layout/1
 
 `required_visual_observation_ids` 只按 page/input stable order 收集 unresolved IDs。
 
-- [ ] **Step 7: Run snapshot tests and verify GREEN**
+- [x] **Step 7: Run snapshot tests and verify GREEN**
 
 Run Step 4 command. Expected: all pass.
 
-- [ ] **Step 8: Verify Coverage exactly once**
+- [x] **Step 8: Verify Coverage exactly once**
 
 Run from `backend/`:
 
@@ -981,7 +983,7 @@ Expected:
 - resolved visual IDs 不需要 `advisor_review`；
 - unmatched fixture 输出不变。
 
-- [ ] **Step 9: Commit Task 6**
+- [x] **Step 9: Commit Task 6**
 
 ```bash
 git add backend/app/processing/automatic_result.py \
@@ -998,7 +1000,7 @@ git commit -m "feat: preserve layout dispositions in candidate coverage"
 - Modify: `backend/tests/unit/candidates/test_symbol_advisor.py`
 - Modify: `backend/tests/unit/candidates/test_advisor.py`
 
-- [ ] **Step 1: Write planner filtering tests**
+- [x] **Step 1: Write planner filtering tests**
 
 修改 test helper 允许传入 explicit required IDs，然后锁定：
 
@@ -1016,7 +1018,7 @@ plan_visual_batches() schedules exactly unresolved-b
 - budget 只计算 required observations；
 - 现有 all-required fixture 的排序和 overflow 行为不变。
 
-- [ ] **Step 2: Run planner tests and verify RED**
+- [x] **Step 2: Run planner tests and verify RED**
 
 Run from `backend/`:
 
@@ -1028,7 +1030,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 
 Expected RED: `plan_visual_batches()` 仍调度 `page.visual_observations` 全集。
 
-- [ ] **Step 3: Filter scheduling by required IDs**
+- [x] **Step 3: Filter scheduling by required IDs**
 
 在 `plan_visual_batches()` 开始冻结 required set：
 
@@ -1047,11 +1049,11 @@ if missing:
 每页 `ordered` 只包含 ID 在 required set 的 observations，再复用现有 priority、
 packing 和 budget logic。不要把 disposition logic 下沉到 planner。
 
-- [ ] **Step 4: Run planner tests and verify GREEN**
+- [x] **Step 4: Run planner tests and verify GREEN**
 
 Run Step 2 command. Expected: all pass.
 
-- [ ] **Step 5: Write Advisor non-projection tests**
+- [x] **Step 5: Write Advisor non-projection tests**
 
 构造 snapshot：
 
@@ -1078,7 +1080,7 @@ unresolved-b required
 
 验证只有 `unresolved-b` 进入 batch/projection，`resolved-a` Coverage byte-equivalent。
 
-- [ ] **Step 6: Run Advisor tests and verify RED**
+- [x] **Step 6: Run Advisor tests and verify RED**
 
 Run from `backend/`:
 
@@ -1091,7 +1093,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 Expected RED: current Advisor 的 `project_visual_page()` 仍收到整页 visual observations，
 把 resolved source 覆盖为 `visual_no_detection`。
 
-- [ ] **Step 7: Limit Advisor projection to required/scheduled observations**
+- [x] **Step 7: Limit Advisor projection to required/scheduled observations**
 
 在 `CandidateAdvisor.review()` 中从 required set 构建 filtered visual mapping，并让：
 
@@ -1114,7 +1116,7 @@ if not routes and not any(visual_batches):
 
 不得修改 Provider adapter、schema validation、cache key 或 retry budget。
 
-- [ ] **Step 8: Run combined visual tests and verify GREEN**
+- [x] **Step 8: Run combined visual tests and verify GREEN**
 
 Run from `backend/`:
 
@@ -1127,7 +1129,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 
 Expected: all pass；existing all-required visual behavior unchanged。
 
-- [ ] **Step 9: Commit Task 7**
+- [x] **Step 9: Commit Task 7**
 
 ```bash
 git add backend/app/candidates/symbol_review.py \
@@ -1146,7 +1148,7 @@ git commit -m "fix: restrict visual Advisor to unresolved sources"
 - Modify: 本计划文件的 `Execution Results`
 - Verify only: production/test files
 
-- [ ] **Step 1: Write failing diagnostic helper tests**
+- [x] **Step 1: Write failing diagnostic helper tests**
 
 新增 test-only、read-only diagnostic helper，并先锁定：
 
@@ -1204,7 +1206,7 @@ git commit -m "fix: restrict visual Advisor to unresolved sources"
 `report_sha256` 只对 canonical `report` object 计算，避免 self-hash。测试必须拒绝
 空 root env、non-PDF input 和 duplicate observation identity。
 
-- [ ] **Step 2: Run helper tests and verify RED**
+- [x] **Step 2: Run helper tests and verify RED**
 
 Run from `backend/`:
 
@@ -1216,7 +1218,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 
 Expected RED: diagnostic helper/module 尚不存在。
 
-- [ ] **Step 3: Implement the read-only helper**
+- [x] **Step 3: Implement the read-only helper**
 
 最小公开函数：
 
@@ -1265,11 +1267,11 @@ QI_WELLI_REGRESSION_SOURCE_ROOT
 stdout 只打印 schema version、aggregate counts 和 `report_sha256`，不打印 private
 paths。
 
-- [ ] **Step 4: Run helper tests and verify GREEN**
+- [x] **Step 4: Run helper tests and verify GREEN**
 
 Run Step 2 command. Expected: all pass.
 
-- [ ] **Step 5: Resolve the approved read-only corpus**
+- [x] **Step 5: Resolve the approved read-only corpus**
 
 运行脚本只能从环境变量读取用户本地 roots：
 
@@ -1282,7 +1284,7 @@ export QI_WELLI_REGRESSION_SOURCE_ROOT="/approved/read-only/root"
 private metadata 写入 repo。report 只记录 source SHA-256、页数、support route 和
 aggregate metrics。
 
-- [ ] **Step 6: Run the deterministic automatic path twice**
+- [x] **Step 6: Run the deterministic automatic path twice**
 
 Run from `backend/`:
 
@@ -1312,7 +1314,7 @@ PDF bytes
 -> canonical aggregate report
 ```
 
-- [ ] **Step 7: Verify the fixed corpus gates**
+- [x] **Step 7: Verify the fixed corpus gates**
 
 必须原样记录实际结果，并检查：
 
@@ -1335,13 +1337,13 @@ unresolved visual batches               = separately reported
 若任何固定 count 不符，不更新阈值或 allowlist；停止并把 source hash、page/profile、
 reason delta 记录为 blocker。
 
-- [ ] **Step 8: Record the determinism boundary**
+- [x] **Step 8: Record the determinism boundary**
 
 记录两个文件的相同 SHA-256。不得把当前 baseline
 `ed8b8f4eae17ae5ae84d7faec815845daac9380083c0818adc222d2d24a8dc`
 误写成 post-change expected hash；它只用于识别 pre-P0-A2 baseline。
 
-- [ ] **Step 9: Report evidence in three separate layers**
+- [x] **Step 9: Report evidence in three separate layers**
 
 **Automatic capability**
 
@@ -1365,7 +1367,7 @@ reason delta 记录为 blocker。
   PDF/Excel/manifest；
 - 明确标为 `not verified`，不得用 automatic metrics 代替。
 
-- [ ] **Step 10: Record results and commit**
+- [x] **Step 10: Record results and commit**
 
 把 commands、actual counts、canonical hash、residuals 和 evidence boundary 写入本
 计划 `Execution Results`，然后：
@@ -1391,7 +1393,7 @@ Harness evaluator/artifact schema；本 Task 不静默修改 `.agent/harness/`�
 - Modify: 本计划文件的 `Execution Results`
 - Verify only: all implementation/test files
 
-- [ ] **Step 1: Run the focused P0-A2 suite**
+- [x] **Step 1: Run the focused P0-A2 suite**
 
 Run from `backend/`:
 
@@ -1413,7 +1415,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 Expected: exit `0`。若 DB-dependent tests 无法连接配置的 PostgreSQL，必须使用仓库现有
 test DB setup 后复跑；不得把 pure-test pass 冒充完整 focused pass。
 
-- [ ] **Step 2: Run the full backend suite**
+- [x] **Step 2: Run the full backend suite**
 
 Run from `backend/` with the repository test database available:
 
@@ -1425,7 +1427,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 Expected: exit `0`。记录实际 pass/warning count；若环境 blocker 未解决，明确标记 full
 suite 未通过，不降低 gate。
 
-- [ ] **Step 3: Run the contract drift check**
+- [x] **Step 3: Run the contract drift check**
 
 Run from repository root:
 
@@ -1437,7 +1439,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 Expected: exit `0`，无 contract drift。P0-A2 是 additive sidecar 和内部 routing，
 不应要求修改 contract matrix。
 
-- [ ] **Step 4: Inspect the final diff**
+- [x] **Step 4: Inspect the final diff**
 
 ```bash
 git status --short
@@ -1454,7 +1456,7 @@ Expected:
 - no PDF binary、host path 或 generated cache；
 - 每个 production change 都有对应 RED/GREEN test。
 
-- [ ] **Step 5: Run independent read-only review**
+- [x] **Step 5: Run independent read-only review**
 
 Reviewer 必须给出 `accept / accept with concerns / reject`，并检查：
 
@@ -1470,7 +1472,7 @@ Reviewer 必须给出 `accept / accept with concerns / reject`，并检查：
 
 任何 blocking issue 必须回到对应 Task 用新的 RED→GREEN 修正，再重跑 Task 9。
 
-- [ ] **Step 6: Record final evidence**
+- [x] **Step 6: Record final evidence**
 
 更新 `Execution Results`：
 
@@ -1821,3 +1823,24 @@ contract check 和独立 reviewer 均有真实证据时，才继续更新本节�
     tests 覆盖，不冒充 live Provider evidence。
   - ReviewedResult freeze、formal numbering、balloon placement、
     PDF/Excel/manifest export 和 final delivery correctness 仍为 `not verified`。
+
+### Post-Merge Closeout
+
+- Status: `accepted / complete`。Tasks 1–9 和批准的 Task 8A amendment 均已完成；
+  implementation 通过 integration checkpoint `3d00d15` 合入本地 `main`。
+- Retired state: feature/integration branches、planning/integration/baseline worktrees
+  和临时 PostgreSQL container 均已删除。
+- Post-merge verification:
+  - focused P0-A2 suite on `main`: `362 passed`
+  - fixed corpus repeated aggregate: `56 / 45 / 1 / 7 / 3 / 184`
+  - `Coverage blocking=0`
+  - resolved visual planned-batch leakage=`0`
+  - contract check: 所有 drift/blocking counters 为 `0`
+  - backend suite excluding three independently reproduced baseline receipt failures:
+    `1350 passed, 3 deselected, 1 warning`
+- Baseline boundary: 三个
+  `tests/contract/harness/test_receipt_policy.py` selector failures 已在未包含本计划
+  implementation 的 `main@2cc661b` detached baseline 独立复现，因此不属于本计划
+  regression；repository-wide full suite 不冒充全绿。
+- Delivery boundary: 本 closeout 不执行 push、ReviewedResult freeze、formal numbering、
+  balloon placement、PDF/Excel/manifest export 或 final delivery validation。

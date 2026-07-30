@@ -9,6 +9,7 @@ from pydantic import (
     StringConstraints,
     TypeAdapter,
     field_validator,
+    model_validator,
 )
 
 from app.candidates.schemas import CandidateType
@@ -146,6 +147,23 @@ class SetSipMetadata(CommandBase):
     revision: NonBlankText
 
 
+class SetTechnicalRequirementMatch(CommandBase):
+    type: Literal["set_technical_requirement_match"]
+    requirement_id: NonBlankText
+    outcome: Literal["matched_items", "global_scope", "excluded"]
+    matched_item_ids: list[NonBlankText] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_relation(self) -> SetTechnicalRequirementMatch:
+        if self.outcome == "matched_items" and not self.matched_item_ids:
+            raise ValueError("matched_items requires at least one item")
+        if self.outcome != "matched_items" and self.matched_item_ids:
+            raise ValueError("only matched_items accepts item targets")
+        if len(set(self.matched_item_ids)) != len(self.matched_item_ids):
+            raise ValueError("matched_item_ids must be unique")
+        return self
+
+
 ReviewCommand = Annotated[
     Union[
         Keep,
@@ -161,6 +179,7 @@ ReviewCommand = Annotated[
         SetBalloonRequired,
         SetSipDetailFields,
         SetSipMetadata,
+        SetTechnicalRequirementMatch,
     ],
     Field(discriminator="type"),
 ]

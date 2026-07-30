@@ -24,6 +24,10 @@ from app.candidates.symbol_escalation_planner import (
 )
 from app.candidates.symbol_review import VisualReviewDecision
 from app.candidates.symbol_routing import RoutingDecision
+from app.candidates.technical_requirements import (
+    TechnicalRequirementEntry,
+    evaluate_technical_requirements,
+)
 from app.config import Settings
 from app.pdf.inventory import build_inventory
 from app.pdf.schemas import TextObservation, VisualObservation
@@ -1977,12 +1981,106 @@ def test_clear_native_candidate_does_not_construct_provider(
 
     reviewed = advisor.review(source, pages, snapshot)
 
-    assert reviewed == snapshot
+    assert reviewed == replace(
+        snapshot,
+        recognition_summary={
+            "schema_version": "symbol-recognition-summary/1",
+            "unresolved_roi_count": 0,
+        },
+    )
     assert constructed == []
     assert len(reviewed.source_signals) == 1
     assert reviewed.source_signals[0].source_type == "native"
     assert str(reviewed.source_signals[0].normalized_value) == "1"
     assert reviewed.candidates[0]["source_truth_preserved"] is True
+
+
+def test_advisor_preserves_technical_requirement_decisions(
+    tmp_path: Path,
+) -> None:
+    source, pages, snapshot = drawing_fixture(tmp_path, raw_text="Ra 3.2")
+    requirement = {
+        "requirement_id": "technical-requirement-1",
+        "rule_version": "technical-requirement/1",
+    }
+    snapshot = replace(
+        snapshot,
+        technical_requirements=(requirement,),
+    )
+
+    reviewed = candidate_advisor(
+        tmp_path,
+        EchoVisionProvider(),
+    ).review(source, pages, snapshot)
+
+    assert reviewed.technical_requirements == (requirement,)
+
+
+def test_advisor_retargets_requirement_when_visual_review_retires_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, snapshot = visual_diameter_fixture(tmp_path)
+    requirement = TechnicalRequirementEntry(
+        ordinal=1,
+        raw_text="未注尺寸公差按GB/T 1804-m执行",
+        normalized_text="未注尺寸公差按GB/T 1804-m执行",
+        source_location_ids=("requirement-source",),
+        source_segment_ids=("requirement-source#0",),
+        page_index=0,
+        coordinates=((10.0, 10.0, 80.0, 20.0),),
+    )
+    evaluated = evaluate_technical_requirements(
+        (requirement,),
+        snapshot.candidates,
+    )
+    snapshot = replace(
+        snapshot,
+        candidates=evaluated.candidates,
+        technical_requirements=tuple(
+            decision.model_dump(mode="json")
+            for decision in evaluated.decisions
+        ),
+    )
+    original_candidate_id = str(snapshot.candidates[0]["candidate_id"])
+    visual = pages[0].visual_observations[0]
+
+    def retire_candidate(**_kwargs: object) -> tuple[VisualReviewDecision, ...]:
+        return (
+            VisualReviewDecision(
+                observation_id=visual.observation_id,
+                disposition="reference_context",
+                source_location_ids=(visual.observation_id,),
+                coordinates=visual.bbox_pdf,
+                candidate_id=None,
+                existing_candidate_index=0,
+                candidate_envelope=None,
+                requires_confirmation=False,
+                symbol_kinds=(),
+                rejection_code=None,
+            ),
+        )
+
+    monkeypatch.setattr(
+        advisor_module,
+        "project_visual_page",
+        retire_candidate,
+    )
+
+    reviewed = candidate_advisor(
+        tmp_path,
+        UnifiedRecordingProvider(),
+    ).review(source, pages, snapshot)
+
+    decision = reviewed.technical_requirements[0]
+    assert original_candidate_id not in {
+        candidate["candidate_id"] for candidate in reviewed.candidates
+    }
+    assert decision["match_outcome"] == "global_scope"
+    assert decision["matched_candidate_ids"] == []
+    assert decision["generated_candidate_id"] in {
+        candidate["candidate_id"] for candidate in reviewed.candidates
+    }
 
 
 @pytest.mark.parametrize(
@@ -2036,7 +2134,28 @@ def test_resolved_visual_does_not_construct_provider_or_mutate_snapshot(
 
     reviewed = advisor.review(source, pages, resolved_snapshot)
 
-    assert reviewed == resolved_snapshot
+    assert reviewed == replace(
+        resolved_snapshot,
+        recognition_mode=(
+            "production_uncertainty"
+            if symbol_recognition_mode == "production_uncertainty"
+            else "legacy_high_recall"
+        ),
+        router_version=(
+            advisor_module.SYMBOL_ROUTER_VERSION
+            if symbol_recognition_mode == "production_uncertainty"
+            else "legacy"
+        ),
+        recognition_summary={
+            "schema_version": "symbol-recognition-summary/1",
+            "unresolved_roi_count": 0,
+        },
+        recognition_evidence_ref=(
+            "symbol-routing-evidence://project-test"
+            if symbol_recognition_mode == "production_uncertainty"
+            else None
+        ),
+    )
     assert constructed == []
     assert reviewed.candidates == resolved_snapshot.candidates
     assert reviewed.source_signals == resolved_snapshot.source_signals

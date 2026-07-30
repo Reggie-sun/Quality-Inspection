@@ -1,6 +1,54 @@
+import importlib.util
+import uuid
+from pathlib import Path
+from types import ModuleType
+
+import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import inspect, text
+from sqlalchemy.engine import Connection
 
 from app.db import engine
+
+
+def _migration_0008() -> ModuleType:
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic/versions/0010_technical_requirements.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "test_migration_0010_technical_requirements",
+        path,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _create_0008_downgrade_fixture(
+    connection: Connection,
+    schema: str,
+) -> None:
+    connection.execute(text(f"CREATE SCHEMA {schema}"))
+    connection.execute(text(f"SET LOCAL search_path TO {schema}"))
+    connection.execute(
+        text(
+            "CREATE TABLE automatic_results ("
+            "id integer PRIMARY KEY, "
+            "technical_requirements jsonb NOT NULL DEFAULT '[]'::jsonb"
+            ")"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE TABLE review_working_copies ("
+            "id integer PRIMARY KEY, "
+            "technical_requirements jsonb NOT NULL DEFAULT '[]'::jsonb"
+            ")"
+        )
+    )
 
 
 def test_core_migration_creates_only_planned_tables() -> None:
@@ -102,8 +150,14 @@ def test_automatic_result_schema_and_immutability_trigger() -> None:
         "inventory_ref",
         "candidates",
         "coverage",
+        "technical_requirements",
         "provider_call_ids",
         "schema_version",
+        "completeness",
+        "recognition_mode",
+        "router_version",
+        "recognition_summary",
+        "recognition_evidence_ref",
         "created_at",
     }
     assert {
@@ -247,6 +301,7 @@ def test_review_schema_has_exact_current_persistence_shape() -> None:
         "version",
         "items",
         "coverage",
+        "technical_requirements",
         "sip_metadata",
         "numbering_stale",
         "items_frozen_at",
@@ -262,6 +317,82 @@ def test_review_schema_has_exact_current_persistence_shape() -> None:
         "operator_id",
         "expires_at",
     }
+
+
+def test_technical_requirement_migration_downgrade_accepts_empty_evidence() -> None:
+    schema = f"test_0008_empty_{uuid.uuid4().hex}"
+    migration = _migration_0008()
+
+    with engine.begin() as connection:
+        _create_0008_downgrade_fixture(connection, schema)
+        migration.op = Operations(MigrationContext.configure(connection))
+
+        migration.downgrade()
+
+        inspector = inspect(connection)
+        assert {
+            column["name"]
+            for column in inspector.get_columns(
+                "automatic_results",
+                schema=schema,
+            )
+        } == {"id"}
+        assert {
+            column["name"]
+            for column in inspector.get_columns(
+                "review_working_copies",
+                schema=schema,
+            )
+        } == {"id"}
+        connection.execute(text(f"DROP SCHEMA {schema} CASCADE"))
+
+
+@pytest.mark.parametrize(
+    "table_name",
+    ["automatic_results", "review_working_copies"],
+)
+def test_technical_requirement_migration_downgrade_refuses_evidence(
+    table_name: str,
+) -> None:
+    schema = f"test_0008_populated_{uuid.uuid4().hex}"
+    migration = _migration_0008()
+
+    with engine.begin() as connection:
+        _create_0008_downgrade_fixture(connection, schema)
+        connection.execute(
+            text(
+                f"INSERT INTO {table_name} "
+                "(id, technical_requirements) "
+                "VALUES (1, '[{\"requirement_id\": \"r1\"}]'::jsonb)"
+            )
+        )
+        migration.op = Operations(MigrationContext.configure(connection))
+
+        with pytest.raises(
+            RuntimeError,
+            match="technical requirement evidence exists",
+        ):
+            migration.downgrade()
+
+        inspector = inspect(connection)
+        for persisted_table in (
+            "automatic_results",
+            "review_working_copies",
+        ):
+            assert {
+                column["name"]
+                for column in inspector.get_columns(
+                    persisted_table,
+                    schema=schema,
+                )
+            } == {"id", "technical_requirements"}
+        assert connection.scalar(
+            text(
+                f"SELECT count(*) FROM {table_name} "
+                "WHERE technical_requirements <> '[]'::jsonb"
+            )
+        ) == 1
+        connection.execute(text(f"DROP SCHEMA {schema} CASCADE"))
 
 
 def test_balloon_and_reviewed_result_schema_is_exact() -> None:
