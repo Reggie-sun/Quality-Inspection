@@ -23,7 +23,7 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
 
 - Date: `2026-07-29`
 - Selected lane: `Heavy`
-- Status: `PRT-2 committed; PRT-3 next`
+- Status: `PRT-3 committed at ce546be0dcb4d7ffc8b47b41fa855fd6d6430dfd; PRT-4 next`
 - Current parent plan:
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
 - Current branch/worktree: `codex/symbol-production-routing` /
@@ -37,9 +37,9 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
   quality review。Explorer、auditor、reviewer 和 OSS researcher 始终只读。
 - Validation action: `amend -> continue`；每个 code task 严格
   RED -> minimal GREEN -> focused regression -> review -> exact commit。
-- Next verification: `PRT-3` zero-call and mixed-route RED in
-  `test_advisor.py + test_symbol_advisor.py +
-  test_symbol_recognition_pipeline.py + test_symbol_recognition.py`。
+- Next verification: `PRT-4` missing evidence/cache schema RED in
+  `test_symbol_cache.py + test_symbol_routing_evidence.py +
+  test_provider_call_records.py`。
 - This file owns only the bounded symbol-recognition convergence steps below. It
   does not become a second current plan and cannot authorize `D7-T3`、`SR-5`、
   `main` merge or frontend work outside the exact `PRT-6` files and checks.
