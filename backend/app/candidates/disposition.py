@@ -14,7 +14,7 @@ INSPECTION_VERB = re.compile(r"检查|检验|检测|测量|确认|验证")
 VERIFIABLE_CRITERION = re.compile(
     r"不得|不允许|应为|应达到|应符合|符合|不大于|不小于|≤|≥|无(?:毛刺|裂纹|缺陷|损伤)"
 )
-PRIMARY_DISPOSITION_RULE_VERSION = "p0-a1-v1"
+PRIMARY_DISPOSITION_RULE_VERSION = "p0-a1-r1"
 EXACT_METADATA_LABELS = frozenset(
     {
         "设计",
@@ -50,6 +50,9 @@ EXACT_WATERMARK_LABELS = frozenset(
     }
 )
 REPEATED_OVERLAY_POSITION_GRID = 0.05
+PAGE_FRAME_EDGE_RATIO = 0.02
+TITLE_BLOCK_MIN_X = 0.65
+TITLE_BLOCK_MIN_Y = 0.82
 
 
 @dataclass(frozen=True)
@@ -114,6 +117,27 @@ def _position_bucket(
     )
 
 
+def _bbox_center(
+    bbox_normalized: tuple[float, float, float, float],
+) -> tuple[float, float]:
+    x0, y0, x1, y1 = bbox_normalized
+    return (x0 + x1) / 2, (y0 + y1) / 2
+
+
+def _standalone_number_region(
+    observation: TextObservation,
+) -> Literal["page_frame", "title_block"] | None:
+    center_x, center_y = _bbox_center(observation.bbox_normalized)
+    if (
+        center_y <= PAGE_FRAME_EDGE_RATIO
+        or center_y >= 1.0 - PAGE_FRAME_EDGE_RATIO
+    ):
+        return "page_frame"
+    if center_x >= TITLE_BLOCK_MIN_X and center_y >= TITLE_BLOCK_MIN_Y:
+        return "title_block"
+    return None
+
+
 def repeated_page_overlay_observation_ids(
     observations: Sequence[TextObservation],
 ) -> frozenset[str]:
@@ -164,11 +188,19 @@ def classify_primary_disposition(
     if STANDALONE_NUMBER.fullmatch(normalized):
         if has_visual_context:
             return None
-        return PrimaryDispositionDecision(
-            disposition="ambiguous",
-            reason="standalone_number",
-            requires_confirmation=True,
-        )
+        region = _standalone_number_region(observation)
+        if region == "page_frame":
+            return PrimaryDispositionDecision(
+                disposition="non_inspection",
+                reason="page_frame_number",
+            )
+        if region == "title_block":
+            return PrimaryDispositionDecision(
+                disposition="ambiguous",
+                reason="title_block_number",
+                requires_confirmation=True,
+            )
+        return None
     if STANDALONE_ROMAN_LABEL.fullmatch(normalized.upper()):
         if has_visual_context:
             return None

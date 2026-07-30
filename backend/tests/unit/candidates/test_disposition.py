@@ -40,8 +40,6 @@ def _observation(
         ("2 : 15", "non_inspection", "drawing_scale", False),
         ("A-A", "non_inspection", "section_view_label", False),
         ("B - B", "non_inspection", "section_view_label", False),
-        ("25", "ambiguous", "standalone_number", True),
-        ("25.0", "ambiguous", "standalone_number", True),
         ("II", "ambiguous", "standalone_roman_label", True),
         ("IV", "ambiguous", "standalone_roman_label", True),
     ],
@@ -61,6 +59,51 @@ def test_classify_primary_disposition_is_conservative(
     assert decision.requires_confirmation is requires_confirmation
 
 
+def test_body_standalone_number_yields_to_parser() -> None:
+    observation = _observation(
+        "25",
+        bbox_normalized=(0.40, 0.40, 0.44, 0.42),
+    )
+
+    assert classify_primary_disposition(observation) is None
+
+
+@pytest.mark.parametrize(
+    "bbox_normalized",
+    [
+        (0.24, 0.00, 0.26, 0.015),
+        (0.74, 0.985, 0.76, 1.00),
+    ],
+)
+def test_page_frame_number_is_non_inspection(
+    bbox_normalized: tuple[float, float, float, float],
+) -> None:
+    decision = classify_primary_disposition(
+        _observation("1", bbox_normalized=bbox_normalized)
+    )
+
+    assert decision is not None
+    assert decision.disposition == "non_inspection"
+    assert decision.reason == "page_frame_number"
+    assert decision.rule_version == PRIMARY_DISPOSITION_RULE_VERSION
+    assert decision.requires_confirmation is False
+
+
+def test_title_block_number_remains_reviewable() -> None:
+    decision = classify_primary_disposition(
+        _observation(
+            "260710",
+            bbox_normalized=(0.70, 0.83, 0.76, 0.86),
+        )
+    )
+
+    assert decision is not None
+    assert decision.disposition == "ambiguous"
+    assert decision.reason == "title_block_number"
+    assert decision.rule_version == PRIMARY_DISPOSITION_RULE_VERSION
+    assert decision.requires_confirmation is True
+
+
 @pytest.mark.parametrize(
     "raw_text",
     ["Φ20", "M6", "R5", "25±0.02", "检查焊缝不得有裂纹"],
@@ -71,15 +114,36 @@ def test_primary_disposition_does_not_capture_engineering_annotations(
     assert classify_primary_disposition(_observation(raw_text)) is None
 
 
-@pytest.mark.parametrize("raw_text", ["25", "II"])
-def test_context_free_label_gate_yields_to_visual_context(raw_text: str) -> None:
+@pytest.mark.parametrize(
+    ("raw_text", "bbox_normalized"),
+    [
+        ("1", (0.24, 0.00, 0.26, 0.015)),
+        ("260710", (0.70, 0.83, 0.76, 0.86)),
+        ("II", (0.1, 0.1, 0.2, 0.2)),
+    ],
+)
+def test_context_free_label_gate_yields_to_visual_context(
+    raw_text: str,
+    bbox_normalized: tuple[float, float, float, float],
+) -> None:
     assert (
         classify_primary_disposition(
-            _observation(raw_text),
+            _observation(raw_text, bbox_normalized=bbox_normalized),
             has_visual_context=True,
         )
         is None
     )
+
+
+@pytest.mark.parametrize("raw_text", ["设计", "1:10", "A-A"])
+def test_exact_noise_gate_does_not_yield_to_visual_context(raw_text: str) -> None:
+    decision = classify_primary_disposition(
+        _observation(raw_text),
+        has_visual_context=True,
+    )
+
+    assert decision is not None
+    assert decision.disposition == "non_inspection"
 
 
 def test_repeated_overlay_requires_distinct_pages_and_stable_position() -> None:
