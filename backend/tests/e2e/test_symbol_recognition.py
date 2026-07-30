@@ -76,6 +76,7 @@ class FrozenSymbolProvider:
         self.factory_calls = 0
         self.symbol_calls = 0
         self.text_calls = 0
+        self.symbol_recognition_modes: list[str] = []
 
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
@@ -228,6 +229,7 @@ def _configure_task(
         lambda: Settings(
             storage_root=storage_root,
             qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="legacy_high_recall",
         ),
     )
     monkeypatch.setattr(
@@ -242,6 +244,9 @@ def _configure_task(
 
     def vision_provider_factory(_settings: Settings) -> FrozenSymbolProvider:
         provider.factory_calls += 1
+        provider.symbol_recognition_modes.append(
+            _settings.symbol_recognition_mode
+        )
         return provider
 
     monkeypatch.setattr(tasks, "OCR_PROVIDER_FACTORY", forbidden_ocr_provider)
@@ -617,3 +622,24 @@ def test_symbol_fixture_negative_regions_do_not_create_items(
     }
     assert failures == {}
     assert symbol_flow.external_calls == 0
+
+
+def test_frozen_default_and_explicit_legacy_mode_preserve_sealed_semantics(
+    symbol_flow: SymbolFlow,
+) -> None:
+    """E2E-03: frozen legacy routing remains the default sealed flow."""
+    assert Settings(qwen_model="qwen3-vl-plus").symbol_recognition_mode == (
+        "legacy_high_recall"
+    )
+    assert symbol_flow.provider.symbol_recognition_modes == [
+        "legacy_high_recall"
+    ]
+    assert symbol_flow.provider.factory_calls == 1
+    assert symbol_flow.provider.symbol_calls > 0
+    assert symbol_flow.external_calls == 0
+    assert len(_positive_labels(symbol_flow.manifest)) == 19
+    assert len(_negative_labels(symbol_flow.manifest)) == 12
+    assert len(symbol_flow.candidates) == len(symbol_flow.working_items) == 15
+    assert len(symbol_flow.coverage_entries) == len(
+        symbol_flow.working_coverage_entries
+    )

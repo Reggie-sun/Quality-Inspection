@@ -8,6 +8,7 @@ import pytest
 
 import app.candidates.symbol_review as symbol_review
 from app.candidates.coverage import CoverageEntry
+from app.candidates.local_symbol_resolution import resolve_visual_observation
 from app.candidates.symbol_review import (
     ValidatedSymbolDetection,
     VisualReviewDecision,
@@ -2070,6 +2071,79 @@ def test_multiple_existing_candidate_projections_merge_or_conflict_stably() -> N
         and decision.rejection_code == "visual_projection_conflict"
         for decision in conflict
     )
+
+
+def test_nonfirst_local_projection_merges_with_same_page_vlm_decision() -> None:
+    owner = _text("owner", "Φ10", (40, 10, 52, 20))
+    unrelated = {
+        "candidate_id": "candidate-unrelated",
+        "payload": {
+            "candidate_id": "candidate-unrelated",
+            "item_type": "linear_dimension",
+            "raw_text": "5",
+            "normalized_text": "5",
+            "coordinates": owner.bbox_pdf,
+            "scope": "local_feature",
+            "quantity": None,
+            "nominal": "5",
+            "sub_requirements": [],
+            "balloon_required": True,
+            "requires_confirmation": False,
+        },
+        "source_location_ids": ["other"],
+    }
+    target = copy.deepcopy(unrelated)
+    target["candidate_id"] = "candidate-target"
+    target["payload"].update(
+        {
+            "candidate_id": "candidate-target",
+            "item_type": "diameter_dimension",
+            "raw_text": "Φ10",
+            "normalized_text": "Φ10",
+            "nominal": "10",
+            "feature_kind": "unknown",
+        }
+    )
+    target["source_location_ids"] = ["owner"]
+    local_visual = _visual("visual-local", (10, 10, 18, 20), ("owner",))
+    vlm_visual = _visual("visual-vlm", (22, 10, 30, 20), ("owner",))
+    local = resolve_visual_observation(
+        observation=local_visual,
+        family_hypotheses=("diameter",),
+        text_observations=(owner,),
+        candidates=(unrelated, target),
+        geometry_context=None,
+    )
+    assert local.projection is not None
+    assert local.projection.existing_candidate_index == 1
+
+    decisions = project_visual_page(
+        visual_observations=(local_visual, vlm_visual),
+        detections=(
+            ValidatedSymbolDetection(
+                vlm_visual.observation_id,
+                "diameter",
+                vlm_visual.bbox_pdf,
+                ("owner",),
+            ),
+        ),
+        rejection_codes={},
+        text_observations=(owner,),
+        candidates=(unrelated, target),
+        geometry_contexts={},
+        local_decisions=(local.projection,),
+    )
+
+    assert all(
+        decision.existing_candidate_index == 1
+        and decision.candidate_id == "candidate-target"
+        and decision.source_location_ids
+        == ("visual-local", "visual-vlm", "owner")
+        for decision in decisions
+    )
+    assert sum(
+        decision.candidate_envelope is not None for decision in decisions
+    ) == 1
 
 
 def test_rejected_detection_preserves_accepted_symbol_kinds() -> None:

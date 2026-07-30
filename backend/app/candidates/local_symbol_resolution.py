@@ -347,10 +347,13 @@ def _project(
     text_observations: Sequence[TextObservation],
     candidates: Sequence[Mapping[str, Any]],
     geometry_context: VisualGeometryContext | None,
+    kind_candidate: Mapping[str, Any] | None = None,
 ) -> VisualReviewDecision:
     kinds = _projection_kinds(
         family,
-        candidates[0] if candidates else {},
+        kind_candidate
+        if kind_candidate is not None
+        else (candidates[0] if candidates else {}),
     )
     detections = tuple(
         {
@@ -623,8 +626,9 @@ def resolve_visual_observation(
         observation=observation,
         family=family,
         text_observations=text_observations,
-        candidates=exact_candidates,
+        candidates=candidates,
         geometry_context=geometry_context,
+        kind_candidate=candidate,
     )
     if projection.disposition == "ambiguous":
         reason = (
@@ -646,4 +650,47 @@ def resolve_visual_observation(
         resolved_family=family,
         projection=projection,
         confidence=confidence,
+    )
+
+
+def _prepare_local_family_hypotheses(
+    *,
+    observation: VisualObservation,
+    text_observations: Sequence[TextObservation],
+    candidates: Sequence[Mapping[str, Any]],
+    geometry_context: VisualGeometryContext | None,
+) -> tuple[str, ...]:
+    frozen_texts = tuple(text_observations)
+    frozen_candidates = tuple(candidates)
+    positives = set[str]()
+    for family in sorted(LOCAL_SYMBOL_FAMILIES):
+        replay = resolve_visual_observation(
+            observation=observation,
+            family_hypotheses=(family,),
+            text_observations=frozen_texts,
+            candidates=frozen_candidates,
+            geometry_context=geometry_context,
+        )
+        if (
+            replay.resolved_family == family
+            and replay.projection is not None
+            and "local_projection_complete" in replay.reason_codes
+        ):
+            positives.add(family)
+    return tuple(sorted(positives))
+
+
+def prepare_local_family_hypotheses(
+    *,
+    observation: VisualObservation,
+    text_observations: Sequence[TextObservation],
+    candidates: Sequence[Mapping[str, Any]],
+    geometry_context: VisualGeometryContext | None,
+) -> tuple[str, ...]:
+    """Return only families completed by deterministic single-family replay."""
+    return _prepare_local_family_hypotheses(
+        observation=observation,
+        text_observations=text_observations,
+        candidates=candidates,
+        geometry_context=geometry_context,
     )

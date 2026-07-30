@@ -1,13 +1,29 @@
 from __future__ import annotations
 
+import inspect
+from collections.abc import Iterator, Mapping
 from dataclasses import replace
 
 import pytest
 
-from app.candidates.local_symbol_resolution import resolve_visual_observation
+from app.candidates.local_symbol_resolution import (
+    prepare_local_family_hypotheses,
+    resolve_visual_observation,
+)
 from app.candidates.symbol_routing import route_visual_observation
 from app.pdf.schemas import TextObservation, VisualObservation
 from app.pdf.visual_observations import VisualGeometryContext
+
+
+class _RaisingMapping(Mapping[str, object]):
+    def __getitem__(self, key: str) -> object:
+        raise RuntimeError("hostile candidate access")
+
+    def __iter__(self) -> Iterator[str]:
+        raise RuntimeError("hostile candidate iteration")
+
+    def __len__(self) -> int:
+        raise RuntimeError("hostile candidate length")
 
 
 def _text(
@@ -202,6 +218,192 @@ def _resolve(
         geometry_context=context,
         confidence=confidence,
     )
+
+
+def _prepare(
+    *,
+    text: TextObservation | None = None,
+    visual: VisualObservation | None = None,
+    candidates: tuple[Mapping[str, object], ...] = (),
+    context: VisualGeometryContext | None = None,
+) -> tuple[str, ...]:
+    return prepare_local_family_hypotheses(
+        observation=visual or _visual(),
+        text_observations=(text or _text("text-1", "10"),),
+        candidates=candidates,
+        geometry_context=context,
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "candidates", "expected"),
+    (
+        (
+            _text("text-1", "Φ10"),
+            (_diameter_candidate(),),
+            ("diameter",),
+        ),
+        (
+            _text("text-1", "M6 深 8"),
+            (_depth_candidate(),),
+            ("depth",),
+        ),
+        (
+            _text("text-1", "Ra 3.2"),
+            (
+                _coarse_candidate(
+                    "roughness",
+                    identity="candidate-roughness",
+                    raw_text="Ra 3.2",
+                ),
+            ),
+            ("surface_roughness",),
+        ),
+    ),
+)
+def test_prepares_only_complete_typed_family_positives(
+    text: TextObservation,
+    candidates: tuple[Mapping[str, object], ...],
+    expected: tuple[str, ...],
+) -> None:
+    assert _prepare(text=text, candidates=candidates) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "context", "expected"),
+    (
+        (
+            _text("text-1", "A", (20, 20, 26, 28)),
+            _datum_context(),
+            ("datum_reference",),
+        ),
+        (
+            _text("text-1", "P1", (20, 20, 28, 28)),
+            _revision_context(),
+            ("revision_marker",),
+        ),
+    ),
+)
+def test_prepares_reference_family_through_common_projection(
+    text: TextObservation,
+    context: VisualGeometryContext,
+    expected: tuple[str, ...],
+) -> None:
+    assert _prepare(text=text, context=context) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "candidates"),
+    (
+        (
+            _text("text-1", "10 深 8"),
+            (_diameter_candidate(), _depth_candidate()),
+        ),
+        (
+            _text("text-1", "0.1 A"),
+            (
+                _coarse_candidate(
+                    "geometric_tolerance",
+                    identity="candidate-gdt",
+                    raw_text="0.1 A",
+                ),
+            ),
+        ),
+        (_text("text-1", "unclassified"), ()),
+    ),
+)
+def test_preparation_keeps_unsupported_or_unknown_evidence_empty(
+    text: TextObservation,
+    candidates: tuple[Mapping[str, object], ...],
+) -> None:
+    hypotheses = _prepare(text=text, candidates=candidates)
+    resolution = resolve_visual_observation(
+        observation=_visual(),
+        family_hypotheses=hypotheses,
+        text_observations=(text,),
+        candidates=candidates,
+        geometry_context=None,
+    )
+
+    assert hypotheses == ()
+    assert resolution.reason_codes == ("unknown_symbol_pattern",)
+    assert route_visual_observation(resolution).disposition == "escalate"
+
+
+def test_preparation_preserves_all_multiple_complete_positives() -> None:
+    candidate = _diameter_candidate()
+    candidate["payload"]["depth"] = "8"  # type: ignore[index]
+    text = _text("text-1", "Φ10 深 8")
+    hypotheses = _prepare(text=text, candidates=(candidate,))
+    resolution = resolve_visual_observation(
+        observation=_visual(),
+        family_hypotheses=hypotheses,
+        text_observations=(text,),
+        candidates=(candidate,),
+        geometry_context=None,
+    )
+
+    assert hypotheses == ("depth", "diameter")
+    assert resolution.reason_codes == ("local_evidence_conflict",)
+    assert route_visual_observation(resolution).disposition == "escalate"
+
+
+def test_preparation_is_label_free_order_stable_and_replay_stable() -> None:
+    signature = inspect.signature(prepare_local_family_hypotheses)
+    assert "family_hypotheses" not in signature.parameters
+    assert "symbol_kinds" not in signature.parameters
+    text = _text("text-1", "Φ10")
+    unrelated = _diameter_candidate(sources=("other-text",))
+    inputs = {
+        "observation": _visual(),
+        "text_observations": (text, _text("other-text", "Φ11")),
+        "candidates": (_diameter_candidate(), unrelated),
+        "geometry_context": None,
+    }
+
+    first = prepare_local_family_hypotheses(**inputs)
+    replay = prepare_local_family_hypotheses(**inputs)
+    reordered = prepare_local_family_hypotheses(
+        **{
+            **inputs,
+            "text_observations": tuple(
+                reversed(inputs["text_observations"])
+            ),
+            "candidates": tuple(reversed(inputs["candidates"])),
+        }
+    )
+
+    assert first == replay == reordered == ("diameter",)
+
+
+def test_preparation_propagates_helper_defects() -> None:
+    with pytest.raises(RuntimeError, match="hostile candidate"):
+        _prepare(candidates=(_RaisingMapping(),))
+    with pytest.raises(AttributeError):
+        prepare_local_family_hypotheses(
+            observation=object(),  # type: ignore[arg-type]
+            text_observations=(),
+            candidates=(),
+            geometry_context=None,
+        )
+
+
+def test_typed_projection_preserves_global_candidate_index() -> None:
+    unrelated = _diameter_candidate(
+        identity="unrelated",
+        sources=("other-text",),
+    )
+    target = _diameter_candidate(identity="target")
+
+    resolution = _resolve(
+        "diameter",
+        text=_text("text-1", "Φ10"),
+        candidates=(unrelated, target),
+    )
+
+    assert resolution.projection is not None
+    assert resolution.projection.candidate_id == "target"
+    assert resolution.projection.existing_candidate_index == 1
 
 
 def test_locally_complete_diameter_skips_escalation() -> None:
