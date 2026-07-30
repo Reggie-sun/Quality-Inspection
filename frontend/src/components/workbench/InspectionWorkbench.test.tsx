@@ -687,6 +687,9 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(screen.getByRole("row", { name: /M6/ }));
 
     const reviewRegion = screen.getByRole("region", { name: "检验项审核" });
+    expect(reviewRegion.classList.contains(
+      "inspection-pane--with-technical-requirements",
+    )).toBe(false);
     const recognitionSummary = screen.getByRole("region", { name: "识别汇总" });
     const workspace = screen.getByRole("group", {
       name: "检验项列表与编辑",
@@ -1946,6 +1949,9 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
+    expect(screen.getByRole("region", { name: "检验项审核" }).classList.contains(
+      "inspection-pane--with-technical-requirements",
+    )).toBe(true);
     fireEvent.click(screen.getByRole("button", {
       name: "匹配此检验项：25",
     }));

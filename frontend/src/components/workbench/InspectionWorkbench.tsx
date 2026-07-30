@@ -426,7 +426,12 @@ export function InspectionWorkbench({
         </section>
 
         <section
-          className="inspection-pane"
+          className={[
+            "inspection-pane",
+            (workingCopy?.technical_requirements?.length ?? 0) > 0
+              ? "inspection-pane--with-technical-requirements"
+              : "",
+          ].filter(Boolean).join(" ")}
           aria-label={zhCN.workbench.reviewRegion}
           role="region"
         >

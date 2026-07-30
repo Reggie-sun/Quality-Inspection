@@ -294,6 +294,14 @@
   overflow: hidden;
 }
 
+.inspection-pane--with-technical-requirements {
+  grid-template-rows:
+    auto
+    minmax(120px, 0.75fr)
+    minmax(0, 1.25fr)
+    auto;
+}
+
 .workbench-aside {
   max-height: calc(100vh - 248px);
   min-height: 570px;
