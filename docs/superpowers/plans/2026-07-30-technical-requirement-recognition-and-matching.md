@@ -13,7 +13,7 @@
 ## Status
 
 - Date: `2026-07-30`
-- Status: `in_progress`
+- Status: `completed`
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-30-technical-requirement-recognition-and-matching.md`
@@ -21,7 +21,7 @@
   `docs/superpowers/specs/2026-07-30-technical-requirement-recognition-and-matching-design.md`
 - Selection evidence: 用户批准“语义拆解匹配 + SIP 填充”、“规则 Owner + 辅助识别”
   和“不自动换算 `GB/T 1804/1184` 数值”的边界
-- Validation action: `amend`
+- Validation action: `close`
 - Production authorization: 用户已选择 `A 主线程串行执行`，并授权创建独立
   worktree
 - Execution branch: `feature/technical-requirement-matching`
@@ -33,9 +33,8 @@
   - frontend focused: `32 passed`
 - Writer ownership and order: 一个 write-capable executor 严格按 Task 1 → Task 7；
   同一 file group 不并发写
-- Next verification: 先以 RED tests 复现并修复 reviewer 确认的两项行为回归，
-  再补 migration downgrade evidence，重跑 focused/full verification，最后重新绑定
-  本地 `reviewer` profile 完成 Task 7 independent reviewer gate
+- Next verification: none；implementation、runtime、parent verification 和 independent
+  reviewer gate 均已完成
 
 ### Task 7 Reviewer Residual Amendment
 
@@ -103,6 +102,10 @@
   前执行单一 invariant validation；所有 active `scope=global_requirement` item 必须
   `balloon_required=false`，每条 confirmed `global_scope` relation 必须指向一个满足同一
   invariant 的 active target。违规 command 整体拒绝，不递增 working-copy version。
+- Final reviewer evidence: child rollout
+  `019fb158-51d6-7c22-95c8-be85ffbaa12f` confirmed
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`；
+  verdict `accept`，无 blocking 或 non-blocking finding。
 
 ## Problem Boundary
 
@@ -1323,7 +1326,7 @@ Task 7 runtime evidence (`2026-07-30`):
 - smoke screenshot：`/tmp/qi-techreq-playwright-pass-20260730/`
   `technical-requirement-matching.png`。
 
-- [ ] **Step 6: 独立 reviewer gate**
+- [x] **Step 6: 独立 reviewer gate**
 
 按仓库规则选择并绑定本地 `reviewer` profile，reviewer 只读，范围为本 plan commits 和
 以下问题：
@@ -1363,7 +1366,7 @@ git diff --check
 
 Expected: 全部 PASS；build 仅允许明确报告的既有 warning。
 
-- [ ] **Step 8: Close plan only when runtime and review gates pass**
+- [x] **Step 8: Close plan only when runtime and review gates pass**
 
 把本 plan `Status` 改为 `completed`，记录：
 
@@ -1383,13 +1386,18 @@ Task 7 checkpoint (`2026-07-30`):
   清理旧 relation 并对最终候选重新匹配；
 - `auto-feature-smoke-test`: PASS；fresh real-PDF Playwright `1 passed
   (4.1m)`，Chrome MCP integrated visual QA PASS；
-- parent verification: backend `250 passed`，frontend `209 passed`，
+- parent final verification: 隔离 PostgreSQL backend `1060 passed`，
+  frontend `210 passed`，
   production build PASS，保留既有 `>500 kB` chunk warning；contract mirror 与
   `git diff --check` PASS；
-- independent reviewer gate: BLOCKED；当前 collaboration tool 无法显式绑定本地
-  `reviewer` profile/model，按已批准的主线程串行约束未启动 generic child；
-- Task 7 Steps 1–5、7 已完成；Steps 6、8 仍未完成，plan 保持
-  `in_progress`。
+- compatibility profile binding: PASS；按 RAG 已验证 selector 使用
+  `task_name="reviewer__..."`、`fork_turns="none"`，并从 child rollout metadata
+  核验实际 `agent_role/model/reasoning_effort`；
+- independent reviewer gate: PASS；最终 rollout
+  `019fb158-51d6-7c22-95c8-be85ffbaa12f` verdict `accept`，无 finding；
+- residual fix commits:
+  `69b6b0b`、`e3a7e6a`、`7ae04c1`、`966ad20`；
+- Task 7 Steps 1–8 全部完成，plan 状态关闭为 `completed`。
 
 如果 real PDF 或 reviewer gate blocked，保持 `Status: in_progress` 并记录唯一 blocker，
 不得用文档勾选替代实际证据。
