@@ -15,15 +15,22 @@ import { ProjectWorkbenchApp } from "../components/workbench/ProjectWorkbenchApp
 import { projectErrorCopy, projectErrorGuidance, zhCN } from "../copy/zhCN";
 import { projectApi, type ProjectApi } from "../features/projects/api";
 import {
-  canReturnToPreviousWorkbench,
   clearCurrentProjectId,
   getCurrentProjectId,
   getOrCreateLocalOperatorId,
   setCurrentProjectId,
 } from "./localContext";
+import { DrawingListScreen } from "./DrawingListScreen";
+import {
+  readLocalDrawings,
+  registerLocalDrawing,
+  touchLocalDrawing,
+  type LocalDrawingEntry,
+} from "./localDrawingRegistry";
 
 
 type ProductScreen =
+  | { kind: "list" }
   | { kind: "idle" }
   | { kind: "uploading"; file: File }
   | {
@@ -44,7 +51,7 @@ type QualityInspectionAppProps = {
 function initialScreen(): ProductScreen {
   const projectId = getCurrentProjectId();
   return projectId === undefined
-    ? { kind: "idle" }
+    ? { kind: "list" }
     : { kind: "processing", projectId, phase: "queued" };
 }
 
@@ -152,8 +159,10 @@ export function QualityInspectionApp({
   pollIntervalMs = 1_500,
 }: QualityInspectionAppProps) {
   const [screen, setScreen] = useState<ProductScreen>(initialScreen);
-  const [returnProjectId, setReturnProjectId] = useState<string>();
-  const [historyReturnAvailable] = useState(canReturnToPreviousWorkbench);
+  const [drawings, setDrawings] = useState<LocalDrawingEntry[]>(
+    readLocalDrawings,
+  );
+  const [registryWarning, setRegistryWarning] = useState<string>();
   const [selectedFile, setSelectedFile] = useState<File>();
   const [selectionError, setSelectionError] = useState<string>();
   const [statusError, setStatusError] = useState(false);
@@ -167,6 +176,14 @@ export function QualityInspectionApp({
     : undefined;
 
   useEffect(() => () => uploadAbort.current?.abort(), []);
+
+  useEffect(() => {
+    const currentProjectId = getCurrentProjectId();
+    if (currentProjectId === undefined) return;
+    const saved = touchLocalDrawing(currentProjectId);
+    setDrawings(readLocalDrawings());
+    if (!saved) setRegistryWarning(zhCN.drawingList.registryWarning);
+  }, []);
 
   useEffect(() => {
     if (processingProjectId === undefined) return;
@@ -230,7 +247,7 @@ export function QualityInspectionApp({
       const result = await api.createProject(file, controller.signal);
       if (controller.signal.aborted) return;
       if (result.phase === "failed") {
-        if (returnProjectId === undefined) clearCurrentProjectId();
+        clearCurrentProjectId();
         setScreen({
           kind: "fatal",
           file,
@@ -249,7 +266,11 @@ export function QualityInspectionApp({
         return;
       }
       setCurrentProjectId(result.project_id);
-      setReturnProjectId(undefined);
+      const registered = registerLocalDrawing(result.project_id, file.name);
+      setDrawings(readLocalDrawings());
+      setRegistryWarning(
+        registered ? undefined : zhCN.drawingList.registryWarning,
+      );
       setScreen(result.phase === "ready_for_review" && result.workbench_ready
         ? { kind: "ready", projectId: result.project_id }
         : {
@@ -260,7 +281,7 @@ export function QualityInspectionApp({
           });
     } catch (caught) {
       if (controller.signal.aborted) return;
-      if (returnProjectId === undefined) clearCurrentProjectId();
+      clearCurrentProjectId();
       setScreen({
         kind: "fatal",
         file,
@@ -270,7 +291,7 @@ export function QualityInspectionApp({
     } finally {
       if (uploadAbort.current === controller) uploadAbort.current = undefined;
     }
-  }, [api, returnProjectId]);
+  }, [api]);
 
   const selectFile = (file: File | undefined) => {
     setSelectionError(undefined);
@@ -283,7 +304,7 @@ export function QualityInspectionApp({
       setSelectionError(projectErrorCopy("invalid_pdf"));
       return;
     }
-    if (returnProjectId === undefined) clearCurrentProjectId();
+    clearCurrentProjectId();
     setStatusError(false);
     setSelectedFile(file);
     setScreen({ kind: "idle" });
@@ -297,35 +318,31 @@ export function QualityInspectionApp({
     setDragActive(false);
     selectFile(event.dataTransfer.files[0]);
   };
-  const reset = () => {
+  const returnToDrawingList = () => {
     uploadAbort.current?.abort();
-    if (returnProjectId === undefined) clearCurrentProjectId();
+    clearCurrentProjectId();
     setSelectedFile(undefined);
     setSelectionError(undefined);
     setStatusError(false);
-    setScreen({ kind: "idle" });
+    setDrawings(readLocalDrawings());
+    setScreen({ kind: "list" });
   };
-  const startAnother = () => {
-    if (screen.kind !== "ready") return;
+  const openDrawing = (entry: LocalDrawingEntry) => {
     uploadAbort.current?.abort();
-    setReturnProjectId(screen.projectId);
+    setCurrentProjectId(entry.projectId);
+    const saved = touchLocalDrawing(entry.projectId, entry.fileName);
+    setDrawings(readLocalDrawings());
+    setRegistryWarning(
+      saved ? undefined : zhCN.drawingList.registryWarning,
+    );
     setSelectedFile(undefined);
     setSelectionError(undefined);
     setStatusError(false);
-    setScreen({ kind: "idle" });
-  };
-  const returnToCurrentProject = () => {
-    if (returnProjectId === undefined) {
-      if (historyReturnAvailable) window.history.back();
-      return;
-    }
-    uploadAbort.current?.abort();
-    setCurrentProjectId(returnProjectId);
-    setSelectedFile(undefined);
-    setSelectionError(undefined);
-    setStatusError(false);
-    setScreen({ kind: "ready", projectId: returnProjectId });
-    setReturnProjectId(undefined);
+    setScreen({
+      kind: "processing",
+      projectId: entry.projectId,
+      phase: "queued",
+    });
   };
   const openFilePicker = () => {
     if (fileInput.current === null) return;
@@ -335,16 +352,33 @@ export function QualityInspectionApp({
   const retryProcessing = () => {
     if (screen.kind !== "fatal") return;
     if (!screen.retryable) {
-      reset();
+      returnToDrawingList();
       return;
     }
     if (screen.file === undefined) {
-      reset();
+      returnToDrawingList();
       return;
     }
-    if (returnProjectId === undefined) clearCurrentProjectId();
+    clearCurrentProjectId();
     void beginUpload(screen.file);
   };
+
+  if (screen.kind === "list") {
+    return (
+      <DrawingListScreen
+        entries={drawings}
+        api={api}
+        warning={registryWarning}
+        onUpload={() => {
+          setSelectedFile(undefined);
+          setSelectionError(undefined);
+          setStatusError(false);
+          setScreen({ kind: "idle" });
+        }}
+        onOpen={openDrawing}
+      />
+    );
+  }
 
   if (screen.kind === "ready") {
     return (
@@ -352,7 +386,7 @@ export function QualityInspectionApp({
         <ProjectWorkbenchApp
           projectId={screen.projectId}
           operatorId={operatorId}
-          onReset={startAnother}
+          onReset={returnToDrawingList}
         />
       </div>
     );
@@ -370,11 +404,9 @@ export function QualityInspectionApp({
   return (
     <main className="product-shell" aria-busy={busy}>
       <ProductHeader action={
-        returnProjectId === undefined && !historyReturnAvailable ? undefined : (
-        <button className="button" type="button" onClick={returnToCurrentProject}>
-          返回当前图纸
+        <button className="button" type="button" onClick={returnToDrawingList}>
+          回到图纸列表
         </button>
-        )
       } />
       <ProcessRail screen={screen} />
 
@@ -419,6 +451,11 @@ export function QualityInspectionApp({
 
           {selectionError === undefined ? null : (
             <p className="message message--error" role="alert">{selectionError}</p>
+          )}
+          {registryWarning === undefined ? null : (
+            <p className="message message--warning" role="status">
+              {registryWarning}
+            </p>
           )}
           {screen.kind === "fatal" ? (
             <div className="message message--error" role="alert">
