@@ -1736,3 +1736,88 @@ contract check 和独立 reviewer 均有真实证据时，才继续更新本节�
 - ReviewedResult freeze, formal numbering, balloon placement, PDF/Excel/manifest generation
   and final delivery validation are `not verified`.
 - Automatic diagnostic metrics are not delivery proof.
+
+### Task 9 Verification And Independent Review
+
+- Status: `accepted / complete`。focused suite、full backend suite、contract check、
+  final diff audit 和 independent read-only review 均通过。
+- Test database:
+  - 初次宿主机 focused run 为 `320 passed, 10 errors in 3.62s`；10 个 error
+    全部发生在 DB fixture setup，原因为 Compose-only hostname `postgres` 无法解析。
+  - 使用两个先后创建的独立临时 PostgreSQL 17 containers，均先迁移到 Alembic
+    `head`，未复用或修改共享数据库；验证结束后两个 container 均已删除。
+- Pre-review verification:
+  - focused P0-A2 suite: `330 passed in 2.34s`
+  - full backend suite: `1116 passed, 1 warning in 47.12s`
+  - warning: 既有 Starlette/httpx deprecation warning
+  - contract check:
+    `global_contracts=69, p0_contracts=111, mapped=101,
+    implementation_only=10, unclassified=0, duplicate=0, missing_task=0,
+    missing_selector=0, mirror_drift=0, bindings_drift=0,
+    unbound_p0_stage_global=0, binding_relation_conflict=0`
+- Review follow-up:
+  - 第一次 independent review verdict 为 `accept`、无 blocking issue。
+  - parent 复核额外发现 page-frame `<1 mm` 例外只检查 `cell_role`，理论上可能把
+    internal band boundary 当作 physical outer edge。
+  - follow-up RED: `3 failed`，分别证明 matcher 缺少 outer-edge evidence、
+    disposition 放过 internal boundary、关联 visual 被错误 resolved。
+  - follow-up GREEN: 最终 `5 passed in 0.81s`。matcher 只在 actual top `y=0`
+    或 actual bottom `y=page_height` 接触时写入
+    `physical_page_outer_edge` evidence；disposition 和 visual preservation
+    只允许该 evidence 绕过 `<1 mm` veto。
+  - follow-up fixed corpus 两次仍为
+    `56 / 45 / 1 / 7 / 3 / 184`，`Coverage blocking=0`、
+    resolved visual planned-batch leakage=`0`；canonical/report-file SHA-256
+    均与 Task 8A 相同。
+- Final post-follow-up verification:
+  - focused P0-A2 suite: `332 passed in 2.24s`
+  - full backend suite: `1118 passed, 1 warning in 44.49s`
+  - contract check: 与上方相同，所有 drift/blocking counters 为 `0`
+  - `git diff --check main...HEAD`: exit `0`
+  - final changed paths: `19`，仅包含 approved
+    PDF/layout/disposition/Coverage/Advisor implementation、对应 tests/helpers
+    和当前 plan/design；无 database/frontend/Provider schema/runtime、PDF binary、
+    host path 或 generated cache。
+- Final independent read-only review:
+  - mechanism: `claude` skill review mode，tool-less、完整 `main...HEAD` diff。
+  - verdict: `accept`
+  - blocking issues: `none`
+  - reviewer 明确验证 physical outer-edge evidence 只能由 actual top/bottom edge
+    产生；internal boundary 回到旧路径并保持 visual required；真实 outer-edge
+    page-frame 继续路由和解决 visual。
+  - non-blocking concerns: `_layout_snapshot_context()` 密度、watermark quorum
+    `O(n²)` 和 revision grouping 的轻微重复计算；在当前每页 `<20` watermark
+    candidates 和已覆盖 fixed corpus 边界下不构成 blocker。
+  - reviewer limitation: corpus/runtime commands 不能由静态 diff 独立复现；verdict
+    依赖代码/测试语义审查，实际 runtime evidence 仍由上方本地命令拥有。
+- Commit list:
+  - `71caddd` design baseline
+  - `4b13193` design gap closeout
+  - `85d975a` implementation plan
+  - `43a15e9` execution authorization
+  - `79b6cf5` immutable layout sidecar
+  - `33d5a46` profile matcher
+  - `3ac6f9c` cell/watermark assignments
+  - `07f7214` inventory attachment
+  - `974925d` primary disposition routing
+  - `7ac4472` Coverage preservation
+  - `09e45fd` unresolved-only Advisor routing
+  - `596d007` deterministic regression helper
+  - `27ef8ab` Task 8A blocker corrections
+  - `d56e609` physical outer-edge evidence follow-up
+- Rollback boundaries:
+  - follow-up outer-edge behavior: `d56e609`
+  - Task 8A corpus blocker corrections: `27ef8ab`
+  - deterministic regression gate: `596d007`
+  - production behavior must otherwise roll back in reverse dependency order from
+    `09e45fd` through `79b6cf5`;不得单独保留 consumer 而移除其 sidecar/evidence
+    producer。
+- Remaining risks:
+  - Quality Owner item/group ground truth 仍不可用，formal false-exclusion rate、
+    correction time 和 human correction cost 仍为 `unknown`。
+  - 两个 scanned/unsupported pages 仍不在 deterministic layout matcher 成功范围。
+  - fixed corpus 只执行 automatic inventory/snapshot/batch measurement；未调用 live
+    CandidateAdvisor Provider。Advisor-level resolved/unresolved behavior由 focused/full
+    tests 覆盖，不冒充 live Provider evidence。
+  - ReviewedResult freeze、formal numbering、balloon placement、
+    PDF/Excel/manifest export 和 final delivery correctness 仍为 `not verified`。
