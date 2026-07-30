@@ -49,7 +49,7 @@
 - Modify: `backend/tests/unit/candidates/test_disposition.py`
 - Modify: `backend/app/candidates/disposition.py`
 
-- [ ] **Step 1: Write failing unit tests for exact deterministic rules**
+- [x] **Step 1: Write failing unit tests for exact deterministic rules**
 
 新增参数化测试，要求：
 
@@ -70,7 +70,7 @@ def test_classify_primary_disposition_is_conservative(...):
 
 同时增加反例，确认 `Φ20`、`M6`、`R5`、`25±0.02`、`检查焊缝不得有裂纹` 不被规则误判。
 
-- [ ] **Step 2: Run the unit test and verify RED**
+- [x] **Step 2: Run the unit test and verify RED**
 
 Run from `backend/`:
 
@@ -81,7 +81,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 
 Expected: 新测试因 primary-disposition API 尚不存在而失败。
 
-- [ ] **Step 3: Implement the minimum classifier**
+- [x] **Step 3: Implement the minimum classifier**
 
 在 `backend/app/candidates/disposition.py` 增加：
 
@@ -105,7 +105,7 @@ def classify_primary_disposition(
 
 规则顺序固定为：精确 metadata → scale → section label → standalone number → standalone Roman label → confirmed repeated overlay。仅做完全匹配，不做包含匹配。
 
-- [ ] **Step 4: Implement conservative repeated-overlay evidence**
+- [x] **Step 4: Implement conservative repeated-overlay evidence**
 
 增加纯函数：
 
@@ -123,13 +123,13 @@ def repeated_page_overlay_observation_ids(
 - `bbox_normalized` 中心点落在同一个保守网格桶
 - 文本不是空值、不是独立数字、不是明确工程标注、不是 technical requirement
 
-- [ ] **Step 5: Run the unit test and verify GREEN**
+- [x] **Step 5: Run the unit test and verify GREEN**
 
 Run the same command.
 
 Expected: `tests/unit/candidates/test_disposition.py` 全部通过。
 
-- [ ] **Step 6: Commit rule Owner**
+- [x] **Step 6: Commit rule Owner**
 
 ```bash
 git add backend/app/candidates/disposition.py \
@@ -146,7 +146,7 @@ git commit -m "feat: add conservative candidate noise disposition"
 - Modify: `backend/tests/e2e/test_offline_automatic_result.py`
 - Modify: `backend/tests/unit/candidates/test_coverage.py`
 
-- [ ] **Step 1: Write failing end-to-end snapshot tests**
+- [x] **Step 1: Write failing end-to-end snapshot tests**
 
 覆盖以下行为：
 
@@ -168,7 +168,7 @@ same watermark on page 0 and page 1 at the same normalized position
   -> still create their existing candidate type
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run from `backend/`:
 
@@ -181,7 +181,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 
 Expected: 噪声仍进入 parser/candidate，且 CoverageEntry 尚无 rule evidence。
 
-- [ ] **Step 3: Extend CoverageEntry without breaking legacy serialization**
+- [x] **Step 3: Extend CoverageEntry without breaking legacy serialization**
 
 增加可选字段：
 
@@ -192,7 +192,7 @@ disposition_rule_version: str | None = None
 
 仅在字段非空时写入 `to_dict()`，因此旧 fixture 和非规则路径输出保持不变。
 
-- [ ] **Step 4: Insert primary disposition after technical-requirement classification**
+- [x] **Step 4: Insert primary disposition after technical-requirement classification**
 
 在 `candidate_snapshot_from_inventory()` 中：
 
@@ -202,11 +202,11 @@ disposition_rule_version: str | None = None
 4. 命中时直接写 CoverageEntry 并跳过 composite/group/parser。
 5. 未命中时继续原路径。
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run the command from Step 2.
 
-- [ ] **Step 6: Commit candidate snapshot integration**
+- [x] **Step 6: Commit candidate snapshot integration**
 
 ```bash
 git add backend/app/processing/automatic_result.py \
@@ -222,7 +222,7 @@ git commit -m "feat: gate obvious noise before candidate parsing"
 
 - Verify only; no production edits unless a verified defect requires a new TDD cycle
 
-- [ ] **Step 1: Re-run the candidate/PDF/contract baseline**
+- [x] **Step 1: Re-run the candidate/PDF/contract baseline**
 
 Run from `backend/`:
 
@@ -243,7 +243,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 \
 
 Expected: 全部通过，且先前 `271 passed` 基线没有回归。
 
-- [ ] **Step 2: Verify failure and rollback behavior**
+- [x] **Step 2: Verify failure and rollback behavior**
 
 确认：
 
@@ -252,7 +252,7 @@ Expected: 全部通过，且先前 `271 passed` 基线没有回归。
 - 未命中的 observation 沿原路径处理。
 - rule classifier 抛出异常时不会被静默转换为 formal success；测试应暴露失败。
 
-- [ ] **Step 3: Inspect the exact diff**
+- [x] **Step 3: Inspect the exact diff**
 
 ```bash
 git diff HEAD~2 -- \
@@ -266,7 +266,7 @@ git diff HEAD~2 -- \
 
 确认每一行都追溯到 `P0-A1`，且没有 parser、VLM、frontend、numbering 或 export 变更。
 
-- [ ] **Step 4: Run independent read-only review**
+- [x] **Step 4: Run independent read-only review**
 
 Reviewer 必须给出 `accept / accept with concerns / reject`，重点检查：
 
@@ -276,7 +276,7 @@ Reviewer 必须给出 `accept / accept with concerns / reject`，重点检查：
 - Coverage Ledger 是否完整
 - 是否出现隐藏 fallback 或第二个业务 Owner
 
-- [ ] **Step 5: Apply only verified review fixes through a new RED/GREEN loop**
+- [x] **Step 5: Apply only verified review fixes through a new RED/GREEN loop**
 
 若 reviewer 报告 blocker，先由主线程复核文件/测试证据，再以最小补丁修复并重新运行 Step 1；非阻断建议留给后续 `P0-B`。
 
@@ -294,3 +294,24 @@ Reviewer 必须给出 `accept / accept with concerns / reject`，重点检查：
 - Final delivery:
   - 本任务不声明 reviewed result、formal balloon、PDF/Excel/manifest 正确性提升。
   - 交付正确性仍由后续审核 freeze 与统一 reviewed-result gate 保证。
+
+## Execution Results
+
+- RED/GREEN:
+  - primary-disposition API 缺失时 unit collection 明确失败。
+  - snapshot 旧路径证明独立数字仍会直接创建 `linear_dimension`。
+  - reviewer 发现 repeated-overlay 提前覆盖工程语义后，新增跨页焊接、粗糙度、GD&T、未注公差和技术要求回归，再完成 GREEN。
+  - full-suite 发现 visual-context standalone number 回归后，新增 visual context 让行规则并完成 GREEN。
+- Verification:
+  - focused candidate/PDF/contract suite: `295 passed`
+  - offline automatic-result DB e2e: `32 passed`
+  - fresh PostgreSQL full backend suite: `986 passed, 1 warning`
+- Independent review:
+  - first verdict: `reject`
+  - final verdict: `accept with concerns`
+  - remaining concerns are fixed-sample evaluation and 5% normalized-position bucket stability；均不扩大本任务生产范围。
+- Commits:
+  - `662d21f` — deterministic disposition Owner
+  - `f91a826` — candidate snapshot gate and Coverage evidence
+  - `104e5b1` — repeated engineering observation preservation
+  - `6267ce1` — visually contextualized standalone number preservation
