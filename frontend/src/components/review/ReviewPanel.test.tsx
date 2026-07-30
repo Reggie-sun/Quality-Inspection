@@ -235,6 +235,62 @@ describe("ReviewPanel", () => {
     }));
   });
 
+  test("直径尺寸字段支持修改按钮和直接点击两种编辑入口", async () => {
+    render(
+      <ReviewPanel
+        items={[{
+          item_id: "diameter-edit-item",
+          item_type: "diameter_dimension",
+          raw_text: "65",
+          nominal: "65",
+          feature_kind: "unknown",
+          through: false,
+          active: true,
+        }]}
+        onCommand={vi.fn()}
+        selectedItemId="diameter-edit-item"
+      />,
+    );
+
+    const edit = screen.getByRole("button", { name: "修改检验项：65" });
+    const diameter = screen.getByRole("textbox", { name: "直径：65" });
+    const depth = screen.getByRole("textbox", { name: "深度：65" });
+    const featureKind = screen.getByRole("combobox", { name: "特征类型：65" });
+    const through = screen.getByRole("combobox", { name: "通孔：65" });
+
+    expect(edit.hasAttribute("disabled")).toBe(false);
+    expect(diameter.hasAttribute("readonly")).toBe(false);
+    expect(depth.hasAttribute("readonly")).toBe(false);
+    expect(featureKind.hasAttribute("disabled")).toBe(false);
+    expect(through.hasAttribute("disabled")).toBe(false);
+
+    fireEvent.click(edit);
+    await waitFor(() => {
+      expect(screen.getByRole("button", {
+        name: "取消修改检验项：65",
+      })).not.toBeNull();
+      expect(diameter.hasAttribute("readonly")).toBe(false);
+      expect(depth.hasAttribute("readonly")).toBe(false);
+      expect(featureKind.hasAttribute("disabled")).toBe(false);
+      expect(through.hasAttribute("disabled")).toBe(false);
+    });
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "取消修改检验项：65",
+    }));
+    fireEvent.focus(diameter);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", {
+        name: "取消修改检验项：65",
+      })).not.toBeNull();
+      expect(diameter.hasAttribute("readonly")).toBe(false);
+      expect(depth.hasAttribute("readonly")).toBe(false);
+      expect(featureKind.hasAttribute("disabled")).toBe(false);
+      expect(through.hasAttribute("disabled")).toBe(false);
+    });
+  });
+
   test("P0-UI-006 keeps merge out of details and exposes seven single-item command types", () => {
     const onCommand = vi.fn();
     const items: ReviewItem[] = [
@@ -562,7 +618,7 @@ describe("ReviewPanel", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
-  test("点击修改才可编辑且取消修改会回滚未保存草稿", async () => {
+  test("结构化字段可直接编辑且取消修改会回滚未保存草稿", async () => {
     let resolveCommand: (outcome: boolean) => void = () => undefined;
     const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
       resolveCommand = resolve;
@@ -597,7 +653,7 @@ describe("ReviewPanel", () => {
       name: "原始标注：10",
     })).toBeNull();
     expect(nominal.hasAttribute("disabled")).toBe(false);
-    expect(nominal.hasAttribute("readonly")).toBe(true);
+    expect(nominal.hasAttribute("readonly")).toBe(false);
     expect(save.hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(edit);
@@ -612,7 +668,7 @@ describe("ReviewPanel", () => {
     expect(save.hasAttribute("disabled")).toBe(false);
     fireEvent.click(cancel);
     expect((nominal as HTMLInputElement).value).toBe("10");
-    expect(nominal.hasAttribute("readonly")).toBe(true);
+    expect(nominal.hasAttribute("readonly")).toBe(false);
     expect(save.hasAttribute("disabled")).toBe(true);
     expect(onCommand).not.toHaveBeenCalled();
 
@@ -647,7 +703,7 @@ describe("ReviewPanel", () => {
     await act(async () => resolveCommand(true));
 
     await waitFor(() => {
-      expect(nominal.hasAttribute("readonly")).toBe(true);
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
     expect((nominal as HTMLInputElement).value).toBe("11");
@@ -705,7 +761,7 @@ describe("ReviewPanel", () => {
 
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("2");
-      expect(nominal.hasAttribute("readonly")).toBe(true);
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -756,7 +812,7 @@ describe("ReviewPanel", () => {
 
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("2");
-      expect(nominal.hasAttribute("readonly")).toBe(true);
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -769,7 +825,7 @@ describe("ReviewPanel", () => {
     await act(async () => resolveCommand(true));
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("02");
-      expect(nominal.hasAttribute("readonly")).toBe(true);
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
 
@@ -951,7 +1007,7 @@ describe("ReviewPanel", () => {
     await act(async () => resolveCommand(true));
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("11");
-      expect(nominal.hasAttribute("readonly")).toBe(true);
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
 
@@ -959,7 +1015,7 @@ describe("ReviewPanel", () => {
 
     await waitFor(() => {
       expect((nominal as HTMLInputElement).value).toBe("12");
-      expect(nominal.hasAttribute("readonly")).toBe(true);
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -1000,7 +1056,7 @@ describe("ReviewPanel", () => {
 
     await waitFor(() => {
       expect(onCommand).toHaveBeenCalledTimes(1);
-      expect(nominal.hasAttribute("readonly")).toBe(true);
+      expect(nominal.hasAttribute("readonly")).toBe(false);
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
@@ -1024,7 +1080,7 @@ describe("ReviewPanel", () => {
     expect(onDraftChange).toHaveBeenLastCalledWith(false);
   });
 
-  test("切换所选检验项后需要重新点击修改", () => {
+  test("切换所选检验项后字段仍保持可直接编辑", () => {
     const items: ReviewItem[] = [
       {
         item_id: "item-a",
@@ -1053,7 +1109,7 @@ describe("ReviewPanel", () => {
     expect(
       screen.getByRole("textbox", { name: "基本尺寸：A" })
         .hasAttribute("readonly"),
-    ).toBe(true);
+    ).toBe(false);
     fireEvent.click(screen.getByRole("button", {
       name: "修改检验项：A",
     }));
@@ -1072,7 +1128,7 @@ describe("ReviewPanel", () => {
     expect(
       screen.getByRole("textbox", { name: "基本尺寸：B" })
         .hasAttribute("readonly"),
-    ).toBe(true);
+    ).toBe(false);
     fireEvent.click(screen.getByRole("button", {
       name: "修改检验项：B",
     }));
@@ -1089,7 +1145,7 @@ describe("ReviewPanel", () => {
       />,
     );
     const nominal = screen.getByRole("textbox", { name: "基本尺寸：A" });
-    expect(nominal.hasAttribute("readonly")).toBe(true);
+    expect(nominal.hasAttribute("readonly")).toBe(false);
   });
 
   test("修改命令显式失败时保留本地草稿和编辑模式", async () => {
