@@ -3,10 +3,11 @@
 ## Status
 
 - Date: `2026-07-30`
-- Status: `review_requested`
+- Status: `approved`
 - Selected lane: `Heavy`
-- Selected plan: 尚未创建；用户 review 本文前，本文是唯一 current task contract，
-  但不授权 implementation
+- Selected plan:
+  `docs/superpowers/plans/2026-07-30-technical-requirement-recognition-and-matching.md`
+  是唯一 successor implementation plan
 - Selection evidence: 用户确认技术要求需要“语义拆解匹配 + SIP 填充”，并批准
   “规则 Owner + 辅助识别”与“不自动换算标准数值”的边界
 - Validation action: `replan`
@@ -15,8 +16,8 @@
   P0 task，也不把尚未完成 runtime acceptance 的 confidence plan 标记为完成
 - Writer ownership and order: spec 阶段父 agent 是本文件唯一 writer；production
   implementation 必须在后续唯一 plan 中串行分配 file ownership
-- Next verification: spec review 通过后创建唯一 implementation plan；本文件本身
-  不授权 production implementation
+- Next verification: implementation plan 自检、用户选择 execution mode，然后执行
+  plan Task 1 RED；本文本身不授权 production implementation
 
 ## Context
 
@@ -252,27 +253,41 @@ evidence。
 
 不得用“最后一条覆盖前一条”、模型概率或 frontend 选择来消解冲突。
 
-## Automatic-Result Contract
+## Persistence And Automatic-Result Contract
 
-优先采用 additive-compatible contract：
+结构调查确认：
 
-- 保留当前 `automatic-result/2`；
-- 在 automatic result 顶层增加 optional `technical_requirements`；
-- 在 candidate envelope 增加 optional `technical_requirement_refs`；
-- 不把 requirement match fields 塞进 typed candidate payload；
-- legacy result 缺少这些字段时按“没有自动 technical-requirement evidence”处理，
-  不重新推断。
+- `AutomaticResult` 目前把 `candidates`、`coverage` 和 `provider_call_ids` 分列保存，
+  不存在任意 automatic-result 顶层 JSON 文档；
+- `ReviewWorkingCopy` 目前只分列保存 `items`、`coverage` 和 `sip_metadata`；
+- 把 requirement semantics 塞入 `coverage` 会错误扩大 Coverage Owner。
 
-implementation plan 必须先用 contract tests 证明现有 reader 对这些 optional fields
-兼容。若 current validators 实际要求 schema version bump，则 plan 必须显式
-`replan` 到新版本、定义 dual-reader sequencing 和 rollback，不能静默改版本。
+因此采用明确 schema migration：
+
+- `automatic_results.technical_requirements JSONB NOT NULL DEFAULT '[]'`
+  保存 immutable requirement decisions、match relations 和 SIP suggestions；
+- `review_working_copies.technical_requirements JSONB NOT NULL DEFAULT '[]'`
+  保存从 immutable result 投影出来的 versioned review state；
+- 保留当前 `automatic-result/2` candidate envelope 和 confidence contract；
+- candidate envelope 只增加 optional `technical_requirement_refs`，不把 match fields
+  塞进 typed candidate payload；
+- 既有数据库行由 migration backfill 为 `[]`，reader 把空数组解释为“没有自动
+  technical-requirement evidence”，不得重算历史结果；
+- 不给 `ReviewedResult` 新增 requirement column；确认后的 global items、target item
+  SIP fields 和 provenance 继续冻结在既有 `items` 中，export 不读 mutable review
+  relation。
+
+migration 必须在写入新数据前完成，并包含 upgrade、downgrade、model/schema contract
+tests 和 legacy row compatibility。downgrade 只允许在确认没有需要保留的新
+technical-requirement evidence 后执行，不能静默丢弃已生成的业务数据。
 
 示意：
 
 ```json
 {
   "schema_version": "automatic-result/2",
-  "technical_requirements": [
+  "automatic_result_record": {
+    "technical_requirements": [
     {
       "requirement_id": "stable-id",
       "ordinal": 5,
@@ -290,7 +305,8 @@ implementation plan 必须先用 contract tests 证明现有 reader 对这些 op
       "rule_version": "technical-requirement/1",
       "review_required": true
     }
-  ]
+    ]
+  }
 }
 ```
 
@@ -428,17 +444,18 @@ PDF inventory / OCR observations
 
 ## Rollback
 
-优先的 additive contract rollback：
+schema rollback：
 
-1. 停止新 writer 生成 technical requirement decisions；
-2. 保留 reader 对 optional fields 的忽略/读取兼容；
+1. 先停止新 writer 生成 technical requirement decisions；
+2. 保留 reader 对 `[]` 和已存在 requirement records 的兼容；
 3. 现有 immutable results 不删除、不重写；
-4. 回到旧 source-review behavior；
-5. 首项 rollback verification 是 legacy `automatic-result/2` processing +
-   Review bootstrap focused integration test。
-
-若实现调查证明必须升级 schema version，implementation plan 必须在写 code 前重写本节，
-提供 dual-reader rollout、历史结果兼容和明确 rollback，不得沿用上述 additive 假设。
+4. 只有数据库查询证明两个新增 column 全部为空数组，才允许执行 downgrade 删除
+   column；否则 rollback 停在 application rollback 并保留 schema；
+5. application rollback 回到旧 source-review behavior；
+6. 首项 rollback verification 是 legacy `automatic-result/2` processing +
+   Review bootstrap focused integration test；
+7. 若执行 schema downgrade，再运行 `alembic upgrade head` 和 schema integration
+   test 证明可恢复。
 
 ## Implementation Planning Gate
 
