@@ -347,3 +347,27 @@ def test_report_rejects_duplicate_observation_identity(
 
     with pytest.raises(ValueError, match="duplicate observation identity"):
         regression.build_welli_layout_report((pdf_path,))
+
+
+def test_title_reroute_metric_includes_metadata_and_approval_context() -> None:
+    aggregate = regression._empty_aggregate()
+    current_coverage = {
+        "metadata": _coverage(
+            "metadata",
+            "reference_context",
+            reason="welli_title_metadata_value",
+        ),
+        "approval": _coverage(
+            "approval",
+            "reference_context",
+            reason="welli_title_approval_context",
+        ),
+    }
+
+    regression._increment_reason_counts(
+        aggregate,
+        rerouted_ids=frozenset(current_coverage),
+        current_coverage=current_coverage,
+    )
+
+    assert aggregate["title_metadata_reroutes"] == 2

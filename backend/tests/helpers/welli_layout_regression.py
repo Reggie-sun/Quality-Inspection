@@ -149,6 +149,7 @@ def _increment_reason_counts(
         "welli_revision_marker": "revision_marker_reroutes",
         "welli_revision_description": "revision_description_reroutes",
         "welli_title_metadata_value": "title_metadata_reroutes",
+        "welli_title_approval_context": "title_metadata_reroutes",
         "welli_page_frame_number": "page_frame_reroutes",
     }
     for observation_id in rerouted_ids:

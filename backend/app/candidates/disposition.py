@@ -227,8 +227,22 @@ def _welli_layout_decision(
         or assignment.page_index != observation.page_index
         or assignment.profile_id not in WELLI_PROFILE_IDS
         or assignment.rule_version != WELLI_LAYOUT_RULE_VERSION
-        or assignment.boundary_distance_mm < 1.0
     ):
+        return None
+
+    if (
+        assignment.region_id == "page_frame"
+        and assignment.cell_role == "page_frame_number"
+        and WELLI_PAGE_FRAME_NUMBER_BY_CELL_ID.get(assignment.cell_id)
+        == normalized
+    ):
+        return PrimaryDispositionDecision(
+            disposition="non_inspection",
+            reason="welli_page_frame_number",
+            rule_version=WELLI_LAYOUT_RULE_VERSION,
+        )
+
+    if assignment.boundary_distance_mm < 1.0:
         return None
 
     if (
@@ -304,17 +318,6 @@ def _welli_layout_decision(
             )
         return None
 
-    if (
-        assignment.region_id == "page_frame"
-        and assignment.cell_role == "page_frame_number"
-        and WELLI_PAGE_FRAME_NUMBER_BY_CELL_ID.get(assignment.cell_id)
-        == normalized
-    ):
-        return PrimaryDispositionDecision(
-            disposition="non_inspection",
-            reason="welli_page_frame_number",
-            rule_version=WELLI_LAYOUT_RULE_VERSION,
-        )
     return None
 
 

@@ -1584,7 +1584,7 @@ contract check 和独立 reviewer 均有真实证据时，才继续更新本节�
 
 ### Task 8 Diagnostic Gate
 
-- Status: `rejected / blocker`。Task 9 未获准开始；固定 count 未调整，未增加
+- Initial status: `rejected / blocker`。Task 9 当时未获准开始；固定 count 未调整，未增加
   filename/hash/source-ID allowlist。
 - Helper TDD:
   - RED:
@@ -1666,24 +1666,68 @@ contract check 和独立 reviewer 均有真实证据时，才继续更新本节�
     page `0` (`9`), and A3 portrait
     `687e7b9fb46e9a55cb52e32669b3c9577e6deccf5bb1b12175309440a5d7739e`
     page `0` (`12`).
-  - The remaining `154` exact text+angle sources across `11` matched pages are rejected by
+- The remaining `154` exact text+angle sources across `11` matched pages are rejected by
     the lattice evidence, so the current watermark contract has corpus false negatives.
+
+### Task 8A Bounded Amendment
+
+- Authorization: 用户于 `2026-07-30` 批准先前只读诊断提出的 bounded amendment。
+- Change surface:
+  - production 仅修改 `backend/app/pdf/layout_profiles.py`、
+    `backend/app/processing/automatic_result.py` 和
+    `backend/app/candidates/disposition.py`；
+  - regression helper 仅修正 title metadata/approval 聚合口径；
+  - 对应 layout/disposition/offline regression tests 增加真实 failure-mode coverage；
+  - 未调整 threshold，未增加 filename/hash/source-ID allowlist。
+- Root-cause corrections:
+  - watermark 改为 deterministic page-level lattice quorum；partial outer row 不再使
+    已满足 exact text/angle/count/spacing 的整页失败；
+  - parser/grouping/visual engineering preservation 限定为
+    `revision_description` row，coarse keyword/type fallback 不再单独构成 veto；
+  - page-frame assignment 使用 matched actual page dimensions，精确
+    cell/text/target 可接触 physical page outer edge。
+- TDD:
+  - RED focused command: `8 failed, 2 passed`；失败分别覆盖 actual-height assignment、
+    partial outer-row lattice、page-frame edge disposition、两类 title value、
+    plain revision prose、page-frame visual resolution 和 helper aggregate。
+  - GREEN focused command: `10 passed in 0.88s`。
+  - 扩展相关文件验证: `172 passed, 10 errors in 3.30s`；10 个 error 均发生在
+    database fixture setup，原因是当前环境无法解析 host `postgres`，未出现 test
+    assertion failure。该环境 blocker 不转换为通过。
+- Fixed corpus gate:
+  - repeated live runs: both exit `0`; `cmp` exit `0`
+  - canonical `report_sha256`:
+    `1acaccf12d07e7cd757b1516ebae45481816f09b6fc527262c344e3e62eccad8`
+  - identical report-file SHA-256:
+    `813a27ba5aa4d4dceb9e136e730cd08fd456fa6d839c247e0a7f2e847e21b9c6`
+  - control/current candidate source count: `1312 / 1256`
+  - safe candidate reroutes: `56`
+  - revision marker/description reroutes: `45 / 1`
+  - title metadata candidate reroutes: `7`
+  - page-frame candidate reroutes: `3`
+  - WELLI watermark Native lines: `184`
+  - revision engineering-preserved lines: `4`
+  - layout-resolved/required visual observations: `56 / 1016`
+  - resolved visual IDs in planned batches: `0`
+  - Coverage blocking count: `0`
+- Status: `accepted`。Task 8 fixed aggregate、Coverage 和 determinism gate 已恢复；
+  仅此 gate 的通过使 Task 9 重新具备开始资格，不等于 focused/full suite、contract
+  check、independent review、freeze 或 export 已完成。
 
 #### Evidence Boundaries
 
 **Automatic capability**
 
 - Profile support/match counts and deterministic current/control snapshots are verified.
-- Revision-marker rerouting, Coverage exact-once, zero resolved-visual batch leakage, and
-  repeat determinism are verified.
-- The fixed candidate/watermark gate is not verified and rejects Task 8.
+- The fixed candidate/watermark aggregate, Coverage exact-once, zero resolved-visual batch
+  leakage, and repeat determinism are verified.
 - No human modifications, OCR Provider, CandidateAdvisor, network, review, freeze, numbering,
   balloon placement, or export ran.
 
 **Human correction cost**
 
-- Confirmed candidate queue reduction is `45`, not the required `56`.
-- Layout-resolved visual count is `50`; unresolved required visual count is `1022`.
+- Confirmed candidate queue reduction is `56`.
+- Layout-resolved visual count is `56`; unresolved required visual count is `1016`.
 - Quality Owner item/group ground truth is unavailable, so correction time and formal
   false-exclusion rate remain `unknown`.
 

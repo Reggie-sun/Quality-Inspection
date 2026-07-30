@@ -188,7 +188,7 @@ class _LayoutSnapshotContext:
     engineering_preservation_observation_ids: frozenset[str]
 
 
-def _single_observation_is_engineering(
+def _revision_description_is_engineering(
     observation: TextObservation,
 ) -> bool:
     if (
@@ -203,7 +203,7 @@ def _single_observation_is_engineering(
     try:
         return bool(group_observations((observation,)))
     except ValueError:
-        return _coarse_type(observation.raw_text) is not None
+        return False
 
 
 def _layout_snapshot_context(
@@ -266,14 +266,14 @@ def _layout_snapshot_context(
             preservation_ids.add(observation_id)
             continue
         assignments_by_id[observation_id] = assignment
-        is_control_number = assignment.cell_role in {
-            "revision_marker",
-            "page_frame_number",
-        }
-        if assignment.boundary_distance_mm < 1.0:
+        if (
+            assignment.boundary_distance_mm < 1.0
+            and assignment.cell_role != "page_frame_number"
+        ):
             preservation_ids.add(observation_id)
-        elif not is_control_number and _single_observation_is_engineering(
-            observation
+        elif (
+            assignment.cell_role == "revision_description"
+            and _revision_description_is_engineering(observation)
         ):
             preservation_ids.add(observation_id)
         elif (

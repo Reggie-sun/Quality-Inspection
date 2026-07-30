@@ -466,6 +466,10 @@ text "2":    abs(center_x - 3W/4) <= 1 mm
 
 只有 exact standalone `1/2` 同时命中 y band 和 x target 才赋
 `page_frame_number`；其他 page-edge 工程标注继续 P0-A1-R1 conservative path。
+page-frame band 和 x target 使用已通过 profile size tolerance 的实际 page `W/H`，
+不把 nominal profile size 与解析器返回值之间的浮点差异解释为越界。精确
+cell/text/target 已同时命中时，line 接触 actual physical page outer edge 是允许的；
+这项例外不适用于内部 cell boundary 或其他 role。
 
 ### Observation-To-Cell Assignment
 
@@ -488,8 +492,9 @@ assignment 范围。
 不唯一或 title optional `x=93` 造成两种解释，则不创建 assignment。
 `boundary_distance_mm` 为相对 unexpanded role union 的 signed inward distance；
 assignment 中只允许非负值。`0..1 mm` 表示位于 grid tolerance band 内侧，
-assignment 可保留用于诊断，但 disposition 必须 veto；负值一律不创建 assignment。
-不得用“center 落进整块 title/revision rectangle”替代 cell assignment。
+assignment 可保留用于诊断，且除精确 `page_frame_number` 接触 actual physical
+page outer edge 外，disposition 必须 veto；负值一律不创建 assignment。不得用
+“center 落进整块 title/revision rectangle”替代 cell assignment。
 
 ### Match Gate
 
@@ -611,14 +616,20 @@ cell role 处理。
 
 ### Engineering-Preservation Gate
 
-除 revision marker cell 的精确规则外，任一 observation 满足以下条件时，layout
-policy 不得直接返回 `reference_context/non_inspection`：
+现有 executable technical requirement 对所有 role 保持最高优先级。bbox 跨 cell、
+方向异常、cell role 不唯一或同一 source 的 line/span assignment 冲突时不创建
+layout decision；除下述精确 page-frame outer-edge 例外外，距离内部 role boundary
+小于 `1 mm` 同样返回 no decision。
 
-- 现有 parser 能识别为工程标注；
-- 命中现有 executable technical requirement；
-- 关联的 VisualObservation 表达非 revision-control 的工程符号上下文；
-- bbox 跨 cell、距离边界小于 `1 mm`、方向异常或 cell role 不唯一；
-- 同一 source 的 line/span assignment 冲突。
+parser/grouping/visual engineering preservation 只适用于 `revision_description` row：
+
+- 现有 parser/grouping 能识别为工程标注；
+- 关联的 VisualObservation 表达非 revision-control 的工程符号上下文。
+
+title metadata/approval、archive record 等 role 不因 generic parser 把日期、编号或
+重量值解释为 engineering shape 而失去已确认的 cell policy。coarse keyword/type
+fallback 本身也不是 revision engineering evidence；例如 plain change prose
+不能只因包含 `焊接` 等词而被保留为 candidate。
 
 此时 policy 返回 no decision，继续现有 classifier/parser；若现有路径仍不能解释，
 Coverage 保持 `ambiguous/requires_confirmation=true`。
@@ -639,7 +650,9 @@ Native lines 也全部返回 no decision。这样不会把复合标注中未单�
 因此通用 preservation rule 是“description-row engineering evidence veto”，不是
 filename、source hash、page index、observation ID 或 exact sample text 特判。marker
 cell 对应的 exact `1/2/3` 是唯一允许覆盖 visual-context yield 的 revision-control
-例外。
+例外。另一个 control-role 例外是精确 page-frame cell/text/target：它可以接触
+actual physical page outer edge，并优先于 visual-context yield；内部边界仍不得
+放宽。
 
 ### Decision Table
 
@@ -730,7 +743,7 @@ layout-resolved visual observations
 1. normalized text 精确等于 `伟立机器人`；
 2. direction angle 为 `-30° ±2°`；
 3. 同页 unique Native line count `>=9`；
-4. centers 形成至少 `2×3` 的规则网格；
+4. centers 中存在至少 `9` 个 unique inliers，形成至少 `2×3` 的规则网格；
 5. spacing variance 在 versioned deterministic tolerance 内；
 6. observation 不在技术要求或其他工程文本 group 中。
 
@@ -743,11 +756,14 @@ line 的 span 再计一次。按 profile 的预期相邻 center spacing 为：
 | A4 portrait | `65 mm` | `80 mm` | `±2 mm` |
 | A3 portrait | `100 mm` | `90 mm` | `±2 mm` |
 
-只有 unique centers 中至少两列、三行的相邻 spacing 同时满足对应 profile，才通过
-grid evidence；页面边缘允许缺少被裁切的外侧点，但不得降低 count 或 spacing gate。
-当前 corpus 的 14 个含水印 parseable pages 上共有 `184` 条满足文字、
-角度和网格模式的 Native line observations，每页为 `9～14` 次。不得使用 substring
-match，因为工程文本中可能出现相近词；水平 logo 也不得被本规则捕获。
+只有某个 deterministic origin 下至少 `9` 个 unique centers 占据至少两列、三行，
+且相邻 spacing 同时满足对应 profile，才通过 page-level lattice quorum。页面边缘
+允许缺少被裁切的外侧点，也允许存在不完整 outer row；它们不得降低 count 或 spacing
+gate，也不得因为不能共同确定全页最小 origin 而否决已经成立的 quorum。page-level
+quorum 成立后，同页全部满足 exact text、angle 和非工程 group 条件的 unique Native
+lines 都按本 rule 路由。当前 corpus 的 14 个含水印 parseable pages 上共有 `184`
+条满足文字、角度和网格模式的 Native line observations，每页为 `9～14` 次。不得
+使用 substring match，因为工程文本中可能出现相近词；水平 logo 也不得被本规则捕获。
 
 P0-A2 不把任意倾斜重复文字泛化为水印。其他文字继续走现有跨页 repeated-overlay
 规则或 `ambiguous`。

@@ -604,6 +604,22 @@ def test_matched_revision_marker_and_visual_leave_candidate_path() -> None:
             "non_inspection",
             "welli_page_frame_number",
         ),
+        (
+            "260508",
+            "title_block",
+            "title_metadata_value",
+            "title-metadata-value",
+            "reference_context",
+            "welli_title_metadata_value",
+        ),
+        (
+            "20260730",
+            "title_block",
+            "title_approval_context",
+            "title-approval-context",
+            "reference_context",
+            "welli_title_approval_context",
+        ),
     ),
 )
 def test_matched_layout_text_routes_before_parser(
@@ -719,6 +735,69 @@ def test_revision_description_engineering_evidence_preserves_entire_row() -> Non
         entry.disposition_reason != "welli_revision_description"
         for entry in snapshot.coverage_entries
     )
+
+
+def test_plain_revision_change_prose_is_not_preserved_by_coarse_weld_hint() -> None:
+    observation = _text_observation(
+        "更新焊接说明",
+        observation_id="welli:plain-revision-description",
+    )
+    assignment = _layout_assignment(
+        observation,
+        region_id="revision_table",
+        cell_role="revision_description",
+        cell_id="revision-description-1",
+    )
+    page = _page_with_observations(
+        0,
+        (observation,),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+
+    assert snapshot.candidates == ()
+    entry = snapshot.coverage_entries[0]
+    assert entry.disposition == "reference_context"
+    assert entry.disposition_reason == "welli_revision_description"
+
+
+def test_page_frame_edge_control_number_with_visual_context_is_resolved() -> None:
+    observation = _text_observation(
+        "1",
+        observation_id="welli:page-frame-bottom-1",
+    )
+    assignment = _layout_assignment(
+        observation,
+        region_id="page_frame",
+        cell_role="page_frame_number",
+        cell_id="page-frame-bottom-1",
+        boundary_distance_mm=0.0,
+    )
+    visual = _visual_observation(
+        "visual:page-frame-bottom-1",
+        (observation.observation_id,),
+    )
+    page = _page_with_observations(
+        0,
+        (observation,),
+        visual_observations=(visual,),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+    coverage = {
+        entry.observation_id: entry for entry in snapshot.coverage_entries
+    }
+
+    assert snapshot.candidates == ()
+    assert coverage[observation.observation_id].disposition_reason == (
+        "welli_page_frame_number"
+    )
+    assert coverage[visual.observation_id].disposition_reason == (
+        "welli_layout_visual_context"
+    )
+    assert snapshot.required_visual_observation_ids == ()
 
 
 def test_technical_requirement_precedes_overlapping_layout_assignment() -> None:

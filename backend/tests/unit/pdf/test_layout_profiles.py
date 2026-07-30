@@ -297,6 +297,35 @@ def test_native_lines_receive_stable_cell_assignments(
     )
 
 
+def test_bottom_page_frame_assignment_uses_actual_matched_page_height() -> None:
+    page_height_mm = 297.0000885009765
+    observation = welli_text_observation(
+        observation_id="native:page-frame-bottom-1",
+        text="1",
+        bbox_mm=(51.6546, 292.0848, 53.3838, page_height_mm),
+        page_size_mm=(210.0, page_height_mm),
+    )
+    fixture = make_welli_layout_fixture(
+        profile_id="welli-a4-portrait/1",
+        page_size_delta_mm=(0.0, page_height_mm - 297.0),
+    )
+    match = _match(
+        replace(
+            fixture,
+            observations=fixture.observations + (observation,),
+        )
+    )
+
+    assert match is not None
+    assignments = {
+        assignment.observation_id: assignment
+        for assignment in match.assignments
+    }
+    assignment = assignments[observation.observation_id]
+    assert assignment.cell_id == "page-frame-bottom-1"
+    assert assignment.boundary_distance_mm == pytest.approx(0.0)
+
+
 def test_revision_marker_and_description_have_distinct_row_identity() -> None:
     page_size = PROFILE_PAGE_SIZES_MM["welli-a3-landscape/1"]
     observations = (
@@ -486,6 +515,29 @@ def _watermark_ids(observations):
 
 def test_same_page_watermark_requires_exact_profile_grid() -> None:
     observations = _watermark_observations()
+
+    assert _watermark_ids(observations) == frozenset(
+        observation.observation_id for observation in observations
+    )
+
+
+def test_same_page_watermark_uses_lattice_quorum_for_partial_outer_row() -> None:
+    lattice = _watermark_observations(
+        x_positions=(50.0, 150.0, 250.0, 350.0),
+    )
+    partial_outer_row = tuple(
+        replace(
+            observation,
+            observation_id=f"native:watermark:partial:{index}",
+        )
+        for index, observation in enumerate(
+            _watermark_observations(
+                x_positions=(52.0, 152.0),
+                y_positions=(267.0,),
+            )
+        )
+    )
+    observations = lattice + partial_outer_row
 
     assert _watermark_ids(observations) == frozenset(
         observation.observation_id for observation in observations

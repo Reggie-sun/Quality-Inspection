@@ -537,6 +537,28 @@ def test_layout_boundary_inside_one_millimetre_is_not_filtered() -> None:
     )
 
 
+def test_exact_page_frame_control_number_can_touch_physical_page_edge() -> None:
+    observation = _observation("1", observation_id="welli:page-frame-bottom-1")
+    assignment = _layout_assignment(
+        observation,
+        region_id="page_frame",
+        cell_role="page_frame_number",
+        cell_id="page-frame-bottom-1",
+        boundary_distance_mm=0.0,
+    )
+
+    decision = classify_primary_disposition(
+        observation,
+        has_visual_context=True,
+        layout_assignment=assignment,
+    )
+
+    assert decision is not None
+    assert decision.disposition == "non_inspection"
+    assert decision.reason == "welli_page_frame_number"
+    assert decision.rule_version == WELLI_LAYOUT_RULE_VERSION
+
+
 @pytest.mark.parametrize(
     ("cell_role", "cell_id", "raw_text"),
     (

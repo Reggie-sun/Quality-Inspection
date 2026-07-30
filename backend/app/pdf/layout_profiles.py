@@ -348,7 +348,12 @@ def _page_profile(
     return matches[0] if len(matches) == 1 else None
 
 
-def _role_rectangles(profile: _Profile) -> tuple[_RoleRectMm, ...]:
+def _role_rectangles(
+    profile: _Profile,
+    *,
+    page_width_mm: float,
+    page_height_mm: float,
+) -> tuple[_RoleRectMm, ...]:
     title_x0, title_y0, title_x1, title_y1 = profile.title_box
     revision_x0, revision_y0, revision_x1, _ = profile.revision_box
     archive_x0, archive_y0, archive_x1, _ = profile.archive_box
@@ -423,7 +428,7 @@ def _role_rectangles(profile: _Profile) -> tuple[_RoleRectMm, ...]:
         )
     for band, band_y0, band_y1 in (
         ("top", 0.0, 5.0),
-        ("bottom", profile.height_mm - 5.0, profile.height_mm),
+        ("bottom", page_height_mm - 5.0, page_height_mm),
     ):
         roles.extend(
             (
@@ -431,22 +436,22 @@ def _role_rectangles(profile: _Profile) -> tuple[_RoleRectMm, ...]:
                     "page_frame",
                     "page_frame_number",
                     f"page-frame-{band}-1",
-                    (0.0, band_y0, profile.width_mm / 2.0, band_y1),
+                    (0.0, band_y0, page_width_mm / 2.0, band_y1),
                     expected_text="1",
-                    center_x_target_mm=profile.width_mm / 4.0,
+                    center_x_target_mm=page_width_mm / 4.0,
                 ),
                 _RoleRectMm(
                     "page_frame",
                     "page_frame_number",
                     f"page-frame-{band}-2",
                     (
-                        profile.width_mm / 2.0,
+                        page_width_mm / 2.0,
                         band_y0,
-                        profile.width_mm,
+                        page_width_mm,
                         band_y1,
                     ),
                     expected_text="2",
-                    center_x_target_mm=profile.width_mm * 3.0 / 4.0,
+                    center_x_target_mm=page_width_mm * 3.0 / 4.0,
                 ),
             )
         )
@@ -481,6 +486,8 @@ def _role_boundary_distance(
 def _assignment_for_observation(
     *,
     profile: _Profile,
+    page_width_mm: float,
+    page_height_mm: float,
     page_index: int,
     observation: TextObservation,
 ) -> ObservationRegionAssignment | None:
@@ -498,7 +505,11 @@ def _assignment_for_observation(
     center_y = (y0 + y1) / 2.0
     compact_text = _compact_text(observation.normalized_text)
     matches: list[tuple[_RoleRectMm, float]] = []
-    for role in _role_rectangles(profile):
+    for role in _role_rectangles(
+        profile,
+        page_width_mm=page_width_mm,
+        page_height_mm=page_height_mm,
+    ):
         role_x0, role_y0, role_x1, role_y1 = role.box
         if not (
             role_x0 <= center_x <= role_x1
@@ -540,6 +551,8 @@ def _assignment_for_observation(
 def _observation_assignments(
     *,
     profile: _Profile,
+    page_width_mm: float,
+    page_height_mm: float,
     page_index: int,
     observations: Sequence[TextObservation],
 ) -> tuple[ObservationRegionAssignment, ...]:
@@ -549,6 +562,8 @@ def _observation_assignments(
         if (
             assignment := _assignment_for_observation(
                 profile=profile,
+                page_width_mm=page_width_mm,
+                page_height_mm=page_height_mm,
                 page_index=page_index,
                 observation=observation,
             )
@@ -625,6 +640,8 @@ def match_welli_layout_profile(
         text_anchor_evidence_codes=text_anchor_evidence,
         assignments=_observation_assignments(
             profile=profile,
+            page_width_mm=page_width_pt * MM_PER_PDF_POINT,
+            page_height_mm=page_height_pt * MM_PER_PDF_POINT,
             page_index=page_index,
             observations=observations,
         ),
@@ -656,6 +673,41 @@ def _lattice_cell(
     ):
         return None
     return (column, row)
+
+
+def _has_watermark_lattice_quorum(
+    centers: Sequence[tuple[TextObservation, float, float]],
+    *,
+    spacing_x_mm: float,
+    spacing_y_mm: float,
+) -> bool:
+    for _origin, origin_x, origin_y in centers:
+        cells: dict[tuple[int, int], TextObservation] = {}
+        has_conflict = False
+        for observation, center_x, center_y in centers:
+            cell = _lattice_cell(
+                x_mm=center_x,
+                y_mm=center_y,
+                origin_x_mm=origin_x,
+                origin_y_mm=origin_y,
+                spacing_x_mm=spacing_x_mm,
+                spacing_y_mm=spacing_y_mm,
+            )
+            if cell is None:
+                continue
+            if cell in cells:
+                has_conflict = True
+                break
+            cells[cell] = observation
+        if has_conflict:
+            continue
+        if (
+            len(cells) >= _MIN_WATERMARK_NATIVE_LINE_COUNT
+            and len({cell[0] for cell in cells}) >= 2
+            and len({cell[1] for cell in cells}) >= 3
+        ):
+            return True
+    return False
 
 
 def welli_same_page_watermark_observation_ids(
@@ -699,24 +751,11 @@ def welli_same_page_watermark_observation_ids(
         for observation in candidates
         for bbox in (_bbox_mm(observation),)
     )
-    origin_x = min(center[1] for center in centers)
-    origin_y = min(center[2] for center in centers)
     spacing_x, spacing_y = profile.watermark_spacing_mm
-    cells: dict[tuple[int, int], TextObservation] = {}
-    for observation, center_x, center_y in centers:
-        cell = _lattice_cell(
-            x_mm=center_x,
-            y_mm=center_y,
-            origin_x_mm=origin_x,
-            origin_y_mm=origin_y,
-            spacing_x_mm=spacing_x,
-            spacing_y_mm=spacing_y,
-        )
-        if cell is None or cell in cells:
-            return frozenset()
-        cells[cell] = observation
-    if len(cells) < _MIN_WATERMARK_NATIVE_LINE_COUNT:
-        return frozenset()
-    if len({cell[0] for cell in cells}) < 2 or len({cell[1] for cell in cells}) < 3:
+    if not _has_watermark_lattice_quorum(
+        centers,
+        spacing_x_mm=spacing_x,
+        spacing_y_mm=spacing_y,
+    ):
         return frozenset()
     return frozenset(observation.observation_id for observation in candidates)
