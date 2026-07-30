@@ -48,11 +48,29 @@ describe("inspectionItemPresentation", () => {
       item_id: "item-3",
       raw_text: "M8",
       status: "kept",
+      balloon_required: true,
       active: true,
     })).toMatchObject({
       status: "confirmed",
       statusLabel: zhCN.inspection.statusConfirmed,
     });
+  });
+
+  test("kept 但未选择气泡时继续显示为待处理", () => {
+    const item = {
+      item_id: "balloon-pending-item",
+      raw_text: "3.2",
+      status: "kept",
+      requires_confirmation: false,
+      balloon_required: null,
+      active: true,
+    } as const;
+
+    expect(inspectionItemPresentation(item)).toMatchObject({
+      status: "pending",
+      statusLabel: "待选择气泡",
+    });
+    expect(isReviewRequiredItem(item)).toBe(true);
   });
 
   test("精确 auto_accepted 显示自动通过且候选编号明确待统一编号", () => {
@@ -62,6 +80,7 @@ describe("inspectionItemPresentation", () => {
         raw_text: "10",
         status: "auto_accepted",
         requires_confirmation: false,
+        balloon_required: true,
         acceptance_source: "confidence_policy",
         confidence_decision: {
           band: "high",
@@ -144,6 +163,7 @@ describe("inspectionItemPresentation", () => {
         active: true,
         status: "auto_accepted",
         requires_confirmation: false,
+        balloon_required: true,
         acceptance_source: "confidence_policy",
         confidence_decision: {
           band: "high",
@@ -369,7 +389,11 @@ describe("inspectionItemPresentation", () => {
     },
     {
       name: "已确认 SIP 字段映射为 confirmed",
-      item: { active: true, sip_detail_fields_confirmed: true },
+      item: {
+        active: true,
+        sip_detail_fields_confirmed: true,
+        balloon_required: false,
+      },
       balloon: {},
       expected: "confirmed",
     },

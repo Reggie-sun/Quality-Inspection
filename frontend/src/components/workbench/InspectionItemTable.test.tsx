@@ -851,6 +851,7 @@ test("审核队列保留原列表信息密度，仅用状态区分待人工审�
       raw_text: "自动项",
       status: "auto_accepted",
       requires_confirmation: false,
+      balloon_required: true,
       acceptance_source: "confidence_policy" as const,
       confidence_decision: {
         band: "high" as const,
@@ -925,6 +926,27 @@ test("审核队列保留原列表信息密度，仅用状态区分待人工审�
   expect(screen.getByRole("row", { name: /自动项/ }).textContent)
     .not.toContain("typed_schema_complete");
   expect(screen.queryByRole("row", { name: /中置信项/ })).toBeNull();
+});
+
+test("已保留但未选择气泡的项目仍留在待人工审核筛选", () => {
+  render(
+    <InspectionItemTable
+      items={[{
+        item_id: "balloon-pending",
+        raw_text: "3.2",
+        status: "kept",
+        requires_confirmation: false,
+        balloon_required: null,
+        active: true,
+      }]}
+      balloons={[]}
+      filter="review_required"
+      onSelectItem={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByRole("row", { name: /3.2.*待选择气泡/ })).not.toBeNull();
+  expect(screen.queryByText("没有符合条件的检验项。")).toBeNull();
 });
 
 test("全部筛选保留自动通过项的选择身份", () => {

@@ -563,6 +563,7 @@ describe("InspectionWorkbench", () => {
           raw_text: "M6",
           page_index: 0,
           status: "kept",
+          balloon_required: true,
           active: true,
         }]}
         workingCopy={{
@@ -673,6 +674,7 @@ describe("InspectionWorkbench", () => {
           raw_text: "M6",
           page_index: 0,
           status: "kept",
+          balloon_required: true,
           active: true,
         }]}
         onSave={vi.fn().mockResolvedValue(undefined)}
@@ -759,6 +761,7 @@ describe("InspectionWorkbench", () => {
             raw_text: "M8",
             page_index: 1,
             status: "kept",
+            balloon_required: true,
             active: true,
           },
         ]}
@@ -1766,6 +1769,7 @@ describe("InspectionWorkbench", () => {
         raw_text: "10",
         nominal: "10",
         status: "auto_accepted",
+        balloon_required: true,
         requires_confirmation: false,
         acceptance_source: "confidence_policy" as const,
         confidence_decision: {

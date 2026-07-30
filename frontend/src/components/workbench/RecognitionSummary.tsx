@@ -1,6 +1,9 @@
 import type { BalloonOverlay, ReviewItem } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
-import { isAutoAcceptedItem } from "./inspectionItemPresentation";
+import {
+  isAutoAcceptedItem,
+  isBalloonDecisionPending,
+} from "./inspectionItemPresentation";
 
 
 export type InspectionFilter =
@@ -33,6 +36,9 @@ export function RecognitionSummary({
   const active = items.filter((item) => item.active).length;
   const excluded = items.length - active;
   const autoAccepted = items.filter(isAutoAcceptedItem).length;
+  const balloonDecisionPending = items.filter(
+    isBalloonDecisionPending,
+  ).length;
   const manualBalloons = balloons.filter(
     (balloon) =>
       balloon.status !== "deleted" && balloon.placementStatus === "manual_required",
@@ -69,7 +75,7 @@ export function RecognitionSummary({
       value: "review_required",
       label: zhCN.summary.reviewRequired,
       testId: "summary-review-count",
-      count: manualReviewCount,
+      count: manualReviewCount + balloonDecisionPending,
     },
     {
       value: "manual_required",

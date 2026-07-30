@@ -106,6 +106,27 @@ test("气泡人工放置统计不依赖待确认来源", () => {
   expect(screen.getByTestId("summary-manual-count").textContent).toBe("1");
 });
 
+test("已保留但未选择气泡的项目继续计入待人工审核", () => {
+  render(
+    <RecognitionSummary
+      items={[{
+        item_id: "balloon-pending",
+        raw_text: "3.2",
+        status: "kept",
+        requires_confirmation: false,
+        balloon_required: null,
+        active: true,
+      }]}
+      balloons={[]}
+      manualReviewCount={0}
+      filter="review_required"
+      onFilterChange={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByTestId("summary-review-count").textContent).toBe("1");
+});
+
 test("自动通过、人工审核、放置人工处理与碰撞计数彼此独立", () => {
   const onFilterChange = vi.fn();
   render(
@@ -116,6 +137,7 @@ test("自动通过、人工审核、放置人工处理与碰撞计数彼此独�
           raw_text: "10",
           status: "auto_accepted",
           requires_confirmation: false,
+          balloon_required: true,
           acceptance_source: "confidence_policy",
           confidence_decision: {
             band: "high",

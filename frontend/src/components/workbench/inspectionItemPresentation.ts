@@ -82,10 +82,11 @@ function inspectionItemStatus(
   if (!item.active) return "excluded";
   if (balloon?.placementStatus === "manual_required") return "manual";
   if ((balloon?.collisionFlags?.length ?? 0) > 0) return "collision";
-  if (isAutoAcceptedItem(item)) return "auto_accepted";
   if (item.requires_confirmation === true || item.status === "pending") {
     return "pending";
   }
+  if (isBalloonDecisionPending(item)) return "pending";
+  if (isAutoAcceptedItem(item)) return "auto_accepted";
   if (item.status === "kept" || item.sip_detail_fields_confirmed === true) {
     return "confirmed";
   }
@@ -102,6 +103,17 @@ export function isAutoAcceptedItem(item: ReviewItem): boolean {
     && item.confidence_decision.policy_version === "candidate-confidence/1";
 }
 
+export function isBalloonDecisionPending(item: ReviewItem): boolean {
+  const inspectionDecisionResolved =
+    item.status === "kept"
+    || item.sip_detail_fields_confirmed === true
+    || isAutoAcceptedItem(item);
+  return item.active === true
+    && item.requires_confirmation !== true
+    && inspectionDecisionResolved
+    && (item.balloon_required === null || item.balloon_required === undefined);
+}
+
 export function isAutoAcceptedCandidateProjection(
   item: ReviewItem,
   candidate: ProjectWorkbenchCandidate,
@@ -113,8 +125,10 @@ export function isAutoAcceptedCandidateProjection(
 }
 
 export function isReviewRequiredItem(item: ReviewItem): boolean {
-  if (!item.active || isAutoAcceptedItem(item)) return false;
+  if (!item.active) return false;
   if (item.requires_confirmation === true) return true;
+  if (isBalloonDecisionPending(item)) return true;
+  if (isAutoAcceptedItem(item)) return false;
   return item.status !== "kept";
 }
 
@@ -149,6 +163,8 @@ export function inspectionItemPresentation(
       ? zhCN.workbench.unknown
       : zhCN.inspection.sourcePage(page),
     status,
-    statusLabel: INSPECTION_ITEM_STATUS_LABELS[status],
+    statusLabel: isBalloonDecisionPending(item)
+      ? zhCN.inspection.statusBalloonPending
+      : INSPECTION_ITEM_STATUS_LABELS[status],
   };
 }

@@ -196,6 +196,7 @@ export const zhCN = {
     confirmSip: "确认当前检验项 SIP",
     cancelSip: "取消当前检验项 SIP 修改",
     statusPending: "待人工审核",
+    statusBalloonPending: "待选择气泡",
     statusAutoAccepted: "自动通过",
     autoAcceptedCandidateNumber: (number: number) =>
       `自动通过气泡 ${number}，待统一编号`,

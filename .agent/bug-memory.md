@@ -122,3 +122,26 @@
   主工作区仍为 `323px`；7 个状态卡单排，列表行保留序号、原文/类型和完整状态，
   console error / warning 为 `0 / 0`。
 - Change: `ui: prioritize inspection review workspace`
+
+## BUG-20260730-confirmed-item-still-blocks-freeze
+
+- Status: 已解决
+- First reported: 2026-07-30
+- Last reported: 2026-07-30
+- Recurrence: 1
+- Surface: `inspectionItemPresentation`、检验项待处理筛选、识别汇总与正式气泡门禁
+- Symptom: 检验项列表和详情显示绿色“已确认”，待人工审核筛选为空，但“冻结检验项”仍禁用
+- Previously correct behavior: 任何仍会阻止正式气泡的有效检验项都必须继续显示为待处理并可从待处理筛选定位；只有审核结论和气泡选择都完整后才显示“已确认”
+- Reproduction: 当前真实项目中 coverage blocker 和 review-required 都为 0，但 3 个 active kept 项的 `balloon_required` 仍为 null；列表将它们显示为“已确认”，`FreezeReviewButton.hasResolvedReview()` 同时因 null 气泡选择返回 false
+- Root cause: `inspectionItemStatus()` 只依据 `status="kept"` 投影“已确认”，`isReviewRequiredItem()` 也将 kept 项移出人工队列；两者没有复用正式气泡门禁所要求的 `balloon_required != null` 条件
+- Fix: 新增共享 `isBalloonDecisionPending()` 投影，将审核结论已完成但
+  `balloon_required` 仍为空的 active 项统一显示为“待选择气泡”、保留在待人工审核
+  筛选，并补入汇总计数；未改变 Review API、schema 或冻结/生成/确认的既有顺序语义
+- Regression check: TDD RED 先由 presentation、summary、table 三层测试复现；
+  focused workbench 测试 `114/114` 通过，frontend 全量测试 `214/214` 通过；
+  `npm run build` 成功（仅保留既有 bundle-size warning）
+- Runtime proof: Chrome MCP 在当前真实项目
+  `fb0572f9-4401-4d05-95ae-fde26b28d1d3` 验证汇总“待人工审核 3”，列表保留
+  candidate 3、6、82 并显示“待选择气泡”；冻结/生成/确认仍按顺序禁用，
+  无横向溢出，console error / warning 为 `0 / 0`
+- Change: `fix: keep bubble decisions in review queue`
