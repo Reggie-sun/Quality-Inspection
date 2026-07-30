@@ -1581,3 +1581,114 @@ git commit -m "docs: close P0-A2 layout routing verification"
 
 后续只有在各 Task 的 RED/GREEN、固定 corpus diagnostic、focused/full suite、
 contract check 和独立 reviewer 均有真实证据时，才继续更新本节。
+
+### Task 8 Diagnostic Gate
+
+- Status: `rejected / blocker`。Task 9 未获准开始；固定 count 未调整，未增加
+  filename/hash/source-ID allowlist。
+- Helper TDD:
+  - RED:
+    `tests/unit/helpers/test_welli_layout_regression.py` 因 module 不存在而 collection
+    error。
+  - GREEN:
+    `python -m pytest -q -p no:cacheprovider
+    tests/unit/helpers/test_welli_layout_regression.py` → `4 passed`。
+  - 首次 live run 暴露 helper 把 Native span 错当 snapshot expected identity；安全
+    计数证明 15 个文档的差集只包含 Native span，`snapshot_only_count=0`。helper
+    改为复用 production `selected_observations()` /
+    `selected_visual_observations()` Owner，并新增 line + child span 回归用例。
+- Corpus input summary（不记录 private path、basename 或 raw text）:
+  - unique documents: `15`
+  - duplicate documents: `0`
+  - pages: `17`
+  - parseable/high-confidence matched pages: `15`
+  - scanned/unsupported pages: `2`
+- Determinism:
+  - run 1 exit: `0`
+  - run 2 exit: `0`
+  - `cmp` exit: `0`
+  - canonical `report_sha256`:
+    `e071d6b8977f7951843f42ca54462aee04397da28ec10f9af2ebcc3b573c55eb`
+  - identical report-file SHA-256:
+    `a491e809179c5ce1f42891f01da803032050bc31418f96537716a4d84930f8d6`
+- Actual aggregate:
+  - control candidate source count: `1312`
+  - current candidate source count: `1267`
+  - safe candidate reroutes: `45`（expected `56`）
+  - revision marker reroutes: `45`（expected `45`）
+  - revision description reroutes: `0`（expected `1`）
+  - title metadata candidate reroutes: `0`（expected `7`）
+  - page-frame candidate reroutes: `0`（expected `3`）
+  - WELLI watermark Native lines: `30`（expected `184`）
+  - revision engineering-preserved lines: `5`
+  - layout-resolved visual observations: `50`
+  - required visual observations: `1022`
+  - resolved visual IDs in planned batches: `0`
+  - Coverage blocking count: `0`
+
+#### Blocker Evidence By Source Hash / Page / Profile
+
+- Revision-description delta:
+  - `322d56b00456f495830386b8dc50a32e34086a5bc66d4735e2c3c735d5fbc57d`,
+    page `0`, `welli-a4-portrait/1`: one control candidate assigned
+    `revision_description` remains a candidate.
+  - `8fffd93fa7f055f9fe1a7da25bc85630910bdfc2ea86b2ace6ec54979f0a515e`,
+    page `0`, `welli-a3-landscape/1`: one control candidate assigned
+    `revision_description` remains a candidate.
+  - Result: preservation retains both rows; the fixed gate requires one safe description
+    reroute and one engineering exception.
+- Title candidate delta:
+  - `322d56b00456f495830386b8dc50a32e34086a5bc66d4735e2c3c735d5fbc57d`,
+    page `0`, A4 portrait: `title_approval_context=1`.
+  - `44a51de5112ebf92319bcbaed65642643818a1b0ed5bfbcb8308b673dab38392`,
+    page `0`, A3 landscape: `title_metadata_value=1`.
+  - `687e7b9fb46e9a55cb52e32669b3c9577e6deccf5bb1b12175309440a5d7739e`,
+    page `0`, A3 portrait: `title_approval_context=1`.
+  - `a33a163a2580a46227f7840283b28399690316f06390afb52b5a70dad0cc6d06`,
+    page `0`, A4 portrait:
+    `title_approval_context=1,title_metadata_value=1`.
+  - `ffee22f2e392f309d3d0acfc2edadc4a8d5330a9bc28009263af5d8597074a86`,
+    page `0`, A4 portrait: `title_metadata_value=2`.
+  - Result: all `7` control candidate sources remain candidates; current matcher role split is
+    four metadata and three approval, and the broad engineering-preservation path prevents
+    the expected safe reroutes.
+- Page-frame delta:
+  - The three parseable A4 pages above each produce two page-frame assignments, but none of
+    the three expected control candidate source IDs joins those assignments.
+  - Result: `page_frame_reroutes=0`; candidate/assignment lineage does not converge.
+- Watermark delta:
+  - exact text + `-30° ±2°` Native-line candidates total `184`, matching the design
+    baseline; lattice acceptance totals only `30`.
+  - Accepted pages are the A4 portrait sources
+    `322d56b00456f495830386b8dc50a32e34086a5bc66d4735e2c3c735d5fbc57d`
+    page `0` (`9`),
+    `a33a163a2580a46227f7840283b28399690316f06390afb52b5a70dad0cc6d06`
+    page `0` (`9`), and A3 portrait
+    `687e7b9fb46e9a55cb52e32669b3c9577e6deccf5bb1b12175309440a5d7739e`
+    page `0` (`12`).
+  - The remaining `154` exact text+angle sources across `11` matched pages are rejected by
+    the lattice evidence, so the current watermark contract has corpus false negatives.
+
+#### Evidence Boundaries
+
+**Automatic capability**
+
+- Profile support/match counts and deterministic current/control snapshots are verified.
+- Revision-marker rerouting, Coverage exact-once, zero resolved-visual batch leakage, and
+  repeat determinism are verified.
+- The fixed candidate/watermark gate is not verified and rejects Task 8.
+- No human modifications, OCR Provider, CandidateAdvisor, network, review, freeze, numbering,
+  balloon placement, or export ran.
+
+**Human correction cost**
+
+- Confirmed candidate queue reduction is `45`, not the required `56`.
+- Layout-resolved visual count is `50`; unresolved required visual count is `1022`.
+- Quality Owner item/group ground truth is unavailable, so correction time and formal
+  false-exclusion rate remain `unknown`.
+
+**Final delivery correctness**
+
+- ReviewedResult freeze, formal numbering, balloon placement, PDF/Excel/manifest generation
+  and final delivery validation are `not verified`.
+- Automatic diagnostic metrics are not delivery proof.
