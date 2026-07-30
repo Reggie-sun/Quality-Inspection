@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.operations import OperationRecord
 from app.candidates.models import AutomaticResult
+from app.candidates.schemas import stable_candidate_id
 from app.db import engine
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
@@ -264,6 +265,164 @@ def _set_linked_review_state(
     }
     db_session.commit()
     db_session.refresh(working_copy)
+
+
+def _set_technical_requirement_state(
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+    *,
+    confirmed: bool = False,
+) -> None:
+    requirement_id = "requirement-1"
+    items = copy.deepcopy(working_copy.items)
+    item = next(value for value in items if value["item_id"] == "i1")
+    item["technical_requirement_refs"] = [requirement_id]
+    item["inspection_standard"] = (
+        "MANUAL-CONFIRMED" if confirmed else "GB/T 1804-m"
+    )
+    item["sip_detail_fields_confirmed"] = confirmed
+    item["sip_suggestion_provenance"] = {
+        "inspection_standard": requirement_id
+    }
+    working_copy.items = items
+    coverage = copy.deepcopy(working_copy.coverage)
+    coverage["entries"].append(
+        {
+            "observation_id": "requirement-source",
+            "disposition": "reference_context",
+            "source_location_id": "requirement-source",
+            "coordinates": [1, 2, 3, 4],
+            "candidate_id": None,
+            "requires_confirmation": True,
+        }
+    )
+    coverage["review_required_count"] += 1
+    working_copy.coverage = coverage
+    working_copy.technical_requirements = [
+        {
+            "requirement_id": requirement_id,
+            "ordinal": 5,
+            "raw_text": "未注尺寸公差按GB/T 1804-m执行",
+            "normalized_text": "未注尺寸公差按GB/T 1804-m执行",
+            "source_location_ids": ["requirement-source"],
+            "page_index": 0,
+            "coordinates": [[1, 2, 3, 4]],
+            "category": "applicability_rule",
+            "subtype": "general_dimensional_tolerance",
+            "parsed_parameters": {
+                "standard_code": "GB/T 1804",
+                "tolerance_class": "m",
+            },
+            "match_outcome": "matched_items",
+            "matched_candidate_ids": ["i1"],
+            "generated_candidate_id": None,
+            "rule_id": "technical-requirement:general_dimensional_tolerance",
+            "rule_version": "technical-requirement/1",
+            "review_required": True,
+            "review_status": "suggested",
+            "sip_suggestion": {
+                "inspection_item": "未注尺寸公差",
+                "inspection_standard": "GB/T 1804-m",
+                "key_dimension": None,
+                "source_page": 1,
+                "remarks": "未注尺寸公差按GB/T 1804-m执行",
+            },
+        }
+    ]
+    db_session.commit()
+    db_session.refresh(working_copy)
+
+
+def test_requirement_match_override_relinks_suggestions_transactionally(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    before_version = working_copy.version
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=before_version,
+        operator_id="quality-1",
+        command={
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "matched_items",
+            "matched_item_ids": ["typed-1"],
+        },
+    )
+
+    old_target = _item(saved, "i1")
+    new_target = _item(saved, "typed-1")
+    assert "inspection_standard" not in old_target
+    assert old_target["technical_requirement_refs"] == []
+    assert new_target["inspection_standard"] == "GB/T 1804-m"
+    assert new_target["sip_detail_fields_confirmed"] is False
+    assert new_target["sip_suggestion_provenance"][
+        "inspection_standard"
+    ] == "requirement-1"
+    requirement = saved.technical_requirements[0]
+    assert requirement["match_outcome"] == "matched_items"
+    assert requirement["matched_candidate_ids"] == ["typed-1"]
+    assert requirement["review_status"] == "confirmed"
+    assert saved.version == before_version + 1
+    record = db_session.scalar(
+        select(OperationRecord).where(
+            OperationRecord.project_id == saved.project_id
+        )
+    )
+    assert record is not None
+    assert record.command == "set_technical_requirement_match"
+
+
+def test_requirement_global_and_excluded_preserve_confirmed_values(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    _set_technical_requirement_state(
+        working_copy,
+        db_session,
+        confirmed=True,
+    )
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "global_scope",
+        },
+    )
+
+    assert _item(saved, "i1")["inspection_standard"] == "MANUAL-CONFIRMED"
+    global_id = stable_candidate_id(
+        "technical-requirement-candidate",
+        "requirement-1",
+    )
+    global_item = _item(saved, global_id)
+    assert global_item["active"] is True
+    assert global_item["balloon_required"] is False
+    assert saved.technical_requirements[0]["generated_candidate_id"] == global_id
+
+    excluded = review_service.apply(
+        saved.id,
+        expected_version=saved.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "excluded",
+        },
+    )
+    assert _item(excluded, "i1")["inspection_standard"] == "MANUAL-CONFIRMED"
+    assert next(
+        item for item in excluded.items if item["item_id"] == global_id
+    )["active"] is False
+    assert excluded.technical_requirements[0]["review_status"] == "excluded"
 
 
 def _freeze_blockers_with_completed_sip(

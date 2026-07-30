@@ -257,3 +257,47 @@ def test_sip_detail_remarks_are_optional_and_bounded() -> None:
 
     with pytest.raises(ValidationError):
         parse_review_command({**command, "remarks": "注" * 2001})
+
+
+def test_technical_requirement_match_command_is_versioned_review_command() -> None:
+    parsed = parse_review_command(
+        {
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "matched_items",
+            "matched_item_ids": ["item-1", "item-2"],
+        }
+    )
+
+    assert parsed.type == "set_technical_requirement_match"
+    assert parsed.matched_item_ids == ["item-1", "item-2"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        {
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "matched_items",
+            "matched_item_ids": [],
+        },
+        {
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "global_scope",
+            "matched_item_ids": ["item-1"],
+        },
+        {
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "matched_items",
+            "matched_item_ids": ["item-1", "item-1"],
+        },
+    ],
+)
+def test_technical_requirement_match_command_fails_closed(
+    command: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        parse_review_command(command)

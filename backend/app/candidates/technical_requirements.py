@@ -380,7 +380,7 @@ def classify_deburr(text: str) -> _Classification | None:
         category="standalone_check",
         subtype="deburr",
         parsed_parameters={},
-        inspection_item="锐边去毛刺",
+        inspection_item="去毛刺与锐边检查",
         inspection_standard=text,
         key_dimension=None,
     )
