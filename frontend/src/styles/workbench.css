@@ -1729,8 +1729,11 @@
 }
 
 .technical-requirements {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
   overflow: hidden;
-  margin: 0 0 12px;
+  margin: 0;
   border: 1px solid #dbe3ec;
   border-radius: 10px;
   background: #ffffff;
@@ -1776,9 +1779,12 @@
 
 .technical-requirements__list {
   display: grid;
+  align-content: start;
   gap: 0;
+  min-height: 0;
   margin: 0;
   padding: 0;
+  overflow: auto;
   list-style: none;
 }
 

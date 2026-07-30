@@ -447,7 +447,10 @@ export function InspectionWorkbench({
             requirements={workingCopy?.technical_requirements ?? []}
             items={items}
             disabled={reviewCommandsDisabled}
-            onSelectItem={selectItem}
+            onSelectItem={(itemId) => {
+              setFilter("all");
+              return selectItem(itemId);
+            }}
             onCommand={submitCommand}
           />
           <div
