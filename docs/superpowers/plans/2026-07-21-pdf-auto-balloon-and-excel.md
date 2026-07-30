@@ -43,6 +43,14 @@
 - Writer ownership and order: 主线程是唯一 writer；先 RED tests，再移除按钮并实现自动调用，随后 focused/full frontend tests、production build、Chrome active/failure surface smoke、focused diff review 和单独 commit。
 - Next verification: `npm test -- --run src/components/workbench/reviewFinalization.test.ts src/components/workbench/ProjectWorkbenchApp.test.tsx src/components/workbench/ExportPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx`；预期旧实现因仍渲染三按钮、不会自动 prepare、导出前不会 confirm 而失败。
 
+### Workbench refresh default-filter amendment — 2026-07-30
+
+- Selected lane: `Standard`。本次只修复 React workbench 刷新后的初始筛选状态，但需要 focused regression 与真实 Chrome refresh smoke；不改变 API/schema、backend Owner、审核语义或持久化数据。
+- Selected plan and evidence: 本文件仍是唯一 current plan。用户以刷新后的实际页面截图明确要求默认选中“全部”，当前 `InspectionWorkbench` 则把初始 `filter` 硬编码为 `review_required`。
+- Validation action: `continue`。先新增新挂载时展示全部检验项的 RED regression，再把唯一初始筛选 Owner 改为 `all`。
+- Allowed paths and unchanged contract: 只允许修改 `frontend/src/components/workbench/InspectionWorkbench.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx` 与本文件；用户主动切换其他筛选、检验项身份、审核计数及 backend 状态全部保持不变。
+- Writer ownership and next verification: 主线程是唯一 writer；运行 focused `InspectionWorkbench` test、frontend full tests、build，并按 `auto-feature-smoke-test` 在现有 workbench 页面刷新后检查“全部”激活。
+
 ### Day 2 continuation amendment — 2026-07-21
 
 本节是对同一 current plan 的原地修订，不创建第二套 plan。修订依据是 D1-T1～D1-T3 的实际接口、当前 `a859fb8` 后继 worktree、fresh D1 task receipts，以及 `0715095` 已带入的 approved design spec。

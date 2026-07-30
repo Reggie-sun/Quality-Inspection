@@ -182,7 +182,7 @@ export function InspectionWorkbench({
   const [selectedBalloonId, setSelectedBalloonId] = useState<string>();
   const [selectedSourceId, setSelectedSourceId] = useState<string>();
   const [pageIndex, setPageIndex] = useState(0);
-  const [filter, setFilter] = useState<InspectionFilter>("review_required");
+  const [filter, setFilter] = useState<InspectionFilter>("all");
   const [metadata, setMetadata] = useState<MetadataDraft>(
     () => metadataDraft(workingCopy),
   );

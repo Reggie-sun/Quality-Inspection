@@ -65,6 +65,64 @@ const duplicateExampleItems = [
 ];
 
 describe("InspectionWorkbench", () => {
+  test("刷新后默认选中全部并展示自动通过与待人工审核项", () => {
+    const items = [
+      {
+        item_id: "auto-item",
+        item_type: "linear_dimension" as const,
+        raw_text: "10",
+        status: "auto_accepted",
+        requires_confirmation: false,
+        acceptance_source: "confidence_policy" as const,
+        confidence_decision: {
+          band: "high" as const,
+          review_disposition: "auto_accepted" as const,
+          policy_version: "candidate-confidence/1" as const,
+          evidence_codes: ["typed_schema_complete"],
+        },
+        balloon_required: true,
+        active: true,
+      },
+      {
+        item_id: "review-item",
+        item_type: "linear_dimension" as const,
+        raw_text: "20",
+        status: "pending",
+        requires_confirmation: true,
+        active: true,
+      },
+    ];
+
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "refresh-default-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 1 },
+          manual_review_count: 1,
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "筛选全部" })
+      .getAttribute("data-active")).toBe("true");
+    expect(screen.getByRole("row", { name: /10/ })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /20/ })).not.toBeNull();
+  });
+
   test("顶部只保留项目摘要与切换图纸，不暴露后台定稿步骤", () => {
     const onReset = vi.fn();
     render(
@@ -1864,13 +1922,12 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "筛选待人工审核" })
+    expect(screen.getByRole("button", { name: "筛选全部" })
       .getAttribute("data-active")).toBe("true");
+    expect(screen.getByRole("row", { name: /10/ })).not.toBeNull();
     expect(screen.getByRole("row", { name: /20/ })).not.toBeNull();
     expect(screen.getByRole("row", { name: /25/ })).not.toBeNull();
-    expect(screen.queryByRole("row", { name: /10/ })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
     const autoAcceptedRow = screen.getByRole("row", { name: /10/ });
     expect(autoAcceptedRow.textContent).toContain("自动通过");
     fireEvent.click(autoAcceptedRow);
@@ -1880,7 +1937,7 @@ describe("InspectionWorkbench", () => {
     expect(screen.queryByText("typed_schema_complete")).toBeNull();
   });
 
-  test("全自动通过结果在默认人工队列中不预选详情，切到全部后才可选择编辑", () => {
+  test("全自动通过结果在默认全部筛选中可直接选择编辑", () => {
     const items = [{
       item_id: "only-auto-item",
       item_type: "linear_dimension" as const,
@@ -1922,15 +1979,13 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "筛选待人工审核" })
+    expect(screen.getByRole("button", { name: "筛选全部" })
       .getAttribute("data-active")).toBe("true");
-    expect(screen.getByText("没有符合条件的检验项。")).not.toBeNull();
     expect(screen.queryByRole("article", {
       name: /检验项/,
     })).toBeNull();
     expect(screen.queryByRole("textbox", { name: "基本尺寸：30" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
     const row = screen.getByRole("row", { name: /30/ });
     expect(row.getAttribute("data-selected")).toBe("false");
     fireEvent.click(row);
@@ -2005,7 +2060,7 @@ describe("InspectionWorkbench", () => {
     }));
   });
 
-  test("技术要求匹配项跳转会展示默认人工队列外的目标", () => {
+  test("技术要求匹配项跳转会从其他筛选恢复全部并选中目标", () => {
     const items = [{
       item_id: "auto-dimension-100",
       item_type: "linear_dimension" as const,
@@ -2062,6 +2117,9 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
+    expect(screen.getByRole("button", { name: "筛选全部" })
+      .getAttribute("data-active")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "筛选待人工审核" }));
     expect(screen.getByRole("button", { name: "筛选待人工审核" })
       .getAttribute("data-active")).toBe("true");
     expect(screen.queryByRole("row", { name: /100/ })).toBeNull();
