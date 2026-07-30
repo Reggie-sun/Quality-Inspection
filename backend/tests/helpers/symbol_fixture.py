@@ -183,6 +183,7 @@ def _negative_label(
     variant: str | None,
     bbox: tuple[float, float, float, float],
     text: str | None = None,
+    expected_disposition: str = "ambiguous",
 ) -> dict[str, Any]:
     if variant is not None:
         _draw_negative_geometry(page, variant=variant, bbox=bbox)
@@ -193,7 +194,7 @@ def _negative_label(
         "bbox_pdf": list(bbox),
         "symbol_kinds": ["frozen_negative"],
         "negative_family": negative_family,
-        "expected_disposition": "ambiguous",
+        "expected_disposition": expected_disposition,
         "expected_projection": None,
     }
 
@@ -306,6 +307,11 @@ def _populate_page(
                 variant=variant,
                 bbox=bbox,
                 text=text,
+                expected_disposition=(
+                    "non_inspection"
+                    if family == "view_or_section_label" and text == "A-A"
+                    else "ambiguous"
+                ),
             )
         )
     return labels

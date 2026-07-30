@@ -578,8 +578,8 @@ def test_symbol_fixture_negative_regions_do_not_create_items(
                 sources=sources,
             )
         ]
-        semantic_coverage_ids = [
-            entry["observation_id"]
+        semantic_coverage = [
+            entry
             for entry in symbol_flow.coverage_entries
             if entry["disposition"] in {"reference_context", "non_inspection"}
             and _source_overlaps_label(
@@ -589,6 +589,27 @@ def test_symbol_fixture_negative_regions_do_not_create_items(
                 sources=sources,
             )
         ]
+        expected_semantic_disposition = label["expected_disposition"]
+        if expected_semantic_disposition in {
+            "reference_context",
+            "non_inspection",
+        }:
+            semantic_coverage_errors = (
+                []
+                if len(semantic_coverage) == 1
+                and semantic_coverage[0]["disposition"]
+                == expected_semantic_disposition
+                else [
+                    f"{entry['observation_id']}:{entry['disposition']}"
+                    for entry in semantic_coverage
+                ]
+                or ["missing"]
+            )
+        else:
+            semantic_coverage_errors = [
+                f"{entry['observation_id']}:{entry['disposition']}"
+                for entry in semantic_coverage
+            ]
         item_ids = [
             item["item_id"]
             for item in symbol_flow.working_items
@@ -602,7 +623,7 @@ def test_symbol_fixture_negative_regions_do_not_create_items(
         comparisons[label["label_id"]] = {
             "visual_observations": visual_ids,
             "candidates": candidate_ids,
-            "semantic_coverage": semantic_coverage_ids,
+            "semantic_coverage": semantic_coverage_errors,
             "items": item_ids,
         }
 

@@ -71,6 +71,17 @@ def test_primary_disposition_does_not_capture_engineering_annotations(
     assert classify_primary_disposition(_observation(raw_text)) is None
 
 
+@pytest.mark.parametrize("raw_text", ["25", "II"])
+def test_context_free_label_gate_yields_to_visual_context(raw_text: str) -> None:
+    assert (
+        classify_primary_disposition(
+            _observation(raw_text),
+            has_visual_context=True,
+        )
+        is None
+    )
+
+
 def test_repeated_overlay_requires_distinct_pages_and_stable_position() -> None:
     first = _observation("CONFIDENTIAL", observation_id="first", page_index=0)
     second = _observation(

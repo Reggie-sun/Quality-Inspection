@@ -142,6 +142,7 @@ def repeated_page_overlay_observation_ids(
 def classify_primary_disposition(
     observation: TextObservation,
     *,
+    has_visual_context: bool = False,
     repeated_overlay_observation_ids: AbstractSet[str] = frozenset(),
 ) -> PrimaryDispositionDecision | None:
     normalized = normalize_text(observation.normalized_text or observation.raw_text)
@@ -161,12 +162,16 @@ def classify_primary_disposition(
             reason="section_view_label",
         )
     if STANDALONE_NUMBER.fullmatch(normalized):
+        if has_visual_context:
+            return None
         return PrimaryDispositionDecision(
             disposition="ambiguous",
             reason="standalone_number",
             requires_confirmation=True,
         )
     if STANDALONE_ROMAN_LABEL.fullmatch(normalized.upper()):
+        if has_visual_context:
+            return None
         return PrimaryDispositionDecision(
             disposition="ambiguous",
             reason="standalone_roman_label",

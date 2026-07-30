@@ -182,6 +182,11 @@ def candidate_snapshot_from_inventory(
     observations = _selected_observations(pages)
     repeated_overlay_ids = repeated_page_overlay_observation_ids(observations)
     visual_observations = selected_visual_observations(pages)
+    visually_contextualized_text_ids = {
+        observation_id
+        for visual_observation in visual_observations
+        for observation_id in visual_observation.associated_text_observation_ids
+    }
     candidates: list[dict[str, Any]] = []
     coverage_entries: list[CoverageEntry] = []
     duplicate_inputs: list[DuplicateCandidate] = []
@@ -229,7 +234,14 @@ def candidate_snapshot_from_inventory(
         if requirement is not None:
             candidate = requirement
         else:
-            decision = classify_primary_disposition(observation)
+            has_visual_context = (
+                observation.observation_id
+                in visually_contextualized_text_ids
+            )
+            decision = classify_primary_disposition(
+                observation,
+                has_visual_context=has_visual_context,
+            )
             if decision is None:
                 if composite := _composite_at(observations, index):
                     candidate, members = composite
@@ -249,6 +261,7 @@ def candidate_snapshot_from_inventory(
             if decision is None:
                 decision = classify_primary_disposition(
                     observation,
+                    has_visual_context=has_visual_context,
                     repeated_overlay_observation_ids=repeated_overlay_ids,
                 )
             coverage_entries.append(

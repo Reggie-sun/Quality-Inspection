@@ -867,7 +867,7 @@ def test_ambiguous_promotion_requires_local_parser_success(tmp_path: Path) -> No
 def test_existing_text_payload_update_recomputes_duplicate_suggestions(
     tmp_path: Path,
 ) -> None:
-    source, pages, snapshot = drawing_fixture(tmp_path, raw_text="10")
+    source, pages, snapshot = drawing_fixture(tmp_path, raw_text="10±0.1")
     candidate = dict(snapshot.candidates[0])
     candidate["payload"] = {
         **candidate["payload"],
@@ -881,7 +881,7 @@ def test_existing_text_payload_update_recomputes_duplicate_suggestions(
     )
     provider = RecordingVisionProvider(
         payload=advisor_payload(
-            "10",
+            "10±0.1",
             "linear_dimension",
             "11",
             True,
