@@ -324,6 +324,7 @@ def test_bottom_page_frame_assignment_uses_actual_matched_page_height() -> None:
     assignment = assignments[observation.observation_id]
     assert assignment.cell_id == "page-frame-bottom-1"
     assert assignment.boundary_distance_mm == pytest.approx(0.0)
+    assert "physical_page_outer_edge" in assignment.assignment_evidence_codes
 
 
 def test_revision_marker_and_description_have_distinct_row_identity() -> None:

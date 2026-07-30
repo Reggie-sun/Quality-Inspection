@@ -40,7 +40,16 @@ def _layout_assignment(
     cell_role: str,
     cell_id: str,
     boundary_distance_mm: float = 2.0,
+    physical_page_outer_edge: bool = False,
 ) -> ObservationRegionAssignment:
+    evidence_codes = (
+        "bbox_inside_role",
+        "center_in_role",
+        "horizontal_direction",
+        "single_role",
+    )
+    if physical_page_outer_edge:
+        evidence_codes += ("physical_page_outer_edge",)
     return ObservationRegionAssignment(
         observation_id=observation.observation_id,
         page_index=observation.page_index,
@@ -48,12 +57,7 @@ def _layout_assignment(
         region_id=region_id,  # type: ignore[arg-type]
         cell_role=cell_role,
         cell_id=cell_id,
-        assignment_evidence_codes=(
-            "bbox_inside_role",
-            "center_in_role",
-            "horizontal_direction",
-            "single_role",
-        ),
+        assignment_evidence_codes=evidence_codes,
         boundary_distance_mm=boundary_distance_mm,
         rule_version=WELLI_LAYOUT_RULE_VERSION,
     )
@@ -545,6 +549,7 @@ def test_exact_page_frame_control_number_can_touch_physical_page_edge() -> None:
         cell_role="page_frame_number",
         cell_id="page-frame-bottom-1",
         boundary_distance_mm=0.0,
+        physical_page_outer_edge=True,
     )
 
     decision = classify_primary_disposition(
@@ -557,6 +562,25 @@ def test_exact_page_frame_control_number_can_touch_physical_page_edge() -> None:
     assert decision.disposition == "non_inspection"
     assert decision.reason == "welli_page_frame_number"
     assert decision.rule_version == WELLI_LAYOUT_RULE_VERSION
+
+
+def test_exact_page_frame_control_number_at_internal_band_boundary_is_not_filtered() -> None:
+    observation = _observation("1", observation_id="welli:page-frame-inner-1")
+    assignment = _layout_assignment(
+        observation,
+        region_id="page_frame",
+        cell_role="page_frame_number",
+        cell_id="page-frame-bottom-1",
+        boundary_distance_mm=0.0,
+    )
+
+    decision = classify_primary_disposition(
+        observation,
+        has_visual_context=True,
+        layout_assignment=assignment,
+    )
+
+    assert decision is None
 
 
 @pytest.mark.parametrize(

@@ -151,7 +151,16 @@ def _layout_assignment(
     cell_role: str,
     cell_id: str,
     boundary_distance_mm: float = 2.0,
+    physical_page_outer_edge: bool = False,
 ) -> ObservationRegionAssignment:
+    evidence_codes = (
+        "bbox_inside_role",
+        "center_in_role",
+        "horizontal_direction",
+        "single_role",
+    )
+    if physical_page_outer_edge:
+        evidence_codes += ("physical_page_outer_edge",)
     return ObservationRegionAssignment(
         observation_id=observation.observation_id,
         page_index=observation.page_index,
@@ -159,12 +168,7 @@ def _layout_assignment(
         region_id=region_id,  # type: ignore[arg-type]
         cell_role=cell_role,
         cell_id=cell_id,
-        assignment_evidence_codes=(
-            "bbox_inside_role",
-            "center_in_role",
-            "horizontal_direction",
-            "single_role",
-        ),
+        assignment_evidence_codes=evidence_codes,
         boundary_distance_mm=boundary_distance_mm,
         rule_version="p0-a2-welli-layout/1",
     )
@@ -773,6 +777,7 @@ def test_page_frame_edge_control_number_with_visual_context_is_resolved() -> Non
         cell_role="page_frame_number",
         cell_id="page-frame-bottom-1",
         boundary_distance_mm=0.0,
+        physical_page_outer_edge=True,
     )
     visual = _visual_observation(
         "visual:page-frame-bottom-1",
@@ -798,6 +803,39 @@ def test_page_frame_edge_control_number_with_visual_context_is_resolved() -> Non
         "welli_layout_visual_context"
     )
     assert snapshot.required_visual_observation_ids == ()
+
+
+def test_page_frame_internal_band_boundary_keeps_visual_unresolved() -> None:
+    observation = _text_observation(
+        "1",
+        observation_id="welli:page-frame-inner-1",
+    )
+    assignment = _layout_assignment(
+        observation,
+        region_id="page_frame",
+        cell_role="page_frame_number",
+        cell_id="page-frame-bottom-1",
+        boundary_distance_mm=0.0,
+    )
+    visual = _visual_observation(
+        "visual:page-frame-inner-1",
+        (observation.observation_id,),
+    )
+    page = _page_with_observations(
+        0,
+        (observation,),
+        visual_observations=(visual,),
+        layout_profile_match=_layout_match(0, (assignment,)),
+    )
+
+    snapshot = candidate_snapshot_from_inventory((page,))
+    coverage = {
+        entry.observation_id: entry for entry in snapshot.coverage_entries
+    }
+
+    assert coverage[observation.observation_id].disposition == "candidate"
+    assert coverage[visual.observation_id].disposition == "ambiguous"
+    assert snapshot.required_visual_observation_ids == (visual.observation_id,)
 
 
 def test_technical_requirement_precedes_overlapping_layout_assignment() -> None:

@@ -26,6 +26,7 @@ from app.candidates.disposition import (
     classify_primary_disposition,
     classify_technical_requirement,
     repeated_page_overlay_observation_ids,
+    welli_page_frame_assignment_touches_outer_edge,
 )
 from app.candidates.duplicates import (
     DuplicateCandidate,
@@ -268,7 +269,7 @@ def _layout_snapshot_context(
         assignments_by_id[observation_id] = assignment
         if (
             assignment.boundary_distance_mm < 1.0
-            and assignment.cell_role != "page_frame_number"
+            and not welli_page_frame_assignment_touches_outer_edge(assignment)
         ):
             preservation_ids.add(observation_id)
         elif (

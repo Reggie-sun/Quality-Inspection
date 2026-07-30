@@ -7,6 +7,7 @@ from typing import AbstractSet, Literal, Sequence
 
 from app.candidates.parser import NUMBER, normalize_text, parse_annotation
 from app.candidates.schemas import Candidate, stable_candidate_id
+from app.pdf.layout_profiles import PHYSICAL_PAGE_OUTER_EDGE_EVIDENCE_CODE
 from app.pdf.schemas import ObservationRegionAssignment, TextObservation
 
 
@@ -235,6 +236,10 @@ def _welli_layout_decision(
         and assignment.cell_role == "page_frame_number"
         and WELLI_PAGE_FRAME_NUMBER_BY_CELL_ID.get(assignment.cell_id)
         == normalized
+        and (
+            assignment.boundary_distance_mm >= 1.0
+            or welli_page_frame_assignment_touches_outer_edge(assignment)
+        )
     ):
         return PrimaryDispositionDecision(
             disposition="non_inspection",
@@ -319,6 +324,17 @@ def _welli_layout_decision(
         return None
 
     return None
+
+
+def welli_page_frame_assignment_touches_outer_edge(
+    assignment: ObservationRegionAssignment,
+) -> bool:
+    return (
+        assignment.region_id == "page_frame"
+        and assignment.cell_role == "page_frame_number"
+        and PHYSICAL_PAGE_OUTER_EDGE_EVIDENCE_CODE
+        in assignment.assignment_evidence_codes
+    )
 
 
 def classify_primary_disposition(

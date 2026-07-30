@@ -16,8 +16,10 @@ MM_PER_PDF_POINT = 25.4 / 72.0
 PAGE_SIZE_TOLERANCE_MM = 0.5
 GRID_TOLERANCE_MM = 1.0
 RULE_VERSION = "p0-a2-welli-layout/1"
+PHYSICAL_PAGE_OUTER_EDGE_EVIDENCE_CODE = "physical_page_outer_edge"
 _AXIS_TOLERANCE_MM = 0.05
 _POSITION_CLUSTER_TOLERANCE_MM = 0.1
+_FLOAT_COMPARISON_ABS_TOLERANCE_MM = 1e-9
 _MIN_AXIS_SEGMENT_MM = 1.0
 _HORIZONTAL_ASSIGNMENT_ANGLE_TOLERANCE_DEGREES = 2.0
 _WATERMARK_ANGLE_DEGREES = -30.0
@@ -483,6 +485,26 @@ def _role_boundary_distance(
     )
 
 
+def _touches_physical_page_outer_edge(
+    *,
+    bbox: tuple[float, float, float, float],
+    role: _RoleRectMm,
+    page_height_mm: float,
+) -> bool:
+    if role.region_id != "page_frame":
+        return False
+    _, y0, _, y1 = bbox
+    _, role_y0, _, role_y1 = role.box
+    return (
+        role_y0 == 0.0
+        and abs(y0) <= _FLOAT_COMPARISON_ABS_TOLERANCE_MM
+    ) or (
+        role_y1 == page_height_mm
+        and abs(y1 - page_height_mm)
+        <= _FLOAT_COMPARISON_ABS_TOLERANCE_MM
+    )
+
+
 def _assignment_for_observation(
     *,
     profile: _Profile,
@@ -530,6 +552,20 @@ def _assignment_for_observation(
     if len(matches) != 1:
         return None
     role, boundary_distance = matches[0]
+    assignment_evidence_codes = (
+        "bbox_inside_role",
+        "center_in_role",
+        "horizontal_direction",
+        "single_role",
+    )
+    if _touches_physical_page_outer_edge(
+        bbox=bbox,
+        role=role,
+        page_height_mm=page_height_mm,
+    ):
+        assignment_evidence_codes += (
+            PHYSICAL_PAGE_OUTER_EDGE_EVIDENCE_CODE,
+        )
     return ObservationRegionAssignment(
         observation_id=observation.observation_id,
         page_index=page_index,
@@ -537,12 +573,7 @@ def _assignment_for_observation(
         region_id=role.region_id,  # type: ignore[arg-type]
         cell_role=role.cell_role,
         cell_id=role.cell_id,
-        assignment_evidence_codes=(
-            "bbox_inside_role",
-            "center_in_role",
-            "horizontal_direction",
-            "single_role",
-        ),
+        assignment_evidence_codes=assignment_evidence_codes,
         boundary_distance_mm=boundary_distance,
         rule_version=RULE_VERSION,
     )
