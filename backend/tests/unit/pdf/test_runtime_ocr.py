@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import struct
+from dataclasses import replace
 from pathlib import Path
 
 import pymupdf
@@ -8,6 +9,8 @@ import pytest
 
 from app.config import Settings
 from app.pdf.inventory import build_inventory as build_native_inventory
+from app.pdf.schemas import LayoutProfileMatch, ObservationRegionAssignment
+from app.processing import runtime_recognition as runtime_recognition_module
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.providers.base import OcrObservation, OcrResult
 
@@ -152,6 +155,76 @@ def test_hybrid_image_region_appends_separate_coordinate_safe_ocr_observation(
     assert ocr_candidate["source_truth_preserved"] is True
     assert provider.calls == [(120, 80)]
     assert factory_calls == ["factory"]
+
+
+def test_runtime_ocr_preserves_native_layout_assignments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf_path = tmp_path / "hybrid-layout-sidecar.pdf"
+    _write_pdf(
+        pdf_path,
+        native_text="M6",
+        image_rect=pymupdf.Rect(100.0, 100.0, 160.0, 140.0),
+    )
+    native = build_native_inventory(pdf_path)[0]
+    native_line = next(
+        observation
+        for observation in native.observations
+        if observation.source_type == "native"
+        and observation.observation_level == "line"
+    )
+    assignment = ObservationRegionAssignment(
+        observation_id=native_line.observation_id,
+        page_index=0,
+        profile_id="welli-a4-portrait/1",
+        region_id="title_block",
+        cell_role="title_metadata_value",
+        cell_id="title-metadata-value",
+        assignment_evidence_codes=(
+            "bbox_inside_role",
+            "center_in_role",
+            "horizontal_direction",
+            "single_role",
+        ),
+        boundary_distance_mm=2.0,
+        rule_version="p0-a2-welli-layout/1",
+    )
+    match = LayoutProfileMatch(
+        page_index=0,
+        profile_id="welli-a4-portrait/1",
+        match_state="high_confidence",
+        geometry_evidence_codes=("body_frame", "revision_grid", "title_grid"),
+        text_anchor_evidence_codes=(
+            "revision_anchor_quorum",
+            "title_anchor_quorum",
+        ),
+        assignments=(assignment,),
+        rule_version="p0-a2-welli-layout/1",
+    )
+    matched_native = replace(native, layout_profile_match=match)
+    monkeypatch.setattr(
+        runtime_recognition_module,
+        "build_native_inventory",
+        lambda *_args, **_kwargs: (matched_native,),
+    )
+    provider = RecordingOcrProvider()
+    factory_calls: list[str] = []
+
+    enhanced = _recognition(provider, factory_calls).build_inventory(pdf_path)
+
+    assert enhanced[0].layout_profile_match is match
+    assert enhanced[0].layout_profile_match.assignments == (assignment,)
+    appended_ocr_ids = {
+        observation.observation_id
+        for observation in enhanced[0].observations
+        if observation.source_type == "ocr"
+    }
+    assert appended_ocr_ids
+    assert all(
+        item.observation_id not in appended_ocr_ids
+        for item in enhanced[0].layout_profile_match.assignments
+    )
 
 
 @pytest.mark.parametrize(

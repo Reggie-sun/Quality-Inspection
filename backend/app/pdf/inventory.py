@@ -11,6 +11,7 @@ import pymupdf
 
 from app.pdf.classification import PageSignals, classify_page
 from app.pdf.coordinates import BBox, PageTransform
+from app.pdf.layout_profiles import match_welli_layout_profile
 from app.pdf.schemas import PageInventory, TextObservation
 from app.pdf.visual_observations import build_page_visual_observations
 
@@ -156,6 +157,14 @@ def build_inventory(
 
             page_area = transform.width * transform.height
             drawings = page.get_drawings()
+            layout_profile_match = match_welli_layout_profile(
+                page_index=page_index,
+                page_width_pt=transform.width,
+                page_height_pt=transform.height,
+                page_rotation=transform.rotation,
+                observations=tuple(observations),
+                drawings=drawings,
+            )
             signals = PageSignals(
                 native_char_count=native_char_count,
                 native_span_count=native_span_count,
@@ -190,6 +199,7 @@ def build_inventory(
                     render_to_pdf_matrix=transform.render_to_pdf_matrix,
                     observations=tuple(observations),
                     visual_observations=visual_observations,
+                    layout_profile_match=layout_profile_match,
                 )
             )
         return tuple(pages)

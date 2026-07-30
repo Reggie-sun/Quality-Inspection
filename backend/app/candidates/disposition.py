@@ -7,7 +7,8 @@ from typing import AbstractSet, Literal, Sequence
 
 from app.candidates.parser import NUMBER, normalize_text, parse_annotation
 from app.candidates.schemas import Candidate, stable_candidate_id
-from app.pdf.schemas import TextObservation
+from app.pdf.layout_profiles import PHYSICAL_PAGE_OUTER_EDGE_EVIDENCE_CODE
+from app.pdf.schemas import ObservationRegionAssignment, TextObservation
 
 
 INSPECTION_VERB = re.compile(r"检查|检验|检测|测量|确认|验证")
@@ -15,6 +16,7 @@ VERIFIABLE_CRITERION = re.compile(
     r"不得|不允许|应为|应达到|应符合|符合|不大于|不小于|≤|≥|无(?:毛刺|裂纹|缺陷|损伤)"
 )
 PRIMARY_DISPOSITION_RULE_VERSION = "p0-a1-r1"
+WELLI_LAYOUT_RULE_VERSION = "p0-a2-welli-layout/1"
 EXACT_METADATA_LABELS = frozenset(
     {
         "设计",
@@ -53,11 +55,60 @@ REPEATED_OVERLAY_POSITION_GRID = 0.05
 PAGE_FRAME_EDGE_RATIO = 0.02
 TITLE_BLOCK_MIN_X = 0.65
 TITLE_BLOCK_MIN_Y = 0.82
+WELLI_PROFILE_IDS = frozenset(
+    {
+        "welli-a3-landscape/1",
+        "welli-a4-portrait/1",
+        "welli-a3-portrait/1",
+    }
+)
+WELLI_TITLE_FIXED_LABELS = frozenset(
+    {
+        "更改文件号",
+        "版本号",
+        "设计",
+        "签名",
+        "年月日标准化",
+        "年月日",
+        "校对",
+        "工艺",
+        "批准",
+        "审核",
+        "重量",
+        "重量/kg",
+        "比例",
+        "图样代号",
+        "物料编码",
+        "第一角法",
+        "表面积",
+        "共张",
+        "第张",
+    }
+)
+WELLI_ARCHIVE_LABEL_BY_CELL_ID = {
+    "archive-label-1": "借通用件登记",
+    "archive-label-2": "描图",
+    "archive-label-3": "校描",
+    "archive-label-4": "旧底图总号",
+    "archive-label-5": "签字",
+    "archive-label-6": "日期",
+}
+WELLI_REVISION_MARKER_BY_CELL_ID = {
+    "revision-marker-1": "1",
+    "revision-marker-2": "2",
+    "revision-marker-3": "3",
+}
+WELLI_PAGE_FRAME_NUMBER_BY_CELL_ID = {
+    "page-frame-top-1": "1",
+    "page-frame-top-2": "2",
+    "page-frame-bottom-1": "1",
+    "page-frame-bottom-2": "2",
+}
 
 
 @dataclass(frozen=True)
 class PrimaryDispositionDecision:
-    disposition: Literal["non_inspection", "ambiguous"]
+    disposition: Literal["reference_context", "non_inspection", "ambiguous"]
     reason: str
     rule_version: str = PRIMARY_DISPOSITION_RULE_VERSION
     requires_confirmation: bool = False
@@ -163,11 +214,137 @@ def repeated_page_overlay_observation_ids(
     return frozenset(repeated_ids)
 
 
+def _welli_layout_decision(
+    observation: TextObservation,
+    *,
+    normalized: str,
+    layout_assignment: ObservationRegionAssignment | None,
+    engineering_preservation_observation_ids: AbstractSet[str],
+) -> PrimaryDispositionDecision | None:
+    assignment = layout_assignment
+    if (
+        assignment is None
+        or assignment.observation_id != observation.observation_id
+        or assignment.page_index != observation.page_index
+        or assignment.profile_id not in WELLI_PROFILE_IDS
+        or assignment.rule_version != WELLI_LAYOUT_RULE_VERSION
+    ):
+        return None
+
+    if (
+        assignment.region_id == "page_frame"
+        and assignment.cell_role == "page_frame_number"
+        and WELLI_PAGE_FRAME_NUMBER_BY_CELL_ID.get(assignment.cell_id)
+        == normalized
+        and (
+            assignment.boundary_distance_mm >= 1.0
+            or welli_page_frame_assignment_touches_outer_edge(assignment)
+        )
+    ):
+        return PrimaryDispositionDecision(
+            disposition="non_inspection",
+            reason="welli_page_frame_number",
+            rule_version=WELLI_LAYOUT_RULE_VERSION,
+        )
+
+    if assignment.boundary_distance_mm < 1.0:
+        return None
+
+    if (
+        assignment.region_id == "revision_table"
+        and assignment.cell_role == "revision_marker"
+        and WELLI_REVISION_MARKER_BY_CELL_ID.get(assignment.cell_id)
+        == normalized
+    ):
+        return PrimaryDispositionDecision(
+            disposition="reference_context",
+            reason="welli_revision_marker",
+            rule_version=WELLI_LAYOUT_RULE_VERSION,
+        )
+
+    if observation.observation_id in engineering_preservation_observation_ids:
+        return None
+
+    if assignment.region_id == "title_block":
+        if normalized in WELLI_TITLE_FIXED_LABELS:
+            return PrimaryDispositionDecision(
+                disposition="non_inspection",
+                reason="welli_title_fixed_label",
+                rule_version=WELLI_LAYOUT_RULE_VERSION,
+            )
+        if assignment.cell_role == "title_metadata_value":
+            return PrimaryDispositionDecision(
+                disposition="reference_context",
+                reason="welli_title_metadata_value",
+                rule_version=WELLI_LAYOUT_RULE_VERSION,
+            )
+        if assignment.cell_role == "title_approval_context":
+            return PrimaryDispositionDecision(
+                disposition="reference_context",
+                reason="welli_title_approval_context",
+                rule_version=WELLI_LAYOUT_RULE_VERSION,
+            )
+        return None
+
+    if assignment.region_id == "revision_table":
+        if (
+            assignment.cell_role == "revision_header"
+            and normalized in {"标记", "更改描述"}
+        ):
+            return PrimaryDispositionDecision(
+                disposition="non_inspection",
+                reason="welli_revision_header",
+                rule_version=WELLI_LAYOUT_RULE_VERSION,
+            )
+        if assignment.cell_role == "revision_description":
+            return PrimaryDispositionDecision(
+                disposition="reference_context",
+                reason="welli_revision_description",
+                rule_version=WELLI_LAYOUT_RULE_VERSION,
+            )
+        return None
+
+    if assignment.region_id == "archive_strip":
+        if (
+            assignment.cell_role == "archive_label"
+            and WELLI_ARCHIVE_LABEL_BY_CELL_ID.get(assignment.cell_id)
+            == normalized
+        ):
+            return PrimaryDispositionDecision(
+                disposition="non_inspection",
+                reason="welli_archive_label",
+                rule_version=WELLI_LAYOUT_RULE_VERSION,
+            )
+        if assignment.cell_role == "archive_record":
+            return PrimaryDispositionDecision(
+                disposition="reference_context",
+                reason="welli_archive_record",
+                rule_version=WELLI_LAYOUT_RULE_VERSION,
+            )
+        return None
+
+    return None
+
+
+def welli_page_frame_assignment_touches_outer_edge(
+    assignment: ObservationRegionAssignment,
+) -> bool:
+    return (
+        assignment.region_id == "page_frame"
+        and assignment.cell_role == "page_frame_number"
+        and PHYSICAL_PAGE_OUTER_EDGE_EVIDENCE_CODE
+        in assignment.assignment_evidence_codes
+    )
+
+
 def classify_primary_disposition(
     observation: TextObservation,
     *,
     has_visual_context: bool = False,
     repeated_overlay_observation_ids: AbstractSet[str] = frozenset(),
+    layout_assignment: ObservationRegionAssignment | None = None,
+    welli_watermark_observation_ids: AbstractSet[str] = frozenset(),
+    engineering_preservation_observation_ids: AbstractSet[str] = frozenset(),
 ) -> PrimaryDispositionDecision | None:
     normalized = normalize_text(observation.normalized_text or observation.raw_text)
     if normalized in EXACT_METADATA_LABELS:
@@ -184,6 +361,24 @@ def classify_primary_disposition(
         return PrimaryDispositionDecision(
             disposition="non_inspection",
             reason="section_view_label",
+        )
+    layout_decision = _welli_layout_decision(
+        observation,
+        normalized=normalized,
+        layout_assignment=layout_assignment,
+        engineering_preservation_observation_ids=(
+            engineering_preservation_observation_ids
+        ),
+    )
+    if layout_decision is not None:
+        return layout_decision
+    if observation.observation_id in welli_watermark_observation_ids:
+        if observation.observation_id in engineering_preservation_observation_ids:
+            return None
+        return PrimaryDispositionDecision(
+            disposition="non_inspection",
+            reason="welli_same_page_watermark",
+            rule_version=WELLI_LAYOUT_RULE_VERSION,
         )
     if STANDALONE_NUMBER.fullmatch(normalized):
         if has_visual_context:

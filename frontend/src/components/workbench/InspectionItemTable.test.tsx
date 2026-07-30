@@ -118,7 +118,7 @@ test("compact 模式只保留序号、检验项和状态三列", () => {
   ).toHaveLength(3);
 });
 
-test("搜索、状态筛选和紧凑分页可处理大量检验项", () => {
+test("列表不显示搜索框并保留状态筛选和紧凑分页", () => {
   const items = Array.from({ length: 51 }, (_, index) => ({
     item_id: `internal-${index}`,
     raw_text: `检验标注 ${index + 1}`,
@@ -138,11 +138,8 @@ test("搜索、状态筛选和紧凑分页可处理大量检验项", () => {
 
   expect(screen.getByRole("button", { name: "下一页" })).not.toBeNull();
   expect(screen.getByText("第 1 / 2 页")).not.toBeNull();
-  fireEvent.change(screen.getByRole("searchbox", { name: "搜索检验项" }), {
-    target: { value: "标注 51" },
-  });
-  expect(screen.getByRole("row", { name: /检验标注 51/ })).not.toBeNull();
-  expect(screen.queryByRole("row", { name: /检验标注 1$/ })).toBeNull();
+  expect(screen.queryByRole("searchbox", { name: "搜索检验项" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "筛选状态" })).not.toBeNull();
 });
 
 test("紧凑分页只在 DOM 渲染当前页检验项", () => {
@@ -627,7 +624,7 @@ test("待人工审核筛选包含待判定来源", () => {
   expect(screen.getByRole("row", { name: /伟立机器人/ })).not.toBeNull();
 });
 
-test("待判定来源参与状态筛选、搜索和外部选择分页跳转", () => {
+test("待判定来源参与状态筛选和外部选择分页跳转", () => {
   const items = Array.from({ length: 50 }, (_, index) => ({
     item_id: `item-${index}`,
     raw_text: `检验项 ${index + 1}`,
@@ -656,9 +653,6 @@ test("待判定来源参与状态筛选、搜索和外部选择分页跳转", ()
   expect(screen.getByRole("row", { name: /第二页来源标注/ })
     .getAttribute("data-selected")).toBe("true");
 
-  fireEvent.change(screen.getByRole("searchbox", { name: "搜索检验项" }), {
-    target: { value: "第二页来源" },
-  });
   fireEvent.change(screen.getByRole("combobox", { name: "筛选状态" }), {
     target: { value: "source_pending" },
   });

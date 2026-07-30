@@ -650,6 +650,7 @@ def test_denied_group_persists_budget_terminal_before_whole_pdf_failure(
                 coverage_entries=(),
                 expected_observation_ids=(),
                 duplicate_relations=(),
+                required_visual_observation_ids=("visual-1",),
             ),
         )
 

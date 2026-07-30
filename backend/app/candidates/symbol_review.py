@@ -987,7 +987,18 @@ def plan_visual_batches(
     pages: Sequence[PageInventory],
     snapshot: Any,
 ) -> tuple[tuple[VisualBatch, ...], ...]:
-    """Purely schedule all visual observations before any Provider work."""
+    """Purely schedule required visual observations before Provider work."""
+    required_ids = frozenset(snapshot.required_visual_observation_ids)
+    available_ids = {
+        observation.observation_id
+        for page in pages
+        for observation in page.visual_observations
+    }
+    if not required_ids.issubset(available_ids):
+        raise ValueError(
+            "required visual observation is absent from pages"
+        )
+
     planned: list[tuple[VisualBatch, ...]] = []
     for page in pages:
         texts = {
@@ -995,7 +1006,11 @@ def plan_visual_batches(
             for item in page.observations
         }
         ordered = sorted(
-            page.visual_observations,
+            (
+                observation
+                for observation in page.visual_observations
+                if observation.observation_id in required_ids
+            ),
             key=lambda item: (
                 _visual_priority(item, snapshot, texts),
                 item.page_index,

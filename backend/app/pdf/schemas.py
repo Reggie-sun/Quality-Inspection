@@ -37,6 +37,35 @@ class VisualObservation:
 
 
 @dataclass(frozen=True)
+class ObservationRegionAssignment:
+    observation_id: str
+    page_index: int
+    profile_id: str
+    region_id: Literal[
+        "title_block",
+        "revision_table",
+        "archive_strip",
+        "page_frame",
+    ]
+    cell_role: str
+    cell_id: str
+    assignment_evidence_codes: tuple[str, ...]
+    boundary_distance_mm: float
+    rule_version: str
+
+
+@dataclass(frozen=True)
+class LayoutProfileMatch:
+    page_index: int
+    profile_id: str
+    match_state: Literal["high_confidence"]
+    geometry_evidence_codes: tuple[str, ...]
+    text_anchor_evidence_codes: tuple[str, ...]
+    assignments: tuple[ObservationRegionAssignment, ...]
+    rule_version: str
+
+
+@dataclass(frozen=True)
 class PageInventory:
     page_index: int
     width: float
@@ -54,9 +83,12 @@ class PageInventory:
     render_to_pdf_matrix: Matrix
     observations: tuple[TextObservation, ...]
     visual_observations: tuple[VisualObservation, ...] = ()
+    layout_profile_match: LayoutProfileMatch | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         if not self.visual_observations:
             payload.pop("visual_observations")
+        if self.layout_profile_match is None:
+            payload.pop("layout_profile_match")
         return payload

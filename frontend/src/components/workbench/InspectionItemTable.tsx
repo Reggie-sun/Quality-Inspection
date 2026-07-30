@@ -106,7 +106,6 @@ export function InspectionItemTable({
   onCommand,
   onDraftChange,
 }: InspectionItemTableProps) {
-  const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ItemStatus | "all">("all");
   const [page, setPage] = useState(1);
   const balloonByItem = useMemo(
@@ -136,10 +135,7 @@ export function InspectionItemTable({
           filter === "all" || filter === "review_required";
         const matchesStatus =
           statusFilter === "all" || statusFilter === "source_pending";
-        const matchesSearch = entry.source.rawText
-          .toLocaleLowerCase("zh-CN")
-          .includes(search.trim().toLocaleLowerCase("zh-CN"));
-        return matchesSummary && matchesStatus && matchesSearch;
+        return matchesSummary && matchesStatus;
       }
       const item = entry.item;
       const balloon = balloonByItem.get(item.item_id);
@@ -157,12 +153,8 @@ export function InspectionItemTable({
                   ? (balloon?.collisionFlags?.length ?? 0) > 0
                   : true;
       const status = inspectionItemPresentation(item, balloon).status;
-      const matchesSearch = item.raw_text
-        .toLocaleLowerCase("zh-CN")
-        .includes(search.trim().toLocaleLowerCase("zh-CN"));
       return matchesSummary
-        && (statusFilter === "all" || status === statusFilter)
-        && matchesSearch;
+        && (statusFilter === "all" || status === statusFilter);
     })
     .sort((left, right) => {
       if (left.kind === "source" && right.kind === "source") return 0;
@@ -219,12 +211,11 @@ export function InspectionItemTable({
   useEffect(() => {
     if (pendingSources.length === 0) setBatchConfirmationOpen(false);
   }, [pendingSources.length]);
-  useEffect(() => setPage(1), [filter, search, statusFilter]);
+  useEffect(() => setPage(1), [filter, statusFilter]);
   useEffect(() => {
     if (selectedPage !== undefined) setPage(selectedPage);
   }, [
     filter,
-    search,
     selectedItemId,
     selectedPage,
     selectedSourceId,
@@ -264,16 +255,6 @@ export function InspectionItemTable({
       aria-label={zhCN.inspection.region}
     >
       <div className="inspection-list-controls">
-        <label>
-          <span className="visually-hidden">{zhCN.inspection.search}</span>
-          <input
-            type="search"
-            aria-label={zhCN.inspection.search}
-            placeholder={zhCN.inspection.search}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
         <label>
           <span className="visually-hidden">{zhCN.inspection.statusFilter}</span>
           <select
