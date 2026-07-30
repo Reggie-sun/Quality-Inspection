@@ -178,9 +178,6 @@ export const zhCN = {
     cancelSip: "取消当前检验项 SIP 修改",
     statusPending: "待人工审核",
     statusAutoAccepted: "自动通过",
-    confidenceHigh: "高置信度",
-    confidenceMedium: "中置信度",
-    confidenceLow: "低置信度",
     autoAcceptedCandidateNumber: (number: number) =>
       `自动通过气泡 ${number}，待统一编号`,
     statusConfirmed: "已确认",
@@ -267,7 +264,6 @@ export const zhCN = {
     balloonRequired: "需要气泡",
     requiresConfirmation: "需要人工确认",
     confirmationPending: "待人工确认",
-    confidenceEvidence: "置信度依据",
     complexFields: "复杂检验项字段",
     coarseType: "粗分类",
     unspecified: "未指定",

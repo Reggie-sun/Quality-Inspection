@@ -10,7 +10,6 @@ import { zhCN } from "../../copy/zhCN";
 import {
   INSPECTION_ITEM_STATUS_LABELS,
   INSPECTION_ITEM_TYPE_LABELS,
-  confidenceBandLabel,
   inspectionItemPresentation,
   isAutoAcceptedItem,
   isReviewRequiredItem,
@@ -436,9 +435,6 @@ export function InspectionItemTable({
             const collisions = balloon?.collisionFlags
               ?.map((flag) => COLLISION_LABELS[flag] ?? zhCN.workbench.unknown)
               .join("、");
-            const confidenceLabel = confidenceBandLabel(item);
-            const confidenceEvidence =
-              item.confidence_decision?.evidence_codes.join("、");
             return (
               <div
                 key={entry.key}
@@ -476,16 +472,6 @@ export function InspectionItemTable({
                 <span role="cell" className="inspection-item-copy">
                   <strong title={item.raw_text}>{item.raw_text}</strong>
                   <small>{presentation.typeLabel}</small>
-                  {confidenceLabel === undefined ? null : (
-                    <small className="confidence-badge">
-                      {confidenceLabel}
-                    </small>
-                  )}
-                  {confidenceEvidence ? (
-                    <small className="confidence-evidence">
-                      {confidenceEvidence}
-                    </small>
-                  ) : null}
                 </span>
                 {compact ? null : (
                   <span role="cell">

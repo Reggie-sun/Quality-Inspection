@@ -1740,7 +1740,7 @@ describe("InspectionWorkbench", () => {
     }));
   });
 
-  test("默认只展示待人工审核项，切到全部后自动通过项仍可选择编辑", () => {
+  test("自动通过项可选择编辑且列表与详情不显示置信度内部元数据", () => {
     const items = [
       {
         item_id: "auto-item",
@@ -1813,9 +1813,13 @@ describe("InspectionWorkbench", () => {
     expect(screen.queryByRole("row", { name: /10/ })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
-    fireEvent.click(screen.getByRole("row", { name: /10/ }));
+    const autoAcceptedRow = screen.getByRole("row", { name: /10/ });
+    expect(autoAcceptedRow.textContent).toContain("自动通过");
+    fireEvent.click(autoAcceptedRow);
     expect(screen.getByRole("textbox", { name: "基本尺寸：10" })).not.toBeNull();
-    expect(screen.getAllByText("高置信度")).toHaveLength(2);
+    expect(screen.queryByText("高置信度")).toBeNull();
+    expect(screen.queryByText("candidate-confidence/1")).toBeNull();
+    expect(screen.queryByText("typed_schema_complete")).toBeNull();
   });
 
   test("全自动通过结果在默认人工队列中不预选详情，切到全部后才可选择编辑", () => {

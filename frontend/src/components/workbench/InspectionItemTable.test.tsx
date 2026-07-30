@@ -850,7 +850,7 @@ test("空白来源只在列表显示占位符且补全真实文字后才允许 p
   });
 });
 
-test("review_required 默认队列包含中低与未知项但不包含自动通过项", () => {
+test("审核队列保留原列表信息密度，仅用状态区分待人工审核与自动通过", () => {
   const items = [
     {
       item_id: "auto-item",
@@ -908,11 +908,11 @@ test("review_required 默认队列包含中低与未知项但不包含自动通�
 
   expect(screen.queryByRole("row", { name: /自动项/ })).toBeNull();
   expect(screen.getByRole("row", { name: /中置信项/ }).textContent)
-    .toContain("中置信度");
+    .not.toContain("中置信度");
   expect(screen.getByRole("row", { name: /中置信项/ }).textContent)
-    .toContain("typed_schema_complete、coverage_unchecked");
+    .not.toContain("typed_schema_complete、coverage_unchecked");
   expect(screen.getByRole("row", { name: /低置信项/ }).textContent)
-    .toContain("低置信度");
+    .not.toContain("低置信度");
   expect(screen.getByRole("row", { name: /未知项/ }).textContent)
     .toContain("待人工审核");
 
@@ -925,7 +925,11 @@ test("review_required 默认队列包含中低与未知项但不包含自动通�
     />,
   );
   expect(screen.getByRole("row", { name: /自动项/ }).textContent)
-    .toContain("高置信度");
+    .toContain("自动通过");
+  expect(screen.getByRole("row", { name: /自动项/ }).textContent)
+    .not.toContain("高置信度");
+  expect(screen.getByRole("row", { name: /自动项/ }).textContent)
+    .not.toContain("typed_schema_complete");
   expect(screen.queryByRole("row", { name: /中置信项/ })).toBeNull();
 });
 

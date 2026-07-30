@@ -118,18 +118,6 @@ export function isReviewRequiredItem(item: ReviewItem): boolean {
   return item.status !== "kept";
 }
 
-export function confidenceBandLabel(item: ReviewItem): string | undefined {
-  const band = item.confidence_decision?.band;
-  return band === "high"
-    ? zhCN.inspection.confidenceHigh
-    : band === "medium"
-      ? zhCN.inspection.confidenceMedium
-      : band === "low"
-        ? zhCN.inspection.confidenceLow
-        : undefined;
-}
-
-
 export function inspectionItemPresentation(
   item: ReviewItem,
   balloon?: BalloonOverlay,

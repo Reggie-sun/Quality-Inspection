@@ -1257,7 +1257,7 @@ describe("ReviewPanel", () => {
     expect(onDraftChange).toHaveBeenLastCalledWith(false);
   });
 
-  test("详情只读显示 confidence band、policy 与有序 evidence", () => {
+  test("详情不显示 confidence band、policy 或 evidence 内部元数据", () => {
     render(
       <ReviewPanel
         items={[{
@@ -1282,37 +1282,11 @@ describe("ReviewPanel", () => {
       />,
     );
 
-    const provenance = screen.getByRole("group", { name: "置信度依据" });
-    expect(provenance.textContent).toContain("中置信度");
-    expect(provenance.textContent).toContain("candidate-confidence/1");
-    expect(provenance.textContent)
-      .toContain("typed_schema_complete、coverage_unchecked");
-    expect(within(provenance).queryByRole("textbox")).toBeNull();
-    expect(within(provenance).queryByRole("combobox")).toBeNull();
-  });
-
-  test("低置信度详情显示低置信度 badge", () => {
-    render(
-      <ReviewPanel
-        items={[{
-          item_id: "low-confidence-item",
-          item_type: "linear_dimension",
-          raw_text: "20",
-          nominal: "20",
-          status: "pending",
-          confidence_decision: {
-            band: "low",
-            review_disposition: "review_required",
-            policy_version: "candidate-confidence/1",
-            evidence_codes: ["source_signal_invalid"],
-          },
-          active: true,
-        }]}
-        onCommand={vi.fn()}
-        selectedItemId="low-confidence-item"
-      />,
-    );
-
-    expect(screen.getByText("低置信度")).not.toBeNull();
+    expect(screen.queryByRole("group", { name: "置信度依据" })).toBeNull();
+    expect(screen.queryByText("中置信度")).toBeNull();
+    expect(screen.queryByText("candidate-confidence/1")).toBeNull();
+    expect(screen.queryByText(
+      "typed_schema_complete、coverage_unchecked",
+    )).toBeNull();
   });
 });
