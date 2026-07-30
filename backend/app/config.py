@@ -4,6 +4,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.candidates.symbol_routing import SymbolRecognitionMode
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -24,6 +26,7 @@ class Settings(BaseSettings):
     qwen_api_key: str | None = Field(default=None, repr=False)
     qwen_workspace_id: str | None = None
     qwen_model: str = "qwen3-vl-plus"
+    symbol_recognition_mode: SymbolRecognitionMode = "legacy_high_recall"
 
 
 @lru_cache

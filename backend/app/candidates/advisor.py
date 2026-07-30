@@ -4,27 +4,75 @@ import hashlib
 import json
 import re
 import time
+import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from threading import Lock
+from typing import Any, Callable
 
 import pymupdf
+from sqlalchemy.orm import Session
 
+from app.candidates.confidence import (
+    CandidateSourceSignal,
+    normalize_visual_signal,
+)
 from app.candidates.duplicates import (
     DuplicateCandidate,
     DuplicateRelation,
     suggest_cross_view_duplicates,
 )
-from app.candidates.confidence import (
-    CandidateSourceSignal,
-    normalize_visual_signal,
+from app.candidates.local_symbol_resolution import (
+    prepare_local_family_hypotheses,
+    resolve_visual_observation,
 )
 from app.candidates.parser import normalize_text, parse_annotation
 from app.candidates.schemas import stable_candidate_id
+from app.candidates.symbol_escalation_contracts import (
+    MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE,
+    MAX_VISUAL_IN_FLIGHT,
+    MAX_VISUAL_PAGE_WALL_SECONDS,
+    MAX_VISUAL_PRIMARY_GROUPS_PER_PAGE,
+    MAX_VISUAL_PROJECT_WALL_SECONDS,
+)
+from app.candidates.symbol_escalation_planner import (
+    EscalationRequest,
+    plan_symbol_escalation_batches,
+    reserve_escalation_budget_window,
+)
+from app.candidates.routing_evidence import (
+    ESCALATION_ATTEMPT_SCHEMA_VERSION,
+    ESCALATION_OUTCOME_SCHEMA_VERSION,
+    EscalationAttemptEvent,
+    EscalationOutcome,
+    ObservationOutcome,
+    RoutingEvidenceRepository,
+    routing_decision_group_sha256,
+)
+from app.candidates.symbol_cache import (
+    CACHE_IDENTITY_SCHEMA_VERSION,
+    CROP_CANONICALIZATION_VERSION,
+    CacheConsumer,
+    InvalidCacheWinner,
+    SymbolCacheIdentity,
+    SymbolCacheProvenance,
+    VisualSymbolCache,
+    VisualSymbolCacheEntry,
+    build_cache_entry,
+)
+from app.candidates.symbol_routing import (
+    SYMBOL_ROUTER_VERSION,
+    RoutingDecision,
+    route_visual_observation,
+    validate_routing_decision,
+)
 from app.candidates.symbol_review import (
+    VISUAL_ADAPTER_VERSION,
     VISUAL_PROMPT_VERSION,
     VISUAL_SCHEMA_VERSION,
     ValidatedSymbolDetection,
@@ -47,7 +95,11 @@ from app.capabilities.service import CapabilityUnavailable
 from app.config import Settings
 from app.pdf.coordinates import BBox
 from app.pdf.schemas import TextObservation, VisualObservation
-from app.pdf.visual_observations import reconstruct_visual_geometry_contexts
+from app.pdf.visual_observations import (
+    PROPOSAL_RULE_VERSION,
+    pack_visual_batches,
+    reconstruct_visual_geometry_contexts,
+)
 from app.processing.automatic_result import CandidateSnapshot, selected_observations
 from app.providers.base import VisionResult
 from app.providers.call_records import (
@@ -68,8 +120,10 @@ from app.storage.local import LocalFileStorage
 PROMPT_VERSION = "candidate-review-prompt/2"
 SCHEMA_VERSION = "candidate-review/1"
 ADAPTER_VERSION = "qwen-openai-compatible/1"
-MAX_CALLS_PER_PAGE = 16
 RENDER_SCALE = 2.0
+PROJECTED_VISUAL_PRIMARY_WALL_SECONDS = (
+    MAX_VISUAL_PAGE_WALL_SECONDS / MAX_VISUAL_PRIMARY_GROUPS_PER_PAGE
+)
 ALLOWED_SUGGESTION_TYPES = {
     "linear_dimension",
     "diameter_dimension",
@@ -119,6 +173,225 @@ class RoutedObject:
     candidate_id: str | None
     coverage_index: int
     requires_confirmation: bool
+
+
+@dataclass(frozen=True)
+class VisualExecutionIdentity:
+    page_index: int
+    content_sha256: str
+    lineage_sha256: str
+    budget_sha256: str
+    observation_member_bindings: tuple[tuple[str, str], ...]
+    crop_sha256: str
+    member_content_sha256s: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class VisualReviewOutcome:
+    result: VisionResult
+    provider: object | None
+    provenance_request_ids: tuple[str, ...]
+    current_attempt_request_ids: tuple[str, ...]
+    current_attempt_count: int
+    retry_count: int
+    attempt_duration_ms: tuple[int, ...]
+    measured_duration_ms: int
+    cache_hit: bool
+    execution_identity: VisualExecutionIdentity | None
+    attempt_event_sha256s: tuple[str, ...] = ()
+    terminal_replay: bool = False
+
+    def __iter__(self) -> Iterator[object]:
+        yield self.result
+        yield self.provider
+        yield self.provenance_request_ids
+
+
+@dataclass(frozen=True)
+class ProductionVisualJob:
+    page_position: int
+    page_index: int
+    observation_ids: tuple[str, ...]
+    crop_bbox_pdf: BBox
+    crop_png: bytes
+    visual_observations: tuple[VisualObservation, ...]
+    execution_identity: VisualExecutionIdentity
+    escalation_group_id: str
+    routing_decision_sha256: str
+
+
+@dataclass(frozen=True)
+class VisualEvidenceContext:
+    escalation_group_id: str
+    routing_decision_sha256: str
+
+
+class ProductionRetryCoordinator:
+    def __init__(
+        self,
+        *,
+        plan: Any,
+        actual_call_capacity_by_page: dict[int, int],
+        execution_identities: Sequence[VisualExecutionIdentity],
+    ) -> None:
+        self._state = plan.budget_state
+        self._actual_call_capacity_by_page = dict(
+            actual_call_capacity_by_page
+        )
+        self._batches = {
+            (batch.page_index, batch.content_sha256): batch
+            for batch in plan.batches
+        }
+        self._execution_identities = {
+            (identity.page_index, identity.content_sha256): identity
+            for identity in execution_identities
+        }
+        self._actual_page_seconds: dict[int, float] = defaultdict(float)
+        self._actual_project_seconds = 0.0
+        self._outstanding_projected_seconds: dict[
+            tuple[int, str], float
+        ] = {}
+        self._primary_accounted: set[tuple[int, str]] = set()
+        self._retry_outstanding: set[tuple[int, str]] = set()
+        self._lock = Lock()
+
+    @staticmethod
+    def _key(
+        identity: VisualExecutionIdentity,
+    ) -> tuple[int, str]:
+        return identity.page_index, identity.content_sha256
+
+    def _batch_for_identity(
+        self,
+        identity: VisualExecutionIdentity | None,
+    ) -> Any | None:
+        if identity is None:
+            return None
+        key = self._key(identity)
+        batch = self._batches.get(key)
+        return (
+            batch
+            if batch is not None
+            and identity == self._execution_identities.get(key)
+            and batch.lineage_sha256 == identity.lineage_sha256
+            and batch.budget_sha256 == identity.budget_sha256
+            and batch.observation_member_bindings
+            == identity.observation_member_bindings
+            else None
+        )
+
+    def _wall_allows(
+        self,
+        *,
+        page_index: int,
+        projected_seconds: float,
+    ) -> bool:
+        page_outstanding = sum(
+            seconds
+            for (page, _), seconds in (
+                self._outstanding_projected_seconds.items()
+            )
+            if page == page_index
+        )
+        project_outstanding = sum(
+            self._outstanding_projected_seconds.values()
+        )
+        return (
+            self._actual_page_seconds[page_index]
+            + page_outstanding
+            + projected_seconds
+            <= MAX_VISUAL_PAGE_WALL_SECONDS
+            and self._actual_project_seconds
+            + project_outstanding
+            + projected_seconds
+            <= MAX_VISUAL_PROJECT_WALL_SECONDS
+        )
+
+    def start_primary(self, identity: VisualExecutionIdentity) -> bool:
+        with self._lock:
+            batch = self._batch_for_identity(identity)
+            if batch is None:
+                return False
+            key = self._key(identity)
+            if key in self._outstanding_projected_seconds:
+                return False
+            if not self._wall_allows(
+                page_index=identity.page_index,
+                projected_seconds=batch.projected_wall_seconds,
+            ):
+                return False
+            self._outstanding_projected_seconds[key] = (
+                batch.projected_wall_seconds
+            )
+            return True
+
+    def _account_primary(
+        self,
+        identity: VisualExecutionIdentity,
+        measured_duration_ms: int,
+    ) -> None:
+        key = self._key(identity)
+        if key in self._primary_accounted:
+            return
+        self._outstanding_projected_seconds.pop(key, None)
+        measured_seconds = measured_duration_ms / 1000.0
+        self._actual_page_seconds[identity.page_index] += measured_seconds
+        self._actual_project_seconds += measured_seconds
+        self._primary_accounted.add(key)
+
+    def authorize(
+        self,
+        identity: VisualExecutionIdentity | None,
+        primary_duration_ms: int,
+    ) -> bool:
+        batch = self._batch_for_identity(identity)
+        if identity is None or batch is None:
+            return False
+        with self._lock:
+            self._account_primary(identity, primary_duration_ms)
+            if not self._wall_allows(
+                page_index=identity.page_index,
+                projected_seconds=batch.projected_wall_seconds,
+            ):
+                return False
+            reservation = reserve_escalation_budget_window(
+                self._state,
+                (batch,),
+                actual_call_capacity_by_page=(
+                    self._actual_call_capacity_by_page
+                ),
+                retry=True,
+            )
+            if not reservation.allowed:
+                return False
+            self._state = reservation.state
+            key = self._key(identity)
+            self._outstanding_projected_seconds[key] = (
+                batch.projected_wall_seconds
+            )
+            self._retry_outstanding.add(key)
+            return True
+
+    def complete(self, outcome: VisualReviewOutcome) -> None:
+        identity = outcome.execution_identity
+        if identity is None:
+            return
+        with self._lock:
+            key = self._key(identity)
+            if outcome.retry_count:
+                self._outstanding_projected_seconds.pop(key, None)
+                retry_ms = outcome.attempt_duration_ms[-1]
+                retry_seconds = retry_ms / 1000.0
+                self._actual_page_seconds[
+                    identity.page_index
+                ] += retry_seconds
+                self._actual_project_seconds += retry_seconds
+                self._retry_outstanding.discard(key)
+            else:
+                self._account_primary(
+                    identity,
+                    outcome.measured_duration_ms,
+                )
 
 
 def _bbox_union(observations: Sequence[TextObservation]) -> BBox:
@@ -243,6 +516,8 @@ def _route_objects(
     snapshot: CandidateSnapshot,
     *,
     max_calls_by_page: dict[int, int] | None = None,
+    excluded_source_ids: frozenset[str] = frozenset(),
+    excluded_candidate_ids: frozenset[str] = frozenset(),
 ) -> tuple[RoutedObject, ...]:
     observations = {
         observation.observation_id: observation
@@ -314,6 +589,12 @@ def _route_objects(
             )
         )
 
+    routes = [
+        route
+        for route in routes
+        if not set(route.source_ids).intersection(excluded_source_ids)
+        and route.candidate_id not in excluded_candidate_ids
+    ]
     routes.sort(
         key=lambda route: (
             route.page_index,
@@ -326,9 +607,12 @@ def _route_objects(
     bounded: list[RoutedObject] = []
     for route in routes:
         page_cap = (
-            MAX_CALLS_PER_PAGE
+            MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE
             if max_calls_by_page is None
-            else max_calls_by_page.get(route.page_index, MAX_CALLS_PER_PAGE)
+            else max_calls_by_page.get(
+                route.page_index,
+                MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE,
+            )
         )
         if calls_per_page[route.page_index] >= page_cap:
             continue
@@ -452,6 +736,8 @@ class CandidateAdvisor:
         *,
         project_id: str,
         provider_factory: VisionProviderFactory,
+        symbol_session_factory: Callable[[], Session] | None = None,
+        require_symbol_persistence: bool = False,
     ) -> None:
         if _SAFE_PROJECT_ID.fullmatch(project_id) is None:
             raise ValueError("project_id must be one safe path segment")
@@ -459,6 +745,270 @@ class CandidateAdvisor:
         self._storage = storage
         self._project_id = project_id
         self._provider_factory = provider_factory
+        self._symbol_session_factory = symbol_session_factory
+        self._require_symbol_persistence = require_symbol_persistence
+
+    def _project_uuid(self) -> uuid.UUID:
+        try:
+            return uuid.UUID(self._project_id)
+        except ValueError:
+            raise CandidateAdvisorFailure(
+                "Symbol routing persistence project identity is invalid"
+            ) from None
+
+    def _record_routing_decisions(
+        self,
+        *,
+        decisions: Sequence[RoutingDecision],
+        escalation_group_by_observation: dict[str, str],
+        escalation_group_member_index_by_observation: dict[str, int],
+    ) -> dict[str, str]:
+        if self._symbol_session_factory is None:
+            return {}
+        session = self._symbol_session_factory()
+        try:
+            evidence = RoutingEvidenceRepository(session)
+            hashes: dict[str, str] = {}
+            for decision in decisions:
+                record = evidence.record_decision(
+                    project_id=self._project_uuid(),
+                    decision=decision,
+                    escalation_group_id=(
+                        escalation_group_by_observation.get(
+                            decision.visual_observation_id
+                        )
+                        if decision.disposition == "escalate"
+                        else None
+                    ),
+                    escalation_group_member_index=(
+                        escalation_group_member_index_by_observation.get(
+                            decision.visual_observation_id
+                        )
+                        if decision.disposition == "escalate"
+                        else None
+                    ),
+                    local_resolution_ref=(
+                        f"sha256:{decision.input_sha256}"
+                        if decision.disposition == "locally_resolved"
+                        else None
+                    ),
+                )
+                hashes[decision.visual_observation_id] = (
+                    record.decision_sha256
+                )
+            session.commit()
+            return hashes
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    @staticmethod
+    def _production_cache_identity(
+        *,
+        execution_identity: VisualExecutionIdentity,
+        visual_observations: Sequence[VisualObservation],
+        text_observations: dict[str, TextObservation],
+        model: str,
+    ) -> SymbolCacheIdentity:
+        associated_text_sha256 = hashlib.sha256(
+            _json_bytes(
+                [
+                    {
+                        "visual_observation_id": (
+                            observation.observation_id
+                        ),
+                        "associated_text_allowlist": [
+                            {
+                                "observation_id": text.observation_id,
+                                "observation_level": (
+                                    text.observation_level
+                                ),
+                                "raw_text": text.raw_text,
+                            }
+                            for text in (
+                                text_observations[text_id]
+                                for text_id in (
+                                    observation
+                                    .associated_text_observation_ids
+                                )
+                            )
+                        ],
+                    }
+                    for observation in visual_observations
+                ]
+            )
+        ).hexdigest()
+        local_evidence_sha256s = (
+            execution_identity.member_content_sha256s
+            or tuple(
+                evidence_sha256
+                for _, evidence_sha256 in (
+                    execution_identity.observation_member_bindings
+                )
+            )
+        )
+        return SymbolCacheIdentity(
+            schema_version=CACHE_IDENTITY_SCHEMA_VERSION,
+            canonical_crop_sha256=execution_identity.crop_sha256,
+            associated_text_sha256=associated_text_sha256,
+            local_evidence_sha256s=local_evidence_sha256s,
+            router_version=SYMBOL_ROUTER_VERSION,
+            proposal_version=PROPOSAL_RULE_VERSION,
+            prompt_version=VISUAL_PROMPT_VERSION,
+            response_schema_version=VISUAL_SCHEMA_VERSION,
+            adapter_version=VISUAL_ADAPTER_VERSION,
+            model_identity=model,
+            pymupdf_version=pymupdf.VersionBind,
+            crop_canonicalization_version=(
+                CROP_CANONICALIZATION_VERSION
+            ),
+        )
+
+    def _production_cache_provenance_valid(
+        self,
+        entry: VisualSymbolCacheEntry,
+    ) -> bool:
+        provenance = entry.provenance
+        if provenance is None:
+            return False
+        try:
+            audit_path = self._storage.resolve_resource_ref(
+                provenance.producer_call_record_ref
+            )
+            audit_content = audit_path.read_bytes()
+            audit = json.loads(audit_content)
+            if (
+                not isinstance(audit, dict)
+                or serialize_call_record(audit) != audit_content
+                or audit.get("provider") != "qwen-vl"
+                or audit.get("request_id")
+                != provenance.producer_request_id
+                or audit.get("model") != entry.identity.model_identity
+                or audit.get("prompt_version")
+                != entry.identity.prompt_version
+                or audit.get("schema_version")
+                != entry.identity.response_schema_version
+            ):
+                return False
+            request_ref = audit.get("request_ref")
+            response_ref = audit.get("response_ref")
+            if not isinstance(request_ref, str) or not isinstance(
+                response_ref, str
+            ):
+                return False
+            request_path = self._storage.resolve_resource_ref(request_ref)
+            request_content = request_path.read_bytes()
+            request_payload = json.loads(request_content)
+            if not isinstance(request_payload, dict):
+                return False
+            crop_ref = request_payload.get("crop_ref")
+            usage = request_payload.get("usage")
+            if not isinstance(crop_ref, str) or not isinstance(usage, dict):
+                return False
+            request_evidence = parse_visual_request_evidence(
+                request_payload,
+                expected_crop_ref=crop_ref,
+                expected_crop_sha256=(
+                    entry.identity.canonical_crop_sha256
+                ),
+                expected_usage=usage,
+            )
+            crop_path = self._storage.resolve_resource_ref(crop_ref)
+            response_path = self._storage.resolve_resource_ref(response_ref)
+            return (
+                _json_bytes(request_evidence) == request_content
+                and hashlib.sha256(crop_path.read_bytes()).hexdigest()
+                == entry.identity.canonical_crop_sha256
+                and response_path.read_bytes()
+                == canonical_visual_response_bytes(entry.response)
+                and hashlib.sha256(
+                    canonical_visual_response_bytes(entry.response)
+                ).hexdigest()
+                == entry.response_sha256
+            )
+        except Exception:
+            return False
+
+    def _append_attempt_event(
+        self,
+        *,
+        context: VisualEvidenceContext,
+        attempt_index: int,
+        event_code: str,
+        cache_entry_id: uuid.UUID | None = None,
+        provider_request_id: str | None = None,
+    ) -> str:
+        if self._symbol_session_factory is None:
+            return ""
+        session = self._symbol_session_factory()
+        try:
+            record = RoutingEvidenceRepository(session).append_attempt(
+                project_id=self._project_uuid(),
+                event=EscalationAttemptEvent(
+                    schema_version=ESCALATION_ATTEMPT_SCHEMA_VERSION,
+                    escalation_group_id=context.escalation_group_id,
+                    routing_decision_sha256=(
+                        context.routing_decision_sha256
+                    ),
+                    attempt_index=attempt_index,
+                    event_code=event_code,
+                    cache_entry_id=cache_entry_id,
+                    provider_request_id=provider_request_id,
+                ),
+            )
+            session.commit()
+            return record.event_sha256
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def _record_terminal_outcome(
+        self,
+        *,
+        context: VisualEvidenceContext,
+        outcome_code: str,
+        observation_outcomes: tuple[ObservationOutcome, ...],
+        attempt_event_sha256s: tuple[str, ...],
+    ) -> None:
+        if self._symbol_session_factory is None:
+            return
+        del attempt_event_sha256s
+        session = self._symbol_session_factory()
+        try:
+            evidence = RoutingEvidenceRepository(session)
+            canonical_attempt_sha256s = (
+                evidence.canonical_attempt_sha256s(
+                    project_id=self._project_uuid(),
+                    escalation_group_id=context.escalation_group_id,
+                    routing_decision_sha256=(
+                        context.routing_decision_sha256
+                    ),
+                )
+            )
+            evidence.record_terminal_outcome(
+                project_id=self._project_uuid(),
+                outcome=EscalationOutcome(
+                    schema_version=ESCALATION_OUTCOME_SCHEMA_VERSION,
+                    escalation_group_id=context.escalation_group_id,
+                    routing_decision_sha256=(
+                        context.routing_decision_sha256
+                    ),
+                    outcome_code=outcome_code,
+                    observation_outcomes=observation_outcomes,
+                    attempt_event_sha256s=canonical_attempt_sha256s,
+                    terminal=True,
+                ),
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
     def _cache_result(
         self,
@@ -711,11 +1261,33 @@ class CandidateAdvisor:
         text_observations: dict[str, TextObservation],
         model: str,
         allow_schema_retry: bool = False,
-    ) -> tuple[VisionResult, object | None, tuple[str, ...]]:
+        execution_identity: VisualExecutionIdentity | None = None,
+        retry_authorizer: (
+            Callable[[VisualExecutionIdentity | None, int], bool] | None
+        ) = None,
+        legacy_cache_enabled: bool = True,
+        evidence_context: VisualEvidenceContext | None = None,
+    ) -> VisualReviewOutcome:
         if not isinstance(allow_schema_retry, bool):
             raise ValueError("visual schema retry flag must be boolean")
+        if retry_authorizer is not None and not callable(retry_authorizer):
+            raise ValueError("visual retry authorizer must be callable")
+        if not isinstance(legacy_cache_enabled, bool):
+            raise ValueError("legacy visual cache flag must be boolean")
+        if (evidence_context is None) != (execution_identity is None):
+            if evidence_context is not None:
+                raise ValueError(
+                    "visual evidence context requires execution identity"
+                )
         canonical_crop_png = canonicalize_visual_png(crop_png)
         crop_sha256 = hashlib.sha256(canonical_crop_png).hexdigest()
+        if (
+            execution_identity is not None
+            and execution_identity.crop_sha256 != crop_sha256
+        ):
+            raise CandidateAdvisorFailure(
+                "Visual symbol execution identity is invalid"
+            )
         visual_observation_ids = tuple(
             observation.observation_id
             for observation in visual_observations
@@ -750,12 +1322,134 @@ class CandidateAdvisor:
             f"projects/{self._project_id}/provider-requests/"
             f"qwen-symbol/{cache_key}.json"
         )
-        cached = self._visual_cache_result(
-            cache_relative,
-            audit_relative_path=audit_relative,
-            crop_relative_path=crop_relative,
-            request_relative_path=request_relative,
-            identity=identity,
+        attempt_event_sha256s: list[str] = []
+        production_cache_identity: SymbolCacheIdentity | None = None
+        if (
+            evidence_context is not None
+            and execution_identity is not None
+            and self._symbol_session_factory is not None
+        ):
+            if (
+                self._require_symbol_persistence
+                and (
+                    not execution_identity.member_content_sha256s
+                    or len(
+                        set(
+                            execution_identity.member_content_sha256s
+                        )
+                    )
+                    != len(execution_identity.member_content_sha256s)
+                )
+            ):
+                raise CandidateAdvisorFailure(
+                    "Visual symbol cache member identity is invalid"
+                )
+            production_cache_identity = (
+                self._production_cache_identity(
+                    execution_identity=execution_identity,
+                    visual_observations=visual_observations,
+                    text_observations=text_observations,
+                    model=model,
+                )
+            )
+            session = self._symbol_session_factory()
+            terminal_outcome: EscalationOutcome | None = None
+            try:
+                evidence = RoutingEvidenceRepository(session)
+                terminal_outcome = evidence.load_terminal_outcome(
+                    project_id=self._project_uuid(),
+                    escalation_group_id=(
+                        evidence_context.escalation_group_id
+                    ),
+                    routing_decision_sha256=(
+                        evidence_context.routing_decision_sha256
+                    ),
+                )
+                lookup = VisualSymbolCache(session).lookup(
+                    project_id=self._project_uuid(),
+                    identity=production_cache_identity,
+                    consumer=(
+                        None
+                        if terminal_outcome is not None
+                        else CacheConsumer(
+                            escalation_group_id=(
+                                evidence_context.escalation_group_id
+                            ),
+                            routing_decision_sha256=(
+                                evidence_context.routing_decision_sha256
+                            ),
+                            attempt_index=0,
+                        )
+                    ),
+                    evidence=(
+                        None if terminal_outcome is not None else evidence
+                    ),
+                    provenance_validator=(
+                        self._production_cache_provenance_valid
+                    ),
+                )
+                if terminal_outcome is not None and not lookup.hit:
+                    raise CandidateAdvisorFailure(
+                        "Visual symbol terminal replay cache is invalid"
+                    )
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise CandidateAdvisorFailure(
+                    "Visual symbol cache lookup failed"
+                ) from None
+            finally:
+                session.close()
+            attempt_event_sha256s.extend(
+                (
+                    terminal_outcome.attempt_event_sha256s
+                    if terminal_outcome is not None
+                    else lookup.attempt_event_sha256s
+                )
+            )
+            if lookup.hit:
+                if (
+                    lookup.response is None
+                    or lookup.entry is None
+                    or lookup.entry.provenance is None
+                ):
+                    raise CandidateAdvisorFailure(
+                        "Visual symbol cache hit is invalid"
+                    )
+                return VisualReviewOutcome(
+                    result=VisionResult(
+                        request_id=(
+                            lookup.entry.provenance.producer_request_id
+                        ),
+                        payload=lookup.response,
+                        usage={},
+                    ),
+                    provider=provider,
+                    provenance_request_ids=(
+                        lookup.entry.provenance.producer_request_id,
+                    ),
+                    current_attempt_request_ids=(),
+                    current_attempt_count=0,
+                    retry_count=0,
+                    attempt_duration_ms=(),
+                    measured_duration_ms=0,
+                    cache_hit=True,
+                    execution_identity=execution_identity,
+                    attempt_event_sha256s=tuple(
+                        attempt_event_sha256s
+                    ),
+                    terminal_replay=terminal_outcome is not None,
+                )
+        cached = (
+            self._visual_cache_result(
+                cache_relative,
+                audit_relative_path=audit_relative,
+                crop_relative_path=crop_relative,
+                request_relative_path=request_relative,
+                identity=identity,
+            )
+            if legacy_cache_enabled
+            else None
         )
         if cached is not None:
             cached_result, cached_request_ids = cached
@@ -763,10 +1457,78 @@ class CandidateAdvisor:
                 raise CandidateAdvisorFailure(
                     "Visual symbol Advisor retry budget is invalid"
                 )
-            return cached_result, provider, cached_request_ids
+            return VisualReviewOutcome(
+                result=cached_result,
+                provider=provider,
+                provenance_request_ids=cached_request_ids,
+                current_attempt_request_ids=(),
+                current_attempt_count=0,
+                retry_count=0,
+                attempt_duration_ms=(),
+                measured_duration_ms=0,
+                cache_hit=True,
+                execution_identity=execution_identity,
+                attempt_event_sha256s=(),
+            )
+
+        def append_attempt(
+            *,
+            attempt_index: int,
+            event_code: str,
+            provider_request_id: str | None = None,
+        ) -> None:
+            if evidence_context is None:
+                return
+            event_sha256 = self._append_attempt_event(
+                context=evidence_context,
+                attempt_index=attempt_index,
+                event_code=event_code,
+                provider_request_id=provider_request_id,
+            )
+            if event_sha256:
+                attempt_event_sha256s.append(event_sha256)
+
+        def persist_terminal_failure(observation_code: str) -> None:
+            if evidence_context is None:
+                return
+            self._record_terminal_outcome(
+                context=evidence_context,
+                outcome_code="unresolved",
+                observation_outcomes=tuple(
+                    ObservationOutcome(
+                        visual_observation_id=(
+                            observation.observation_id
+                        ),
+                        outcome_code=observation_code,
+                    )
+                    for observation in visual_observations
+                ),
+                attempt_event_sha256s=tuple(
+                    attempt_event_sha256s
+                ),
+            )
 
         if provider is None:
-            provider = self._provider_factory(self._settings)
+            try:
+                provider = self._provider_factory(self._settings)
+            except CapabilityUnavailable:
+                append_attempt(
+                    attempt_index=0,
+                    event_code="provider_unavailable",
+                )
+                persist_terminal_failure("provider_unavailable")
+                raise
+            except Exception:
+                append_attempt(
+                    attempt_index=0,
+                    event_code="provider_transport_failure",
+                )
+                persist_terminal_failure(
+                    "provider_transport_failure"
+                )
+                raise CandidateAdvisorFailure(
+                    "Visual symbol Advisor call failed"
+                ) from None
         crop_write = self._storage.write_verified(
             crop_relative,
             canonical_crop_png,
@@ -871,13 +1633,37 @@ class CandidateAdvisor:
                 ),
             )
 
-        result, provider_failure, duration_ms = call_once()
+        try:
+            result, provider_failure, duration_ms = call_once()
+        except CapabilityUnavailable:
+            append_attempt(
+                attempt_index=0,
+                event_code="provider_unavailable",
+            )
+            persist_terminal_failure("provider_unavailable")
+            raise
+        except CandidateAdvisorFailure:
+            append_attempt(
+                attempt_index=0,
+                event_code="provider_transport_failure",
+            )
+            persist_terminal_failure("provider_transport_failure")
+            raise
         request_ids: list[str] = []
+        attempt_durations = [duration_ms]
         retry_count = 0
         if (
             provider_failure is not None
             and allow_schema_retry
             and provider_failure[2] == "tool_arguments_schema_invalid"
+            and (
+                retry_authorizer is None
+                or retry_authorizer(
+                    execution_identity,
+                    duration_ms,
+                )
+                is True
+            )
         ):
             retry_paths = _visual_retry_evidence_paths(
                 self._project_id,
@@ -891,8 +1677,36 @@ class CandidateAdvisor:
                 request_path=retry_paths[1],
                 response_path=retry_paths[2],
             )
+            append_attempt(
+                attempt_index=0,
+                event_code="provider_schema_invalid",
+                provider_request_id=provider_failure[0],
+            )
+            append_attempt(
+                attempt_index=0,
+                event_code="retry_scheduled",
+                provider_request_id=provider_failure[0],
+            )
             request_ids.append(provider_failure[0])
-            result, provider_failure, duration_ms = call_once()
+            try:
+                result, provider_failure, duration_ms = call_once()
+            except CapabilityUnavailable:
+                append_attempt(
+                    attempt_index=1,
+                    event_code="provider_unavailable",
+                )
+                persist_terminal_failure("provider_unavailable")
+                raise
+            except CandidateAdvisorFailure:
+                append_attempt(
+                    attempt_index=1,
+                    event_code="provider_transport_failure",
+                )
+                persist_terminal_failure(
+                    "provider_transport_failure"
+                )
+                raise
+            attempt_durations.append(duration_ms)
             retry_count = 1
 
         if provider_failure is not None:
@@ -907,10 +1721,21 @@ class CandidateAdvisor:
                     f"qwen-symbol/{cache_key}.json"
                 ),
             )
+            append_attempt(
+                attempt_index=retry_count,
+                event_code="provider_schema_invalid",
+                provider_request_id=provider_failure[0],
+            )
+            persist_terminal_failure("provider_schema_invalid")
             raise CandidateAdvisorFailure(
                 "Visual symbol Advisor response is invalid"
             ) from None
         if result is None:
+            append_attempt(
+                attempt_index=retry_count,
+                event_code="provider_transport_failure",
+            )
+            persist_terminal_failure("provider_transport_failure")
             raise CandidateAdvisorFailure(
                 "Visual symbol Advisor call failed"
             ) from None
@@ -945,11 +1770,12 @@ class CandidateAdvisor:
             usage=result.usage,
         )
         cache_content = _json_bytes(cache_payload)
-        self._storage.write_verified(
-            cache_relative,
-            cache_content,
-            hashlib.sha256(cache_content).hexdigest(),
-        )
+        if legacy_cache_enabled:
+            self._storage.write_verified(
+                cache_relative,
+                cache_content,
+                hashlib.sha256(cache_content).hexdigest(),
+            )
         persist_call_record(
             self._storage,
             audit_relative,
@@ -968,7 +1794,99 @@ class CandidateAdvisor:
                 response_ref=response_write.resource_ref,
             ),
         )
-        return result, provider, tuple(request_ids)
+        if (
+            production_cache_identity is not None
+            and self._symbol_session_factory is not None
+        ):
+            session = self._symbol_session_factory()
+            try:
+                VisualSymbolCache(session).store_if_absent(
+                    project_id=self._project_uuid(),
+                    entry=build_cache_entry(
+                        identity=production_cache_identity,
+                        response=result.payload,
+                        provenance=SymbolCacheProvenance(
+                            identity_sha256=(
+                                production_cache_identity.sha256
+                            ),
+                            producer_project_id=self._project_id,
+                            producer_request_id=result.request_id,
+                            producer_call_record_ref=(
+                                f"asset://{audit_relative}"
+                            ),
+                            response_sha256=response_sha256,
+                            created_at=datetime.now(UTC),
+                            model_identity=model,
+                            response_schema_version=(
+                                VISUAL_SCHEMA_VERSION
+                            ),
+                            router_version=SYMBOL_ROUTER_VERSION,
+                            validation_outcome="schema_valid",
+                        ),
+                        provider_event_code="provider_response_valid",
+                        schema_valid=True,
+                    ),
+                )
+                if evidence_context is None:
+                    raise CandidateAdvisorFailure(
+                        "Visual symbol routing evidence is incomplete"
+                    )
+                attempt = RoutingEvidenceRepository(
+                    session
+                ).append_attempt(
+                    project_id=self._project_uuid(),
+                    event=EscalationAttemptEvent(
+                        schema_version=(
+                            ESCALATION_ATTEMPT_SCHEMA_VERSION
+                        ),
+                        escalation_group_id=(
+                            evidence_context.escalation_group_id
+                        ),
+                        routing_decision_sha256=(
+                            evidence_context.routing_decision_sha256
+                        ),
+                        attempt_index=retry_count,
+                        event_code="provider_response_valid",
+                        cache_entry_id=None,
+                        provider_request_id=result.request_id,
+                    ),
+                )
+                session.commit()
+                attempt_event_sha256s.append(attempt.event_sha256)
+            except InvalidCacheWinner:
+                session.rollback()
+                append_attempt(
+                    attempt_index=retry_count,
+                    event_code="provider_response_valid",
+                    provider_request_id=result.request_id,
+                )
+            except Exception:
+                session.rollback()
+                raise CandidateAdvisorFailure(
+                    "Visual symbol cache persistence failed"
+                ) from None
+            finally:
+                session.close()
+        else:
+            append_attempt(
+                attempt_index=retry_count,
+                event_code="provider_response_valid",
+                provider_request_id=result.request_id,
+            )
+        current_request_ids = tuple(request_ids)
+        return VisualReviewOutcome(
+            result=result,
+            provider=provider,
+            provenance_request_ids=current_request_ids,
+            current_attempt_request_ids=current_request_ids,
+            current_attempt_count=len(current_request_ids),
+            retry_count=retry_count,
+            attempt_duration_ms=tuple(attempt_durations),
+            measured_duration_ms=sum(attempt_durations),
+            cache_hit=False,
+            execution_identity=execution_identity,
+            attempt_event_sha256s=tuple(attempt_event_sha256s),
+        )
 
     def _review_result(
         self,
@@ -1082,18 +2000,307 @@ class CandidateAdvisor:
         pages: Sequence[Any],
         snapshot: CandidateSnapshot,
     ) -> CandidateSnapshot:
-        visual_batches = plan_visual_batches(pages, snapshot)
+        production_local_decisions: list[list[VisualReviewDecision]] = [
+            [] for _ in pages
+        ]
+        production_contexts: dict[str, Any] | None = None
+        uncertainty_mode = self._settings.symbol_recognition_mode
+        routing_decision_sha256_by_observation: dict[str, str] = {}
+        uncertainty_routing_decisions: list[RoutingDecision] = []
+        if (
+            self._require_symbol_persistence
+            and uncertainty_mode
+            in {"shadow_uncertainty", "production_uncertainty"}
+            and self._symbol_session_factory is None
+        ):
+            raise CandidateAdvisorFailure(
+                "Symbol routing persistence is required"
+            )
+        if uncertainty_mode in {
+            "shadow_uncertainty",
+            "production_uncertainty",
+        }:
+            all_text = tuple(
+                observation
+                for page in pages
+                for observation in page.observations
+            )
+            production_contexts = {
+                item.observation_id: item
+                for item in reconstruct_visual_geometry_contexts(
+                    pdf_path,
+                    pages,
+                )
+            }
+            requests: list[EscalationRequest] = []
+            routing_blocked = False
+            try:
+                for page_position, page in enumerate(pages):
+                    for observation in page.visual_observations:
+                        local_resolution = resolve_visual_observation(
+                            observation=observation,
+                            family_hypotheses=(
+                                prepare_local_family_hypotheses(
+                                    observation=observation,
+                                    text_observations=all_text,
+                                    candidates=snapshot.candidates,
+                                    geometry_context=production_contexts.get(
+                                        observation.observation_id
+                                    ),
+                                )
+                            ),
+                            text_observations=all_text,
+                            candidates=snapshot.candidates,
+                            geometry_context=production_contexts.get(
+                                observation.observation_id
+                            ),
+                        )
+                        routing_decision = validate_routing_decision(
+                            route_visual_observation(local_resolution)
+                        )
+                        if (
+                            routing_decision.visual_observation_id
+                            != observation.observation_id
+                        ):
+                            raise ValueError(
+                                "routing decision observation mismatch"
+                            )
+                        uncertainty_routing_decisions.append(
+                            routing_decision
+                        )
+                        if routing_decision.disposition == "block":
+                            routing_blocked = True
+                            continue
+                        if routing_decision.disposition == "locally_resolved":
+                            if local_resolution.projection is None:
+                                raise ValueError(
+                                    "local symbol projection missing"
+                                )
+                            production_local_decisions[
+                                page_position
+                            ].append(local_resolution.projection)
+                            continue
+                        requests.append(
+                            EscalationRequest(
+                                decision=routing_decision,
+                                observation=observation,
+                                local_resolution=local_resolution,
+                                projected_wall_seconds=(
+                                    PROJECTED_VISUAL_PRIMARY_WALL_SECONDS
+                                ),
+                            )
+                        )
+                if uncertainty_mode == "production_uncertainty":
+                    plan = plan_symbol_escalation_batches(
+                        requests,
+                        actual_call_capacity_by_page={
+                            page.page_index:
+                            MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE
+                            for page in pages
+                        },
+                    )
+            except Exception:
+                raise CandidateAdvisorFailure(
+                    "Visual symbol routing contract is invalid"
+                ) from None
+            if uncertainty_mode == "production_uncertainty":
+                visual_by_id = {
+                    observation.observation_id: observation
+                    for page in pages
+                    for observation in page.visual_observations
+                }
+                ordered_group_members = {
+                    batch.content_sha256: tuple(
+                        sorted(
+                            batch.observation_ids,
+                            key=lambda observation_id: (
+                                visual_by_id[observation_id].page_index,
+                                visual_by_id[observation_id].bbox_pdf[1],
+                                visual_by_id[observation_id].bbox_pdf[0],
+                                visual_by_id[
+                                    observation_id
+                                ].proposal_kind,
+                                observation_id,
+                            ),
+                        )
+                    )
+                    for batch in (*plan.batches, *plan.denied)
+                }
+                escalation_group_by_observation = {
+                    observation_id: batch.content_sha256
+                    for batch in (*plan.batches, *plan.denied)
+                    for observation_id in batch.observation_ids
+                }
+                escalation_group_member_index_by_observation = {
+                    observation_id: member_index
+                    for group_id, observation_ids
+                    in ordered_group_members.items()
+                    for member_index, observation_id
+                    in enumerate(observation_ids)
+                }
+            else:
+                escalation_group_by_observation = {
+                    decision.visual_observation_id: hashlib.sha256(
+                        (
+                            "shadow:"
+                            + decision.visual_observation_id
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    for decision in uncertainty_routing_decisions
+                    if decision.disposition == "escalate"
+                }
+                escalation_group_member_index_by_observation = {
+                    decision.visual_observation_id: 0
+                    for decision in uncertainty_routing_decisions
+                    if decision.disposition == "escalate"
+                }
+            try:
+                routing_decision_sha256_by_observation = (
+                    self._record_routing_decisions(
+                        decisions=uncertainty_routing_decisions,
+                        escalation_group_by_observation=(
+                            escalation_group_by_observation
+                        ),
+                        escalation_group_member_index_by_observation=(
+                            escalation_group_member_index_by_observation
+                        ),
+                    )
+                )
+            except Exception:
+                raise CandidateAdvisorFailure(
+                    "Visual symbol routing evidence persistence failed"
+                ) from None
+            if (
+                self._require_symbol_persistence
+                and len(routing_decision_sha256_by_observation)
+                != len(uncertainty_routing_decisions)
+            ):
+                raise CandidateAdvisorFailure(
+                    "Visual symbol routing evidence is incomplete"
+                )
+            if (
+                uncertainty_mode == "production_uncertainty"
+                and plan.denied
+                and self._symbol_session_factory is not None
+            ):
+                try:
+                    for denied_batch in plan.denied:
+                        denied_observation_ids = tuple(
+                            ordered_group_members[
+                                denied_batch.content_sha256
+                            ]
+                        )
+                        denied_decision_hashes = tuple(
+                            routing_decision_sha256_by_observation[
+                                observation_id
+                            ]
+                            for observation_id in denied_observation_ids
+                        )
+                        denied_context = VisualEvidenceContext(
+                            escalation_group_id=(
+                                denied_batch.content_sha256
+                            ),
+                            routing_decision_sha256=(
+                                routing_decision_group_sha256(
+                                    denied_decision_hashes
+                                )
+                            ),
+                        )
+                        event_sha256 = self._append_attempt_event(
+                            context=denied_context,
+                            attempt_index=0,
+                            event_code=(
+                                "not_started_budget_exhausted"
+                            ),
+                        )
+                        self._record_terminal_outcome(
+                            context=denied_context,
+                            outcome_code="budget_exhausted",
+                            observation_outcomes=tuple(
+                                ObservationOutcome(
+                                    visual_observation_id=(
+                                        observation_id
+                                    ),
+                                    outcome_code=(
+                                        "routing_budget_exhausted"
+                                    ),
+                                )
+                                for observation_id
+                                in denied_observation_ids
+                            ),
+                            attempt_event_sha256s=(event_sha256,),
+                        )
+                except Exception:
+                    raise CandidateAdvisorFailure(
+                        "Visual symbol routing evidence persistence failed"
+                    ) from None
+            if routing_blocked or (
+                uncertainty_mode == "production_uncertainty"
+                and plan.denied
+            ):
+                raise CandidateAdvisorFailure(
+                    "Visual symbol routing contract is invalid"
+                )
+            if uncertainty_mode == "production_uncertainty":
+                visual_batches = tuple(
+                    tuple(
+                        batch
+                        for batch in plan.batches
+                        if batch.page_index == page.page_index
+                    )
+                    for page in pages
+                )
+            else:
+                production_local_decisions = [[] for _ in pages]
+                visual_batches = plan_visual_batches(pages, snapshot)
+        else:
+            visual_batches = plan_visual_batches(pages, snapshot)
         planned_visual_calls_by_page = {
             page.page_index: len(visual_batches[index])
             for index, page in enumerate(pages)
         }
+        locally_resolved_text_ids: frozenset[str] = frozenset()
+        locally_resolved_candidate_ids: frozenset[str] = frozenset()
+        if uncertainty_mode == "production_uncertainty":
+            locally_resolved_visual_ids = {
+                decision.observation_id
+                for page_decisions in production_local_decisions
+                for decision in page_decisions
+            }
+            locally_resolved_text_ids = frozenset(
+                text_id
+                for page in pages
+                for visual in page.visual_observations
+                if visual.observation_id in locally_resolved_visual_ids
+                for text_id in visual.associated_text_observation_ids
+            )
+            locally_resolved_candidate_ids = frozenset(
+                candidate_id
+                for page_decisions in production_local_decisions
+                for decision in page_decisions
+                for candidate_id in (
+                    decision.candidate_id,
+                    (
+                        str(
+                            snapshot.candidates[
+                                decision.existing_candidate_index
+                            ]["candidate_id"]
+                        )
+                        if decision.existing_candidate_index is not None
+                        else None
+                    ),
+                )
+                if candidate_id is not None
+            )
         routes = _route_objects(
             pages,
             snapshot,
             max_calls_by_page={
-                page_index: MAX_CALLS_PER_PAGE - count
+                page_index: MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE - count
                 for page_index, count in planned_visual_calls_by_page.items()
             },
+            excluded_source_ids=locally_resolved_text_ids,
+            excluded_candidate_ids=locally_resolved_candidate_ids,
         )
         model = self._settings.qwen_model.strip()
         provider: object | None = None
@@ -1124,14 +2331,18 @@ class CandidateAdvisor:
             for index, entry in enumerate(coverage_entries)
             if entry.observation_id in visual_observations
         }
-        contexts = {
-            item.observation_id: item
-            for item in (
-                reconstruct_visual_geometry_contexts(pdf_path, pages)
-                if any(visual_batches)
-                else ()
-            )
-        }
+        contexts = (
+            production_contexts
+            if production_contexts is not None
+            else {
+                item.observation_id: item
+                for item in (
+                    reconstruct_visual_geometry_contexts(pdf_path, pages)
+                    if any(visual_batches)
+                    else ()
+                )
+            }
+        )
         source_sha256 = (
             hashlib.sha256(Path(pdf_path).read_bytes()).hexdigest()
             if any(visual_batches)
@@ -1151,60 +2362,409 @@ class CandidateAdvisor:
             rejection_sets_by_page: list[dict[str, set[str]]] = [
                 {} for _ in pages
             ]
-            for page_position, page_batches in enumerate(visual_batches):
-                page_inventory = pages[page_position]
-                page = document[page_inventory.page_index]
-                for batch in page_batches:
-                    batch_observations = tuple(
-                        visual_observations[identity]
-                        for identity in batch.observation_ids
+
+            def consume_visual_outcome(
+                *,
+                page_position: int,
+                page_index: int,
+                observation_ids: tuple[str, ...],
+                batch_observations: tuple[VisualObservation, ...],
+                crop_bbox_pdf: BBox,
+                outcome: VisualReviewOutcome,
+                evidence_context: VisualEvidenceContext | None = None,
+            ) -> None:
+                nonlocal provider, visual_retry_available
+                result = outcome.result
+                request_ids = outcome.provenance_request_ids
+                if uncertainty_mode != "production_uncertainty":
+                    provider = outcome.provider
+                actual_visual_calls_by_page[
+                    page_index
+                ] += (
+                    outcome.current_attempt_count
+                    if uncertainty_mode == "production_uncertainty"
+                    else len(outcome.provenance_request_ids)
+                )
+                if (
+                    outcome.retry_count > 0
+                    or (
+                        uncertainty_mode != "production_uncertainty"
+                        and len(request_ids) > 1
                     )
-                    crop_png = _render_visual_crop(
-                        page,
-                        batch.crop_bbox_pdf,
+                ):
+                    visual_retry_available = False
+                accepted, rejected = validate_symbol_detections(
+                    result.payload,
+                    visual_observation_ids=observation_ids,
+                    text_allowlists={
+                        item.observation_id:
+                        item.associated_text_observation_ids
+                        for item in batch_observations
+                    },
+                    crop_bbox_pdf=crop_bbox_pdf,
+                )
+                accepted_by_page[page_position].extend(accepted)
+                rejection_sets = rejection_sets_by_page[page_position]
+                for rejected_item in rejected:
+                    affected = (
+                        (rejected_item.visual_observation_id,)
+                        if rejected_item.visual_observation_id
+                        in observation_ids
+                        else observation_ids
                     )
-                    result, provider, request_ids = self._visual_review_result(
-                        provider=provider,
-                        crop_png=crop_png,
-                        crop_bbox_pdf=batch.crop_bbox_pdf,
-                        source_sha256=source_sha256,
-                        visual_observations=batch_observations,
-                        text_observations=text_observations_by_id,
-                        model=model,
-                        allow_schema_retry=(
-                            visual_retry_available
-                            and len(page_batches) < MAX_CALLS_PER_PAGE
-                        ),
-                    )
-                    actual_visual_calls_by_page[
-                        page_inventory.page_index
-                    ] += len(request_ids)
-                    if len(request_ids) > 1:
-                        visual_retry_available = False
-                    accepted, rejected = validate_symbol_detections(
-                        result.payload,
-                        visual_observation_ids=batch.observation_ids,
-                        text_allowlists={
-                            item.observation_id:
-                            item.associated_text_observation_ids
-                            for item in batch_observations
-                        },
-                        crop_bbox_pdf=batch.crop_bbox_pdf,
-                    )
-                    accepted_by_page[page_position].extend(accepted)
-                    rejection_sets = rejection_sets_by_page[page_position]
+                    for identity in affected:
+                        rejection_sets.setdefault(identity, set()).add(
+                            rejected_item.rejection_code
+                        )
+                if (
+                    evidence_context is not None
+                    and not outcome.terminal_replay
+                ):
+                    accepted_ids = {
+                        detection.visual_observation_id
+                        for detection in accepted
+                    }
+                    rejected_codes_by_observation: dict[
+                        str, set[str]
+                    ] = defaultdict(set)
                     for rejected_item in rejected:
                         affected = (
-                            (rejected_item.visual_observation_id,)
-                            if rejected_item.visual_observation_id
-                            in batch.observation_ids
-                            else batch.observation_ids
-                        )
-                        for identity in affected:
-                            rejection_sets.setdefault(identity, set()).add(
-                                rejected_item.rejection_code
+                            (
+                                rejected_item.visual_observation_id,
                             )
-                    provider_call_ids.extend(request_ids)
+                            if rejected_item.visual_observation_id
+                            in observation_ids
+                            else observation_ids
+                        )
+                        for observation_id in affected:
+                            rejected_codes_by_observation[
+                                observation_id
+                            ].add(rejected_item.rejection_code)
+                    observation_outcomes = tuple(
+                        ObservationOutcome(
+                            visual_observation_id=observation_id,
+                            outcome_code=(
+                                (
+                                    "cache_resolved"
+                                    if outcome.cache_hit
+                                    else "provider_resolved"
+                                )
+                                if observation_id in accepted_ids
+                                else (
+                                    "provider_no_detection"
+                                    if "visual_no_detection"
+                                    in rejected_codes_by_observation.get(
+                                        observation_id,
+                                        set(),
+                                    )
+                                    else "provider_projection_rejected"
+                                )
+                            ),
+                        )
+                        for observation_id in observation_ids
+                    )
+                    resolved_count = sum(
+                        item.outcome_code
+                        in {"cache_resolved", "provider_resolved"}
+                        for item in observation_outcomes
+                    )
+                    self._record_terminal_outcome(
+                        context=evidence_context,
+                        outcome_code=(
+                            "resolved"
+                            if resolved_count
+                            == len(observation_outcomes)
+                            else (
+                                "partial_unresolved"
+                                if resolved_count
+                                else "unresolved"
+                            )
+                        ),
+                        observation_outcomes=observation_outcomes,
+                        attempt_event_sha256s=(
+                            outcome.attempt_event_sha256s
+                        ),
+                    )
+                provider_call_ids.extend(request_ids)
+
+            if uncertainty_mode == "production_uncertainty":
+                production_jobs: list[ProductionVisualJob] = []
+                for page_position, page_batches in enumerate(
+                    visual_batches
+                ):
+                    page_inventory = pages[page_position]
+                    page = document[page_inventory.page_index]
+                    for batch in page_batches:
+                        ordered_observation_ids = (
+                            ordered_group_members[
+                                batch.content_sha256
+                            ]
+                        )
+                        batch_observations = tuple(
+                            visual_observations[identity]
+                            for identity in ordered_observation_ids
+                        )
+                        packed_batches = pack_visual_batches(
+                            page_inventory,
+                            batch_observations,
+                        )
+                        if (
+                            len(packed_batches) != 1
+                            or set(packed_batches[0].observation_ids)
+                            != set(ordered_observation_ids)
+                        ):
+                            raise CandidateAdvisorFailure(
+                                "Visual symbol execution crop is invalid"
+                            )
+                        crop_bbox_pdf = packed_batches[0].crop_bbox_pdf
+                        crop_png = _render_visual_crop(
+                            page,
+                            crop_bbox_pdf,
+                        )
+                        crop_sha256 = hashlib.sha256(
+                            canonicalize_visual_png(crop_png)
+                        ).hexdigest()
+                        decision_hashes = tuple(
+                            routing_decision_sha256_by_observation[
+                                observation_id
+                            ]
+                            for observation_id in ordered_observation_ids
+                            if observation_id
+                            in routing_decision_sha256_by_observation
+                        )
+                        if (
+                            self._require_symbol_persistence
+                            and len(decision_hashes)
+                            != len(ordered_observation_ids)
+                        ):
+                            raise CandidateAdvisorFailure(
+                                "Visual symbol routing evidence is incomplete"
+                            )
+                        production_jobs.append(
+                            ProductionVisualJob(
+                                page_position=page_position,
+                                page_index=batch.page_index,
+                                observation_ids=ordered_observation_ids,
+                                crop_bbox_pdf=crop_bbox_pdf,
+                                crop_png=crop_png,
+                                visual_observations=batch_observations,
+                                execution_identity=VisualExecutionIdentity(
+                                    page_index=batch.page_index,
+                                    content_sha256=batch.content_sha256,
+                                    lineage_sha256=batch.lineage_sha256,
+                                    budget_sha256=batch.budget_sha256,
+                                    observation_member_bindings=(
+                                        batch.observation_member_bindings
+                                    ),
+                                    crop_sha256=crop_sha256,
+                                    member_content_sha256s=(
+                                        batch.member_content_sha256s
+                                    ),
+                                ),
+                                escalation_group_id=batch.content_sha256,
+                                routing_decision_sha256=(
+                                    routing_decision_group_sha256(
+                                        decision_hashes
+                                    )
+                                    if len(decision_hashes)
+                                    == len(ordered_observation_ids)
+                                    else batch.lineage_sha256
+                                ),
+                            )
+                        )
+                retry_coordinator = ProductionRetryCoordinator(
+                    plan=plan,
+                    actual_call_capacity_by_page={
+                        page.page_index:
+                        MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE
+                        for page in pages
+                    },
+                    execution_identities=tuple(
+                        job.execution_identity
+                        for job in production_jobs
+                    ),
+                )
+                outcomes: list[VisualReviewOutcome | None] = [
+                    None for _ in production_jobs
+                ]
+                worker_failures: dict[int, Exception] = {}
+                with ThreadPoolExecutor(
+                    max_workers=MAX_VISUAL_IN_FLIGHT
+                ) as executor:
+                    outstanding: dict[int, Any] = {}
+                    next_job_index = 0
+
+                    def submit_job(job_index: int) -> bool:
+                        job = production_jobs[job_index]
+                        if not retry_coordinator.start_primary(
+                            job.execution_identity
+                        ):
+                            context = VisualEvidenceContext(
+                                escalation_group_id=(
+                                    job.escalation_group_id
+                                ),
+                                routing_decision_sha256=(
+                                    job.routing_decision_sha256
+                                ),
+                            )
+                            event_sha256 = self._append_attempt_event(
+                                context=context,
+                                attempt_index=0,
+                                event_code=(
+                                    "not_started_budget_exhausted"
+                                ),
+                            )
+                            self._record_terminal_outcome(
+                                context=context,
+                                outcome_code="budget_exhausted",
+                                observation_outcomes=tuple(
+                                    ObservationOutcome(
+                                        visual_observation_id=(
+                                            observation_id
+                                        ),
+                                        outcome_code=(
+                                            "routing_budget_exhausted"
+                                        ),
+                                    )
+                                    for observation_id
+                                    in job.observation_ids
+                                ),
+                                attempt_event_sha256s=(
+                                    event_sha256,
+                                ),
+                            )
+                            worker_failures[job_index] = (
+                                CandidateAdvisorFailure(
+                                "Visual symbol actual wall budget exceeded"
+                                )
+                            )
+                            return False
+                        outstanding[job_index] = executor.submit(
+                            self._visual_review_result,
+                            provider=None,
+                            crop_png=job.crop_png,
+                            crop_bbox_pdf=job.crop_bbox_pdf,
+                            source_sha256=source_sha256,
+                            visual_observations=job.visual_observations,
+                            text_observations=text_observations_by_id,
+                            model=model,
+                            allow_schema_retry=True,
+                            execution_identity=(
+                                job.execution_identity
+                            ),
+                            evidence_context=VisualEvidenceContext(
+                                escalation_group_id=(
+                                    job.escalation_group_id
+                                ),
+                                routing_decision_sha256=(
+                                    job.routing_decision_sha256
+                                ),
+                            ),
+                            retry_authorizer=retry_coordinator.authorize,
+                            legacy_cache_enabled=False,
+                        )
+                        return True
+                    while (
+                        next_job_index < len(production_jobs)
+                        and len(outstanding) < MAX_VISUAL_IN_FLIGHT
+                    ):
+                        submitted = submit_job(next_job_index)
+                        next_job_index += 1
+                        if not submitted:
+                            break
+                    while outstanding:
+                        completed_futures, _ = wait(
+                            tuple(outstanding.values()),
+                            return_when=FIRST_COMPLETED,
+                        )
+                        completed_indexes = sorted(
+                            index
+                            for index, future in outstanding.items()
+                            if future in completed_futures
+                        )
+                        for completed_index in completed_indexes:
+                            future = outstanding.pop(completed_index)
+                            try:
+                                outcome = future.result()
+                            except Exception as exc:
+                                worker_failures[completed_index] = exc
+                            else:
+                                retry_coordinator.complete(outcome)
+                                outcomes[completed_index] = outcome
+                        while (
+                            not worker_failures
+                            and next_job_index < len(production_jobs)
+                            and len(outstanding)
+                            < MAX_VISUAL_IN_FLIGHT
+                        ):
+                            submitted = submit_job(next_job_index)
+                            next_job_index += 1
+                            if not submitted:
+                                break
+                started_job_count = next_job_index
+                for job_index in range(started_job_count):
+                    job = production_jobs[job_index]
+                    outcome = outcomes[job_index]
+                    if outcome is None:
+                        continue
+                    consume_visual_outcome(
+                        page_position=job.page_position,
+                        page_index=job.page_index,
+                        observation_ids=job.observation_ids,
+                        batch_observations=job.visual_observations,
+                        crop_bbox_pdf=job.crop_bbox_pdf,
+                        outcome=outcome,
+                        evidence_context=VisualEvidenceContext(
+                            escalation_group_id=(
+                                job.escalation_group_id
+                            ),
+                            routing_decision_sha256=(
+                                job.routing_decision_sha256
+                            ),
+                        ),
+                    )
+                if worker_failures:
+                    raise worker_failures[min(worker_failures)]
+                if any(outcome is None for outcome in outcomes):
+                    raise CandidateAdvisorFailure(
+                        "Visual symbol execution outcome is missing"
+                    )
+            else:
+                for page_position, page_batches in enumerate(visual_batches):
+                    page_inventory = pages[page_position]
+                    page = document[page_inventory.page_index]
+                    for batch in page_batches:
+                        crop_bbox_pdf = batch.crop_bbox_pdf
+                        batch_observations = tuple(
+                            visual_observations[identity]
+                            for identity in batch.observation_ids
+                        )
+                        crop_png = _render_visual_crop(
+                            page,
+                            crop_bbox_pdf,
+                        )
+                        outcome = self._visual_review_result(
+                            provider=provider,
+                            crop_png=crop_png,
+                            crop_bbox_pdf=crop_bbox_pdf,
+                            source_sha256=source_sha256,
+                            visual_observations=batch_observations,
+                            text_observations=text_observations_by_id,
+                            model=model,
+                            allow_schema_retry=(
+                                visual_retry_available
+                                and len(page_batches)
+                                < MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE
+                            ),
+                        )
+                        consume_visual_outcome(
+                            page_position=page_position,
+                            page_index=page_inventory.page_index,
+                            observation_ids=batch.observation_ids,
+                            batch_observations=batch_observations,
+                            crop_bbox_pdf=crop_bbox_pdf,
+                            outcome=outcome,
+                        )
 
             base_candidates = tuple(candidates)
             visual_decisions = []
@@ -1226,6 +2786,9 @@ class CandidateAdvisor:
                         text_observations=all_text_observations,
                         candidates=base_candidates,
                         geometry_contexts=contexts,
+                        local_decisions=tuple(
+                            production_local_decisions[page_position]
+                        ),
                     )
                 )
 
@@ -1359,7 +2922,11 @@ class CandidateAdvisor:
                 for source_id in sorted(visual_signal_values)
             )
 
-            if not routes and not any(visual_batches):
+            if (
+                not routes
+                and not any(visual_batches)
+                and not any(production_local_decisions)
+            ):
                 return snapshot
 
             text_calls_by_page = {
@@ -1370,7 +2937,7 @@ class CandidateAdvisor:
                 if (
                     actual_visual_calls_by_page[frozen_route.page_index]
                     + text_calls_by_page[frozen_route.page_index]
-                    >= MAX_CALLS_PER_PAGE
+                    >= MAX_UNIFIED_ACTUAL_CALLS_PER_PAGE
                 ):
                     continue
                 if frozen_route.candidate_id is not None:

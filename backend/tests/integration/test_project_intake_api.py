@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import Settings, get_settings
 from app.db import engine
 from app.errors.models import ErrorRecord
 from app.main import app
@@ -122,6 +123,8 @@ def test_create_project_accepts_one_pdf_and_dispatches_canonical_task(
     )
     assert project is not None
     assert project.state == ProjectState.PROCESSING
+    assert project.recognition_mode == "legacy_high_recall"
+    assert project.recognition_router_version == "legacy"
     assert source is not None
     assert source.mime_type == "application/pdf"
     assert intake_context.storage.read_bytes(source.resource_ref) == one_page_vector_pdf
@@ -132,6 +135,43 @@ def test_create_project_accepts_one_pdf_and_dispatches_canonical_task(
     assert "asset://" not in response.text
     assert str(intake_context.storage.root) not in response.text
     assert "credential-secret.pdf" not in response.text
+
+
+def test_project_freezes_allowlisted_recognition_mode_at_intake(
+    intake_context: IntakeContext,
+    one_page_vector_pdf: bytes,
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None,
+        storage_root=intake_context.storage.root,
+        symbol_recognition_mode="production_uncertainty",
+    )
+
+    response = intake_context.client.post(
+        "/api/v1/projects",
+        files={"file": ("drawing.pdf", one_page_vector_pdf, "application/pdf")},
+    )
+
+    assert response.status_code == 202
+    project_id = uuid.UUID(response.json()["project_id"])
+    project = intake_context.session.get(Project, project_id)
+    assert project is not None
+    assert project.recognition_mode == "production_uncertainty"
+    assert project.recognition_router_version == "symbol-uncertainty-router/1"
+    assert intake_context.dispatch.calls == [
+        (str(project_id), f"asset://projects/{project_id}/source.pdf", f"product-process:{project_id}")
+    ]
+
+
+def test_runtime_rejects_verification_high_recall_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "QI_SYMBOL_RECOGNITION_MODE",
+        "verification_high_recall",
+    )
+    with pytest.raises(ValueError):
+        Settings(_env_file=None)
 
 
 _ZERO_PAGE_PDF = (

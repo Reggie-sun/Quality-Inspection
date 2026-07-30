@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import get_args
@@ -18,9 +18,13 @@ import app.candidates.advisor as advisor_module
 from app.candidates.advisor import CandidateAdvisor, CandidateAdvisorFailure
 from app.candidates.complex_fallback import CoarseType
 from app.candidates.coverage import CoverageEntry
+from app.candidates.local_symbol_resolution import LocalResolution
 from app.candidates.models import AutomaticResult
 from app.candidates.schemas import CandidateType
-from app.candidates.symbol_review import plan_visual_batches
+from app.candidates.symbol_review import (
+    VisualReviewDecision,
+    plan_visual_batches,
+)
 from app.capabilities.service import CapabilityUnavailable
 from app.config import Settings
 from app.db import engine
@@ -28,7 +32,10 @@ from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob
 from app.pdf.inventory import build_inventory
 from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
-from app.pdf.visual_observations import VisualObservationBlockingError
+from app.pdf.visual_observations import (
+    VisualObservationBlockingError,
+    reconstruct_visual_geometry_contexts,
+)
 from app.processing import tasks
 from app.processing.automatic_result import (
     CandidateSnapshot,
@@ -104,6 +111,7 @@ class FixtureVisionProvider:
         self.factory_calls = 0
         self.symbol_calls = 0
         self.text_calls = 0
+        self.symbol_observation_ids: list[tuple[str, ...]] = []
 
     @property
     def total_calls(self) -> int:
@@ -117,6 +125,9 @@ class FixtureVisionProvider:
         assert image.startswith(b"\x89PNG")
         request = json.loads(prompt)
         self.symbol_calls += 1
+        self.symbol_observation_ids.append(
+            tuple(request["visual_observation_ids"])
+        )
         detections = []
         if self._detect_symbols:
             for visual_id in request["visual_observation_ids"]:
@@ -398,6 +409,201 @@ def _fixture_task(
         f"product-process:{project.id}",
     )
     return project, provider, result_ref, visual_ids
+
+
+def _bounded_symbol_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, tuple[PageInventory, ...], CandidateSnapshot]:
+    source, _manifest = build_symbol_fixture(tmp_path / "bounded-fixture")
+    original_pages = tuple(build_inventory(source))
+    selected_ids = {
+        visual.observation_id
+        for page in original_pages
+        for visual in page.visual_observations
+    }
+    selected_ids = set(sorted(selected_ids)[:2])
+    assert len(selected_ids) == 2
+    contexts = tuple(
+        context
+        for context in reconstruct_visual_geometry_contexts(
+            source,
+            original_pages,
+        )
+        if context.observation_id in selected_ids
+    )
+    pages = tuple(
+        replace(
+            page,
+            visual_observations=tuple(
+                visual
+                for visual in page.visual_observations
+                if visual.observation_id in selected_ids
+            ),
+        )
+        for page in original_pages
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "reconstruct_visual_geometry_contexts",
+        lambda _path, _pages: contexts,
+    )
+    return source, pages, candidate_snapshot_from_inventory(pages)
+
+
+def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source, pages, initial = _bounded_symbol_input(
+        tmp_path,
+        monkeypatch,
+    )
+    visuals = tuple(
+        visual
+        for page in pages
+        for visual in page.visual_observations
+    )
+    local_visual, escalated_visual = visuals
+    local_projection = VisualReviewDecision(
+        observation_id=local_visual.observation_id,
+        disposition="non_inspection",
+        source_location_ids=(local_visual.observation_id,),
+        coordinates=local_visual.bbox_pdf,
+        candidate_id=None,
+        existing_candidate_index=None,
+        candidate_envelope=None,
+        requires_confirmation=True,
+        symbol_kinds=("revision_marker",),
+        rejection_code=None,
+    )
+
+    def local_resolution(**kwargs: object) -> LocalResolution:
+        observation = kwargs["observation"]
+        if observation.observation_id == local_visual.observation_id:
+            return LocalResolution(
+                visual_observation_id=observation.observation_id,
+                family_hypotheses=("revision_marker",),
+                resolved_family="revision_marker",
+                reason_codes=(
+                    "deterministic_geometry_complete",
+                    "local_projection_complete",
+                ),
+                projection=local_projection,
+            )
+        return LocalResolution(
+            visual_observation_id=observation.observation_id,
+            family_hypotheses=(),
+            resolved_family=None,
+            reason_codes=("unknown_symbol_pattern",),
+            projection=None,
+        )
+
+    monkeypatch.setattr(
+        advisor_module,
+        "prepare_local_family_hypotheses",
+        lambda **kwargs: (
+            ("revision_marker",)
+            if kwargs["observation"].observation_id
+            == local_visual.observation_id
+            else ()
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "resolve_visual_observation",
+        local_resolution,
+    )
+    provider = _fixture_provider(source, detect_symbols=False)
+
+    reviewed = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "provider-storage"),
+        project_id="mixed-routing",
+        provider_factory=lambda _settings: provider,
+    ).review(source, pages, initial)
+
+    assert {
+        identity
+        for batch_ids in provider.symbol_observation_ids
+        for identity in batch_ids
+    } == {escalated_visual.observation_id}
+    assert sum(
+        identity == escalated_visual.observation_id
+        for batch_ids in provider.symbol_observation_ids
+        for identity in batch_ids
+    ) == 1
+    coverage_by_id = {
+        entry.observation_id: entry
+        for entry in reviewed.coverage_entries
+    }
+    assert coverage_by_id[
+        local_visual.observation_id
+    ].source_location_id == local_visual.observation_id
+    assert coverage_by_id[
+        local_visual.observation_id
+    ].disposition == "non_inspection"
+    assert coverage_by_id[
+        escalated_visual.observation_id
+    ].source_location_id == escalated_visual.observation_id
+    assert coverage_by_id[
+        escalated_visual.observation_id
+    ].advisor_review == _visual_review([], "visual_no_detection")
+    assert initial == candidate_snapshot_from_inventory(pages)
+
+
+def test_shadow_uncertainty_uses_legacy_final_write_without_extra_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    source, pages, initial = _bounded_symbol_input(
+        tmp_path,
+        monkeypatch,
+    )
+    legacy_provider = _fixture_provider(source)
+    shadow_provider = _fixture_provider(source)
+    legacy = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="legacy_high_recall",
+        ),
+        LocalFileStorage(tmp_path / "legacy-provider-storage"),
+        project_id="shadow-legacy",
+        provider_factory=lambda _settings: legacy_provider,
+    ).review(source, pages, initial)
+    shadow = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="shadow_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "shadow-provider-storage"),
+        project_id="shadow-evaluation",
+        provider_factory=lambda _settings: shadow_provider,
+    ).review(source, pages, initial)
+
+    assert shadow == legacy
+    assert shadow_provider.symbol_observation_ids == (
+        legacy_provider.symbol_observation_ids
+    )
+    assert shadow_provider.total_calls == legacy_provider.total_calls
+    project, raw, _working = _persist_snapshot(
+        db_session,
+        LocalFileStorage(tmp_path / "result-storage"),
+        shadow,
+    )
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(AutomaticResult)
+            .where(AutomaticResult.project_id == project.id)
+        )
+        == 1
+    )
+    assert tuple(raw.provider_call_ids) == shadow.provider_call_ids
 
 
 def test_vector_fixture_builds_visual_candidate_and_working_copy(
