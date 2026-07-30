@@ -180,7 +180,8 @@ describe("ReviewPanel", () => {
     expect(screen.queryByLabelText("识别原文：48")).toBeNull();
   });
 
-  test("复杂项信息默认隐藏并在点击修改后显示", () => {
+  test("复杂项始终隐藏技术字段并在点击修改后直接编辑检验内容", async () => {
+    const onCommand = vi.fn();
     render(
       <ReviewPanel
         items={[{
@@ -191,7 +192,7 @@ describe("ReviewPanel", () => {
           requires_confirmation: true,
           active: true,
         }]}
-        onCommand={vi.fn()}
+        onCommand={onCommand}
         selectedItemId="grouped-complex-item"
       />,
     );
@@ -208,23 +209,30 @@ describe("ReviewPanel", () => {
       name: "修改检验项：Ra 3.2",
     }));
 
-    const complexDetails = screen.getByRole("group", { name: "复杂项信息" });
-    expect(within(complexDetails).queryByRole("textbox", {
-      name: "原始标注：Ra 3.2",
-    })).toBeNull();
-    expect(within(complexDetails).getByRole("textbox", {
-      name: "坐标：Ra 3.2",
-    })).not.toBeNull();
-    expect(within(complexDetails).getByRole("combobox", {
-      name: "粗分类：Ra 3.2",
-    })).not.toBeNull();
-    expect(within(complexDetails).queryByRole("checkbox", {
-      name: "需要人工确认：Ra 3.2",
-    })).toBeNull();
-    const confirmationStatus = within(complexDetails).getByText("待人工确认");
-    expect(confirmationStatus.classList.contains(
-      "review-field-group__confirmation-status",
-    )).toBe(true);
+    expect(screen.queryByRole("group", { name: "复杂项信息" })).toBeNull();
+    expect(screen.queryByLabelText("坐标：Ra 3.2")).toBeNull();
+    expect(screen.queryByLabelText("粗分类：Ra 3.2")).toBeNull();
+    expect(screen.queryByText("待人工确认")).toBeNull();
+    const content = screen.getByRole("textbox", {
+      name: "检验内容：Ra 3.2",
+    });
+    expect((content as HTMLInputElement).value).toBe("Ra 3.2");
+
+    fireEvent.change(content, { target: { value: "Ra 6.3" } });
+    fireEvent.click(screen.getByRole("button", {
+      name: "保存修改检验项：Ra 3.2",
+    }));
+
+    await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
+      type: "edit",
+      item_id: "grouped-complex-item",
+      fields: {
+        raw_text: "Ra 6.3",
+        coordinates: [9, 10, 11, 12],
+        coarse_type: "roughness",
+        requires_confirmation: true,
+      },
+    }));
   });
 
   test("P0-UI-006 keeps merge out of details and exposes seven single-item command types", () => {
@@ -324,11 +332,8 @@ describe("ReviewPanel", () => {
     fireEvent.click(screen.getByRole("button", {
       name: "修改检验项：Ra 3.2",
     }));
-    fireEvent.change(screen.getByLabelText("坐标：Ra 3.2"), {
-      target: { value: "11,12,13,14" },
-    });
-    fireEvent.change(screen.getByLabelText("粗分类：Ra 3.2"), {
-      target: { value: "weld" },
+    fireEvent.change(screen.getByLabelText("检验内容：Ra 3.2"), {
+      target: { value: "Ra 6.3" },
     });
     fireEvent.click(
       screen.getByRole("button", { name: "保存修改检验项：Ra 3.2" }),
@@ -391,9 +396,9 @@ describe("ReviewPanel", () => {
     }
     expect(complexEdit).toMatchObject({
       fields: {
-        raw_text: "Ra 3.2",
-        coordinates: [11, 12, 13, 14],
-        coarse_type: "weld",
+        raw_text: "Ra 6.3",
+        coordinates: [9, 10, 11, 12],
+        coarse_type: "roughness",
         requires_confirmation: true,
       },
     });
@@ -783,7 +788,7 @@ describe("ReviewPanel", () => {
     });
   });
 
-  test("修改成功后采用服务端规范化的复杂检验项坐标", async () => {
+  test("修改成功后采用服务端规范化的复杂检验项内容", async () => {
     let resolveCommand: (outcome: boolean) => void = () => undefined;
     const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
       resolveCommand = resolve;
@@ -808,20 +813,20 @@ describe("ReviewPanel", () => {
     fireEvent.click(screen.getByRole("button", {
       name: "修改检验项：位置度",
     }));
-    const coordinates = screen.getByRole("textbox", { name: "坐标：位置度" });
+    const content = screen.getByRole("textbox", { name: "检验内容：位置度" });
     const save = screen.getByRole(
       "button",
       { name: "保存修改检验项：位置度" },
     );
-    fireEvent.change(coordinates, { target: { value: "1, 2, 3, 4" } });
+    fireEvent.change(content, { target: { value: "位置度（修正）" } });
     fireEvent.click(save);
 
     rerender(
       <ReviewPanel
         items={[{
           item_id: "canonical-coordinates",
-          raw_text: "位置度",
-          coordinates: [1, 2, 3, 4],
+          raw_text: "位置度修正",
+          coordinates: [0, 0, 0, 0],
           coarse_type: "geometric_tolerance",
           requires_confirmation: false,
           active: true,
@@ -838,9 +843,15 @@ describe("ReviewPanel", () => {
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：位置度修正",
+    }));
+    expect((screen.getByRole("textbox", {
+      name: "检验内容：位置度修正",
+    }) as HTMLInputElement).value).toBe("位置度修正");
   });
 
-  test("持久化签名不变的新快照仍会规范化复杂检验项坐标", async () => {
+  test("持久化签名不变的新快照仍会规范化复杂检验项内容", async () => {
     let resolveCommand: (outcome: boolean) => void = () => undefined;
     const onCommand = vi.fn(() => new Promise<boolean>((resolve) => {
       resolveCommand = resolve;
@@ -866,15 +877,15 @@ describe("ReviewPanel", () => {
     fireEvent.click(screen.getByRole("button", {
       name: "修改检验项：同值位置度",
     }));
-    const coordinates = screen.getByRole(
+    const content = screen.getByRole(
       "textbox",
-      { name: "坐标：同值位置度" },
+      { name: "检验内容：同值位置度" },
     );
     const save = screen.getByRole(
       "button",
       { name: "保存修改检验项：同值位置度" },
     );
-    fireEvent.change(coordinates, { target: { value: "1, 2, 3, 4" } });
+    fireEvent.change(content, { target: { value: " 同值位置度 " } });
     fireEvent.click(save);
 
     rerender(
@@ -892,6 +903,12 @@ describe("ReviewPanel", () => {
       expect(save.hasAttribute("disabled")).toBe(true);
       expect(onDraftChange).toHaveBeenLastCalledWith(false);
     });
+    fireEvent.click(screen.getByRole("button", {
+      name: "修改检验项：同值位置度",
+    }));
+    expect((screen.getByRole("textbox", {
+      name: "检验内容：同值位置度",
+    }) as HTMLInputElement).value).toBe("同值位置度");
   });
 
   test("成功确认并刷新后继续采用同一检验项的后续服务端更新", async () => {

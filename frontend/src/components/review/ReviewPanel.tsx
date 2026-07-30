@@ -92,19 +92,6 @@ const CANDIDATE_TYPES: Array<{ value: CandidateType; label: string }> = [
   { value: "composite", label: zhCN.review.types.composite },
 ];
 
-const COARSE_TYPES = [
-  {
-    value: "geometric_tolerance",
-    label: zhCN.review.coarseTypes.geometric_tolerance,
-  },
-  { value: "roughness", label: zhCN.review.coarseTypes.roughness },
-  { value: "weld", label: zhCN.review.coarseTypes.weld },
-  {
-    value: "cross_view_duplicate",
-    label: zhCN.review.coarseTypes.cross_view_duplicate,
-  },
-] as const;
-
 function parseCoordinates(value: string): PdfCoordinates | null {
   const coordinates = value.split(",").map((part) => Number(part.trim()));
   if (
@@ -583,81 +570,30 @@ export function ReviewPanel({
           <div className="review-selected-item__workspace review-selected-item__workspace--stacked">
           <div className="review-selected-item__form">
           {selectedItem.coarse_type === undefined || !isEditingSelected ? null : (
-          <fieldset
-            className="review-field-group review-field-group--complex"
-            disabled={disabled}
-          >
-            <legend>{zhCN.review.complexDetails}</legend>
-            <label>
-              {zhCN.review.coordinates}
-              <input
-                aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.coordinates,
-                  selectedItem.raw_text,
-                )}
-                disabled={disabled}
-                readOnly={!isEditingSelected}
-                value={complexCoordinates[selectedItem.item_id] ?? ""}
-                onChange={(event) => {
-                  setComplexCoordinates((current) => ({
-                    ...current,
-                    [selectedItem.item_id]: event.target.value,
-                  }));
-                }}
-              />
-            </label>
-            <label>
-              {zhCN.review.coarseType}
-              <select
-                aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.coarseType,
-                  selectedItem.raw_text,
-                )}
-                disabled={disabled || !isEditingSelected}
-                value={
-                  coarseTypes[selectedItem.item_id]
-                  ?? selectedItem.coarse_type
-                }
-                onChange={(event) => {
-                  setCoarseTypes((current) => ({
-                    ...current,
-                    [selectedItem.item_id]: event.target.value,
-                  }));
-                }}
-              >
-                {COARSE_TYPES.some(
-                  ({ value }) =>
-                    value
-                    === (coarseTypes[selectedItem.item_id]
-                      ?? selectedItem.coarse_type),
-                ) ? null : (
-                  <option
-                    value={
-                      coarseTypes[selectedItem.item_id]
-                      ?? selectedItem.coarse_type
-                    }
-                  >
-                    {zhCN.workbench.unknown}
-                  </option>
-                )}
-                {COARSE_TYPES.map(({ value, label }) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </label>
-            {selectedItem.requires_confirmation === true ? (
-              <p
-                className="review-field-group__confirmation-status"
-                role="status"
-                aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.requiresConfirmation,
-                  selectedItem.raw_text,
-                )}
-              >
-                {zhCN.review.confirmationPending}
-              </p>
-            ) : null}
-          </fieldset>
+            <fieldset
+              className="review-field-group review-field-group--parsed"
+              disabled={disabled}
+            >
+              <legend>{zhCN.review.editContent}</legend>
+              <label>
+                {zhCN.review.inspectionContent}
+                <input
+                  aria-label={zhCN.review.fieldForItem(
+                    zhCN.review.inspectionContent,
+                    selectedItem.raw_text,
+                  )}
+                  disabled={disabled}
+                  type="text"
+                  value={rawTexts[selectedItem.item_id] ?? selectedItem.raw_text}
+                  onChange={(event) => {
+                    setRawTexts((current) => ({
+                      ...current,
+                      [selectedItem.item_id]: event.target.value,
+                    }));
+                  }}
+                />
+              </label>
+            </fieldset>
           )}
           {selectedCoreFields.length === 0 ? null : (
             <fieldset
