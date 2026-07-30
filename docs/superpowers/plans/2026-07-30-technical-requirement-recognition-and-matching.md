@@ -1046,7 +1046,7 @@ git commit -m "feat: show technical requirement matches"
 - Modify: `backend/tests/integration/test_review_freeze.py`
 - Modify: `backend/tests/e2e/test_offline_automatic_result.py`
 
-- [ ] **Step 1: 写 cross-layer RED tests**
+- [x] **Step 1: 写 cross-layer RED tests**
 
 必须证明：
 
@@ -1083,7 +1083,7 @@ assert all(
 
 `rule_version` 只能进入 provenance/diagnostic，不污染 SIP 业务单元格。
 
-- [ ] **Step 2: 运行 RED 或确认已有实现直接满足**
+- [x] **Step 2: 运行 RED 或确认已有实现直接满足**
 
 ```bash
 micromamba run -n qi-p0 pytest backend/tests/integration/test_excel_export.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_review_freeze.py backend/tests/e2e/test_offline_automatic_result.py -q
@@ -1092,7 +1092,7 @@ micromamba run -n qi-p0 pytest backend/tests/integration/test_excel_export.py ba
 Expected: 新 assertions 在缺少完整 cross-layer wiring 时 FAIL；如果直接 PASS，记录
 它证明现有 Owner 无需 production 修改，不为了制造 GREEN 而改代码。
 
-- [ ] **Step 3: 只修复真实 boundary gap**
+- [x] **Step 3: 只修复真实 boundary gap**
 
 允许修改 production export/balloon code 的条件：
 
@@ -1103,7 +1103,7 @@ Expected: 新 assertions 在缺少完整 cross-layer wiring 时 FAIL；如果直
 若没有这些 failure，不修改 `backend/app/exports/**` 或
 `backend/app/balloons/**`。
 
-- [ ] **Step 4: 运行 focused backend suite 和 contracts**
+- [x] **Step 4: 运行 focused backend suite 和 contracts**
 
 ```bash
 micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requirements.py backend/tests/contract/test_automatic_result.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_service.py backend/tests/integration/test_excel_export.py backend/tests/e2e/test_offline_automatic_result.py -q
@@ -1112,7 +1112,7 @@ python .agent/harness/scripts/check-contracts.py
 
 Expected: 全部 PASS。
 
-- [ ] **Step 5: 提交 tests 和必要的最小修复**
+- [x] **Step 5: 提交 tests 和必要的最小修复**
 
 如果无 production gap：
 
@@ -1123,6 +1123,16 @@ git commit -m "test: cover technical requirement export boundaries"
 
 如果有 production gap，只额外 stage 实际修复文件，并在 commit 前用
 `git diff --cached --name-only` 核对。
+
+Execution note (`2026-07-30`):
+
+- cross-layer suite `59 passed`；focused backend suite `227 passed`；
+- contract mirror PASS：`unclassified=0`、`mirror_drift=0`、
+  `bindings_drift=0`；
+- existing export、balloon 和 freeze Owners 直接满足边界，未修改 production；
+- freeze 对外继续使用稳定的 `unresolved_confirmation`，测试同时证明内部精确
+  原因为 `sip_detail_fields_unconfirmed`；
+- commit: `15a2e00`.
 
 ## Task 7: Real-PDF Browser Acceptance, Smoke Test, And Independent Review
 
