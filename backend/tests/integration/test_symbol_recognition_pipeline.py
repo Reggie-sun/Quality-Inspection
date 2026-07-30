@@ -1293,30 +1293,12 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
         ),
         storage,
         project_id=str(project.id),
-        provider_factory=lambda _settings: (_ for _ in ()).throw(
-            AssertionError("conflicting persisted evidence reached Provider")
-        ),
+        provider_factory=lambda _settings: None,
         symbol_session_factory=SessionLocal,
         require_symbol_persistence=True,
     )
-    record_decisions = advisor._record_routing_decisions
-
-    def record_then_conflict(**kwargs: object) -> dict[str, str]:
-        persisted = record_decisions(**kwargs)
-        return {
-            observation_id: "f" * 64
-            for observation_id in persisted
-        }
-
-    monkeypatch.setattr(
-        advisor,
-        "_record_routing_decisions",
-        record_then_conflict,
-    )
-
-    with pytest.raises(CandidateAdvisorFailure):
-        advisor.review(matrix.source, matrix.pages, matrix.snapshot)
-
+    _record_matrix_decisions(advisor, matrix)
+    batch = matrix.plan.batches[0]
     decisions = tuple(
         committed_db_session.scalars(
             select(SymbolRoutingDecisionRecord).where(
@@ -1327,7 +1309,79 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
     assert {
         decision.visual_observation_id for decision in decisions
     } == set(matrix.decisions)
-    assert all(decision.decision_sha256 != "f" * 64 for decision in decisions)
+    batch_decisions = tuple(
+        sorted(
+            (
+                decision
+                for decision in decisions
+                if decision.escalation_group_id
+                == batch.content_sha256
+            ),
+            key=lambda decision: (
+                decision.escalation_group_member_index
+            ),
+        )
+    )
+    assert tuple(
+        decision.visual_observation_id
+        for decision in batch_decisions
+    ) == batch.observation_ids
+    (
+        crop_png,
+        crop_bbox_pdf,
+        batch_visuals,
+        texts,
+        execution_identity,
+    ) = _execution_input(matrix, batch)
+    persisted_group_sha256 = routing_decision_group_sha256(
+        tuple(
+            decision.decision_sha256
+            for decision in batch_decisions
+        )
+    )
+    conflicting_group_sha256 = "f" * 64
+    assert persisted_group_sha256 != conflicting_group_sha256
+
+    class CountingProvider:
+        calls = 0
+
+        def review_symbols(
+            self,
+            _image: bytes,
+            _prompt: str,
+        ) -> VisionResult:
+            self.calls += 1
+            return VisionResult(
+                request_id="provider-must-not-run",
+                payload={
+                    "schema_version": "visual-symbol-review/2",
+                    "detections": [],
+                },
+                usage={},
+            )
+
+    provider = CountingProvider()
+    with pytest.raises(CandidateAdvisorFailure):
+        advisor._visual_review_result(
+            provider=provider,
+            crop_png=crop_png,
+            crop_bbox_pdf=crop_bbox_pdf,
+            source_sha256=sha256(
+                matrix.source.read_bytes()
+            ).hexdigest(),
+            visual_observations=batch_visuals,
+            text_observations=texts,
+            model="qwen3-vl-plus",
+            allow_schema_retry=False,
+            execution_identity=execution_identity,
+            legacy_cache_enabled=False,
+            evidence_context=VisualEvidenceContext(
+                escalation_group_id=batch.content_sha256,
+                routing_decision_sha256=conflicting_group_sha256,
+            ),
+        )
+
+    assert provider.calls == 0
     assert (
         committed_db_session.scalar(
             select(func.count())
