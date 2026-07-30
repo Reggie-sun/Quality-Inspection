@@ -14,11 +14,12 @@ def _observation(
     *,
     observation_id: str | None = None,
     page_index: int = 0,
+    source_type: str = "native",
     bbox_normalized: tuple[float, float, float, float] = (0.1, 0.1, 0.2, 0.2),
 ) -> TextObservation:
     return TextObservation(
         observation_id=observation_id or f"obs-{page_index}-{raw_text}",
-        source_type="native",
+        source_type=source_type,
         observation_level="line",
         raw_text=raw_text,
         normalized_text=raw_text,
@@ -102,6 +103,59 @@ def test_title_block_number_remains_reviewable() -> None:
     assert decision.reason == "title_block_number"
     assert decision.rule_version == PRIMARY_DISPOSITION_RULE_VERSION
     assert decision.requires_confirmation is True
+
+
+@pytest.mark.parametrize(
+    ("bbox_normalized", "expected_reason"),
+    [
+        ((0.20, 0.01, 0.30, 0.03), "page_frame_number"),
+        ((0.20, 0.0102, 0.30, 0.0302), None),
+        ((0.20, 0.97, 0.30, 0.99), "page_frame_number"),
+        ((0.20, 0.9698, 0.30, 0.9898), None),
+        ((0.64, 0.81, 0.66, 0.83), "title_block_number"),
+        ((0.638, 0.81, 0.66, 0.83), None),
+        ((0.64, 0.808, 0.66, 0.83), None),
+    ],
+)
+def test_standalone_number_region_boundaries(
+    bbox_normalized: tuple[float, float, float, float],
+    expected_reason: str | None,
+) -> None:
+    decision = classify_primary_disposition(
+        _observation("25", bbox_normalized=bbox_normalized)
+    )
+
+    if expected_reason is None:
+        assert decision is None
+    else:
+        assert decision is not None
+        assert decision.reason == expected_reason
+
+
+def test_page_frame_precedes_title_block_at_bottom_right() -> None:
+    decision = classify_primary_disposition(
+        _observation("1", bbox_normalized=(0.90, 0.97, 0.94, 0.99))
+    )
+
+    assert decision is not None
+    assert decision.disposition == "non_inspection"
+    assert decision.reason == "page_frame_number"
+
+
+@pytest.mark.parametrize("source_type", ["native", "ocr"])
+def test_standalone_number_region_uses_canonical_bbox_for_text_sources(
+    source_type: str,
+) -> None:
+    decision = classify_primary_disposition(
+        _observation(
+            "1",
+            source_type=source_type,
+            bbox_normalized=(0.20, 0.00, 0.30, 0.02),
+        )
+    )
+
+    assert decision is not None
+    assert decision.reason == "page_frame_number"
 
 
 @pytest.mark.parametrize(
