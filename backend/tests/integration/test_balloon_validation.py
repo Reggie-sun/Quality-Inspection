@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from app.balloons.placement import BALLOON_RADIUS_PDF, circle_intersects_box
 from app.balloons.service import ItemSetNotFrozen
 from app.balloons.validator import validate_balloons
-from app.candidates.models import AutomaticResult
 from app.db import engine
 from app.exports.models import ExportJob
 from app.review.models import ReviewedResult
@@ -163,18 +162,12 @@ def test_unresolved_hard_collision_blocks_confirm_and_export(
     ) == 0
 
 
-def test_unresolved_partial_result_blocks_balloon_confirm_and_export_chain(
+def test_unresolved_evidence_blocks_balloon_confirm_and_export_chain(
     db_session: Session,
     tmp_path: Path,
 ) -> None:
-    """PRT-5 unresolved partial evidence creates no downstream formal facts."""
+    """PRT-5 unresolved evidence creates no downstream formal facts."""
     context = make_balloon_context(db_session, tmp_path, frozen=False)
-    raw = db_session.get(
-        AutomaticResult,
-        context.working_copy.raw_result_id,
-    )
-    assert raw is not None
-    setattr(raw, "completeness", "partial_review_required")
     coverage = dict(context.working_copy.coverage)
     coverage["entries"] = [
         {

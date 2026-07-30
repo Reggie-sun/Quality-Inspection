@@ -1052,17 +1052,112 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
         entry.observation_id: entry
         for entry in reviewed.coverage_entries
     }
-    local_review = coverage_by_id[
-        matrix.local_visual.observation_id
-    ].advisor_review
+    local_entry = coverage_by_id[matrix.local_visual.observation_id]
+    assert (
+        local_entry.disposition,
+        local_entry.candidate_id,
+        local_entry.source_location_id,
+    ) == (
+        "non_inspection",
+        None,
+        matrix.local_visual.observation_id,
+    )
+    local_review = local_entry.advisor_review
     assert local_review is not None
     assert "local_resolution_evidence" in local_review
-    assert coverage_by_id[
+    assert local_review["symbol_kinds"] == ["revision_marker"]
+
+    cache_candidate_id = "f6c9f7280582b7403b89108c"
+    vlm_candidate_id = "9e9f419c9d84cd74f263dc3b"
+    cache_entry = coverage_by_id[matrix.cache_visual.observation_id]
+    vlm_entry = coverage_by_id[matrix.vlm_visual.observation_id]
+    assert (
+        cache_entry.disposition,
+        cache_entry.candidate_id,
+        cache_entry.source_location_id,
+    ) == (
+        "candidate",
+        cache_candidate_id,
+        matrix.cache_visual.observation_id,
+    )
+    assert cache_entry.advisor_review is not None
+    assert cache_entry.advisor_review["symbol_kinds"] == ["diameter"]
+    assert (
+        vlm_entry.disposition,
+        vlm_entry.candidate_id,
+        vlm_entry.source_location_id,
+    ) == (
+        "candidate",
+        vlm_candidate_id,
+        matrix.vlm_visual.observation_id,
+    )
+    assert vlm_entry.advisor_review is not None
+    assert vlm_entry.advisor_review["symbol_kinds"] == [
+        "counterbore",
+        "depth",
+        "diameter",
+    ]
+    reviewed_candidates = {
+        candidate["candidate_id"]: candidate
+        for candidate in reviewed.candidates
+    }
+    assert reviewed_candidates[cache_candidate_id]["payload"][
+        "item_type"
+    ] == "diameter_dimension"
+    assert reviewed_candidates[cache_candidate_id][
+        "source_location_ids"
+    ][0] == matrix.cache_visual.observation_id
+    assert reviewed_candidates[vlm_candidate_id]["payload"][
+        "item_type"
+    ] == "composite"
+    assert reviewed_candidates[vlm_candidate_id][
+        "source_location_ids"
+    ][0] == matrix.vlm_visual.observation_id
+
+    raw_coverage_by_id = {
+        entry["observation_id"]: entry
+        for entry in raw.coverage["entries"]
+    }
+    assert {
+        key: raw_coverage_by_id[matrix.local_visual.observation_id][key]
+        for key in ("disposition", "candidate_id", "source_location_id")
+    } == {
+        "disposition": "non_inspection",
+        "candidate_id": None,
+        "source_location_id": matrix.local_visual.observation_id,
+    }
+    assert {
+        key: raw_coverage_by_id[matrix.cache_visual.observation_id][key]
+        for key in ("disposition", "candidate_id", "source_location_id")
+    } == {
+        "disposition": "candidate",
+        "candidate_id": cache_candidate_id,
+        "source_location_id": matrix.cache_visual.observation_id,
+    }
+    assert {
+        key: raw_coverage_by_id[matrix.vlm_visual.observation_id][key]
+        for key in ("disposition", "candidate_id", "source_location_id")
+    } == {
+        "disposition": "candidate",
+        "candidate_id": vlm_candidate_id,
+        "source_location_id": matrix.vlm_visual.observation_id,
+    }
+    raw_candidates = {
+        candidate["candidate_id"]: candidate
+        for candidate in raw.candidates
+    }
+    assert raw_candidates[cache_candidate_id]["payload"]["item_type"] == (
+        "diameter_dimension"
+    )
+    assert raw_candidates[cache_candidate_id]["source_location_ids"][0] == (
         matrix.cache_visual.observation_id
-    ].advisor_review is not None
-    assert coverage_by_id[
+    )
+    assert raw_candidates[vlm_candidate_id]["payload"]["item_type"] == (
+        "composite"
+    )
+    assert raw_candidates[vlm_candidate_id]["source_location_ids"][0] == (
         matrix.vlm_visual.observation_id
-    ].advisor_review is not None
+    )
     failed_entry = next(
         entry
         for entry in reviewed.coverage_entries
@@ -1281,11 +1376,32 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
     """PRT-5 distinguishes persisted evidence conflict from write failure."""
     matrix = _partial_matrix_input(tmp_path, monkeypatch)
     storage = LocalFileStorage(tmp_path / "evidence-revalidation")
-    project, _source_file = _store_project_source(
+    project, source_file = _store_project_source(
         committed_db_session,
         storage,
         matrix.source.read_bytes(),
     )
+
+    class CountingProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def review_symbols(
+            self,
+            _image: bytes,
+            _prompt: str,
+        ) -> VisionResult:
+            self.calls += 1
+            return VisionResult(
+                request_id="provider-must-not-run",
+                payload={
+                    "schema_version": "visual-symbol-review/2",
+                    "detections": [],
+                },
+                usage={},
+            )
+
+    provider = CountingProvider()
     advisor = CandidateAdvisor(
         Settings(
             qwen_model="qwen3-vl-plus",
@@ -1293,7 +1409,7 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
         ),
         storage,
         project_id=str(project.id),
-        provider_factory=lambda _settings: None,
+        provider_factory=lambda _settings: provider,
         symbol_session_factory=SessionLocal,
         require_symbol_persistence=True,
     )
@@ -1326,13 +1442,6 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
         decision.visual_observation_id
         for decision in batch_decisions
     ) == batch.observation_ids
-    (
-        crop_png,
-        crop_bbox_pdf,
-        batch_visuals,
-        texts,
-        execution_identity,
-    ) = _execution_input(matrix, batch)
     persisted_group_sha256 = routing_decision_group_sha256(
         tuple(
             decision.decision_sha256
@@ -1342,46 +1451,57 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
     conflicting_group_sha256 = "f" * 64
     assert persisted_group_sha256 != conflicting_group_sha256
 
-    class CountingProvider:
-        calls = 0
+    monkeypatch.setattr(advisor_module, "MAX_VISUAL_IN_FLIGHT", 1)
+    actual_group_sha256 = advisor_module.routing_decision_group_sha256
 
-        def review_symbols(
-            self,
-            _image: bytes,
-            _prompt: str,
-        ) -> VisionResult:
-            self.calls += 1
-            return VisionResult(
-                request_id="provider-must-not-run",
-                payload={
-                    "schema_version": "visual-symbol-review/2",
-                    "detections": [],
-                },
-                usage={},
-            )
-
-    provider = CountingProvider()
-    with pytest.raises(CandidateAdvisorFailure):
-        advisor._visual_review_result(
-            provider=provider,
-            crop_png=crop_png,
-            crop_bbox_pdf=crop_bbox_pdf,
-            source_sha256=sha256(
-                matrix.source.read_bytes()
-            ).hexdigest(),
-            visual_observations=batch_visuals,
-            text_observations=texts,
-            model="qwen3-vl-plus",
-            allow_schema_retry=False,
-            execution_identity=execution_identity,
-            legacy_cache_enabled=False,
-            evidence_context=VisualEvidenceContext(
-                escalation_group_id=batch.content_sha256,
-                routing_decision_sha256=conflicting_group_sha256,
-            ),
+    def conflict_claimed_group(
+        decision_sha256s: tuple[str, ...],
+    ) -> str:
+        actual = actual_group_sha256(decision_sha256s)
+        return (
+            conflicting_group_sha256
+            if actual == persisted_group_sha256
+            else actual
         )
 
+    monkeypatch.setattr(
+        advisor_module,
+        "routing_decision_group_sha256",
+        conflict_claimed_group,
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as advisor_failure:
+        advisor.review(matrix.source, matrix.pages, matrix.snapshot)
+
+    assert str(advisor_failure.value) == "Visual symbol cache lookup failed"
     assert provider.calls == 0
+
+    def candidate_builder(_pages: tuple[object, ...]) -> CandidateSnapshot:
+        raise advisor_failure.value
+
+    with pytest.raises(CandidateAdvisorFailure):
+        InventoryPipeline(
+            committed_db_session,
+            storage,
+            PassingPreflight(),
+            inventory_builder=lambda _path: matrix.pages,
+            candidate_snapshot_builder=candidate_builder,
+        ).run(
+            str(project.id),
+            source_file.resource_ref,
+            f"product-process:revalidation:{project.id}",
+        )
+
+    error = committed_db_session.scalar(
+        select(ErrorRecord).where(ErrorRecord.project_id == project.id)
+    )
+    job = committed_db_session.scalar(
+        select(LogicalJob).where(
+            LogicalJob.project_id == str(project.id)
+        )
+    )
+    assert error is not None
+    assert job is not None
     assert (
         committed_db_session.scalar(
             select(func.count())
@@ -1390,6 +1510,9 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
         )
         == 0
     )
+    assert job.result_ref is None
+    assert error.stage == "candidate_advisor"
+    assert error.cause_category == "processing_defect"
     assert (
         committed_db_session.scalar(
             select(func.count())

@@ -102,6 +102,82 @@ def raw_result(db_session: Session) -> AutomaticResult:
     )
 
 
+def _insert_partial_raw_result(db_session: Session) -> AutomaticResult:
+    assert "completeness" in AutomaticResult.__table__.c
+    project_id = uuid.uuid4()
+    source_file_id = uuid.uuid4()
+    job_id = uuid.uuid4()
+    result_id = uuid.uuid4()
+    db_session.add_all(
+        [
+            Project(id=project_id, state=ProjectState.READY_FOR_EDIT),
+            StoredFile(
+                id=source_file_id,
+                resource_ref=f"asset://tests/{project_id}/source.pdf",
+                sha256="0" * 64,
+                size_bytes=1,
+                mime_type="application/pdf",
+            ),
+            LogicalJob(
+                id=job_id,
+                project_id=str(project_id),
+                logical_task_key=f"process:partial-result:{project_id}",
+                status="succeeded",
+                result_ref=f"automatic-result://{result_id}",
+            ),
+        ]
+    )
+    db_session.flush()
+    result = AutomaticResult(
+        id=result_id,
+        project_id=project_id,
+        source_file_id=source_file_id,
+        logical_job_id=job_id,
+        inventory_ref=f"asset://tests/{project_id}/inventory.json",
+        candidates=[
+            {
+                "candidate_id": "candidate-1",
+                "payload": {
+                    "raw_text": "M6",
+                    "item_type": "thread",
+                },
+                "source_location_ids": ["page-0:observation-1"],
+                "advisor_review": {
+                    "provider_role": "advisor",
+                    "validated": True,
+                },
+            }
+        ],
+        coverage={
+            "blocking_count": 0,
+            "review_required_count": 1,
+            "coverage_checked": True,
+            "blocking_observation_ids": [],
+            "entries": [
+                {
+                    "observation_id": "observation-1",
+                    "disposition": "candidate",
+                    "source_location_id": "page-0:observation-1",
+                    "coordinates": [1, 2, 3, 4],
+                    "candidate_id": "candidate-1",
+                    "requires_confirmation": True,
+                    "advisor_review": {
+                        "provider_role": "advisor",
+                        "validated": True,
+                    },
+                }
+            ],
+            "relations": [],
+        },
+        provider_call_ids=[],
+        schema_version=LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION,
+        completeness="partial_review_required",
+    )
+    db_session.add(result)
+    db_session.commit()
+    return result
+
+
 def test_raw_result_is_immutable(
     raw_result: AutomaticResult,
     db_session: Session,
@@ -141,12 +217,10 @@ def test_legacy_result_reads_as_complete(
 
 
 def test_partial_result_is_immutable_and_creates_exactly_one_working_copy(
-    raw_result: AutomaticResult,
     db_session: Session,
 ) -> None:
     """PRT-5 persists one reviewable partial result without a second copy."""
-    setattr(raw_result, "completeness", "partial_review_required")
-    db_session.commit()
+    raw_result = _insert_partial_raw_result(db_session)
     service = ReviewService(db_session)
 
     first = service.create_from_raw(raw_result.id)
@@ -163,12 +237,10 @@ def test_partial_result_is_immutable_and_creates_exactly_one_working_copy(
 
 
 def test_partial_result_completeness_is_immutable(
-    raw_result: AutomaticResult,
     db_session: Session,
 ) -> None:
     """PRT-5 completeness is part of the immutable automatic-result fact."""
-    setattr(raw_result, "completeness", "partial_review_required")
-    db_session.commit()
+    raw_result = _insert_partial_raw_result(db_session)
     setattr(raw_result, "completeness", "complete")
 
     with pytest.raises(IntegrityError):
