@@ -33,8 +33,8 @@
   - frontend focused: `32 passed`
 - Writer ownership and order: 一个 write-capable executor 严格按 Task 1 → Task 7；
   同一 file group 不并发写
-- Next verification: Task 1 `github-oss-fusion` 受限 prior-art 检查，然后执行
-  schema RED
+- Next verification: 提供包含六条技术要求的 approved real PDF，并设置
+  `QI_MVP_E2E_PDF`，继续 Task 7 Playwright / Chrome runtime acceptance
 
 ## Problem Boundary
 
@@ -1141,7 +1141,7 @@ Execution note (`2026-07-30`):
 - Create: `frontend/e2e/technical-requirement-matching.spec.ts`
 - Modify: `docs/superpowers/plans/2026-07-30-technical-requirement-recognition-and-matching.md`
 
-- [ ] **Step 1: 确认 approved real PDF precondition**
+- [x] **Step 1: 确认 approved real PDF precondition**
 
 复用现有 E2E input contract：
 
@@ -1227,7 +1227,7 @@ evidence convention。
 
 发现 bug 时回到对应 task 做最小修复并重跑 focused tests。
 
-- [ ] **Step 5: 使用 `auto-feature-smoke-test`**
+- [x] **Step 5: 使用 `auto-feature-smoke-test`**
 
 必须完整读取并执行 skill，覆盖当前 feature flow。报告实际 runtime URL、操作、console
 errors、network failures 和截图证据；不能把 Playwright 单测等同于 smoke test。
@@ -1258,7 +1258,7 @@ Minimal follow-up:
 当前子代理工具若仍不能显式绑定 required profile/model，不得悄悄启动 generic child。
 应先报告 tool limitation；没有独立 review evidence 时不得 claim reviewer gate passed。
 
-- [ ] **Step 7: Parent final verification**
+- [x] **Step 7: Parent final verification**
 
 Run:
 
@@ -1282,6 +1282,18 @@ Expected: 全部 PASS；build 仅允许明确报告的既有 warning。
 - `auto-feature-smoke-test` result；
 - independent reviewer verdict；
 - remaining non-blocking risk。
+
+Task 7 checkpoint (`2026-07-30`):
+
+- approved real PDF precondition: BLOCKED；process env 与 `.env` 均未提供
+  `QI_MVP_E2E_PDF`，未创建 synthetic Playwright 替代证据；
+- `auto-feature-smoke-test` API/focused verification: PASS（backend
+  `227 passed`）；Chrome MCP smoke: BLOCKED（缺少 approved real PDF）；
+- parent verification: frontend `208 passed`，production build PASS，保留既有
+  `>500 kB` chunk warning；contract mirror 与 `git diff --check` PASS；
+- independent reviewer gate: BLOCKED；当前 collaboration tool 无法显式绑定本地
+  `reviewer` profile/model，按已批准的主线程串行约束未启动 generic child；
+- Task 7 Steps 2–4、6、8 仍未完成，plan 保持 `in_progress`。
 
 如果 real PDF 或 reviewer gate blocked，保持 `Status: in_progress` 并记录唯一 blocker，
 不得用文档勾选替代实际证据。
