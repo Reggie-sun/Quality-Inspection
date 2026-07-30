@@ -305,6 +305,7 @@ def test_dispatch_failure_is_sanitized_retryable_and_durable(
     assert project.state == ProjectState.PROCESSING_FAILED
     assert error is not None
     assert error.code == "project_dispatch_failed"
+    assert error.severity == "blocking"
     assert error.stage == "dispatch"
     assert error.cause_category == "transient_dispatch_failure"
     assert secret not in error.message

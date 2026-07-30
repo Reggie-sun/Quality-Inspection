@@ -83,13 +83,38 @@ def test_breaking_gate_allows_additive_optional_fields_and_enum_values() -> None
     assert find_breaking_changes(_baseline(), current) == []
 
 
-def test_breaking_gate_rejects_operation_deletion_or_rename() -> None:
+def test_breaking_gate_rejects_operation_deletion() -> None:
     """Catches removal of a method/path operation from API v1."""
     current = deepcopy(_baseline())
     del current["paths"]["/widgets/{widget_id}"]["get"]
 
     assert any(
         "operation removed" in change
+        for change in find_breaking_changes(_baseline(), current)
+    )
+
+
+def test_breaking_gate_rejects_operation_id_rename() -> None:
+    """Catches a stable API ID rename on an existing method/path."""
+    current = deepcopy(_baseline())
+    current["paths"]["/widgets/{widget_id}"]["get"][
+        "operationId"
+    ] = "QI-API-WID-002"
+
+    assert any(
+        "operationId changed" in change
+        for change in find_breaking_changes(_baseline(), current)
+    )
+
+
+def test_breaking_gate_rejects_property_deletion_or_rename() -> None:
+    """Catches a field rename, represented as removing the old property."""
+    current = deepcopy(_baseline())
+    widget = current["components"]["schemas"]["Widget"]
+    widget["properties"]["widget_id"] = widget["properties"].pop("id")
+
+    assert any(
+        "property removed" in change
         for change in find_breaking_changes(_baseline(), current)
     )
 
