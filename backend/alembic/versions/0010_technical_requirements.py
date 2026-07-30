@@ -27,8 +27,57 @@ def _empty_requirements_column() -> sa.Column:
 
 
 def upgrade() -> None:
-    op.add_column("automatic_results", _empty_requirements_column())
-    op.add_column("review_working_copies", _empty_requirements_column())
+    inspector = sa.inspect(op.get_bind())
+    project_columns = {
+        column["name"] for column in inspector.get_columns("projects")
+    }
+    if "recognition_mode" not in project_columns:
+        op.add_column(
+            "projects",
+            sa.Column(
+                "recognition_mode",
+                sa.String(length=40),
+                server_default="legacy_high_recall",
+                nullable=False,
+            ),
+        )
+    if "recognition_router_version" not in project_columns:
+        op.add_column(
+            "projects",
+            sa.Column(
+                "recognition_router_version",
+                sa.String(length=64),
+                server_default="legacy",
+                nullable=False,
+            ),
+        )
+
+    project_constraints = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("projects")
+    }
+    if "ck_projects_recognition_mode" not in project_constraints:
+        op.create_check_constraint(
+            "ck_projects_recognition_mode",
+            "projects",
+            "recognition_mode IN "
+            "('legacy_high_recall','shadow_uncertainty',"
+            "'production_uncertainty')",
+        )
+
+    automatic_result_columns = {
+        column["name"]
+        for column in inspector.get_columns("automatic_results")
+    }
+    if "technical_requirements" not in automatic_result_columns:
+        op.add_column("automatic_results", _empty_requirements_column())
+
+    working_copy_columns = {
+        column["name"]
+        for column in inspector.get_columns("review_working_copies")
+    }
+    if "technical_requirements" not in working_copy_columns:
+        op.add_column("review_working_copies", _empty_requirements_column())
 
 
 def downgrade() -> None:
