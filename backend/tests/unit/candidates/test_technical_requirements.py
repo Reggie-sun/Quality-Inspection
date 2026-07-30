@@ -6,6 +6,8 @@ from app.candidates.technical_requirements import (
     TECHNICAL_REQUIREMENT_RULE_VERSION,
     TechnicalRequirementEntry,
     classify_technical_requirement_entry,
+    evaluate_requirement,
+    evaluate_technical_requirements,
     reconstruct_technical_requirement_entries,
 )
 from app.pdf.schemas import TextObservation
@@ -199,3 +201,127 @@ def test_standard_reference_is_parsed_without_numeric_conversion() -> None:
     }
     assert decision.sip_suggestion.inspection_standard == "GB/T 1804-m"
     assert decision.sip_suggestion.key_dimension is None
+
+
+def envelope(
+    candidate_id: str,
+    *,
+    item_type: str,
+    **payload_fields: object,
+) -> dict[str, object]:
+    return {
+        "candidate_id": candidate_id,
+        "payload": {
+            "candidate_id": candidate_id,
+            "item_type": item_type,
+            "raw_text": str(payload_fields.get("nominal", item_type)),
+            "normalized_text": str(payload_fields.get("nominal", item_type)),
+            **payload_fields,
+        },
+        "source_location_ids": [f"source-{candidate_id}"],
+    }
+
+
+def test_general_dimensional_tolerance_matches_only_untoleranced_dimensions() -> None:
+    candidates = (
+        envelope("linear", item_type="linear_dimension", nominal="25"),
+        envelope(
+            "explicit",
+            item_type="linear_dimension",
+            nominal="30",
+            upper_tolerance="0.1",
+            lower_tolerance="-0.1",
+        ),
+        envelope("thread", item_type="thread", thread_spec="M6"),
+    )
+
+    decision = evaluate_requirement(
+        entry_for("未注尺寸公差按GB/T 1804-m执行"),
+        candidates,
+    )
+
+    assert decision.match_outcome == "matched_items"
+    assert decision.matched_candidate_ids == ["linear"]
+    assert candidates[0]["payload"].get("upper_tolerance") is None
+    assert candidates[0]["payload"].get("lower_tolerance") is None
+
+
+def test_default_chamfer_and_general_gdt_fail_safe_to_global_scope() -> None:
+    chamfer = evaluate_requirement(entry_for("未标注倒角C0.5"), ())
+    gdt = evaluate_requirement(
+        entry_for("未注形位公差按GB/T 1184-k执行"),
+        (),
+    )
+
+    assert chamfer.match_outcome == "global_scope"
+    assert gdt.match_outcome == "global_scope"
+    assert chamfer.generated_candidate_id is not None
+    assert gdt.generated_candidate_id is not None
+
+
+def test_evaluation_writes_canonical_bidirectional_match_refs() -> None:
+    candidates = (
+        envelope("second", item_type="linear_dimension", nominal="25"),
+        envelope("first", item_type="diameter_dimension", nominal="10"),
+    )
+    requirement = entry_for("未注尺寸公差按GB/T 1804-m执行")
+
+    evaluation = evaluate_technical_requirements((requirement,), candidates)
+
+    decision = evaluation.decisions[0]
+    assert decision.matched_candidate_ids == ["first", "second"]
+    assert all(
+        candidate["technical_requirement_refs"] == [decision.requirement_id]
+        for candidate in evaluation.candidates
+    )
+
+
+def test_conflicting_general_tolerance_classes_remain_unresolved() -> None:
+    requirements = (
+        entry_for("未注尺寸公差按GB/T 1804-m执行", observation_id="m"),
+        entry_for("未注尺寸公差按GB/T 1804-f执行", observation_id="f"),
+    )
+
+    evaluation = evaluate_technical_requirements(
+        requirements,
+        (envelope("linear", item_type="linear_dimension", nominal="25"),),
+    )
+
+    assert [decision.match_outcome for decision in evaluation.decisions] == [
+        "unresolved",
+        "unresolved",
+    ]
+    assert all(
+        decision.review_required
+        and decision.generated_candidate_id is None
+        and decision.matched_candidate_ids == []
+        for decision in evaluation.decisions
+    )
+    assert "technical_requirement_refs" not in evaluation.candidates[0]
+
+
+def test_unresolved_requirement_does_not_create_candidate() -> None:
+    evaluation = evaluate_technical_requirements(
+        (entry_for("按企业内部要求处理"),),
+        (),
+    )
+
+    assert evaluation.decisions[0].match_outcome == "unresolved"
+    assert evaluation.candidates == ()
+
+
+@pytest.mark.parametrize(
+    ("text", "subtype"),
+    [
+        ("检查外观，不得有裂纹", "surface_integrity"),
+        ("测量倒角，尺寸应为1×45°", "default_chamfer"),
+    ],
+)
+def test_existing_executable_requirement_rules_are_owned_here(
+    text: str,
+    subtype: str,
+) -> None:
+    decision = classify_technical_requirement_entry(entry_for(text))
+
+    assert decision.subtype == subtype
+    assert decision.category == "standalone_check"

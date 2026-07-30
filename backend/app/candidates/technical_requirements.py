@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import copy
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Any, Literal, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.candidates.confidence import ConfidenceDecisionContractError
 from app.candidates.parser import normalize_text
-from app.candidates.schemas import stable_candidate_id
+from app.candidates.schemas import Candidate, stable_candidate_id
 from app.pdf.schemas import TextObservation
 
 
@@ -47,9 +50,14 @@ _DEFAULT_CHAMFER = re.compile(
     r"未(?:注|标注)(?:的)?倒角\s*C\s*(?P<size>[0-9]+(?:\.[0-9]+)?)",
     re.IGNORECASE,
 )
+_EXPLICIT_CHAMFER = re.compile(
+    r"(?:检查|检验|测量|确认|验证).*?倒角.*?(?:尺寸)?应为\s*"
+    r"(?P<size>[0-9]+(?:\.[0-9]+)?\s*[×xX]\s*"
+    r"[0-9]+(?:\.[0-9]+)?\s*°?)"
+)
 _DEBURR = re.compile(r"(?:锐边.*?(?:去除?|清除)毛刺|去除?毛刺)")
 _SURFACE_INTEGRITY = re.compile(
-    r"表面.*?(?:划痕|擦伤|损伤).*?(?:缺陷|外观)"
+    r"(?:表面|外观).*?(?:划痕|擦伤|损伤|裂纹)"
 )
 _SURFACE_TREATMENT = re.compile(r"表面.*?阳极氧化.*?处理")
 
@@ -63,6 +71,7 @@ class TechnicalRequirementEntry:
     source_segment_ids: tuple[str, ...]
     page_index: int
     coordinates: tuple[tuple[float, float, float, float], ...]
+    heading_source_location_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -117,6 +126,16 @@ class TechnicalRequirementDecision(BaseModel):
     rule_version: Literal["technical-requirement/1"]
     review_required: bool
     sip_suggestion: SipSuggestion
+
+
+class TechnicalRequirementContractError(ConfidenceDecisionContractError):
+    pass
+
+
+@dataclass(frozen=True)
+class TechnicalRequirementEvaluation:
+    decisions: tuple[TechnicalRequirementDecision, ...]
+    candidates: tuple[dict[str, Any], ...]
 
 
 def _segments(
@@ -191,6 +210,7 @@ def _entry_from_segments(
     ordinal: int,
     segments: Sequence[_ObservationSegment],
     texts: Sequence[str],
+    heading_source_location_ids: tuple[str, ...],
 ) -> TechnicalRequirementEntry:
     source_location_ids = tuple(
         dict.fromkeys(segment.observation.observation_id for segment in segments)
@@ -204,6 +224,7 @@ def _entry_from_segments(
         source_segment_ids=tuple(segment.segment_id for segment in segments),
         page_index=segments[0].observation.page_index,
         coordinates=tuple(segment.bbox_pdf for segment in segments),
+        heading_source_location_ids=heading_source_location_ids,
     )
 
 
@@ -216,6 +237,7 @@ def reconstruct_technical_requirement_entries(
     current_ordinal: int | None = None
     current_segments: list[_ObservationSegment] = []
     current_texts: list[str] = []
+    heading_source_location_ids: tuple[str, ...] = ()
 
     def flush() -> None:
         nonlocal current_ordinal, current_segments, current_texts
@@ -225,6 +247,7 @@ def reconstruct_technical_requirement_entries(
                     current_ordinal,
                     current_segments,
                     current_texts,
+                    heading_source_location_ids,
                 )
             )
         current_ordinal = None
@@ -237,6 +260,9 @@ def reconstruct_technical_requirement_entries(
             flush()
             active_block = True
             awaiting_first_entry = True
+            heading_source_location_ids = (
+                segment.observation.observation_id,
+            )
             continue
         if not active_block:
             continue
@@ -253,16 +279,35 @@ def reconstruct_technical_requirement_entries(
         if awaiting_first_entry or not current_segments:
             active_block = False
             awaiting_first_entry = False
+            heading_source_location_ids = ()
             continue
         if not _can_continue(current_segments[-1], segment):
             flush()
             active_block = False
+            heading_source_location_ids = ()
             continue
         current_segments.append(segment)
         current_texts.append(segment.text)
 
     flush()
     return tuple(entries)
+
+
+def technical_requirement_source_location_ids(
+    _observations: Sequence[TextObservation],
+    entries: Sequence[TechnicalRequirementEntry],
+) -> frozenset[str]:
+    source_ids = {
+        source_id
+        for entry in entries
+        for source_id in entry.source_location_ids
+    }
+    source_ids.update(
+        source_id
+        for entry in entries
+        for source_id in entry.heading_source_location_ids
+    )
+    return frozenset(source_ids)
 
 
 def classify_general_dimensional_tolerance(
@@ -307,16 +352,24 @@ def classify_general_geometric_tolerance(
 
 def classify_default_chamfer(text: str) -> _Classification | None:
     match = _DEFAULT_CHAMFER.search(text)
-    if match is None:
-        return None
-    size = match.group("size")
+    if match is not None:
+        size = f"C{match.group('size')}"
+        category: RequirementCategory = "applicability_rule"
+        inspection_item = "未标注倒角"
+    else:
+        match = _EXPLICIT_CHAMFER.search(text)
+        if match is None:
+            return None
+        size = re.sub(r"\s*[xX×]\s*", "×", match.group("size"))
+        category = "standalone_check"
+        inspection_item = "倒角检查"
     return _Classification(
-        category="applicability_rule",
+        category=category,
         subtype="default_chamfer",
-        parsed_parameters={"chamfer": f"C{size}"},
-        inspection_item="未标注倒角",
+        parsed_parameters={"chamfer": size},
+        inspection_item=inspection_item,
         inspection_standard=None,
-        key_dimension=f"C{size}",
+        key_dimension=size,
     )
 
 
@@ -422,3 +475,282 @@ def classify_technical_requirement_entry(
             remarks=entry.raw_text,
         ),
     )
+
+
+_SUPPORTED_GENERAL_DIMENSION_TYPES = {
+    "linear_dimension",
+    "diameter_dimension",
+    "radius",
+    "angle",
+}
+
+
+def _candidate_identity(candidate: Mapping[str, Any]) -> str:
+    candidate_id = candidate.get("candidate_id")
+    if not isinstance(candidate_id, str) or not candidate_id.strip():
+        raise TechnicalRequirementContractError(
+            "candidate identity must be one non-blank string"
+        )
+    return candidate_id
+
+
+def _validated_matching_candidates(
+    candidates: Sequence[Mapping[str, Any]],
+) -> tuple[Mapping[str, Any], ...]:
+    if (
+        not isinstance(candidates, Sequence)
+        or isinstance(candidates, (str, bytes, bytearray))
+        or isinstance(candidates, Mapping)
+    ):
+        raise TechnicalRequirementContractError(
+            "matching candidates must be a non-string sequence"
+        )
+    frozen = tuple(candidates)
+    candidate_ids = [_candidate_identity(candidate) for candidate in frozen]
+    if len(set(candidate_ids)) != len(candidate_ids):
+        raise TechnicalRequirementContractError(
+            "candidate identities must be unique for requirement matching"
+        )
+    return frozen
+
+
+def evaluate_requirement(
+    requirement: TechnicalRequirementEntry | TechnicalRequirementDecision,
+    candidates: Sequence[Mapping[str, Any]],
+) -> TechnicalRequirementDecision:
+    decision = (
+        classify_technical_requirement_entry(requirement)
+        if isinstance(requirement, TechnicalRequirementEntry)
+        else requirement.model_copy(deep=True)
+    )
+    validated_candidates = _validated_matching_candidates(candidates)
+
+    if decision.category in {"unsupported", "ambiguous"}:
+        return decision.model_copy(
+            update={
+                "match_outcome": "unresolved",
+                "matched_candidate_ids": [],
+                "generated_candidate_id": None,
+                "review_required": True,
+            }
+        )
+
+    matched_candidate_ids: list[str] = []
+    if decision.subtype == "general_dimensional_tolerance":
+        for candidate in validated_candidates:
+            payload = candidate.get("payload")
+            if not isinstance(payload, Mapping):
+                raise TechnicalRequirementContractError(
+                    f"candidate {_candidate_identity(candidate)} payload "
+                    "must be one object"
+                )
+            if payload.get("item_type") not in _SUPPORTED_GENERAL_DIMENSION_TYPES:
+                continue
+            if (
+                payload.get("upper_tolerance") is not None
+                or payload.get("lower_tolerance") is not None
+            ):
+                continue
+            matched_candidate_ids.append(_candidate_identity(candidate))
+
+    if matched_candidate_ids:
+        return decision.model_copy(
+            update={
+                "match_outcome": "matched_items",
+                "matched_candidate_ids": sorted(matched_candidate_ids),
+                "generated_candidate_id": None,
+                "review_required": True,
+            }
+        )
+
+    generated_candidate_id = stable_candidate_id(
+        "technical-requirement-candidate",
+        decision.requirement_id,
+    )
+    return decision.model_copy(
+        update={
+            "match_outcome": "global_scope",
+            "matched_candidate_ids": [],
+            "generated_candidate_id": generated_candidate_id,
+            "review_required": True,
+        }
+    )
+
+
+def _conflicting_requirement_ids(
+    decisions: Sequence[TechnicalRequirementDecision],
+) -> frozenset[str]:
+    by_subtype: dict[str, list[TechnicalRequirementDecision]] = {}
+    for decision in decisions:
+        if decision.subtype not in {
+            "general_dimensional_tolerance",
+            "general_geometric_tolerance",
+        }:
+            continue
+        by_subtype.setdefault(decision.subtype, []).append(decision)
+
+    conflicting: set[str] = set()
+    for group in by_subtype.values():
+        parameter_sets = {
+            tuple(sorted(decision.parsed_parameters.items()))
+            for decision in group
+        }
+        if len(parameter_sets) > 1:
+            conflicting.update(decision.requirement_id for decision in group)
+    return frozenset(conflicting)
+
+
+def _generated_requirement_candidate(
+    decision: TechnicalRequirementDecision,
+) -> dict[str, Any]:
+    if decision.generated_candidate_id is None:
+        raise TechnicalRequirementContractError(
+            "global_scope requirement requires generated candidate identity"
+        )
+    candidate = Candidate(
+        candidate_id=decision.generated_candidate_id,
+        item_type="general_requirement",
+        raw_text=decision.raw_text,
+        normalized_text=decision.normalized_text,
+        coordinates=decision.coordinates[0],
+        scope="global_requirement",
+        balloon_required=False,
+        requires_confirmation=True,
+    )
+    return {
+        "candidate_id": decision.generated_candidate_id,
+        "payload": candidate.model_dump(mode="json", exclude_none=True),
+        "source_location_ids": list(decision.source_location_ids),
+        "source_truth_preserved": False,
+        "technical_requirement_refs": [decision.requirement_id],
+    }
+
+
+def evaluate_technical_requirements(
+    requirements: Sequence[
+        TechnicalRequirementEntry | TechnicalRequirementDecision
+    ],
+    candidates: Sequence[Mapping[str, Any]],
+) -> TechnicalRequirementEvaluation:
+    validated_candidates = _validated_matching_candidates(candidates)
+    candidate_copies = [
+        copy.deepcopy(dict(candidate))
+        for candidate in validated_candidates
+    ]
+    classified = [
+        (
+            classify_technical_requirement_entry(requirement)
+            if isinstance(requirement, TechnicalRequirementEntry)
+            else requirement.model_copy(deep=True)
+        )
+        for requirement in requirements
+    ]
+    conflicting_ids = _conflicting_requirement_ids(classified)
+    decisions: list[TechnicalRequirementDecision] = []
+
+    for requirement in classified:
+        if requirement.requirement_id in conflicting_ids:
+            decisions.append(
+                requirement.model_copy(
+                    update={
+                        "match_outcome": "unresolved",
+                        "matched_candidate_ids": [],
+                        "generated_candidate_id": None,
+                        "review_required": True,
+                    }
+                )
+            )
+            continue
+        decision = evaluate_requirement(requirement, candidate_copies)
+        decisions.append(decision)
+        if decision.match_outcome == "matched_items":
+            matched = set(decision.matched_candidate_ids)
+            for candidate in candidate_copies:
+                if _candidate_identity(candidate) not in matched:
+                    continue
+                refs = candidate.setdefault("technical_requirement_refs", [])
+                if not isinstance(refs, list) or not all(
+                    isinstance(ref, str) for ref in refs
+                ):
+                    raise TechnicalRequirementContractError(
+                        "technical_requirement_refs must be a string list"
+                    )
+                refs.append(decision.requirement_id)
+                candidate["technical_requirement_refs"] = sorted(set(refs))
+        elif decision.match_outcome == "global_scope":
+            candidate_copies.append(_generated_requirement_candidate(decision))
+
+    return TechnicalRequirementEvaluation(
+        decisions=tuple(decisions),
+        candidates=tuple(candidate_copies),
+    )
+
+
+def validate_technical_requirements(
+    technical_requirements: Sequence[Mapping[str, Any]],
+    *,
+    candidate_ids: set[str],
+) -> list[dict[str, Any]]:
+    if (
+        not isinstance(technical_requirements, Sequence)
+        or isinstance(technical_requirements, (str, bytes, bytearray))
+        or isinstance(technical_requirements, Mapping)
+    ):
+        raise TechnicalRequirementContractError(
+            "technical_requirements must be a non-string sequence"
+        )
+
+    validated: list[TechnicalRequirementDecision] = []
+    for index, requirement in enumerate(technical_requirements):
+        if not isinstance(requirement, Mapping):
+            raise TechnicalRequirementContractError(
+                f"technical requirement at index {index} must be one object"
+            )
+        try:
+            validated.append(
+                TechnicalRequirementDecision.model_validate(requirement)
+            )
+        except ValidationError as exc:
+            raise TechnicalRequirementContractError(
+                f"technical requirement at index {index} is invalid: {exc}"
+            ) from exc
+
+    requirement_ids = [decision.requirement_id for decision in validated]
+    if len(set(requirement_ids)) != len(requirement_ids):
+        raise TechnicalRequirementContractError("duplicate requirement_id")
+
+    for decision in validated:
+        targets = decision.matched_candidate_ids
+        if targets != sorted(set(targets)):
+            raise TechnicalRequirementContractError(
+                "matched_candidate_ids must use unique canonical order"
+            )
+        missing_targets = sorted(set(targets) - candidate_ids)
+        if missing_targets:
+            raise TechnicalRequirementContractError(
+                "technical requirement references missing candidate: "
+                + ", ".join(missing_targets)
+            )
+        if decision.match_outcome == "matched_items":
+            if not targets or decision.generated_candidate_id is not None:
+                raise TechnicalRequirementContractError(
+                    "matched_items requires targets and forbids generated candidate"
+                )
+        elif decision.match_outcome == "global_scope":
+            if (
+                targets
+                or decision.generated_candidate_id is None
+                or decision.generated_candidate_id not in candidate_ids
+            ):
+                raise TechnicalRequirementContractError(
+                    "global_scope requires one persisted generated candidate"
+                )
+        elif targets or decision.generated_candidate_id is not None:
+            raise TechnicalRequirementContractError(
+                "unresolved requirement cannot reference candidates"
+            )
+
+    return [
+        decision.model_dump(mode="json")
+        for decision in validated
+    ]

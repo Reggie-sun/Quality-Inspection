@@ -22,7 +22,6 @@ from app.candidates.confidence import (
 from app.candidates.coverage import CoverageEntry, CoverageReport
 from app.candidates.disposition import (
     classify_primary_disposition,
-    classify_technical_requirement,
     repeated_page_overlay_observation_ids,
 )
 from app.candidates.duplicates import (
@@ -33,6 +32,13 @@ from app.candidates.duplicates import (
 from app.candidates.grouping import group_observations
 from app.candidates.models import AutomaticResult
 from app.candidates.schemas import Candidate, stable_candidate_id
+from app.candidates.technical_requirements import (
+    TechnicalRequirementDecision,
+    evaluate_technical_requirements,
+    reconstruct_technical_requirement_entries,
+    technical_requirement_source_location_ids,
+    validate_technical_requirements,
+)
 from app.jobs.idempotency import LogicalJob, LogicalJobStateError
 from app.pdf.schemas import TextObservation, VisualObservation
 from app.projects.models import Project
@@ -61,6 +67,7 @@ class CandidateSnapshot:
     source_signals: tuple[CandidateSourceSignal, ...] = ()
     provider_call_ids: tuple[str, ...] = ()
     required_visual_observation_ids: tuple[str, ...] = ()
+    technical_requirements: tuple[dict[str, Any], ...] = ()
 
 
 def _selected_observations(pages: Sequence[Any]) -> list[TextObservation]:
@@ -176,11 +183,78 @@ def _candidate_envelope(
     }
 
 
+def _technical_requirement_coverage_entries(
+    observations: Sequence[TextObservation],
+    *,
+    source_location_ids: frozenset[str],
+    decisions: Sequence[TechnicalRequirementDecision],
+) -> tuple[CoverageEntry, ...]:
+    decisions_by_source: dict[str, list[TechnicalRequirementDecision]] = {}
+    for decision in decisions:
+        for source_location_id in decision.source_location_ids:
+            decisions_by_source.setdefault(source_location_id, []).append(decision)
+
+    entries: list[CoverageEntry] = []
+    for observation in observations:
+        if observation.observation_id not in source_location_ids:
+            continue
+        source_decisions = decisions_by_source.get(
+            observation.observation_id,
+            [],
+        )
+        if any(
+            decision.match_outcome == "unresolved"
+            for decision in source_decisions
+        ):
+            disposition = "ambiguous"
+            candidate_id = None
+            requires_confirmation = True
+        else:
+            generated_candidate_ids = [
+                decision.generated_candidate_id
+                for decision in source_decisions
+                if decision.generated_candidate_id is not None
+            ]
+            if generated_candidate_ids:
+                disposition = "candidate"
+                candidate_id = generated_candidate_ids[0]
+                requires_confirmation = True
+            else:
+                disposition = "reference_context"
+                candidate_id = None
+                requires_confirmation = False
+        entries.append(
+            CoverageEntry(
+                observation_id=observation.observation_id,
+                disposition=disposition,
+                source_location_id=observation.observation_id,
+                coordinates=observation.bbox_pdf,
+                candidate_id=candidate_id,
+                requires_confirmation=requires_confirmation,
+                disposition_reason="technical_requirement",
+                disposition_rule_version="technical-requirement/1",
+            )
+        )
+    return tuple(entries)
+
+
 def candidate_snapshot_from_inventory(
     pages: Sequence[Any],
 ) -> CandidateSnapshot:
     observations = _selected_observations(pages)
-    repeated_overlay_ids = repeated_page_overlay_observation_ids(observations)
+    requirement_entries = reconstruct_technical_requirement_entries(observations)
+    technical_source_ids = technical_requirement_source_location_ids(
+        observations,
+        requirement_entries,
+    )
+    local_observations = [
+        observation
+        for observation in observations
+        if observation.observation_id not in technical_source_ids
+    ]
+    repeated_overlay_ids = repeated_page_overlay_observation_ids(
+        local_observations
+    )
     visual_observations = selected_visual_observations(pages)
     visually_contextualized_text_ids = {
         observation_id
@@ -220,42 +294,33 @@ def candidate_snapshot_from_inventory(
         source_signals.append(signal)
     index = 0
 
-    while index < len(observations):
-        observation = observations[index]
+    while index < len(local_observations):
+        observation = local_observations[index]
         candidate: Candidate | CoarseCandidate | None = None
-        decision = None
         members: tuple[TextObservation, ...] = (observation,)
 
-        requirement = classify_technical_requirement(
-            observation.raw_text,
-            observation.bbox_pdf,
-            source_id=observation.observation_id,
+        has_visual_context = (
+            observation.observation_id
+            in visually_contextualized_text_ids
         )
-        if requirement is not None:
-            candidate = requirement
-        else:
-            has_visual_context = (
-                observation.observation_id
-                in visually_contextualized_text_ids
-            )
-            decision = classify_primary_disposition(
-                observation,
-                has_visual_context=has_visual_context,
-            )
-            if decision is None:
-                if composite := _composite_at(observations, index):
-                    candidate, members = composite
-                else:
-                    try:
-                        candidate = group_observations([observation])[0]
-                    except ValueError:
-                        coarse_type = _coarse_type(observation.raw_text)
-                        if coarse_type is not None:
-                            candidate = coarse_candidate(
-                                observation.raw_text,
-                                coarse_type,
-                                observation.bbox_pdf,
-                            )
+        decision = classify_primary_disposition(
+            observation,
+            has_visual_context=has_visual_context,
+        )
+        if decision is None:
+            if composite := _composite_at(local_observations, index):
+                candidate, members = composite
+            else:
+                try:
+                    candidate = group_observations([observation])[0]
+                except ValueError:
+                    coarse_type = _coarse_type(observation.raw_text)
+                    if coarse_type is not None:
+                        candidate = coarse_candidate(
+                            observation.raw_text,
+                            coarse_type,
+                            observation.bbox_pdf,
+                        )
 
         if candidate is None:
             if decision is None:
@@ -331,6 +396,19 @@ def candidate_snapshot_from_inventory(
         )
         index += len(members)
 
+    requirement_evaluation = evaluate_technical_requirements(
+        requirement_entries,
+        candidates,
+    )
+    candidates = list(requirement_evaluation.candidates)
+    coverage_entries.extend(
+        _technical_requirement_coverage_entries(
+            observations,
+            source_location_ids=technical_source_ids,
+            decisions=requirement_evaluation.decisions,
+        )
+    )
+
     for observation in visual_observations:
         coverage_entries.append(
             CoverageEntry(
@@ -359,6 +437,10 @@ def candidate_snapshot_from_inventory(
         required_visual_observation_ids=tuple(
             observation.observation_id
             for observation in visual_observations
+        ),
+        technical_requirements=tuple(
+            decision.model_dump(mode="json")
+            for decision in requirement_evaluation.decisions
         ),
     )
 
@@ -431,6 +513,7 @@ def build_automatic_result(
     coverage: CoverageReport,
     provider_call_ids: Sequence[str],
     duplicate_relations: Sequence[DuplicateRelation] = (),
+    technical_requirements: Sequence[Mapping[str, Any]] = (),
     schema_version: str = AUTOMATIC_RESULT_SCHEMA_VERSION,
 ) -> AutomaticResult:
     if coverage.blocking_count > 0 or not coverage.coverage_checked:
@@ -447,6 +530,20 @@ def build_automatic_result(
     validated_candidates = _validated_candidates_for_schema(
         candidates,
         schema_version,
+    )
+    candidate_ids = {
+        str(candidate["candidate_id"])
+        for candidate in validated_candidates
+        if isinstance(candidate.get("candidate_id"), str)
+        and str(candidate["candidate_id"]).strip()
+    }
+    if len(candidate_ids) != len(validated_candidates):
+        raise ConfidenceDecisionContractError(
+            "automatic result candidates require unique non-blank candidate_id"
+        )
+    validated_requirements = validate_technical_requirements(
+        technical_requirements,
+        candidate_ids=candidate_ids,
     )
 
     project_identity = _uuid(project_id, "project_id")
@@ -503,6 +600,7 @@ def build_automatic_result(
         inventory_ref=inventory_ref,
         candidates=_json_safe(list(validated_candidates)),
         coverage=_json_safe(coverage_payload),
+        technical_requirements=_json_safe(validated_requirements),
         provider_call_ids=list(provider_call_ids),
         schema_version=schema_version,
     )

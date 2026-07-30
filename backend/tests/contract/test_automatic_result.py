@@ -15,6 +15,10 @@ from app.processing.automatic_result import (
     _validated_candidates_for_schema,
     build_automatic_result,
 )
+from app.candidates.technical_requirements import (
+    TechnicalRequirementContractError,
+    validate_technical_requirements,
+)
 
 
 def _decision(**overrides: object) -> dict[str, object]:
@@ -39,6 +43,39 @@ def _candidate(decision: object) -> dict[str, object]:
         "source_location_ids": ["observation-1"],
         "confidence_decision": decision,
     }
+
+
+def _requirement(**overrides: object) -> dict[str, object]:
+    requirement: dict[str, object] = {
+        "requirement_id": "requirement-1",
+        "ordinal": 1,
+        "raw_text": "未注尺寸公差按GB/T 1804-m执行",
+        "normalized_text": "未注尺寸公差按GB/T 1804-m执行",
+        "source_location_ids": ["requirement-source-1"],
+        "page_index": 0,
+        "coordinates": [[1.0, 2.0, 11.0, 12.0]],
+        "category": "applicability_rule",
+        "subtype": "general_dimensional_tolerance",
+        "parsed_parameters": {
+            "standard_code": "GB/T 1804",
+            "tolerance_class": "m",
+        },
+        "match_outcome": "matched_items",
+        "matched_candidate_ids": ["candidate-1"],
+        "generated_candidate_id": None,
+        "rule_id": "technical-requirement:general_dimensional_tolerance",
+        "rule_version": "technical-requirement/1",
+        "review_required": True,
+        "sip_suggestion": {
+            "inspection_item": "未注尺寸公差",
+            "inspection_standard": "GB/T 1804-m",
+            "key_dimension": None,
+            "source_page": 1,
+            "remarks": "未注尺寸公差按GB/T 1804-m执行",
+        },
+    }
+    requirement.update(overrides)
+    return requirement
 
 
 def test_confidence_evidence_code_order_is_frozen() -> None:
@@ -257,5 +294,70 @@ def test_build_rejects_invalid_v2_before_database_access() -> None:
                 coverage_checked=True,
             ),
             provider_call_ids=[],
+            schema_version=AUTOMATIC_RESULT_SCHEMA_VERSION,
+        )
+
+
+@pytest.mark.parametrize(
+    ("requirements", "candidate_ids", "message"),
+    [
+        (
+            [_requirement(rule_version="technical-requirement/999")],
+            {"candidate-1"},
+            "rule_version",
+        ),
+        (
+            [_requirement(), _requirement()],
+            {"candidate-1"},
+            "duplicate requirement_id",
+        ),
+        (
+            [_requirement(matched_candidate_ids=["missing"])],
+            {"candidate-1"},
+            "missing candidate",
+        ),
+        (
+            [_requirement(matched_candidate_ids=["candidate-2", "candidate-1"])],
+            {"candidate-1", "candidate-2"},
+            "canonical order",
+        ),
+    ],
+)
+def test_technical_requirement_contract_fails_closed(
+    requirements: list[dict[str, object]],
+    candidate_ids: set[str],
+    message: str,
+) -> None:
+    with pytest.raises(TechnicalRequirementContractError, match=message):
+        validate_technical_requirements(
+            requirements,
+            candidate_ids=candidate_ids,
+        )
+
+
+def test_build_rejects_invalid_requirement_before_database_access() -> None:
+    class NoDatabaseAccess:
+        def scalar(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("database access happened before validation")
+
+    with pytest.raises(
+        TechnicalRequirementContractError,
+        match="missing candidate",
+    ):
+        build_automatic_result(
+            NoDatabaseAccess(),  # type: ignore[arg-type]
+            project_id="not-read",
+            source_file_id="not-read",
+            logical_job_id="not-read",
+            inventory_ref="asset://tests/inventory.json",
+            candidates=[],
+            coverage=SimpleNamespace(  # type: ignore[arg-type]
+                blocking_count=0,
+                coverage_checked=True,
+            ),
+            provider_call_ids=[],
+            technical_requirements=[
+                _requirement(matched_candidate_ids=["missing"])
+            ],
             schema_version=AUTOMATIC_RESULT_SCHEMA_VERSION,
         )
