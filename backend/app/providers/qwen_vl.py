@@ -376,40 +376,62 @@ class QwenVisionProvider:
 
     def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
         data_url = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
-        completion = self._client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                        {
-                            "type": "text",
-                            "text": prompt + "\nOutput in JSON format.",
-                        },
-                    ],
-                },
-            ],
-            response_format={"type": "json_object"},
-            extra_body={"enable_thinking": False},
-        )
-        request_id = getattr(completion, "id", None)
-        if not isinstance(request_id, str) or not request_id.strip():
-            raise CandidateSchemaError("candidate response is missing request ID")
+        localized_failure_category: str | None = None
         try:
-            content = completion.choices[0].message.content
-        except (AttributeError, IndexError, TypeError) as exc:
-            raise CandidateSchemaError(
-                "candidate response is missing message content"
-            ) from exc
-        if not isinstance(content, str):
-            raise CandidateSchemaError("candidate response content must be JSON text")
-        return VisionResult(
-            request_id=request_id,
-            payload=parse_candidate_json(content),
-            usage=_usage_dict(completion.usage),
-        )
+            completion = self._client.chat.completions.create(
+                model=self._model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": data_url},
+                            },
+                            {
+                                "type": "text",
+                                "text": prompt + "\nOutput in JSON format.",
+                            },
+                        ],
+                    },
+                ],
+                response_format={"type": "json_object"},
+                extra_body={"enable_thinking": False},
+            )
+        except (APITimeoutError, TimeoutError):
+            localized_failure_category = "timeout"
+        except (APIConnectionError, ConnectionError, OSError):
+            localized_failure_category = "transport"
+        if localized_failure_category is not None:
+            raise LocalizedProviderFailure(localized_failure_category)
+        schema_failure = False
+        try:
+            request_id = getattr(completion, "id", None)
+            if not isinstance(request_id, str) or not request_id.strip():
+                raise CandidateSchemaError(
+                    "candidate response is missing request ID"
+                )
+            try:
+                content = completion.choices[0].message.content
+            except (AttributeError, IndexError, TypeError) as exc:
+                raise CandidateSchemaError(
+                    "candidate response is missing message content"
+                ) from exc
+            if not isinstance(content, str):
+                raise CandidateSchemaError(
+                    "candidate response content must be JSON text"
+                )
+            return VisionResult(
+                request_id=request_id,
+                payload=parse_candidate_json(content),
+                usage=_usage_dict(completion.usage),
+            )
+        except CandidateSchemaError:
+            schema_failure = True
+        if schema_failure:
+            raise LocalizedProviderFailure("schema")
+        raise AssertionError("candidate schema failure was not raised")
 
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         canonical_image = canonicalize_visual_png(image)

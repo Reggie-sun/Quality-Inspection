@@ -2139,11 +2139,12 @@ def test_resolved_visual_does_not_construct_provider_or_mutate_snapshot(
         recognition_mode=(
             "production_uncertainty"
             if symbol_recognition_mode == "production_uncertainty"
-            else "legacy_high_recall"
+            else symbol_recognition_mode
         ),
         router_version=(
             advisor_module.SYMBOL_ROUTER_VERSION
-            if symbol_recognition_mode == "production_uncertainty"
+            if symbol_recognition_mode
+            in {"shadow_uncertainty", "production_uncertainty"}
             else "legacy"
         ),
         recognition_summary={

@@ -3144,13 +3144,15 @@ class CandidateAdvisor:
                 return replace(
                     snapshot,
                     recognition_mode=(
-                        "production_uncertainty"
-                        if uncertainty_mode == "production_uncertainty"
+                        uncertainty_mode
+                        if uncertainty_mode
+                        in {"shadow_uncertainty", "production_uncertainty"}
                         else "legacy_high_recall"
                     ),
                     router_version=(
                         SYMBOL_ROUTER_VERSION
-                        if uncertainty_mode == "production_uncertainty"
+                        if uncertainty_mode
+                        in {"shadow_uncertainty", "production_uncertainty"}
                         else "legacy"
                     ),
                     recognition_summary={
@@ -3365,13 +3367,15 @@ class CandidateAdvisor:
                 else "complete"
             ),
             recognition_mode=(
-                "production_uncertainty"
-                if uncertainty_mode == "production_uncertainty"
+                uncertainty_mode
+                if uncertainty_mode
+                in {"shadow_uncertainty", "production_uncertainty"}
                 else "legacy_high_recall"
             ),
             router_version=(
                 SYMBOL_ROUTER_VERSION
-                if uncertainty_mode == "production_uncertainty"
+                if uncertainty_mode
+                in {"shadow_uncertainty", "production_uncertainty"}
                 else "legacy"
             ),
             recognition_summary={

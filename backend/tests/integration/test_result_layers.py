@@ -178,6 +178,186 @@ def _insert_partial_raw_result(db_session: Session) -> AutomaticResult:
     return result
 
 
+def _fresh_process_inputs(
+    db_session: Session,
+    *,
+    recognition_mode: str,
+    recognition_router_version: str,
+) -> tuple[Project, StoredFile, LogicalJob, object]:
+    project = Project(
+        id=uuid.uuid4(),
+        state=ProjectState.PROCESSING,
+        recognition_mode=recognition_mode,
+        recognition_router_version=recognition_router_version,
+    )
+    source_file = StoredFile(
+        resource_ref=f"asset://tests/{project.id}/source.pdf",
+        sha256="0" * 64,
+        size_bytes=1,
+        mime_type="application/pdf",
+    )
+    job = LogicalJob(
+        project_id=str(project.id),
+        logical_task_key=f"process:terminal-provenance:{project.id}",
+    )
+    db_session.add_all([project, source_file, job])
+    db_session.commit()
+    coverage = check_coverage(
+        [
+            CoverageEntry(
+                "observation-1",
+                "candidate",
+                "page-0:observation-1",
+                (1, 2, 3, 4),
+                candidate_id="candidate-1",
+                advisor_review={"provider_role": "advisor", "validated": True},
+            )
+        ],
+        expected_observation_ids={"observation-1"},
+    )
+    return project, source_file, job, coverage
+
+
+def _terminal_provenance_result(
+    db_session: Session,
+    *,
+    project: Project,
+    source_file: StoredFile,
+    job: LogicalJob,
+    coverage: object,
+    recognition_mode: str,
+    router_version: str,
+    recognition_summary: dict[str, object],
+    recognition_evidence_ref: str | None,
+) -> AutomaticResult:
+    return build_automatic_result(
+        db_session,
+        project_id=project.id,
+        source_file_id=source_file.id,
+        logical_job_id=job.id,
+        inventory_ref=f"asset://tests/{project.id}/inventory.json",
+        candidates=[
+            {
+                "candidate_id": "candidate-1",
+                "payload": {"raw_text": "M6", "item_type": "thread"},
+                "source_location_ids": ["page-0:observation-1"],
+                "advisor_review": {"provider_role": "advisor", "validated": True},
+            }
+        ],
+        coverage=coverage,  # type: ignore[arg-type]
+        provider_call_ids=[],
+        schema_version=LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION,
+        recognition_mode=recognition_mode,
+        router_version=router_version,
+        recognition_summary=recognition_summary,
+        recognition_evidence_ref=recognition_evidence_ref,
+    )
+
+
+def test_terminal_result_refuses_locked_project_provenance_mismatch(
+    db_session: Session,
+) -> None:
+    project, source_file, job, coverage = _fresh_process_inputs(
+        db_session,
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
+
+    with pytest.raises(ValueError, match="recognition_mode"):
+        _terminal_provenance_result(
+            db_session,
+            project=project,
+            source_file=source_file,
+            job=job,
+            coverage=coverage,
+            recognition_mode="shadow_uncertainty",
+            router_version="symbol-uncertainty-router/1",
+            recognition_summary={
+                "schema_version": "symbol-recognition-summary/1",
+                "unresolved_roi_count": 0,
+            },
+            recognition_evidence_ref=(
+                f"symbol-routing-evidence://{project.id}"
+            ),
+        )
+
+    assert db_session.scalar(
+        select(AutomaticResult).where(AutomaticResult.logical_job_id == job.id)
+    ) is None
+    assert db_session.get(LogicalJob, job.id).status == "pending"  # type: ignore[union-attr]
+    assert db_session.get(Project, project.id).state == ProjectState.PROCESSING  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    ("recognition_mode", "summary", "evidence_ref", "message"),
+    (
+        (
+            "production_uncertainty",
+            {
+                "schema_version": "symbol-recognition-summary/1",
+                "unresolved_roi_count": 0,
+                "extra": True,
+            },
+            "expected",
+            "recognition_summary",
+        ),
+        (
+            "production_uncertainty",
+            {
+                "schema_version": "symbol-recognition-summary/1",
+                "unresolved_roi_count": 0,
+            },
+            "unexpected",
+            "recognition_evidence_ref",
+        ),
+        (
+            "shadow_uncertainty",
+            {
+                "schema_version": "symbol-recognition-summary/1",
+                "unresolved_roi_count": 0,
+            },
+            "unexpected",
+            "recognition_evidence_ref",
+        ),
+    ),
+)
+def test_terminal_result_rejects_invalid_routed_provenance(
+    db_session: Session,
+    recognition_mode: str,
+    summary: dict[str, object],
+    evidence_ref: str,
+    message: str,
+) -> None:
+    project, source_file, job, coverage = _fresh_process_inputs(
+        db_session,
+        recognition_mode=recognition_mode,
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
+    expected_evidence_ref = f"symbol-routing-evidence://{project.id}"
+
+    with pytest.raises(ValueError, match=message):
+        _terminal_provenance_result(
+            db_session,
+            project=project,
+            source_file=source_file,
+            job=job,
+            coverage=coverage,
+            recognition_mode=recognition_mode,
+            router_version="symbol-uncertainty-router/1",
+            recognition_summary=summary,
+            recognition_evidence_ref=(
+                expected_evidence_ref
+                if evidence_ref == "expected"
+                else "symbol-routing-evidence://another-project"
+            ),
+        )
+
+    assert db_session.scalar(
+        select(AutomaticResult).where(AutomaticResult.logical_job_id == job.id)
+    ) is None
+    assert db_session.get(LogicalJob, job.id).status == "pending"  # type: ignore[union-attr]
+
+
 def test_raw_result_is_immutable(
     raw_result: AutomaticResult,
     db_session: Session,

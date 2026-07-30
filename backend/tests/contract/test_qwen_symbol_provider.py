@@ -9,6 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import httpx
+from openai import APIConnectionError, APITimeoutError
 from openai.types.completion_usage import CompletionUsage
 from PIL import Image
 
@@ -30,9 +32,78 @@ from app.providers.qwen_vl import (
     canonicalize_visual_png,
     validate_visual_request_metadata,
 )
+from app.providers.base import LocalizedProviderFailure
 
 
 _VISUAL_TOOL_NAME = "submit_visual_symbol_review"
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "failure_category"),
+    (
+        (
+            APITimeoutError(
+                request=httpx.Request("POST", "https://qwen.example/v1")
+            ),
+            "timeout",
+        ),
+        (
+            TimeoutError("private timeout detail"),
+            "timeout",
+        ),
+        (
+            APIConnectionError(
+                request=httpx.Request("POST", "https://qwen.example/v1")
+            ),
+            "transport",
+        ),
+        (ConnectionError("private connection detail"), "transport"),
+        (OSError("private socket detail"), "transport"),
+    ),
+)
+def test_qwen_candidate_provider_localizes_transport_failures(
+    provider_error: Exception,
+    failure_category: str,
+) -> None:
+    class FailingCompletions:
+        def create(self, **_kwargs):
+            raise provider_error
+
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=FailingCompletions())
+        )
+    )
+
+    with pytest.raises(LocalizedProviderFailure) as raised:
+        provider.review_candidate(_png(text=None), "safe prompt")
+
+    assert raised.value.failure_category == failure_category
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+
+
+def test_qwen_candidate_provider_localizes_malformed_response() -> None:
+    class MalformedCompletions:
+        def create(self, **_kwargs):
+            return SimpleNamespace(
+                id="fixture-qwen-malformed",
+                choices=[SimpleNamespace(message=SimpleNamespace(content="{"))],
+                usage={"total_tokens": 4},
+            )
+
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=MalformedCompletions())
+        )
+    )
+
+    with pytest.raises(LocalizedProviderFailure) as raised:
+        provider.review_candidate(_png(text=None), "safe prompt")
+
+    assert raised.value.failure_category == "schema"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
 
 
 def _png_chunk(kind: bytes, content: bytes) -> bytes:

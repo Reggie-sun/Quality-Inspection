@@ -246,8 +246,16 @@ def _store_project_source(
     session: Session,
     storage: LocalFileStorage,
     payload: bytes,
+    *,
+    recognition_mode: str = "legacy_high_recall",
+    recognition_router_version: str = "legacy",
 ) -> tuple[Project, StoredFile]:
-    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    project = Project(
+        id=uuid.uuid4(),
+        state=ProjectState.PROCESSING,
+        recognition_mode=recognition_mode,
+        recognition_router_version=recognition_router_version,
+    )
     stored = storage.write_verified(
         f"projects/{project.id}/source.pdf",
         payload,
@@ -388,7 +396,13 @@ def _persist_snapshot(
     storage: LocalFileStorage,
     snapshot: CandidateSnapshot,
 ) -> tuple[Project, AutomaticResult, ReviewWorkingCopy]:
-    project, source = _store_project_source(session, storage, b"fixture-pdf")
+    project, source = _store_project_source(
+        session,
+        storage,
+        b"fixture-pdf",
+        recognition_mode=snapshot.recognition_mode,
+        recognition_router_version=snapshot.router_version,
+    )
     result_ref = InventoryPipeline(
         session,
         storage,
@@ -822,6 +836,14 @@ def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
         local_resolution,
     )
     provider = _fixture_provider(source, detect_symbols=False)
+    pipeline_storage = LocalFileStorage(tmp_path / "pipeline-storage")
+    project, source_file = _store_project_source(
+        db_session,
+        pipeline_storage,
+        b"fixture-pdf",
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
 
     reviewed = CandidateAdvisor(
         Settings(
@@ -829,7 +851,7 @@ def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
             symbol_recognition_mode="production_uncertainty",
         ),
         LocalFileStorage(tmp_path / "provider-storage"),
-        project_id="mixed-routing",
+        project_id=str(project.id),
         provider_factory=lambda _settings: provider,
     ).review(source, pages, initial)
 
@@ -875,11 +897,22 @@ def test_mixed_local_and_escalated_preserve_exact_source_and_coverage(
         escalated_visual.observation_id
     ].advisor_review == _visual_review([], "visual_no_detection")
     assert initial == candidate_snapshot_from_inventory(pages)
-    _project, raw, _working = _persist_snapshot(
+    result_ref = InventoryPipeline(
         db_session,
-        LocalFileStorage(tmp_path / "pipeline-storage"),
-        reviewed,
+        pipeline_storage,
+        PassingPreflight(),
+        inventory_builder=lambda _path: (SupportedPageStub(),),
+        candidate_snapshot_builder=lambda _pages: reviewed,
+    ).run(
+        str(project.id),
+        source_file.resource_ref,
+        f"product-process:{project.id}",
     )
+    raw = db_session.scalar(
+        select(AutomaticResult).where(AutomaticResult.project_id == project.id)
+    )
+    assert raw is not None
+    assert result_ref == f"automatic-result://{raw.id}"
     assert raw.coverage["blocking_count"] == 0
     assert raw.coverage["coverage_checked"] is True
 
@@ -936,7 +969,11 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
     storage = LocalFileStorage(tmp_path / f"partial-{failure_family}")
     db_session = committed_db_session
     project, source_file = _store_project_source(
-        db_session, storage, matrix.source.read_bytes()
+        db_session,
+        storage,
+        matrix.source.read_bytes(),
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
     )
     successful = _fixture_provider(matrix.source)
 
@@ -1564,7 +1601,7 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
     )
 
 
-def test_shadow_uncertainty_uses_legacy_final_write_without_extra_provider(
+def test_shadow_uncertainty_uses_legacy_candidate_semantics_with_provenance(
     monkeypatch: pytest.MonkeyPatch,
     db_session: Session,
     tmp_path: Path,
@@ -1594,7 +1631,14 @@ def test_shadow_uncertainty_uses_legacy_final_write_without_extra_provider(
         provider_factory=lambda _settings: shadow_provider,
     ).review(source, pages, initial)
 
-    assert shadow == legacy
+    assert replace(
+        shadow,
+        recognition_mode="legacy_high_recall",
+        router_version="legacy",
+    ) == legacy
+    assert shadow.recognition_mode == "shadow_uncertainty"
+    assert shadow.router_version == "symbol-uncertainty-router/1"
+    assert shadow.recognition_evidence_ref is None
     assert shadow_provider.symbol_observation_ids == (
         legacy_provider.symbol_observation_ids
     )

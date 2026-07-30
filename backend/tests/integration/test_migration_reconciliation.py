@@ -6,6 +6,7 @@ from pathlib import Path
 from types import ModuleType
 
 import sqlalchemy as sa
+import pytest
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
@@ -19,6 +20,7 @@ BACKEND_PATH = Path(__file__).parents[2]
 MIGRATION_PATHS = (
     BACKEND_PATH / "alembic" / "versions" / "0009_symbol_routing_evidence.py",
     BACKEND_PATH / "alembic" / "versions" / "0010_technical_requirements.py",
+    BACKEND_PATH / "alembic" / "versions" / "0011_symbol_result_completeness.py",
 )
 
 
@@ -37,7 +39,7 @@ def _load_migration(path: Path) -> ModuleType:
 def test_integrated_migration_converges_feature_only_0008_schema() -> None:
     schema = f"migration_reconcile_{uuid.uuid4().hex}"
     migration_0009, migration_0010 = (
-        _load_migration(path) for path in MIGRATION_PATHS
+        _load_migration(path) for path in MIGRATION_PATHS[:2]
     )
     script = ScriptDirectory.from_config(
         Config(str(BACKEND_PATH / "alembic.ini"))
@@ -208,5 +210,85 @@ def test_integrated_migration_converges_feature_only_0008_schema() -> None:
                     review_working_copies.c.id == working_copy_id
                 )
             ) == [{"requirement_id": "working"}]
+        finally:
+            transaction.rollback()
+
+
+def test_symbol_result_completeness_downgrade_refuses_provenance_loss() -> None:
+    schema = f"migration_completeness_{uuid.uuid4().hex}"
+    migration_0011 = _load_migration(MIGRATION_PATHS[-1])
+    result_id = uuid.uuid4()
+
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+            connection.execute(
+                sa.text(f'SET LOCAL search_path TO "{schema}", public')
+            )
+            sa.Table(
+                "automatic_results",
+                sa.MetaData(),
+                sa.Column(
+                    "id",
+                    postgresql.UUID(as_uuid=True),
+                    primary_key=True,
+                ),
+                schema=schema,
+            ).create(connection)
+
+            operations = Operations(MigrationContext.configure(connection))
+            migration_0011.op = operations
+            migration_0011.upgrade()
+            connection.execute(
+                sa.text(
+                    "INSERT INTO automatic_results ("
+                    "id, completeness, recognition_mode, router_version, "
+                    "recognition_summary, recognition_evidence_ref"
+                    ") VALUES ("
+                    ":id, 'partial_review_required', "
+                    "'production_uncertainty', "
+                    "'symbol-uncertainty-router/1', "
+                    "CAST(:summary AS jsonb), :evidence_ref"
+                    ")"
+                ),
+                {
+                    "id": result_id,
+                    "summary": '{"schema_version":"symbol-recognition-summary/1",'
+                    '"unresolved_roi_count":1}',
+                    "evidence_ref": "symbol-routing-evidence://project",
+                },
+            )
+
+            with pytest.raises(RuntimeError, match="downgrade refused"):
+                migration_0011.downgrade()
+
+            inspector = sa.inspect(connection)
+            assert {
+                "completeness",
+                "recognition_mode",
+                "router_version",
+                "recognition_summary",
+                "recognition_evidence_ref",
+            }.issubset(
+                {
+                    column["name"]
+                    for column in inspector.get_columns("automatic_results")
+                }
+            )
+            assert connection.execute(
+                sa.text(
+                    "SELECT completeness, recognition_mode, router_version, "
+                    "recognition_summary, recognition_evidence_ref "
+                    "FROM automatic_results WHERE id = :id"
+                ),
+                {"id": result_id},
+            ).one() == (
+                "partial_review_required",
+                "production_uncertainty",
+                "symbol-uncertainty-router/1",
+                {"schema_version": "symbol-recognition-summary/1", "unresolved_roi_count": 1},
+                "symbol-routing-evidence://project",
+            )
         finally:
             transaction.rollback()

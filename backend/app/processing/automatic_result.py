@@ -54,6 +54,10 @@ from app.projects.state import InvalidTransition, ProjectState, transition
 LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"
 AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"
 ROUGHNESS_TOKEN = re.compile(r"(?<![A-Za-z])Ra(?=\s*[0-9])", re.IGNORECASE)
+SYMBOL_RECOGNITION_SUMMARY_VERSION = "symbol-recognition-summary/1"
+_ROUTED_RECOGNITION_MODES = frozenset(
+    {"shadow_uncertainty", "production_uncertainty"}
+)
 
 
 class CoverageBlocking(RuntimeError):
@@ -79,6 +83,44 @@ class CandidateSnapshot:
     router_version: str = "legacy"
     recognition_summary: Mapping[str, Any] | None = None
     recognition_evidence_ref: str | None = None
+
+
+def _validate_terminal_recognition_provenance(
+    *,
+    project: Project,
+    project_id: uuid.UUID,
+    recognition_mode: str,
+    router_version: str,
+    recognition_summary: Mapping[str, Any] | None,
+    recognition_evidence_ref: str | None,
+) -> None:
+    if recognition_mode != project.recognition_mode:
+        raise ValueError("recognition_mode must match the locked project")
+    if router_version != project.recognition_router_version:
+        raise ValueError("router_version must match the locked project")
+    if (
+        recognition_mode in _ROUTED_RECOGNITION_MODES
+        or recognition_summary is not None
+    ):
+        if not isinstance(recognition_summary, Mapping):
+            raise ValueError("recognition_summary must be one object")
+        summary = dict(recognition_summary)
+        if (
+            set(summary) != {"schema_version", "unresolved_roi_count"}
+            or summary.get("schema_version")
+            != SYMBOL_RECOGNITION_SUMMARY_VERSION
+            or not isinstance(summary.get("unresolved_roi_count"), int)
+            or isinstance(summary.get("unresolved_roi_count"), bool)
+            or summary["unresolved_roi_count"] < 0
+        ):
+            raise ValueError("recognition_summary is invalid")
+    expected_evidence_ref = (
+        f"symbol-routing-evidence://{project_id}"
+        if recognition_mode == "production_uncertainty"
+        else None
+    )
+    if recognition_evidence_ref != expected_evidence_ref:
+        raise ValueError("recognition_evidence_ref is invalid")
 
 
 def _selected_observations(pages: Sequence[Any]) -> list[TextObservation]:
@@ -858,6 +900,14 @@ def build_automatic_result(
     )
     if project is None:
         raise ValueError("project does not exist")
+    _validate_terminal_recognition_provenance(
+        project=project,
+        project_id=project_identity,
+        recognition_mode=recognition_mode,
+        router_version=router_version,
+        recognition_summary=recognition_summary,
+        recognition_evidence_ref=recognition_evidence_ref,
+    )
     job = session.scalar(
         select(LogicalJob)
         .where(LogicalJob.id == job_identity)
