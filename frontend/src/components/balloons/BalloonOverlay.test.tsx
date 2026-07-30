@@ -36,6 +36,36 @@ describe("BalloonOverlay", () => {
     expect(formal.querySelector("text")?.getAttribute("fill")).toBe("#ffffff");
   });
 
+  test("正式气泡选中时保留正式样式并叠加统一琥珀光晕", () => {
+    render(
+      <svg aria-label="test overlay">
+        <BalloonOverlay
+          balloon={{
+            id: "selected-formal-balloon",
+            itemId: "selected-formal-item",
+            center: [50, 60],
+            number: 12,
+            status: "active",
+          }}
+          renderToPdfMatrix={[1, 0, 0, 1, 0, 0]}
+          selected
+          onSelect={vi.fn()}
+        />
+      </svg>,
+    );
+
+    const formal = screen.getByRole("button", { name: "正式气泡 12" });
+    expect(formal.querySelector("circle")?.getAttribute("fill")).toBe("#dc2626");
+    expect(formal.querySelector("circle")?.getAttribute("stroke")).toBe("#dc2626");
+    expect(formal.querySelector("text")?.getAttribute("fill")).toBe("#ffffff");
+    expect(formal.querySelector(
+      ".balloon-selection-halo",
+    )?.getAttribute("stroke")).toBe("#fbbf24");
+    expect(formal.querySelector(
+      ".balloon-selection-ring",
+    )?.getAttribute("stroke")).toBe("#f59e0b");
+  });
+
   test("正式气泡 aria-label 包含正式前缀、编号与阻断后缀", () => {
     render(
       <svg aria-label="test overlay">

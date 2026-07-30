@@ -134,8 +134,18 @@ describe("OverlayLayer", () => {
 
     expect(screen.getByRole("button", { name: "候选气泡 1" })
       .getAttribute("tabindex")).toBe("-1");
-    expect(screen.getByRole("button", { name: "候选气泡 2" })
-      .getAttribute("tabindex")).toBe("0");
+    const selectedCandidate = screen.getByRole("button", { name: "候选气泡 2" });
+    expect(selectedCandidate.getAttribute("tabindex")).toBe("0");
+    expect(selectedCandidate.querySelector("circle")?.getAttribute("fill"))
+      .toBe("#EFF6FF");
+    expect(selectedCandidate.querySelector("text")?.getAttribute("fill"))
+      .toBe("#2563EB");
+    expect(selectedCandidate.querySelector(
+      ".balloon-selection-halo",
+    )?.getAttribute("stroke")).toBe("#fbbf24");
+    expect(selectedCandidate.querySelector(
+      ".balloon-selection-ring",
+    )?.getAttribute("stroke")).toBe("#f59e0b");
     expect(screen.getByRole("button", { name: "正式气泡 3" })
       .getAttribute("tabindex")).toBe("0");
     expect(screen.getByRole("button", { name: "正式气泡 4" })
@@ -476,11 +486,17 @@ describe("OverlayLayer", () => {
       .toBe("transparent");
     expect(selectedAuto.querySelector("text")?.getAttribute("fill"))
       .toBe("#c23b3b");
+    const selectionHalo = selectedAuto.querySelector(
+      ".balloon-selection-halo",
+    );
+    expect(selectionHalo?.getAttribute("fill")).toBe("none");
+    expect(selectionHalo?.getAttribute("stroke")).toBe("#fbbf24");
+    expect(selectionHalo?.getAttribute("stroke-opacity")).toBe("0.18");
     const selectionRing = selectedAuto.querySelector(
-      ".pdf-overlay-selection-ring",
+      ".balloon-selection-ring",
     );
     expect(selectionRing?.getAttribute("fill")).toBe("none");
-    expect(selectionRing?.getAttribute("stroke")).toBe("#2563eb");
+    expect(selectionRing?.getAttribute("stroke")).toBe("#f59e0b");
   });
 
   test("正式 Balloon projection 继续使用既有正式样式与可访问名称", () => {

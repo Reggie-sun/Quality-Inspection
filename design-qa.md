@@ -402,6 +402,69 @@ changed files:
 - Remaining P2: 0.
 - final result: passed
 
+## Unified Balloon Selection Halo — 2026-07-30
+
+### Scope And Visual Grounding
+
+本轮将用户批准的方案 1 应用于全部可选气泡：普通候选、自动通过待统一编号、正式气泡。
+选中态只叠加琥珀色半透明光晕与清晰外环，不覆盖气泡自身的生命周期颜色和空心/实心语义。
+
+- source visual truth:
+  `/home/reggie/.codex/generated_images/019fb1ba-e09c-7660-90be-c1362c2a34c3/call_R5UEgH4VyR5hazbv4L2yda61.png`
+- source pixels / density: `1586x992 / device scale 1`
+- rendered candidate:
+  `.local/design-qa/balloon-selection-candidate.png`
+- rendered auto-accepted:
+  `.local/design-qa/balloon-selection-auto.png`
+- rendered formal:
+  `.local/design-qa/balloon-selection-formal.png`
+- same-input comparison:
+  `.local/design-qa/balloon-selection-comparison.png`
+- browser viewport / density: `1565x958 / device scale 1`
+- state: 三类气泡均处于真实工作台选中态；正式气泡使用已有 reviewed project，
+  候选和自动通过使用已有 editing project。
+
+### Full And Focused Comparison
+
+- Full-view evidence: 在真实 PDF 工作区点击气泡后，光晕没有遮挡编号、命中区域或相邻操作，
+  页面布局不发生位移。
+- Focused evidence: 同图对比确认三类气泡都使用相同的琥珀外环和柔和光晕；普通候选仍为
+  浅蓝底蓝字，自动通过仍为红色空心，正式气泡仍为红色实心白字。
+- Intentional adaptation: 概念图只展示红色空心示例；实现把同一选中层抽成共享 SVG 组件，
+  叠加到三类现有生命周期标记上，不把概念图中的红色状态误用于所有气泡。
+- comparison history: 首轮实现与方案 1 的“暖色光晕 + 清晰外环”一致，未发现需要修正的
+  P0、P1 或 P2 差异。
+
+### Required Fidelity Surfaces
+
+- Fonts and typography: 编号字体、字号、颜色均沿用既有气泡状态样式。
+- Spacing and layout rhythm: 外环半径比气泡半径大 `5` 个 SVG 单位；光晕宽 `8`，清晰环宽
+  `2.5`，不改变标记中心或 PDF 坐标。
+- Colors and visual tokens: 光晕 `#fbbf24 / 0.18`，外环 `#f59e0b`；生命周期颜色不变。
+- Image quality and assets: 本次是组件原生 SVG 状态层，没有新增位图资产或替换 PDF 内容。
+- Copy and content: 可访问名称与图例文案不变，选中态不再暗示生命周期变化。
+- Accessibility: 光晕和外环均 `aria-hidden` 且不接收 pointer event，气泡原有 button 语义、
+  键盘入口和命中区域保持不变。
+
+### Interaction And Browser Evidence
+
+- Chrome MCP 在真实项目中分别验证普通候选、自动通过和正式气泡的选中态。
+- 普通候选保持 `#EFF6FF / #2563EB`，自动通过保持透明底与 `#c23b3b`，正式气泡保持
+  `#dc2626` 实心与白字；三者均叠加相同琥珀光晕和外环。
+- console errors / warnings: `0 / 0`。
+
+### Verification And Result
+
+- focused tests: `OverlayLayer.test.tsx` 与 `BalloonOverlay.test.tsx`，`26/26` passed。
+- production build: passed；仅保留既有 Vite large-chunk warning。
+- full frontend tests: `212/215` passed；`InspectionWorkbench.test.tsx` 的 3 个失败来自本轮
+  scope 外并行修改的审核状态/筛选预期，本轮未修改这些文件。
+- Chrome smoke: 三类真实状态、点击选中、生命周期样式保留、统一光晕与 console 检查 passed。
+- Remaining P0: 0.
+- Remaining P1: 0.
+- Remaining P2: 0.
+- final result: passed
+
 ## Compact Technical Requirements Summary — 2026-07-30
 
 ### Grounding

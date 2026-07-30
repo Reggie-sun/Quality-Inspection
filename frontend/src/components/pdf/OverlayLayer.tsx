@@ -7,6 +7,7 @@ import type {
 } from "../../api/types";
 import {
   BalloonOverlay as BalloonMarker,
+  BalloonSelectionHalo,
   displayToPdfMatrix,
 } from "../balloons/BalloonOverlay";
 import { zhCN } from "../../copy/zhCN";
@@ -453,22 +454,15 @@ export function OverlayLayer({
                 fill={
                   isAutoAccepted
                     ? "transparent"
-                    : isSelected ? "#2563EB" : "#EFF6FF"
+                    : "#EFF6FF"
                 }
                 stroke={isAutoAccepted ? "#c23b3b" : "#2563EB"}
-                strokeWidth={isAutoAccepted ? 1.5 : isSelected ? 2 : 1.5}
+                strokeWidth={1.5}
               />
-              {isAutoAccepted && isSelected ? (
-                <circle
-                  className="pdf-overlay-selection-ring"
-                  cx={markerX}
-                  cy={markerY}
-                  r={CANDIDATE_MARKER_RADIUS + 2}
-                  fill="none"
-                  stroke="#2563eb"
-                  strokeWidth={2}
-                  aria-hidden="true"
-                  style={{ pointerEvents: "none" }}
+              {isSelected ? (
+                <BalloonSelectionHalo
+                  center={[markerX, markerY]}
+                  radius={CANDIDATE_MARKER_RADIUS}
                 />
               ) : null}
               <text
@@ -481,7 +475,7 @@ export function OverlayLayer({
                 fill={
                   isAutoAccepted
                     ? "#c23b3b"
-                    : isSelected ? "#FFFFFF" : "#2563EB"
+                    : "#2563EB"
                 }
                 style={{ pointerEvents: "none" }}
               >

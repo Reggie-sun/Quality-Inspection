@@ -7,6 +7,7 @@ import { zhCN } from "../../copy/zhCN";
 type MatrixLike = Pick<DOMMatrix, "a" | "b" | "c" | "d" | "e" | "f">;
 export const BALLOON_RADIUS_PDF = 12;
 const GLYPH_FONT_SIZE_PDF = 9;
+const SELECTION_RING_OFFSET = 5;
 const DEJAVU_SANS_DIGIT_ADVANCE_EM = 0.63623046875;
 const DEJAVU_SANS_ASCENDER_EM = 0.92822265625;
 const DEJAVU_SANS_DESCENDER_EM = -0.23583984375;
@@ -110,6 +111,47 @@ type BalloonOverlayProps = {
 };
 
 
+type BalloonSelectionHaloProps = {
+  center: [number, number];
+  radius: number;
+};
+
+
+export function BalloonSelectionHalo({
+  center,
+  radius,
+}: BalloonSelectionHaloProps) {
+  const selectionRadius = radius + SELECTION_RING_OFFSET;
+  return (
+    <>
+      <circle
+        className="balloon-selection-halo"
+        cx={center[0]}
+        cy={center[1]}
+        r={selectionRadius}
+        fill="none"
+        stroke="#fbbf24"
+        strokeOpacity={0.18}
+        strokeWidth={8}
+        aria-hidden="true"
+        style={{ pointerEvents: "none" }}
+      />
+      <circle
+        className="balloon-selection-ring"
+        cx={center[0]}
+        cy={center[1]}
+        r={selectionRadius}
+        fill="none"
+        stroke="#f59e0b"
+        strokeWidth={2.5}
+        aria-hidden="true"
+        style={{ pointerEvents: "none" }}
+      />
+    </>
+  );
+}
+
+
 export function BalloonOverlay({
   balloon,
   renderToPdfMatrix,
@@ -199,9 +241,12 @@ export function BalloonOverlay({
         cy={displayCenter[1]}
         r={radius}
         fill={blocked ? "#fff1f2" : "#dc2626"}
-        stroke={selected ? "#2563eb" : blocked ? "#b91c1c" : "#dc2626"}
-        strokeWidth={selected ? 3 : 1.5}
+        stroke={blocked ? "#b91c1c" : "#dc2626"}
+        strokeWidth={1.5}
       />
+      {selected ? (
+        <BalloonSelectionHalo center={displayCenter} radius={radius} />
+      ) : null}
       <text
         x={displayCenter[0]}
         y={displayCenter[1]}
