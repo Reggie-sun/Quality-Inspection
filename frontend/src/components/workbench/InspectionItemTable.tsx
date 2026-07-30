@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   BalloonOverlay,
@@ -108,6 +108,7 @@ export function InspectionItemTable({
 }: InspectionItemTableProps) {
   const [statusFilter, setStatusFilter] = useState<ItemStatus | "all">("all");
   const [page, setPage] = useState(1);
+  const tableRef = useRef<HTMLDivElement>(null);
   const balloonByItem = useMemo(
     () => new Map(
       balloons
@@ -221,6 +222,11 @@ export function InspectionItemTable({
     selectedSourceId,
     statusFilter,
   ]);
+  useEffect(() => {
+    const selectedRow = tableRef.current
+      ?.querySelector<HTMLElement>("[role='row'][data-selected='true']");
+    selectedRow?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [safePage, selectedItemId, selectedSourceId]);
   const updateSourceDraft = (change: Partial<SourceDraft>) => {
     if (selectedSource === undefined || selectedSourceBaseline === undefined) {
       return;
@@ -339,6 +345,7 @@ export function InspectionItemTable({
         </section>
       )}
       <div
+        ref={tableRef}
         className="inspection-table"
         role="table"
         aria-label={zhCN.inspection.region}

@@ -11,7 +11,23 @@ import { afterEach, expect, test, vi } from "vitest";
 import { InspectionItemTable } from "./InspectionItemTable";
 
 
-afterEach(cleanup);
+const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+  Element.prototype,
+  "scrollIntoView",
+);
+
+afterEach(() => {
+  cleanup();
+  if (originalScrollIntoView === undefined) {
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  } else {
+    Object.defineProperty(
+      Element.prototype,
+      "scrollIntoView",
+      originalScrollIntoView,
+    );
+  }
+});
 
 test("P0-UI-004 keeps the dense list and drawing selection on one item identity", () => {
   const onSelectItem = vi.fn();
@@ -169,7 +185,12 @@ test("紧凑分页只在 DOM 渲染当前页检验项", () => {
   expect(screen.getByRole("row", { name: /检验标注 51/ })).not.toBeNull();
 });
 
-test("外部选择第 51 项时自动跳到第二页并显示选中行", () => {
+test("外部选择第 51 项时自动跳到第二页并将选中行滚入视野", async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
   const items = Array.from({ length: 51 }, (_, index) => ({
     item_id: `internal-${index}`,
     raw_text: `检验标注 ${index + 1}`,
@@ -186,6 +207,7 @@ test("外部选择第 51 项时自动跳到第二页并显示选中行", () => {
   const { container, rerender } = render(
     <InspectionItemTable {...props} selectedItemId="internal-0" />,
   );
+  scrollIntoView.mockClear();
 
   rerender(<InspectionItemTable {...props} selectedItemId="internal-50" />);
 
@@ -194,6 +216,12 @@ test("外部选择第 51 项时自动跳到第二页并显示选中行", () => {
   expect(selectedRow.getAttribute("data-selected")).toBe("true");
   expect(container.querySelectorAll("[role='row'][data-item-id]").length)
     .toBeLessThanOrEqual(50);
+  await waitFor(() => {
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      block: "nearest",
+      inline: "nearest",
+    });
+  });
 });
 
 test("未知后端枚举只显示安全中文占位，表头不使用 inline style", () => {
