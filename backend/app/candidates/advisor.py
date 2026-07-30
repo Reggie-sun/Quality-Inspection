@@ -43,6 +43,9 @@ from app.candidates.symbol_review import (
     visual_cache_key,
     visual_review_prompt,
 )
+from app.candidates.technical_requirements import (
+    reconcile_technical_requirements,
+)
 from app.capabilities.service import CapabilityUnavailable
 from app.config import Settings
 from app.pdf.coordinates import BBox
@@ -1524,6 +1527,18 @@ class CandidateAdvisor:
         finally:
             document.close()
 
+        technical_requirements = snapshot.technical_requirements
+        if candidates_changed and technical_requirements:
+            reconciliation = reconcile_technical_requirements(
+                technical_requirements,
+                candidates,
+            )
+            candidates = list(reconciliation.candidates)
+            technical_requirements = tuple(
+                decision.model_dump(mode="json")
+                for decision in reconciliation.decisions
+            )
+
         duplicate_relations = (
             _duplicate_relations(candidates, observations)
             if candidates_changed
@@ -1539,4 +1554,5 @@ class CandidateAdvisor:
             required_visual_observation_ids=(
                 snapshot.required_visual_observation_ids
             ),
+            technical_requirements=technical_requirements,
         )

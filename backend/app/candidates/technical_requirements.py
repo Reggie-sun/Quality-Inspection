@@ -188,7 +188,28 @@ def _can_continue(
         return False
     previous_height = max(previous.bbox_pdf[3] - previous.bbox_pdf[1], 1.0)
     vertical_gap = current.bbox_pdf[1] - previous.bbox_pdf[3]
-    return -1.0 <= vertical_gap <= max(4.0, previous_height * 0.75)
+    return (
+        -previous_height * 0.35
+        <= vertical_gap
+        <= max(4.0, previous_height * 0.75)
+    )
+
+
+def _same_requirement_column(
+    heading: _ObservationSegment,
+    current: _ObservationSegment,
+) -> bool:
+    if heading.observation.page_index != current.observation.page_index:
+        return False
+    if not _same_direction(
+        heading.observation.direction,
+        current.observation.direction,
+    ):
+        return False
+    heading_width = max(heading.bbox_pdf[2] - heading.bbox_pdf[0], 1.0)
+    heading_height = max(heading.bbox_pdf[3] - heading.bbox_pdf[1], 1.0)
+    x_tolerance = max(8.0, heading_width * 0.75, heading_height * 2.0)
+    return abs(current.bbox_pdf[0] - heading.bbox_pdf[0]) <= x_tolerance
 
 
 def _join_requirement_text(parts: Sequence[str]) -> str:
@@ -238,6 +259,7 @@ def reconstruct_technical_requirement_entries(
     current_segments: list[_ObservationSegment] = []
     current_texts: list[str] = []
     heading_source_location_ids: tuple[str, ...] = ()
+    heading_segment: _ObservationSegment | None = None
 
     def flush() -> None:
         nonlocal current_ordinal, current_segments, current_texts
@@ -260,11 +282,17 @@ def reconstruct_technical_requirement_entries(
             flush()
             active_block = True
             awaiting_first_entry = True
+            heading_segment = segment
             heading_source_location_ids = (
                 segment.observation.observation_id,
             )
             continue
         if not active_block:
+            continue
+        if heading_segment is None or not _same_requirement_column(
+            heading_segment,
+            segment,
+        ):
             continue
 
         numbered = _NUMBERED_ENTRY.fullmatch(normalized_segment)
@@ -279,11 +307,13 @@ def reconstruct_technical_requirement_entries(
         if awaiting_first_entry or not current_segments:
             active_block = False
             awaiting_first_entry = False
+            heading_segment = None
             heading_source_location_ids = ()
             continue
         if not _can_continue(current_segments[-1], segment):
             flush()
             active_block = False
+            heading_segment = None
             heading_source_location_ids = ()
             continue
         current_segments.append(segment)
@@ -684,6 +714,56 @@ def evaluate_technical_requirements(
         decisions=tuple(decisions),
         candidates=tuple(candidate_copies),
     )
+
+
+def reconcile_technical_requirements(
+    requirements: Sequence[TechnicalRequirementDecision | Mapping[str, Any]],
+    candidates: Sequence[Mapping[str, Any]],
+) -> TechnicalRequirementEvaluation:
+    """Reapply requirement ownership after another stage changes candidates."""
+    decisions: list[TechnicalRequirementDecision] = []
+    for index, requirement in enumerate(requirements):
+        try:
+            decisions.append(
+                requirement.model_copy(deep=True)
+                if isinstance(requirement, TechnicalRequirementDecision)
+                else TechnicalRequirementDecision.model_validate(requirement)
+            )
+        except ValidationError as exc:
+            raise TechnicalRequirementContractError(
+                f"technical requirement at index {index} is invalid: {exc}"
+            ) from exc
+
+    requirement_ids = {decision.requirement_id for decision in decisions}
+    if len(requirement_ids) != len(decisions):
+        raise TechnicalRequirementContractError("duplicate requirement_id")
+    generated_candidate_ids = {
+        decision.generated_candidate_id
+        for decision in decisions
+        if decision.generated_candidate_id is not None
+    }
+
+    base_candidates: list[dict[str, Any]] = []
+    for candidate in _validated_matching_candidates(candidates):
+        if _candidate_identity(candidate) in generated_candidate_ids:
+            continue
+        candidate_copy = copy.deepcopy(dict(candidate))
+        refs = candidate_copy.get("technical_requirement_refs")
+        if refs is not None:
+            if not isinstance(refs, list) or not all(
+                isinstance(ref, str) for ref in refs
+            ):
+                raise TechnicalRequirementContractError(
+                    "technical_requirement_refs must be a string list"
+                )
+            retained_refs = sorted(set(refs) - requirement_ids)
+            if retained_refs:
+                candidate_copy["technical_requirement_refs"] = retained_refs
+            else:
+                candidate_copy.pop("technical_requirement_refs", None)
+        base_candidates.append(candidate_copy)
+
+    return evaluate_technical_requirements(decisions, base_candidates)
 
 
 def validate_technical_requirements(

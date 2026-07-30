@@ -8,6 +8,7 @@ from app.candidates.technical_requirements import (
     classify_technical_requirement_entry,
     evaluate_requirement,
     evaluate_technical_requirements,
+    reconcile_technical_requirements,
     reconstruct_technical_requirement_entries,
 )
 from app.pdf.schemas import TextObservation
@@ -19,6 +20,8 @@ def observation(
     *,
     y0: float,
     y1: float,
+    x0: float = 10.0,
+    x1: float = 160.0,
     page_index: int = 0,
     direction: tuple[float, float] = (1.0, 0.0),
 ) -> TextObservation:
@@ -29,8 +32,8 @@ def observation(
         raw_text=raw_text,
         normalized_text=raw_text,
         page_index=page_index,
-        bbox_pdf=(10.0, y0, 160.0, y1),
-        bbox_normalized=(0.05, y0 / 200.0, 0.80, y1 / 200.0),
+        bbox_pdf=(x0, y0, x1, y1),
+        bbox_normalized=(x0 / 200.0, y0 / 200.0, x1 / 200.0, y1 / 200.0),
         direction=direction,
         direction_angle_degrees=0.0,
         confidence=None,
@@ -65,6 +68,67 @@ def test_reconstructs_numbered_requirement_block_and_continuation() -> None:
     assert [entry.ordinal for entry in entries] == [1, 3]
     assert entries[1].raw_text == "零件表面不应有划痕、擦伤等损伤零件外观的缺陷"
     assert entries[1].source_location_ids == ("three-a", "three-b")
+
+
+def test_reconstructs_real_drawing_column_amid_interleaved_title_block_text() -> None:
+    observations = (
+        observation("heading", "技术要求:", y0=10, y1=27),
+        observation(
+            "title-date",
+            "260629",
+            x0=700,
+            x1=760,
+            y0=10.1,
+            y1=25,
+        ),
+        observation("one", "1.未标注倒角C0.5;", y0=23, y1=40),
+        observation(
+            "title-revision",
+            "版本号",
+            x0=700,
+            x1=760,
+            y0=28,
+            y1=43,
+        ),
+        observation("two", "2.锐边去毛刺；", y0=36, y1=53),
+        observation("three-a", "3.零件表面不应有划痕、擦", y0=49, y1=66),
+        observation(
+            "title-standard",
+            "标准化",
+            x0=700,
+            x1=760,
+            y0=50,
+            y1=65,
+        ),
+        observation("three-b", "伤等损伤零件外观的缺陷；", y0=62, y1=79),
+        observation("four", "4.表面阳极氧化亮光银色处理；", y0=75, y1=92),
+        observation(
+            "title-scale",
+            "1:5",
+            x0=700,
+            x1=760,
+            y0=78,
+            y1=93,
+        ),
+        observation(
+            "five",
+            "5.未注尺寸公差按GB/T1804-m执行;",
+            y0=88,
+            y1=105,
+        ),
+        observation(
+            "six",
+            "6.未注形位公差按GB/T1184-k执行。",
+            y0=101,
+            y1=118,
+        ),
+    )
+
+    entries = reconstruct_technical_requirement_entries(observations)
+
+    assert [entry.ordinal for entry in entries] == [1, 2, 3, 4, 5, 6]
+    assert entries[2].raw_text == "零件表面不应有划痕、擦伤等损伤零件外观的缺陷；"
+    assert entries[2].source_location_ids == ("three-a", "three-b")
 
 
 @pytest.mark.parametrize(
@@ -274,6 +338,49 @@ def test_evaluation_writes_canonical_bidirectional_match_refs() -> None:
         candidate["technical_requirement_refs"] == [decision.requirement_id]
         for candidate in evaluation.candidates
     )
+
+
+def test_reconciliation_retargets_requirements_after_candidate_retirement() -> None:
+    requirements = (
+        entry_for("未注尺寸公差按GB/T 1804-m执行", observation_id="dim"),
+        entry_for("未注形位公差按GB/T 1184-k执行", observation_id="gdt"),
+    )
+    initial = evaluate_technical_requirements(
+        requirements,
+        (envelope("retired", item_type="linear_dimension", nominal="25"),),
+    )
+    retained_global_id = initial.decisions[1].generated_candidate_id
+    assert retained_global_id is not None
+    final_candidates = (
+        envelope("replacement", item_type="diameter_dimension", nominal="10"),
+        *(
+            candidate
+            for candidate in initial.candidates
+            if candidate["candidate_id"] == retained_global_id
+        ),
+    )
+
+    reconciled = reconcile_technical_requirements(
+        initial.decisions,
+        final_candidates,
+    )
+
+    dimensional, geometric = reconciled.decisions
+    assert dimensional.match_outcome == "matched_items"
+    assert dimensional.matched_candidate_ids == ["replacement"]
+    assert geometric.match_outcome == "global_scope"
+    assert geometric.generated_candidate_id == retained_global_id
+    assert [
+        candidate["candidate_id"] for candidate in reconciled.candidates
+    ].count(retained_global_id) == 1
+    replacement = next(
+        candidate
+        for candidate in reconciled.candidates
+        if candidate["candidate_id"] == "replacement"
+    )
+    assert replacement["technical_requirement_refs"] == [
+        dimensional.requirement_id
+    ]
 
 
 def test_conflicting_general_tolerance_classes_remain_unresolved() -> None:
