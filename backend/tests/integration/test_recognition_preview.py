@@ -11,7 +11,7 @@ from types import ModuleType
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, func, inspect, select, text
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -190,7 +190,6 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
         size_bytes=1,
         mime_type="application/pdf",
     )
-    preview_created = False
     try:
         bootstrap.add_all([project, source])
         bootstrap.commit()
@@ -200,9 +199,8 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
             semantic_snapshot=_local_snapshot(),
         )
         bootstrap.commit()
-        preview_created = True
 
-        def advance(stage: str) -> tuple[str, uuid.UUID]:
+        def advance(marker: int) -> tuple[str, uuid.UUID]:
             session = SessionLocal()
             service = _preview_service(session)
             try:
@@ -211,7 +209,23 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
                     project_id=project.id,
                     expected_head_version=1,
                     parent_revision_id=local.id,
-                    semantic_snapshot={**_local_snapshot(), "stage": stage},
+                    semantic_snapshot={
+                        **_local_snapshot(),
+                        "stage": "vlm_enriching",
+                        "candidates": [
+                            {
+                                "candidate_id": f"candidate-{marker}",
+                                "kind": "thread",
+                            }
+                        ],
+                        "counts": {
+                            "local_resolved": 1,
+                            "cache_resolved": 0,
+                            "vlm_pending": 0,
+                            "vlm_resolved": 1,
+                            "unresolved": 0,
+                        },
+                    },
                 )
                 session.commit()
                 return "winner", revision.id
@@ -226,7 +240,7 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
 
         barrier = threading.Barrier(2)
         with ThreadPoolExecutor(max_workers=2) as executor:
-            outcomes = list(executor.map(advance, ("vlm_enriching", "cache_ready")))
+            outcomes = list(executor.map(advance, (1, 2)))
 
         winners = [revision_id for outcome, revision_id in outcomes if outcome == "winner"]
         losers = [revision_id for outcome, revision_id in outcomes if outcome == "loser"]
@@ -249,16 +263,9 @@ def test_two_postgres_sessions_allow_one_expected_head_advance() -> None:
             ), {"project_id": project.id}) == 0
     finally:
         bootstrap.close()
-        with engine.begin() as connection:
-            if preview_created:
-                connection.execute(text(
-                    "DELETE FROM recognition_preview_heads WHERE project_id = :project_id"
-                ), {"project_id": project.id})
-                connection.execute(text(
-                    "DELETE FROM recognition_preview_revisions WHERE project_id = :project_id"
-                ), {"project_id": project.id})
-            connection.execute(delete(Project).where(Project.id == project.id))
-            connection.execute(delete(StoredFile).where(StoredFile.id == source.id))
+        # This test commits an isolated random project to the brief's disposable
+        # PostgreSQL database. It intentionally leaves that namespace behind:
+        # GREEN's immutable revision trigger must be free to reject DELETE.
 
 
 def test_postgres_rejects_direct_preview_revision_update_and_delete(
@@ -406,6 +413,21 @@ def test_preview_schema_requires_immutable_revisions_and_one_mutable_head() -> N
         (("source_file_id",), "stored_files", ("id",)),
         (("parent_revision_id",), "recognition_preview_revisions", ("id",)),
     }
+    revision_column_details = {
+        column["name"]: column
+        for column in inspector.get_columns("recognition_preview_revisions")
+    }
+    assert all(
+        revision_column_details[column]["nullable"] is False
+        for column in (
+            "project_id",
+            "source_file_id",
+            "revision",
+            "semantic_snapshot",
+            "semantic_sha256",
+            "schema_version",
+        )
+    )
     head_columns = {
         column["name"] for column in inspector.get_columns("recognition_preview_heads")
     }
@@ -433,6 +455,25 @@ def test_preview_schema_requires_immutable_revisions_and_one_mutable_head() -> N
         (("revision_id",), "recognition_preview_revisions", ("id",)),
         (("terminal_result_id",), "automatic_results", ("id",)),
     }
+    head_column_details = {
+        column["name"]: column
+        for column in inspector.get_columns("recognition_preview_heads")
+    }
+    assert all(
+        head_column_details[column]["nullable"] is False
+        for column in ("project_id", "revision_id", "version")
+    )
+    with engine.connect() as connection:
+        revision_triggers = set(
+            connection.scalars(
+                text(
+                    "SELECT tgname FROM pg_trigger "
+                    "WHERE tgrelid = 'recognition_preview_revisions'::regclass "
+                    "AND NOT tgisinternal"
+                )
+            )
+        )
+    assert revision_triggers == {"prevent_recognition_preview_revision_update_delete"}
 
 
 def test_recognition_preview_schema_is_owned_by_0012_after_0011() -> None:

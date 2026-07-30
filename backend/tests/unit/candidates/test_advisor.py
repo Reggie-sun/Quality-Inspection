@@ -262,16 +262,15 @@ class FailingIfCalledVisionProvider:
 
 class RecordingPreviewSink:
     def __init__(self) -> None:
-        self.local_snapshots: list[CandidateSnapshot] = []
+        self.local_submissions: list[tuple[CandidateSnapshot, str]] = []
 
     def publish_local(
         self,
         *,
         snapshot: CandidateSnapshot,
-        source_path: Path,
+        source_file_id: str,
     ) -> None:
-        assert source_path.name == "drawing.pdf"
-        self.local_snapshots.append(snapshot)
+        self.local_submissions.append((snapshot, source_file_id))
 
 
 def drawing_fixture(
@@ -487,7 +486,7 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
 
     class ProviderAfterLocal(RecordingVisionProvider):
         def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
-            assert sink.local_snapshots == [snapshot]
+            assert sink.local_submissions == [(snapshot, "stored-source-exact")]
             return super().review_candidate(image, prompt)
 
     provider = ProviderAfterLocal(advisor_payload("M6", "thread", "M6", True))
@@ -499,10 +498,15 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
         preview_sink=sink,
     )
 
-    reviewed = advisor.review(source, pages, snapshot)
+    reviewed = advisor.review(
+        source,
+        pages,
+        snapshot,
+        source_file_id="stored-source-exact",
+    )
 
-    assert sink.local_snapshots == [snapshot]
-    assert sink.local_snapshots[0].provider_call_ids == ()
+    assert sink.local_submissions == [(snapshot, "stored-source-exact")]
+    assert sink.local_submissions[0][0].provider_call_ids == ()
     assert len(provider.images) == 1
     assert reviewed.provider_call_ids == ("fixture-qwen-request-1",)
 
