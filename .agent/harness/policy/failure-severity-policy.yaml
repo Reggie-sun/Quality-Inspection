@@ -9,7 +9,7 @@ failure_proof:
   scope: task
   task_id: D7-T1
   contract_id: P0-ACC-007
-  selector: phase://failure/no-silent-success
+  selector: phase://failure/no-silent-success?recognition_mode=production_uncertainty
   test_path: backend/tests/e2e/test_no_silent_success.py
   report_ref: reports/no-silent-success.json
   junit_ref: reports/no-silent-success.junit.xml

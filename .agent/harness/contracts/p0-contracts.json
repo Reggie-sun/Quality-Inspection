@@ -1,5 +1,5 @@
 {
-  "contract_definition_hash": "8950003780d9cdfc65a42f61d0c056d01a71156618be61c55b81716afb095eb1",
+  "contract_definition_hash": "d083d5596b43b8b7d8d0fa206f7d91a8d731706dfedb49f43bc4235a32705ba5",
   "contracts": [
     {
       "blocking_level": "blocking",
@@ -123,7 +123,7 @@
       "stable_p0_requirement": "局部 ROI Provider/budget 故障保留 sibling 正式证据并只形成 `partial_review_required`；identity/conflict/schema-provenance corruption、storage、template、font 或任一正式子产物故障仍阻止 result/formal success/download。Provider、frontend 和 Harness 均不能降级此 Veto Gate",
       "task_id": "D7-T1",
       "tier": "failure-e2e",
-      "verification_selector": "phase://failure/no-silent-success"
+      "verification_selector": "phase://failure/no-silent-success?recognition_mode=production_uncertainty"
     },
     {
       "blocking_level": "blocking",

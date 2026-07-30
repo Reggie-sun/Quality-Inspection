@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -21,6 +22,7 @@ TRACE = ROOT / "docs/superpowers/plans/2026-07-21-p0-contract-traceability-matri
 GLOBAL = ROOT / "docs/contracts/MAIN_CONTRACT_MATRIX.md"
 MIRROR_PATH = HARNESS / "contracts/p0-contracts.json"
 BINDINGS_PATH = HARNESS / "contracts/global-contract-bindings.json"
+FAILURE_SEVERITY_POLICY_PATH = HARNESS / "policy/failure-severity-policy.yaml"
 SCHEMAS = HARNESS / "schemas"
 EXPECTED_SCHEMA_FILES = (
     "contract-result.schema.json",
@@ -197,6 +199,33 @@ def _binding_conflicts(bindings: list[dict[str, Any]]) -> int:
     return conflicts
 
 
+def _failure_proof_selector_drift(contracts: list[dict[str, Any]]) -> int:
+    try:
+        policy = yaml.safe_load(
+            FAILURE_SEVERITY_POLICY_PATH.read_text(encoding="utf-8")
+        )
+    except yaml.YAMLError as exc:
+        raise ContractCheckError(
+            "failure severity policy is invalid YAML"
+        ) from exc
+    proof = policy.get("failure_proof") if isinstance(policy, dict) else None
+    if not isinstance(proof, dict):
+        raise ContractCheckError("failure severity policy is missing failure_proof")
+    contract_id = proof.get("contract_id")
+    selector = proof.get("selector")
+    matches = [
+        row["verification_selector"]
+        for row in contracts
+        if row["p0_contract_id"] == contract_id
+    ]
+    if len(matches) != 1 or selector != matches[0]:
+        raise ContractCheckError(
+            "failure proof selector drift: "
+            f"policy={selector!r} contract={matches[0] if len(matches) == 1 else None!r}"
+        )
+    return 0
+
+
 def check() -> dict[str, int]:
     # 1. Validate all Draft 2020-12 schemas, then the two generated instances.
     mirror, bindings_document = _validate_schemas_and_instances()
@@ -263,6 +292,7 @@ def check() -> dict[str, int]:
                 raise ContractCheckError(f"{row['p0_contract_id']}: empty {field}")
     missing_task = sum(not row["task_id"].strip() for row in contracts)
     missing_selector = sum(not row["verification_selector"].strip() for row in contracts)
+    failure_proof_selector_drift = _failure_proof_selector_drift(contracts)
 
     # Definition/status digests are checked before byte drift for actionable errors.
     if mirror["contract_definition_hash"] != _definition_hash(contracts):
@@ -331,6 +361,7 @@ def check() -> dict[str, int]:
         "duplicate": duplicate,
         "missing_task": missing_task,
         "missing_selector": missing_selector,
+        "failure_proof_selector_drift": failure_proof_selector_drift,
         "mirror_drift": mirror_drift,
         "bindings_drift": bindings_drift,
         "unbound_p0_stage_global": len(unbound),

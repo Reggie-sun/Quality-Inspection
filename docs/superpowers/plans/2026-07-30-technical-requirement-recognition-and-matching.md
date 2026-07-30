@@ -1401,7 +1401,7 @@ Task 7 checkpoint (`2026-07-30`):
 
 Main integration checkpoint (`2026-07-30`):
 
-- integrated source: `main@637a096`；6 个 textual conflicts 均保留 WELLI/layout/
+- integrated source: `main@e029d41`；6 个初始 textual conflicts 均保留 WELLI/layout/
   symbol routing 与 Technical Requirement Rule Owner 两侧语义；
 - migration graph: 技术要求 migration 从冲突的 `0008` 顺延为
   `0010_technical_requirements.py`，接在 symbol routing `0009` 后，
@@ -1409,9 +1409,10 @@ Main integration checkpoint (`2026-07-30`):
 - migration deployment caveat: fresh chain 已验证；若任何持久环境曾执行
   feature-only revision `0008`，部署前必须盘点 `alembic_version` 与 column shape，
   并走专门恢复流程，不能盲目 `stamp` 或直接升级；
-- pre-existing main Harness blocker: `P0-ACC-007` contract selector 曾携带 runner
-  未消费的 `recognition_mode` query，与 failure-proof policy/runner 不一致；恢复为
-  canonical `phase://failure/no-silent-success`，并新增三方 selector 一致性测试；
+- pre-existing main Harness blocker: `P0-ACC-007` contract selector 曾与
+  failure-proof policy/runner 不一致；latest main 将带
+  `recognition_mode=production_uncertainty` query 的 selector 定为 canonical，
+  runner 从 contract mirror 读取并消费，contract checker 强制 policy/mirror 一致；
 - integrated verification: 隔离 PostgreSQL backend `1409 passed`，frontend
   `210 passed`，production build PASS，Harness `134 passed`，contract mirror 和
   bindings drift 全零；
