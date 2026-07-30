@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pymupdf
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select, text, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ from app.db import SessionLocal, engine
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob, set_processing_stage
 from app.processing import tasks
+from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
@@ -556,6 +558,110 @@ def test_task_preview_composition_commits_each_preview_before_provider_stage() -
             observer.close()
     finally:
         bootstrap.close()
+
+
+def test_pipeline_project_lock_allows_preview_fk_and_blocks_project_writers(
+    tmp_path: Path,
+) -> None:
+    """Catches a Project FOR UPDATE lock that self-blocks preview FK insertion."""
+    setup = SessionLocal()
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    source = StoredFile(
+        resource_ref=f"asset://tests/{project.id}/source.pdf",
+        sha256="4" * 64,
+        size_bytes=1,
+        mime_type="application/pdf",
+    )
+    logical_task_key = f"preview-project-lock:{project.id}"
+    job = LogicalJob(
+        project_id=str(project.id),
+        logical_task_key=logical_task_key,
+        status="processing",
+        processing_stage="recognizing",
+    )
+    snapshot = {
+        "schema_version": "recognition-preview/1",
+        "stage": "local_ready",
+        "candidates": [],
+        "sources": [],
+        "counts": {
+            "local_resolved": 0,
+            "cache_resolved": 0,
+            "vlm_pending": 0,
+            "vlm_resolved": 0,
+            "unresolved": 0,
+        },
+    }
+    lock_sql: list[str] = []
+
+    def record_project_lock(
+        _connection,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany,
+    ) -> None:
+        if "FROM projects" in statement and "FOR " in statement:
+            lock_sql.append(statement)
+
+    def timed_session() -> Session:
+        session = SessionLocal()
+        session.execute(text("SET LOCAL lock_timeout = '250ms'"))
+        return session
+
+    session_a = SessionLocal()
+    try:
+        setup.add_all([project, source, job])
+        setup.commit()
+        event.listen(engine, "before_cursor_execute", record_project_lock)
+        pipeline = InventoryPipeline(
+            session_a,
+            LocalFileStorage(tmp_path / "storage"),
+            PassingPreflight(),
+        )
+        assert pipeline._project(str(project.id), for_update=True).id == project.id
+
+        sink = tasks._VisibleRecognitionPreviewSink(
+            timed_session,
+            project_id=project.id,
+            logical_task_key=logical_task_key,
+        )
+        local = sink.publish_local(source_file_id=source.id, snapshot=snapshot)
+        assert any("FOR NO KEY UPDATE" in statement for statement in lock_sql)
+
+        observer = SessionLocal()
+        try:
+            from app.processing.recognition_preview import RecognitionPreviewService
+
+            assert RecognitionPreviewService(
+                observer, project_id=project.id
+            ).head().id == local.id
+            observed_job = observer.scalar(
+                select(LogicalJob).where(LogicalJob.id == job.id)
+            )
+            assert observed_job is not None
+            assert observed_job.processing_stage == "local_ready"
+        finally:
+            observer.close()
+
+        writer = timed_session()
+        try:
+            with pytest.raises(OperationalError) as error:
+                writer.execute(
+                    update(Project)
+                    .where(Project.id == project.id)
+                    .values(state=ProjectState.EDITING)
+                )
+            assert getattr(error.value.orig, "sqlstate", None) == "55P03"
+        finally:
+            writer.rollback()
+            writer.close()
+    finally:
+        event.remove(engine, "before_cursor_execute", record_project_lock)
+        session_a.rollback()
+        session_a.close()
+        setup.close()
 
 
 def test_worker_rejects_corrupt_frozen_pair_before_provider_construction(

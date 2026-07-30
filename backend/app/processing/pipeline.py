@@ -126,7 +126,7 @@ class InventoryPipeline:
             Project,
             identity,
             populate_existing=True,
-            with_for_update=for_update,
+            with_for_update={"key_share": True} if for_update else False,
         )
         if project is None:
             raise ValueError("project does not exist")
