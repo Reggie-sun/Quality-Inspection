@@ -7,7 +7,7 @@
 - Status: 已解决
 - First reported: 2026-07-30
 - Last reported: 2026-07-30
-- Recurrence: 1
+- Recurrence: 2
 - Surface: `frontend/src/components/workbench/TechnicalRequirementPanel.tsx` 的待确认技术要求操作区
 - Symptom: 技术要求摘要显示“待确认 1”，展开后的对应要求也显示“待确认”，但界面没有可见的确认按钮，用户无法明确完成该要求的确认操作
 - Previously correct behavior: 待确认技术要求必须提供可见、可理解的确认入口，并继续由既有 review command Owner 提交状态变更
@@ -39,6 +39,34 @@
 - Validation action: `continue`；先验证 root-cause hypothesis，再执行 TDD RED/GREEN、focused test、build 与 Chrome MCP smoke
 - Writer ownership and order: 父 agent 唯一 writer；只读 explorer 不修改任何文件
 - Next verification: 已完成 focused/full tests、build、independent review 与无数据写入的 live browser smoke
+
+### Recurrence 2
+
+- Symptom: 明确确认按钮已经出现，但用户仍无法理解应先选择什么、点击后会影响哪些
+  检验项，以及确认完成后下一步是什么；unresolved 行仍把大量候选投影成即时提交按钮。
+- Root cause hypothesis: 当前 frontend 把业务决策、影响预览和持久化提交压缩为同一次
+  button click；同时 exact screenshot text `未注公差按GB/T1804-m级执行` 未命中
+  Rule Owner，因此没有可消费的系统建议。
+- Approved fix direction: `A 内联逐条确认`；先形成本地互斥 draft，再预览影响并显式
+  `确认并处理下一条`；终态为只读 `已确认` 摘要，全部完成后进入检验项/SIP 审核。
+  Rule Owner 只对包含明确 `GB/T 1804`、等级和执行语义的 shorthand 扩展识别。
+- Selected lane: `Standard` amendment to the existing approved technical-requirement plan。
+- Resolution: Rule Owner 已识别明确 `GB/T 1804-m级执行` shorthand，同时保持缺少
+  `执行`、非法等级和其他标准 fail closed；frontend 已替换为单 active editor 的
+  draft → impact → confirm-next → terminal 流，并把 draft 纳入工作台现有
+  dirty/save/prepare/finalize gate。多草稿返回时按 technical requirement →
+  metadata → remaining drafts 顺序保存。
+- Regression check: backend focused/offline slice `93 passed`；frontend focused
+  `44 passed`、full `257 passed`；production build PASS（仅既有 large-chunk
+  warning）；Playwright E2E spec collection PASS。
+- Runtime proof: 用户批准的 Playwright CDP fallback 使用 intercepted API 验证
+  local draft、影响预览、dirty return gate、existing command payload、terminal、
+  modify 与 inspection handoff；console error/warning、HTTP `>=400` 和 unexpected
+  request failure 均为 `0`，真实项目写入为 `0`。
+- Independent review: rollout `019fb21e-b59c-7741-97ac-229d960d910a`
+  最终 verdict `accept`，无剩余 blocker。
+- Change: `feat: add sequential technical requirement confirmation`
+- Next verification: 已关闭；仅在新 feedback 或 runtime regression 时重开。
 
 ## BUG-20260730-unclassified-vision-failure-category
 

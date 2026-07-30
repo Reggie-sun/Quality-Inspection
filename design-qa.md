@@ -402,6 +402,103 @@ changed files:
 - Remaining P2: 0.
 - final result: passed
 
+## Technical Requirement A Inline Confirmation — 2026-07-30
+
+### Grounding
+
+- source visual truth:
+  `.superpowers/brainstorm/2274792-1785400722/content/technical-requirement-three-state-flow.html`
+- source captures:
+  - `.local/design-qa/technical-requirement-a-flow/source-selected.png`
+    (`491x418`)
+  - `.local/design-qa/technical-requirement-a-flow/source-terminal.png`
+    (`490x418`)
+- implementation route:
+  `/?project_id=fb0572f9-4401-4d05-95ae-fde26b28d1d3&operator_id=4362748d-c0ce-460e-9f57-dc17b04a0dc9`
+- implementation captures:
+  - `.local/design-qa/technical-requirement-a-flow/implementation-selected.png`
+    (`401x301`)
+  - `.local/design-qa/technical-requirement-a-flow/implementation-terminal.png`
+    (`401x56`)
+  - `.local/design-qa/technical-requirement-a-flow/implementation-full.png`
+    (`1550x968`)
+- combined comparison:
+  `.local/design-qa/technical-requirement-a-flow/comparison.png`
+  (`1385x1336`)
+- browser: existing Google Chrome through approved Playwright CDP fallback
+- CSS viewport: `1565x958`; `deviceScaleFactor=1`
+- normalization: source and implementation element captures retain native `1x`
+  CSS density, then the comparison page fits both into equal-width columns without
+  changing their aspect ratio.
+- state: `已选择，待提交` and `终态`; the production pending state was projected from
+  the current read-only workbench response, and `/review/commands` was intercepted so
+  no project data was changed.
+
+### Full-View And Focused Comparison
+
+- Full-view evidence uses the real `121`-item workbench and confirms the technical
+  requirement area remains above the inspection-item workspace without page-level
+  horizontal overflow.
+- Focused comparison was required because the relevant controls occupy a narrow
+  right-hand panel. The combined image compares the selected draft and terminal
+  result at readable scale.
+- Fonts/typography: both use the existing Chinese system sans stack, compact
+  `10–13px` workbench hierarchy, bold decision/impact headings, and readable wrapping.
+- Spacing/layout rhythm: selected choice, impact preview, primary confirmation and
+  cancel action follow the mock's order. The production terminal is intentionally
+  denser because confirmed rows share one workbench list.
+- Colors/tokens: pending amber, selection blue, impact light blue and confirmed green
+  match the approved semantic palette and existing workbench tokens.
+- Image quality/assets: this flow contains no raster imagery, logos, illustrations or
+  custom icons; no placeholder or code-drawn asset substituted for source imagery.
+- Copy/content: `应用到系统建议的检验项`、`确认后会发生什么`、
+  `确认并处理下一条`、`已应用到 1 个检验项`、`查看关联项`、`修改` 和
+  `进入检验项审核` preserve the approved state meaning. The count difference
+  (`121` in the concept versus `1` in current project evidence) is real data, not
+  design drift.
+
+### Interaction And Runtime Evidence
+
+- Choosing the suggested range changes only local draft state and reveals the impact
+  preview; it does not send a command.
+- The same local choice immediately changes the workbench save state to
+  `有未保存修改`; `回到图纸列表` opens the existing three-way return dialog instead
+  of discarding the technical-requirement draft.
+- The intercepted submit captured exactly one existing
+  `set_technical_requirement_match` command with the current requirement ID and one
+  backend-provided target ID.
+- After the mocked successful refresh, the row becomes read-only `已确认`; `查看关联项`
+  selects the linked inspection row, `修改` restores the persisted choice as checked,
+  `取消` exits edit mode, and `进入检验项审核` selects an active inspection item.
+- console errors / warnings: `0 / 0`
+- HTTP responses `>=400`: `0`
+- unexpected request failures: `0`
+- real project writes: `0`; the command request was intercepted and fulfilled inside
+  the QA page only.
+
+### Comparison History
+
+- Initial P2: the old `280px` expanded-panel cap clipped the impact area and primary
+  confirmation below the visible selected state.
+- Fix: after a processing mode is selected, non-selected modes collapse behind
+  `更改处理方式`; active editing temporarily raises the panel cap while preserving the
+  inspection workspace below it.
+- Post-fix evidence: `implementation-selected.png` shows the selected option, impact
+  explanation, `确认并处理下一条` and `取消` together with no clipping.
+
+### Findings And Result
+
+- Remaining P0: `0`.
+- Remaining P1: `0`.
+- Remaining P2: `0`.
+- P3: the production selected state keeps `更改处理方式` and
+  `查看系统建议关联项` as separate compact secondary actions; this is intentional for
+  discoverability in the dense workbench.
+- Primary interactions tested: expand, choose suggestion, dirty/return gate, cancel
+  return, inspect impact, submit existing command seam, terminal projection, view
+  relation, modify, cancel edit and inspection handoff.
+- final result: passed
+
 ## Unified Balloon Selection Halo — 2026-07-30
 
 ### Scope And Visual Grounding

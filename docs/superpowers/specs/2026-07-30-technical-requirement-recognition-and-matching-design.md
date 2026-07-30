@@ -3,21 +3,54 @@
 ## Status
 
 - Date: `2026-07-30`
-- Status: `approved`
+- Status: `approved`；`A 内联逐条确认` amendment 于 `2026-07-30` 批准
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-30-technical-requirement-recognition-and-matching.md`
   是唯一 successor implementation plan
 - Selection evidence: 用户确认技术要求需要“语义拆解匹配 + SIP 填充”，并批准
   “规则 Owner + 辅助识别”与“不自动换算标准数值”的边界
-- Validation action: `replan`
+- Validation action: `close`
 - Selected direction: 用户批准“规则 Owner + 辅助识别”
 - Supersession boundary: 本功能是新的 successor scope；不重开已 sealed 的七天
   P0 task，也不把尚未完成 runtime acceptance 的 confidence plan 标记为完成
 - Writer ownership and order: spec 阶段父 agent 是本文件唯一 writer；production
   implementation 必须在后续唯一 plan 中串行分配 file ownership
-- Next verification: implementation plan 自检、用户选择 execution mode，然后执行
-  plan Task 1 RED；本文本身不授权 production implementation
+- Next verification: successor implementation 与本 amendment 已按唯一 plan
+  完成并关闭；后续只在出现新的用户反馈或 runtime regression 时重开验证
+
+### A Inline Confirmation Flow Amendment
+
+用户针对 production screenshot 明确选择方案 `A 内联逐条确认`，并批准同时补齐
+`未注公差按 GB/T 1804-m 级执行` 的 Rule Owner 识别。该 amendment 不新增第二个
+matching Owner，也不改变 Review API/schema。
+
+批准的状态流：
+
+1. `待确认`
+   - 当前待处理 requirement 内联展示互斥处理方式：
+     `采用系统建议`、`选择部分检验项`、`设为全局要求`、`排除此要求`；
+   - 用户先形成本地 draft，再看到影响摘要；
+   - 未选择合法处理方式前，主按钮保持 disabled；
+   - 点击 `确认并处理下一条` 后，仍只提交既有
+     `set_technical_requirement_match` command。
+2. `已选择，待提交`
+   - frontend 可以维护未持久化的 selection draft；
+   - selection draft 必须进入工作台既有 dirty/save/freeze gate；返回列表时复用
+     现有三向确认，保存时先提交 technical requirement draft；
+   - frontend 不得解析 raw text、计算适用范围或把全部 active items 当成系统建议；
+   - `系统建议` 只能消费 Rule Owner 已提交的
+     `match_outcome / matched_candidate_ids`。
+3. `终态`
+   - 已确认 requirement 收敛为只读摘要，显示 `已确认`、影响范围和关联项入口；
+   - `修改` 只重新打开同一 command 的 draft UI，不创建新 endpoint；
+   - 全部 requirement 已确认后，面板收敛为完成摘要，并提供
+     `进入检验项审核`；下一阶段仍是 item/SIP 人工审核，不得跳到 freeze、编号或气泡。
+
+明确 `GB/T 1804` 且包含 `执行` 的 `未注/未标注公差` shorthand 可由
+Technical Requirement Rule Owner 归类为
+`general_dimensional_tolerance`；缺少明确标准、等级或执行语义的
+`未注公差` 仍保持 `ambiguous / unresolved`。本 amendment 不自动计算标准数值公差。
 
 ## Context
 

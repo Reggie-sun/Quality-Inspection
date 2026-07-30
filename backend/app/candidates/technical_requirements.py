@@ -42,8 +42,8 @@ _VERIFIABLE_CRITERION = re.compile(
     r"无(?:毛刺|裂纹|缺陷|损伤)"
 )
 _DIMENSIONAL_STANDARD = re.compile(
-    r"未(?:注|标注)尺寸公差按\s*GB\s*/\s*T\s*1804\s*[-—]?\s*"
-    r"(?P<class>[FfMmCcVv])\s*执行"
+    r"未(?:注|标注)(?:尺寸)?公差按\s*GB\s*/\s*T\s*1804\s*[-—]?\s*"
+    r"(?P<class>[FfMmCcVv])(?:级)?\s*执行"
 )
 _GEOMETRIC_STANDARD = re.compile(
     r"未(?:注|标注)形位公差按\s*GB\s*/\s*T\s*1184\s*[-—]?\s*"
