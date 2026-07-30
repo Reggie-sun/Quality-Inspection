@@ -282,6 +282,52 @@ def test_formal_numbers_require_frozen_item_set(
     assert items["i2"]["acceptance_source"] == "manual_override"
 
 
+def test_global_requirement_is_not_assigned_a_formal_number(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    context = make_balloon_context(db_session, tmp_path, frozen=False)
+    items = list(context.working_copy.items)
+    items.append(
+        {
+            "item_id": "technical-requirement-global-1",
+            "item_type": "general_requirement",
+            "scope": "global_requirement",
+            "active": True,
+            "balloon_required": False,
+            "inspection_item": "去毛刺与锐边检查",
+            "inspection_standard": "锐边去毛刺",
+            "inspection_method": "目视",
+            "key_dimension": "否",
+            "inspection_role": "FQC",
+            "source_page": 1,
+            "sip_detail_fields_confirmed": True,
+        }
+    )
+    context.working_copy.items = items
+    db_session.commit()
+
+    frozen = context.review_service.freeze_items(
+        context.working_copy.id,
+        expected_version=context.working_copy.version,
+        operator_id="quality-1",
+    )
+    generated = context.balloon_service.generate_formal(
+        frozen.project_id,
+        expected_version=frozen.version,
+        operator_id="quality-1",
+    )
+
+    assert [balloon.inspection_item_id for balloon in generated] == ["i1", "i2"]
+    global_requirement = next(
+        item
+        for item in frozen.items
+        if item["item_id"] == "technical-requirement-global-1"
+    )
+    assert global_requirement["balloon_required"] is False
+    assert global_requirement.get("formal_number") is None
+
+
 @pytest.mark.parametrize(
     "command",
     [

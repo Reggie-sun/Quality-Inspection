@@ -35,6 +35,7 @@ from app.processing.runtime_recognition import RuntimeRecognition
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.providers.base import VisionResult
+from app.review.service import ReviewService
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -233,6 +234,13 @@ def test_candidate_snapshot_reconstructs_and_matches_six_technical_requirements(
         if candidate["candidate_id"]
         == snapshot.technical_requirements[4]["matched_candidate_ids"][0]
     )
+    global_requirement = next(
+        candidate["payload"]
+        for candidate in snapshot.candidates
+        if candidate["payload"].get("scope") == "global_requirement"
+    )
+    assert global_requirement["balloon_required"] is False
+    assert global_requirement.get("formal_number") is None
     assert dimension["payload"].get("upper_tolerance") is None
     assert dimension["payload"].get("lower_tolerance") is None
     assert dimension["technical_requirement_refs"] == [
@@ -270,6 +278,17 @@ def test_pipeline_freezes_technical_requirement_decisions(
     assert result_ref == f"automatic-result://{result.id}"
     assert len(result.technical_requirements) == 6
     assert result.technical_requirements[4]["match_outcome"] == "matched_items"
+    working = ReviewService(db_session).create_from_raw(result.id)
+    requirement = result.technical_requirements[4]
+    matched_dimension = next(
+        item
+        for item in working.items
+        if item["item_id"] in requirement["matched_candidate_ids"]
+    )
+    assert matched_dimension.get("upper_tolerance") is None
+    assert matched_dimension.get("lower_tolerance") is None
+    assert matched_dimension["inspection_standard"] == "GB/T 1804-m"
+    assert matched_dimension["sip_detail_fields_confirmed"] is False
 
 
 @pytest.mark.parametrize("text", ("DRAFT", "DRAWING", "GENERAL"))
