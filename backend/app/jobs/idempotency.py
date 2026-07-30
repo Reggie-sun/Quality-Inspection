@@ -45,6 +45,8 @@ PROCESSING_STAGES = {
     "queued",
     "parsing",
     "recognizing",
+    "local_ready",
+    "vlm_enriching",
     "preparing_review",
 }
 
@@ -65,6 +67,16 @@ def successful_result_ref(job: LogicalJob) -> str | None:
     if job.status not in {"pending", "processing"}:
         raise LogicalJobStateError(f"logical job cannot run from status {job.status}")
     return None
+
+
+def existing_successful_result_ref(
+    session: Session, *, project_id: str, logical_task_key: str
+) -> str | None:
+    job = session.scalar(select(LogicalJob).where(
+        LogicalJob.project_id == project_id,
+        LogicalJob.logical_task_key == logical_task_key,
+    ))
+    return successful_result_ref(job) if job is not None else None
 
 
 def claim_logical_job(

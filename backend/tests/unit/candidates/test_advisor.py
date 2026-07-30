@@ -326,9 +326,11 @@ def _normalized_preview_snapshot(
         "candidates": [
             {
                 "candidate_id": candidate["candidate_id"],
-                "kind": candidate["payload"]["item_type"],
+                "kind": candidate["payload"].get("item_type")
+                or candidate["payload"].get("coarse_type")
+                or "unknown",
                 "label": candidate["payload"].get("normalized_text")
-                or candidate["payload"]["raw_text"],
+                or candidate["payload"].get("raw_text", ""),
             }
             for candidate in snapshot.candidates
         ],
@@ -559,7 +561,7 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
     tmp_path: Path,
 ) -> None:
     """Catches Advisor enrichment that reaches a Provider before persisting local facts."""
-    source, pages, snapshot = drawing_fixture(tmp_path, raw_text="M6")
+    source, pages, snapshot = drawing_fixture(tmp_path, raw_text="Ra 3.2")
     sink = RecordingPreviewSink()
     source_file_id = uuid.UUID("00000000-0000-0000-0000-000000000601")
     expected_preview = _normalized_preview_snapshot(snapshot, pages)
@@ -569,7 +571,7 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
             assert sink.local_submissions == [(expected_preview, source_file_id)]
             return super().review_candidate(image, prompt)
 
-    provider = ProviderAfterLocal(advisor_payload("M6", "thread", "M6", True))
+    provider = ProviderAfterLocal(advisor_payload("Ra 3.2", "roughness", "Ra 3.2", True))
     advisor = CandidateAdvisor(
         Settings(qwen_model="qwen3-vl-plus"),
         LocalFileStorage(tmp_path / "storage"),
@@ -592,8 +594,8 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
     assert submitted_snapshot["candidates"] == [
         {
             "candidate_id": snapshot.candidates[0]["candidate_id"],
-            "kind": "thread",
-            "label": "M6",
+            "kind": "roughness",
+            "label": "Ra 3.2",
         }
     ]
     assert submitted_snapshot["sources"] == [
@@ -601,7 +603,7 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
             "source_location_id": snapshot.source_signals[0].source_location_id,
             "source_type": "native",
             "page_index": 0,
-            "raw_text": "M6",
+            "raw_text": "Ra 3.2",
         }
     ]
     assert submitted_snapshot["counts"]["local_resolved"] == 1

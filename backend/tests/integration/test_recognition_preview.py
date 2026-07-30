@@ -320,16 +320,21 @@ def test_postgres_rejects_direct_preview_revision_update_and_delete(
         source_file_id=source.id,
         snapshot=_local_snapshot(),
     )
+    preview_context.session.commit()
     original_snapshot = copy.deepcopy(revision.semantic_snapshot)
     original_hash = revision.semantic_sha256
 
     with pytest.raises(DBAPIError):
         preview_context.session.execute(text(
             "UPDATE recognition_preview_revisions "
-            "SET semantic_snapshot = '{\"tampered\":true}'::jsonb WHERE id = :id"
+            "SET semantic_snapshot = jsonb_build_object('tampered', true) WHERE id = :id"
         ), {"id": revision.id})
         preview_context.session.commit()
     preview_context.session.rollback()
+    revision = service.publish_local(
+        source_file_id=source.id,
+        snapshot=_local_snapshot(),
+    )
     with pytest.raises(DBAPIError):
         preview_context.session.execute(text(
             "DELETE FROM recognition_preview_revisions WHERE id = :id"
@@ -358,6 +363,7 @@ def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
         snapshot={**_local_snapshot(), "stage": "vlm_enriching"},
     )
     job = LogicalJob(
+        id=uuid.uuid4(),
         project_id=str(project.id),
         logical_task_key=f"preview-terminal:{project.id}",
         status="succeeded",
@@ -366,14 +372,16 @@ def test_stale_completion_and_terminal_result_cannot_advance_the_preview_head(
     terminal = AutomaticResult(
         project_id=project.id,
         source_file_id=source.id,
-        logical_job=job,
+        logical_job_id=job.id,
         inventory_ref=f"asset://tests/{project.id}/inventory.json",
         candidates=[],
         coverage={},
         provider_call_ids=[],
         schema_version="automatic-result/1",
     )
-    preview_context.session.add_all([job, terminal])
+    preview_context.session.add(job)
+    preview_context.session.flush()
+    preview_context.session.add(terminal)
     preview_context.session.commit()
     service.supersede_with_terminal(automatic_result_id=terminal.id)
     preview_context.session.refresh(terminal)

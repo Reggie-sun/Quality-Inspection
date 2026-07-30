@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 from pathlib import Path
+import uuid
 
 import pymupdf
 
@@ -119,6 +120,8 @@ class RuntimeRecognition:
     def build_candidate_snapshot(
         self,
         pages: tuple[PageInventory, ...],
+        *,
+        source_file_id: uuid.UUID | None = None,
     ) -> CandidateSnapshot:
         snapshot = replace(
             candidate_snapshot_from_inventory(pages),
@@ -128,7 +131,12 @@ class RuntimeRecognition:
             return snapshot
         if self._source_path is None:
             raise RuntimeError("candidate snapshot requires one source PDF")
-        return self._advisor.review(self._source_path, pages, snapshot)
+        return self._advisor.review(
+            self._source_path,
+            pages,
+            snapshot,
+            source_file_id=source_file_id,
+        )
 
     @staticmethod
     def _eligible_regions(

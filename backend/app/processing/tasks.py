@@ -14,9 +14,11 @@ from app.capabilities.service import ProcessingPreflight
 from app.celery_app import celery_app
 from app.config import get_settings
 from app.db import SessionLocal
+from app.jobs.idempotency import existing_successful_result_ref
 from app.errors.models import ErrorRecord
 from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
+from app.processing.recognition_preview import RecognitionPreviewService
 from app.projects.models import Project
 from app.providers.runtime import (
     OcrProviderFactory,
@@ -96,6 +98,18 @@ def inventory_project(
             update={"symbol_recognition_mode": recognition_mode}
         )
         storage = LocalFileStorage(settings.storage_root)
+        existing = existing_successful_result_ref(
+            session, project_id=project_id, logical_task_key=logical_task_key
+        )
+        if existing is not None:
+            try:
+                ReviewService(session, storage=storage).create_from_raw(
+                    _automatic_result_id(existing)
+                )
+            except Exception:
+                _record_review_bootstrap_failure(session, project_id)
+                raise
+            return existing
         preflight = ProcessingPreflight(
             storage,
             Redis.from_url(settings.redis_url),
@@ -111,6 +125,10 @@ def inventory_project(
                 settings.qwen_model,
             ),
         )
+        preview_sink = RecognitionPreviewService(
+            session,
+            project_id=uuid.UUID(project_id),
+        )
         advisor = CandidateAdvisor(
             settings,
             storage,
@@ -118,6 +136,7 @@ def inventory_project(
             provider_factory=VISION_PROVIDER_FACTORY,
             symbol_session_factory=SessionLocal,
             require_symbol_persistence=True,
+            preview_sink=preview_sink,
         )
         recognition = RuntimeRecognition(
             settings,
@@ -130,6 +149,7 @@ def inventory_project(
             preflight,
             inventory_builder=recognition.build_inventory,
             candidate_snapshot_builder=recognition.build_candidate_snapshot,
+            preview_superseder=preview_sink,
         ).run(
             project_id,
             source_ref,

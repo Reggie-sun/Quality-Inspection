@@ -24,6 +24,8 @@ class ProcessingStage(StrEnum):
     QUEUED = "queued"
     PARSING = "parsing"
     RECOGNIZING = "recognizing"
+    LOCAL_READY = "local_ready"
+    VLM_ENRICHING = "vlm_enriching"
     PREPARING_REVIEW = "preparing_review"
 
 
@@ -106,3 +108,50 @@ class ProjectWorkbenchResponse(BaseModel):
     source_pdf_url: str
     reviewed_result_id: uuid.UUID | None
     latest_export: ExportResponse | None
+
+
+class RecognitionPreviewCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str
+    kind: str
+    label: str
+
+
+class RecognitionPreviewSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_location_id: str
+    source_type: str
+    page_index: int
+    raw_text: str
+
+
+class RecognitionPreviewCounts(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    local_resolved: int
+    cache_resolved: int
+    vlm_pending: int
+    vlm_resolved: int
+    unresolved: int
+
+
+class RecognitionPreviewSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str
+    stage: Literal["local_ready", "vlm_enriching"]
+    candidates: list[RecognitionPreviewCandidate]
+    sources: list[RecognitionPreviewSource]
+    counts: RecognitionPreviewCounts
+
+
+class RecognitionPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    revision: int
+    stage: Literal["local_ready", "vlm_enriching"]
+    source_pdf_url: str
+    semantic_snapshot: RecognitionPreviewSnapshot
+    counts: RecognitionPreviewCounts

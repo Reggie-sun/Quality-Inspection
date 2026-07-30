@@ -855,6 +855,7 @@ def build_automatic_result(
     router_version: str = "legacy",
     recognition_summary: Mapping[str, Any] | None = None,
     recognition_evidence_ref: str | None = None,
+    preview_superseder: object | None = None,
 ) -> AutomaticResult:
     if coverage.blocking_count > 0 or not coverage.coverage_checked:
         raise CoverageBlocking(coverage.blocking_count)
@@ -980,5 +981,8 @@ def build_automatic_result(
     job.processing_stage = "preparing_review"
     job.status = "succeeded"
     job.result_ref = automatic_result_ref(result)
+    session.flush()
+    if preview_superseder is not None:
+        preview_superseder.supersede_with_terminal(automatic_result_id=result.id)
     session.commit()
     return result

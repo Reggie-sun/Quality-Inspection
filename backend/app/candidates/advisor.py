@@ -778,6 +778,7 @@ class CandidateAdvisor:
         *,
         project_id: str,
         provider_factory: VisionProviderFactory,
+        preview_sink: Any | None = None,
         symbol_session_factory: Callable[[], Session] | None = None,
         require_symbol_persistence: bool = False,
     ) -> None:
@@ -789,6 +790,7 @@ class CandidateAdvisor:
         self._provider_factory = provider_factory
         self._symbol_session_factory = symbol_session_factory
         self._require_symbol_persistence = require_symbol_persistence
+        self._preview_sink = preview_sink
 
     def _project_uuid(self) -> uuid.UUID:
         try:
@@ -2066,7 +2068,47 @@ class CandidateAdvisor:
         pdf_path: Path,
         pages: Sequence[Any],
         snapshot: CandidateSnapshot,
+        *,
+        source_file_id: uuid.UUID | None = None,
     ) -> CandidateSnapshot:
+        if self._preview_sink is not None and source_file_id is not None:
+            sources_by_id = {
+                observation.observation_id: observation
+                for page in pages
+                for observation in page.observations
+            }
+            local_count = sum(1 for candidate in snapshot.candidates)
+            self._preview_sink.publish_local(
+                source_file_id=source_file_id,
+                snapshot={
+                    "schema_version": "recognition-preview/1",
+                    "stage": "local_ready",
+                    "candidates": [
+                        {
+                            "candidate_id": candidate["candidate_id"],
+                            "kind": candidate["payload"].get("item_type") or candidate["payload"].get("coarse_type") or "unknown",
+                            "label": candidate["payload"].get("normalized_text") or candidate["payload"].get("raw_text") or "",
+                        }
+                        for candidate in snapshot.candidates
+                    ],
+                    "sources": [
+                        {
+                            "source_location_id": signal.source_location_id,
+                            "source_type": signal.source_type,
+                            "page_index": sources_by_id[signal.source_location_id].page_index,
+                            "raw_text": sources_by_id[signal.source_location_id].raw_text,
+                        }
+                        for signal in snapshot.source_signals
+                    ],
+                    "counts": {
+                        "local_resolved": local_count,
+                        "cache_resolved": 0,
+                        "vlm_pending": len(snapshot.required_visual_observation_ids),
+                        "vlm_resolved": 0,
+                        "unresolved": 0,
+                    },
+                },
+            )
         required_visual_ids = frozenset(
             snapshot.required_visual_observation_ids
         )

@@ -324,6 +324,7 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
     )
     preview_sinks: list[RecordingPreviewService] = []
     local_submissions: list[tuple[uuid.UUID, Mapping[str, object]]] = []
+    terminal_result_ids: list[uuid.UUID] = []
 
     class RecordingPreviewService:
         def __init__(self, session: Session, *, project_id: uuid.UUID) -> None:
@@ -370,6 +371,13 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
             )
             local_submissions.append((source_file_id, snapshot))
 
+        def supersede_with_terminal(
+            self,
+            *,
+            automatic_result_id: uuid.UUID,
+        ) -> None:
+            terminal_result_ids.append(automatic_result_id)
+
     original_advisor = tasks.CandidateAdvisor
 
     def recording_advisor(*args, **kwargs):
@@ -394,6 +402,7 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
     assert len(preview_sinks) == 1
     assert local_submissions and local_submissions[0][0] == source.id
     assert len(local_submissions) == 1
+    assert len(terminal_result_ids) == 1
     assert first_result == retry_result
     assert external_calls == []
 
@@ -489,6 +498,8 @@ def test_canonical_task_calls_vision_once_for_eligible_candidate(
     def recording_snapshot_builder(
         recognition: RuntimeRecognition,
         pages,
+        *,
+        source_file_id: uuid.UUID | None = None,
     ):
         observer = task_session_factory()
         try:
@@ -501,7 +512,11 @@ def test_canonical_task_calls_vision_once_for_eligible_candidate(
             observed_stages.append(job.processing_stage)
         finally:
             observer.close()
-        return original_snapshot_builder(recognition, pages)
+        return original_snapshot_builder(
+            recognition,
+            pages,
+            source_file_id=source_file_id,
+        )
 
     monkeypatch.setattr(
         RuntimeRecognition,

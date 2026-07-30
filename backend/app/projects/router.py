@@ -27,7 +27,15 @@ from app.exports.router import _export_payload
 from app.exports.service import ExportService
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
-from app.projects.schemas import ProjectStatusResponse, ProjectWorkbenchResponse
+from app.projects.schemas import (
+    ProjectStatusResponse,
+    ProjectWorkbenchResponse,
+    RecognitionPreviewResponse,
+)
+from app.processing.recognition_preview import (
+    RecognitionPreviewHead,
+    RecognitionPreviewRevision,
+)
 from app.projects.service import (
     InvalidPdf,
     ProjectDispatchFailed,
@@ -49,6 +57,10 @@ class ProjectWorkbenchNotFound(LookupError):
 
 
 class ProjectWorkbenchUnavailable(RuntimeError):
+    pass
+
+
+class RecognitionPreviewUnavailable(RuntimeError):
     pass
 
 
@@ -241,8 +253,7 @@ def get_source_pdf(
     storage: StorageDependency,
 ) -> Response:
     try:
-        _, _, raw = _project_review_result(session, project_id)
-        source = session.get(StoredFile, raw.source_file_id)
+        source = _source_pdf_file(session, project_id)
         if source is None or source.mime_type != "application/pdf":
             raise ProjectWorkbenchUnavailable("project source PDF is unavailable")
         content = storage.read_bytes(source.resource_ref)
@@ -262,6 +273,56 @@ def get_source_pdf(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.get(
+    "/{project_id}/recognition-preview",
+    operation_id="QI-API-PRJ-005",
+    response_model=RecognitionPreviewResponse,
+    responses=error_responses({
+        404: ("project_not_found",),
+        409: ("project_recognition_preview_unavailable",),
+        422: ("request_validation_failed",),
+        500: ("internal_server_error",),
+    }),
+)
+def get_recognition_preview(
+    project_id: uuid.UUID,
+    session: SessionDependency,
+) -> RecognitionPreviewResponse | JSONResponse:
+    if session.get(Project, project_id) is None:
+        return _error(404, "project_not_found", "project was not found")
+    head = session.get(RecognitionPreviewHead, project_id)
+    if head is None or head.terminal_result_id is not None:
+        return _error(409, "project_recognition_preview_unavailable", "recognition preview is unavailable")
+    revision = session.get(RecognitionPreviewRevision, head.revision_id)
+    if revision is None:
+        return _error(409, "project_recognition_preview_unavailable", "recognition preview is unavailable")
+    snapshot = revision.semantic_snapshot
+    return RecognitionPreviewResponse.model_validate({
+        "revision": revision.revision,
+        "stage": snapshot["stage"],
+        "source_pdf_url": f"/api/v1/projects/{project_id}/source-pdf",
+        "semantic_snapshot": snapshot,
+        "counts": snapshot["counts"],
+    })
+
+
+def _source_pdf_file(session: Session, project_id: uuid.UUID) -> StoredFile:
+    if session.get(Project, project_id) is None:
+        raise ProjectWorkbenchNotFound("project was not found")
+    head = session.get(RecognitionPreviewHead, project_id)
+    if head is not None and head.terminal_result_id is None:
+        revision = session.get(RecognitionPreviewRevision, head.revision_id)
+        if revision is not None:
+            source = session.get(StoredFile, revision.source_file_id)
+            if source is not None:
+                return source
+    _, _, raw = _project_review_result(session, project_id)
+    source = session.get(StoredFile, raw.source_file_id)
+    if source is None:
+        raise ProjectWorkbenchUnavailable("project source PDF is unavailable")
+    return source
 
 
 def _workbench_payload(
