@@ -79,8 +79,17 @@ class RecordingOcrProvider:
         )
 
 
-class SourceBoundAdvisor:
+class SourceBoundPreviewSink:
     def __init__(self) -> None:
+        self.local_submissions: list[tuple[str, object]] = []
+
+    def publish_local(self, *, source_file_id: str, snapshot: object) -> None:
+        self.local_submissions.append((source_file_id, snapshot))
+
+
+class SourceBoundAdvisor:
+    def __init__(self, preview_sink: SourceBoundPreviewSink) -> None:
+        self._preview_sink = preview_sink
         self.calls: list[tuple[Path, str, object]] = []
 
     def review(
@@ -92,6 +101,10 @@ class SourceBoundAdvisor:
         source_file_id: str,
     ) -> object:
         assert pages
+        self._preview_sink.publish_local(
+            source_file_id=source_file_id,
+            snapshot=snapshot,
+        )
         self.calls.append((source_path, source_file_id, snapshot))
         return snapshot
 
@@ -306,7 +319,9 @@ def test_runtime_recognition_forwards_exact_source_identity_to_advisor(
     pdf_path = tmp_path / "source-bound.pdf"
     _write_pdf(pdf_path, native_text="M6")
     provider = RecordingOcrProvider()
-    advisor = SourceBoundAdvisor()
+    source_file_id = "stored-source-exact"
+    sink = SourceBoundPreviewSink()
+    advisor = SourceBoundAdvisor(sink)
     recognition = RuntimeRecognition(
         Settings(storage_root=Path("/tmp/not-used")),
         provider_factory=lambda _settings: provider,
@@ -316,10 +331,11 @@ def test_runtime_recognition_forwards_exact_source_identity_to_advisor(
     pages = recognition.build_inventory(pdf_path)
     snapshot = recognition.build_candidate_snapshot(
         pages,
-        source_file_id="stored-source-exact",
+        source_file_id=source_file_id,
     )
 
-    assert advisor.calls == [(pdf_path, "stored-source-exact", snapshot)]
+    assert advisor.calls == [(pdf_path, source_file_id, snapshot)]
+    assert sink.local_submissions == [(source_file_id, snapshot)]
     assert provider.calls == []
 
 
