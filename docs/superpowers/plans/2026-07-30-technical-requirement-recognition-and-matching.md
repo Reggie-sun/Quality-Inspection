@@ -774,7 +774,7 @@ git commit -m "feat: match technical requirements to candidates"
 - Modify: `backend/tests/integration/test_review_operations.py`
 - Modify: `backend/tests/integration/test_project_workbench_api.py`
 
-- [ ] **Step 1: 写 bootstrap RED test**
+- [x] **Step 1: 写 bootstrap RED test**
 
 ```python
 def test_review_bootstrap_projects_requirement_suggestions_without_confirming() -> None:
@@ -801,7 +801,7 @@ assert dimension["sip_detail_fields_confirmed"] is False
 assert dimension["sip_suggestion_provenance"]["inspection_standard"] == requirement_id
 ```
 
-- [ ] **Step 2: 写 match override command RED tests**
+- [x] **Step 2: 写 match override command RED tests**
 
 Command contract：
 
@@ -835,7 +835,7 @@ Integration tests prove：
 - command and requirement update commit atomically；
 - frozen working copy rejects command。
 
-- [ ] **Step 3: 运行 RED**
+- [x] **Step 3: 运行 RED**
 
 ```bash
 micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_project_workbench_api.py -q
@@ -843,7 +843,7 @@ micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py back
 
 Expected: FAIL because model/API/service do not project requirements。
 
-- [ ] **Step 4: 实现 bootstrap 和 suggestion provenance**
+- [x] **Step 4: 实现 bootstrap 和 suggestion provenance**
 
 `ReviewService.create_from_raw()` 先构造 items，再投影：
 
@@ -869,7 +869,7 @@ suggestion rules：
 - global/standalone requirement 使用 stable generated item ID；
 - automatic immutable decision 深拷贝到 working-copy requirement state。
 
-- [ ] **Step 5: 实现 transactional override**
+- [x] **Step 5: 实现 transactional override**
 
 在 `_apply_command()` 中把 `technical_requirements` 作为同一 deep-copy aggregate
 传入，保存时与 items/coverage 一次提交。不要新增独立 endpoint 或 frontend-local
@@ -884,7 +884,7 @@ API `_working_copy()` 增加：
 `manual_review_count()` 不能把一个 matched requirement 与 target item 重复计数；
 unresolved requirement 仍由 coverage entry 计数。
 
-- [ ] **Step 6: 运行 GREEN**
+- [x] **Step 6: 运行 GREEN**
 
 ```bash
 micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_project_workbench_api.py -q
@@ -892,7 +892,7 @@ micromamba run -n qi-p0 pytest backend/tests/contract/test_review_schema.py back
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add backend/app/review/schemas.py backend/app/review/service.py backend/app/review/router.py backend/tests/contract/test_review_schema.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_project_workbench_api.py
