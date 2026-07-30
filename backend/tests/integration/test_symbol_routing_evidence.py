@@ -963,13 +963,19 @@ def test_decision_attempt_and_terminal_outcome_are_exact_one_and_immutable(
     assert replayed_attempt.id == attempt.id
     assert replayed_outcome.id == outcome.id
     assert db_session.scalar(
-        select(func.count()).select_from(SymbolRoutingDecisionRecord)
+        select(func.count())
+        .select_from(SymbolRoutingDecisionRecord)
+        .where(SymbolRoutingDecisionRecord.project_id == project_id)
     ) == 1
     assert db_session.scalar(
-        select(func.count()).select_from(SymbolEscalationAttemptEventRecord)
+        select(func.count())
+        .select_from(SymbolEscalationAttemptEventRecord)
+        .where(SymbolEscalationAttemptEventRecord.project_id == project_id)
     ) == 1
     assert db_session.scalar(
-        select(func.count()).select_from(SymbolEscalationOutcomeRecord)
+        select(func.count())
+        .select_from(SymbolEscalationOutcomeRecord)
+        .where(SymbolEscalationOutcomeRecord.project_id == project_id)
     ) == 1
 
     decision.disposition = "locally_resolved"
@@ -1279,7 +1285,9 @@ def test_conflicting_replay_fails_closed_without_rewriting_evidence(
     assert persisted is not None
     assert persisted.input_sha256 == SHA_A
     assert db_session.scalar(
-        select(func.count()).select_from(SymbolRoutingDecisionRecord)
+        select(func.count())
+        .select_from(SymbolRoutingDecisionRecord)
+        .where(SymbolRoutingDecisionRecord.project_id == project_id)
     ) == 1
 
 
