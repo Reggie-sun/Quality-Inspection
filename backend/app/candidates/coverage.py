@@ -56,9 +56,9 @@ class CoverageEntry:
     coordinates: tuple[float, float, float, float] | None
     candidate_id: str | None = None
     requires_confirmation: bool = False
+    advisor_review: dict[str, object] | None = None
     disposition_reason: str | None = None
     disposition_rule_version: str | None = None
-    advisor_review: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {

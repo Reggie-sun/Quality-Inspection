@@ -218,6 +218,7 @@ def candidate_snapshot_from_inventory(
     while index < len(observations):
         observation = observations[index]
         candidate: Candidate | CoarseCandidate | None = None
+        decision = None
         members: tuple[TextObservation, ...] = (observation,)
 
         requirement = classify_technical_requirement(
@@ -227,45 +228,46 @@ def candidate_snapshot_from_inventory(
         )
         if requirement is not None:
             candidate = requirement
-        elif decision := classify_primary_disposition(
-            observation,
-            repeated_overlay_observation_ids=repeated_overlay_ids,
-        ):
-            coverage_entries.append(
-                CoverageEntry(
-                    observation_id=observation.observation_id,
-                    disposition=decision.disposition,
-                    source_location_id=observation.observation_id,
-                    coordinates=observation.bbox_pdf,
-                    requires_confirmation=decision.requires_confirmation,
-                    disposition_reason=decision.reason,
-                    disposition_rule_version=decision.rule_version,
-                )
-            )
-            index += 1
-            continue
-        elif composite := _composite_at(observations, index):
-            candidate, members = composite
         else:
-            try:
-                candidate = group_observations([observation])[0]
-            except ValueError:
-                coarse_type = _coarse_type(observation.raw_text)
-                if coarse_type is not None:
-                    candidate = coarse_candidate(
-                        observation.raw_text,
-                        coarse_type,
-                        observation.bbox_pdf,
-                    )
+            decision = classify_primary_disposition(observation)
+            if decision is None:
+                if composite := _composite_at(observations, index):
+                    candidate, members = composite
+                else:
+                    try:
+                        candidate = group_observations([observation])[0]
+                    except ValueError:
+                        coarse_type = _coarse_type(observation.raw_text)
+                        if coarse_type is not None:
+                            candidate = coarse_candidate(
+                                observation.raw_text,
+                                coarse_type,
+                                observation.bbox_pdf,
+                            )
 
         if candidate is None:
+            if decision is None:
+                decision = classify_primary_disposition(
+                    observation,
+                    repeated_overlay_observation_ids=repeated_overlay_ids,
+                )
             coverage_entries.append(
                 CoverageEntry(
                     observation_id=observation.observation_id,
-                    disposition="ambiguous",
+                    disposition=(
+                        decision.disposition if decision else "ambiguous"
+                    ),
                     source_location_id=observation.observation_id,
                     coordinates=observation.bbox_pdf,
-                    requires_confirmation=True,
+                    requires_confirmation=(
+                        decision.requires_confirmation if decision else True
+                    ),
+                    disposition_reason=(
+                        decision.reason if decision else None
+                    ),
+                    disposition_rule_version=(
+                        decision.rule_version if decision else None
+                    ),
                 )
             )
             index += 1

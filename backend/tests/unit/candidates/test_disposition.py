@@ -100,6 +100,42 @@ def test_repeated_overlay_requires_distinct_pages_and_stable_position() -> None:
 
 
 @pytest.mark.parametrize(
+    ("raw_text", "expected_disposition", "expected_reason", "requires_confirmation"),
+    [
+        (
+            "CONFIDENTIAL",
+            "non_inspection",
+            "repeated_page_overlay",
+            False,
+        ),
+        (
+            "技术要求",
+            "ambiguous",
+            "repeated_page_text",
+            True,
+        ),
+    ],
+)
+def test_repeated_page_text_requires_explicit_watermark_semantics(
+    raw_text: str,
+    expected_disposition: str,
+    expected_reason: str,
+    requires_confirmation: bool,
+) -> None:
+    observation = _observation(raw_text, observation_id="repeated")
+
+    decision = classify_primary_disposition(
+        observation,
+        repeated_overlay_observation_ids={"repeated"},
+    )
+
+    assert decision is not None
+    assert decision.disposition == expected_disposition
+    assert decision.reason == expected_reason
+    assert decision.requires_confirmation is requires_confirmation
+
+
+@pytest.mark.parametrize(
     "raw_text",
     ["25", "Φ20", "检查焊缝不得有裂纹"],
 )

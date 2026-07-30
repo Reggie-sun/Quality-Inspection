@@ -287,6 +287,93 @@ def test_candidate_snapshot_filters_only_confirmed_cross_page_overlay() -> None:
 
 
 @pytest.mark.parametrize(
+    ("raw_text", "expected_candidate_count", "expected_disposition"),
+    [
+        ("焊缝不得有裂纹", 2, "candidate"),
+        ("Ra 3.2", 2, "candidate"),
+        ("∥0.05 A", 2, "candidate"),
+        ("未注公差按 GB/T 1804-m", 0, "ambiguous"),
+        ("技术要求", 0, "ambiguous"),
+    ],
+)
+def test_candidate_snapshot_preserves_repeated_cross_page_engineering_text(
+    raw_text: str,
+    expected_candidate_count: int,
+    expected_disposition: str,
+) -> None:
+    first = _text_observation(
+        raw_text,
+        observation_id="engineering-page-0",
+        page_index=0,
+        bbox_normalized=(0.1, 0.1, 0.2, 0.2),
+    )
+    second = _text_observation(
+        raw_text,
+        observation_id="engineering-page-1",
+        page_index=1,
+        bbox_normalized=(0.11, 0.1, 0.21, 0.2),
+    )
+
+    snapshot = candidate_snapshot_from_inventory(
+        (_page(first), _page(second))
+    )
+
+    assert len(snapshot.candidates) == expected_candidate_count
+    assert tuple(entry.disposition for entry in snapshot.coverage_entries) == (
+        expected_disposition,
+        expected_disposition,
+    )
+    assert all(
+        entry.disposition_reason != "repeated_page_overlay"
+        for entry in snapshot.coverage_entries
+    )
+    if expected_disposition == "ambiguous":
+        assert all(
+            entry.requires_confirmation
+            and entry.disposition_reason == "repeated_page_text"
+            for entry in snapshot.coverage_entries
+        )
+
+
+def test_candidate_snapshot_preserves_existing_composite_grouping() -> None:
+    primary = replace(
+        _text_observation("Φ10", observation_id="diameter"),
+        bbox_pdf=(1, 2, 31, 10),
+    )
+    depth = replace(
+        _text_observation("深20", observation_id="depth"),
+        bbox_pdf=(1, 11, 31, 19),
+    )
+
+    snapshot = candidate_snapshot_from_inventory(
+        (_page_with_observations(0, (primary, depth)),)
+    )
+
+    assert len(snapshot.candidates) == 1
+    assert snapshot.candidates[0]["payload"]["item_type"] == "composite"
+    assert tuple(entry.disposition for entry in snapshot.coverage_entries) == (
+        "candidate",
+        "candidate",
+    )
+    assert tuple(
+        entry.observation_id for entry in snapshot.coverage_entries
+    ) == ("diameter", "depth")
+
+
+def test_primary_disposition_failure_is_not_silently_downgraded() -> None:
+    observation = _text_observation("设计")
+
+    with (
+        patch(
+            "app.processing.automatic_result.classify_primary_disposition",
+            side_effect=RuntimeError("disposition unavailable"),
+        ),
+        pytest.raises(RuntimeError, match="disposition unavailable"),
+    ):
+        candidate_snapshot_from_inventory((_page(observation),))
+
+
+@pytest.mark.parametrize(
     "raw_text",
     ["Φ20", "M6", "R5", "25±0.02", "检查焊缝不得有裂纹"],
 )

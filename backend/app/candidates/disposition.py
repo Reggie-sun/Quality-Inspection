@@ -35,6 +35,20 @@ STANDALONE_NUMBER = re.compile(rf"^{NUMBER}$")
 STANDALONE_ROMAN_LABEL = re.compile(
     r"^(?:I|II|III|IV|V|VI|VII|VIII|IX|X)$"
 )
+EXACT_WATERMARK_LABELS = frozenset(
+    {
+        "CONFIDENTIAL",
+        "DRAFT",
+        "SAMPLE",
+        "作废",
+        "仅供参考",
+        "仅供审阅",
+        "受控",
+        "机密",
+        "样本",
+        "样张",
+    }
+)
 REPEATED_OVERLAY_POSITION_GRID = 0.05
 
 
@@ -159,6 +173,12 @@ def classify_primary_disposition(
             requires_confirmation=True,
         )
     if observation.observation_id in repeated_overlay_observation_ids:
+        if normalized.upper() not in EXACT_WATERMARK_LABELS:
+            return PrimaryDispositionDecision(
+                disposition="ambiguous",
+                reason="repeated_page_text",
+                requires_confirmation=True,
+            )
         return PrimaryDispositionDecision(
             disposition="non_inspection",
             reason="repeated_page_overlay",
