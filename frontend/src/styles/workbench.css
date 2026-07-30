@@ -541,13 +541,14 @@
 
 .inspection-list-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 112px;
+  grid-template-columns: minmax(0, 1fr) 96px;
   gap: 6px;
 }
 
 .inspection-list-controls input,
 .inspection-list-controls select {
   width: 100%;
+  font-size: 11px;
 }
 
 .source-batch-bar {
@@ -555,23 +556,27 @@
   min-height: 38px;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 7px 9px;
+  gap: 6px;
+  padding: 6px 7px;
   border: 1px solid #fed7aa;
   border-radius: 7px;
   background: #fffaf0;
   color: #7c4a12;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .source-batch-bar > strong {
+  flex: 0 0 auto;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .source-batch-bar button {
-  min-height: 30px;
-  padding: 4px 10px;
-  font-size: 11px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 3px 6px;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .source-batch-confirmation {
