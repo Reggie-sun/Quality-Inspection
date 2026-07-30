@@ -36,6 +36,60 @@
   box-shadow: 0 2px 5px rgb(16 24 40 / 7%);
 }
 
+.workbench-return-dialog-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(15 23 42 / 38%);
+}
+
+.workbench-return-dialog {
+  width: min(100%, 440px);
+  padding: 22px;
+  border: 1px solid var(--qi-border);
+  border-radius: 10px;
+  background: var(--qi-panel);
+  box-shadow: 0 18px 48px rgb(15 23 42 / 22%);
+}
+
+.workbench-return-dialog h2,
+.workbench-return-dialog p {
+  margin: 0;
+}
+
+.workbench-return-dialog h2 {
+  font-size: 18px;
+}
+
+.workbench-return-dialog p {
+  margin-top: 8px;
+  color: var(--qi-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.workbench-return-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.workbench-return-dialog__primary {
+  border-color: var(--qi-blue);
+  background: var(--qi-blue);
+  color: #ffffff;
+}
+
+.workbench-return-dialog__primary:hover:not(:disabled) {
+  border-color: var(--qi-blue-hover);
+  background: var(--qi-blue-hover);
+  color: #ffffff;
+}
+
 .panel-heading h2,
 .balloon-toolbar h2,
 .company-log h2 {

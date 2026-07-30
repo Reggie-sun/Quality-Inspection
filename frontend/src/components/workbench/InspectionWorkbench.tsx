@@ -21,6 +21,10 @@ import {
   type PendingSourceReview,
 } from "./InspectionItemTable";
 import {
+  saveDraftHandlesInOrder,
+  type DraftSaveHandle,
+} from "./draftSave";
+import {
   inspectionItemPresentation,
   isReviewRequiredItem,
 } from "./inspectionItemPresentation";
@@ -191,6 +195,13 @@ export function InspectionWorkbench({
   const [selectedSipDraftDirty, setSelectedSipDraftDirty] = useState(false);
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
   const [selectionBlocked, setSelectionBlocked] = useState(false);
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [returnSaving, setReturnSaving] = useState(false);
+  const reviewDraftSaveRef = useRef<DraftSaveHandle>(null);
+  const sourceDraftSaveRef = useRef<DraftSaveHandle>(null);
+  const selectedSipDraftSaveRef = useRef<DraftSaveHandle>(null);
+  const returnActionRef = useRef<HTMLButtonElement>(null);
+  const saveAndReturnRef = useRef<HTMLButtonElement>(null);
   const prepareAttemptRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (metadataDraftDirty) return;
@@ -199,6 +210,9 @@ export function InspectionWorkbench({
   useEffect(() => {
     if (!reviewDraftDirty) setSelectionBlocked(false);
   }, [reviewDraftDirty]);
+  useEffect(() => {
+    if (returnDialogOpen) saveAndReturnRef.current?.focus();
+  }, [returnDialogOpen]);
   const candidateNumbers = useMemo(() => {
     const lookup = new Map<string, number>();
     for (const candidate of candidates) {
@@ -260,6 +274,7 @@ export function InspectionWorkbench({
   const reviewCommandsDisabled =
     saving
     || busy
+    || returnSaving
     || reviewImmutable;
   const frozen = workingCopy?.items_frozen_at != null;
   const activeBalloonCount = balloons.filter(
@@ -323,16 +338,51 @@ export function InspectionWorkbench({
       setSaving(false);
     }
   };
-  const confirmMetadata = async (): Promise<void> => {
+  const confirmMetadata = async (): Promise<boolean> => {
     const saved = await submitCommand({
       type: "set_sip_metadata",
       ...metadata,
     });
     if (saved) setMetadataDraftDirty(false);
+    return saved;
   };
   const cancelMetadata = (): void => {
     setMetadata(metadataDraft(workingCopy));
     setMetadataDraftDirty(false);
+  };
+  const requestReturnToDrawingList = (): void => {
+    if (onReset === undefined) return;
+    if (!localDraftDirty) {
+      onReset();
+      return;
+    }
+    setReturnDialogOpen(true);
+  };
+  const cancelReturnToDrawingList = (): void => {
+    if (returnSaving) return;
+    setReturnDialogOpen(false);
+    window.setTimeout(() => returnActionRef.current?.focus(), 0);
+  };
+  const saveAndReturnToDrawingList = async (): Promise<void> => {
+    if (returnSaving || onReset === undefined) return;
+    const draftSaveHandles = [
+      reviewDraftSaveRef.current,
+      sourceDraftSaveRef.current,
+      selectedSipDraftSaveRef.current,
+    ];
+    setReturnSaving(true);
+    try {
+      if (metadataDraftDirty && !(await confirmMetadata())) return;
+      const saved = await saveDraftHandlesInOrder(draftSaveHandles);
+      if (!saved) {
+        setSaveState(zhCN.workbench.saveFailed);
+        return;
+      }
+      setReturnDialogOpen(false);
+      onReset();
+    } finally {
+      setReturnSaving(false);
+    }
   };
   const reviewedCount = items.filter(
     (item) => item.active && item.status === "kept",
@@ -482,11 +532,12 @@ export function InspectionWorkbench({
           </section>
           {onReset === undefined ? null : (
             <button
+              ref={returnActionRef}
               type="button"
               className="workbench-reset-action"
-              onClick={onReset}
+              onClick={requestReturnToDrawingList}
             >
-              {zhCN.upload.another}
+              {zhCN.workbench.returnToDrawingList}
             </button>
           )}
         </div>
@@ -571,6 +622,7 @@ export function InspectionWorkbench({
                 onSelectSource={selectSource}
                 onCommand={submitCommand}
                 onDraftChange={setSourceDraftDirty}
+                draftSaveRef={sourceDraftSaveRef}
               />
             </div>
             <div className="inspection-review-workspace__detail">
@@ -583,6 +635,7 @@ export function InspectionWorkbench({
                 pageIndex={pageIndex}
                 onCommand={submitCommand}
                 onDraftChange={setReviewDraftDirty}
+                draftSaveRef={reviewDraftSaveRef}
               />
               <SipInformationPanel
                 metadata={metadata}
@@ -600,6 +653,7 @@ export function InspectionWorkbench({
                 onCancelMetadata={cancelMetadata}
                 onCommand={submitCommand}
                 onSelectedSipDraftChange={setSelectedSipDraftDirty}
+                selectedSipDraftSaveRef={selectedSipDraftSaveRef}
               />
             </div>
           </div>
@@ -620,6 +674,77 @@ export function InspectionWorkbench({
         </section>
 
       </div>
+      {returnDialogOpen ? (
+        <div className="workbench-return-dialog-backdrop">
+          <section
+            className="workbench-return-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="workbench-return-dialog-title"
+            aria-describedby="workbench-return-dialog-description"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                cancelReturnToDrawingList();
+                return;
+              }
+              if (event.key !== "Tab") return;
+              const buttons = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  "button:not(:disabled)",
+                ),
+              );
+              if (buttons.length === 0) return;
+              const first = buttons[0];
+              const last = buttons[buttons.length - 1];
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+              }
+            }}
+          >
+            <h2 id="workbench-return-dialog-title">
+              {zhCN.workbench.returnDialogTitle}
+            </h2>
+            <p id="workbench-return-dialog-description">
+              {zhCN.workbench.returnDialogDescription}
+            </p>
+            <div className="workbench-return-dialog__actions">
+              <button
+                ref={saveAndReturnRef}
+                type="button"
+                className="workbench-return-dialog__primary"
+                disabled={returnSaving}
+                onClick={() => void saveAndReturnToDrawingList()}
+              >
+                {returnSaving
+                  ? zhCN.workbench.saving
+                  : zhCN.workbench.saveAndReturn}
+              </button>
+              <button
+                type="button"
+                disabled={returnSaving}
+                onClick={() => {
+                  setReturnDialogOpen(false);
+                  onReset?.();
+                }}
+              >
+                {zhCN.workbench.discardAndReturn}
+              </button>
+              <button
+                type="button"
+                disabled={returnSaving}
+                onClick={cancelReturnToDrawingList}
+              >
+                {zhCN.workbench.cancelReturn}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

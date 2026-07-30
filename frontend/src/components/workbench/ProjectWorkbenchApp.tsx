@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDocument } from "pdfjs-dist";
 
 import { ApiError, getJson, postJson } from "../../api/client";
@@ -66,6 +66,7 @@ export function ProjectWorkbenchApp({
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const [reviewedResultId, setReviewedResultId] = useState<string>();
+  const snapshotRef = useRef<ProjectWorkbenchView | undefined>(undefined);
 
   const safeError = (caught: unknown) => (
     caught instanceof ApiError ? apiErrorCopy(caught.code) : zhCN.errors.fallback
@@ -84,6 +85,7 @@ export function ProjectWorkbenchApp({
     ) {
       throw new Error("project workbench identity mismatch");
     }
+    snapshotRef.current = loaded;
     setSnapshot(loaded);
     setReviewedResultId(loaded.reviewed_result_id ?? undefined);
     return loaded;
@@ -186,12 +188,15 @@ export function ProjectWorkbenchApp({
     const saved = await run(
       zhCN.workbench.saving,
       async () => {
-        if (snapshot === undefined) throw new Error("project workbench is not loaded");
+        const currentSnapshot = snapshotRef.current;
+        if (currentSnapshot === undefined) {
+          throw new Error("project workbench is not loaded");
+        }
         await saveWorkingCopy(
           postJson,
           projectId,
           operatorId,
-          snapshot.working_copy.version,
+          currentSnapshot.working_copy.version,
           command,
         );
       },

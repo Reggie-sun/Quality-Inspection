@@ -123,7 +123,7 @@ describe("InspectionWorkbench", () => {
     expect(screen.getByRole("row", { name: /20/ })).not.toBeNull();
   });
 
-  test("顶部只保留项目摘要与切换图纸，不暴露后台定稿步骤", () => {
+  test("顶部只保留项目摘要与返回列表且无草稿时直接返回", () => {
     const onReset = vi.fn();
     render(
       <InspectionWorkbench
@@ -164,9 +164,10 @@ describe("InspectionWorkbench", () => {
     expect(screen.queryByRole("button", { name: "确认审核结果" })).toBeNull();
 
     fireEvent.click(within(compactHeader).getByRole("button", {
-      name: "处理另一份图纸",
+      name: "回到图纸列表",
     }));
     expect(onReset).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   test("审核界面不向用户暴露重复项合并工具", () => {
@@ -2133,5 +2134,171 @@ describe("InspectionWorkbench", () => {
       .getAttribute("data-active")).toBe("true");
     expect(screen.getByRole("row", { name: /100/ })
       .getAttribute("data-selected")).toBe("true");
+  });
+
+  test("有草稿时返回列表提供保存、不保存和取消三种选择", () => {
+    const onReset = vi.fn();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "return-dialog-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "上座",
+            drawing_number: "JS26032501",
+            material: "SUS304",
+            revision: "A1",
+          },
+        }}
+        onSave={onSave}
+        onReset={onReset}
+      />,
+    );
+
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    const productName = within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }) as HTMLInputElement;
+    fireEvent.change(productName, { target: { value: "未保存名称" } });
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+
+    const dialog = screen.getByRole("dialog", { name: "返回图纸列表？" });
+    expect(within(dialog).getByRole("button", { name: "保存并返回" }))
+      .toBe(document.activeElement);
+    expect(within(dialog).getByRole("button", { name: "不保存返回" }))
+      .not.toBeNull();
+    expect(within(dialog).getByRole("button", { name: "取消" })).not.toBeNull();
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(productName.value).toBe("未保存名称");
+    expect(onReset).not.toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+    fireEvent.click(screen.getByRole("button", { name: "不保存返回" }));
+    expect(onReset).toHaveBeenCalledOnce();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  test("保存并返回失败时留在工作台并保留草稿", async () => {
+    const onReset = vi.fn();
+    const onSave = vi.fn().mockRejectedValue(new Error("save failed"));
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "return-failed-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "上座",
+            drawing_number: "JS26032501",
+            material: "SUS304",
+            revision: "A1",
+          },
+        }}
+        onSave={onSave}
+        onReset={onReset}
+      />,
+    );
+
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    const productName = within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }) as HTMLInputElement;
+    fireEvent.change(productName, { target: { value: "失败后保留" } });
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(screen.getByRole("dialog", { name: "返回图纸列表？" }))
+      .not.toBeNull();
+    expect(productName.value).toBe("失败后保留");
+    expect(onReset).not.toHaveBeenCalled();
+  });
+
+  test("全部草稿保存成功后才返回列表", async () => {
+    const onReset = vi.fn();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "return-success-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "上座",
+            drawing_number: "JS26032501",
+            material: "SUS304",
+            revision: "A1",
+          },
+        }}
+        onSave={onSave}
+        onReset={onReset}
+      />,
+    );
+
+    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    fireEvent.change(within(sipRegion).getByRole("textbox", {
+      name: "产品名称",
+    }), { target: { value: "保存后返回" } });
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+
+    await waitFor(() => expect(onReset).toHaveBeenCalledOnce());
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      type: "set_sip_metadata",
+      material_name: "保存后返回",
+    }));
   });
 });

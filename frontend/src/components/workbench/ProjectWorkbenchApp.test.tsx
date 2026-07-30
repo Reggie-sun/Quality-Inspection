@@ -238,7 +238,7 @@ test("就绪页头部横向组合纯文字品牌、真实阶段和重新处理�
   })).toBeNull();
 
   fireEvent.click(within(compactHeader).getByRole("button", {
-    name: "处理另一份图纸",
+    name: "回到图纸列表",
   }));
   expect(onReset).toHaveBeenCalledOnce();
 });
@@ -453,4 +453,87 @@ test("candidate 单边自动投影不得绕过 working item 完整合同", async
     })).toBeNull();
     expect(screen.getByRole("row", { name: new RegExp(rawText) })).not.toBeNull();
   }
+});
+
+test("保存并返回的连续命令使用每次刷新后的最新 working copy version", async () => {
+  let currentVersion = 7;
+  const expectedVersions: number[] = [];
+  const snapshot = reviewedResponse();
+  snapshot.project.state = "editing";
+  snapshot.working_copy.items = [];
+  snapshot.working_copy.version = currentVersion;
+  snapshot.working_copy.coverage = {
+    blocking_count: 1,
+    review_required_count: 0,
+  };
+  snapshot.working_copy.items_frozen_at = null;
+  snapshot.working_copy.items_frozen_by = null;
+  snapshot.working_copy.items_frozen_version = null;
+  snapshot.balloons = [];
+  snapshot.reviewed_result_id = null;
+  snapshot.latest_export = null;
+
+  const fetchMock = vi.fn(async (
+    path: RequestInfo | URL,
+    init?: RequestInit,
+  ) => {
+    if (String(path).endsWith("/review/lock")) {
+      return new Response(JSON.stringify({ operator_id: "operator-real" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (String(path).endsWith("/review/commands")) {
+      const body = JSON.parse(String(init?.body)) as {
+        expected_version: number;
+      };
+      expectedVersions.push(body.expected_version);
+      currentVersion += 1;
+      return new Response(JSON.stringify({ version: currentVersion }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({
+      ...snapshot,
+      working_copy: {
+        ...snapshot.working_copy,
+        version: currentVersion,
+      },
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const onReset = vi.fn();
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+      onReset={onReset}
+    />,
+  );
+
+  const sipRegion = await screen.findByRole("region", { name: "SIP 信息" });
+  fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+    selector: "summary",
+  }));
+  fireEvent.change(within(sipRegion).getByRole("textbox", {
+    name: "产品名称",
+  }), { target: { value: "连续保存名称" } });
+  fireEvent.change(screen.getByLabelText("新增检验项原始标注"), {
+    target: { value: "M10" },
+  });
+  fireEvent.change(screen.getByLabelText("新增检验项坐标"), {
+    target: { value: "1,2,3,4" },
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
+
+  await waitFor(() => expect(onReset).toHaveBeenCalledOnce());
+  expect(expectedVersions).toEqual([7, 8]);
 });
