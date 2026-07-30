@@ -33,6 +33,7 @@ import {
   SipInformationPanel,
   type MetadataDraft,
 } from "./SipInformationPanel";
+import { TechnicalRequirementPanel } from "./TechnicalRequirementPanel";
 import "../../styles/workbench.css";
 
 
@@ -436,6 +437,13 @@ export function InspectionWorkbench({
             manualReviewCount={workingCopy?.manual_review_count ?? 0}
             filter={filter}
             onFilterChange={setFilter}
+          />
+          <TechnicalRequirementPanel
+            requirements={workingCopy?.technical_requirements ?? []}
+            items={items}
+            disabled={reviewCommandsDisabled}
+            onSelectItem={selectItem}
+            onCommand={submitCommand}
           />
           <div
             className="inspection-review-workspace"

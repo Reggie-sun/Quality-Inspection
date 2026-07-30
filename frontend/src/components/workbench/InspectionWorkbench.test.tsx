@@ -1897,4 +1897,64 @@ describe("InspectionWorkbench", () => {
       name: "检验项 — · 线性尺寸",
     })).not.toBeNull();
   });
+
+  test("技术要求面板复用唯一保存命令 seam", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const items = [{
+      item_id: "dimension-25",
+      item_type: "linear_dimension" as const,
+      raw_text: "25",
+      nominal: "25",
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "technical-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 1 },
+          technical_requirements: [{
+            requirement_id: "requirement-5",
+            ordinal: 5,
+            raw_text: "未注尺寸公差按 GB/T 1804-m 执行",
+            normalized_text: "未注尺寸公差按 GB/T 1804-m 执行",
+            source_location_ids: ["source-5"],
+            page_index: 0,
+            category: "applicability_rule",
+            subtype: "general_dimensional_tolerance",
+            parsed_parameters: {},
+            match_outcome: "unresolved",
+            matched_candidate_ids: [],
+            rule_version: "technical-requirement/1",
+            review_required: true,
+          }],
+          manual_review_count: 1,
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "匹配此检验项：25",
+    }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
+      type: "set_technical_requirement_match",
+      requirement_id: "requirement-5",
+      outcome: "matched_items",
+      matched_item_ids: ["dimension-25"],
+    }));
+  });
 });

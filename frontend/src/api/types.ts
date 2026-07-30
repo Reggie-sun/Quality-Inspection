@@ -112,6 +112,8 @@ export type ReviewItem = {
   source_page?: number;
   remarks?: string;
   sip_detail_fields_confirmed?: boolean;
+  technical_requirement_refs?: string[];
+  sip_suggestion_provenance?: Record<string, string>;
   confidence_decision?: ConfidenceDecision;
   acceptance_source?:
     | "confidence_policy"
@@ -167,7 +169,35 @@ export type ReviewCommand =
       drawing_number: string;
       material: string;
       revision: string;
+    }
+  | {
+      type: "set_technical_requirement_match";
+      requirement_id: string;
+      outcome: "matched_items" | "global_scope" | "excluded";
+      matched_item_ids?: string[];
     };
+
+export type TechnicalRequirement = {
+  requirement_id: string;
+  ordinal?: number | null;
+  raw_text: string;
+  normalized_text: string;
+  source_location_ids: string[];
+  page_index: number;
+  category:
+    | "standalone_check"
+    | "applicability_rule"
+    | "unsupported"
+    | "ambiguous";
+  subtype: string;
+  parsed_parameters: Record<string, string>;
+  match_outcome: "matched_items" | "global_scope" | "unresolved";
+  matched_candidate_ids: string[];
+  generated_candidate_id?: string | null;
+  rule_version: "technical-requirement/1";
+  review_required: boolean;
+  review_status?: "suggested" | "confirmed" | "excluded";
+};
 
 export type ReviewWorkingCopy = {
   id: string;
@@ -176,6 +206,7 @@ export type ReviewWorkingCopy = {
   version: number;
   items: ReviewItem[];
   coverage: ReviewCoverage;
+  technical_requirements?: TechnicalRequirement[];
   manual_review_count?: number;
   numbering_stale: boolean;
   items_frozen_at: string | null;
