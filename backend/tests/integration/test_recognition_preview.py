@@ -4,7 +4,7 @@ import copy
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -106,11 +106,14 @@ def _preview_service(session: Session, project_id: uuid.UUID):
     return RecognitionPreviewService(session, project_id=project_id)
 
 
-def _local_snapshot() -> dict[str, object]:
+def _local_snapshot() -> Mapping[str, object]:
     return {
         "schema_version": "recognition-preview/1",
         "stage": "local_ready",
         "candidates": [{"candidate_id": "candidate-1", "kind": "thread"}],
+        "sources": [
+            {"source_location_id": "source-1", "source_type": "native"}
+        ],
         "counts": {
             "local_resolved": 1,
             "cache_resolved": 0,
@@ -139,7 +142,8 @@ def test_local_snapshot_is_immutable_revision_one_and_the_canonical_head(
         b'{"candidates":[{"candidate_id":"candidate-1","kind":"thread"}],'
         b'"counts":{"cache_resolved":0,"local_resolved":1,"unresolved":0,'
         b'"vlm_pending":1,"vlm_resolved":0},"schema_version":'
-        b'"recognition-preview/1","stage":"local_ready"}'
+        b'"recognition-preview/1","sources":[{"source_location_id":"source-1",'
+        b'"source_type":"native"}],"stage":"local_ready"}'
     ).hexdigest()
     assert preview.head().id == revision.id
 

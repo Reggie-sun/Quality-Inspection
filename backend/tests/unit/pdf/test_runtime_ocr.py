@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 import struct
 from dataclasses import replace
 from pathlib import Path
@@ -12,6 +13,7 @@ from app.config import Settings
 from app.pdf.inventory import build_inventory as build_native_inventory
 from app.pdf.schemas import LayoutProfileMatch, ObservationRegionAssignment
 from app.processing import runtime_recognition as runtime_recognition_module
+from app.processing.automatic_result import CandidateSnapshot
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.providers.base import OcrObservation, OcrResult
 
@@ -82,34 +84,73 @@ class RecordingOcrProvider:
 
 class SourceBoundPreviewSink:
     def __init__(self) -> None:
-        self.local_submissions: list[tuple[uuid.UUID, object]] = []
+        self.local_submissions: list[tuple[uuid.UUID, Mapping[str, object]]] = []
 
     def publish_local(
         self,
         *,
         source_file_id: uuid.UUID,
-        snapshot: object,
+        snapshot: Mapping[str, object],
     ) -> None:
+        assert set(snapshot) == {
+            "schema_version",
+            "stage",
+            "candidates",
+            "sources",
+            "counts",
+        }
+        assert set(snapshot["counts"]) == {
+            "local_resolved",
+            "cache_resolved",
+            "vlm_pending",
+            "vlm_resolved",
+            "unresolved",
+        }
         self.local_submissions.append((source_file_id, snapshot))
 
 
 class SourceBoundAdvisor:
     def __init__(self, preview_sink: SourceBoundPreviewSink) -> None:
         self._preview_sink = preview_sink
-        self.calls: list[tuple[Path, str, object]] = []
+        self.calls: list[tuple[Path, uuid.UUID, CandidateSnapshot]] = []
 
     def review(
         self,
         source_path: Path,
         pages: tuple[object, ...],
-        snapshot: object,
+        snapshot: CandidateSnapshot,
         *,
         source_file_id: uuid.UUID,
-    ) -> object:
+    ) -> CandidateSnapshot:
         assert pages
+        normalized_snapshot: Mapping[str, object] = {
+            "schema_version": "recognition-preview/1",
+            "stage": "local_ready",
+            "candidates": [
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "kind": candidate["payload"]["item_type"],
+                }
+                for candidate in snapshot.candidates
+            ],
+            "sources": [
+                {
+                    "source_location_id": signal.source_location_id,
+                    "source_type": signal.source_type,
+                }
+                for signal in snapshot.source_signals
+            ],
+            "counts": {
+                "local_resolved": len(snapshot.candidates),
+                "cache_resolved": 0,
+                "vlm_pending": len(snapshot.candidates),
+                "vlm_resolved": 0,
+                "unresolved": 0,
+            },
+        }
         self._preview_sink.publish_local(
             source_file_id=source_file_id,
-            snapshot=snapshot,
+            snapshot=normalized_snapshot,
         )
         self.calls.append((source_path, source_file_id, snapshot))
         return snapshot
@@ -341,7 +382,36 @@ def test_runtime_recognition_forwards_exact_source_identity_to_advisor(
     )
 
     assert advisor.calls == [(pdf_path, source_file_id, snapshot)]
-    assert sink.local_submissions == [(source_file_id, snapshot)]
+    assert sink.local_submissions == [
+        (
+            source_file_id,
+            {
+                "schema_version": "recognition-preview/1",
+                "stage": "local_ready",
+                "candidates": [
+                    {
+                        "candidate_id": candidate["candidate_id"],
+                        "kind": candidate["payload"]["item_type"],
+                    }
+                    for candidate in snapshot.candidates
+                ],
+                "sources": [
+                    {
+                        "source_location_id": signal.source_location_id,
+                        "source_type": signal.source_type,
+                    }
+                    for signal in snapshot.source_signals
+                ],
+                "counts": {
+                    "local_resolved": len(snapshot.candidates),
+                    "cache_resolved": 0,
+                    "vlm_pending": len(snapshot.candidates),
+                    "vlm_resolved": 0,
+                    "unresolved": 0,
+                },
+            },
+        )
+    ]
     assert provider.calls == []
 
 

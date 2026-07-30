@@ -4,6 +4,7 @@ import hashlib
 import json
 import threading
 import uuid
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -263,15 +264,64 @@ class FailingIfCalledVisionProvider:
 
 class RecordingPreviewSink:
     def __init__(self) -> None:
-        self.local_submissions: list[tuple[CandidateSnapshot, uuid.UUID]] = []
+        self.local_submissions: list[
+            tuple[Mapping[str, object], uuid.UUID]
+        ] = []
 
     def publish_local(
         self,
         *,
-        snapshot: CandidateSnapshot,
+        snapshot: Mapping[str, object],
         source_file_id: uuid.UUID,
     ) -> None:
+        assert not isinstance(snapshot, CandidateSnapshot)
+        assert set(snapshot) == {
+            "schema_version",
+            "stage",
+            "candidates",
+            "sources",
+            "counts",
+        }
+        assert snapshot["schema_version"] == "recognition-preview/1"
+        assert snapshot["stage"] == "local_ready"
+        assert set(snapshot["counts"]) == {
+            "local_resolved",
+            "cache_resolved",
+            "vlm_pending",
+            "vlm_resolved",
+            "unresolved",
+        }
         self.local_submissions.append((snapshot, source_file_id))
+
+
+def _normalized_preview_snapshot(
+    snapshot: CandidateSnapshot,
+) -> Mapping[str, object]:
+    return {
+        "schema_version": "recognition-preview/1",
+        "stage": "local_ready",
+        "candidates": [
+            {
+                "candidate_id": candidate["candidate_id"],
+                "kind": candidate["payload"]["item_type"],
+            }
+            for candidate in snapshot.candidates
+        ],
+        "sources": [
+            {
+                "source_location_id": signal.source_location_id,
+                "source_type": signal.source_type,
+            }
+            for signal in snapshot.source_signals
+        ],
+        "counts": {
+            "local_resolved": len(snapshot.candidates),
+            "cache_resolved": 0,
+            "vlm_pending": len(snapshot.candidates),
+            "vlm_resolved": 0,
+            "unresolved": 0,
+        },
+    }
 
 
 def drawing_fixture(
@@ -485,10 +535,11 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
     source, pages, snapshot = drawing_fixture(tmp_path, raw_text="M6")
     sink = RecordingPreviewSink()
     source_file_id = uuid.UUID("00000000-0000-0000-0000-000000000601")
+    expected_preview = _normalized_preview_snapshot(snapshot)
 
     class ProviderAfterLocal(RecordingVisionProvider):
         def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
-            assert sink.local_submissions == [(snapshot, source_file_id)]
+            assert sink.local_submissions == [(expected_preview, source_file_id)]
             return super().review_candidate(image, prompt)
 
     provider = ProviderAfterLocal(advisor_payload("M6", "thread", "M6", True))
@@ -507,8 +558,12 @@ def test_advisor_publishes_local_snapshot_before_provider_enrichment(
         source_file_id=source_file_id,
     )
 
-    assert sink.local_submissions == [(snapshot, source_file_id)]
-    assert sink.local_submissions[0][0].provider_call_ids == ()
+    assert sink.local_submissions == [(expected_preview, source_file_id)]
+    submitted_snapshot = sink.local_submissions[0][0]
+    assert submitted_snapshot["candidates"] == expected_preview["candidates"]
+    assert submitted_snapshot["sources"] == expected_preview["sources"]
+    assert "provider_call_ids" not in submitted_snapshot
+    assert "resource_ref" not in submitted_snapshot
     assert len(provider.images) == 1
     assert reviewed.provider_call_ids == ("fixture-qwen-request-1",)
 

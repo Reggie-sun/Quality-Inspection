@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from hashlib import sha256
 from pathlib import Path
 
@@ -323,7 +323,7 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
         external_calls=external_calls,
     )
     preview_sinks: list[RecordingPreviewService] = []
-    local_submissions: list[tuple[uuid.UUID, object]] = []
+    local_submissions: list[tuple[uuid.UUID, Mapping[str, object]]] = []
 
     class RecordingPreviewService:
         def __init__(self, session: Session, *, project_id: uuid.UUID) -> None:
@@ -335,8 +335,22 @@ def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
             self,
             *,
             source_file_id: uuid.UUID,
-            snapshot: object,
+            snapshot: Mapping[str, object],
         ) -> None:
+            assert set(snapshot) == {
+                "schema_version",
+                "stage",
+                "candidates",
+                "sources",
+                "counts",
+            }
+            assert set(snapshot["counts"]) == {
+                "local_resolved",
+                "cache_resolved",
+                "vlm_pending",
+                "vlm_resolved",
+                "unresolved",
+            }
             local_submissions.append((source_file_id, snapshot))
 
     original_advisor = tasks.CandidateAdvisor
