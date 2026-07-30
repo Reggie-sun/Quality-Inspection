@@ -565,7 +565,7 @@ git commit -m "feat: classify technical requirements"
 - Modify: `backend/tests/contract/test_automatic_result.py`
 - Modify: `backend/tests/e2e/test_offline_automatic_result.py`
 
-- [ ] **Step 1: 写 deterministic matching RED tests**
+- [x] **Step 1: 写 deterministic matching RED tests**
 
 首版 matching contract：
 
@@ -615,7 +615,7 @@ def test_default_chamfer_and_general_gdt_fail_safe_to_global_scope() -> None:
 - matched refs 双向一致；
 - unresolved 不创建 candidate。
 
-- [ ] **Step 2: 写 snapshot 和 persistence RED tests**
+- [x] **Step 2: 写 snapshot 和 persistence RED tests**
 
 `CandidateSnapshot` 新增：
 
@@ -660,7 +660,7 @@ micromamba run -n qi-p0 pytest backend/tests/unit/candidates/test_technical_requ
 
 Expected: FAIL because snapshot/result writer does not yet carry requirements。
 
-- [ ] **Step 3: 实现 two-phase snapshot**
+- [x] **Step 3: 实现 two-phase snapshot**
 
 `candidate_snapshot_from_inventory()` 顺序固定：
 
@@ -694,7 +694,7 @@ evaluation = evaluate_technical_requirements(
 - safe matched rule 为 `reference_context/requires_confirmation=false`；
 - technical requirement generated candidate 进入既有 confidence policy。
 
-- [ ] **Step 4: 退役旧 active path**
+- [x] **Step 4: 退役旧 active path**
 
 删除：
 
@@ -715,7 +715,7 @@ rg -n "classify_technical_requirement|technical_requirements" backend/app backen
 Expected: 没有旧 function 或 call site；production classification 只指向
 `app.candidates.technical_requirements`。
 
-- [ ] **Step 5: 持久化并验证 cross references**
+- [x] **Step 5: 持久化并验证 cross references**
 
 `build_automatic_result()` 增加：
 
@@ -744,7 +744,7 @@ technical_requirements=snapshot.technical_requirements,
 unknown rule version、duplicate requirement ID、missing target ID、non-canonical target order
 必须 fail closed 为 contract error。
 
-- [ ] **Step 6: 运行 focused GREEN 和 owner inventory**
+- [x] **Step 6: 运行 focused GREEN 和 owner inventory**
 
 Run:
 
@@ -755,7 +755,7 @@ rg -n "classify_technical_requirement" backend/app backend/tests
 
 Expected: tests PASS；`rg` 无旧 symbol。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add backend/app/candidates/technical_requirements.py backend/app/candidates/disposition.py backend/app/processing/automatic_result.py backend/app/processing/pipeline.py backend/tests/unit/candidates/test_technical_requirements.py backend/tests/contract/test_automatic_result.py backend/tests/e2e/test_offline_automatic_result.py
