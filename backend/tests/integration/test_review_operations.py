@@ -429,6 +429,7 @@ def _confirm_requirement_target(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,
     *,
+    requirement_id: str = "requirement-1",
     item_ids: list[str] | None = None,
 ) -> ReviewWorkingCopy:
     return review_service.apply(
@@ -437,7 +438,7 @@ def _confirm_requirement_target(
         operator_id="quality-1",
         command={
             "type": "set_technical_requirement_match",
-            "requirement_id": "requirement-1",
+            "requirement_id": requirement_id,
             "outcome": "matched_items",
             "matched_item_ids": item_ids or ["i1"],
         },
@@ -447,6 +448,8 @@ def _confirm_requirement_target(
 def _confirm_global_requirement(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,
+    *,
+    requirement_id: str = "requirement-1",
 ) -> tuple[ReviewWorkingCopy, str]:
     saved = review_service.apply(
         working_copy.id,
@@ -454,7 +457,7 @@ def _confirm_global_requirement(
         operator_id="quality-1",
         command={
             "type": "set_technical_requirement_match",
-            "requirement_id": "requirement-1",
+            "requirement_id": requirement_id,
             "outcome": "global_scope",
         },
     )
@@ -462,6 +465,21 @@ def _confirm_global_requirement(
         saved.technical_requirements[0]["generated_candidate_id"]
     )
     return saved, generated_id
+
+
+def _add_shared_requirement(
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    requirements = copy.deepcopy(working_copy.technical_requirements)
+    shared = copy.deepcopy(requirements[0])
+    shared["requirement_id"] = "requirement-2"
+    shared["raw_text"] = "共享 observation 的第二条技术要求"
+    shared["normalized_text"] = shared["raw_text"]
+    requirements.append(shared)
+    working_copy.technical_requirements = requirements
+    db_session.commit()
+    db_session.refresh(working_copy)
 
 
 def _assert_requirement_reopened(saved: ReviewWorkingCopy) -> None:
@@ -614,6 +632,47 @@ def test_merging_global_requirement_target_relinks_singular_generated_item(
     assert merged["balloon_required"] is False
 
 
+def test_global_requirement_merge_rejects_local_balloon_peer_in_any_order(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    confirmed, generated_id = _confirm_global_requirement(
+        review_service,
+        working_copy,
+    )
+    with_peer = review_service.apply(
+        confirmed.id,
+        expected_version=confirmed.version,
+        operator_id="quality-1",
+        command={
+            "type": "add",
+            "item_type": "general_requirement",
+            "raw_text": "需要气泡的局部要求",
+            "coordinates": [9, 10, 11, 12],
+            "scope": "local_feature",
+            "balloon_required": True,
+        },
+    )
+    peer_id = str(with_peer.items[-1]["item_id"])
+
+    with pytest.raises(
+        ValueError,
+        match="global requirement merge requires global unnumbered items",
+    ):
+        review_service.apply(
+            with_peer.id,
+            expected_version=with_peer.version,
+            operator_id="quality-1",
+            command={
+                "type": "merge",
+                "item_ids": [peer_id, generated_id],
+                "raw_text": "非法的局部与全局合并",
+            },
+        )
+
+
 def test_splitting_global_requirement_target_reopens_singular_relation(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,
@@ -643,6 +702,53 @@ def test_splitting_global_requirement_target_reopens_singular_relation(
     assert all(
         item.get("technical_requirement_refs") == []
         for item in saved.items[-2:]
+    )
+
+
+def test_shared_requirement_source_stays_blocked_until_every_relation_resolves(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    _add_shared_requirement(working_copy, db_session)
+    first, generated_id = _confirm_global_requirement(
+        review_service,
+        working_copy,
+    )
+    both_confirmed = _confirm_requirement_target(
+        review_service,
+        first,
+        requirement_id="requirement-2",
+    )
+    first_reopened = review_service.apply(
+        both_confirmed.id,
+        expected_version=both_confirmed.version,
+        operator_id="quality-1",
+        command={"type": "exclude", "item_id": generated_id},
+    )
+
+    saved = _confirm_requirement_target(
+        review_service,
+        first_reopened,
+        requirement_id="requirement-2",
+    )
+
+    unresolved = next(
+        requirement
+        for requirement in saved.technical_requirements
+        if requirement["requirement_id"] == "requirement-1"
+    )
+    assert unresolved["review_required"] is True
+    requirement_coverage = next(
+        entry
+        for entry in saved.coverage["entries"]
+        if entry["observation_id"] == "requirement-source"
+    )
+    assert requirement_coverage["requires_confirmation"] is True
+    assert "confirmation_accepted" not in requirement_coverage
+    assert "unresolved_confirmation" in _freeze_blockers_with_completed_sip(
+        saved
     )
 
 

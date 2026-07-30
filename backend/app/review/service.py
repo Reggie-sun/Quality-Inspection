@@ -622,6 +622,22 @@ class ReviewService:
                 source.get("item_type") != item_type for source in source_items
             ):
                 raise ValueError("merge requires the same simple item type")
+            global_target_ids = {
+                requirement.get("generated_candidate_id")
+                for requirement in technical_requirements
+                if requirement.get("match_outcome") == "global_scope"
+            }
+            if any(
+                item_id in global_target_ids
+                for item_id in command.item_ids
+            ) and any(
+                source.get("scope") != "global_requirement"
+                or source.get("balloon_required") is not False
+                for source in source_items
+            ):
+                raise ValueError(
+                    "global requirement merge requires global unnumbered items"
+                )
             merged_id = str(uuid.uuid4())
             merged = copy.deepcopy(source_items[0])
             self._clear_sip_detail_fields(merged)
@@ -1016,7 +1032,11 @@ class ReviewService:
                         "review_status": "suggested",
                     }
                 )
-                self._reopen_requirement_coverage(coverage, requirement)
+                self._sync_requirement_coverage(
+                    coverage,
+                    technical_requirements,
+                    requirement,
+                )
                 continue
             if match_outcome == "global_scope":
                 requirement.update(
@@ -1035,18 +1055,40 @@ class ReviewService:
                     )
                 self._add_requirement_ref(target, requirement_id)
                 self._apply_requirement_suggestion(target, requirement)
+            self._sync_requirement_coverage(
+                coverage,
+                technical_requirements,
+                requirement,
+            )
 
     @staticmethod
-    def _reopen_requirement_coverage(
+    def _sync_requirement_coverage(
         coverage: dict[str, Any],
+        technical_requirements: list[dict[str, Any]],
         requirement: dict[str, Any],
     ) -> None:
         source_ids = set(requirement.get("source_location_ids", []))
         for entry in ReviewService._coverage_entries(coverage):
-            if entry.get("observation_id") not in source_ids:
+            observation_id = entry.get("observation_id")
+            if observation_id not in source_ids:
                 continue
-            entry["requires_confirmation"] = True
-            entry.pop("confirmation_accepted", None)
+            source_requirements = [
+                candidate
+                for candidate in technical_requirements
+                if observation_id in candidate.get("source_location_ids", [])
+            ]
+            requires_confirmation = any(
+                candidate.get("review_required") is True
+                for candidate in source_requirements
+            )
+            entry["requires_confirmation"] = requires_confirmation
+            if requires_confirmation:
+                entry.pop("confirmation_accepted", None)
+            else:
+                entry["confirmation_accepted"] = any(
+                    candidate.get("review_status") == "confirmed"
+                    for candidate in source_requirements
+                )
         ReviewService._refresh_review_required_count(coverage)
 
     @staticmethod
@@ -1089,20 +1131,6 @@ class ReviewService:
         }
         items.append(item)
         return item
-
-    @staticmethod
-    def _resolve_requirement_coverage(
-        coverage: dict[str, Any],
-        requirement: dict[str, Any],
-        *,
-        accepted: bool,
-    ) -> None:
-        source_ids = set(requirement.get("source_location_ids", []))
-        for entry in ReviewService._coverage_entries(coverage):
-            if entry.get("observation_id") in source_ids:
-                entry["requires_confirmation"] = False
-                entry["confirmation_accepted"] = accepted
-        ReviewService._refresh_review_required_count(coverage)
 
     def _set_technical_requirement_match(
         self,
@@ -1169,10 +1197,10 @@ class ReviewService:
                 }
             )
             numbering_stale = True
-        self._resolve_requirement_coverage(
+        self._sync_requirement_coverage(
             coverage,
+            technical_requirements,
             requirement,
-            accepted=command.outcome != "excluded",
         )
         return target_ids, numbering_stale
 

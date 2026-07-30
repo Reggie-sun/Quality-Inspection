@@ -84,6 +84,16 @@
 - Additional regression evidence: 四种 retirement/replacement command 的 global relation、
   matched multi-target unaffected preservation、generic standalone fallback，以及两个
   persistence table 的 nonempty migration downgrade refusal。
+- Second re-review evidence: child rollout
+  `019fb14a-d97d-7e30-9f24-05e03d582708` confirmed
+  `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`，结论为
+  `reject`；确认 multiline observation 可承载多条 requirement，coverage gate 必须按
+  同 source 全部 requirement 重算；并确认 global merge 必须拒绝 local/balloon source，
+  不能让 source order 改写 global 无气泡合同。
+- Third residual rule: requirement relation transition 后，对受影响 observation 收集全部
+  source requirements；任一 `review_required=true` 时 coverage 继续阻塞且不写 accepted
+  verdict，全部解决后才关闭 gate。包含 global target 的 merge 仅允许全部 source 均为
+  `scope=global_requirement` 且 `balloon_required=false`。
 
 ## Problem Boundary
 

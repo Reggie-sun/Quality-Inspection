@@ -16,7 +16,9 @@
   transaction 内同时应用 `matched_candidate_ids` 与 `generated_candidate_id` replacement
   map；无剩余 target 或 singular global relation 被拆成多个 target 时，把 requirement
   重开为 `unresolved` 并恢复 source coverage confirmation；其他 replacement 只重连
-  active item 并重新投影 SIP suggestion。
+  active item 并重新投影 SIP suggestion。共享同一 observation 的 coverage gate 按全部
+  requirements 重算；global merge 只接受 `global_requirement / balloon_required=false`
+  source，避免顺序依赖破坏无气泡合同。
 - Regression check: `backend/tests/integration/test_review_operations.py`
 
 ## BUG-20260730-standalone-requirement-owner-replacement
