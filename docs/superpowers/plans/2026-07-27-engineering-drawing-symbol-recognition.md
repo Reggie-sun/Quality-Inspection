@@ -1490,7 +1490,50 @@ frontend unit/build, and verifies the old workbench flow.
 - Modify:
   `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
 
-- [ ] **Step 1: RED evidence contract**
+**PRT-7 Step 1 selection record (`2026-07-31`):**
+
+- Selected lane: `Heavy`.
+- Selected plan:
+  `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`,
+  `PRT-7 Step 1` only.
+- Selection evidence: feature HEAD
+  `41175aa9f359370d9284711c30d685b8c4f15302`, live main
+  `ae883c1a8cc09de0cc340aac7b83e86ba36fa17f`, merge-base
+  `50d118523181fe2edc9c240afe070faed22a7def`, feature ahead `12` / behind `1`;
+  index and unmerged entries are empty; all five PRT-7 paths and all
+  non-artifact paths are clean. The sole main-only delta changes
+  `design-qa.md`, `ReviewPanel.tsx`, and `ReviewPanel.test.tsx`, with no overlap
+  against this step.
+- Validation action: `continue`; write only the dual-route offline evidence
+  contract tests, run the exact two-file command once RED is written, preserve
+  the observed missing-contract failure, complete an independent scoped review,
+  and stop before GREEN.
+- Problem boundary: one sealed input identity must bind both
+  `legacy_high_recall` and `production_uncertainty` offline outputs, including
+  admitted/local/escalated/deduped/cache/call/unresolved counts, reason
+  distribution, explicit cold/warm identity, raw latency distribution, recall
+  delta, completeness/partial outcomes, and Quality Owner verdict refs. A
+  single `513.44s` canary is not percentile evidence.
+- Owner and old-path action: `CandidateAdvisor` remains the sole
+  candidate/coverage/completeness semantic Owner. Harness is an offline evidence
+  consumer/validator only. Existing schema and evaluator paths are `preserve`
+  during RED; no old path is replaced or marked in this step.
+- Unchanged contract: no Provider, upload, browser, formal live Harness,
+  production promotion, main merge, push, artifact cleanup, or `PRT-8`; do not
+  modify `visual-symbol-eval.schema.json` or `symbol_eval.py` before the expected
+  RED is observed.
+- Writer ownership and order: the parent is the single sequential TDD writer for
+  the two test files and this selection/evidence record; one independent
+  read-only reviewer follows the RED command.
+- Next verification:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
+  backend/tests/contract/harness/test_symbol_eval_contract.py \
+  backend/tests/contract/harness/test_live_run_contract.py -q
+```
+
+- [x] **Step 1: RED evidence contract**
 
 Require both legacy and uncertainty outputs for the same sealed inputs:
 admitted/local/escalated/deduped/cache/call/unresolved counts、reason distribution、
@@ -1505,6 +1548,43 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/contract/harness/test_symbol_eval_contract.py \
   backend/tests/contract/harness/test_live_run_contract.py -q
 ```
+
+**PRT-7 Step 1 RED evidence (`2026-07-31`):**
+
+- Exact command: the two-file command above.
+- Exit code: `1`.
+- Result: `3 failed, 83 passed in 5.77s`.
+- Expected failures:
+  - `test_offline_routing_comparison_schema_is_closed_and_complete`: missing
+    `visual-symbol-eval.schema.json#/$defs/routingComparisonEvidence`, so the
+    closed schema cannot yet admit the shared sealed identity, dual-mode
+    cold/warm outputs, seven routing counts, reason distribution, latency
+    distribution, completeness outcomes, recall delta, or Quality Owner verdict
+    refs.
+  - `test_offline_routing_comparison_validator_binds_modes_to_one_identity`:
+    missing
+    `symbol_eval.py::validate_routing_comparison_evidence`, so Harness cannot yet
+    validate exact legacy/uncertainty × cold/warm membership, sealed/content
+    identity agreement, or recall-delta arithmetic without recomputing Owner
+    semantics.
+  - `test_single_live_canary_cannot_masquerade_as_latency_percentiles`: missing
+    `visual-symbol-eval.schema.json#/$defs/latencyDistribution`, so the contract
+    cannot yet distinguish one raw `513440.2794169728ms` sample from a measured
+    distribution that is eligible to report P50/P95.
+- Failure-surface verdict: expected RED. No fixture, collection, environment,
+  Provider, upload, browser, formal live Harness, or production path failed.
+  `visual-symbol-eval.schema.json` and `symbol_eval.py` remain unmodified.
+- Initial scoped review rejected two test-contract gaps: it did not individually
+  remove all seven counts / three completeness outcomes / both mode verdict
+  refs, and it did not separately cover missing/extra mode-cache membership or a
+  valid nonzero recall delta. The parent amended only the RED tests, then reran
+  the exact command with exit `1`, `3 failed, 83 passed in 5.68s`; the failure
+  surface remained the same three missing PRT-7 contracts.
+- Final scoped re-review independently reran the exact command with exit `1`,
+  `3 failed, 83 passed in 5.79s`, confirmed the expanded negative controls,
+  unchanged schema/evaluator sources, empty index and allowed source diff, and
+  returned `accept` with `0 blockers`. Existing `__pycache__` / `.pyc` artifacts
+  remain unstaged and unmodified by this step.
 
 - [ ] **Step 2: GREEN offline shadow**
 
