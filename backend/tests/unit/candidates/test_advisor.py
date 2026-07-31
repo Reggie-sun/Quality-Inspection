@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+import uuid
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,9 +16,11 @@ import app.candidates.advisor as advisor_module
 from app.candidates.advisor import (
     CandidateAdvisor,
     CandidateAdvisorFailure,
+    VisualEvidenceContext,
     VisualExecutionIdentity,
 )
 from app.candidates.coverage import CoverageEntry
+from app.candidates.confidence import CandidateSourceSignal
 from app.candidates.duplicates import DuplicateRelation
 from app.candidates.local_symbol_resolution import LocalResolution
 from app.candidates.symbol_escalation_planner import (
@@ -30,7 +34,7 @@ from app.candidates.technical_requirements import (
 )
 from app.config import Settings
 from app.pdf.inventory import build_inventory
-from app.pdf.schemas import TextObservation, VisualObservation
+from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
 from app.pdf.visual_observations import (
     VisualBatch,
     reconstruct_visual_geometry_contexts,
@@ -260,6 +264,118 @@ class FailingIfCalledVisionProvider:
         raise AssertionError("cache hit constructed one external call")
 
 
+class RecordingPreviewSink:
+    def __init__(self) -> None:
+        self.local_submissions: list[
+            tuple[Mapping[str, object], uuid.UUID]
+        ] = []
+        self.enrichment_submissions: list[
+            tuple[int, uuid.UUID, Mapping[str, object]]
+        ] = []
+        self.events: list[str] = []
+
+    def publish_local(
+        self,
+        *,
+        snapshot: Mapping[str, object],
+        source_file_id: uuid.UUID,
+    ) -> SimpleNamespace:
+        assert not isinstance(snapshot, CandidateSnapshot)
+        assert set(snapshot) == {
+            "schema_version",
+            "stage",
+            "candidates",
+            "sources",
+            "counts",
+        }
+        assert snapshot["schema_version"] == "recognition-preview/1"
+        assert snapshot["stage"] == "local_ready"
+        assert set(snapshot["counts"]) == {
+            "local_resolved",
+            "cache_resolved",
+            "vlm_pending",
+            "vlm_resolved",
+            "unresolved",
+        }
+        candidates = snapshot["candidates"]
+        sources = snapshot["sources"]
+        assert isinstance(candidates, list)
+        assert isinstance(sources, list)
+        assert all(
+            set(candidate) == {"candidate_id", "kind", "label"}
+            for candidate in candidates
+        )
+        assert all(
+            set(source) == {
+                "source_location_id",
+                "source_type",
+                "page_index",
+                "raw_text",
+            }
+            for source in sources
+        )
+        self.local_submissions.append((snapshot, source_file_id))
+        self.events.append("local")
+        return SimpleNamespace(
+            id=uuid.UUID("00000000-0000-0000-0000-000000000602"),
+            revision=1,
+        )
+
+    def append_enrichment(
+        self,
+        *,
+        expected_head_version: int,
+        parent_revision_id: uuid.UUID,
+        snapshot: Mapping[str, object],
+    ) -> None:
+        self.enrichment_submissions.append(
+            (expected_head_version, parent_revision_id, snapshot)
+        )
+        self.events.append("enrichment")
+
+
+def _normalized_preview_snapshot(
+    snapshot: CandidateSnapshot,
+    pages: tuple[PageInventory, ...],
+) -> Mapping[str, object]:
+    observations = {
+        observation.observation_id: observation
+        for page in pages
+        for observation in page.observations
+    }
+    return {
+        "schema_version": "recognition-preview/1",
+        "stage": "local_ready",
+        "candidates": [
+            {
+                "candidate_id": candidate["candidate_id"],
+                "kind": candidate["payload"].get("item_type")
+                or candidate["payload"].get("coarse_type")
+                or "unknown",
+                "label": candidate["payload"].get("normalized_text")
+                or candidate["payload"].get("raw_text", ""),
+            }
+            for candidate in snapshot.candidates
+        ],
+        "sources": [
+            {
+                "source_location_id": signal.source_location_id,
+                "source_type": signal.source_type,
+                "page_index": observations[signal.source_location_id].page_index,
+                "raw_text": observations[signal.source_location_id].raw_text,
+            }
+            for signal in snapshot.source_signals
+        ],
+        "counts": {
+            "local_resolved": len(snapshot.candidates),
+            "cache_resolved": 0,
+            "vlm_pending": len(snapshot.required_visual_observation_ids),
+            "vlm_resolved": 0,
+            "unresolved": 0,
+        },
+    }
+
+
 def drawing_fixture(
     tmp_path: Path,
     *,
@@ -462,6 +578,196 @@ def _canonical_snapshot_bytes(snapshot: CandidateSnapshot) -> bytes:
             ),
         }
     )
+
+
+def test_advisor_publishes_local_snapshot_before_provider_enrichment(
+    tmp_path: Path,
+) -> None:
+    """Catches Advisor enrichment that reaches a Provider before persisting local facts."""
+    source, pages, snapshot = drawing_fixture(tmp_path, raw_text="Ra 3.2")
+    snapshot = replace(snapshot, provider_call_ids=("inbound-ocr-call",))
+    sink = RecordingPreviewSink()
+    source_file_id = uuid.UUID("00000000-0000-0000-0000-000000000601")
+    expected_preview = _normalized_preview_snapshot(snapshot, pages)
+
+    class ProviderAfterLocal(RecordingVisionProvider):
+        def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
+            assert sink.local_submissions == [(expected_preview, source_file_id)]
+            assert sink.events == ["local"]
+            return super().review_candidate(image, prompt)
+
+    provider = ProviderAfterLocal(advisor_payload("Ra 3.2", "roughness", "Ra 3.2", True))
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id="project-test",
+        provider_factory=lambda _settings: provider,
+        preview_sink=sink,
+    )
+
+    reviewed = advisor.review(
+        source,
+        pages,
+        snapshot,
+        source_file_id=source_file_id,
+    )
+
+    assert sink.local_submissions == [(expected_preview, source_file_id)]
+    submitted_snapshot = sink.local_submissions[0][0]
+    assert submitted_snapshot["candidates"] == expected_preview["candidates"]
+    assert submitted_snapshot["sources"] == expected_preview["sources"]
+    assert submitted_snapshot["candidates"] == [
+        {
+            "candidate_id": snapshot.candidates[0]["candidate_id"],
+            "kind": "roughness",
+            "label": "Ra 3.2",
+        }
+    ]
+    assert submitted_snapshot["sources"] == [
+        {
+            "source_location_id": snapshot.source_signals[0].source_location_id,
+            "source_type": "native",
+            "page_index": 0,
+            "raw_text": "Ra 3.2",
+        }
+    ]
+    assert submitted_snapshot["counts"]["local_resolved"] == 1
+    assert submitted_snapshot["counts"]["vlm_pending"] == 0
+    assert sink.events == ["local", "enrichment"]
+    assert sink.enrichment_submissions == [
+        (
+            1,
+            uuid.UUID("00000000-0000-0000-0000-000000000602"),
+            {
+                **_normalized_preview_snapshot(reviewed, pages),
+                "stage": "vlm_enriching",
+                "counts": {
+                    "local_resolved": 1,
+                    "cache_resolved": 0,
+                    "vlm_pending": 0,
+                    "vlm_resolved": 1,
+                    "unresolved": 0,
+                },
+            },
+        )
+    ]
+    assert "provider_call_ids" not in submitted_snapshot
+    assert "resource_ref" not in submitted_snapshot
+    assert len(provider.images) == 1
+    assert reviewed.provider_call_ids == (
+        "inbound-ocr-call",
+        "fixture-qwen-request-1",
+    )
+
+
+def test_preview_enrichment_projects_visual_sources_without_provider_data(
+    tmp_path: Path,
+) -> None:
+    """Catches visual source projection through a text-only observation map."""
+    _, pages, snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    enriched = replace(
+        snapshot,
+        provider_call_ids=("inbound-ocr-call",),
+        source_signals=(
+            *snapshot.source_signals,
+            CandidateSourceSignal(
+                source_location_id=visual.observation_id,
+                source_type="visual",
+                normalized_value=None,
+            ),
+        ),
+    )
+
+    payload = advisor_module._recognition_preview_snapshot(
+        enriched,
+        pages,
+        stage="vlm_enriching",
+    )
+
+    visual_source = next(
+        source for source in payload["sources"]
+        if source["source_location_id"] == visual.observation_id
+    )
+    assert visual_source == {
+        "source_location_id": visual.observation_id,
+        "source_type": "visual",
+        "page_index": visual.page_index,
+        "raw_text": "10",
+    }
+    assert payload["counts"] == {
+        "local_resolved": len(enriched.candidates),
+        "cache_resolved": 0,
+        "vlm_pending": 0,
+        "vlm_resolved": 0,
+        "unresolved": 0,
+    }
+
+
+def test_preview_enrichment_retains_localized_provider_failure_count(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches preview counts inferred from filtered review IDs after a VLM failure."""
+    source, pages, snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    sink = RecordingPreviewSink()
+    project_id = uuid.UUID("00000000-0000-0000-0000-000000000603")
+
+    monkeypatch.setattr(
+        advisor_module,
+        "check_deferred_vision_preflight",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_routing_decisions",
+        lambda _self, **kwargs: {
+            decision.visual_observation_id: "d" * 64
+            for decision in kwargs["decisions"]
+        },
+    )
+
+    def localized_transport_failure(_self: CandidateAdvisor, **_kwargs: object) -> object:
+        raise CandidateAdvisorFailure(
+            "fixture provider transport failure",
+            failure_category="transport",
+        )
+
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_visual_review_result",
+        localized_transport_failure,
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(project_id),
+        provider_factory=lambda _settings: object(),
+        preview_sink=sink,
+        symbol_session_factory=lambda: pytest.fail("unexpected persistence Session"),
+        require_symbol_persistence=True,
+    )
+
+    reviewed = advisor.review(
+        source,
+        pages,
+        snapshot,
+        source_file_id=project_id,
+    )
+
+    assert reviewed.completeness == "partial_review_required"
+    assert visual.observation_id not in reviewed.required_visual_observation_ids
+    assert sink.enrichment_submissions[0][2]["counts"] == {
+        "local_resolved": len(reviewed.candidates),
+        "cache_resolved": 0,
+        "vlm_pending": 0,
+        "vlm_resolved": 0,
+        "unresolved": 1,
+    }
 
 
 def test_production_locally_resolved_visual_skips_provider(
@@ -1317,6 +1623,99 @@ def test_visual_execution_identity_crop_hash_mismatch_blocks_provider(
         )
 
     assert constructed == []
+
+
+def test_production_cache_evidence_failure_is_not_labeled_as_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    storage = LocalFileStorage(tmp_path / "storage")
+    constructed: list[str] = []
+    session = SimpleNamespace(
+        commit=lambda: None,
+        rollback=lambda: None,
+        close=lambda: None,
+    )
+    private_detail = "/srv/private/customer.pdf credential=do-not-leak"
+
+    class FailingEvidence:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        def load_terminal_outcome(self, **_kwargs: object) -> None:
+            raise RuntimeError(private_detail)
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        FailingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        storage,
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: (
+            constructed.append("provider") or object()
+        ),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+    document = pymupdf.open(source)
+    try:
+        crop_png = advisor_module._render_visual_crop(
+            document[0],
+            (0.0, 0.0, 80.0, 80.0),
+        )
+    finally:
+        document.close()
+    crop_sha256 = hashlib.sha256(
+        advisor_module.canonicalize_visual_png(crop_png)
+    ).hexdigest()
+
+    with pytest.raises(
+        CandidateAdvisorFailure,
+        match="^Visual symbol cache lookup failed$",
+    ) as raised:
+        advisor._visual_review_result(
+            provider=None,
+            crop_png=crop_png,
+            crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+            source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            visual_observations=(visual,),
+            text_observations={
+                observation.observation_id: observation
+                for observation in pages[0].observations
+            },
+            model="qwen3-vl-plus",
+            execution_identity=VisualExecutionIdentity(
+                page_index=0,
+                content_sha256="a" * 64,
+                lineage_sha256="b" * 64,
+                budget_sha256="c" * 64,
+                observation_member_bindings=(
+                    (visual.observation_id, "a" * 64),
+                ),
+                crop_sha256=crop_sha256,
+                member_content_sha256s=("a" * 64,),
+            ),
+            legacy_cache_enabled=False,
+            evidence_context=VisualEvidenceContext(
+                escalation_group_id="a" * 64,
+                routing_decision_sha256="b" * 64,
+            ),
+        )
+
+    assert getattr(raised.value, "failure_origin", None) == "routing_evidence"
+    assert private_detail not in str(raised.value)
+    assert constructed == []
+    assert not list(
+        storage.root.glob("projects/*/provider-inputs/qwen-symbol/*.png")
+    )
 
 
 def test_production_does_not_read_or_write_legacy_visual_cache(

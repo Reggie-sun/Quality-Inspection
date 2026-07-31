@@ -37,6 +37,10 @@ export interface paths {
     /** Create Export */
     post: operations["QI-API-EXP-001"];
   };
+  "/api/v1/projects/{project_id}/recognition-preview": {
+    /** Get Recognition Preview */
+    get: operations["QI-API-PRJ-005"];
+  };
   "/api/v1/projects/{project_id}/review/commands": {
     /** Apply Command */
     post: operations["QI-API-REV-003"];
@@ -390,7 +394,7 @@ export interface components {
      * ProcessingStage
      * @enum {string}
      */
-    ProcessingStage: "queued" | "parsing" | "recognizing" | "preparing_review";
+    ProcessingStage: "queued" | "parsing" | "recognizing" | "local_ready" | "vlm_enriching" | "preparing_review";
     /** ProjectError */
     ProjectError: {
       /** Code */
@@ -555,6 +559,71 @@ export interface components {
        * @constant
        */
       type: "rebuild";
+    };
+    /** RecognitionPreviewCandidate */
+    RecognitionPreviewCandidate: {
+      /** Candidate Id */
+      candidate_id: string;
+      /** Kind */
+      kind: string;
+      /** Label */
+      label: string;
+    };
+    /** RecognitionPreviewCounts */
+    RecognitionPreviewCounts: {
+      /** Cache Resolved */
+      cache_resolved: number;
+      /** Local Resolved */
+      local_resolved: number;
+      /** Unresolved */
+      unresolved: number;
+      /** Vlm Pending */
+      vlm_pending: number;
+      /** Vlm Resolved */
+      vlm_resolved: number;
+    };
+    /** RecognitionPreviewResponse */
+    RecognitionPreviewResponse: {
+      counts: components["schemas"]["RecognitionPreviewCounts"];
+      /** Revision */
+      revision: number;
+      semantic_snapshot: components["schemas"]["RecognitionPreviewSnapshot"];
+      /** Source Pdf Url */
+      source_pdf_url: string;
+      /**
+       * Stage
+       * @enum {string}
+       */
+      stage: "local_ready" | "vlm_enriching";
+    };
+    /** RecognitionPreviewSnapshot */
+    RecognitionPreviewSnapshot: {
+      /** Candidates */
+      candidates: components["schemas"]["RecognitionPreviewCandidate"][];
+      counts: components["schemas"]["RecognitionPreviewCounts"];
+      /**
+       * Schema Version
+       * @constant
+       */
+      schema_version: "recognition-preview/1";
+      /** Sources */
+      sources: components["schemas"]["RecognitionPreviewSource"][];
+      /**
+       * Stage
+       * @enum {string}
+       */
+      stage: "local_ready" | "vlm_enriching";
+    };
+    /** RecognitionPreviewSource */
+    RecognitionPreviewSource: {
+      /** Page Index */
+      page_index: number;
+      /** Raw Text */
+      raw_text: string;
+      /** Source Location Id */
+      source_location_id: string;
+      /** Source Type */
+      source_type: string;
     };
     /** RenumberBalloons */
     RenumberBalloons: {
@@ -1151,6 +1220,46 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["ExportResponse"];
+        };
+      };
+      /** @description Requested resource was not found. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Request conflicts with current aggregate or capability state. */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Request failed transport or business validation. */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Unexpected internal failure. */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+    };
+  };
+  /** Get Recognition Preview */
+  "QI-API-PRJ-005": {
+    parameters: {
+      path: {
+        project_id: string;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        content: {
+          "application/json": components["schemas"]["RecognitionPreviewResponse"];
         };
       };
       /** @description Requested resource was not found. */

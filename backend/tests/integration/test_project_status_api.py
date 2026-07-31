@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.candidates.models import AutomaticResult
@@ -372,6 +373,13 @@ def test_vision_provider_failure_projects_retryable_sanitized_status(
             "page_inventory",
         ),
         (
+            "symbol_routing_evidence_failed",
+            "processing_defect",
+            "processing_failed",
+            "failed",
+            "candidate_advisor",
+        ),
+        (
             "review_bootstrap_failed",
             "processing_defect",
             "ready_for_edit",
@@ -473,6 +481,38 @@ def test_partial_result_projects_terminal_review_required_status(
     assert "provider" not in response.text.lower()
     assert "resource_ref" not in response.text
     assert "asset://" not in response.text
+
+
+@pytest.mark.parametrize("stage", ("local_ready", "vlm_enriching"))
+def test_status_exposes_progressive_preview_stage_without_workbench_access(
+    status_context: StatusContext,
+    stage: str,
+) -> None:
+    """PRT-6 keeps progressive states processing until a real working copy exists."""
+    try:
+        project_id = _seed_project_status(
+            status_context.session,
+            project_state="processing",
+            job_status="processing",
+            processing_stage=stage,
+        )
+    except IntegrityError as error:
+        status_context.session.rollback()
+        raise AssertionError(
+            f"PRT-6 logical_jobs schema rejects progressive stage {stage!r}"
+        ) from error
+
+    response = status_context.client.get(
+        f"/api/v1/projects/{project_id}/status"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "phase": "processing",
+        "stage": stage,
+        "workbench_ready": False,
+        "retryable": False,
+    }
 
 
 def test_unknown_project_uses_sanitized_not_found_envelope(

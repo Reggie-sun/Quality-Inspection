@@ -70,6 +70,16 @@ export const zhCN = {
     ready: "识别完成，已进入审核",
     hint: "处理完成后将自动进入审核工作台，请保持页面打开。",
   },
+  recognitionPreview: {
+    title: "识别预览",
+    version: (revision: number) => `版本 ${revision}`,
+    localReady: "本地识别完成",
+    vlmEnriching: "正在进行视觉增强",
+    drawingTitle: "工程图纸预览",
+    localResolved: (count: number) => `本地已解析：${count}`,
+    cacheResolved: (count: number) => `缓存已解析：${count}`,
+    vlmPending: (count: number) => `视觉处理中：${count}`,
+  },
   drawingList: {
     title: "图纸列表",
     eyebrow: "图纸任务",

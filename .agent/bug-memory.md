@@ -2,6 +2,51 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260731-recognition-preview-migration-drift
+
+- Status: 已解决
+- First reported: 2026-07-31
+- Last reported: 2026-07-31
+- Recurrence: 1
+- Surface: `GET /api/v1/projects/{project_id}/source-pdf`、Alembic runtime schema 与 `ProjectWorkbenchApp` startup gate
+- Symptom: workbench 显示“操作失败，请重试”，所有审核字段和动作禁用，项目没有正式气泡
+- Previously correct behavior: 已生成 working copy 的项目应能读取 source PDF 并进入可编辑审核；正式气泡只在审核解析、冻结和生成完成后出现
+- Reproduction: live project `b3d4d9ba-4bcb-475b-9fa2-c559a201c7f3` 的 `/review/lock` 与 `/workbench` 返回 HTTP `200`，`/source-pdf` 返回 HTTP `500 internal_server_error`；数据库为 `alembic_version=0011` 且没有 `recognition_preview_heads / recognition_preview_revisions`，API 日志为 `UndefinedTable: relation "recognition_preview_heads" does not exist`
+- Root cause: merge `59a0edb` 通过 bind-mounted `backend/app` 热加载了新的
+  `_source_pdf_file()`，该 active path 会查询 `recognition_preview_heads`；运行
+  PostgreSQL 仍是 `alembic_version=0011`，且 API image 没有新 Alembic files，
+  因此每次 `/source-pdf` 都在缺表查询处触发 `UndefinedTable`。
+- Fix: 使用当前 Compose network 的一次性 API container，只读挂载
+  `backend/alembic` 与 `backend/alembic.ini`，执行 existing migration
+  `0011 -> 0012`；未修改或重启 API/worker，未添加 compatibility fallback。
+- Regression check: 运行 current `qi-p0` Micromamba environment、同一 Compose
+  network 与只读 backend mount 的 focused tests：
+  `test_project_workbench_delivers_real_pdf_without_internal_references`、
+  `test_recognition_preview_schema_is_owned_by_0012_after_0011`、
+  `test_preview_refresh_is_project_and_source_bound_without_working_copy`，
+  返回 `3 passed, 3 warnings`；warnings 仅为既有 Starlette deprecation 与只读
+  mount 无法写 `.pytest_cache`。
+- Runtime proof: fresh schema check 为 `alembic_version=0012`，两张 preview 表、
+  expanded processing-stage constraint 和 immutable trigger 均存在；同一项目
+  health/workbench/source PDF 分别返回 HTTP `200/200/200`，PDF 为
+  `application/pdf`、`194782` bytes。Chrome MCP reload 后启动请求均为 `200`，
+  alert 与 console error 均为 `0`，检验项 10 的保留/排除/无需气泡动作已恢复；
+  项目仍为 `frozen=false`、`active_balloons=0`，页面只显示候选/自动通过标记。
+- Change: runtime database migrated to existing commit `59a0edb` head `0012`；
+  repo 只更新本 bug-memory 记录
+- Selected lane: `Heavy`
+- Selected plan: `BUG-20260731-recognition-preview-migration-drift` ad hoc runtime repair；不重开已关闭的 symbol-recognition plan
+- Selection evidence: merge `59a0edb` 已使 active `/source-pdf` path 查询新增 preview schema，但 live database 仍停在 `0011`；这是稳定 schema 与 runtime identity mismatch
+- Validation action: `completed`
+- Problem boundary: 只补齐 merge 已提交的 `0012` runtime schema，不改变 review、freeze、balloon 或 export contract
+- Single owner: `backend/alembic/versions/0012_recognition_preview.py`
+- Old path action: retire live `0011` schema state；不增加 compatibility fallback
+- Rollback: migration 失败时停止并验证事务仍在 `0011`；post-upgrade 失败时保留证据并停止，不在 active code 仍依赖 `0012` 时擅自 downgrade
+- Writer ownership and order: 父 agent 唯一 runtime writer；无并发 writer
+- Focused verification: Alembic `0012`、preview schema、同一 `/source-pdf`、workbench controls 与 formal-balloon gate
+- Independent review: `accept`；无 blocking issue、confirmed defect 或 material risk
+- Next verification: 已关闭；仅在新 deployment/schema drift 或 `/source-pdf` 回归时重开
+
 ## BUG-20260731-multi-source-balloon-geometry-selection
 
 - Status: 已解决

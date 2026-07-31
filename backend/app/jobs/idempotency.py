@@ -45,6 +45,8 @@ PROCESSING_STAGES = {
     "queued",
     "parsing",
     "recognizing",
+    "local_ready",
+    "vlm_enriching",
     "preparing_review",
 }
 
@@ -65,6 +67,16 @@ def successful_result_ref(job: LogicalJob) -> str | None:
     if job.status not in {"pending", "processing"}:
         raise LogicalJobStateError(f"logical job cannot run from status {job.status}")
     return None
+
+
+def existing_successful_result_ref(
+    session: Session, *, project_id: str, logical_task_key: str
+) -> str | None:
+    job = session.scalar(select(LogicalJob).where(
+        LogicalJob.project_id == project_id,
+        LogicalJob.logical_task_key == logical_task_key,
+    ))
+    return successful_result_ref(job) if job is not None else None
 
 
 def claim_logical_job(
@@ -108,10 +120,16 @@ def set_processing_stage(
     *,
     job_id: uuid.UUID,
     stage: str,
+    expected_stages: tuple[str, ...] | None = None,
 ) -> None:
     if stage not in PROCESSING_STAGES:
         raise ValueError("unknown processing stage")
-    outcome = session.execute(
+    if expected_stages is not None and (
+        not expected_stages
+        or any(expected not in PROCESSING_STAGES for expected in expected_stages)
+    ):
+        raise ValueError("expected processing stages are invalid")
+    statement = (
         update(LogicalJob)
         .where(
             LogicalJob.id == job_id,
@@ -120,6 +138,11 @@ def set_processing_stage(
         )
         .values(status="processing", processing_stage=stage)
     )
+    if expected_stages is not None:
+        statement = statement.where(
+            LogicalJob.processing_stage.in_(expected_stages)
+        )
+    outcome = session.execute(statement)
     if outcome.rowcount != 1:
         session.rollback()
         raise LogicalJobStateError("logical job cannot change processing stage")

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import AbstractSet, Literal, Sequence
 
 from app.candidates.parser import NUMBER, normalize_text, parse_annotation
-from app.candidates.schemas import Candidate, stable_candidate_id
 from app.candidates.technical_requirements import (
     is_standalone_executable_requirement,
 )

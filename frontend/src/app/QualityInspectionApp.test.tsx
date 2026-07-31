@@ -245,6 +245,58 @@ test.each([
   expect(screen.queryByText(/%/)).toBeNull();
 });
 
+test("local_ready 路由到只读识别预览而非审核工作台", async () => {
+  window.sessionStorage.setItem("qi.current-project-id", PROJECT_ID);
+  const getProjectStatus = vi.fn().mockResolvedValue(
+    status("processing", { stage: "local_ready" as never }),
+  );
+
+  render(
+    <QualityInspectionApp
+      api={fakeApi(undefined, getProjectStatus)}
+      pollIntervalMs={60_000}
+    />,
+  );
+
+  expect(await screen.findByRole("heading", { name: "识别预览" })).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "检验项目审核" })).toBeNull();
+});
+
+test("vlm_enriching 持续路由到只读识别预览", async () => {
+  window.sessionStorage.setItem("qi.current-project-id", PROJECT_ID);
+  const getProjectStatus = vi.fn().mockResolvedValue(
+    status("processing", { stage: "vlm_enriching" as never }),
+  );
+
+  render(
+    <QualityInspectionApp
+      api={fakeApi(undefined, getProjectStatus)}
+      pollIntervalMs={60_000}
+    />,
+  );
+
+  expect(await screen.findByRole("heading", { name: "识别预览" })).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "检验项目审核" })).toBeNull();
+  expect(getProjectStatus).toHaveBeenCalledOnce();
+});
+
+test("terminal partial_review_required 且 workbench_ready 时进入既有审核工作台", async () => {
+  window.sessionStorage.setItem("qi.current-project-id", PROJECT_ID);
+  const getProjectStatus = vi.fn().mockResolvedValue(
+    status("partial_review_required" as never, { workbench_ready: true }),
+  );
+
+  render(
+    <QualityInspectionApp
+      api={fakeApi(undefined, getProjectStatus)}
+      pollIntervalMs={60_000}
+    />,
+  );
+
+  expect(await screen.findByRole("heading", { name: "检验项目审核" })).not.toBeNull();
+  expect(screen.queryByRole("heading", { name: "识别预览" })).toBeNull();
+});
+
 
 test("非重试配置错误不把有效 PDF 说成无效", async () => {
   window.sessionStorage.setItem("qi.current-project-id", PROJECT_ID);

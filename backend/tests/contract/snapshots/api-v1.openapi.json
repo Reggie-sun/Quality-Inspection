@@ -834,6 +834,8 @@
           "queued",
           "parsing",
           "recognizing",
+          "local_ready",
+          "vlm_enriching",
           "preparing_review"
         ],
         "title": "ProcessingStage",
@@ -1433,6 +1435,173 @@
           "expected_version"
         ],
         "title": "RebuildBalloon",
+        "type": "object"
+      },
+      "RecognitionPreviewCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "kind",
+          "label"
+        ],
+        "title": "RecognitionPreviewCandidate",
+        "type": "object"
+      },
+      "RecognitionPreviewCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_resolved": {
+            "title": "Cache Resolved",
+            "type": "integer"
+          },
+          "local_resolved": {
+            "title": "Local Resolved",
+            "type": "integer"
+          },
+          "unresolved": {
+            "title": "Unresolved",
+            "type": "integer"
+          },
+          "vlm_pending": {
+            "title": "Vlm Pending",
+            "type": "integer"
+          },
+          "vlm_resolved": {
+            "title": "Vlm Resolved",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "local_resolved",
+          "cache_resolved",
+          "vlm_pending",
+          "vlm_resolved",
+          "unresolved"
+        ],
+        "title": "RecognitionPreviewCounts",
+        "type": "object"
+      },
+      "RecognitionPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/RecognitionPreviewCounts"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "semantic_snapshot": {
+            "$ref": "#/components/schemas/RecognitionPreviewSnapshot"
+          },
+          "source_pdf_url": {
+            "title": "Source Pdf Url",
+            "type": "string"
+          },
+          "stage": {
+            "enum": [
+              "local_ready",
+              "vlm_enriching"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "stage",
+          "source_pdf_url",
+          "semantic_snapshot",
+          "counts"
+        ],
+        "title": "RecognitionPreviewResponse",
+        "type": "object"
+      },
+      "RecognitionPreviewSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/RecognitionPreviewCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/RecognitionPreviewCounts"
+          },
+          "schema_version": {
+            "const": "recognition-preview/1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/RecognitionPreviewSource"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "stage": {
+            "enum": [
+              "local_ready",
+              "vlm_enriching"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "stage",
+          "candidates",
+          "sources",
+          "counts"
+        ],
+        "title": "RecognitionPreviewSnapshot",
+        "type": "object"
+      },
+      "RecognitionPreviewSource": {
+        "additionalProperties": false,
+        "properties": {
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "source_location_id": {
+            "title": "Source Location Id",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_location_id",
+          "source_type",
+          "page_index",
+          "raw_text"
+        ],
+        "title": "RecognitionPreviewSource",
         "type": "object"
       },
       "RenumberBalloons": {
@@ -2911,6 +3080,91 @@
         "summary": "Create Export",
         "tags": [
           "exports"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/recognition-preview": {
+      "get": {
+        "operationId": "QI-API-PRJ-005",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecognitionPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "project_recognition_preview_unavailable"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Get Recognition Preview",
+        "tags": [
+          "projects"
         ]
       }
     },

@@ -14,6 +14,10 @@ EXPECTED_OPERATIONS = {
     ("GET", "/api/v1/projects/{project_id}/status"): "QI-API-PRJ-002",
     ("GET", "/api/v1/projects/{project_id}/workbench"): "QI-API-PRJ-003",
     ("GET", "/api/v1/projects/{project_id}/source-pdf"): "QI-API-PRJ-004",
+    (
+        "GET",
+        "/api/v1/projects/{project_id}/recognition-preview",
+    ): "QI-API-PRJ-005",
     ("POST", "/api/v1/projects/{project_id}/review/lock"): "QI-API-REV-001",
     (
         "GET",
@@ -136,6 +140,19 @@ def test_openapi_documents_the_unified_error_contract() -> None:
             assert schema == {
                 "$ref": "#/components/schemas/ErrorEnvelope",
             }
+
+
+def test_recognition_preview_documents_its_read_only_error_contract() -> None:
+    """Catches a preview route that omits its explicit unavailable-state errors."""
+    responses = app.openapi()["paths"][
+        "/api/v1/projects/{project_id}/recognition-preview"
+    ]["get"]["responses"]
+
+    assert {"404", "409", "422", "500"} <= set(responses)
+    for status in ("404", "409", "422", "500"):
+        assert responses[status]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorEnvelope",
+        }
 
 
 def test_openapi_matches_the_approved_api_v1_snapshot() -> None:

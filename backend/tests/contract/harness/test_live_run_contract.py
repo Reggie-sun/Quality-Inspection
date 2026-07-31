@@ -85,6 +85,26 @@ def _validate(document: dict[str, object], schema_name: str) -> None:
     ).validate(document)
 
 
+def _validate_schema_definition(
+    document: dict[str, object],
+    name: str,
+) -> None:
+    schema = _schema("visual-symbol-eval.schema.json")
+    definitions = schema["$defs"]
+    assert isinstance(definitions, dict)
+    assert name in definitions, (
+        f"missing PRT-7 visual-symbol-eval schema definition: {name}"
+    )
+    jsonschema.Draft202012Validator(
+        {
+            "$schema": schema["$schema"],
+            "$defs": definitions,
+            "$ref": f"#/$defs/{name}",
+        },
+        format_checker=jsonschema.FormatChecker(),
+    ).validate(document)
+
+
 def _identity(seed: str) -> dict[str, object]:
     return {
         "algorithm": "sha256",
@@ -1219,6 +1239,39 @@ def test_live_and_human_verdict_schemas_are_closed() -> None:
             },
             "human-verdict.schema.json",
         )
+
+
+def test_single_live_canary_cannot_masquerade_as_latency_percentiles() -> None:
+    """PRT-7: 513.44s is one raw sample, never a fabricated P50/P95."""
+    single_sample = {
+        "sample_count": 1,
+        "durations_ms": [513440.2794169728],
+    }
+    _validate_schema_definition(single_sample, "latencyDistribution")
+
+    fabricated_percentiles = {
+        **single_sample,
+        "p50_ms": 513440.2794169728,
+        "p95_ms": 513440.2794169728,
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        _validate_schema_definition(
+            fabricated_percentiles,
+            "latencyDistribution",
+        )
+
+    measured_distribution = {
+        "sample_count": 20,
+        "durations_ms": [
+            42000.0 + index * 1000.0 for index in range(20)
+        ],
+        "p50_ms": 51500.0,
+        "p95_ms": 60050.0,
+    }
+    _validate_schema_definition(
+        measured_distribution,
+        "latencyDistribution",
+    )
 
 
 def test_staged_human_verdict_is_explicit_and_immutable(tmp_path: Path) -> None:
@@ -2381,7 +2434,7 @@ def test_chrome_identity_uses_the_resolved_binary_version_and_hash(
     }
 
 
-def test_all_eleven_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
+def test_all_twelve_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
     checker = _load_module(
         "qi_contract_checker_schema_inventory",
         HARNESS / "scripts/check-contracts.py",
@@ -2400,6 +2453,7 @@ def test_all_eleven_harness_schemas_are_checked_and_bound_to_code_identity() -> 
         "provider-fixture.schema.json",
         "receipt.schema.json",
         "run.schema.json",
+        "symbol-routing-canary-evidence.schema.json",
         "visual-symbol-annotation-verdict.schema.json",
         "visual-symbol-eval.schema.json",
     }

@@ -18,6 +18,7 @@ from app.jobs.idempotency import (
     LogicalJobStateError,
     claim_logical_job,
     complete_logical_job,
+    set_processing_stage,
 )
 from app.processing.automatic_result import (
     AUTOMATIC_RESULT_SCHEMA_VERSION,
@@ -155,6 +156,70 @@ def test_first_successful_result_ref_wins(db_session: Session) -> None:
         db_session.execute(
             delete(LogicalJob).where(LogicalJob.project_id == project_id)
         )
+        db_session.commit()
+
+
+def test_expected_processing_stages_reject_regression_and_terminal_jobs(
+    db_session: Session,
+) -> None:
+    """Catches a stage writer that permits stale preview updates or terminal regression."""
+    project_id = f"p0-test-{uuid.uuid4()}"
+    logical_task_key = "inventory:preview-stage-cas"
+    try:
+        job = claim_logical_job(
+            db_session,
+            project_id=project_id,
+            logical_task_key=logical_task_key,
+        )
+        set_processing_stage(
+            db_session,
+            job_id=job.id,
+            stage="recognizing",
+            expected_stages=("queued",),
+        )
+        set_processing_stage(
+            db_session,
+            job_id=job.id,
+            stage="local_ready",
+            expected_stages=("recognizing",),
+        )
+        set_processing_stage(
+            db_session,
+            job_id=job.id,
+            stage="vlm_enriching",
+            expected_stages=("local_ready",),
+        )
+
+        with pytest.raises(LogicalJobStateError):
+            set_processing_stage(
+                db_session,
+                job_id=job.id,
+                stage="local_ready",
+                expected_stages=("recognizing", "local_ready"),
+            )
+        persisted = db_session.get(LogicalJob, job.id, populate_existing=True)
+        assert persisted is not None
+        assert persisted.processing_stage == "vlm_enriching"
+
+        complete_logical_job(
+            db_session,
+            job_id=job.id,
+            result_ref="asset://projects/winner/inventory.json",
+        )
+        with pytest.raises(LogicalJobStateError):
+            set_processing_stage(
+                db_session,
+                job_id=job.id,
+                stage="preparing_review",
+                expected_stages=("vlm_enriching",),
+            )
+        persisted = db_session.get(LogicalJob, job.id, populate_existing=True)
+        assert persisted is not None
+        assert persisted.status == "succeeded"
+        assert persisted.processing_stage == "vlm_enriching"
+    finally:
+        db_session.rollback()
+        db_session.execute(delete(LogicalJob).where(LogicalJob.project_id == project_id))
         db_session.commit()
 
 

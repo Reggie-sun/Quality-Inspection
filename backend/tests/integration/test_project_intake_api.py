@@ -240,6 +240,13 @@ def test_create_project_rejects_a_second_multipart_file(
     intake_context: IntakeContext,
     one_page_vector_pdf: bytes,
 ) -> None:
+    project_count = intake_context.session.scalar(
+        select(func.count()).select_from(Project)
+    )
+    file_count = intake_context.session.scalar(
+        select(func.count()).select_from(StoredFile)
+    )
+
     response = intake_context.client.post(
         "/api/v1/projects",
         files=[
@@ -253,10 +260,10 @@ def test_create_project_rejects_a_second_multipart_file(
     assert intake_context.dispatch.calls == []
     assert intake_context.session.scalar(
         select(func.count()).select_from(Project)
-    ) == 0
+    ) == project_count
     assert intake_context.session.scalar(
         select(func.count()).select_from(StoredFile)
-    ) == 0
+    ) == file_count
     assert not [path for path in intake_context.storage.root.rglob("*") if path.is_file()]
 
 
