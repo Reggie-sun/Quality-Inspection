@@ -1266,3 +1266,32 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - Remaining P1: 0.
 - Remaining P2: 0.
 - final result: passed
+
+## Automatic Source Disposition — 2026-07-31
+
+### Grounding
+
+- source visual truth: `/tmp/codex-clipboard-9yenQ9.png`
+- target: 移除紧凑检验项列表上方的“待确认来源 / 确认当前有效项”批量操作条。
+- behavior owner: 新建审核工作副本时由 backend 默认将无候选关联的来源标记为
+  `non_inspection`；technical requirement source 保持待审核并继续阻断 freeze；
+  不自动冻结检验项、不生成气泡、不创建 reviewed result。
+
+### Interaction And Browser Evidence
+
+- Chrome MCP 在真实项目
+  `b3d4d9ba-4bcb-475b-9fa2-c559a201c7f3` 验证：
+  `.source-batch-bar` 数量为 `0`，“确认当前有效项”按钮不存在。
+- 紧凑列表与检验项表格的 `scrollWidth <= clientWidth` 均为 `true`。
+- 页面保存状态为“已保存”；workbench、source PDF 与 review lock 请求均返回 `200`。
+- console errors / warnings: `0 / 0`。
+- 两个当前已打开项目的 source-only `pendingCount` 均为 `0`，未执行重复迁移写入。
+
+### Verification And Result
+
+- backend focused integration: `111/111` passed。
+- frontend focused tests: `67/67` passed。
+- compact-list Playwright smoke: `1/1` passed。
+- production build: passed；仅保留既有 Vite large-chunk warning。
+- OpenAPI generated client drift check: passed。
+- final result: passed

@@ -1946,8 +1946,8 @@ describe("InspectionWorkbench", () => {
     });
   });
 
-  test("确认当前有效项只提交一次批量来源命令", async () => {
-    const onSave = vi.fn().mockResolvedValue(undefined);
+  test("legacy 待确认来源不再提供前台批量命令", () => {
+    const onSave = vi.fn();
     const onPrepareReview = vi.fn().mockResolvedValue(undefined);
     const items = [{
       item_id: "item-1",
@@ -2015,14 +2015,11 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "确认当前有效项" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认排除 2 条" }));
-
-    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
-    expect(onSave).toHaveBeenCalledWith({
-      type: "ignore_sources",
-      observation_ids: ["batch-observation-1", "batch-observation-2"],
-    });
+    expect(
+      screen.queryByRole("button", { name: "确认当前有效项" }),
+    ).toBeNull();
+    expect(screen.getByRole("row", { name: /设计/ })).not.toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
     expect(onPrepareReview).not.toHaveBeenCalled();
   });
 

@@ -83,6 +83,7 @@ class ReviewedResultImmutable(RuntimeError):
 _COORDINATES = TypeAdapter(tuple[float, float, float, float])
 _COARSE_TYPE = TypeAdapter(CoarseType)
 _SIP_DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
+_DEFAULT_SOURCE_DISPOSITION_RULE_VERSION = "review-source-default/1"
 
 
 def manual_review_count(
@@ -157,12 +158,27 @@ class ReviewService:
             technical_requirements,
             items,
         )
+        technical_requirement_source_ids: set[str] = set()
+        for requirement in technical_requirements:
+            source_ids = requirement.get("source_location_ids", [])
+            if not isinstance(source_ids, list):
+                continue
+            technical_requirement_source_ids.update(
+                source_id
+                for source_id in source_ids
+                if isinstance(source_id, str)
+            )
         working = ReviewWorkingCopy(
             project_id=raw_result.project_id,
             raw_result_id=raw_result.id,
             version=1,
             items=items,
-            coverage=self._review_coverage(raw_result.coverage),
+            coverage=self._review_coverage(
+                raw_result.coverage,
+                technical_requirement_source_ids=frozenset(
+                    technical_requirement_source_ids
+                ),
+            ),
             technical_requirements=technical_requirements,
             sip_metadata={},
             numbering_stale=False,
@@ -537,7 +553,11 @@ class ReviewService:
         return current
 
     @staticmethod
-    def _review_coverage(raw_coverage: dict[str, Any]) -> dict[str, Any]:
+    def _review_coverage(
+        raw_coverage: dict[str, Any],
+        *,
+        technical_requirement_source_ids: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
         coverage = copy.deepcopy(raw_coverage)
         for entry in coverage.get("entries", []):
             if isinstance(entry, dict):
@@ -581,6 +601,24 @@ class ReviewService:
                     ):
                         entry["rejection_code"] = rejection_code
                 entry.pop("advisor_review", None)
+                if (
+                    entry.get("requires_confirmation") is True
+                    and entry.get("candidate_id") is None
+                    and entry.get("source_location_id")
+                    not in technical_requirement_source_ids
+                ):
+                    entry.update(
+                        {
+                            "disposition": "non_inspection",
+                            "requires_confirmation": False,
+                            "confirmation_accepted": False,
+                            "resolution_source": "system_default",
+                            "resolution_rule_version": (
+                                _DEFAULT_SOURCE_DISPOSITION_RULE_VERSION
+                            ),
+                        }
+                    )
+        ReviewService._refresh_review_required_count(coverage)
         return coverage
 
     def _apply_command(

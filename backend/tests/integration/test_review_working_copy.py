@@ -14,7 +14,7 @@ from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
 from app.projects.state import ProjectState
 from app.review.locks import acquire_lock
-from app.review.service import ReviewService, manual_review_count
+from app.review.service import FreezeBlocked, ReviewService, manual_review_count
 from app.storage.models import StoredFile
 
 
@@ -89,6 +89,7 @@ def _make_raw_result(
     db_session: Session,
     *,
     candidates: list[dict[str, object]] | None = None,
+    coverage: dict[str, object] | None = None,
     technical_requirements: list[dict[str, object]] | None = None,
     schema_version: str = "automatic-result/1",
 ) -> AutomaticResult:
@@ -102,8 +103,8 @@ def _make_raw_result(
         source_file_id=source_file_id,
         logical_job_id=job_id,
         inventory_ref=f"asset://tests/{project_id}/inventory.json",
-        candidates=candidates or [_raw_candidate()],
-        coverage={
+        candidates=candidates if candidates is not None else [_raw_candidate()],
+        coverage=coverage if coverage is not None else {
             "blocking_count": 0,
             "review_required_count": 0,
             "coverage_checked": True,
@@ -288,6 +289,118 @@ def test_create_working_copy_moves_ready_project_to_editing(
     assert project is not None
     assert project.state == ProjectState.EDITING
     assert working.project_id == project.id
+
+
+def test_review_bootstrap_defaults_source_only_pending_to_non_inspection(
+    db_session: Session,
+) -> None:
+    raw_coverage = {
+        "blocking_count": 0,
+        "review_required_count": 2,
+        "coverage_checked": True,
+        "blocking_observation_ids": [],
+        "entries": [
+            {
+                "observation_id": "source-only",
+                "source_location_id": "source-only",
+                "candidate_id": None,
+                "disposition": "ambiguous",
+                "coordinates": [10.0, 20.0, 30.0, 40.0],
+                "requires_confirmation": True,
+                "disposition_reason": "unclassified_source",
+            },
+            {
+                "observation_id": "candidate-linked",
+                "source_location_id": "source-candidate-1",
+                "candidate_id": "candidate-1",
+                "disposition": "candidate",
+                "coordinates": [1.0, 2.0, 3.0, 4.0],
+                "requires_confirmation": True,
+            },
+        ],
+        "relations": [],
+    }
+    raw_result = _make_raw_result(
+        db_session,
+        coverage=copy.deepcopy(raw_coverage),
+    )
+
+    working = ReviewService(db_session).create_from_raw(raw_result.id)
+
+    assert db_session.get(AutomaticResult, raw_result.id).coverage == raw_coverage
+    source_only, candidate_linked = working.coverage["entries"]
+    assert source_only == {
+        **raw_coverage["entries"][0],
+        "disposition": "non_inspection",
+        "requires_confirmation": False,
+        "confirmation_accepted": False,
+        "resolution_source": "system_default",
+        "resolution_rule_version": "review-source-default/1",
+    }
+    assert candidate_linked == raw_coverage["entries"][1]
+    assert working.coverage["review_required_count"] == 1
+
+
+def test_review_bootstrap_keeps_unresolved_technical_requirement_pending(
+    db_session: Session,
+) -> None:
+    source_id = "source-technical-unresolved"
+    raw_coverage = {
+        "blocking_count": 0,
+        "review_required_count": 1,
+        "coverage_checked": True,
+        "blocking_observation_ids": [],
+        "entries": [
+            {
+                "observation_id": source_id,
+                "source_location_id": source_id,
+                "candidate_id": None,
+                "disposition": "ambiguous",
+                "coordinates": [10.0, 20.0, 30.0, 40.0],
+                "requires_confirmation": True,
+                "disposition_reason": "technical_requirement",
+                "disposition_rule_version": "technical-requirement/1",
+            }
+        ],
+        "relations": [],
+    }
+    requirement = _requirement(
+        "technical-unresolved",
+        "未注公差按 GB/T 1804-m",
+        subtype="general_tolerance",
+        match_outcome="unresolved",
+        matched_candidate_ids=[],
+        generated_candidate_id=None,
+        inspection_item="未注公差",
+        inspection_standard="GB/T 1804-m",
+    )
+    requirement["source_location_ids"] = [source_id]
+    raw_result = _make_raw_result(
+        db_session,
+        candidates=[],
+        coverage=copy.deepcopy(raw_coverage),
+        technical_requirements=[requirement],
+    )
+
+    working = ReviewService(db_session).create_from_raw(raw_result.id)
+
+    assert working.coverage["entries"] == raw_coverage["entries"]
+    assert working.coverage["review_required_count"] == 1
+    working.sip_metadata = {
+        "material_code": "MAT-001",
+        "material_name": "45#",
+        "drawing_number": "DWG-001",
+        "material": "Steel",
+        "revision": "A",
+    }
+    db_session.commit()
+    acquire_lock(db_session, working.project_id, "quality-1")
+    with pytest.raises(FreezeBlocked, match="unresolved_confirmation"):
+        ReviewService(db_session).freeze_items(
+            working.id,
+            expected_version=working.version,
+            operator_id="quality-1",
+        )
 
 
 def test_v2_bootstrap_routes_only_high_confidence_away_from_manual_review(
@@ -579,12 +692,16 @@ def test_visual_coverage_exposes_only_owner_committed_discriminator() -> None:
         assert projected["entries"] == [
             {
                 "observation_id": "visual-source",
-                "disposition": "ambiguous",
+                "disposition": "non_inspection",
                 "source_location_id": "visual-source",
                 "coordinates": [1, 2, 3, 4],
                 "candidate_id": None,
-                "requires_confirmation": True,
+                "requires_confirmation": False,
                 "symbol_kinds": [],
                 "rejection_code": "visual_no_detection",
+                "confirmation_accepted": False,
+                "resolution_source": "system_default",
+                "resolution_rule_version": "review-source-default/1",
             }
         ]
+        assert projected["review_required_count"] == 0

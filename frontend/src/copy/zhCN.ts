@@ -312,13 +312,6 @@ export const zhCN = {
     promoteSource: "添加为检验项",
     ignoreSource: "忽略，不作为检验项",
     selectItemType: "请选择检验类型",
-    pendingSourceCount: (count: number) => `${count} 条待确认来源`,
-    confirmCurrentItems: "确认当前有效项",
-    batchConfirmation: (active: number, pending: number) =>
-      `将保留当前 ${active} 个有效检验项，并排除全部 ${pending} 条待确认来源。`,
-    batchExclusionWarning: "排除内容不会进入 SIP，也不会生成气泡。",
-    confirmBatchExclusion: (count: number) => `确认排除 ${count} 条`,
-    cancelBatchExclusion: "取消",
     pagination: "检验项分页",
     types: {
       linear_dimension: "线性尺寸",

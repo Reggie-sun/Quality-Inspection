@@ -463,65 +463,6 @@
   font-size: 11px;
 }
 
-.source-batch-bar {
-  display: flex;
-  flex-wrap: wrap;
-  min-height: 38px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 6px 7px;
-  border: 1px solid #fed7aa;
-  border-radius: 7px;
-  background: #fffaf0;
-  color: #7c4a12;
-  font-size: 10px;
-}
-
-.source-batch-bar > strong {
-  flex: 0 0 auto;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.source-batch-bar button {
-  flex: 0 0 auto;
-  min-height: 28px;
-  padding: 3px 6px;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.source-batch-confirmation {
-  display: grid;
-  width: 100%;
-  gap: 8px;
-}
-
-.source-batch-confirmation p {
-  margin: 3px 0 0;
-  color: #8a5b22;
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-.source-batch-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 7px;
-}
-
-.source-batch-actions button {
-  padding-inline: 7px;
-  white-space: nowrap;
-}
-
-.source-batch-actions__confirm:not(:disabled) {
-  border-color: #b45309;
-  background: #b45309;
-  color: #ffffff;
-}
-
 .inspection-table {
   overflow: hidden;
   border: 1px solid var(--qi-border);

@@ -1,7 +1,49 @@
 # Source Review Convergence Design
 
 **Status:** Approved on 2026-07-24; batch-confirmation amendment approved on
-2026-07-29
+2026-07-29; automatic-source-default amendment approved by user on 2026-07-31
+
+## 2026-07-31 Automatic-Source-Default Amendment
+
+用户明确要求移除前台“待确认来源 / 确认当前有效项”批量确认条，并将该批量动作改为
+后台默认执行。本 amendment supersedes 2026-07-29 对“必须由用户二次确认、不得静默
+执行”的产品选择，但保留以下边界：
+
+- immutable `AutomaticResult.coverage` 继续保存原始 `ambiguous` source-only evidence；
+- `ReviewService.create_from_raw()` 是初始 working-copy projection 的唯一 Owner，
+  使用 `review-source-default/1` 将 `requires_confirmation=true`、
+  `candidate_id=null` 且 source 不属于 technical requirement 的 entry 默认投影为
+  `non_inspection`；technical requirement source 继续保持 pending 并阻断 freeze；
+- working-copy entry 保留原 source、coordinates、原 disposition reason，并新增
+  `resolution_source=system_default` 与
+  `resolution_rule_version=review-source-default/1`；
+- 只重算 working-copy `review_required_count`，不修改 item-set、numbering、freeze、
+  balloon、SIP、reviewed result 或 export；
+- frontend 删除 batch bar、inline confirmation、batch copy 与专属 CSS，不再发送
+  `ignore_sources`；legacy pending source 的逐条 correction 与 public review command
+  schema 暂不删除；
+- 已经存在的 working copy 不通过 GET 或 frontend effect 隐式写入，使用现有
+  `ignore_sources` command 做一次可审计收口。
+
+### Amendment Execution Selection
+
+- **Selected lane:** `Heavy`
+- **Selected plan:**
+  `docs/superpowers/plans/2026-07-31-automatic-source-disposition.md`
+- **Selection evidence:** 该变更替换人工 source-only 决策路径，并改变 Coverage
+  Ledger 到 working-copy 的 data-integrity / workflow contract。
+- **Validation action:** `replan`
+- **Single owner:** `ReviewService.create_from_raw()` /
+  `ReviewService._review_coverage()` 拥有初始 working-copy system-default projection；
+  `ReviewService.apply()` 继续独占后续人工 command mutation。
+- **Old path action:** `remove` frontend batch confirmation；`preserve` public
+  `promote_source` / `ignore_source(s)` schema 和 service branches，因为仍有 tests、
+  existing working-copy convergence 与非 UI consumers。
+- **Rollback:** 回滚 amendment code/docs commit 后恢复 frontend batch confirmation；
+  第一项验证为 source-only freeze blocker regression。
+- **Writer ownership and order:** 父 agent 是唯一 writer；只读 explorer/reviewer
+  不修改文件。
+- **Next verification:** backend bootstrap RED，再 frontend batch-bar removal RED。
 
 ## Problem Statement
 

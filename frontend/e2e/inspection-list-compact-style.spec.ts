@@ -18,10 +18,6 @@ test.beforeEach(async ({ page }) => {
           </select>
         </label>
       </div>
-      <section class="source-batch-bar" aria-label="待确认来源">
-        <strong>138 条待确认来源</strong>
-        <button type="button">确认当前有效项</button>
-      </section>
     </main>
   `);
   await page.addStyleTag({ path: "src/styles/app.css" });
@@ -46,34 +42,4 @@ test("紧凑列表控件使用可完整显示提示的小字号", async ({ page 
       - Number.parseFloat(style.paddingRight);
     return context.measureText(input.placeholder).width <= availableWidth;
   })).toBe(true);
-});
-
-
-test("待确认来源提示与操作在窄栏中保持单行", async ({ page }) => {
-  const batchBar = page.getByRole("region", { name: "待确认来源" });
-  const count = batchBar.getByText("138 条待确认来源");
-  const action = batchBar.getByRole("button", { name: "确认当前有效项" });
-
-  await expect(batchBar).toHaveCSS("font-size", "10px");
-  await expect(count).toHaveCSS("white-space", "nowrap");
-  await expect(action).toHaveCSS("white-space", "nowrap");
-  expect((await batchBar.boundingBox())?.height).toBeLessThanOrEqual(46);
-  expect(await page.locator("main").evaluate((element) =>
-    element.scrollWidth <= element.clientWidth)).toBe(true);
-});
-
-test("待确认来源提示在实际紧凑宽度内换行且不撑宽列表", async ({ page }) => {
-  await page.locator("main").evaluate((element) => {
-    element.style.width = "135px";
-  });
-
-  const batchBar = page.getByRole("region", { name: "待确认来源" });
-  const countBox = await batchBar.getByText("138 条待确认来源").boundingBox();
-  const actionBox = await batchBar
-    .getByRole("button", { name: "确认当前有效项" })
-    .boundingBox();
-
-  expect(await page.locator("main").evaluate((element) =>
-    element.scrollWidth <= element.clientWidth)).toBe(true);
-  expect(actionBox?.y).toBeGreaterThan(countBox?.y ?? 0);
 });
