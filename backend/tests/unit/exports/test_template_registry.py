@@ -18,45 +18,50 @@ from app.exports.template_registry import (
 def _complete_mapping(template_bytes: bytes) -> dict[str, object]:
     return {
         "template_id": "sip-v1",
-        "template_version": "2",
+        "template_version": "3",
         "template_sha256": sha256(template_bytes).hexdigest(),
-        "mapping_version": "2",
-        "sheet": "SIP检验记录",
+        "mapping_version": "3",
+        "sheet": "尺寸质量检测表",
         "capacity": {"first_row": 6, "last_row": 517},
         "metadata_cells": {
-            "material_code": "B2",
-            "material_name": "D2",
-            "drawing_number": "F2",
-            "material": "B3",
-            "revision": "D3",
+            "source_filename": "B2",
+            "inspection_date": "F2",
+            "toleranced_count": "I2",
+            "page_count": "B3",
+            "detail_count": "F3",
+            "unit": "I3",
+            "general_tolerance_note": "A4",
         },
         "detail_columns": {
-            "balloon_number": "A",
-            "inspection_item": "B",
-            "inspection_standard": "C",
-            "inspection_method": "D",
-            "key_dimension": "E",
-            "inspection_role": "F",
-            "source_page": "G",
+            "number": "A",
+            "source_page": "B",
+            "type_label": "C",
+            "basic_size": "D",
+            "tolerance": "E",
+            "upper_limit": "F",
+            "lower_limit": "G",
         },
+        "measurement_column": "H",
+        "result_column": "I",
         "image_sheet": "气泡图",
         "image_anchor": "B2",
         "protected_ranges": [
-            "A1:H1",
+            "A1:I1",
             "A2",
-            "C2",
             "E2",
+            "H2",
             "A3",
-            "C3",
-            "A4:H4",
-            "A5:H5",
-            "A518:H518",
+            "E3",
+            "H3",
+            "A5:I5",
+            "I6:I517",
+            "A518:I518",
         ],
         "signoff_ranges": [
             "A519:B522",
             "C519:D522",
             "E519:F522",
-            "G519:H522",
+            "G519:I522",
         ],
     }
 
@@ -82,8 +87,8 @@ def _copy_approved_registration(tmp_path: Path) -> tuple[Path, Path]:
     return template_path, mapping_path
 
 
-def test_p0_exp_001_loads_the_approved_single_template_registration() -> None:
-    """P0-EXP-001 binds the approved template bytes to the complete sip-v1 map."""
+def test_p0_exp_001_loads_the_approved_v3_template_registration() -> None:
+    """Catches a registered workbook that retains the v2 layout or row columns."""
     backend_root = Path(__file__).resolve().parents[3]
     registration = load_template_registration(
         backend_root / "assets/templates/sip-v1.xlsx",
@@ -91,19 +96,20 @@ def test_p0_exp_001_loads_the_approved_single_template_registration() -> None:
     )
 
     assert registration.template_id == "sip-v1"
-    assert registration.template_version == "2"
-    assert registration.template_sha256 == (
-        "6a946e9279a489f845e94f08d0ecb5917829a20378bba85cccc9171e50b16720"
-    )
-    assert registration.mapping_version == "2"
-    assert registration.sheet == "SIP检验记录"
+    assert registration.template_version == "3"
+    assert registration.mapping_version == "3"
+    assert registration.sheet == "尺寸质量检测表"
     assert registration.capacity == 512
+    assert registration.first_row == 6
+    assert registration.last_row == 517
+    assert registration.measurement_column == "H"
+    assert registration.result_column == "I"
     assert registration.image_sheet == "气泡图"
     assert registration.image_anchor == "B2"
 
 
-def test_p0_exp_003_approved_template_has_fixed_current_four_print_capacity() -> None:
-    """P0-EXP-003 keeps 512 fixed rows readable without moving the sign-off body."""
+def test_p0_exp_003_approved_v3_template_has_fixed_print_capacity() -> None:
+    """Catches a v3 workbook that moves its fixed body or corrupts H/I ownership."""
     backend_root = Path(__file__).resolve().parents[3]
     template_path = backend_root / "assets/templates/sip-v1.xlsx"
     registration = load_template_registration(
@@ -115,19 +121,41 @@ def test_p0_exp_003_approved_template_has_fixed_current_four_print_capacity() ->
         sheet = workbook[registration.sheet]
         assert (registration.first_row, registration.last_row) == (6, 517)
         assert sheet.max_row == 522
-        assert str(sheet.print_area) == "'SIP检验记录'!$A$1:$H$522"
+        assert str(sheet.print_area) == "'尺寸质量检测表'!$A$1:$I$522"
         assert sheet.print_title_rows == "$1:$5"
-        assert sheet.page_setup.fitToHeight == 16
-        assert [entry.id for entry in sheet.row_breaks.brk] == list(
-            range(37, 517, 32)
+        assert registration.protected_ranges == (
+            "A1:I1",
+            "A2",
+            "E2",
+            "H2",
+            "A3",
+            "E3",
+            "H3",
+            "A5:I5",
+            "I6:I517",
+            "A518:I518",
         )
-        assert "G517:H517" in {str(value) for value in sheet.merged_cells.ranges}
-        assert sheet["A518"].value == (
-            "备注：正式数据必须来自同一份已冻结 reviewed_result。"
+        assert registration.signoff_ranges == (
+            "A519:B522",
+            "C519:D522",
+            "E519:F522",
+            "G519:I522",
         )
         assert all(
-            sheet[f"{column}517"].protection.locked is False
-            for column in "ABCDEFG"
+            sheet[f"H{row}"].value is None
+            and sheet[f"H{row}"].protection.locked is False
+            and sheet[f"I{row}"].value
+            == (
+                f'=IF(H{row}="","",IF(OR(F{row}="",G{row}=""),"",'
+                f'IF(AND(ISNUMBER(H{row}),H{row}<=F{row},H{row}>=G{row}),"OK","NG")))'
+            )
+            and sheet[f"I{row}"].protection.locked is True
+            for row in range(registration.first_row, registration.last_row + 1)
+        )
+        assert all(
+            sheet[f"{column}{row}"].protection.locked is True
+            for row in range(518, 523)
+            for column in "ABCDEFGHI"
         )
     finally:
         workbook.close()
@@ -178,6 +206,68 @@ def test_p0_exp_001_registry_rejects_missing_fixed_mapping_field(
     with pytest.raises(
         InvalidTemplateRegistration,
         match="complete fixed-field mapping",
+    ):
+        load_template_registration(template_path, mapping_path)
+
+
+def test_registry_rejects_a_registration_without_a_measurement_column(
+    tmp_path: Path,
+) -> None:
+    """Catches a v3 mapping that cannot identify the editable measurement column."""
+    template_bytes = b"approved-template-bytes"
+    mapping = _complete_mapping(template_bytes)
+    mapping.pop("measurement_column")
+    template_path, mapping_path = _write_registration(
+        tmp_path,
+        template_bytes,
+        mapping,
+    )
+
+    with pytest.raises(
+        InvalidTemplateRegistration,
+        match="measurement_column must be a non-empty string",
+    ):
+        load_template_registration(template_path, mapping_path)
+
+
+def test_registry_rejects_result_column_that_overlaps_measurement_column(
+    tmp_path: Path,
+) -> None:
+    """Catches a v3 mapping that would overwrite hand-entered measurements."""
+    template_bytes = b"approved-template-bytes"
+    mapping = _complete_mapping(template_bytes)
+    mapping["result_column"] = "H"
+    template_path, mapping_path = _write_registration(
+        tmp_path,
+        template_bytes,
+        mapping,
+    )
+
+    with pytest.raises(
+        InvalidTemplateRegistration,
+        match="measurement_column and result_column must not overlap",
+    ):
+        load_template_registration(template_path, mapping_path)
+
+
+def test_registry_rejects_detail_column_that_overlaps_result_formula(
+    tmp_path: Path,
+) -> None:
+    """Catches a v3 mapping that would replace the trusted result formula."""
+    template_bytes = b"approved-template-bytes"
+    mapping = _complete_mapping(template_bytes)
+    detail_columns = dict(mapping["detail_columns"])
+    detail_columns["upper_limit"] = "I"
+    mapping["detail_columns"] = detail_columns
+    template_path, mapping_path = _write_registration(
+        tmp_path,
+        template_bytes,
+        mapping,
+    )
+
+    with pytest.raises(
+        InvalidTemplateRegistration,
+        match="detail_columns must not overlap measurement or result columns",
     ):
         load_template_registration(template_path, mapping_path)
 

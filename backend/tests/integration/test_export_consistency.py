@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -220,6 +221,119 @@ def test_confidence_provenance_is_not_written_to_sip_business_rows() -> None:
     assert "acceptance_source" not in rows[0]
     assert "confidence_decision" not in rows[0]
     assert "confidence_policy_versions" not in rows[0]
+
+
+def _confirmed_dimension_item(**overrides: object) -> dict[str, object]:
+    item: dict[str, object] = {
+        "item_id": "dimension-item",
+        "item_type": "linear_dimension",
+        "normalized_text": "10",
+        "nominal": "10",
+        "source_page": 1,
+        "active": True,
+        "balloon_required": False,
+        "sip_detail_fields_confirmed": True,
+        "inspection_item": "线性尺寸：10",
+        "inspection_standard": "图纸要求",
+        "inspection_method": "游标卡尺",
+        "key_dimension": "否",
+        "inspection_role": "IPQC",
+    }
+    item.update(overrides)
+    return item
+
+
+def test_excel_rows_project_a_linear_dimension_with_numeric_limits() -> None:
+    """Catches the legacy SIP projection that omits dimension row values and limits."""
+    linear = {
+        "item_id": "linear-500",
+        "item_type": "linear_dimension",
+        "normalized_text": "500 ±0.2",
+        "nominal": "500",
+        "upper_tolerance": "0.2",
+        "lower_tolerance": "-0.2",
+        "source_page": 1,
+        "active": True,
+        "balloon_required": True,
+        "sip_detail_fields_confirmed": True,
+        "inspection_item": "线性尺寸：500 ±0.2",
+        "inspection_standard": "图纸要求",
+        "inspection_method": "游标卡尺",
+        "key_dimension": "否",
+        "inspection_role": "IPQC",
+    }
+
+    rows = ExportService._excel_rows(
+        [linear],
+        [{"inspection_item_id": "linear-500", "formal_number": 7}],
+    )
+
+    assert rows == [
+        {
+            "number": 7,
+            "source_page": 1,
+            "type_label": "线性",
+            "basic_size": "500",
+            "tolerance": "±0.2",
+            "upper_limit": Decimal("500.2"),
+            "lower_limit": Decimal("499.8"),
+            "scope": None,
+            "balloon_required": True,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("item_type", "structured_fields", "expected_type", "expected_size"),
+    [
+        ("diameter_dimension", {"nominal": "20"}, "直径", "Φ20"),
+        ("radius", {"radius_value": "35"}, "半径", "R35"),
+        (None, {"coarse_type": "roughness", "raw_text": "Ra3.2"}, "粗糙度", "Ra3.2"),
+        ("angle", {"angle_value": "45"}, "角度", "45°"),
+        ("thread", {"thread_spec": "M10×1.5"}, "螺纹", "M10×1.5"),
+        ("general_requirement", {"normalized_text": "去毛刺"}, "技术要求", "去毛刺"),
+        ("composite", {"normalized_text": "Φ10 深20"}, "复合", "Φ10 深20"),
+    ],
+)
+def test_excel_rows_project_supported_dimension_display_values(
+    item_type: str | None,
+    structured_fields: dict[str, object],
+    expected_type: str,
+    expected_size: str,
+) -> None:
+    """Catches a type-specific display projection that falls back to legacy SIP prose."""
+    item = _confirmed_dimension_item(
+        **{
+            "item_type": item_type,
+            "normalized_text": "",
+            **structured_fields,
+        }
+    )
+
+    row = ExportService._excel_rows([item], [])[0]
+
+    assert row["type_label"] == expected_type
+    assert row["basic_size"] == expected_size
+
+
+def test_excel_rows_leave_limits_blank_without_structured_tolerance() -> None:
+    """Catches projection that invents limits where reviewed structured tolerance is absent."""
+    no_tolerance_row = ExportService._excel_rows(
+        [_confirmed_dimension_item()],
+        [],
+    )[0]
+
+    assert no_tolerance_row["tolerance"] == ""
+    assert no_tolerance_row["upper_limit"] == ""
+    assert no_tolerance_row["lower_limit"] == ""
+
+
+def test_excel_rows_reject_one_sided_structured_tolerance() -> None:
+    """Catches projection that silently exports an incomplete reviewed tolerance."""
+    upper_only_item = _confirmed_dimension_item(upper_tolerance="0.2")
+
+    with pytest.raises(ValueError, match="one-sided structured tolerance"):
+        ExportService._excel_rows([upper_only_item], [])
 
 
 def test_artifacts_share_reviewed_result_id() -> None:

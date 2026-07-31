@@ -5,8 +5,6 @@ from pathlib import Path
 import pytest
 
 from app.exports.excel import (
-    REQUIRED_DETAIL_FIELDS,
-    REQUIRED_METADATA_FIELDS,
     CapacityExceeded,
     assert_capacity,
 )
@@ -21,15 +19,30 @@ def _approved_registration():
     )
 
 
-def test_all_fixed_fields_are_mapped() -> None:
-    """P0-EXP-002 covers the fixed 12 cells fields and balloon-image mapping."""
+def test_all_v3_fixed_fields_are_mapped() -> None:
+    """Catches a workbook registration that leaves the v3 header or row map incomplete."""
     registration = _approved_registration()
 
-    assert set(registration.metadata_cells) == REQUIRED_METADATA_FIELDS
-    assert set(registration.detail_columns) == REQUIRED_DETAIL_FIELDS
-    assert "remarks" not in REQUIRED_DETAIL_FIELDS
-    assert "remarks" not in registration.detail_columns
-    assert len(REQUIRED_METADATA_FIELDS | REQUIRED_DETAIL_FIELDS) == 12
+    assert registration.metadata_cells == {
+        "source_filename": "B2",
+        "inspection_date": "F2",
+        "toleranced_count": "I2",
+        "page_count": "B3",
+        "detail_count": "F3",
+        "unit": "I3",
+        "general_tolerance_note": "A4",
+    }
+    assert registration.detail_columns == {
+        "number": "A",
+        "source_page": "B",
+        "type_label": "C",
+        "basic_size": "D",
+        "tolerance": "E",
+        "upper_limit": "F",
+        "lower_limit": "G",
+    }
+    assert registration.measurement_column == "H"
+    assert registration.result_column == "I"
     assert registration.image_sheet == "气泡图"
     assert registration.image_anchor == "B2"
 
