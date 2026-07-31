@@ -63,14 +63,16 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 ## Status
 
 - Date: `2026-07-31`
-- Status: `ready-for-execution`
+- Status: `implementation-verified-review-pending`
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-31-leader-dimension-inspection-excel.md`
 - Selection evidence: 用户明确要求在批准的非生产对比稿之后建立正式 spec/plan。
-- Validation action: `replan`
-- Writer ownership and order: parent/main thread；Task 1 → Task 5；不允许并发 writer。
-- Next verification: Task 1 Step 2 的 focused RED。
+- Validation action: `continue`
+- Writer ownership and order: Task 1 → Task 5 的 production tasks 已串行完成；Task 5 worker
+  仅拥有 allowed test/docs files，parent 保留 independent reviewer gate 和最终闭环。
+- Next verification: independent reviewer 的 read-only verdict；在该 verdict 前不得标记计划
+  或正式实现 completed。
 
 ## Allowed Paths
 
@@ -1009,7 +1011,7 @@ git commit -m "feat(exports): render trusted inspection result formulas"
 - Consumes: completed v3 asset, renderer, row projection and validators.
 - Produces: executable acceptance evidence, durable `EXP` contract update and independent verdict.
 
-- [ ] **Step 1: Add the representative LibreOffice recalculation test**
+- [x] **Step 1: Add the representative LibreOffice recalculation test**
 
 In `test_excel_export.py`, add a test that requires the local `libreoffice` binary:
 
@@ -1065,7 +1067,7 @@ def test_dimension_result_formula_recalculates_with_libreoffice(
 Use a unique `UserInstallation` directory so an existing desktop LibreOffice session cannot
 capture the command. Do not modify production code to satisfy the smoke.
 
-- [ ] **Step 2: Run the complete focused export suite**
+- [x] **Step 2: Run the complete focused export suite**
 
 Run:
 
@@ -1084,7 +1086,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 Expected: command prints a real binary path; pytest has zero failures and the LibreOffice test is
 not skipped.
 
-- [ ] **Step 3: Run the nearest broader backend verification**
+- [x] **Step 3: Run the nearest broader backend verification**
 
 Run:
 
@@ -1109,7 +1111,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 ruff check \
 
 Expected: zero test failures and zero Ruff errors.
 
-- [ ] **Step 4: Update the durable contract matrix**
+- [x] **Step 4: Update the durable contract matrix**
 
 Amend only these rows:
 
@@ -1136,7 +1138,7 @@ Dispatch the local `reviewer` profile with:
 
 The parent must verify every blocking claim against code/tests before acting.
 
-- [ ] **Step 6: Run final diff and scope verification**
+- [x] **Step 6: Run final diff and scope verification**
 
 Run:
 
@@ -1167,7 +1169,21 @@ git diff -- \
 Confirm no `.local`, `.pyc`, Harness run, recognition, frontend, database, OpenAPI or unrelated file
 is staged.
 
-- [ ] **Step 7: Commit the closure**
+#### Task 5 Implementation Evidence (2026-07-31)
+
+- `libreoffice --version` reported `24.2.7.2`; the required test used a unique temporary
+  `UserInstallation`, confirmed all three source formulas before conversion, then confirmed
+  `500.3 -> NG`, a blank measurement -> blank result, and no explicit tolerance -> blank limits/result.
+- The isolated-DB focused command passed `79` tests; the nearest broader command passed `97` tests;
+  the prescribed Ruff check reported zero errors.
+- Current workbook, mapping and registry pins were rechecked: template
+  `b5a1ffac7cadba1cf1faac7ae6866be9482aca5fcd70fee24f385dbca854eea3`, mapping
+  `bd0ed776123deaf2d043fbc0b816991f1560cfd4fb053ed2f69307864ab545e6`, both v3 and accepted by
+  `load_template_registration()`; the atomicity suite continues to exercise manifest registration.
+- Implementation and verification are complete for this task. Final independent review remains
+  pending and is the required gate before any overall completion claim.
+
+- [x] **Step 7: Commit the closure**
 
 ```bash
 git add \

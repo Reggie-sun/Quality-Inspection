@@ -429,6 +429,17 @@ def test_success_exposes_exactly_three_verified_downloads(
         backend_root / "assets/templates/sip-v1.xlsx",
         backend_root / "assets/templates/sip-v1.mapping.json",
     )
+    assert {
+        "template_id": manifest["template_id"],
+        "template_version": manifest["template_version"],
+        "template_sha256": manifest["template_sha256"],
+        "mapping_version": manifest["mapping_version"],
+    } == {
+        "template_id": registration.template_id,
+        "template_version": registration.template_version,
+        "template_sha256": registration.template_sha256,
+        "mapping_version": registration.mapping_version,
+    }
     workbook = load_workbook(BytesIO(storage.read_bytes(excel_ref)), data_only=False)
     try:
         sheet = workbook[registration.sheet]

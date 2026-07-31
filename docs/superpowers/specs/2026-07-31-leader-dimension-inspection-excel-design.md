@@ -3,20 +3,21 @@
 ## Status
 
 - Date: `2026-07-31`
-- Status: `approved-for-planning`
+- Status: `implementation-verified-review-pending`
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-31-leader-dimension-inspection-excel.md`
-- Selection evidence: 用户在查看非生产对比稿后明确要求“写 specs 和 plan”，授权把
-  “机械图纸尺寸质量检测表”方向固化为正式实施合同；本次只创建文档，不修改生产导出。
-- Validation action: `replan`。本 design 只 supersede
+- Selection evidence: Task 1–4 production commits 已在同一批准 plan 下完成；Task 5 新增
+  代表性 LibreOffice 回算，并以 isolated-DB focused/broader export suites 验证 v3 合同。
+- Validation action: `continue`。本 design 只 supersede
   `2026-07-31-sip-auto-mapping-and-exception-review-design.md` 中
   “不修改固定 Excel 模板、列 mapping”的 non-goal；该 design 已完成的
   item review、SIP auto-mapping、exception-only UI 和 project metadata 行为保持不变。
-- Writer ownership and order: 主线程是本 spec/plan 的唯一 writer；`code_mapper`
-  只读代理只提供当前生产链证据，不修改任何文件。
-- Next verification: 对本 design 与 implementation plan 做路径、Owner、old-path、
-  rollback、测试命令和禁止项静态核验，再交由独立 reviewer 审查。
+- Writer ownership and order: Task 5 worker 仅修改 allowed test/docs files；parent 保留
+  独立 read-only reviewer gate 的唯一调度和最终判定权。
+- Next verification: parent 执行 independent review，检查唯一 Owner、无 v2 fallback、
+  formula trust、active rows、`气泡图`、atomic publish、rollback 和测试真实性；在 verdict
+  前不得将该 design 或正式实现标记为 completed。
 
 ## Context
 

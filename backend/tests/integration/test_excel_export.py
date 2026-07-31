@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+import shutil
+import subprocess
 
 import pytest
 from openpyxl import load_workbook
@@ -47,6 +49,15 @@ def _reviewed_items() -> list[dict[str, object]]:
             "tolerance": "±0.2",
             "upper_limit": Decimal("500.2"),
             "lower_limit": Decimal("499.8"),
+        },
+        {
+            "number": "",
+            "source_page": 2,
+            "type_label": "线性",
+            "basic_size": "10",
+            "tolerance": "±0.1",
+            "upper_limit": Decimal("10.1"),
+            "lower_limit": Decimal("9.9"),
         },
         {
             "number": "",
@@ -162,6 +173,66 @@ def test_v3_renderer_writes_numeric_cells_and_preserves_template_contract(
         assert conditional_fills['$C6="粗糙度"'] == "C23ACF"
     finally:
         workbook.close()
+
+
+def test_dimension_result_formula_recalculates_with_libreoffice(
+    tmp_path: Path,
+) -> None:
+    """Catches a trusted formula that is present but fails in a real spreadsheet engine."""
+    libreoffice = shutil.which("libreoffice")
+    assert libreoffice is not None, "LibreOffice is required for formal Excel verification"
+    content, registration, _ = _render(tmp_path)
+    source = tmp_path / "leader-dimension-inspection.xlsx"
+    source.write_bytes(content)
+    profile = tmp_path / "lo-profile"
+    output = tmp_path / "recalculated"
+    profile.mkdir()
+    output.mkdir()
+
+    input_book = load_workbook(source, data_only=False)
+    try:
+        values = input_book[registration.sheet]
+        assert values["F7"].value == 10.1
+        assert values["G7"].value == 9.9
+        for row in (6, 7, 8):
+            assert values[f"I{row}"].value == (
+                f'=IF(H{row}="","",IF(OR(F{row}="",G{row}=""),"",'
+                f'IF(AND(ISNUMBER(H{row}),H{row}<=F{row},H{row}>=G{row}),"OK","NG")))'
+            )
+        values["H6"] = 500.3
+        input_book.save(source)
+    finally:
+        input_book.close()
+
+    subprocess.run(
+        [
+            libreoffice,
+            f"-env:UserInstallation=file://{profile}",
+            "--headless",
+            "--convert-to",
+            "xlsx",
+            "--outdir",
+            str(output),
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    recalculated_path = output / source.name
+    recalculated = load_workbook(recalculated_path, data_only=True)
+    try:
+        values = recalculated[registration.sheet]
+        assert values["F6"].value == 500.2
+        assert values["G6"].value == 499.8
+        assert values["I6"].value == "NG"
+        assert values["I7"].value is None
+        assert values["F8"].value is None
+        assert values["G8"].value is None
+        assert values["I8"].value is None
+    finally:
+        recalculated.close()
 
 
 def test_renderer_keeps_formula_like_text_as_plain_text(tmp_path: Path) -> None:
