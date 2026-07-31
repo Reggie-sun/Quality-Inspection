@@ -25,6 +25,7 @@ class ExportManifest:
     template_version: str
     template_sha256: str
     mapping_version: str
+    mapping_sha256: str
     font_sha256: str
     renderer_version: str
     reviewed_item_count: int

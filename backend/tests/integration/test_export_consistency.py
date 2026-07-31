@@ -138,6 +138,7 @@ def test_manifest_aggregates_deterministic_confidence_provenance() -> None:
             template_version="1",
             template_sha256="2" * 64,
             mapping_version="1",
+            mapping_sha256="3" * 64,
         ),
         1,
         {
@@ -178,6 +179,7 @@ def test_manifest_legacy_only_result_has_empty_confidence_provenance() -> None:
             template_version="1",
             template_sha256="2" * 64,
             mapping_version="1",
+            mapping_sha256="3" * 64,
         ),
         1,
         {
@@ -538,6 +540,7 @@ def test_artifacts_share_reviewed_result_id() -> None:
         template_version="1",
         template_sha256="2" * 64,
         mapping_version="1",
+        mapping_sha256="3" * 64,
         font_sha256="3" * 64,
         renderer_version="balloon-pdf/1",
         reviewed_item_count=2,

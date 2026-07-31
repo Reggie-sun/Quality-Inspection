@@ -65,6 +65,7 @@ class TemplateRegistration:
     template_version: str
     template_sha256: str
     mapping_version: str
+    mapping_sha256: str
     sheet: str
     first_row: int
     last_row: int
@@ -230,6 +231,7 @@ def load_template_registration(
         template_version=template_version,
         template_sha256=APPROVED_TEMPLATE_SHA256,
         mapping_version=mapping_version,
+        mapping_sha256=actual_mapping_sha256,
         sheet=sheet,
         first_row=first_row,
         last_row=last_row,

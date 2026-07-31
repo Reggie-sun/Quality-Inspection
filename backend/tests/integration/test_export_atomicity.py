@@ -434,11 +434,13 @@ def test_success_exposes_exactly_three_verified_downloads(
         "template_version": manifest["template_version"],
         "template_sha256": manifest["template_sha256"],
         "mapping_version": manifest["mapping_version"],
+        "mapping_sha256": manifest["mapping_sha256"],
     } == {
         "template_id": registration.template_id,
         "template_version": registration.template_version,
         "template_sha256": registration.template_sha256,
         "mapping_version": registration.mapping_version,
+        "mapping_sha256": registration.mapping_sha256,
     }
     workbook = load_workbook(BytesIO(storage.read_bytes(excel_ref)), data_only=False)
     try:

@@ -935,6 +935,7 @@ class ExportService:
             template_version=registration.template_version,
             template_sha256=registration.template_sha256,
             mapping_version=registration.mapping_version,
+            mapping_sha256=registration.mapping_sha256,
             font_sha256=APPROVED_BALLOON_FONT_SHA256,
             renderer_version=RENDERER_VERSION,
             reviewed_item_count=len(active_items),
