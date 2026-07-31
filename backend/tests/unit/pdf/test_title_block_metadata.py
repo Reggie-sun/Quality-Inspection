@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
+
 from app.pdf.title_block_metadata import suggest_sip_metadata
 
 
@@ -211,6 +213,46 @@ def test_same_field_suggested_on_multiple_pages_fails_closed() -> None:
         observation["observation_id"] = f"page-2-{observation['observation_id']}"
 
     assert suggest_sip_metadata([first, second]) == []
+
+
+def test_ambiguous_field_on_another_page_suppresses_unique_suggestion() -> None:
+    first = _welli_page()
+    second = deepcopy(first)
+    second["page_index"] = 1
+    observations = second["observations"]
+    assert isinstance(observations, list)
+    for observation in observations:
+        observation["page_index"] = 1
+        observation["observation_id"] = f"page-2-{observation['observation_id']}"
+    observations.append(
+        _observation(
+            "page-2-material-code-conflict",
+            "12320096477",
+            (1080.0, 807.0, 1150.0, 821.7),
+            page_index=1,
+        )
+    )
+
+    suggestions = _by_field([first, second])
+
+    assert "material_code" not in suggestions
+
+
+@pytest.mark.parametrize("non_name", ["2026年7月31日", "第1页"])
+def test_date_and_page_tokens_are_not_material_name_suggestions(
+    non_name: str,
+) -> None:
+    page = _welli_page()
+    observations = page["observations"]
+    assert isinstance(observations, list)
+    for observation in observations:
+        if observation["observation_id"] == "material-name-value":
+            observation["raw_text"] = non_name
+            observation["normalized_text"] = non_name
+
+    suggestions = _by_field([page])
+
+    assert "material_name" not in suggestions
 
 
 def test_malformed_inventory_pages_are_ignored() -> None:

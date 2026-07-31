@@ -29,25 +29,37 @@ _REVISION_VALUE = re.compile(
     r"[A-Za-z0-9]{1,4}(?:[./-][A-Za-z0-9]{1,4})?"
 )
 _CJK_CHARACTER = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_DATE_VALUE = re.compile(r"(?:\d{2,4}年)?\d{1,2}月\d{1,2}日")
+_PAGE_VALUE = re.compile(
+    r"(?:第?\d+(?:页|张)|共\d+(?:页|张)(?:第\d+(?:页|张))?)"
+)
 
 
 def suggest_sip_metadata(
     pages: list[object],
 ) -> list[dict[str, object]]:
     grouped: dict[str, list[dict[str, object]]] = {}
+    ambiguous_fields: set[str] = set()
     for page in pages:
-        for suggestion in _suggest_page(page):
+        suggestions, page_ambiguities = _suggest_page(page)
+        ambiguous_fields.update(page_ambiguities)
+        for suggestion in suggestions:
             grouped.setdefault(str(suggestion["field"]), []).append(suggestion)
     return [
         grouped[field][0]
         for field in SIP_FIELD_ORDER
-        if len(grouped.get(field, ())) == 1
+        if (
+            field not in ambiguous_fields
+            and len(grouped.get(field, ())) == 1
+        )
     ]
 
 
-def _suggest_page(page: object) -> list[dict[str, object]]:
+def _suggest_page(
+    page: object,
+) -> tuple[list[dict[str, object]], set[str]]:
     if not isinstance(page, Mapping):
-        return []
+        return [], set()
     width = _positive_number(page.get("width"))
     height = _positive_number(page.get("height"))
     page_index = page.get("page_index")
@@ -58,7 +70,7 @@ def _suggest_page(page: object) -> list[dict[str, object]]:
         or not isinstance(page_index, int)
         or not isinstance(raw_observations, list)
     ):
-        return []
+        return [], set()
 
     observations = [
         observation
@@ -79,13 +91,17 @@ def _suggest_page(page: object) -> list[dict[str, object]]:
         if observation["compact_text"] in _ANCHOR_LABELS
     }
     if len(anchor_texts) < 2:
-        return []
+        return [], set()
 
     suggestions: dict[str, dict[str, object]] = {}
+    ambiguous_fields: set[str] = set()
     for field in ("material_code", "drawing_number", "material"):
-        label = _unique_label(observations, field)
-        if label is None:
+        labels = _field_labels(observations, field)
+        if len(labels) != 1:
+            if len(labels) > 1:
+                ambiguous_fields.add(field)
             continue
+        label = labels[0]
         candidates = _same_row_right_candidates(
             observations,
             label=label,
@@ -93,6 +109,8 @@ def _suggest_page(page: object) -> list[dict[str, object]]:
             page_width=width,
         )
         if len(candidates) != 1:
+            if len(candidates) > 1:
+                ambiguous_fields.add(field)
             continue
         suggestions[field] = _suggestion(
             field=field,
@@ -101,8 +119,11 @@ def _suggest_page(page: object) -> list[dict[str, object]]:
             evidence_code="same_row_right_of_label",
         )
 
-    revision_label = _unique_label(observations, "revision")
-    if revision_label is not None:
+    revision_labels = _field_labels(observations, "revision")
+    if len(revision_labels) > 1:
+        ambiguous_fields.add("revision")
+    if len(revision_labels) == 1:
+        revision_label = revision_labels[0]
         revision_candidates = _same_column_above_candidates(
             observations,
             label=revision_label,
@@ -114,9 +135,12 @@ def _suggest_page(page: object) -> list[dict[str, object]]:
                 label=revision_label,
                 evidence_code="same_column_above_label",
             )
+        elif len(revision_candidates) > 1:
+            ambiguous_fields.add("revision")
 
     drawing_suggestion = suggestions.get("drawing_number")
-    drawing_label = _unique_label(observations, "drawing_number")
+    drawing_labels = _field_labels(observations, "drawing_number")
+    drawing_label = drawing_labels[0] if len(drawing_labels) == 1 else None
     if drawing_suggestion is not None and drawing_label is not None:
         drawing_value = next(
             (
@@ -140,12 +164,17 @@ def _suggest_page(page: object) -> list[dict[str, object]]:
                     label=drawing_label,
                     evidence_code="drawing_number_column",
                 )
+            elif len(name_candidates) > 1:
+                ambiguous_fields.add("material_name")
 
-    return [
-        suggestions[field]
-        for field in SIP_FIELD_ORDER
-        if field in suggestions
-    ]
+    return (
+        [
+            suggestions[field]
+            for field in SIP_FIELD_ORDER
+            if field in suggestions
+        ],
+        ambiguous_fields,
+    )
 
 
 def _native_title_observation(
@@ -203,16 +232,15 @@ def _native_title_observation(
     }
 
 
-def _unique_label(
+def _field_labels(
     observations: list[dict[str, Any]],
     field: str,
-) -> dict[str, Any] | None:
-    labels = [
+) -> list[dict[str, Any]]:
+    return [
         observation
         for observation in observations
         if observation["compact_text"] in _TITLE_LABELS[field]
     ]
-    return labels[0] if len(labels) == 1 else None
 
 
 def _same_row_right_candidates(
@@ -291,7 +319,7 @@ def _material_name_candidates(
         if (
             observation["observation_id"] == drawing_value["observation_id"]
             or observation["compact_text"] in _ALL_LABELS
-            or _CJK_CHARACTER.search(observation["compact_text"]) is None
+            or not _is_material_name_value(observation["compact_text"])
         ):
             continue
         value_x0, _, value_x1, value_y1 = observation["bbox"]
@@ -312,6 +340,14 @@ def _material_name_candidates(
             continue
         candidates.append(observation)
     return candidates
+
+
+def _is_material_name_value(value: str) -> bool:
+    return (
+        _CJK_CHARACTER.search(value) is not None
+        and _DATE_VALUE.fullmatch(value) is None
+        and _PAGE_VALUE.fullmatch(value) is None
+    )
 
 
 def _suggestion(
