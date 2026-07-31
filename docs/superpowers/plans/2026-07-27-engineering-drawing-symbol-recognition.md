@@ -3280,3 +3280,223 @@ PRT-8R or authorize a retry. Another exact-one canary would require a new
 plan-only authorization amendment、an independent reviewer verdict of `accept`
 with `0` blockers、fresh source/runtime identity checks and a new explicit user
 authorization.
+
+## PRT-8S Parent Amendment: One Alias-Lifecycle-Corrected Canary, No Promotion
+
+### Selection Record
+
+- Selected lane: `Heavy`.
+- Selected action: amendment-only design for one new exact-one
+  `production_uncertainty` canary using the corrected upload-alias lifecycle.
+  This amendment does not itself authorize runtime start、browser file
+  selection、submit、project creation or Provider access.
+- Runtime code remains frozen at
+  `9ea61f773633abaa348339e84ba3058214d79ef7`. The PRT-8S correction changes
+  operator sequencing only; no production/frontend/Harness code change is
+  selected.
+- Feature HEAD before this amendment is
+  `0d18fc902e8ef81e16afcacfd31408095e4e6aa1`; live `main` is
+  `cbf1453f7da75d733db4e516e8808f36837f9d13`; merge-base remains
+  `50d118523181fe2edc9c240afe070faed22a7def`; feature is ahead `30` / behind
+  `20`.
+- Live `main` after the PRT-8R snapshot contains only
+  `06a87cd fix(balloons): resolve later source geometry` and
+  `cbf1453 docs(exports): plan dimension inspection workbook v3`. Their
+  combined delta is limited to `.agent/bug-memory.md`、
+  `backend/app/balloons/service.py`、
+  `backend/tests/integration/test_balloon_service.py` and the two
+  leader-dimension inspection plan/spec files. It has no frozen symbol
+  runtime、Provider or sealed-source overlap. Do not merge `main`.
+- Index and unmerged entries are empty. All `188` dirty entries are preserved
+  `pyc`、`__pycache__` or immutable Harness-run artifacts; non-artifact dirty
+  count is `0`.
+- Writer ownership: the parent is the only amendment writer and may modify
+  only this plan. One independent read-only reviewer must return `accept` with
+  `0` blockers before any live authorization request.
+
+### Decision And Authorization Boundary
+
+PRT-8S exists only to obtain the live evidence that PRT-8R could not reach
+because its upload alias was removed before submit. After a separate explicit
+user authorization, it may consume exactly one browser file selection、one
+submit click and at most one project creation. It never permits a retry、
+re-selection、re-upload、second project or direct Provider request.
+
+The authorization becomes consumed at the first browser file selection and
+remains consumed for every later terminal outcome, including a local
+selected-file readability failure、upload failure、Provider failure、timeout、
+budget exhaustion、partial result or success. Any pre-selection preflight or
+runtime failure also stops the run and requires a new user decision; it may not
+be repaired and resumed silently.
+
+PRT-8S does not:
+
+- change the repository or shared deployment default from
+  `legacy_high_recall`;
+- merge `main`、push、open a PR、deploy to a shared runtime or run formal live
+  Harness/current-four/full-P0;
+- reuse、modify or delete either prior canary's preserved volumes or images;
+- enable cross-project cache、mark the legacy path for removal or satisfy the
+  production promotion cohort;
+- turn one run-level duration sample into P50/P95;
+- move candidate、coverage、completeness or promotion semantics from
+  `CandidateAdvisor` into frontend、Provider or Harness.
+
+Quality Owner state remains `blocked_quality_owner_verdict` and
+`promotion_eligible=false`. Even a successful PRT-8S canary cannot lift the
+remaining promotion gates in PRT-8.
+
+### Frozen Source And Runtime Identity
+
+The separately authorized execution is valid only for the same sealed source
+and frozen runtime used by PRT-8R:
+
+```text
+implementation_head=9ea61f773633abaa348339e84ba3058214d79ef7
+source_filename=JS26032501-1-03-036#上下座B#A1.pdf
+source_sha256=58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec
+recognition_mode=production_uncertainty
+router_version=symbol-uncertainty-router/1
+configured_model=qwen3-vl-plus-2025-12-19
+prompt_version=visual-symbol-prompt/4
+response_schema=visual-symbol-review/2
+adapter_version=qwen-openai-compatible/5
+cache_identity_schema=visual-symbol-cache-identity/1
+credential_env_file=/home/reggie/vscode_folder/Quality_Inspection/.env
+qwen_vl_sha256=f862fb012d919456299386b482f67672b4e18450fc3de597c4711c42f38f42ad
+symbol_review_sha256=fe40293d48903f1578bb9241367a16d0849034818b4fba71d137238056297bd4
+provider_runtime_sha256=1774815f29ca8302f7869697cafbc45c1cabc8f508b8a19c7ba4eb92cbff42f8
+symbol_routing_sha256=9580aa60a5404d920ad6ec37f16e32d37558f3ede25c2e96249b3b2bdc7be866
+candidate_advisor_sha256=ed116a3efcfce4401eaf3c0a1f5fb3bea61b393f911f5d1185b434e43dcbb59f
+processing_pipeline_sha256=5d84e4a4fbad3a57b01056c36bf691535e4c570d0a0ad0be6d4c89f0e2975ca2
+config_sha256=fe577c3f38e7e5552784cb1b7d0f3a17cf7518a2bb13c4ffd32473a96a7b8748
+```
+
+Only source basename、existence and SHA-256 may be reported. The private
+absolute source path、credential values、cookie/header values、raw Provider
+response and crop/image bytes remain forbidden from the plan、logs、
+screenshots and Git.
+
+### Resource Isolation Contract
+
+Both prior canary audit sets remain immutable:
+
+```text
+preserve_volume=qi_prt8_canary_postgres owner=prt8-canary
+preserve_volume=qi_prt8_canary_storage owner=prt8-canary
+preserve_image=qi-prt8-canary-api:12c88b5
+preserve_image=qi-prt8-canary-frontend:12c88b5
+preserve_volume=qi_prt8r_canary_postgres owner=prt8r-canary
+preserve_volume=qi_prt8r_canary_storage owner=prt8r-canary
+preserve_image=qi-prt8-canary-api:9ea61f7
+preserve_image=qi-prt8-canary-frontend:9ea61f7
+```
+
+PRT-8S must use only these new persistent audit resources:
+
+```text
+postgres_volume=qi_prt8s_canary_postgres
+storage_volume=qi_prt8s_canary_storage
+api_image=qi-prt8-canary-api:9ea61f7-prt8s
+frontend_image=qi-prt8-canary-frontend:9ea61f7-prt8s
+owner_label=prt8s-canary
+temporary_screenshot_directory=/tmp/qi-prt8s-canary-evidence/
+```
+
+The removed `qi-prt8-canary` network and five runtime container names may be
+reused only because the committed collector binds the database hostname
+`qi-prt8-canary-postgres`. Preflight must prove those ephemeral names and all
+four new PRT-8S resources are absent, the three loopback ports are free, and
+both prior audit sets retain their exact owner labels and image IDs. Build both
+new images only from `git archive 9ea61f7`, with `--platform linux/amd64`,
+locally revalidated pinned base images and no pull. Cleanup may select only
+exact `qi.owner=prt8s-canary` operational resources; the new volumes/images
+remain for audit.
+
+### Alias-Lifecycle-Corrected Execution Contract
+
+- [ ] **Step S1: Revalidate identity and resources with zero live calls**
+
+  Require `9ea61f7` to remain an ancestor of HEAD and require a zero diff from
+  that commit across the frozen backend/frontend runtime paths listed in
+  PRT-8R. Recheck the unique sealed basename/SHA、all seven source hashes、
+  artifact-only dirty boundary、base image identities、ports and exact
+  absence/preservation rules. Inspect only live-main commits after
+  `cbf1453f7da75d733db4e516e8808f36837f9d13`; any frozen runtime overlap
+  requires a new amendment. Do not merge `main`.
+
+- [ ] **Step S2: Build and start one fresh isolated runtime with zero Provider calls**
+
+  Create only the four new persistent resources and the absent ephemeral
+  network/containers under `qi.owner=prt8s-canary`. Run Alembic to head and
+  verify health、worker `pong`、mode、model、router、credential-presence
+  booleans、task registration、source hashes、owner labels and pre-upload zero
+  database/storage counts. Startup readiness must not create a project、select
+  a file or call the Provider. Any startup failure stops without advancing to
+  browser selection.
+
+- [ ] **Step S3: Keep the sealed alias readable through the exact-one submit**
+
+  After a separate explicit user authorization:
+
+  1. Repeat the unique basename/SHA check without printing the private source
+     path, create one owner-only upload alias and prove one byte is readable
+     without logging its value.
+  2. Select that alias in headed Chrome exactly once. Do not unlink it.
+  3. Before the single submit, prove the selected browser `File` can read one
+     byte without logging file bytes. A failure consumes the authorization and
+     stops without submit or re-selection.
+  4. Click `上传并开始识别` exactly once and keep the alias present until
+     `createProject()` settles with a project response or terminal upload
+     error.
+  5. Remove the alias through an owner-fenced `finally` cleanup and prove it is
+     absent. Do not retry if project creation or later processing fails.
+
+  For a created project, record one project ID、logical job ID、preview
+  revision IDs and one terminal result/error identity. Do not click retry、
+  Confirm、freeze、balloon or export. The correction-specific acceptance
+  surface remains the five PRT-8R Step R3 requirements for budget-denied
+  terminal evidence、preserved siblings、bounded Provider admission、one
+  partial `AutomaticResult` and honest browser evidence.
+
+- [ ] **Step S4: Collect sanitized evidence and perform isolated rollback**
+
+  If a project UUID exists, run the committed closed-schema collector once
+  against the PRT-8S database/read-only storage and report the actual routing、
+  outcome、budget and accumulated run-duration evidence. Keep
+  `p50_eligible=false`、`p95_eligible=false` and
+  `live_concurrency_observable=false`. If no project exists, do not run the
+  collector; report ledger calls as `null` and distributions as `unavailable`.
+
+  Capture and hash only sanitized browser evidence. Remove the five runtime
+  containers and reused network only after exact owner assertions. Preserve
+  the two new volumes/images and re-inspect both prior audit sets unchanged.
+
+- [ ] **Step S5: Record evidence, obtain reviews and stop**
+
+  Only this plan may receive sanitized execution evidence. Commit it as a
+  plan-only change and require an independent read-only reviewer to return
+  `accept` with `0` blockers for identity、alias lifecycle、exact-one
+  accounting、privacy、Owner uniqueness、legacy preservation and honest
+  no-percentile/no-promotion reporting. If an inspectable partial result
+  exists, an explicitly authorized Quality Owner must return `accept` or
+  `reject`; otherwise keep `blocked_quality_owner_verdict`. Stop afterward.
+  Do not promote、merge、push、clean artifacts or run another canary.
+
+### PRT-8S Amendment Commit Contract
+
+The currently authorized write is only this amendment. Run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python \
+  .agent/harness/scripts/check-contracts.py
+git diff --check
+git add docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md
+git diff --cached --check
+git diff --cached --name-only
+git commit -m "docs: authorize alias-corrected routing canary"
+```
+
+The staged path list must contain exactly this plan. After an independent
+read-only reviewer accepts with `0` blockers, stop before Step S1 and request
+one explicit authorization to consume the new exact-one canary.
