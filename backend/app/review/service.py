@@ -17,6 +17,7 @@ from app.candidates.confidence import (
 )
 from app.candidates.models import AutomaticResult
 from app.candidates.schemas import Candidate, stable_candidate_id
+from app.config import get_settings
 from app.projects.models import Project
 from app.projects.state import ProjectState, transition
 from app.review.locks import require_active_lock
@@ -200,9 +201,18 @@ class ReviewService:
             working.technical_requirements
         )
         sip_metadata = copy.deepcopy(working.sip_metadata)
+        needs_sip_source_pages = (
+            isinstance(parsed, GenerateSipTable)
+            and any(
+                item.get("active", True)
+                and not self._sip_fields_are_manual(item)
+                and not isinstance(item.get("page_index"), int)
+                for item in items
+            )
+        )
         sip_source_pages = (
             self._sip_source_page_indices(working)
-            if isinstance(parsed, GenerateSipTable)
+            if needs_sip_source_pages
             else {}
         )
         target_ids, numbering_stale = self._apply_command(
@@ -1376,13 +1386,12 @@ class ReviewService:
         self,
         working: ReviewWorkingCopy,
     ) -> dict[str, int]:
-        if self.storage is None:
-            return {}
         raw = self.session.get(AutomaticResult, working.raw_result_id)
         if raw is None:
             return {}
+        storage = self.storage or LocalFileStorage(get_settings().storage_root)
         try:
-            document = json.loads(self.storage.read_bytes(raw.inventory_ref))
+            document = json.loads(storage.read_bytes(raw.inventory_ref))
             pages = document["pages"]
         except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
             return {}
