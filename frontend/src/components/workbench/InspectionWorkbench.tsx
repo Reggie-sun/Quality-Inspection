@@ -103,17 +103,10 @@ const NO_SIP_METADATA_SUGGESTIONS: ProjectWorkbenchSipMetadataSuggestion[] = [];
 function hasResolvedReview(workingCopy: ReviewWorkingCopyView): boolean {
   const blocking = Number(workingCopy.coverage.blocking_count ?? 0);
   const unresolved = Number(workingCopy.coverage.review_required_count ?? 0);
-  const metadata = workingCopy.sip_metadata;
-  const metadataConfirmed =
-    metadata !== undefined
-    && Object.keys(metadata).length === SIP_METADATA_FIELDS.length
-    && SIP_METADATA_FIELDS.every(
-      (field) => typeof metadata[field] === "string" && metadata[field]!.trim() !== "",
-    );
   return (
     blocking === 0
     && unresolved === 0
-    && metadataConfirmed
+    && hasConfirmedSipMetadata(workingCopy)
     && workingCopy.items
       .filter((item) => item.active)
       .every(
@@ -128,6 +121,20 @@ function hasResolvedReview(workingCopy: ReviewWorkingCopyView): boolean {
           && Number.isInteger(item.source_page)
           && Number(item.source_page) >= 1,
       )
+  );
+}
+
+
+function hasConfirmedSipMetadata(
+  workingCopy: ReviewWorkingCopyView,
+): boolean {
+  const metadata = workingCopy.sip_metadata;
+  return (
+    metadata !== undefined
+    && Object.keys(metadata).length === SIP_METADATA_FIELDS.length
+    && SIP_METADATA_FIELDS.every(
+      (field) => typeof metadata[field] === "string" && metadata[field]!.trim() !== "",
+    )
   );
 }
 
@@ -435,9 +442,11 @@ export function InspectionWorkbench({
   const reviewedCount = items.filter(
     (item) => item.active && item.status === "kept",
   ).length;
+  const activeItemCount = items.filter((item) => item.active).length;
   const confirmedCount = items.filter(
     (item) => item.active && item.sip_detail_fields_confirmed === true,
   ).length;
+  const sipPendingCount = activeItemCount - confirmedCount;
   const selectedReviewItem = items.find(
     (item) => item.active && item.item_id === selectedItemId,
   );
@@ -482,6 +491,27 @@ export function InspectionWorkbench({
     setPageIndex(source?.pageIndex ?? pageIndex);
     return true;
   };
+  const selectNextUnconfirmed = (
+    justConfirmedItemId?: string,
+  ): boolean => {
+    const pendingItems = items.filter(
+      (item) =>
+        item.active
+        && item.sip_detail_fields_confirmed !== true
+        && item.item_id !== justConfirmedItemId,
+    );
+    if (pendingItems.length === 0) return false;
+    const justConfirmedIndex = justConfirmedItemId === undefined
+      ? -1
+      : items.findIndex((item) => item.item_id === justConfirmedItemId);
+    const next = justConfirmedIndex < 0
+      ? pendingItems[0]
+      : pendingItems.find(
+        (item) => items.indexOf(item) > justConfirmedIndex,
+      ) ?? pendingItems[0];
+    setFilter("all");
+    return selectItem(next.item_id);
+  };
   const exportPanel = projectId === undefined || exportPost === undefined
     ? null
     : (
@@ -489,6 +519,10 @@ export function InspectionWorkbench({
         projectId={projectId}
         reviewedResultId={reviewedResultId}
         canFinalize={canFinalize}
+        sipPendingCount={sipPendingCount}
+        projectMetadataConfirmed={
+          workingCopy !== undefined && hasConfirmedSipMetadata(workingCopy)
+        }
         balloonBlockers={balloonBlockers}
         post={exportPost}
         initialExport={initialExport}
@@ -564,7 +598,7 @@ export function InspectionWorkbench({
               </div>
               <div>
                 <dt>{zhCN.workbench.confirmedItems}</dt>
-                <dd>{confirmedCount}</dd>
+                <dd>{confirmedCount} / {activeItemCount}</dd>
               </div>
               <div>
                 <dt>{zhCN.workbench.currentState}</dt>
@@ -699,12 +733,20 @@ export function InspectionWorkbench({
                 selectedItem={selectedReviewItem}
                 selectedBalloon={selectedReviewBalloon}
                 selectedSourceActive={selectedSourceId !== undefined}
+                confirmedItemCount={confirmedCount}
+                activeItemCount={activeItemCount}
                 onMetadataChange={(next) => {
                   setMetadata(next);
                   setMetadataDraftDirty(true);
                 }}
                 onConfirmMetadata={confirmMetadata}
                 onCancelMetadata={cancelMetadata}
+                onSelectNextUnconfirmed={() => {
+                  selectNextUnconfirmed();
+                }}
+                onSelectedSipConfirmed={(itemId) => {
+                  selectNextUnconfirmed(itemId);
+                }}
                 onCommand={submitCommand}
                 onSelectedSipDraftChange={setSelectedSipDraftDirty}
                 selectedSipDraftSaveRef={selectedSipDraftSaveRef}

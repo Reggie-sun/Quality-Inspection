@@ -1132,7 +1132,8 @@ describe("InspectionWorkbench", () => {
       screen.getByRole("region", { name: "项目摘要" }),
     );
     expect(summary.getByText("已审核").nextElementSibling?.textContent).toBe("1");
-    expect(summary.getByText("已确认").nextElementSibling?.textContent).toBe("1");
+    expect(summary.getByText("检验项 SIP").nextElementSibling?.textContent)
+      .toBe("1 / 2");
     expect(summary.getByText("保存状态").nextElementSibling?.textContent)
       .toBe("已保存");
 
@@ -1357,6 +1358,90 @@ describe("InspectionWorkbench", () => {
       material: "6061-T6",
       revision: "A/0",
     }));
+  });
+
+  test("检验项 SIP 进度可进入下一条并在成功确认后自动推进", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const sipItem = (
+      itemId: string,
+      rawText: string,
+      confirmed: boolean,
+    ) => ({
+      item_id: itemId,
+      item_type: "linear_dimension" as const,
+      raw_text: rawText,
+      status: "kept",
+      balloon_required: true,
+      requires_confirmation: false,
+      sip_detail_fields_confirmed: confirmed,
+      inspection_item: `${rawText} 检验`,
+      inspection_standard: "图纸要求",
+      inspection_method: "卡尺",
+      key_dimension: "是",
+      inspection_role: "IPQC",
+      source_page: 1,
+      active: true,
+    });
+    const items = [
+      sipItem("confirmed-item", "10", true),
+      sipItem("pending-item-1", "20", false),
+      sipItem("pending-item-2", "30", false),
+    ];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "sip-progress-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "MAT-001",
+            material_name: "横行滑板",
+            drawing_number: "ZHZS25032501-04",
+            material: "6061-T6",
+            revision: "A/0",
+          },
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    const summary = within(
+      screen.getByRole("region", { name: "项目摘要" }),
+    );
+    expect(summary.getByText("检验项 SIP").nextElementSibling?.textContent)
+      .toBe("1 / 3");
+    expect(screen.getByText("检验项 SIP 已确认 1 / 3")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "处理下一条未确认 SIP",
+    }));
+    expect(screen.getByRole("textbox", { name: "检验项目：20" }))
+      .not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "确认当前检验项 SIP",
+    }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+        type: "set_sip_detail_fields",
+        item_id: "pending-item-1",
+      }));
+      expect(screen.getByRole("textbox", { name: "检验项目：30" }))
+        .not.toBeNull();
+    });
   });
 
   test("已确认项目 SIP 优先于识别建议", () => {

@@ -135,6 +135,37 @@ test("首次导出先在后台确认审核结果，再提交同一 reviewed resu
   );
 });
 
+test("未完成审核时优先显示精确的 SIP 确认阻断", () => {
+  const post = vi.fn() as unknown as PostJson;
+  const { rerender } = render(
+    <ExportPanel
+      projectId="project-1"
+      reviewedResultId={undefined}
+      canFinalize={false}
+      balloonBlockers={[]}
+      sipPendingCount={112}
+      projectMetadataConfirmed
+      post={post}
+    />,
+  );
+
+  expect(screen.getByRole("status").textContent)
+    .toBe("还需确认 112 条检验项 SIP");
+
+  rerender(
+    <ExportPanel
+      projectId="project-1"
+      reviewedResultId={undefined}
+      canFinalize={false}
+      balloonBlockers={[]}
+      sipPendingCount={0}
+      projectMetadataConfirmed={false}
+      post={post}
+    />,
+  );
+  expect(screen.getByRole("status").textContent).toBe("项目 SIP 信息未确认");
+});
+
 test("恢复投影如实渲染导出中、失败和三产物原子下载", () => {
   const post = vi.fn() as unknown as PostJson;
   const { rerender } = render(

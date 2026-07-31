@@ -194,6 +194,24 @@ test("图纸识别字段在编辑器中明确标记为待确认建议", () => {
   ).value).toBe("JS26032501");
 });
 
+test("显示检验项 SIP 进度并转发下一条未确认入口", () => {
+  const onSelectNextUnconfirmed = vi.fn();
+  render(
+    <SipInformationPanel
+      {...panelProps()}
+      confirmedItemCount={3}
+      activeItemCount={115}
+      onSelectNextUnconfirmed={onSelectNextUnconfirmed}
+    />,
+  );
+
+  expect(screen.getByText("检验项 SIP 已确认 3 / 115")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", {
+    name: "处理下一条未确认 SIP",
+  }));
+  expect(onSelectNextUnconfirmed).toHaveBeenCalledOnce();
+});
+
 test("disabled 状态由项目 SIP fieldset 统一承载", () => {
   renderPanel({ disabled: true, metadataDirty: true });
 

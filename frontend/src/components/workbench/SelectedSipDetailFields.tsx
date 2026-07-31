@@ -19,6 +19,7 @@ type SelectedSipDetailFieldsProps = {
     command: ReviewCommand,
   ) => boolean | void | Promise<boolean | void>;
   onDraftChange?: (dirty: boolean) => void;
+  onConfirmed?: (itemId: string) => void;
   draftSaveRef?: Ref<DraftSaveHandle>;
 };
 
@@ -64,6 +65,7 @@ export function SelectedSipDetailFields({
   disabled = false,
   onCommand,
   onDraftChange,
+  onConfirmed,
   draftSaveRef,
 }: SelectedSipDetailFieldsProps) {
   const baseline = detailDraft(item, balloon);
@@ -121,7 +123,10 @@ export function SelectedSipDetailFields({
       source_page: sourcePage,
       remarks: itemDraft.remarks,
     });
-    if (succeeded) clearDraft(itemId);
+    if (succeeded) {
+      clearDraft(itemId);
+      onConfirmed?.(itemId);
+    }
     return succeeded;
   };
 

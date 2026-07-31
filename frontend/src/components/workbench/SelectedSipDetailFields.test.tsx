@@ -40,11 +40,13 @@ function reviewItem(
 test("编辑备注提交既有 SIP command，成功后报告 dirty false", async () => {
   const onCommand = vi.fn();
   const onDraftChange = vi.fn();
+  const onConfirmed = vi.fn();
   render(
     <SelectedSipDetailFields
       item={reviewItem("remarks-item", "M6")}
       onCommand={onCommand}
       onDraftChange={onDraftChange}
+      onConfirmed={onConfirmed}
     />,
   );
 
@@ -69,12 +71,14 @@ test("编辑备注提交既有 SIP command，成功后报告 dirty false", async
       remarks: "首件需复核",
     });
     expect(onDraftChange).toHaveBeenLastCalledWith(false);
+    expect(onConfirmed).toHaveBeenCalledWith("remarks-item");
   });
 });
 
 test("保存失败后切换检验项再返回仍保留方法草稿和 dirty true", async () => {
   const onCommand = vi.fn().mockResolvedValue(false);
   const onDraftChange = vi.fn();
+  const onConfirmed = vi.fn();
   const firstItem = reviewItem("sip-retry", "M10");
   const secondItem = reviewItem("other-item", "M12", {
     inspection_method: "通止规",
@@ -85,6 +89,7 @@ test("保存失败后切换检验项再返回仍保留方法草稿和 dirty true
       item={firstItem}
       onCommand={onCommand}
       onDraftChange={onDraftChange}
+      onConfirmed={onConfirmed}
     />,
   );
 
@@ -112,6 +117,7 @@ test("保存失败后切换检验项再返回仍保留方法草稿和 dirty true
       item={secondItem}
       onCommand={onCommand}
       onDraftChange={onDraftChange}
+      onConfirmed={onConfirmed}
     />,
   );
   rerender(
@@ -119,6 +125,7 @@ test("保存失败后切换检验项再返回仍保留方法草稿和 dirty true
       item={firstItem}
       onCommand={onCommand}
       onDraftChange={onDraftChange}
+      onConfirmed={onConfirmed}
     />,
   );
 
@@ -128,6 +135,7 @@ test("保存失败后切换检验项再返回仍保留方法草稿和 dirty true
     }) as HTMLInputElement).value,
   ).toBe("三针法复核");
   expect(onDraftChange).toHaveBeenLastCalledWith(true);
+  expect(onConfirmed).not.toHaveBeenCalled();
 });
 
 test("取消修改恢复当前后端备注基线且不发送 command", () => {

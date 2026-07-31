@@ -10,6 +10,8 @@ type ExportPanelProps = {
   projectId: string;
   reviewedResultId?: string;
   canFinalize?: boolean;
+  sipPendingCount?: number;
+  projectMetadataConfirmed?: boolean;
   balloonBlockers: string[];
   post: PostJson;
   initialExport?: ExportJob | null;
@@ -36,6 +38,8 @@ export function ExportPanel({
   projectId,
   reviewedResultId,
   canFinalize = false,
+  sipPendingCount = 0,
+  projectMetadataConfirmed = true,
   balloonBlockers,
   post,
   initialExport,
@@ -68,8 +72,12 @@ export function ExportPanel({
   const atomicSuccess = exportJob?.status === "success"
     && DOWNLOADS.every(({ kind }) => downloadableKinds.has(kind))
     && downloadableKinds.size === DOWNLOADS.length;
-  const status = reviewedResultId === undefined && !canFinalize
-    ? zhCN.export.notReviewed
+  const status = reviewedResultId === undefined && sipPendingCount > 0
+    ? zhCN.export.pendingSip(sipPendingCount)
+    : reviewedResultId === undefined && !projectMetadataConfirmed
+      ? zhCN.export.pendingProjectSip
+      : reviewedResultId === undefined && !canFinalize
+        ? zhCN.export.notReviewed
     : balloonBlockers.length > 0
       ? zhCN.export.blocked
       : exportInFlight

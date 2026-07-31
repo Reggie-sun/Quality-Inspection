@@ -715,6 +715,35 @@
   font-size: 12px;
 }
 
+.sip-selected-information__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sip-selected-information__heading h3,
+.sip-selected-information__heading p {
+  margin: 0;
+}
+
+.sip-selected-information__heading h3 {
+  color: #344054;
+  font-size: 12px;
+}
+
+.sip-selected-information__heading p {
+  margin-top: 2px;
+  color: var(--qi-muted);
+  font-size: 10px;
+}
+
+.sip-selected-information__heading button {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
 .sip-information-panel__empty {
   margin: 0;
   padding: 12px;

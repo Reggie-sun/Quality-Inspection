@@ -26,9 +26,13 @@ export type SipInformationPanelProps = {
   selectedItem?: ReviewItem;
   selectedBalloon?: BalloonOverlay;
   selectedSourceActive?: boolean;
+  confirmedItemCount?: number;
+  activeItemCount?: number;
   onMetadataChange: (next: MetadataDraft) => void;
   onConfirmMetadata: () => void;
   onCancelMetadata: () => void;
+  onSelectNextUnconfirmed?: () => void;
+  onSelectedSipConfirmed?: (itemId: string) => void;
   onCommand: (
     command: ReviewCommand,
   ) => boolean | void | Promise<boolean | void>;
@@ -46,9 +50,13 @@ export function SipInformationPanel({
   selectedItem,
   selectedBalloon,
   selectedSourceActive = false,
+  confirmedItemCount = 0,
+  activeItemCount = 0,
   onMetadataChange,
   onConfirmMetadata,
   onCancelMetadata,
+  onSelectNextUnconfirmed,
+  onSelectedSipConfirmed,
   onCommand,
   onSelectedSipDraftChange,
   selectedSipDraftSaveRef,
@@ -135,7 +143,27 @@ export function SipInformationPanel({
         className="sip-selected-information"
         aria-label={zhCN.workbench.selectedSipInformation}
       >
-        <h3>{zhCN.workbench.selectedSipInformation}</h3>
+        <div className="sip-selected-information__heading">
+          <div>
+            <h3>{zhCN.workbench.selectedSipInformation}</h3>
+            <p>
+              {zhCN.workbench.sipConfirmationProgress(
+                confirmedItemCount,
+                activeItemCount,
+              )}
+            </p>
+          </div>
+          {confirmedItemCount >= activeItemCount
+          || onSelectNextUnconfirmed === undefined ? null : (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onSelectNextUnconfirmed}
+            >
+              {zhCN.workbench.nextUnconfirmedSip}
+            </button>
+          )}
+        </div>
         {selectedSourceActive ? (
           <p className="sip-information-panel__empty">
             {zhCN.workbench.selectedSourceSipUnavailable}
@@ -159,6 +187,7 @@ export function SipInformationPanel({
           disabled={disabled}
           onCommand={onCommand}
           onDraftChange={onSelectedSipDraftChange}
+          onConfirmed={onSelectedSipConfirmed}
           draftSaveRef={selectedSipDraftSaveRef}
         />
       </section>
