@@ -1779,7 +1779,7 @@ amendment decision for the still-blocked security-scope cache and `PRT-8`.
 - Next verification: `git diff --check`,
   `.agent/harness/scripts/check-contracts.py`, exact diff/staging review,
   amendment commit, then independent review. Stop and request a new explicit
-  user authorization before Step 1 below.
+  user authorization before Step 0 below.
 
 ### Decision Boundary
 
@@ -1841,7 +1841,7 @@ source_filename=JS26032501-1-03-036#上下座B#A1.pdf
 source_sha256=58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec
 recognition_mode=production_uncertainty
 router_version=symbol-uncertainty-router/1
-configured_model=qwen3-vl-plus
+configured_model=qwen3-vl-plus-2025-12-19
 prompt_version=visual-symbol-prompt/4
 response_schema=visual-symbol-review/2
 adapter_version=qwen-openai-compatible/5
@@ -1872,10 +1872,15 @@ redis_container=qi-prt8-canary-redis
 api_container=qi-prt8-canary-api
 worker_container=qi-prt8-canary-worker
 frontend_container=qi-prt8-canary-frontend
+collector_container=qi-prt8-canary-collector
 postgres_volume=qi_prt8_canary_postgres
 storage_volume=qi_prt8_canary_storage
 api_image=qi-prt8-canary-api:12c88b5
 frontend_image=qi-prt8-canary-frontend:12c88b5
+python_base_image=python@sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2
+node_base_image=node@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2
+postgres_image=postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+redis_image=redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
 postgres_port=127.0.0.1:15432
 api_port=127.0.0.1:18080
 frontend_port=127.0.0.1:15173
@@ -1886,20 +1891,109 @@ anything. The canary must not attach to the existing dev/QA/production database�
 Redis、storage、API、worker or frontend. The two canary data volumes are preserved
 after execution for audit; do not clean them as artifacts. Containers and the
 network may be removed only after they are stopped and the sanitized evidence
-has been captured and hashed. Preserve both images and both data volumes until
-the later promotion decision.
+has been captured and hashed. The four base-image digests must already exist
+locally and match exactly; execution uses `--pull=false` / `--pull=never` and
+must not resolve a mutable tag over the network. Preserve both canary images and
+both data volumes until the later promotion decision.
 
 ### PRT-8: Execute The One Authorized Canary
 
 **Files:**
 
+- Create before any live authorization:
+  `.agent/harness/schemas/symbol-routing-canary-evidence.schema.json`
+- Create before any live authorization:
+  `.agent/harness/scripts/symbol_canary_evidence.py`
+- Create before any live authorization:
+  `backend/tests/contract/harness/test_symbol_canary_evidence_contract.py`
 - Modify after execution:
   `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
 - Do not modify: production code、tests、schemas、Harness、frontend source、
   runtime config files or any existing immutable run.
 - Temporary screenshot directory:
   `/tmp/qi-prt8-canary-evidence/`
-- Docker writes only the ten named isolated resources above.
+- Docker owns exactly eleven named canary operational resources above: one network、six
+  containers、two volumes and two canary images. The collector container is a
+  read-only short-lived evidence process and must use `--rm`. The four pre-existing
+  digest-pinned base images are read-only prerequisites, not canary-owned
+  resources; no registry pull is allowed. Docker build cache metadata may change
+  while producing the two labeled images; it is not canary evidence and must not
+  be cleaned by this task.
+
+- [ ] **Step 0: Add the offline sanitized canary ledger contract**
+
+Current persisted database summaries alone cannot prove per-page primary calls
+or distinguish a cache provenance request ID from a current external call.
+Therefore live Step 1 is blocked until this offline-only collector is committed
+and independently accepted.
+
+Write RED tests first. The closed evidence schema and pure collector must:
+
+1. join `page-inventory/1` visual observation IDs to page indexes;
+2. join routing decisions to escalation groups and exact observation coverage;
+3. treat only distinct non-null current `provider_request_id` attempt events
+   with one matching redacted `ProviderCallRecord` as external calls;
+4. classify `attempt_index=0` as primary and `attempt_index>0` as retry;
+5. classify `cache_hit_valid` with no current request ID as cache reuse, never
+   as an external call;
+6. report admitted/local/escalated/block、deduped group、cache、primary、retry、
+   total current call and unresolved counts plus reason/outcome distributions;
+7. report per-page and per-project primary/total call counts and the sum of
+   current redacted call-record `duration_ms`, matching the scheduler's
+   accumulated page/project budget accounting;
+8. require `primary<=4/page`、`primary<=8/project`、`retry<=1/project`,
+   page accumulated duration `<=45000ms` and project accumulated duration
+   `<=90000ms`;
+9. reject missing/duplicate call records、cache IDs counted as current calls、
+   cross-page groups、coverage gaps、arithmetic mismatch and raw/private fields;
+10. set `live_concurrency_observable=false`. Bind the existing focused
+    concurrency/retry tests as carried implementation evidence, but never call
+    that a live concurrency measurement or a promotion gate pass.
+
+The collector accepts exactly four required flags: `--database-url`,
+`--storage-root`, `--project-id` and `--schema`. Step 4 provides their literal
+isolated values. The collector writes one closed-schema JSON object to stdout
+and nothing to the database、storage or repository. It must reject any database
+host other than
+`qi-prt8-canary-postgres` so it cannot inspect a shared runtime.
+
+The carried test refs are exactly:
+
+```text
+backend/tests/unit/candidates/test_symbol_routing.py::test_concurrent_budget_window_denial_reserves_zero_members
+backend/tests/unit/candidates/test_advisor.py::test_concurrent_schema_failures_reserve_exactly_one_project_retry
+backend/tests/unit/candidates/test_advisor.py::test_actual_wall_budget_stops_queued_job_with_fake_clock
+backend/tests/unit/candidates/test_advisor.py::test_actual_primary_wall_blocks_retry_before_second_call
+```
+
+Run RED, implement the minimum pure collector/schema, then require GREEN:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
+  backend/tests/contract/harness/test_symbol_canary_evidence_contract.py \
+  backend/tests/unit/candidates/test_symbol_routing.py::test_concurrent_budget_window_denial_reserves_zero_members \
+  backend/tests/unit/candidates/test_advisor.py::test_concurrent_schema_failures_reserve_exactly_one_project_retry \
+  backend/tests/unit/candidates/test_advisor.py::test_actual_wall_budget_stops_queued_job_with_fake_clock \
+  backend/tests/unit/candidates/test_advisor.py::test_actual_primary_wall_blocks_retry_before_second_call -q
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python \
+  .agent/harness/scripts/check-contracts.py
+micromamba run -n qi-p0 ruff check \
+  .agent/harness/scripts/symbol_canary_evidence.py \
+  backend/tests/contract/harness/test_symbol_canary_evidence_contract.py
+git diff --check
+git add \
+  .agent/harness/schemas/symbol-routing-canary-evidence.schema.json \
+  .agent/harness/scripts/symbol_canary_evidence.py \
+  backend/tests/contract/harness/test_symbol_canary_evidence_contract.py \
+  docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md
+git diff --cached --check
+git commit -m "test: add symbol routing canary ledger"
+```
+
+Harness remains a validator of already-owned records. It must not compute
+candidate、coverage、completeness or promotion semantics. After one independent
+read-only review accepts Step 0 with `0` blockers, stop and request a separate
+live-canary authorization before Step 1.
 
 - [ ] **Step 1: Revalidate source, Git and resource identity without live calls**
 
@@ -1910,7 +2004,9 @@ git merge-base --is-ancestor \
   12c88b5e509451030f373fad8dc748e0b01418e3 HEAD || exit 1
 git diff --quiet \
   12c88b5e509451030f373fad8dc748e0b01418e3 -- \
-  . ':(exclude)docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md' \
+  backend/app backend/alembic backend/assets backend/Dockerfile \
+  backend/pyproject.toml frontend/src frontend/Dockerfile \
+  frontend/package.json frontend/package-lock.json frontend/vite.config.ts \
   || exit 1
 test "$(basename -- "$QI_SYMBOL_SOURCE_PDF")" = \
   "JS26032501-1-03-036#上下座B#A1.pdf" || exit 1
@@ -1956,15 +2052,70 @@ change requires a parent amendment before continuing. Do not merge `main`.
 - [ ] **Step 2: Start the isolated runtime with zero Provider calls**
 
 Run the exact preflight and startup sequence below. It refuses to reuse or
-delete an existing name、volume or listening port:
+delete an existing name、volume or listening port. Both build contexts come
+from `git archive` at the frozen PRT-7 commit, so preserved worktree artifacts
+and the later Step 0 collector cannot enter either runtime image:
 
 ```bash
+set -Eeuo pipefail
+prt8_build_root=""
+
+prt8_cleanup_startup() {
+  trap - ERR INT TERM
+  set +e
+  if test -n "$prt8_build_root" &&
+     printf '%s\n' "$prt8_build_root" | \
+       rg -q '^/tmp/qi-prt8-canary-build\.[A-Za-z0-9]+$'; then
+    find "$prt8_build_root" -mindepth 1 -delete
+    rmdir "$prt8_build_root"
+  fi
+  for prt8_container in \
+    qi-prt8-canary-collector \
+    qi-prt8-canary-frontend \
+    qi-prt8-canary-worker \
+    qi-prt8-canary-api \
+    qi-prt8-canary-redis \
+    qi-prt8-canary-postgres
+  do
+    if test "$(docker container inspect --format \
+      '{{index .Config.Labels "qi.owner"}}' \
+      "$prt8_container" 2>/dev/null)" = "prt8-canary"; then
+      docker rm --force "$prt8_container"
+    fi
+  done
+  if test "$(docker network inspect --format \
+    '{{index .Labels "qi.owner"}}' \
+    qi-prt8-canary 2>/dev/null)" = "prt8-canary"; then
+    docker network rm qi-prt8-canary
+  fi
+  for prt8_volume in qi_prt8_canary_postgres qi_prt8_canary_storage
+  do
+    if test "$(docker volume inspect --format \
+      '{{index .Labels "qi.owner"}}' \
+      "$prt8_volume" 2>/dev/null)" = "prt8-canary"; then
+      docker volume rm "$prt8_volume"
+    fi
+  done
+  for prt8_image in \
+    qi-prt8-canary-api:12c88b5 \
+    qi-prt8-canary-frontend:12c88b5
+  do
+    if test "$(docker image inspect --format \
+      '{{index .Config.Labels "qi.owner"}}' \
+      "$prt8_image" 2>/dev/null)" = "prt8-canary"; then
+      docker image rm "$prt8_image"
+    fi
+  done
+  exit 1
+}
+
 for prt8_container in \
   qi-prt8-canary-postgres \
   qi-prt8-canary-redis \
   qi-prt8-canary-api \
   qi-prt8-canary-worker \
-  qi-prt8-canary-frontend
+  qi-prt8-canary-frontend \
+  qi-prt8-canary-collector
 do
   if docker container inspect "$prt8_container" >/dev/null 2>&1; then
     exit 1
@@ -1992,24 +2143,58 @@ if ss -ltn | rg -q ':(15432|18080|15173)\b'; then
 fi
 test -f .env || exit 1
 
-docker build -t qi-prt8-canary-api:12c88b5 backend
-docker build -t qi-prt8-canary-frontend:12c88b5 frontend
-docker network create qi-prt8-canary
-docker volume create qi_prt8_canary_postgres
-docker volume create qi_prt8_canary_storage
+test "$(docker image inspect python:3.11-slim --format '{{.Id}}')" = \
+  "sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2"
+test "$(docker image inspect node:22-alpine --format '{{.Id}}')" = \
+  "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2"
+test "$(docker image inspect postgres:17-alpine --format '{{.Id}}')" = \
+  "sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
+test "$(docker image inspect redis:7-alpine --format '{{.Id}}')" = \
+  "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"
+
+trap prt8_cleanup_startup ERR INT TERM
+prt8_build_root="$(mktemp -d /tmp/qi-prt8-canary-build.XXXXXX)"
+git archive 12c88b5e509451030f373fad8dc748e0b01418e3 backend | \
+  tar -x -C "$prt8_build_root"
+git archive 12c88b5e509451030f373fad8dc748e0b01418e3 frontend | \
+  tar -x -C "$prt8_build_root"
+docker build --pull=false \
+  --label qi.owner=prt8-canary \
+  --tag qi-prt8-canary-api:12c88b5 \
+  "$prt8_build_root/backend"
+docker build --pull=false \
+  --label qi.owner=prt8-canary \
+  --tag qi-prt8-canary-frontend:12c88b5 \
+  "$prt8_build_root/frontend"
+find "$prt8_build_root" -mindepth 1 -delete
+rmdir "$prt8_build_root"
+prt8_build_root=""
+docker network create \
+  --label qi.owner=prt8-canary \
+  qi-prt8-canary
+docker volume create \
+  --label qi.owner=prt8-canary \
+  qi_prt8_canary_postgres
+docker volume create \
+  --label qi.owner=prt8-canary \
+  qi_prt8_canary_storage
 docker run --detach \
+  --pull=never \
   --name qi-prt8-canary-postgres \
+  --label qi.owner=prt8-canary \
   --network qi-prt8-canary \
   --env POSTGRES_DB=qi \
   --env POSTGRES_USER=qi \
   --env POSTGRES_PASSWORD=qi \
   --publish 127.0.0.1:15432:5432 \
   --volume qi_prt8_canary_postgres:/var/lib/postgresql/data \
-  postgres:17-alpine
+  postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
 docker run --detach \
+  --pull=never \
   --name qi-prt8-canary-redis \
+  --label qi.owner=prt8-canary \
   --network qi-prt8-canary \
-  redis:7-alpine \
+  redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99 \
   redis-server --appendonly no
 for prt8_attempt in $(seq 1 30)
 do
@@ -2021,6 +2206,7 @@ do
   fi
   sleep 2
 done
+test "$(docker exec qi-prt8-canary-redis redis-cli ping)" = "PONG"
 
 cd backend
 PYTHONDONTWRITEBYTECODE=1 \
@@ -2029,7 +2215,9 @@ micromamba run -n qi-p0 alembic -c alembic.ini upgrade head
 cd ..
 
 docker run --detach \
+  --pull=never \
   --name qi-prt8-canary-api \
+  --label qi.owner=prt8-canary \
   --network qi-prt8-canary \
   --network-alias api \
   --env-file .env \
@@ -2037,24 +2225,30 @@ docker run --detach \
   --env QI_REDIS_URL=redis://qi-prt8-canary-redis:6379/0 \
   --env QI_STORAGE_ROOT=/data \
   --env QI_SYMBOL_RECOGNITION_MODE=production_uncertainty \
+  --env QI_QWEN_MODEL=qwen3-vl-plus-2025-12-19 \
   --env PYTHONDONTWRITEBYTECODE=1 \
   --publish 127.0.0.1:18080:8000 \
   --volume qi_prt8_canary_storage:/data \
   qi-prt8-canary-api:12c88b5
 docker run --detach \
+  --pull=never \
   --name qi-prt8-canary-worker \
+  --label qi.owner=prt8-canary \
   --network qi-prt8-canary \
   --env-file .env \
   --env QI_DATABASE_URL=postgresql+psycopg://qi:qi@qi-prt8-canary-postgres:5432/qi \
   --env QI_REDIS_URL=redis://qi-prt8-canary-redis:6379/0 \
   --env QI_STORAGE_ROOT=/data \
   --env QI_SYMBOL_RECOGNITION_MODE=production_uncertainty \
+  --env QI_QWEN_MODEL=qwen3-vl-plus-2025-12-19 \
   --env PYTHONDONTWRITEBYTECODE=1 \
   --volume qi_prt8_canary_storage:/data \
   qi-prt8-canary-api:12c88b5 \
   celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=1
 docker run --detach \
+  --pull=never \
   --name qi-prt8-canary-frontend \
+  --label qi.owner=prt8-canary \
   --network qi-prt8-canary \
   --env QI_API_PROXY_TARGET=http://api:8000 \
   --publish 127.0.0.1:15173:3000 \
@@ -2075,10 +2269,26 @@ curl --noproxy 127.0.0.1 -fsS \
   http://127.0.0.1:15173/ >/dev/null
 test "$(docker inspect -f '{{.State.Running}}' qi-prt8-canary-worker)" = \
   "true"
+docker exec qi-prt8-canary-worker \
+  celery -A app.celery_app:celery_app inspect ping --timeout=5 | \
+  rg -q 'pong'
 docker exec qi-prt8-canary-worker sh -c \
   'test -n "$QI_QWEN_API_KEY" && printf "qwen_api_key_present=true\n"'
-docker exec qi-prt8-canary-api python -c \
-  'from app.config import get_settings; s=get_settings(); print(f"mode={s.symbol_recognition_mode} model={s.qwen_model}")'
+test "$(docker exec qi-prt8-canary-api python -c \
+  'from app.config import get_settings; s=get_settings(); print(f"mode={s.symbol_recognition_mode} model={s.qwen_model}")')" = \
+  "mode=production_uncertainty model=qwen3-vl-plus-2025-12-19"
+test "$(docker exec qi-prt8-canary-worker python -c \
+  'from app.config import get_settings; s=get_settings(); print(f"mode={s.symbol_recognition_mode} model={s.qwen_model}")')" = \
+  "mode=production_uncertainty model=qwen3-vl-plus-2025-12-19"
+test "$(docker exec qi-prt8-canary-api python -c \
+  'from app.candidates.symbol_routing import symbol_routing_identity; print(symbol_routing_identity(\"production_uncertainty\"))')" = \
+  "('production_uncertainty', 'symbol-uncertainty-router/1')"
+test "$(docker exec qi-prt8-canary-worker python -c \
+  'from app.candidates.symbol_routing import symbol_routing_identity; print(symbol_routing_identity(\"production_uncertainty\"))')" = \
+  "('production_uncertainty', 'symbol-uncertainty-router/1')"
+test "$(docker exec qi-prt8-canary-postgres \
+  psql -U qi -d qi -tAc 'SELECT version_num FROM alembic_version')" = \
+  "0012"
 test "$(docker exec qi-prt8-canary-api sha256sum \
   /app/app/providers/qwen_vl.py | cut -d ' ' -f 1)" = \
   "f862fb012d919456299386b482f67672b4e18450fc3de597c4711c42f38f42ad"
@@ -2091,13 +2301,24 @@ test "$(docker exec qi-prt8-canary-api sha256sum \
 test "$(docker exec qi-prt8-canary-worker sha256sum \
   /app/app/candidates/symbol_review.py | cut -d ' ' -f 1)" = \
   "fe40293d48903f1578bb9241367a16d0849034818b4fba71d137238056297bd4"
+trap - ERR INT TERM
 ```
 
 Expected: API health `ok`、worker `running`、frontend HTTP success, matching
 host/API/worker source hashes, `mode=production_uncertainty`,
-`model=qwen3-vl-plus` and `qwen_api_key_present=true`. Do not print `.env`、
-`docker inspect` environment arrays or credential values. With no project
-created, Provider construction/calls remain `0`.
+`model=qwen3-vl-plus-2025-12-19`、router
+`symbol-uncertainty-router/1`、Redis `PONG`、worker broker `pong`、Alembic
+`0012` and `qwen_api_key_present=true`. Do not print `.env`、`docker inspect`
+environment arrays or credential values. With no project created, Provider
+construction/calls remain `0`.
+
+Any startup command failure or interrupt triggers fail-fast cleanup. The trap
+deletes only resources that both use the exact canary name and carry
+`qi.owner=prt8-canary`; it cannot delete a pre-existing unlabelled resource
+because the preflight rejects those names before the first create. If the shell
+ends after successful startup but before file selection, a later session may
+remove these resources only after confirming all owner labels and
+`SELECT count(*) FROM projects` returns `0`.
 
 - [ ] **Step 3: Consume exactly one browser canary**
 
@@ -2119,13 +2340,21 @@ browser_file_selections=1
 browser_submit_clicks=1
 project_creations=1
 direct_provider_calls=0
-visual_primary_calls_per_page<=4
-visual_primary_calls_per_project<=8
-in_flight_visual_calls<=2
-visual_wall_time_per_page<=45s
-visual_wall_time_per_project<=90s
-schema_retry<=1/project
+ledger_external_calls=distinct current attempt provider_request_ids
+ledger_visual_primary_calls_per_page<=4
+ledger_visual_primary_calls_per_project<=8
+ledger_accumulated_visual_duration_per_page<=45000ms
+ledger_accumulated_visual_duration_per_project<=90000ms
+ledger_schema_retry<=1/project
+live_concurrency_observable=false
+carried_offline_in_flight_limit=2
 ```
+
+The canary ledger owns the live call/duration arithmetic. The in-flight `2`
+limit is carried from the exact Step 0 tests and is not observable in current
+persisted live records. This canary must therefore report live concurrency as
+unmeasured, and production promotion remains blocked even if every observable
+canary budget passes.
 
 Do not click retry、review mutations、Confirm、freeze、balloon or export. If the
 project is non-terminal after the bounded worker budget has exhausted, capture
@@ -2196,7 +2425,7 @@ docker exec qi-prt8-canary-postgres \
 docker exec qi-prt8-canary-postgres \
   psql -U qi -d qi -v ON_ERROR_STOP=1 -P pager=off -c \
   "SELECT completeness, recognition_mode, router_version,
-          jsonb_array_length(provider_call_ids) AS call_count,
+          jsonb_array_length(provider_call_ids) AS provider_provenance_id_count,
           recognition_summary, recognition_evidence_ref
    FROM automatic_results
    WHERE project_id = '$PRT8_PROJECT_ID'::uuid"
@@ -2209,10 +2438,36 @@ docker exec qi-prt8-canary-postgres \
    ORDER BY revision"
 ```
 
-Read Provider duration records only through their existing redacted
-`ProviderCallRecord` allowlist. Report `request_id`、`model`、prompt/schema
-versions、`duration_ms`、`retry_count` and safe refs; do not open the referenced
-response payloads.
+The diagnostic `provider_provenance_id_count` is never an external-call count:
+it may include a cache producer request ID. Generate the authoritative sanitized
+call/page/duration ledger with the committed Step 0 collector:
+
+```bash
+set -Eeuo pipefail
+mkdir -p /tmp/qi-prt8-canary-evidence
+docker run --rm \
+  --pull=never \
+  --name qi-prt8-canary-collector \
+  --label qi.owner=prt8-canary \
+  --network qi-prt8-canary \
+  --volume /home/reggie/vscode_folder/Quality_Inspection/.worktrees/symbol-prt5-red-tests:/workspace:ro \
+  --volume qi_prt8_canary_storage:/data:ro \
+  qi-prt8-canary-api:12c88b5 \
+  python /workspace/.agent/harness/scripts/symbol_canary_evidence.py \
+    --database-url postgresql+psycopg://qi:qi@qi-prt8-canary-postgres:5432/qi \
+    --storage-root /data \
+    --project-id "$PRT8_PROJECT_ID" \
+    --schema /workspace/.agent/harness/schemas/symbol-routing-canary-evidence.schema.json \
+  > /tmp/qi-prt8-canary-evidence/symbol-routing-canary-evidence.json
+```
+
+The collector may read Provider duration records only through the existing
+redacted `ProviderCallRecord` allowlist. Its closed-schema stdout reports safe
+`request_id`、`model`、prompt/schema versions、`duration_ms`、`retry_count`,
+opaque refs, exact call arithmetic, `live_concurrency_observable=false` and the
+four carried offline test refs. It must not open the referenced response
+payloads. The preceding SQL output is supplemental diagnostics, not budget
+proof.
 
 Do not store raw Provider response、crop/image bytes、credential、private path or
 unsanitized logs. One canary produces one raw latency sample only. Report
@@ -2290,5 +2545,5 @@ git commit -m "docs: authorize production routing canary"
 ```
 
 The staged path list must contain exactly this plan. After the independent
-amendment review accepts with `0` blockers, stop before PRT-8 Step 1 and ask for
-one explicit live-canary authorization.
+amendment review accepts with `0` blockers, stop before PRT-8 Step 0 and ask for
+one explicit offline-ledger RED/GREEN authorization.
