@@ -546,14 +546,18 @@ was executed.
   `docs/superpowers/specs/2026-07-29-symbol-recognition-production-routing-design.md`.
 - Parent activation:
   `D7-T2 Symbol Recognition Production Routing Implementation Amendment`.
-- Current implementation tasks: `PRT-0` through `PRT-7`, in exact order.
-- `PRT-8` live canary/promotion is intentionally absent from the authorized task
-  list. It requires a separate committed parent amendment after offline evidence.
+- `PRT-0` through `PRT-7` are complete. The committed parent amendment below
+  defines `PRT-8` as the next task, but the current authorization covers only
+  writing、reviewing and committing that amendment.
+- `PRT-8` live execution still requires one later explicit user authorization.
+  It authorizes one isolated bounded canary only; it does not authorize
+  production-default promotion.
 - `legacy_high_recall` remains preserved. No task below deletes it、marks it for
   removal、changes a historical result or imports its `/5` cache into the new
   namespace.
-- No task below may read credentials、make Provider live calls、upload a PDF or
-  run formal live Harness.
+- No task except a separately user-authorized `PRT-8` live execution may check
+  credential presence、make Provider live calls or upload a PDF. `PRT-8` never
+  authorizes printing credential values or running formal live Harness.
 
 ### Owner Matrix
 
@@ -1748,3 +1752,543 @@ amendment decision for the still-blocked security-scope cache and `PRT-8`.
   No Provider, upload, browser, formal live Harness, production promotion,
   production default/fallback, cache Owner, main merge, push, artifact cleanup
   or `PRT-8` action occurred.
+
+## PRT-8 Parent Amendment: One Isolated Canary, No Promotion
+
+### Selection Record
+
+- Selected lane: `Heavy`.
+- Selected plan:
+  `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`,
+  `PRT-8` only.
+- Selection evidence: user authorized an amendment-only continuation after the
+  read-only preflight. Feature implementation HEAD is
+  `12c88b5e509451030f373fad8dc748e0b01418e3`; live `main` is
+  `31f7bf319129a056683b43833317a743faef46c8`; merge-base is
+  `50d118523181fe2edc9c240afe070faed22a7def`; feature is ahead `14` / behind
+  `10`. Index and unmerged entries are empty, all `188` dirty entries are
+  pre-existing `pyc`、`__pycache__` or immutable Harness-run artifacts, and
+  non-artifact dirty count is `0`.
+- Validation action: `amend`. The offline evidence is sufficient to define one
+  isolated canary, but not production promotion. The single `513.44s` historical
+  run and any single successor canary remain raw samples, never P50/P95.
+- Writer ownership and order: the parent is the only amendment writer for this
+  plan. One independent read-only reviewer must accept the committed amendment
+  with `0` blockers. No writer may execute the live steps while this amendment
+  is being written or reviewed.
+- Next verification: `git diff --check`,
+  `.agent/harness/scripts/check-contracts.py`, exact diff/staging review,
+  amendment commit, then independent review. Stop and request a new explicit
+  user authorization before Step 1 below.
+
+### Decision Boundary
+
+`PRT-8` is not a combined canary-and-promotion shortcut. It owns exactly one
+isolated `production_uncertainty` browser upload against the frozen feature
+implementation and a sanitized evidence/rollback record. It does not:
+
+- change the repository or deployment default from `legacy_high_recall`;
+- merge `main`、push、open a PR or deploy to a shared production runtime;
+- run `full-p0`、formal live Harness、current-four or a second project;
+- retry、re-upload、make a direct Provider call or approve/freeze/export;
+- enable cross-project cache or claim its security gate passed;
+- mark `legacy_high_recall` for removal or satisfy production promotion.
+
+Production-default promotion remains blocked until a later parent decision has
+all of the following fresh evidence:
+
+1. live-main convergence for the project API/workbench paths changed after
+   `50d1185`;
+2. the design cohort with at least `20` independent project executions per
+   source class and explicit cold/warm distributions;
+3. current-four、partial-failure browser、cache and rollback evidence;
+4. a bound storage/security Owner for same-tenant cross-project cache, or a new
+   approved design that explicitly removes that P0 promotion requirement;
+5. an affirmative Quality Owner verdict and independent promotion review.
+
+The still-open cache status is therefore unchanged:
+
+```text
+cross_project_cache_status=blocked_missing_security_scope_owner
+project_local_content_cache_allowed=true
+```
+
+### Owner, Old Path And Failure Contract
+
+- `CandidateAdvisor` remains the only candidate、coverage and completeness
+  semantic Owner.
+- `build_automatic_result()` remains the only terminal persistence Executor.
+- Project intake freezes `production_uncertainty` and
+  `symbol-uncertainty-router/1` for the canary project.
+- Provider、cache、frontend and Harness remain Advisor/evidence consumers; none
+  may infer a promotion verdict.
+- `legacy_high_recall` action is `preserve`: it remains the shared deployment
+  default and real consumer for every non-canary new project. The isolated
+  canary does not replace it, so no removal mark is created.
+- Any source、code、model、prompt、schema、adapter、router、runtime、database or
+  credential-presence mismatch stops before browser file selection.
+- Any terminal success、localized partial result、Provider failure、timeout or
+  budget exhaustion consumes the one-canary authorization and stops without
+  retry. Systemic lineage/contract failure must remain fail-closed.
+
+### Frozen Canary Identity
+
+The live authorization, if later granted, is valid only for:
+
+```text
+implementation_head=12c88b5e509451030f373fad8dc748e0b01418e3
+source_filename=JS26032501-1-03-036#上下座B#A1.pdf
+source_sha256=58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec
+recognition_mode=production_uncertainty
+router_version=symbol-uncertainty-router/1
+configured_model=qwen3-vl-plus
+prompt_version=visual-symbol-prompt/4
+response_schema=visual-symbol-review/2
+adapter_version=qwen-openai-compatible/5
+cache_identity_schema=visual-symbol-cache-identity/1
+qwen_vl_sha256=f862fb012d919456299386b482f67672b4e18450fc3de597c4711c42f38f42ad
+symbol_review_sha256=fe40293d48903f1578bb9241367a16d0849034818b4fba71d137238056297bd4
+provider_runtime_sha256=1774815f29ca8302f7869697cafbc45c1cabc8f508b8a19c7ba4eb92cbff42f8
+symbol_routing_sha256=9580aa60a5404d920ad6ec37f16e32d37558f3ede25c2e96249b3b2bdc7be866
+candidate_advisor_sha256=18ae0e234fcd6db0934624290ba19c17c6271e2563d537bab782f3765a04e6b5
+processing_pipeline_sha256=39a555d1b774e7400f0f4c8694fcf24e5525150a46ac774de20d954ad5d70048
+config_sha256=fe577c3f38e7e5552784cb1b7d0f3a17cf7518a2bb13c4ffd32473a96a7b8748
+```
+
+`QI_SYMBOL_SOURCE_PDF` must point to the named file outside Git. Only its
+basename、existence and SHA-256 may be reported; the private absolute path must
+not enter logs、screenshots、the plan or Git. Credential values must never be
+read into agent output; only boolean presence may be checked inside the isolated
+containers.
+
+### Isolated Runtime Contract
+
+The canary uses only these new resources and ports:
+
+```text
+network=qi-prt8-canary
+postgres_container=qi-prt8-canary-postgres
+redis_container=qi-prt8-canary-redis
+api_container=qi-prt8-canary-api
+worker_container=qi-prt8-canary-worker
+frontend_container=qi-prt8-canary-frontend
+postgres_volume=qi_prt8_canary_postgres
+storage_volume=qi_prt8_canary_storage
+api_image=qi-prt8-canary-api:12c88b5
+frontend_image=qi-prt8-canary-frontend:12c88b5
+postgres_port=127.0.0.1:15432
+api_port=127.0.0.1:18080
+frontend_port=127.0.0.1:15173
+```
+
+If any named resource or port already exists, stop before creating or deleting
+anything. The canary must not attach to the existing dev/QA/production database、
+Redis、storage、API、worker or frontend. The two canary data volumes are preserved
+after execution for audit; do not clean them as artifacts. Containers and the
+network may be removed only after they are stopped and the sanitized evidence
+has been captured and hashed. Preserve both images and both data volumes until
+the later promotion decision.
+
+### PRT-8: Execute The One Authorized Canary
+
+**Files:**
+
+- Modify after execution:
+  `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
+- Do not modify: production code、tests、schemas、Harness、frontend source、
+  runtime config files or any existing immutable run.
+- Temporary screenshot directory:
+  `/tmp/qi-prt8-canary-evidence/`
+- Docker writes only the ten named isolated resources above.
+
+- [ ] **Step 1: Revalidate source, Git and resource identity without live calls**
+
+Run from the feature worktree:
+
+```bash
+git merge-base --is-ancestor \
+  12c88b5e509451030f373fad8dc748e0b01418e3 HEAD || exit 1
+git diff --quiet \
+  12c88b5e509451030f373fad8dc748e0b01418e3 -- \
+  . ':(exclude)docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md' \
+  || exit 1
+test "$(basename -- "$QI_SYMBOL_SOURCE_PDF")" = \
+  "JS26032501-1-03-036#上下座B#A1.pdf" || exit 1
+test "$(sha256sum "$QI_SYMBOL_SOURCE_PDF" | cut -d ' ' -f 1)" = \
+  "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec" \
+  || exit 1
+test "$(git status --porcelain=v1 | awk '
+function artifact(p) {
+  return p ~ /(^|\/)__pycache__\// ||
+    p ~ /\.pyc$/ ||
+    p ~ /^\.agent\/harness\/runs\//
+}
+{ p=substr($0,4); if (!artifact(p)) count++ }
+END { print count+0 }')" = "0" || exit 1
+test "$(sha256sum backend/app/providers/qwen_vl.py | cut -d ' ' -f 1)" = \
+  "f862fb012d919456299386b482f67672b4e18450fc3de597c4711c42f38f42ad" \
+  || exit 1
+test "$(sha256sum backend/app/candidates/symbol_review.py | cut -d ' ' -f 1)" = \
+  "fe40293d48903f1578bb9241367a16d0849034818b4fba71d137238056297bd4" \
+  || exit 1
+test "$(sha256sum backend/app/providers/runtime.py | cut -d ' ' -f 1)" = \
+  "1774815f29ca8302f7869697cafbc45c1cabc8f508b8a19c7ba4eb92cbff42f8" \
+  || exit 1
+test "$(sha256sum backend/app/candidates/symbol_routing.py | cut -d ' ' -f 1)" = \
+  "9580aa60a5404d920ad6ec37f16e32d37558f3ede25c2e96249b3b2bdc7be866" \
+  || exit 1
+test "$(sha256sum backend/app/candidates/advisor.py | cut -d ' ' -f 1)" = \
+  "18ae0e234fcd6db0934624290ba19c17c6271e2563d537bab782f3765a04e6b5" \
+  || exit 1
+test "$(sha256sum backend/app/processing/pipeline.py | cut -d ' ' -f 1)" = \
+  "39a555d1b774e7400f0f4c8694fcf24e5525150a46ac774de20d954ad5d70048" \
+  || exit 1
+test "$(sha256sum backend/app/config.py | cut -d ' ' -f 1)" = \
+  "fe577c3f38e7e5552784cb1b7d0f3a17cf7518a2bb13c4ffd32473a96a7b8748" \
+  || exit 1
+```
+
+Then inspect live `main` only for commits after
+`31f7bf319129a056683b43833317a743faef46c8`. A new delta does not change the
+frozen canary runtime, but any symbol-routing contract、Provider or sealed-source
+change requires a parent amendment before continuing. Do not merge `main`.
+
+- [ ] **Step 2: Start the isolated runtime with zero Provider calls**
+
+Run the exact preflight and startup sequence below. It refuses to reuse or
+delete an existing name、volume or listening port:
+
+```bash
+for prt8_container in \
+  qi-prt8-canary-postgres \
+  qi-prt8-canary-redis \
+  qi-prt8-canary-api \
+  qi-prt8-canary-worker \
+  qi-prt8-canary-frontend
+do
+  if docker container inspect "$prt8_container" >/dev/null 2>&1; then
+    exit 1
+  fi
+done
+if docker network inspect qi-prt8-canary >/dev/null 2>&1; then
+  exit 1
+fi
+for prt8_volume in qi_prt8_canary_postgres qi_prt8_canary_storage
+do
+  if docker volume inspect "$prt8_volume" >/dev/null 2>&1; then
+    exit 1
+  fi
+done
+for prt8_image in \
+  qi-prt8-canary-api:12c88b5 \
+  qi-prt8-canary-frontend:12c88b5
+do
+  if docker image inspect "$prt8_image" >/dev/null 2>&1; then
+    exit 1
+  fi
+done
+if ss -ltn | rg -q ':(15432|18080|15173)\b'; then
+  exit 1
+fi
+test -f .env || exit 1
+
+docker build -t qi-prt8-canary-api:12c88b5 backend
+docker build -t qi-prt8-canary-frontend:12c88b5 frontend
+docker network create qi-prt8-canary
+docker volume create qi_prt8_canary_postgres
+docker volume create qi_prt8_canary_storage
+docker run --detach \
+  --name qi-prt8-canary-postgres \
+  --network qi-prt8-canary \
+  --env POSTGRES_DB=qi \
+  --env POSTGRES_USER=qi \
+  --env POSTGRES_PASSWORD=qi \
+  --publish 127.0.0.1:15432:5432 \
+  --volume qi_prt8_canary_postgres:/var/lib/postgresql/data \
+  postgres:17-alpine
+docker run --detach \
+  --name qi-prt8-canary-redis \
+  --network qi-prt8-canary \
+  redis:7-alpine \
+  redis-server --appendonly no
+for prt8_attempt in $(seq 1 30)
+do
+  if docker exec qi-prt8-canary-postgres pg_isready -U qi -d qi; then
+    break
+  fi
+  if test "$prt8_attempt" = "30"; then
+    exit 1
+  fi
+  sleep 2
+done
+
+cd backend
+PYTHONDONTWRITEBYTECODE=1 \
+QI_DATABASE_URL=postgresql+psycopg://qi:qi@127.0.0.1:15432/qi \
+micromamba run -n qi-p0 alembic -c alembic.ini upgrade head
+cd ..
+
+docker run --detach \
+  --name qi-prt8-canary-api \
+  --network qi-prt8-canary \
+  --network-alias api \
+  --env-file .env \
+  --env QI_DATABASE_URL=postgresql+psycopg://qi:qi@qi-prt8-canary-postgres:5432/qi \
+  --env QI_REDIS_URL=redis://qi-prt8-canary-redis:6379/0 \
+  --env QI_STORAGE_ROOT=/data \
+  --env QI_SYMBOL_RECOGNITION_MODE=production_uncertainty \
+  --env PYTHONDONTWRITEBYTECODE=1 \
+  --publish 127.0.0.1:18080:8000 \
+  --volume qi_prt8_canary_storage:/data \
+  qi-prt8-canary-api:12c88b5
+docker run --detach \
+  --name qi-prt8-canary-worker \
+  --network qi-prt8-canary \
+  --env-file .env \
+  --env QI_DATABASE_URL=postgresql+psycopg://qi:qi@qi-prt8-canary-postgres:5432/qi \
+  --env QI_REDIS_URL=redis://qi-prt8-canary-redis:6379/0 \
+  --env QI_STORAGE_ROOT=/data \
+  --env QI_SYMBOL_RECOGNITION_MODE=production_uncertainty \
+  --env PYTHONDONTWRITEBYTECODE=1 \
+  --volume qi_prt8_canary_storage:/data \
+  qi-prt8-canary-api:12c88b5 \
+  celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=1
+docker run --detach \
+  --name qi-prt8-canary-frontend \
+  --network qi-prt8-canary \
+  --env QI_API_PROXY_TARGET=http://api:8000 \
+  --publish 127.0.0.1:15173:3000 \
+  qi-prt8-canary-frontend:12c88b5
+
+for prt8_attempt in $(seq 1 30)
+do
+  if curl --noproxy 127.0.0.1 -fsS \
+    http://127.0.0.1:18080/api/v1/health >/dev/null; then
+    break
+  fi
+  if test "$prt8_attempt" = "30"; then
+    exit 1
+  fi
+  sleep 2
+done
+curl --noproxy 127.0.0.1 -fsS \
+  http://127.0.0.1:15173/ >/dev/null
+test "$(docker inspect -f '{{.State.Running}}' qi-prt8-canary-worker)" = \
+  "true"
+docker exec qi-prt8-canary-worker sh -c \
+  'test -n "$QI_QWEN_API_KEY" && printf "qwen_api_key_present=true\n"'
+docker exec qi-prt8-canary-api python -c \
+  'from app.config import get_settings; s=get_settings(); print(f"mode={s.symbol_recognition_mode} model={s.qwen_model}")'
+test "$(docker exec qi-prt8-canary-api sha256sum \
+  /app/app/providers/qwen_vl.py | cut -d ' ' -f 1)" = \
+  "f862fb012d919456299386b482f67672b4e18450fc3de597c4711c42f38f42ad"
+test "$(docker exec qi-prt8-canary-worker sha256sum \
+  /app/app/providers/qwen_vl.py | cut -d ' ' -f 1)" = \
+  "f862fb012d919456299386b482f67672b4e18450fc3de597c4711c42f38f42ad"
+test "$(docker exec qi-prt8-canary-api sha256sum \
+  /app/app/candidates/symbol_review.py | cut -d ' ' -f 1)" = \
+  "fe40293d48903f1578bb9241367a16d0849034818b4fba71d137238056297bd4"
+test "$(docker exec qi-prt8-canary-worker sha256sum \
+  /app/app/candidates/symbol_review.py | cut -d ' ' -f 1)" = \
+  "fe40293d48903f1578bb9241367a16d0849034818b4fba71d137238056297bd4"
+```
+
+Expected: API health `ok`、worker `running`、frontend HTTP success, matching
+host/API/worker source hashes, `mode=production_uncertainty`,
+`model=qwen3-vl-plus` and `qwen_api_key_present=true`. Do not print `.env`、
+`docker inspect` environment arrays or credential values. With no project
+created, Provider construction/calls remain `0`.
+
+- [ ] **Step 3: Consume exactly one browser canary**
+
+Use Chrome MCP against `http://127.0.0.1:15173/`:
+
+1. select `QI_SYMBOL_SOURCE_PDF` exactly once;
+2. click submit exactly once;
+3. record the returned project ID and confirm intake froze
+   `production_uncertainty` / `symbol-uncertainty-router/1`;
+4. capture the first `local_ready` or `vlm_enriching` preview before terminal;
+5. wait only for `ready_for_review`、`partial_review_required` or a fail-closed
+   project error;
+6. capture the terminal/error state and stop interacting.
+
+Budgets are hard:
+
+```text
+browser_file_selections=1
+browser_submit_clicks=1
+project_creations=1
+direct_provider_calls=0
+visual_primary_calls_per_page<=4
+visual_primary_calls_per_project<=8
+in_flight_visual_calls<=2
+visual_wall_time_per_page<=45s
+visual_wall_time_per_project<=90s
+schema_retry<=1/project
+```
+
+Do not click retry、review mutations、Confirm、freeze、balloon or export. If the
+project is non-terminal after the bounded worker budget has exhausted, capture
+sanitized status/call evidence, stop the isolated worker and record a failed
+canary. Never submit a second project.
+
+- [ ] **Step 4: Record sanitized evidence and perform isolated rollback**
+
+Record in this plan:
+
+- exact project/task/preview/terminal result IDs that are safe opaque refs;
+- frozen mode/router、source hash and runtime/code identities;
+- admitted/local/escalated/deduped/cache/call/unresolved counts;
+- reason-code and outcome distributions;
+- ordered raw stage/provider durations with sample count;
+- completeness、partial or fail-closed outcome;
+- cache namespace/provenance validation result;
+- screenshot paths plus SHA-256;
+- browser/action counts、authorization consumed and external call count;
+- Quality Owner verdict state.
+
+Set `PRT8_PROJECT_ID` to the opaque project ID shown by the browser, validate it
+as a UUID, then collect the database-owned counts without reading raw Provider
+payloads:
+
+```bash
+test "$(printf '%s' "$PRT8_PROJECT_ID" | \
+  rg -c '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')" = \
+  "1" || exit 1
+docker exec qi-prt8-canary-postgres \
+  psql -U qi -d qi -v ON_ERROR_STOP=1 -P pager=off -c \
+  "SELECT recognition_mode, recognition_router_version
+   FROM projects
+   WHERE id = '$PRT8_PROJECT_ID'::uuid"
+docker exec qi-prt8-canary-postgres \
+  psql -U qi -d qi -v ON_ERROR_STOP=1 -P pager=off -c \
+  "SELECT disposition, count(*)
+   FROM symbol_routing_decisions
+   WHERE project_id = '$PRT8_PROJECT_ID'::uuid
+   GROUP BY disposition
+   ORDER BY disposition"
+docker exec qi-prt8-canary-postgres \
+  psql -U qi -d qi -v ON_ERROR_STOP=1 -P pager=off -c \
+  "SELECT reason_code, count(*)
+   FROM symbol_routing_decisions,
+   LATERAL jsonb_array_elements_text(
+     local_resolution_reason_codes ||
+     escalation_reason_codes ||
+     block_reason_codes
+   ) AS reasons(reason_code)
+   WHERE project_id = '$PRT8_PROJECT_ID'::uuid
+   GROUP BY reason_code
+   ORDER BY reason_code"
+docker exec qi-prt8-canary-postgres \
+  psql -U qi -d qi -v ON_ERROR_STOP=1 -P pager=off -c \
+  "SELECT event_code, count(*)
+   FROM symbol_escalation_attempt_events
+   WHERE project_id = '$PRT8_PROJECT_ID'::uuid
+   GROUP BY event_code
+   ORDER BY event_code"
+docker exec qi-prt8-canary-postgres \
+  psql -U qi -d qi -v ON_ERROR_STOP=1 -P pager=off -c \
+  "SELECT outcome_code, count(*)
+   FROM symbol_escalation_outcomes
+   WHERE project_id = '$PRT8_PROJECT_ID'::uuid
+   GROUP BY outcome_code
+   ORDER BY outcome_code"
+docker exec qi-prt8-canary-postgres \
+  psql -U qi -d qi -v ON_ERROR_STOP=1 -P pager=off -c \
+  "SELECT completeness, recognition_mode, router_version,
+          jsonb_array_length(provider_call_ids) AS call_count,
+          recognition_summary, recognition_evidence_ref
+   FROM automatic_results
+   WHERE project_id = '$PRT8_PROJECT_ID'::uuid"
+docker exec qi-prt8-canary-postgres \
+  psql -U qi -d qi -v ON_ERROR_STOP=1 -P pager=off -c \
+  "SELECT revision, semantic_snapshot->>'stage' AS stage,
+          semantic_snapshot->'counts' AS counts
+   FROM recognition_preview_revisions
+   WHERE project_id = '$PRT8_PROJECT_ID'::uuid
+   ORDER BY revision"
+```
+
+Read Provider duration records only through their existing redacted
+`ProviderCallRecord` allowlist. Report `request_id`、`model`、prompt/schema
+versions、`duration_ms`、`retry_count` and safe refs; do not open the referenced
+response payloads.
+
+Do not store raw Provider response、crop/image bytes、credential、private path or
+unsanitized logs. One canary produces one raw latency sample only. Report
+`p50_eligible=false` and `p95_eligible=false`.
+
+Stop and remove only the five canary application/runtime containers and
+`qi-prt8-canary` network after evidence capture. Preserve
+`qi_prt8_canary_postgres`、`qi_prt8_canary_storage` and both tagged images.
+Verify the repository default remains `legacy_high_recall` and the existing
+non-canary runtime was not restarted or modified. This isolated stop is not a
+deployment rollback drill and must not be reported as one.
+
+```bash
+docker stop \
+  qi-prt8-canary-frontend \
+  qi-prt8-canary-worker \
+  qi-prt8-canary-api \
+  qi-prt8-canary-redis \
+  qi-prt8-canary-postgres
+docker rm \
+  qi-prt8-canary-frontend \
+  qi-prt8-canary-worker \
+  qi-prt8-canary-api \
+  qi-prt8-canary-redis \
+  qi-prt8-canary-postgres
+docker network rm qi-prt8-canary
+docker volume inspect qi_prt8_canary_postgres >/dev/null
+docker volume inspect qi_prt8_canary_storage >/dev/null
+docker image inspect qi-prt8-canary-api:12c88b5 >/dev/null
+docker image inspect qi-prt8-canary-frontend:12c88b5 >/dev/null
+```
+
+An explicitly authorized Quality Owner must inspect the sealed positives、
+frozen negatives、unresolved sources、partial state and browser evidence and
+return `accept` or `reject`. Until that human verdict is recorded, the PRT-8
+result is `blocked_quality_owner_verdict` regardless of automated metrics.
+
+- [ ] **Step 5: Commit evidence, review and stop before promotion**
+
+Run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python \
+  .agent/harness/scripts/check-contracts.py
+git diff --check
+git add docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md
+git diff --cached --check
+git diff --cached --name-only
+git commit -m "docs: record production routing canary"
+```
+
+The staged path list must contain exactly this plan. An independent read-only
+reviewer must return `accept` with `0` blockers for source/runtime identity,
+exact-one authorization consumption、budget arithmetic、privacy、Owner uniqueness、
+project-local cache boundary、legacy preservation and honest no-percentile/no-
+promotion reporting.
+
+Stop after review. Do not change the production default、mark the old path、run a
+second canary、start full-P0、merge `main` or push. The next action must be a new
+user decision based on the actual canary and Quality Owner evidence.
+
+### Amendment-Only Commit Contract
+
+The currently authorized write is only this parent amendment. Before committing
+it, run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python \
+  .agent/harness/scripts/check-contracts.py
+git diff --check
+git add docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md
+git diff --cached --check
+git diff --cached --name-only
+git commit -m "docs: authorize production routing canary"
+```
+
+The staged path list must contain exactly this plan. After the independent
+amendment review accepts with `0` blockers, stop before PRT-8 Step 1 and ask for
+one explicit live-canary authorization.
