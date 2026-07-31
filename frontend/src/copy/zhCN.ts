@@ -137,6 +137,9 @@ export const zhCN = {
       `SIP 表格：已生成 ${ready}，异常 ${exceptions}`,
     defaultInspectionRole: "默认检验角色",
     generateSipTable: "生成并检查 SIP 表格",
+    sipTableComplete: "SIP 表格已完成",
+    sipTableCompleteNextStep:
+      "正式文件将在审核和冻结完成后从左侧统一生成。",
     nextSipException: "处理下一条异常",
     sipMappingExceptions: {
       composite_method_required: "复合项需要选择检验方法",

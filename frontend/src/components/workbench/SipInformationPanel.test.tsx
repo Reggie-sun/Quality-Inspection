@@ -256,7 +256,7 @@ test("一次生成 SIP 表格并只转发下一条异常入口", () => {
   expect(document.body.textContent).not.toContain("已确认 112 / 115");
 });
 
-test("没有 SIP 异常时不显示逐条处理入口", () => {
+test("没有 SIP 异常时显示完成终态并移除重复生成动作", () => {
   render(
     <SipInformationPanel
       {...panelProps()}
@@ -270,6 +270,34 @@ test("没有 SIP 异常时不显示逐条处理入口", () => {
   expect(screen.queryByRole("button", {
     name: "处理下一条异常",
   })).toBeNull();
+  expect(screen.queryByRole("button", {
+    name: "生成并检查 SIP 表格",
+  })).toBeNull();
+  expect(screen.queryByRole("textbox", {
+    name: "默认检验角色",
+  })).toBeNull();
+  expect(screen.getByText("SIP 表格已完成")).not.toBeNull();
+  expect(screen.getByText(
+    "正式文件将在审核和冻结完成后从左侧统一生成。",
+  )).not.toBeNull();
+});
+
+test("没有有效检验项时保留首次生成入口", () => {
+  render(
+    <SipInformationPanel
+      {...panelProps()}
+      readyItemCount={0}
+      exceptionItemCount={0}
+    />,
+  );
+
+  expect(screen.getByRole("textbox", {
+    name: "默认检验角色",
+  })).not.toBeNull();
+  expect(screen.getByRole("button", {
+    name: "生成并检查 SIP 表格",
+  })).not.toBeNull();
+  expect(screen.queryByText("SIP 表格已完成")).toBeNull();
 });
 
 test("标题栏冲突并列显示且采用识别值只修改本地草稿", () => {

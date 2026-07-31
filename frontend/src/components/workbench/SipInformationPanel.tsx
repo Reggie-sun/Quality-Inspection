@@ -65,6 +65,8 @@ export function SipInformationPanel({
   selectedSipDraftSaveRef,
 }: SipInformationPanelProps) {
   const selectedItemActive = selectedItem?.active === true;
+  const sipTableComplete =
+    readyItemCount + exceptionItemCount > 0 && exceptionItemCount === 0;
   const [inspectionRole, setInspectionRole] = useState("");
   const suggestionByField = new Map(
     metadataSuggestions.map((suggestion) => [suggestion.field, suggestion]),
@@ -179,28 +181,40 @@ export function SipInformationPanel({
         className="sip-selected-information"
         aria-label={zhCN.workbench.selectedSipInformation}
       >
-        <div className="sip-table-generation">
-          <label>
-            {zhCN.workbench.defaultInspectionRole}
-            <input
-              aria-label={zhCN.workbench.defaultInspectionRole}
-              value={inspectionRole}
-              onChange={(event) => setInspectionRole(event.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            disabled={disabled || inspectionRole.trim() === ""}
-            onClick={() => {
-              void onCommand({
-                type: "generate_sip_table",
-                inspection_role: inspectionRole.trim(),
-              });
-            }}
+        {sipTableComplete ? (
+          <div
+            className="sip-table-complete"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
           >
-            {zhCN.workbench.generateSipTable}
-          </button>
-        </div>
+            <strong>{zhCN.workbench.sipTableComplete}</strong>
+            <span>{zhCN.workbench.sipTableCompleteNextStep}</span>
+          </div>
+        ) : (
+          <div className="sip-table-generation">
+            <label>
+              {zhCN.workbench.defaultInspectionRole}
+              <input
+                aria-label={zhCN.workbench.defaultInspectionRole}
+                value={inspectionRole}
+                onChange={(event) => setInspectionRole(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={disabled || inspectionRole.trim() === ""}
+              onClick={() => {
+                void onCommand({
+                  type: "generate_sip_table",
+                  inspection_role: inspectionRole.trim(),
+                });
+              }}
+            >
+              {zhCN.workbench.generateSipTable}
+            </button>
+          </div>
+        )}
         <div className="sip-selected-information__heading">
           <div>
             <h3>{zhCN.workbench.selectedSipInformation}</h3>

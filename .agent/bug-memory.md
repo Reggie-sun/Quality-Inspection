@@ -2,6 +2,44 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260731-sip-terminal-action-no-feedback
+
+- Status: 已解决
+- First reported: 2026-07-31
+- Last reported: 2026-07-31
+- Recurrence: 1
+- Surface: `frontend/src/components/workbench/SipInformationPanel.tsx` 的批量生成动作与 SIP 完成态
+- Symptom: SIP 已显示“已生成 115，异常 0”时，蓝色“生成并检查 SIP 表格”仍呈现为主要可点击动作；点击后用户看不到任何状态变化，并感觉它与左侧“生成正式文件”重复
+- Previously correct behavior: 批量生成动作应明确反馈执行结果；SIP 达到异常 0 后应呈现可理解的完成终态，并与正式 PDF/Excel/校验清单导出动作清楚区分
+- Reproduction: 用户截图显示当前检验项区域为“SIP 表格：已生成 115，异常 0”，默认检验角色已填写，蓝色“生成并检查 SIP 表格”仍可点击；左侧“生成正式文件”同时可见但因“尚未审核”保持禁用
+- Root cause: `SipInformationPanel` 只用 ready/exception count 渲染进度并隐藏
+  “处理下一条异常”，没有把 `activeCount > 0 && exceptionCount == 0` 投影为终态；
+  批量按钮因此仍无条件把 `generate_sip_table` 转发给 `submitCommand`。重复命令实际
+  写入新 version，但返回后的计数仍为 `115 / 0`，且按钮自身没有 local result
+  feedback，用户只能在远处看到全局保存状态，所以视觉上表现为“点击没反应”。
+- Fix: 当 `readyItemCount + exceptionItemCount > 0` 且异常为 `0` 时，将默认角色输入
+  和批量生成按钮替换为绿色 `SIP 表格已完成` 终态，并明确说明正式文件需在审核和
+  冻结完成后从左侧统一生成；空集合和仍有异常的状态继续保留原生成入口。未改变
+  `submitCommand`、backend mapping、freeze 或 `ExportPanel` 合同。
+- Regression check: TDD RED
+  `没有 SIP 异常时显示完成终态并移除重复生成动作` 先稳定失败于旧生成按钮仍存在；
+  reviewer 建议的 `0 / 0` 空态用例通过 mutation check，能拦截把完成条件误简化为
+  `exceptionItemCount === 0` 的回归。focused suite 返回 `14/14`，frontend 全量返回
+  `269/269`，`npm run build` 与 `npm run api:check` 均通过。
+- Runtime proof: Chrome MCP 返回 `Transport closed`；按已批准 fallback 使用
+  Playwright + system Chrome 打开当前源码与真实 project workbench，只拦截
+  review-lock acquisition 以避免写入真实 lock，其他 workbench/PDF 请求仍走 live
+  API。验证 `SIP 表格已完成` 与下一步各 `1` 个，旧生成按钮和默认角色输入均为
+  `0`，进度仍是 `115 / 0`，console error 与 HTTP `>=400` 均为 `0`。
+- Change: `fix(frontend): show SIP terminal completion state`
+- Selected lane: `Lite`
+- Selected plan: `BUG-20260731-sip-terminal-action-no-feedback` ad hoc bug task；不切换已完成的 SIP auto-mapping implementation plan
+- Selection evidence: 当前证据指向单个 workbench frontend 终态投影与动作反馈；不改变 Review API、SIP mapping、freeze 或正式导出合同
+- Validation action: `completed`
+- Writer ownership and order: 父 agent 唯一 writer；只读 debugger 只提供调用链证据
+- Independent review: 最终 verdict `accept`，无 blocker 或 concern。
+- Next verification: 已关闭；仅在新 feedback 或 runtime regression 时重开。
+
 ## BUG-20260730-technical-requirement-confirm-action-missing
 
 - Status: 已解决
