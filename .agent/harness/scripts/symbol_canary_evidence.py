@@ -151,6 +151,13 @@ def _safe_ref(value: object, *, kind: str) -> str:
     return ref
 
 
+def _recognition_evidence_ref(value: object, *, project_id: str) -> str:
+    ref = _text(value, kind="recognition evidence ref")
+    if ref != f"symbol-routing-evidence://{project_id}":
+        raise ValueError("recognition evidence ref is invalid")
+    return ref
+
+
 def _stable_json(path: Path, *, kind: str) -> dict[str, Any]:
     try:
         before = path.lstat()
@@ -176,6 +183,26 @@ def _stable_json(path: Path, *, kind: str) -> dict[str, Any]:
     return document
 
 
+def _storage_path(
+    storage_root: Path,
+    relative: PurePosixPath,
+    *,
+    kind: str,
+) -> Path:
+    if storage_root.is_symlink():
+        raise ValueError(f"{kind} contains a symlink")
+    root = storage_root.resolve()
+    current = storage_root
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(f"{kind} contains a symlink")
+    resolved = current.resolve(strict=False)
+    if resolved != root and root not in resolved.parents:
+        raise ValueError(f"{kind} escapes storage root")
+    return resolved
+
+
 def _asset_path(
     storage_root: Path,
     resource_ref: object,
@@ -186,16 +213,7 @@ def _asset_path(
     if not ref.startswith("asset://"):
         raise ValueError(f"{kind} must use asset storage")
     relative = ref.removeprefix("asset://")
-    current = storage_root
-    for part in relative.split("/"):
-        current /= part
-        if current.is_symlink():
-            raise ValueError(f"{kind} contains a symlink")
-    resolved = current.resolve(strict=False)
-    root = storage_root.resolve()
-    if root not in resolved.parents:
-        raise ValueError(f"{kind} escapes storage root")
-    return resolved
+    return _storage_path(storage_root, PurePosixPath(relative), kind=kind)
 
 
 def _validate_call_record(document: object) -> dict[str, Any]:
@@ -257,9 +275,13 @@ def _load_call_records(
     by_request: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_ref: dict[str, dict[str, Any]] = {}
     root = storage_root.resolve()
-    project_root = root / "projects" / project_id / "provider-calls"
+    project_relative = PurePosixPath("projects") / project_id / "provider-calls"
     for family in ("qwen-symbol", "qwen-symbol-retries"):
-        directory = project_root / family
+        directory = _storage_path(
+            storage_root,
+            project_relative / family,
+            kind="Provider call record directory",
+        )
         if not directory.exists():
             continue
         if directory.is_symlink() or not directory.is_dir():
@@ -705,12 +727,10 @@ def build_canary_evidence(
         or router != EXPECTED_ROUTER
     ):
         raise ValueError("automatic result recognition identity is invalid")
-    evidence_ref = automatic_result.get("recognition_evidence_ref")
-    if evidence_ref is not None:
-        evidence_ref = _safe_ref(
-            evidence_ref,
-            kind="recognition evidence ref",
-        )
+    evidence_ref = _recognition_evidence_ref(
+        automatic_result.get("recognition_evidence_ref"),
+        project_id=project_id,
+    )
     counts = {
         "admitted": len(visual_pages),
         "locally_resolved": dispositions["locally_resolved"],

@@ -311,9 +311,7 @@ def _fixture(tmp_path: Path) -> tuple[dict[str, Any], Path]:
             "completeness": "partial_review_required",
             "recognition_mode": "production_uncertainty",
             "router_version": "symbol-uncertainty-router/1",
-            "recognition_evidence_ref": (
-                f"asset://projects/{PROJECT_ID}/routing/evidence.json"
-            ),
+            "recognition_evidence_ref": f"symbol-routing-evidence://{PROJECT_ID}",
         },
         "decisions": decisions,
         "attempts": attempts,
@@ -439,6 +437,48 @@ def test_schema_rejects_unowned_fields(tmp_path: Path) -> None:
         jsonschema.Draft202012Validator(_schema()).validate(evidence)
 
 
+@pytest.mark.parametrize(
+    "recognition_evidence_ref",
+    [
+        None,
+        f"asset://projects/{PROJECT_ID}/routing/evidence.json",
+        "symbol-routing-evidence://not-a-project-id",
+    ],
+)
+def test_schema_requires_production_routing_evidence_ref(
+    tmp_path: Path,
+    recognition_evidence_ref: str | None,
+) -> None:
+    module = _collector()
+    bundle, storage_root = _fixture(tmp_path)
+    evidence = _build(module, bundle, storage_root)
+    evidence["recognition_identity"]["recognition_evidence_ref"] = (
+        recognition_evidence_ref
+    )
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(_schema()).validate(evidence)
+
+
+@pytest.mark.parametrize(
+    "recognition_evidence_ref",
+    [
+        None,
+        "symbol-routing-evidence://22222222-2222-4222-8222-222222222222",
+    ],
+)
+def test_collector_requires_project_bound_recognition_evidence_ref(
+    tmp_path: Path,
+    recognition_evidence_ref: str | None,
+) -> None:
+    module = _collector()
+    bundle, storage_root = _fixture(tmp_path)
+    bundle["automatic_result"]["recognition_evidence_ref"] = recognition_evidence_ref
+
+    with pytest.raises(ValueError, match="recognition evidence ref"):
+        _build(module, bundle, storage_root)
+
+
 def test_collector_rejects_coverage_gap(tmp_path: Path) -> None:
     module = _collector()
     bundle, storage_root = _fixture(tmp_path)
@@ -517,6 +557,20 @@ def test_collector_rejects_private_call_record_fields(
     _write_json(primary, document)
 
     with pytest.raises(ValueError, match="call record"):
+        _build(module, bundle, storage_root)
+
+
+def test_collector_rejects_provider_call_intermediate_symlink(
+    tmp_path: Path,
+) -> None:
+    module = _collector()
+    bundle, storage_root = _fixture(tmp_path)
+    provider_calls = storage_root / f"projects/{PROJECT_ID}/provider-calls"
+    external_provider_calls = tmp_path / "external-provider-calls"
+    provider_calls.rename(external_provider_calls)
+    provider_calls.symlink_to(external_provider_calls, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="symlink|storage root"):
         _build(module, bundle, storage_root)
 
 
