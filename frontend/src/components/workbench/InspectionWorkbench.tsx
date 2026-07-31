@@ -115,6 +115,7 @@ function hasResolvedReview(workingCopy: ReviewWorkingCopyView): boolean {
           && item.balloon_required !== null
           && item.balloon_required !== undefined
           && item.sip_detail_fields_confirmed === true
+          && (item.sip_mapping_exceptions?.length ?? 0) === 0
           && SIP_DETAIL_TEXT_FIELDS.every(
             (field) => typeof item[field] === "string" && item[field]!.trim() !== "",
           )
@@ -169,19 +170,6 @@ function metadataDraft(
       ];
     }),
   ) as MetadataDraft;
-}
-
-
-function suggestedMetadataFields(
-  workingCopy: ReviewWorkingCopyView | undefined,
-  suggestions: ProjectWorkbenchSipMetadataSuggestion[],
-): Array<keyof MetadataDraft> {
-  return suggestions
-    .map((suggestion) => suggestion.field)
-    .filter((field) => {
-      const confirmed = workingCopy?.sip_metadata?.[field];
-      return !(typeof confirmed === "string" && confirmed.trim() !== "");
-    });
 }
 
 
@@ -443,10 +431,13 @@ export function InspectionWorkbench({
     (item) => item.active && item.status === "kept",
   ).length;
   const activeItemCount = items.filter((item) => item.active).length;
-  const confirmedCount = items.filter(
-    (item) => item.active && item.sip_detail_fields_confirmed === true,
+  const readyItemCount = items.filter(
+    (item) =>
+      item.active
+      && item.sip_detail_fields_confirmed === true
+      && (item.sip_mapping_exceptions?.length ?? 0) === 0,
   ).length;
-  const sipPendingCount = activeItemCount - confirmedCount;
+  const sipExceptionCount = activeItemCount - readyItemCount;
   const selectedReviewItem = items.find(
     (item) => item.active && item.item_id === selectedItemId,
   );
@@ -491,24 +482,27 @@ export function InspectionWorkbench({
     setPageIndex(source?.pageIndex ?? pageIndex);
     return true;
   };
-  const selectNextUnconfirmed = (
-    justConfirmedItemId?: string,
+  const selectNextException = (
+    justResolvedItemId?: string,
   ): boolean => {
-    const pendingItems = items.filter(
+    const exceptionItems = items.filter(
       (item) =>
         item.active
-        && item.sip_detail_fields_confirmed !== true
-        && item.item_id !== justConfirmedItemId,
+        && (
+          item.sip_detail_fields_confirmed !== true
+          || (item.sip_mapping_exceptions?.length ?? 0) > 0
+        )
+        && item.item_id !== justResolvedItemId,
     );
-    if (pendingItems.length === 0) return false;
-    const justConfirmedIndex = justConfirmedItemId === undefined
+    if (exceptionItems.length === 0) return false;
+    const justResolvedIndex = justResolvedItemId === undefined
       ? -1
-      : items.findIndex((item) => item.item_id === justConfirmedItemId);
-    const next = justConfirmedIndex < 0
-      ? pendingItems[0]
-      : pendingItems.find(
-        (item) => items.indexOf(item) > justConfirmedIndex,
-      ) ?? pendingItems[0];
+      : items.findIndex((item) => item.item_id === justResolvedItemId);
+    const next = justResolvedIndex < 0
+      ? exceptionItems[0]
+      : exceptionItems.find(
+        (item) => items.indexOf(item) > justResolvedIndex,
+      ) ?? exceptionItems[0];
     setFilter("all");
     return selectItem(next.item_id);
   };
@@ -519,7 +513,7 @@ export function InspectionWorkbench({
         projectId={projectId}
         reviewedResultId={reviewedResultId}
         canFinalize={canFinalize}
-        sipPendingCount={sipPendingCount}
+        sipExceptionCount={sipExceptionCount}
         projectMetadataConfirmed={
           workingCopy !== undefined && hasConfirmedSipMetadata(workingCopy)
         }
@@ -598,7 +592,7 @@ export function InspectionWorkbench({
               </div>
               <div>
                 <dt>{zhCN.workbench.confirmedItems}</dt>
-                <dd>{confirmedCount} / {activeItemCount}</dd>
+                <dd>已生成 {readyItemCount} / 异常 {sipExceptionCount}</dd>
               </div>
               <div>
                 <dt>{zhCN.workbench.currentState}</dt>
@@ -724,28 +718,26 @@ export function InspectionWorkbench({
               <SipInformationPanel
                 metadata={metadata}
                 metadataValues={metadataValues}
-                suggestedMetadataFields={suggestedMetadataFields(
-                  workingCopy,
-                  sipMetadataSuggestions,
-                )}
+                persistedMetadata={workingCopy?.sip_metadata ?? {}}
+                metadataSuggestions={sipMetadataSuggestions}
                 metadataDirty={metadataDraftDirty}
                 disabled={reviewCommandsDisabled}
                 selectedItem={selectedReviewItem}
                 selectedBalloon={selectedReviewBalloon}
                 selectedSourceActive={selectedSourceId !== undefined}
-                confirmedItemCount={confirmedCount}
-                activeItemCount={activeItemCount}
+                readyItemCount={readyItemCount}
+                exceptionItemCount={sipExceptionCount}
                 onMetadataChange={(next) => {
                   setMetadata(next);
                   setMetadataDraftDirty(true);
                 }}
                 onConfirmMetadata={confirmMetadata}
                 onCancelMetadata={cancelMetadata}
-                onSelectNextUnconfirmed={() => {
-                  selectNextUnconfirmed();
+                onSelectNextException={() => {
+                  selectNextException();
                 }}
                 onSelectedSipConfirmed={(itemId) => {
-                  selectNextUnconfirmed(itemId);
+                  selectNextException(itemId);
                 }}
                 onCommand={submitCommand}
                 onSelectedSipDraftChange={setSelectedSipDraftDirty}

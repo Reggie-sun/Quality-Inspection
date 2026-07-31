@@ -744,6 +744,45 @@
   font-size: 11px;
 }
 
+.sip-table-generation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #b2ddff;
+  border-radius: 6px;
+  background: #eff8ff;
+}
+
+.sip-table-generation label {
+  display: grid;
+  gap: 3px;
+  color: #344054;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sip-table-generation button {
+  align-self: end;
+  min-height: 34px;
+  border-color: var(--qi-blue);
+  background: var(--qi-blue);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.sip-mapping-exceptions {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 7px 8px 7px 24px;
+  border: 1px solid #fec84b;
+  border-radius: 6px;
+  background: #fffaeb;
+  color: #93370d;
+  font-size: 11px;
+}
+
 .sip-information-panel__empty {
   margin: 0;
   padding: 12px;
@@ -844,6 +883,27 @@
   gap: 3px;
   color: #475467;
   font-size: 11px;
+}
+
+.sip-metadata-editor__field {
+  display: grid;
+  gap: 5px;
+}
+
+.sip-metadata-conflict {
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border-left: 3px solid #f79009;
+  background: #fffaeb;
+  color: #7a2e0e;
+  font-size: 10px;
+}
+
+.sip-metadata-conflict button {
+  justify-self: start;
+  min-height: 26px;
+  padding: 3px 7px;
 }
 
 .sip-metadata-field-label {
@@ -1365,6 +1425,10 @@
 
 @media (max-width: 460px) {
   .sip-information-panel .sip-metadata-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .sip-table-generation {
     grid-template-columns: 1fr;
   }
 

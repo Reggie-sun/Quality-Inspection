@@ -361,13 +361,13 @@ test("检验项列表不再渲染 legacy SIP 字段组或确认操作", () => {
   const tableSection = container.querySelector(".inspection-table-section");
   expect(
     within(tableSection as HTMLElement)
-      .queryByRole("group", { name: "SIP 确认字段" }),
+      .queryByRole("group", { name: "SIP 字段" }),
   ).toBeNull();
   expect(
     within(tableSection as HTMLElement)
-      .queryByRole("button", { name: "确认当前检验项 SIP" }),
+      .queryByRole("button", { name: "保存当前 SIP 字段" }),
   ).toBeNull();
-  expect(tableSection?.textContent).not.toContain("确认当前检验项 SIP");
+  expect(tableSection?.textContent).not.toContain("保存当前 SIP 字段");
 });
 
 test("缺少 onCommand 时不渲染 SIP 字段组", () => {
@@ -387,7 +387,7 @@ test("缺少 onCommand 时不渲染 SIP 字段组", () => {
   );
 
   expect(
-    screen.queryByRole("group", { name: "SIP 确认字段" }),
+    screen.queryByRole("group", { name: "SIP 字段" }),
   ).toBeNull();
 });
 

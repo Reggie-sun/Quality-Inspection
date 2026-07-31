@@ -135,7 +135,7 @@ test("首次导出先在后台确认审核结果，再提交同一 reviewed resu
   );
 });
 
-test("未完成审核时优先显示精确的 SIP 确认阻断", () => {
+test("未完成审核时优先显示精确的 SIP 异常阻断", () => {
   const post = vi.fn() as unknown as PostJson;
   const { rerender } = render(
     <ExportPanel
@@ -143,14 +143,14 @@ test("未完成审核时优先显示精确的 SIP 确认阻断", () => {
       reviewedResultId={undefined}
       canFinalize={false}
       balloonBlockers={[]}
-      sipPendingCount={112}
+      sipExceptionCount={112}
       projectMetadataConfirmed
       post={post}
     />,
   );
 
   expect(screen.getByRole("status").textContent)
-    .toBe("还需确认 112 条检验项 SIP");
+    .toBe("SIP 异常 112 项");
 
   rerender(
     <ExportPanel
@@ -158,7 +158,7 @@ test("未完成审核时优先显示精确的 SIP 确认阻断", () => {
       reviewedResultId={undefined}
       canFinalize={false}
       balloonBlockers={[]}
-      sipPendingCount={0}
+      sipExceptionCount={0}
       projectMetadataConfirmed={false}
       post={post}
     />,

@@ -1132,8 +1132,8 @@ describe("InspectionWorkbench", () => {
       screen.getByRole("region", { name: "项目摘要" }),
     );
     expect(summary.getByText("已审核").nextElementSibling?.textContent).toBe("1");
-    expect(summary.getByText("检验项 SIP").nextElementSibling?.textContent)
-      .toBe("1 / 2");
+    expect(summary.getByText("SIP 表格").nextElementSibling?.textContent)
+      .toBe("已生成 1 / 异常 1");
     expect(summary.getByText("保存状态").nextElementSibling?.textContent)
       .toBe("已保存");
 
@@ -1174,7 +1174,7 @@ describe("InspectionWorkbench", () => {
     expect(sipSummary?.textContent).toContain("检验人员角色尺寸检验员");
     expect(sipSummary?.querySelectorAll("dd")).toHaveLength(8);
     const selectedFields = within(currentRegion).getByRole("group", {
-      name: "SIP 确认字段",
+      name: "SIP 字段",
     });
     for (const [label, value] of [
       ["检验项目：M6", "螺纹检验"],
@@ -1360,7 +1360,7 @@ describe("InspectionWorkbench", () => {
     }));
   });
 
-  test("检验项 SIP 进度可进入下一条并在成功确认后自动推进", async () => {
+  test("SIP 表格只生成一次并在异常修复后自动推进", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const sipItem = (
       itemId: string,
@@ -1374,6 +1374,7 @@ describe("InspectionWorkbench", () => {
       balloon_required: true,
       requires_confirmation: false,
       sip_detail_fields_confirmed: confirmed,
+      sip_mapping_exceptions: confirmed ? [] : ["missing_inspection_role"],
       inspection_item: `${rawText} 检验`,
       inspection_standard: "图纸要求",
       inspection_method: "卡尺",
@@ -1420,18 +1421,29 @@ describe("InspectionWorkbench", () => {
     const summary = within(
       screen.getByRole("region", { name: "项目摘要" }),
     );
-    expect(summary.getByText("检验项 SIP").nextElementSibling?.textContent)
-      .toBe("1 / 3");
-    expect(screen.getByText("检验项 SIP 已确认 1 / 3")).not.toBeNull();
+    expect(summary.getByText("SIP 表格").nextElementSibling?.textContent)
+      .toBe("已生成 1 / 异常 2");
+    expect(screen.getByText("SIP 表格：已生成 1，异常 2")).not.toBeNull();
+
+    fireEvent.change(screen.getByRole("textbox", {
+      name: "默认检验角色",
+    }), { target: { value: "IPQC" } });
+    fireEvent.click(screen.getByRole("button", {
+      name: "生成并检查 SIP 表格",
+    }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
+      type: "generate_sip_table",
+      inspection_role: "IPQC",
+    }));
 
     fireEvent.click(screen.getByRole("button", {
-      name: "处理下一条未确认 SIP",
+      name: "处理下一条异常",
     }));
     expect(screen.getByRole("textbox", { name: "检验项目：20" }))
       .not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", {
-      name: "确认当前检验项 SIP",
+      name: "保存当前 SIP 字段",
     }));
 
     await waitFor(() => {
@@ -1759,7 +1771,7 @@ describe("InspectionWorkbench", () => {
     expect(within(sipRegion).getByText("当前选择的是待判定来源。"))
       .not.toBeNull();
     expect(within(sipRegion).queryByRole("group", {
-      name: "SIP 确认字段",
+      name: "SIP 字段",
     })).toBeNull();
     expect(saveStatus.textContent).toBe("有未保存修改");
 
@@ -1777,7 +1789,7 @@ describe("InspectionWorkbench", () => {
     expect(saveStatus.textContent).toBe("有未保存修改");
 
     fireEvent.click(screen.getByRole("button", {
-      name: "取消当前检验项 SIP 修改",
+      name: "取消当前 SIP 字段修改",
     }));
     expect(
       (screen.getByRole("textbox", {
@@ -1856,7 +1868,7 @@ describe("InspectionWorkbench", () => {
     ).disabled).toBe(true);
     expect((
       within(sipRegion).getByRole("group", {
-        name: "SIP 确认字段",
+        name: "SIP 字段",
       }) as HTMLFieldSetElement
     ).disabled).toBe(true);
   });

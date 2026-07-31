@@ -90,7 +90,7 @@ test("统一 SIP 区域同时呈现项目信息和当前检验项", () => {
     name: "当前检验项",
   })).toBeTruthy();
   expect(within(region).getByRole("group", {
-    name: "SIP 确认字段",
+    name: "SIP 字段",
   })).toBeTruthy();
   expect(region.textContent).toContain("产品名称上座");
   expect(region.textContent).toContain("图号JS26032501");
@@ -114,7 +114,7 @@ test("切到待判定来源时保留项目区和当前检验项草稿", () => {
   expect(region.textContent).toContain("产品名称上座");
   expect(region.textContent).toContain("当前选择的是待判定来源。");
   expect(within(region).queryByRole("group", {
-    name: "SIP 确认字段",
+    name: "SIP 字段",
   })).toBeNull();
 
   rerender(<SipInformationPanel {...props} selectedSourceActive={false} />);
@@ -178,7 +178,29 @@ test("图纸识别字段在编辑器中明确标记为待确认建议", () => {
   render(
     <SipInformationPanel
       {...panelProps()}
-      suggestedMetadataFields={["material_name", "drawing_number"]}
+      persistedMetadata={{}}
+      metadataSuggestions={[
+        {
+          field: "material_name",
+          value: "上座",
+          observation_id: "material-name-value",
+          label_observation_id: "material-name-label",
+          page_index: 0,
+          bbox_pdf: [1, 2, 3, 4],
+          rule_version: "welli-title-metadata/1",
+          evidence_codes: ["native_line"],
+        },
+        {
+          field: "drawing_number",
+          value: "JS26032501",
+          observation_id: "drawing-number-value",
+          label_observation_id: "drawing-number-label",
+          page_index: 0,
+          bbox_pdf: [1, 2, 3, 4],
+          rule_version: "welli-title-metadata/1",
+          evidence_codes: ["native_line"],
+        },
+      ]}
     />,
   );
 
@@ -194,22 +216,94 @@ test("图纸识别字段在编辑器中明确标记为待确认建议", () => {
   ).value).toBe("JS26032501");
 });
 
-test("显示检验项 SIP 进度并转发下一条未确认入口", () => {
-  const onSelectNextUnconfirmed = vi.fn();
+test("一次生成 SIP 表格并只转发下一条异常入口", () => {
+  const onCommand = vi.fn().mockResolvedValue(true);
+  const onSelectNextException = vi.fn();
   render(
     <SipInformationPanel
       {...panelProps()}
-      confirmedItemCount={3}
-      activeItemCount={115}
-      onSelectNextUnconfirmed={onSelectNextUnconfirmed}
+      selectedItem={reviewItem({
+        sip_detail_fields_confirmed: false,
+        sip_mapping_exceptions: ["composite_method_required"],
+      })}
+      readyItemCount={112}
+      exceptionItemCount={3}
+      onSelectNextException={onSelectNextException}
+      onCommand={onCommand}
     />,
   );
 
-  expect(screen.getByText("检验项 SIP 已确认 3 / 115")).not.toBeNull();
+  expect(screen.getByText("SIP 表格：已生成 112，异常 3")).not.toBeNull();
+  expect(screen.getByText("复合项需要选择检验方法")).not.toBeNull();
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "默认检验角色",
+  }), { target: { value: "IPQC" } });
   fireEvent.click(screen.getByRole("button", {
-    name: "处理下一条未确认 SIP",
+    name: "生成并检查 SIP 表格",
   }));
-  expect(onSelectNextUnconfirmed).toHaveBeenCalledOnce();
+  expect(onCommand).toHaveBeenCalledWith({
+    type: "generate_sip_table",
+    inspection_role: "IPQC",
+  });
+  fireEvent.click(screen.getByRole("button", {
+    name: "处理下一条异常",
+  }));
+  expect(onSelectNextException).toHaveBeenCalledOnce();
+  expect(document.body.textContent).not.toContain("已确认 112 / 115");
+});
+
+test("没有 SIP 异常时不显示逐条处理入口", () => {
+  render(
+    <SipInformationPanel
+      {...panelProps()}
+      readyItemCount={115}
+      exceptionItemCount={0}
+      onSelectNextException={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("SIP 表格：已生成 115，异常 0")).not.toBeNull();
+  expect(screen.queryByRole("button", {
+    name: "处理下一条异常",
+  })).toBeNull();
+});
+
+test("标题栏冲突并列显示且采用识别值只修改本地草稿", () => {
+  const onMetadataChange = vi.fn();
+  const onCommand = vi.fn();
+  render(
+    <SipInformationPanel
+      {...panelProps()}
+      persistedMetadata={metadata}
+      metadataSuggestions={[{
+        field: "material_name",
+        value: "横行滑板",
+        observation_id: "material-name-value",
+        label_observation_id: "material-name-label",
+        page_index: 0,
+        bbox_pdf: [1, 2, 3, 4],
+        rule_version: "welli-title-metadata/1",
+        evidence_codes: ["native_line"],
+      }]}
+      onMetadataChange={onMetadataChange}
+      onCommand={onCommand}
+    />,
+  );
+
+  fireEvent.click(screen.getByText("编辑项目 SIP 信息", {
+    selector: "summary",
+  }));
+  expect(screen.getByText("当前值：上座")).not.toBeNull();
+  expect(screen.getByText("图纸识别值：横行滑板")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", {
+    name: "采用识别值：产品名称",
+  }));
+
+  expect(onMetadataChange).toHaveBeenCalledWith({
+    ...metadata,
+    material_name: "横行滑板",
+  });
+  expect(onCommand).not.toHaveBeenCalled();
 });
 
 test("disabled 状态由项目 SIP fieldset 统一承载", () => {
@@ -232,7 +326,7 @@ test("没有当前检验项时显示精确 SIP 空状态", () => {
     "请选择一个有效检验项以填写 SIP 信息。",
   );
   expect(within(region).queryByRole("group", {
-    name: "SIP 确认字段",
+    name: "SIP 字段",
   })).toBeNull();
 });
 
@@ -244,7 +338,7 @@ test("非 active 检验项显示精确 SIP 空状态", () => {
     "请选择一个有效检验项以填写 SIP 信息。",
   );
   expect(within(region).queryByRole("group", {
-    name: "SIP 确认字段",
+    name: "SIP 字段",
   })).toBeNull();
 });
 

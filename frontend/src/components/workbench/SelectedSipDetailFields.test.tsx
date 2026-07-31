@@ -55,7 +55,7 @@ test("编辑备注提交既有 SIP command，成功后报告 dirty false", async
   });
   expect(onDraftChange).toHaveBeenLastCalledWith(true);
   fireEvent.click(screen.getByRole("button", {
-    name: "确认当前检验项 SIP",
+    name: "保存当前 SIP 字段",
   }));
 
   await waitFor(() => {
@@ -97,7 +97,7 @@ test("保存失败后切换检验项再返回仍保留方法草稿和 dirty true
     target: { value: "三针法复核" },
   });
   fireEvent.click(screen.getByRole("button", {
-    name: "确认当前检验项 SIP",
+    name: "保存当前 SIP 字段",
   }));
 
   await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
@@ -159,7 +159,7 @@ test("取消修改恢复当前后端备注基线且不发送 command", () => {
   }) as HTMLTextAreaElement;
   fireEvent.change(remarks, { target: { value: "临时修改" } });
   fireEvent.click(screen.getByRole("button", {
-    name: "取消当前检验项 SIP 修改",
+    name: "取消当前 SIP 字段修改",
   }));
 
   expect(remarks.value).toBe("保留原文");
@@ -186,7 +186,7 @@ test("待判定来源式空 item 状态不提交 SIP command", () => {
       onCommand={onCommand}
     />,
   );
-  expect(screen.queryByRole("group", { name: "SIP 确认字段" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "SIP 字段" })).toBeNull();
   expect(onCommand).not.toHaveBeenCalled();
 
   rerender(
@@ -228,7 +228,7 @@ test("技术要求建议只预填可证明字段，补全后才允许确认", as
     name: "检验标准：锐边去毛刺",
   }) as HTMLInputElement).value).toBe("锐边去毛刺");
   const confirm = screen.getByRole("button", {
-    name: "确认当前检验项 SIP",
+    name: "保存当前 SIP 字段",
   }) as HTMLButtonElement;
   expect(confirm.disabled).toBe(true);
 

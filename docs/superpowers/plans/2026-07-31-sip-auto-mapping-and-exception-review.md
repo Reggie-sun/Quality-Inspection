@@ -64,6 +64,7 @@ TypeScript、React、Vitest、Chrome DevTools、Micromamba `qi-p0`
 - `frontend/src/api/types.ts`
 - `frontend/src/components/workbench/InspectionWorkbench.tsx`
 - `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- `frontend/src/components/workbench/InspectionItemTable.test.tsx`
 - `frontend/src/components/workbench/SipInformationPanel.tsx`
 - `frontend/src/components/workbench/SipInformationPanel.test.tsx`
 - `frontend/src/components/workbench/SelectedSipDetailFields.tsx`
@@ -324,7 +325,7 @@ git commit -m "feat(review): generate SIP rows in one command"
 - Receives complete `ProjectWorkbenchSipMetadataSuggestion[]` so current and
   recognized values can be compared without server mutation.
 
-- [ ] **Step 1: Write component REDs**
+- [x] **Step 1: Write component REDs**
 
 Add tests proving:
 
@@ -339,7 +340,7 @@ Add tests proving:
   local metadata draft without calling `onCommand`;
 - export blocker copy uses `SIP 异常 N 项` rather than `N 项未确认`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -354,7 +355,7 @@ npm --prefix frontend test -- \
 Expected: assertion FAIL because the current UI still renders per-row confirmation
 progress and has no batch action/conflict surface.
 
-- [ ] **Step 3: Implement the minimal presenter changes**
+- [x] **Step 3: Implement the minimal presenter changes**
 
 - keep role input local until the batch button is clicked;
 - derive ready/exception counts only from server-projected item fields;
@@ -367,7 +368,7 @@ progress and has no batch action/conflict surface.
 - preserve dirty-draft save/cancel behavior and version-conflict error handling;
 - do not add frontend mapping rules or local export generation.
 
-- [ ] **Step 4: Run frontend GREEN**
+- [x] **Step 4: Run frontend GREEN**
 
 Run the Step 2 command again, then:
 

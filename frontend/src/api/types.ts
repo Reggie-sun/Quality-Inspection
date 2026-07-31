@@ -109,6 +109,7 @@ export type ReviewItem = {
   source_page?: number;
   remarks?: string;
   sip_detail_fields_confirmed?: boolean;
+  sip_mapping_exceptions?: string[];
   technical_requirement_refs?: string[];
   sip_suggestion_provenance?: Record<string, string>;
   confidence_decision?: ConfidenceDecision;
