@@ -3005,7 +3005,7 @@ allowed.
 
 ### Corrected Canary Execution Contract
 
-- [ ] **Step R1: Revalidate source, code and resources with zero live calls**
+- [x] **Step R1: Revalidate source, code and resources with zero live calls**
 
   Require `9ea61f7` to be an ancestor of HEAD and require a zero diff from that
   commit across `backend/app`、`backend/alembic`、`backend/assets`、
@@ -3018,7 +3018,7 @@ allowed.
   `06a87cd3a8010e2553c1257b332165d060a66280`; any symbol/Provider/runtime
   overlap requires a new parent amendment. Do not merge `main`.
 
-- [ ] **Step R2: Build and start the isolated runtime with zero Provider calls**
+- [x] **Step R2: Build and start the isolated runtime with zero Provider calls**
 
   Build both contexts only from `git archive
   9ea61f773633abaa348339e84ba3058214d79ef7`, tag the two new images above and
@@ -3031,7 +3031,7 @@ allowed.
   `qi.owner=prt8r-canary` names after an ownership assertion; new volumes and
   images remain for audit.
 
-- [ ] **Step R3: Consume exactly one corrected browser canary**
+- [x] **Step R3: Consume exactly one corrected browser canary**
 
   After a separate explicit user authorization, use headed browser upload for
   the frozen source exactly once. Record one project ID、logical job ID、
@@ -3057,7 +3057,7 @@ allowed.
   Any terminal outcome consumes the authorization. A Provider failure or
   different systemic failure is recorded honestly and stops without retry.
 
-- [ ] **Step R4: Collect sanitized evidence and perform isolated rollback**
+- [x] **Step R4: Collect sanitized evidence and perform isolated rollback**
 
   Run the committed closed-schema collector once against
   `qi-prt8-canary-postgres` and the new read-only storage volume. Report actual
@@ -3075,7 +3075,7 @@ allowed.
   `qi_prt8r_canary_storage` and both `9ea61f7` images. Reinspect the first
   canary audit resources to prove they were unchanged.
 
-- [ ] **Step R5: Record evidence, obtain Quality Owner verdict and stop**
+- [x] **Step R5: Record evidence, obtain Quality Owner verdict and stop**
 
   Only this plan may receive sanitized execution evidence. Commit it as a
   plan-only change and require an independent read-only reviewer to return
@@ -3103,3 +3103,124 @@ git commit -m "docs: authorize corrected routing canary"
 The staged path list must contain exactly this plan. After an independent
 read-only reviewer accepts with `0` blockers, stop before Step R1 and request
 one explicit authorization to consume the corrected exact-one canary.
+
+### Actual PRT-8R Evidence On 2026-07-31
+
+The user explicitly authorized one corrected exact-one canary after the
+amendment review returned `accept` with `0` blockers and `0` concerns.
+
+- Step R1 passed before any runtime mutation or live call. The sealed source
+  had exactly one basename/SHA match without printing its private path;
+  `9ea61f7` was an ancestor of HEAD; the frozen runtime/frontend delta、
+  live-main delta after `06a87cd` and non-artifact dirty count were all `0`.
+  All seven frozen source hashes、four pinned base image identities、ports、
+  credential-file metadata、old audit-resource identities and new-resource
+  absence checks passed.
+- Both frozen images were built from `git archive 9ea61f7` and labeled
+  `qi.owner=prt8r-canary`:
+
+  ```text
+  api_image_id=sha256:33307d63890829fed37ac4e7e695634687c3a7a837c1ff7e2a6e15905cb60032
+  frontend_image_id=sha256:45206820472711d58bbb008af5c6e6018aa666f33ed85e4f727108ad55f57af9
+  ```
+
+- The first R2 shell reached the worker readiness gate after creating the
+  images、new volumes and five running runtime containers. Celery
+  `inspect ping` returned CLI exit `69`; the ERR trap emitted a cleanup summary
+  from command-substitution context, but read-only owner inspection proved the
+  containers and network were still running. No project、logical job、routing
+  record、result or storage file existed. A continuation command therefore
+  stopped before its trap because the correctly owned resources already
+  existed; it did not restart or rebuild anything.
+- A direct full validation of that same runtime then passed:
+  API/frontend health、Redis、worker `pong`、mode、model、router、Alembic
+  `0012`、all seven API/worker source hashes、image/volume/container/network
+  owner labels and first-canary preservation checks matched. Its pre-upload
+  database/storage counts were:
+
+  ```text
+  projects=0
+  logical_jobs=0
+  routing_decisions=0
+  escalation_attempt_events=0
+  escalation_outcomes=0
+  automatic_results=0
+  storage_files=0
+  ```
+
+- A temporary owner-only upload alias was created after a second unique
+  basename/SHA check. Headed Chrome selected the sealed PDF exactly once. The
+  alias was removed immediately after file selection and before submit;
+  `project_count` was still `0`.
+- Chrome clicked `上传并开始识别` exactly once. The single POST to
+  `/api/v1/projects` failed in the browser with
+  `net::ERR_ALPN_NEGOTIATION_FAILED`. The UI immediately displayed the
+  terminal network error and stated that no formal inspection result was
+  generated. No retry、re-selection、second submit、review mutation、Confirm、
+  freeze、balloon or export action occurred.
+- After the browser terminal, direct API health and the frontend-proxied health
+  endpoint both returned HTTP `200`, while the authoritative database/storage
+  counts remained:
+
+  ```text
+  projects=0
+  logical_jobs=0
+  error_records=0
+  routing_decisions=0
+  automatic_results=0
+  storage_files=0
+  ```
+
+  Therefore no project ID、logical job ID、preview revision、terminal result or
+  Provider task exists. The budget-denial correction did not receive live
+  execution evidence in this canary.
+- Authorization accounting is:
+
+  ```text
+  browser_file_selections=1
+  browser_submit_clicks=1
+  project_creations=0
+  direct_provider_calls=0
+  authorization_consumed=true
+  retry_allowed=false
+  ```
+
+  The failed submit consumes the authorization even though project creation
+  did not complete. No second project may be used to compensate.
+- The closed-schema collector was not run because it requires one project UUID
+  and this canary created none. Report
+  `collector_status=not_run_no_project_id`、
+  `ledger_external_calls=null`、all ledger distributions `unavailable`,
+  `p50_eligible=false`、`p95_eligible=false` and
+  `live_concurrency_observable=false`. Zero project/job/storage state proves
+  the Provider path was not entered; it is not presented as a successful
+  collector ledger.
+- Sanitized browser evidence is
+  `/tmp/qi-prt8r-canary-evidence/terminal-network-error.png`, size `148778`
+  bytes, SHA-256
+  `35d8100d820b15da57c20bda57c0297b9ab98e8c5b2b3acd8b1ce24395fc91db`.
+  Visual inspection confirmed the selected basename and terminal error only;
+  it contains no credential、cookie/header、private source path、raw Provider
+  response or crop/image bytes. No preview screenshot exists because the
+  request failed before project creation.
+- Owner-fenced rollback stopped and removed the five
+  `qi.owner=prt8r-canary` containers and reused network. Ports were released
+  and the temporary upload alias was absent. It preserved:
+
+  ```text
+  qi_prt8r_canary_postgres
+  qi_prt8r_canary_storage
+  qi-prt8-canary-api:9ea61f7
+  qi-prt8-canary-frontend:9ea61f7
+  ```
+
+  The first canary's two `prt8-canary` volumes and two `12c88b5` image IDs were
+  reinspected and remained unchanged. The repository default remains
+  `legacy_high_recall`.
+
+Automated PRT-8R outcome is
+`failed_closed_pre_project_browser_transport`. Quality Owner state remains
+`blocked_quality_owner_verdict` because no partial result exists to inspect;
+`promotion_eligible=false`. No Provider、collector、formal live Harness、
+production promotion、main merge、push or artifact cleanup ran. This evidence
+commit does not authorize a retry or another canary.
