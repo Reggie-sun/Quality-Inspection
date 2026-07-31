@@ -637,6 +637,27 @@
         "title": "GenerateBalloonsRequest",
         "type": "object"
       },
+      "GenerateSipTable": {
+        "additionalProperties": false,
+        "properties": {
+          "inspection_role": {
+            "minLength": 1,
+            "title": "Inspection Role",
+            "type": "string"
+          },
+          "type": {
+            "const": "generate_sip_table",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "inspection_role"
+        ],
+        "title": "GenerateSipTable",
+        "type": "object"
+      },
       "HealthResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1518,6 +1539,7 @@
                 "add": "#/components/schemas/Add",
                 "edit": "#/components/schemas/Edit",
                 "exclude": "#/components/schemas/Exclude",
+                "generate_sip_table": "#/components/schemas/GenerateSipTable",
                 "ignore_source": "#/components/schemas/IgnoreSource",
                 "ignore_sources": "#/components/schemas/IgnoreSources",
                 "keep": "#/components/schemas/Keep",
@@ -1568,6 +1590,9 @@
               },
               {
                 "$ref": "#/components/schemas/SetSipDetailFields"
+              },
+              {
+                "$ref": "#/components/schemas/GenerateSipTable"
               },
               {
                 "$ref": "#/components/schemas/SetSipMetadata"

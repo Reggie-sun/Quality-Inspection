@@ -210,7 +210,7 @@ git commit -m "feat(review): add deterministic SIP mapping"
 - Preserves manually resolved row when `sip_detail_fields_confirmed is True`
   and its provenance has no `sip-auto-map/1` value.
 
-- [ ] **Step 1: Write integration REDs**
+- [x] **Step 1: Write integration REDs**
 
 Add tests proving:
 
@@ -226,7 +226,7 @@ Add tests proving:
 6. complete generated rows satisfy existing freeze SIP readiness, while an
    exception row still yields `unresolved_confirmation`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -239,7 +239,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 Expected: FAIL because `generate_sip_table` is rejected by the discriminated command
 schema and no batch branch exists.
 
-- [ ] **Step 3: Add the stable command schema**
+- [x] **Step 3: Add the stable command schema**
 
 Add:
 
@@ -252,7 +252,7 @@ class GenerateSipTable(CommandBase):
 Include it in `ReviewCommand`. No endpoint, DB column, migration or alternate write
 path is added.
 
-- [ ] **Step 4: Apply all rows inside the existing ReviewService transaction**
+- [x] **Step 4: Apply all rows inside the existing ReviewService transaction**
 
 In `_apply_command()`:
 
@@ -269,13 +269,13 @@ Update `_clear_sip_detail_fields()` to remove `sip_mapping_exceptions`. Keep
 `_sip_confirmation_blockers()` as the freeze Veto: generated complete rows pass
 because they carry all fields and readiness; exceptions fail closed.
 
-- [ ] **Step 5: Run integration GREEN**
+- [x] **Step 5: Run integration GREEN**
 
 Run the Step 2 command again.
 
 Expected: all focused integration tests PASS.
 
-- [ ] **Step 6: Update and verify the API contract**
+- [x] **Step 6: Update and verify the API contract**
 
 Run:
 
@@ -294,7 +294,7 @@ npm --prefix frontend run api:check
 
 Expected: contract tests and generated-client drift check PASS.
 
-- [ ] **Step 7: Commit Task 2**
+- [x] **Step 7: Commit Task 2**
 
 ```bash
 git add backend/app/review/schemas.py backend/app/review/service.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_review_freeze.py backend/tests/contract/snapshots/api-v1.openapi.json frontend/src/api/generated.ts frontend/src/api/types.ts docs/superpowers/plans/2026-07-31-sip-auto-mapping-and-exception-review.md

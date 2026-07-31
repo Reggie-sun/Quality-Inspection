@@ -216,6 +216,93 @@ def test_unconfirmed_technical_requirement_suggestion_blocks_freeze(
         )
 
 
+def test_generated_complete_sip_row_does_not_need_manual_confirmation(
+    db_session: Session,
+    working_copy: ReviewWorkingCopy,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    for field in (
+        "inspection_item",
+        "inspection_standard",
+        "inspection_method",
+        "key_dimension",
+        "inspection_role",
+        "source_page",
+        "remarks",
+        "sip_detail_fields_confirmed",
+    ):
+        items[0].pop(field, None)
+    items[0]["page_index"] = 0
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+    service = ReviewService(db_session)
+
+    generated = service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+    frozen = service.freeze_items(
+        generated.id,
+        expected_version=generated.version,
+        operator_id="quality-1",
+    )
+
+    assert generated.items[0]["sip_detail_fields_confirmed"] is True
+    assert generated.items[0]["sip_mapping_exceptions"] == []
+    assert frozen.items_frozen_at is not None
+
+
+def test_generated_exception_remains_a_freeze_blocker(
+    db_session: Session,
+    working_copy: ReviewWorkingCopy,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    for field in (
+        "inspection_item",
+        "inspection_standard",
+        "inspection_method",
+        "key_dimension",
+        "inspection_role",
+        "source_page",
+        "remarks",
+        "sip_detail_fields_confirmed",
+    ):
+        items[0].pop(field, None)
+    items[0]["item_type"] = "composite"
+    items[0]["page_index"] = 0
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+    service = ReviewService(db_session)
+
+    generated = service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+
+    assert generated.items[0]["sip_mapping_exceptions"] == [
+        "composite_method_required"
+    ]
+    with pytest.raises(FreezeBlocked) as error:
+        service.freeze_items(
+            generated.id,
+            expected_version=generated.version,
+            operator_id="quality-1",
+        )
+    assert error.value.blockers == ("unresolved_confirmation",)
+
+
 def test_freeze_reports_only_the_three_exact_blockers(
     db_session: Session,
     working_copy: ReviewWorkingCopy,

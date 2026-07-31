@@ -302,6 +302,16 @@ export interface components {
       /** Expected Version */
       expected_version: number;
     };
+    /** GenerateSipTable */
+    GenerateSipTable: {
+      /** Inspection Role */
+      inspection_role: string;
+      /**
+       * Type
+       * @constant
+       */
+      type: "generate_sip_table";
+    };
     /** HealthResponse */
     HealthResponse: {
       /** App Name */
@@ -592,7 +602,7 @@ export interface components {
     /** ReviewCommandRequest */
     ReviewCommandRequest: {
       /** Command */
-      command: components["schemas"]["Keep"] | components["schemas"]["Exclude"] | components["schemas"]["Edit"] | components["schemas"]["Add"] | components["schemas"]["PromoteSource"] | components["schemas"]["IgnoreSource"] | components["schemas"]["IgnoreSources"] | components["schemas"]["Merge"] | components["schemas"]["Split"] | components["schemas"]["ResolveConfirmation"] | components["schemas"]["SetBalloonRequired"] | components["schemas"]["SetSipDetailFields"] | components["schemas"]["SetSipMetadata"] | components["schemas"]["SetTechnicalRequirementMatch"];
+      command: components["schemas"]["Keep"] | components["schemas"]["Exclude"] | components["schemas"]["Edit"] | components["schemas"]["Add"] | components["schemas"]["PromoteSource"] | components["schemas"]["IgnoreSource"] | components["schemas"]["IgnoreSources"] | components["schemas"]["Merge"] | components["schemas"]["Split"] | components["schemas"]["ResolveConfirmation"] | components["schemas"]["SetBalloonRequired"] | components["schemas"]["SetSipDetailFields"] | components["schemas"]["GenerateSipTable"] | components["schemas"]["SetSipMetadata"] | components["schemas"]["SetTechnicalRequirementMatch"];
       /** Expected Version */
       expected_version: number;
     };

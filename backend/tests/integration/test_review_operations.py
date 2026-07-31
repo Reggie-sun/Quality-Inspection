@@ -1380,6 +1380,247 @@ def test_set_sip_detail_fields_are_fixed_confirmed_values(
     assert "remarks" not in _item(edited, "i1")
 
 
+def test_generate_sip_table_maps_active_rows_in_one_operation(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = item["item_id"] in {"i1", "typed-1"}
+        if item["active"]:
+            item["page_index"] = 0 if item["item_id"] == "i1" else 1
+    inactive_before = copy.deepcopy(
+        next(item for item in items if item["item_id"] == "i2")
+    )
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+    before_version = working_copy.version
+    before_operations = db_session.scalar(
+        select(func.count()).select_from(OperationRecord)
+    )
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=before_version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+
+    assert saved.version == before_version + 1
+    assert _item(saved, "i1")["inspection_method"] == "螺纹规"
+    assert _item(saved, "typed-1")["inspection_method"] == "游标卡尺"
+    assert _item(saved, "i1")["sip_detail_fields_confirmed"] is True
+    assert _item(saved, "typed-1")["sip_detail_fields_confirmed"] is True
+    assert _item(saved, "i1")["sip_mapping_exceptions"] == []
+    assert _item(saved, "i2") == inactive_before
+    assert db_session.scalar(
+        select(func.count()).select_from(OperationRecord)
+    ) == before_operations + 1
+    operation = db_session.scalar(
+        select(OperationRecord)
+        .where(OperationRecord.project_id == saved.project_id)
+        .order_by(OperationRecord.created_at.desc())
+    )
+    assert operation is not None
+    assert operation.command == "generate_sip_table"
+    assert operation.target_ids == ["i1", "typed-1"]
+    assert operation.before_version == before_version
+    assert operation.after_version == before_version + 1
+
+
+def test_generate_sip_table_preserves_manual_resolved_row(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = item["item_id"] == "i1"
+        if item["active"]:
+            item["page_index"] = 0
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+    manual = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_detail_fields",
+            "item_id": "i1",
+            "inspection_item": "人工检验项目",
+            "inspection_standard": "人工标准",
+            "inspection_method": "人工量具",
+            "key_dimension": "是",
+            "inspection_role": "OQC",
+            "source_page": 4,
+            "remarks": "人工备注",
+        },
+    )
+    manual_row = copy.deepcopy(_item(manual, "i1"))
+
+    generated = review_service.apply(
+        manual.id,
+        expected_version=manual.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+
+    assert _item(generated, "i1") == manual_row
+
+
+def test_generate_sip_table_can_refresh_only_automatic_role(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = item["item_id"] == "i1"
+        if item["active"]:
+            item["page_index"] = 0
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+
+    first = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+    first_role = _item(first, "i1")["inspection_role"]
+    second = review_service.apply(
+        first.id,
+        expected_version=first.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "OQC",
+        },
+    )
+
+    assert first_role == "IPQC"
+    assert _item(second, "i1")["inspection_role"] == "OQC"
+    assert _item(second, "i1")["sip_detail_fields_confirmed"] is True
+
+
+def test_confirmed_requirement_invalidates_automatic_sip_readiness(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = item["item_id"] == "i1"
+        if item["active"]:
+            item["page_index"] = 0
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+    generated = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+    automatic_row = copy.deepcopy(_item(generated, "i1"))
+    _set_technical_requirement_state(generated, db_session)
+    remapped_items = copy.deepcopy(generated.items)
+    remapped_items[
+        next(
+            index
+            for index, item in enumerate(remapped_items)
+            if item["item_id"] == "i1"
+        )
+    ] = automatic_row
+    generated.items = remapped_items
+    db_session.commit()
+    db_session.refresh(generated)
+
+    saved = review_service.apply(
+        generated.id,
+        expected_version=generated.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "matched_items",
+            "matched_item_ids": ["i1"],
+        },
+    )
+
+    row = _item(saved, "i1")
+    assert row["inspection_standard"] == "GB/T 1804-m"
+    assert row["sip_suggestion_provenance"]["inspection_standard"] == (
+        "requirement-1"
+    )
+    assert row["sip_detail_fields_confirmed"] is False
+    assert "inspection_method" not in row
+    assert "sip_mapping_exceptions" not in row
+
+
+@pytest.mark.parametrize(
+    ("item_id", "expected_exception"),
+    [
+        ("composite-1", "composite_method_required"),
+        ("complex-1", "unsupported_item_type"),
+    ],
+)
+def test_generate_sip_table_keeps_unresolved_rows_as_exceptions(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+    item_id: str,
+    expected_exception: str,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = item["item_id"] == item_id
+        if item["active"]:
+            item["page_index"] = 0
+            item["requires_confirmation"] = False
+    working_copy.items = items
+    working_copy.coverage = {
+        "blocking_count": 0,
+        "review_required_count": 0,
+        "coverage_checked": True,
+        "blocking_observation_ids": [],
+        "entries": [],
+        "relations": [],
+    }
+    db_session.commit()
+    db_session.refresh(working_copy)
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+
+    row = _item(saved, item_id)
+    assert row["sip_mapping_exceptions"] == [expected_exception]
+    assert row["sip_detail_fields_confirmed"] is False
+
+
 def test_set_sip_metadata_replaces_the_fixed_review_snapshot(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,

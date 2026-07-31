@@ -24,6 +24,7 @@ from app.review.schemas import (
     Add,
     Edit,
     Exclude,
+    GenerateSipTable,
     IgnoreSource,
     IgnoreSources,
     Keep,
@@ -42,6 +43,8 @@ from app.review.schemas import (
     parse_review_command,
     validate_edit_fields,
 )
+from app.review.sip_mapping import RULE_VERSION as SIP_MAPPING_RULE_VERSION
+from app.review.sip_mapping import map_sip_item
 from app.storage.local import LocalFileStorage
 
 
@@ -827,7 +830,29 @@ class ReviewService:
                 item[field] = values[field]
             item[_SIP_DETAIL_CONFIRMED] = True
             item.pop("sip_suggestion_provenance", None)
+            item.pop("sip_mapping_exceptions", None)
             return [command.item_id], numbering_stale
+        if isinstance(command, GenerateSipTable):
+            target_ids: list[str] = []
+            for item in items:
+                if not item.get("active", True):
+                    continue
+                target_ids.append(str(item["item_id"]))
+                if self._sip_fields_are_manual(item):
+                    continue
+                result = map_sip_item(
+                    item,
+                    inspection_role=command.inspection_role,
+                )
+                for field in (*SIP_DETAIL_FIELDS, *SIP_OPTIONAL_DETAIL_FIELDS):
+                    if field in result.fields:
+                        item[field] = result.fields[field]
+                    else:
+                        item.pop(field, None)
+                item["sip_suggestion_provenance"] = result.provenance
+                item["sip_mapping_exceptions"] = list(result.exceptions)
+                item[_SIP_DETAIL_CONFIRMED] = not result.exceptions
+            return target_ids, numbering_stale
         if isinstance(command, SetTechnicalRequirementMatch):
             return self._set_technical_requirement_match(
                 items,
@@ -942,8 +967,10 @@ class ReviewService:
         item: dict[str, Any],
         requirement: dict[str, Any],
     ) -> None:
-        if item.get(_SIP_DETAIL_CONFIRMED) is True:
+        if ReviewService._sip_fields_are_manual(item):
             return
+        if item.get(_SIP_DETAIL_CONFIRMED) is True:
+            ReviewService._clear_automatic_sip_fields(item)
         suggestion = requirement.get("sip_suggestion")
         requirement_id = requirement.get("requirement_id")
         if not isinstance(suggestion, dict) or not isinstance(
@@ -1003,7 +1030,7 @@ class ReviewService:
             provenance = item.get("sip_suggestion_provenance")
             if (
                 isinstance(provenance, dict)
-                and item.get(_SIP_DETAIL_CONFIRMED) is not True
+                and not ReviewService._sip_fields_are_manual(item)
             ):
                 for field, source_requirement_id in list(provenance.items()):
                     if source_requirement_id != requirement_id:
@@ -1334,6 +1361,32 @@ class ReviewService:
         ):
             item.pop(field, None)
         item.pop("sip_suggestion_provenance", None)
+        item.pop("sip_mapping_exceptions", None)
+
+    @staticmethod
+    def _sip_fields_are_manual(item: dict[str, Any]) -> bool:
+        if item.get(_SIP_DETAIL_CONFIRMED) is not True:
+            return False
+        provenance = item.get("sip_suggestion_provenance")
+        return not (
+            isinstance(provenance, dict)
+            and SIP_MAPPING_RULE_VERSION in provenance.values()
+        )
+
+    @staticmethod
+    def _clear_automatic_sip_fields(item: dict[str, Any]) -> None:
+        provenance = item.get("sip_suggestion_provenance")
+        if not isinstance(provenance, dict):
+            return
+        for field, source in list(provenance.items()):
+            if source != SIP_MAPPING_RULE_VERSION:
+                continue
+            item.pop(field, None)
+            provenance.pop(field, None)
+        item.pop("sip_mapping_exceptions", None)
+        item[_SIP_DETAIL_CONFIRMED] = False
+        if not provenance:
+            item.pop("sip_suggestion_provenance", None)
 
     @staticmethod
     def _sip_confirmation_blockers(

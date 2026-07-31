@@ -140,6 +140,11 @@ class SetSipDetailFields(CommandBase):
     remarks: str = Field(default="", max_length=2000)
 
 
+class GenerateSipTable(CommandBase):
+    type: Literal["generate_sip_table"]
+    inspection_role: NonBlankText
+
+
 class SetSipMetadata(CommandBase):
     type: Literal["set_sip_metadata"]
     material_code: NonBlankText
@@ -180,6 +185,7 @@ ReviewCommand = Annotated[
         ResolveConfirmation,
         SetBalloonRequired,
         SetSipDetailFields,
+        GenerateSipTable,
         SetSipMetadata,
         SetTechnicalRequirementMatch,
     ],
