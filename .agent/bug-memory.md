@@ -2,6 +2,34 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260731-compact-source-batch-overflow
+
+- Status: 已解决
+- First reported: 2026-07-31
+- Last reported: 2026-07-31
+- Recurrence: 1
+- Surface: `InspectionItemTable` compact mode、`.source-batch-bar` 与 `.inspection-review-workspace__list`
+- Symptom: 新图纸存在待确认来源时，紧凑检验项列表被撑宽，出现横向滚动条并截断“状态”列；无待确认来源的已审核图纸保持正常三列布局
+- Previously correct behavior: 无论是否存在待确认来源，紧凑列表都应在当前左栏宽度内完整显示“序号 / 检验项 / 状态”，不产生横向滚动
+- Reproduction: live project `b3d4d9ba-4bcb-475b-9fa2-c559a201c7f3` 在 `1440x1000` viewport 下，`.inspection-table-section` 为 `clientWidth=135 / scrollWidth=180`；对照项目 `fb0572f9-4401-4d05-95ae-fde26b28d1d3` 为 `135 / 135`
+- Root cause: compact 列表的 `.source-batch-bar` 同时将计数与动作按钮设为 `flex: 0 0 auto` 和 `white-space: nowrap`，其最小内容宽度约 `180px`，超过列表可用宽度并触发外层 `overflow:auto`
+- Fix: 为 `.source-batch-bar` 增加 `flex-wrap: wrap`；宽度足够时保持单行，实际 `135px` 紧凑宽度下将动作按钮换到下一行，保留待确认来源事实与批量确认入口，不改变 item 状态、筛选、编号或 review command
+- Regression check: 新增 `135px` 紧凑宽度 Playwright 回归；修复前因 `main.scrollWidth > main.clientWidth` RED，修复后 `frontend/e2e/inspection-list-compact-style.spec.ts` 为 `3 passed`；`InspectionItemTable.test.tsx` 为 `26 passed`；frontend production build 通过，仅保留既有 Vite chunk-size warning
+- Runtime proof: live project `b3d4d9ba-4bcb-475b-9fa2-c559a201c7f3` 在 `1440x1000` viewport 下，列表、table section、header 分别为 `clientWidth/scrollWidth=155/155`、`135/135`、`133/133`；三列完整显示且无横向滚动。展开确认态的 list、source bar、actions 分别为 `155/155`、`139/139`、`125/125`，取消后未提交 mutation；真实“待人工审核”筛选显示 `13` 行后已复位“全部状态”；review-lock/workbench/source-pdf/renew 请求均为 HTTP `200`，console error/warning 为 `0`
+- Change: `frontend/src/styles/workbench.css` 的一行 compact source-bar 换行规则、对应 Playwright 回归、Design QA 证据与本 bug-memory 记录
+- Selected lane: `Standard`
+- Selected plan: `BUG-20260731-compact-source-batch-overflow` ad hoc frontend layout repair
+- Selection evidence: 单个 frontend component/CSS surface，但需要 focused test、build 与真实 Chrome layout smoke；不改变稳定 API/schema 或 backend workflow
+- Validation action: `completed`
+- Problem boundary: 只修 pending-source bar 对 compact 三列表格的横向挤压；不隐藏待确认来源或已排除项，不改变候选号、筛选和审核语义
+- Single owner: `frontend/src/components/workbench/InspectionItemTable.tsx` 与 `frontend/src/styles/workbench.css`
+- Old path action: retire compact mode 下 source bar 的不可收缩单行布局；非 compact 呈现保持不变
+- Rollback: 若 focused test、build 或同项目 Chrome 测量失败，回退本次 compact modifier/CSS delta；第一项验证为原 focused regression test
+- Writer ownership and order: 父 agent 唯一 writer；无并发 writer
+- Focused verification: RED/GREEN Playwright regression、组件回归、frontend build、同项目 `.inspection-table-section` 与 list container `scrollWidth <= clientWidth`、console error/warning 为 0
+- Independent review: `accept`；补测展开确认态后 reviewer 确认无 blocking issue 或 non-blocking concern
+- Next verification: 已关闭；仅在 compact 列表重新出现 `scrollWidth > clientWidth` 时重开
+
 ## BUG-20260731-recognition-preview-migration-drift
 
 - Status: 已解决

@@ -402,6 +402,66 @@ changed files:
 - Remaining P2: 0.
 - final result: passed
 
+## Compact Pending-Source Inspection List — 2026-07-31
+
+### Grounding
+
+- source visual truth:
+  `/tmp/codex-clipboard-jl5qRN.png`
+- source pixels / density: `183x614 / device scale 1`
+- rendered implementation:
+  `.local/design-qa/compact-source-list-fixed.png`
+- implementation pixels / density: `171x750 / device scale 1`
+- browser viewport: `1440x1000`
+- implementation route:
+  `/?project_id=b3d4d9ba-4bcb-475b-9fa2-c559a201c7f3`
+- state: `全部状态`，存在 `78` 条待确认来源、`38` 个有效项和 `2` 个已排除项
+- normalized comparison:
+  `.local/design-qa/compact-source-list-comparison.png`
+- comparison normalization: 参考与实现均以 `183x614` 顶部聚焦区域并排显示；
+  implementation 保留真实 pending-source bar，因此内容行与参考图不同，但三列宽度、
+  字号、状态可读性和无横向滚动是本轮对齐目标。
+
+### Comparison History
+
+- Initial P1: pending-source bar 的两个不可收缩单行 child 将
+  `.inspection-table-section` 从 `clientWidth=135` 撑至 `scrollWidth=180`，
+  产生横向滚动并截断“状态”列。
+- Fix: `.source-batch-bar` 保留原有 count、button、copy 和 review command，
+  只允许在可用宽度不足时换行。
+- Post-fix evidence: live 新图纸中 table section 为 `135/135`、list container 为
+  `155/155`、source bar 为 `133/133`；三列表头 grid 为
+  `28px 41.3594px 52px`，可见标签仍为“序号 / 检验项 / 状态”。
+- Post-fix comparison: 参考图与实现图的列表边框、三列结构、圆形编号、主/次文字、
+  状态色和行密度保持同一视觉语言；真实 pending-source bar 在窄栏内改为两行，
+  不再改变下面表格的列宽。
+
+### Required Fidelity Surfaces
+
+- Fonts and typography: 沿用现有字体、`10–11px` 表头/状态、主值加粗和次级类型层级；
+  没有新增字体或字重漂移。
+- Spacing and layout rhythm: 保留原筛选、表头、`52px` row、边框、圆角和内边距；
+  pending-source bar 仅在不足 `180px` 时自然换行。
+- Colors and visual tokens: 自动通过红、已排除深色、待审核蓝与浅灰边框均沿用现有 token。
+- Image quality and assets: 本轮不涉及 Logo、图片、图标或其他资产。
+- Copy and content: “78 条待确认来源”“确认当前有效项”和所有真实 item/status 均保留；
+  没有隐藏待确认来源或已排除项来伪造参考状态。
+
+### Interaction And Browser Evidence
+
+- Chrome 打开并取消“确认当前有效项”，没有提交 `ignore_sources` mutation。
+- 展开确认态下，list、source bar、actions 分别为 `155/155`、`139/139`、
+  `125/125`，document 为 `1440/1440`；仍无用户可见横向滚动。
+- 状态筛选切换到“待人工审核”后显示真实 `13` 行，并恢复“全部状态”。
+- 初始态和筛选态的 list container 均为 `scrollWidth == clientWidth == 155`。
+- Workbench、source PDF 与 review lock 请求均返回 HTTP `200`。
+- Console errors: `0`.
+- Console warnings: `0`.
+- Remaining P0: `0`.
+- Remaining P1: `0`.
+- Remaining P2: `0`.
+- final result: passed
+
 ## Technical Requirement A Inline Confirmation — 2026-07-30
 
 ### Grounding

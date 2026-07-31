@@ -58,6 +58,22 @@ test("待确认来源提示与操作在窄栏中保持单行", async ({ page }) 
   await expect(count).toHaveCSS("white-space", "nowrap");
   await expect(action).toHaveCSS("white-space", "nowrap");
   expect((await batchBar.boundingBox())?.height).toBeLessThanOrEqual(46);
-  expect(await batchBar.evaluate((element) =>
+  expect(await page.locator("main").evaluate((element) =>
     element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
+test("待确认来源提示在实际紧凑宽度内换行且不撑宽列表", async ({ page }) => {
+  await page.locator("main").evaluate((element) => {
+    element.style.width = "135px";
+  });
+
+  const batchBar = page.getByRole("region", { name: "待确认来源" });
+  const countBox = await batchBar.getByText("138 条待确认来源").boundingBox();
+  const actionBox = await batchBar
+    .getByRole("button", { name: "确认当前有效项" })
+    .boundingBox();
+
+  expect(await page.locator("main").evaluate((element) =>
+    element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(actionBox?.y).toBeGreaterThan(countBox?.y ?? 0);
 });
