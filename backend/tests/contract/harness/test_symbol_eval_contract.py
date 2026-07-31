@@ -4,6 +4,8 @@ import copy
 import hashlib
 import json
 import stat
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +13,12 @@ import jsonschema
 import pymupdf
 import pytest
 
-from harness_test_support import _load_module, _write_json
+from harness_test_support import (
+    _load_module,
+    _write_json,
+    evaluate_receipt,
+    make_valid_run_evidence,
+)
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -44,6 +51,11 @@ NEGATIVE_FAMILIES = (
 )
 EVAL_ARTIFACT = "artifacts/visual-symbol-eval.json"
 VERDICT_ARTIFACT = "artifacts/visual-symbol-annotation-verdict.json"
+ROUTING_COMPARISON_ARTIFACT = "artifacts/symbol-routing-comparison.json"
+ROUTING_COMPARISON_FIXTURE = (
+    HARNESS / "fixtures/manifests/symbol-routing-comparison-v1.json"
+)
+FIXTURE_OFFLINE_PROOF = "reports/fixture-offline-proof.json"
 
 
 def _schema(name: str) -> dict[str, Any]:
@@ -304,6 +316,135 @@ def _failure_reasons(report: dict[str, Any]) -> set[str]:
     return {str(item["reason"]) for item in report["failures"]}
 
 
+def _routing_comparison_evidence() -> dict[str, Any]:
+    sealed_digest = "d" * 64
+    content_digest = "e" * 64
+
+    def output(
+        mode: str,
+        cache_state: str,
+        *,
+        calls: int,
+        cache_hits: int,
+        completeness: str = "complete",
+    ) -> dict[str, Any]:
+        completeness_outcomes = {
+            "complete": 0,
+            "partial_review_required": 0,
+            "blocked": 0,
+        }
+        completeness_outcomes[completeness] = 20
+        return {
+            "mode": mode,
+            "cache_state": cache_state,
+            "run_identity": (
+                f"offline-{mode}-{cache_state}-20260731"
+            ),
+            "sealed_input_identity_sha256": sealed_digest,
+            "content_identity_sha256": content_digest,
+            "counts": {
+                "admitted": 205,
+                "local": 176 if mode == "production_uncertainty" else 0,
+                "escalated": 29 if mode == "production_uncertainty" else 205,
+                "deduped": 2 if mode == "production_uncertainty" else 29,
+                "cache_hits": cache_hits,
+                "calls": calls,
+                "unresolved": 0,
+            },
+            "reason_distribution": {
+                (
+                    "local_exact_typed_source"
+                    if mode == "production_uncertainty"
+                    else "legacy_all_admitted"
+                ): 176 if mode == "production_uncertainty" else 205,
+                "provider_required": 29 if mode == "production_uncertainty" else 0,
+            },
+            "latency_distribution": {
+                "sample_count": 20,
+                "durations_ms": [1000 + index * 10 for index in range(20)],
+                "p50_ms": 1095,
+                "p95_ms": 1181,
+            },
+            "completeness_outcomes": completeness_outcomes,
+        }
+
+    return {
+        "schema_version": "symbol-routing-comparison/1",
+        "sealed_input_identity": {
+            "algorithm": "sha256",
+            "digest": sealed_digest,
+            "components": [
+                f"source_sha256:{SOURCE_SHA256}",
+                f"manifest_sha256:{'a' * 64}",
+                f"annotation_verdict_sha256:{'b' * 64}",
+            ],
+        },
+        "outputs": [
+            output(
+                "legacy_high_recall",
+                "cold",
+                calls=29,
+                cache_hits=0,
+            ),
+            output(
+                "legacy_high_recall",
+                "warm",
+                calls=0,
+                cache_hits=29,
+            ),
+            output(
+                "production_uncertainty",
+                "cold",
+                calls=2,
+                cache_hits=0,
+            ),
+            output(
+                "production_uncertainty",
+                "warm",
+                calls=0,
+                cache_hits=2,
+                completeness="partial_review_required",
+            ),
+        ],
+        "recall_delta": {
+            "legacy_positive_recall": 0.875,
+            "uncertainty_positive_recall": 1.0,
+            "delta": 0.125,
+            "legacy_negative_candidate_count": 0,
+            "uncertainty_negative_candidate_count": 0,
+        },
+        "quality_owner_verdict_refs": {
+            "legacy_high_recall": [
+                {
+                    "ref": "verdicts/legacy-quality-owner.json",
+                    "sha256": "f" * 64,
+                }
+            ],
+            "production_uncertainty": [
+                {
+                    "ref": "verdicts/uncertainty-quality-owner.json",
+                    "sha256": "1" * 64,
+                }
+            ],
+        },
+    }
+
+
+def _validate_schema_definition(document: dict[str, Any], name: str) -> None:
+    schema = _schema("visual-symbol-eval.schema.json")
+    assert name in schema["$defs"], (
+        f"missing PRT-7 visual-symbol-eval schema definition: {name}"
+    )
+    jsonschema.Draft202012Validator(
+        {
+            "$schema": schema["$schema"],
+            "$defs": schema["$defs"],
+            "$ref": f"#/$defs/{name}",
+        },
+        format_checker=jsonschema.FormatChecker(),
+    ).validate(document)
+
+
 def test_sealed_current_pdf_symbol_manifest(tmp_path: Path) -> None:
     """LIVE-01 compares only immutable labels with post-result Owner objects."""
     evaluator = _evaluator_module()
@@ -500,6 +641,426 @@ def test_symbol_eval_schema_is_closed_and_current_source_bound() -> None:
     oversized_id["pages"][0]["labels"][0]["label_id"] = "a" * 129
     with pytest.raises(jsonschema.ValidationError):
         _validate(oversized_id, "visual-symbol-eval.schema.json")
+
+
+def test_offline_routing_comparison_schema_is_closed_and_complete() -> None:
+    """PRT-7: one sealed identity carries every required offline metric."""
+    evidence = _routing_comparison_evidence()
+    _validate_schema_definition(evidence, "routingComparisonEvidence")
+
+    for field in (
+        "sealed_input_identity",
+        "outputs",
+        "recall_delta",
+        "quality_owner_verdict_refs",
+    ):
+        missing = copy.deepcopy(evidence)
+        missing.pop(field)
+        with pytest.raises(jsonschema.ValidationError):
+            _validate_schema_definition(missing, "routingComparisonEvidence")
+
+    for output_index in range(4):
+        for field in (
+            "counts",
+            "reason_distribution",
+            "latency_distribution",
+            "completeness_outcomes",
+        ):
+            missing_metric = copy.deepcopy(evidence)
+            missing_metric["outputs"][output_index].pop(field)
+            with pytest.raises(jsonschema.ValidationError):
+                _validate_schema_definition(
+                    missing_metric,
+                    "routingComparisonEvidence",
+                )
+
+        for field in (
+            "admitted",
+            "local",
+            "escalated",
+            "deduped",
+            "cache_hits",
+            "calls",
+            "unresolved",
+        ):
+            missing_count = copy.deepcopy(evidence)
+            missing_count["outputs"][output_index]["counts"].pop(field)
+            with pytest.raises(jsonschema.ValidationError):
+                _validate_schema_definition(
+                    missing_count,
+                    "routingComparisonEvidence",
+                )
+
+        for field in (
+            "complete",
+            "partial_review_required",
+            "blocked",
+        ):
+            missing_outcome = copy.deepcopy(evidence)
+            missing_outcome["outputs"][output_index][
+                "completeness_outcomes"
+            ].pop(field)
+            with pytest.raises(jsonschema.ValidationError):
+                _validate_schema_definition(
+                    missing_outcome,
+                    "routingComparisonEvidence",
+                )
+
+    output_identity_override = copy.deepcopy(evidence)
+    output_identity_override["outputs"][0]["source_sha256"] = "0" * 64
+    with pytest.raises(jsonschema.ValidationError):
+        _validate_schema_definition(
+            output_identity_override,
+            "routingComparisonEvidence",
+        )
+
+    for mode in ("legacy_high_recall", "production_uncertainty"):
+        missing_verdict_ref = copy.deepcopy(evidence)
+        missing_verdict_ref["quality_owner_verdict_refs"].pop(mode)
+        with pytest.raises(jsonschema.ValidationError):
+            _validate_schema_definition(
+                missing_verdict_ref,
+                "routingComparisonEvidence",
+            )
+
+
+def test_offline_routing_comparison_validator_binds_modes_to_one_identity() -> None:
+    """PRT-7: Harness validates Owner evidence without recomputing semantics."""
+    evaluator = _evaluator_module()
+    evidence = _routing_comparison_evidence()
+
+    evaluator.validate_routing_comparison_evidence(evidence)
+    assert "passed" not in evidence
+
+    for output_index in range(4):
+        wrong_identity = copy.deepcopy(evidence)
+        wrong_identity["outputs"][output_index][
+            "sealed_input_identity_sha256"
+        ] = "0" * 64
+        with pytest.raises(ValueError, match="sealed input identity"):
+            evaluator.validate_routing_comparison_evidence(wrong_identity)
+
+    missing_mode_state = copy.deepcopy(evidence)
+    missing_mode_state["outputs"].pop()
+    with pytest.raises(ValueError, match="legacy.*uncertainty|mode.*cache"):
+        evaluator.validate_routing_comparison_evidence(missing_mode_state)
+
+    extra_mode_state = copy.deepcopy(evidence)
+    extra_mode_state["outputs"].append(
+        copy.deepcopy(extra_mode_state["outputs"][0])
+    )
+    with pytest.raises(ValueError, match="legacy.*uncertainty|mode.*cache"):
+        evaluator.validate_routing_comparison_evidence(extra_mode_state)
+
+    duplicate_mode_state = copy.deepcopy(evidence)
+    duplicate_mode_state["outputs"][3] = copy.deepcopy(
+        duplicate_mode_state["outputs"][2]
+    )
+    with pytest.raises(ValueError, match="legacy.*uncertainty|mode.*cache"):
+        evaluator.validate_routing_comparison_evidence(duplicate_mode_state)
+
+    for warm_output_index in (1, 3):
+        mismatched_warm_content = copy.deepcopy(evidence)
+        mismatched_warm_content["outputs"][warm_output_index][
+            "content_identity_sha256"
+        ] = "0" * 64
+        with pytest.raises(ValueError, match="cold.*warm|content identity"):
+            evaluator.validate_routing_comparison_evidence(
+                mismatched_warm_content
+            )
+
+    for output_index in range(4):
+        mismatched_latency_samples = copy.deepcopy(evidence)
+        mismatched_latency_samples["outputs"][output_index][
+            "latency_distribution"
+        ]["durations_ms"].pop()
+        with pytest.raises(ValueError, match="latency distribution sample count"):
+            evaluator.validate_routing_comparison_evidence(mismatched_latency_samples)
+
+    invented_recall_delta = copy.deepcopy(evidence)
+    invented_recall_delta["recall_delta"]["delta"] = 0.0
+    with pytest.raises(ValueError, match="recall delta"):
+        evaluator.validate_routing_comparison_evidence(invented_recall_delta)
+
+
+def test_offline_routing_comparison_validator_accepts_stable_recall_delta() -> None:
+    """PRT-7: binary representation noise does not invalidate Owner arithmetic."""
+    evaluator = _evaluator_module()
+    evidence = _routing_comparison_evidence()
+    evidence["recall_delta"] = {
+        **evidence["recall_delta"],
+        "legacy_positive_recall": 0.1,
+        "uncertainty_positive_recall": 0.3,
+        "delta": 0.2,
+    }
+
+    evaluator.validate_routing_comparison_evidence(evidence)
+
+
+def test_d7_t2_fixture_run_seals_sanitized_routing_comparison_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PRT-7: fixture-only routing evidence is sealed and never current-four."""
+    runner = _runner_module()
+    receipt_module = _receipt_module()
+    evaluator = _evaluator_module()
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(runner, "RUNS", runs)
+    original_load = runner._load_json
+    socket_program = "import socket; socket.create_connection(('127.0.0.1', 1), 0.01)"
+    command_selector = f"{sys.executable} -c {json.dumps(socket_program)}"
+
+    def load_with_mixed_fixture_selectors(path: Path) -> dict[str, Any]:
+        document = original_load(path)
+        if path != runner.MIRROR_PATH:
+            return document
+        changed = copy.deepcopy(document)
+        for row in changed["contracts"]:
+            if row["task_id"] == "D7-T2" and not row["verification_selector"].startswith(
+                "phase://"
+            ):
+                row["verification_selector"] = command_selector
+        return changed
+
+    monkeypatch.setattr(
+        runner,
+        "_load_json",
+        load_with_mixed_fixture_selectors,
+    )
+
+    run_id, _ = runner.run_task("fixture", "task", "D7-T2")
+    run_dir = runs / run_id
+    artifact = run_dir / ROUTING_COMPARISON_ARTIFACT
+    artifact_bytes = ROUTING_COMPARISON_FIXTURE.read_bytes()
+    evidence = json.loads(artifact.read_text(encoding="utf-8"))
+    receipt = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
+    run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    results = json.loads((run_dir / "contract-results.json").read_text(encoding="utf-8"))
+    proof = json.loads((run_dir / FIXTURE_OFFLINE_PROOF).read_text(encoding="utf-8"))
+
+    assert artifact.read_bytes() == artifact_bytes
+    assert not artifact.stat().st_mode & stat.S_IWUSR
+    _validate_schema_definition(evidence, "routingComparisonEvidence")
+    evaluator.validate_routing_comparison_evidence(evidence)
+    assert receipt["external_calls"] == 0
+    assert run["mode"] == "fixture"
+    assert not (run_dir / "artifacts/current-four-manifest.json").exists()
+    assert proof["external_calls_proven"] is True
+    phase_selectors = [
+        selector for selector in proof["selectors"] if selector.startswith("phase://")
+    ]
+    assert proof["attempted_selectors"] == proof["selectors"]
+    assert proof["executed_selectors"] == [command_selector]
+    assert proof["pre_execution_blocked_selectors"] == phase_selectors
+    assert proof["offline_enforced_selectors"] == proof["selectors"]
+    assert run["input_identity"] == receipt_module.input_identity(
+        "fixture",
+        "task",
+        "D7-T2",
+        {ROUTING_COMPARISON_ARTIFACT: artifact_bytes},
+    )
+    assert all(
+        ROUTING_COMPARISON_ARTIFACT in result["artifact_refs"]
+        for result in results["results"]
+    )
+    assert "fixture network access is blocked" in "".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((run_dir / "logs").iterdir())
+    )
+
+
+def test_legacy_receipt_v1_without_external_calls_remains_checkable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PRT-7: adding a receipt field must not invalidate sealed v1 evidence."""
+    evidence = make_valid_run_evidence(tmp_path)
+    receipt = evaluate_receipt(evidence)
+    receipt.pop("external_calls", None)
+    run_dir = evidence.root / ".agent/harness/runs" / evidence.run["run_id"]
+    _write_json(run_dir / "receipt.json", receipt)
+    receipt_module = _load_module(
+        "qi_generate_receipt_legacy_v1",
+        HARNESS / "scripts/generate-receipt.py",
+    )
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:
+            return datetime(2026, 7, 22, 0, 4, 1, tzinfo=UTC).astimezone(tz or UTC)
+
+    monkeypatch.setattr(receipt_module, "check_contract_authority", lambda _root: None)
+    monkeypatch.setattr(receipt_module, "datetime", FrozenDatetime)
+
+    receipt_module.validate_schema(receipt, "receipt.schema.json", evidence.root)
+    assert receipt_module.check_run(evidence.run["run_id"], evidence.root) == receipt
+
+
+@pytest.mark.parametrize("as_symlink", (False, True))
+def test_build_receipt_rejects_noncanonical_run_dir_override(
+    tmp_path: Path,
+    as_symlink: bool,
+) -> None:
+    """PRT-7: a supplied run directory must retain the sealed run identity."""
+    evidence = make_valid_run_evidence(tmp_path)
+    receipt_module = _receipt_module()
+    expected_run_dir = evidence.root / ".agent/harness/runs" / evidence.run["run_id"]
+    override = tmp_path / "wrong-run-directory"
+    if as_symlink:
+        override.symlink_to(expected_run_dir, target_is_directory=True)
+    else:
+        override.mkdir()
+
+    with pytest.raises(ValueError, match="run directory is unavailable"):
+        receipt_module.build_receipt(
+            evidence.root,
+            evidence.run,
+            evidence.results,
+            evidence.mirror,
+            evidence.bindings,
+            evidence.policies,
+            generated_at=evidence.generated_at.isoformat().replace("+00:00", "Z"),
+            now=evidence.now,
+            run_dir=override,
+        )
+
+
+@pytest.mark.parametrize(
+    "input_artifacts",
+    (
+        {EVAL_ARTIFACT: b"eval", VERDICT_ARTIFACT: b"verdict"},
+        {
+            "artifacts/current-four-manifest.json": b"current-four",
+            EVAL_ARTIFACT: b"eval",
+            VERDICT_ARTIFACT: b"verdict",
+        },
+    ),
+)
+def test_run_task_rejects_symbol_eval_artifacts_outside_registration_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    input_artifacts: dict[str, bytes],
+) -> None:
+    """PRT-7: task execution accepts only its two explicitly authorized sets."""
+    runner = _runner_module()
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(runner, "RUNS", runs)
+    monkeypatch.setattr(
+        runner,
+        "_execute_selector_in_run",
+        lambda *_args: pytest.fail("symbol-eval artifacts escaped task admission"),
+    )
+
+    with pytest.raises(ValueError, match="symbol-eval artifacts are registration-only"):
+        runner.run_task("failure", "task", "D2-T1", input_artifacts=input_artifacts)
+
+    assert list(runs.iterdir()) == []
+
+
+def test_fixture_task_records_command_parse_failure_as_pre_execution_blocked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PRT-7: a selector rejected before subprocess start is never executed."""
+    runner = _runner_module()
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(runner, "RUNS", runs)
+    original_load = runner._load_json
+    selector = '"unterminated-fixture-selector'
+
+    def load_with_socket_selector(path: Path) -> dict[str, Any]:
+        document = original_load(path)
+        if path != runner.MIRROR_PATH:
+            return document
+        changed = copy.deepcopy(document)
+        for row in changed["contracts"]:
+            if row["task_id"] == "D7-T2" and not row["verification_selector"].startswith(
+                "phase://"
+            ):
+                row["verification_selector"] = selector
+        return changed
+
+    monkeypatch.setattr(runner, "_load_json", load_with_socket_selector)
+
+    run_id, _ = runner.run_task("fixture", "task", "D7-T2")
+    run_dir = runs / run_id
+    proof = json.loads((run_dir / FIXTURE_OFFLINE_PROOF).read_text(encoding="utf-8"))
+    receipt = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
+
+    assert proof["external_calls_proven"] is True
+    assert proof["credential_keys_empty"] == list(runner.LIVE_CREDENTIAL_KEYS)
+    assert proof["attempted_selectors"] == proof["selectors"]
+    assert proof["executed_selectors"] == []
+    assert proof["pre_execution_blocked_selectors"] == proof["selectors"]
+    assert proof["offline_enforced_selectors"] == proof["selectors"]
+    assert receipt["external_calls"] == 0
+
+
+def test_fixture_task_without_lifecycle_classification_cannot_claim_zero(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PRT-7: a bare `exit_code=None` outcome cannot impersonate a proof."""
+    runner = _runner_module()
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(runner, "RUNS", runs)
+    monkeypatch.setattr(
+        runner,
+        "_execute_selector_in_run",
+        lambda *_args: {
+            "exit_code": None,
+            "result_state": "blocked",
+            "started_at": "2026-07-31T00:00:00Z",
+            "completed_at": "2026-07-31T00:00:01Z",
+            "output": "unclassified blocked outcome",
+            "artifact_refs": [],
+        },
+    )
+
+    run_id, _ = runner.run_task("fixture", "task", "D7-T2")
+    run_dir = runs / run_id
+    proof = json.loads((run_dir / FIXTURE_OFFLINE_PROOF).read_text(encoding="utf-8"))
+    receipt = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
+
+    assert proof["executed_selectors"] == []
+    assert proof["pre_execution_blocked_selectors"] == []
+    assert proof["external_calls_proven"] is False
+    assert receipt["external_calls"] is None
+
+
+def test_nonfixture_receipt_does_not_invent_zero_external_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PRT-7: only fixture mode has a literal zero-call receipt."""
+    runner = _runner_module()
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(runner, "RUNS", runs)
+    monkeypatch.setattr(
+        runner,
+        "_execute_selector_in_run",
+        lambda *_args: {
+            "exit_code": None,
+            "result_state": "blocked",
+            "started_at": "2026-07-31T00:00:00Z",
+            "completed_at": "2026-07-31T00:00:01Z",
+            "output": "nonfixture selector unavailable",
+            "artifact_refs": [],
+        },
+    )
+
+    run_id, _ = runner.run_task("failure", "task", "D7-T2")
+    receipt = json.loads(
+        (runs / run_id / "receipt.json").read_text(encoding="utf-8")
+    )
+
+    assert receipt["external_calls"] is None
 
 
 def test_stage_symbol_eval_rejects_wrong_hash_bbox_or_family_set(

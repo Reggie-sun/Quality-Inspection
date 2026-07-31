@@ -84,6 +84,10 @@ SYMBOL_TABLES = {
     "symbol_escalation_outcomes",
     "visual_symbol_cache_entries",
 }
+LATER_PRT6_RECOGNITION_PREVIEW_TABLES = {
+    "recognition_preview_revisions",
+    "recognition_preview_heads",
+}
 PRE_PRT4_TABLES = {
     "alembic_version",
     "projects",
@@ -566,10 +570,13 @@ def test_terminal_replay_reuses_valid_cache_without_new_attempt_or_provider(
     assert appended == []
 
 
-def test_denied_group_persists_budget_terminal_before_whole_pdf_failure(
+def test_denied_group_persists_budget_terminal_evidence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    class DownstreamReviewReached(Exception):
+        pass
+
     visual = _visual("visual-1")
     page = SimpleNamespace(
         page_index=0,
@@ -638,10 +645,17 @@ def test_denied_group_persists_budget_terminal_before_whole_pdf_failure(
         lambda **kwargs: terminals.append(kwargs),
     )
 
-    with pytest.raises(
-        CandidateAdvisorFailure,
-        match="routing contract is invalid",
-    ):
+    def stop_at_downstream_review(*_args: object, **_kwargs: object) -> None:
+        raise DownstreamReviewReached
+
+    monkeypatch.setattr(
+        advisor_module.pymupdf,
+        "open",
+        stop_at_downstream_review,
+    )
+    failure: CandidateAdvisorFailure | None = None
+    downstream_reached = False
+    try:
         advisor.review(
             tmp_path / "not-opened.pdf",
             (page,),
@@ -653,6 +667,10 @@ def test_denied_group_persists_budget_terminal_before_whole_pdf_failure(
                 required_visual_observation_ids=("visual-1",),
             ),
         )
+    except DownstreamReviewReached:
+        downstream_reached = True
+    except CandidateAdvisorFailure as exc:
+        failure = exc
 
     group_sha256 = routing_decision_group_sha256((SHA_A,))
     assert attempts == [
@@ -681,6 +699,11 @@ def test_denied_group_persists_budget_terminal_before_whole_pdf_failure(
             "attempt_event_sha256s": (SHA_B,),
         }
     ]
+    assert failure is None, (
+        "a legitimate hard-budget denial must reach downstream review: "
+        f"{failure}"
+    )
+    assert downstream_reached is True
 
 
 def _identity() -> SymbolCacheIdentity:
@@ -827,7 +850,10 @@ def _execution_identity(crop_png: bytes) -> VisualExecutionIdentity:
 def test_prt4_adds_exactly_the_four_owned_tables() -> None:
     tables = set(inspect(engine).get_table_names())
 
-    assert tables == PRE_PRT4_TABLES | SYMBOL_TABLES
+    assert tables == (
+        PRE_PRT4_TABLES | SYMBOL_TABLES | LATER_PRT6_RECOGNITION_PREVIEW_TABLES
+    )
+    assert tables - PRE_PRT4_TABLES - LATER_PRT6_RECOGNITION_PREVIEW_TABLES == SYMBOL_TABLES
     assert {
         SymbolRoutingDecisionRecord.__tablename__,
         SymbolEscalationAttemptEventRecord.__tablename__,
@@ -850,6 +876,7 @@ def test_inventory_task_injects_required_independent_symbol_sessions(
             if model is Project and identity == project_id
             else None
         ),
+        scalar=lambda _statement: None,
         close=lambda: None,
     )
 

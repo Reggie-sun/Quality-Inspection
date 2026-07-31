@@ -153,7 +153,7 @@ def test_project_workbench_delivers_real_pdf_without_internal_references(
         assert "content-disposition" not in source.headers
         assert "asset://" not in str(source.headers)
 
-        missing = client.get(f"/api/v1/projects/00000000-0000-0000-0000-000000000000/workbench")
+        missing = client.get("/api/v1/projects/00000000-0000-0000-0000-000000000000/workbench")
         assert missing.status_code == 404
         assert missing.json()["error"]["code"] == "project_not_found"
     finally:

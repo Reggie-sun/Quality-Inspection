@@ -73,6 +73,8 @@ def test_core_migration_creates_only_planned_tables() -> None:
         "symbol_escalation_attempt_events",
         "symbol_escalation_outcomes",
         "visual_symbol_cache_entries",
+        "recognition_preview_revisions",
+        "recognition_preview_heads",
     }
 
 

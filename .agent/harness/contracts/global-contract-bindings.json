@@ -605,7 +605,7 @@
       "related_implementation_p0_contract_ids": []
     }
   ],
-  "contract_definition_hash": "d083d5596b43b8b7d8d0fa206f7d91a8d731706dfedb49f43bc4235a32705ba5",
+  "contract_definition_hash": "072eb7353b633164ff70b6b0f003268cb828fcc37d0f26484a3380f502759c7e",
   "global_source": "docs/contracts/MAIN_CONTRACT_MATRIX.md",
   "schema_version": "global-contract-bindings/1",
   "source": ".agent/harness/contracts/p0-contracts.json"

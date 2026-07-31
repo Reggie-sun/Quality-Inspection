@@ -34,6 +34,7 @@ EXPECTED_SCHEMA_FILES = (
     "provider-fixture.schema.json",
     "receipt.schema.json",
     "run.schema.json",
+    "symbol-routing-canary-evidence.schema.json",
     "visual-symbol-annotation-verdict.schema.json",
     "visual-symbol-eval.schema.json",
 )

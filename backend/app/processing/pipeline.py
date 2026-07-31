@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import uuid
 from collections.abc import Callable
@@ -83,21 +84,38 @@ class InventoryPipeline:
         preflight: Any,
         *,
         inventory_builder: Callable[[Path], tuple[Any, ...]] = build_inventory,
-        candidate_snapshot_builder: Callable[
-            [tuple[Any, ...]], CandidateSnapshot
-        ] = candidate_snapshot_from_inventory,
+        candidate_snapshot_builder: Callable[..., CandidateSnapshot] | None = None,
         confidence_policy: ConfidencePolicy | None = None,
+        preview_superseder: object | None = None,
     ) -> None:
         self._session = session
         self._storage = storage
         self._preflight = preflight
         self._inventory_builder = inventory_builder
-        self._candidate_snapshot_builder = candidate_snapshot_builder
+        self._candidate_snapshot_builder = (
+            candidate_snapshot_builder
+            or (lambda pages, *, source_file_id: candidate_snapshot_from_inventory(pages))
+        )
         self._confidence_policy = (
             confidence_policy
             if confidence_policy is not None
             else ConfidencePolicy()
         )
+        self._preview_superseder = preview_superseder
+
+    def _build_snapshot(
+        self,
+        pages: tuple[Any, ...],
+        source_file_id: uuid.UUID,
+    ) -> CandidateSnapshot:
+        if "source_file_id" in inspect.signature(
+            self._candidate_snapshot_builder
+        ).parameters:
+            return self._candidate_snapshot_builder(
+                pages,
+                source_file_id=source_file_id,
+            )
+        return self._candidate_snapshot_builder(pages)
 
     def _project(self, project_id: str, *, for_update: bool = False) -> Project:
         try:
@@ -108,7 +126,7 @@ class InventoryPipeline:
             Project,
             identity,
             populate_existing=True,
-            with_for_update=for_update,
+            with_for_update={"key_share": True} if for_update else False,
         )
         if project is None:
             raise ValueError("project does not exist")
@@ -301,10 +319,10 @@ class InventoryPipeline:
                 raise ValueError("source file metadata does not exist")
             candidate_advisor_started = True
             if deferred_vision_check is None:
-                snapshot = self._candidate_snapshot_builder(pages)
+                snapshot = self._build_snapshot(pages, source_file.id)
             else:
                 with deferred_vision_preflight(deferred_vision_check):
-                    snapshot = self._candidate_snapshot_builder(pages)
+                    snapshot = self._build_snapshot(pages, source_file.id)
             coverage = check_coverage(
                 snapshot.coverage_entries,
                 expected_observation_ids=snapshot.expected_observation_ids,
@@ -343,6 +361,7 @@ class InventoryPipeline:
                     router_version=snapshot.router_version,
                     recognition_summary=snapshot.recognition_summary,
                     recognition_evidence_ref=snapshot.recognition_evidence_ref,
+                    preview_superseder=self._preview_superseder,
                 )
             except ConfidenceDecisionContractError as exc:
                 raise ConfidencePolicyError(
@@ -382,12 +401,23 @@ class InventoryPipeline:
                 return existing
             raise
         except CandidateAdvisorFailure as exc:
+            routing_evidence_failure = (
+                exc.failure_origin == "routing_evidence"
+            )
             existing = self._record_failure(
                 project,
                 job,
                 state=ProjectState.PROCESSING_FAILED,
-                code="vision_provider_call_failed",
-                message="Vision candidate Advisor call failed",
+                code=(
+                    "symbol_routing_evidence_failed"
+                    if routing_evidence_failure
+                    else "vision_provider_call_failed"
+                ),
+                message=(
+                    "Symbol routing evidence validation failed"
+                    if routing_evidence_failure
+                    else "Vision candidate Advisor call failed"
+                ),
                 stage="candidate_advisor",
                 location_ref=None,
                 cause_category=(

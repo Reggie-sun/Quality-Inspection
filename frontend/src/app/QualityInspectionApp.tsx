@@ -12,6 +12,7 @@ import {
 import { ApiError } from "../api/client";
 import type { ProcessingStage, ProjectStatus } from "../api/types";
 import { ProjectWorkbenchApp } from "../components/workbench/ProjectWorkbenchApp";
+import { RecognitionPreviewApp } from "../components/workbench/RecognitionPreviewApp";
 import { projectErrorCopy, projectErrorGuidance, zhCN } from "../copy/zhCN";
 import { projectApi, type ProjectApi } from "../features/projects/api";
 import {
@@ -199,7 +200,10 @@ export function QualityInspectionApp({
         );
         if (cancelled) return;
         setStatusError(false);
-        if (result.phase === "ready_for_review" && result.workbench_ready) {
+        if (
+          (result.phase === "ready_for_review" || result.phase === "partial_review_required")
+          && result.workbench_ready
+        ) {
           setScreen({ kind: "ready", projectId: processingProjectId });
           return;
         }
@@ -390,6 +394,13 @@ export function QualityInspectionApp({
         />
       </div>
     );
+  }
+
+  if (
+    screen.kind === "processing"
+    && (screen.phase === "local_ready" || screen.phase === "vlm_enriching")
+  ) {
+    return <RecognitionPreviewApp projectId={screen.projectId} pollIntervalMs={pollIntervalMs} />;
   }
 
   const currentStatus = statusText(screen);

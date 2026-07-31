@@ -10,7 +10,7 @@ from app.candidates.schemas import Candidate, stable_candidate_id
 NUMBER = r"[0-9]+(?:\.[0-9]+)?"
 DEVIATION = rf"(?:[+-]{NUMBER}|0(?:\.0+)?)"
 QUANTITY = re.compile(
-    rf"^(?P<quantity>[1-9][0-9]*)\s*(?P<separator>[×xX-])\s*(?P<body>.+)$"
+    r"^(?P<quantity>[1-9][0-9]*)\s*(?P<separator>[×xX-])\s*(?P<body>.+)$"
 )
 THREAD = re.compile(
     rf"^(?P<spec>M{NUMBER}(?:\s*[×xX]\s*{NUMBER})?)"

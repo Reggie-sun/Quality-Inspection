@@ -1,0 +1,388 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quality-inspection.local/schemas/symbol-routing-canary-evidence.schema.json",
+  "title": "Sanitized production routing canary ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_id",
+    "recognition_identity",
+    "counts",
+    "reason_distribution",
+    "group_outcome_distribution",
+    "observation_outcome_distribution",
+    "page_ledgers",
+    "project_ledger",
+    "call_records",
+    "latency_distribution",
+    "live_concurrency_observable",
+    "carried_offline_evidence",
+    "promotion_eligible"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "symbol-routing-canary-evidence/1"
+    },
+    "project_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "recognition_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "router_version",
+        "completeness",
+        "inventory_ref",
+        "recognition_evidence_ref"
+      ],
+      "properties": {
+        "mode": {
+          "const": "production_uncertainty"
+        },
+        "router_version": {
+          "const": "symbol-uncertainty-router/1"
+        },
+        "completeness": {
+          "enum": [
+            "complete",
+            "partial_review_required"
+          ]
+        },
+        "inventory_ref": {
+          "$ref": "#/$defs/safeRef"
+        },
+        "recognition_evidence_ref": {
+          "$ref": "#/$defs/routingEvidenceRef"
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "admitted",
+        "locally_resolved",
+        "escalated",
+        "blocked",
+        "deduped_groups",
+        "cache_reuses",
+        "primary_calls",
+        "retry_calls",
+        "external_calls",
+        "unresolved"
+      ],
+      "properties": {
+        "admitted": {
+          "$ref": "#/$defs/count"
+        },
+        "locally_resolved": {
+          "$ref": "#/$defs/count"
+        },
+        "escalated": {
+          "$ref": "#/$defs/count"
+        },
+        "blocked": {
+          "$ref": "#/$defs/count"
+        },
+        "deduped_groups": {
+          "$ref": "#/$defs/count"
+        },
+        "cache_reuses": {
+          "$ref": "#/$defs/count"
+        },
+        "primary_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "retry_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "external_calls": {
+          "$ref": "#/$defs/count"
+        },
+        "unresolved": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "reason_distribution": {
+      "$ref": "#/$defs/distribution"
+    },
+    "group_outcome_distribution": {
+      "$ref": "#/$defs/distribution"
+    },
+    "observation_outcome_distribution": {
+      "$ref": "#/$defs/distribution"
+    },
+    "page_ledgers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/pageLedger"
+      }
+    },
+    "project_ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_calls",
+        "retry_calls",
+        "external_calls",
+        "duration_ms"
+      ],
+      "properties": {
+        "primary_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "retry_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "external_calls": {
+          "$ref": "#/$defs/count"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 90000
+        }
+      }
+    },
+    "call_records": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/callRecord"
+      }
+    },
+    "latency_distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_count",
+        "durations_ms",
+        "p50_eligible",
+        "p95_eligible"
+      ],
+      "properties": {
+        "sample_count": {
+          "const": 1
+        },
+        "durations_ms": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "p50_eligible": {
+          "const": false
+        },
+        "p95_eligible": {
+          "const": false
+        }
+      }
+    },
+    "live_concurrency_observable": {
+      "const": false
+    },
+    "carried_offline_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "in_flight_limit",
+        "test_refs"
+      ],
+      "properties": {
+        "in_flight_limit": {
+          "const": 2
+        },
+        "test_refs": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "const": "backend/tests/unit/candidates/test_symbol_routing.py::test_concurrent_budget_window_denial_reserves_zero_members"
+            },
+            {
+              "const": "backend/tests/unit/candidates/test_advisor.py::test_concurrent_schema_failures_reserve_exactly_one_project_retry"
+            },
+            {
+              "const": "backend/tests/unit/candidates/test_advisor.py::test_actual_wall_budget_stops_queued_job_with_fake_clock"
+            },
+            {
+              "const": "backend/tests/unit/candidates/test_advisor.py::test_actual_primary_wall_blocks_retry_before_second_call"
+            }
+          ],
+          "items": false
+        }
+      }
+    },
+    "promotion_eligible": {
+      "const": false
+    }
+  },
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "safeRef": {
+      "type": "string",
+      "pattern": "^(asset|fixture)://[A-Za-z0-9._/-]+$"
+    },
+    "routingEvidenceRef": {
+      "type": "string",
+      "pattern": "^symbol-routing-evidence://[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "distribution": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "count"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "pageLedger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_index",
+        "visual_observations",
+        "primary_calls",
+        "retry_calls",
+        "external_calls",
+        "duration_ms"
+      ],
+      "properties": {
+        "page_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "visual_observations": {
+          "$ref": "#/$defs/count"
+        },
+        "primary_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "retry_calls": {
+          "$ref": "#/$defs/count"
+        },
+        "external_calls": {
+          "$ref": "#/$defs/count"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 45000
+        }
+      }
+    },
+    "callRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_index",
+        "attempt_index",
+        "provider",
+        "request_id",
+        "model",
+        "prompt_version",
+        "schema_version",
+        "duration_ms",
+        "retry_count",
+        "input_image_count",
+        "estimated_cost",
+        "logical_task_reused",
+        "request_ref",
+        "response_ref"
+      ],
+      "properties": {
+        "page_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "attempt_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "provider": {
+          "const": "qwen-vl"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "const": "qwen3-vl-plus-2025-12-19"
+        },
+        "prompt_version": {
+          "const": "visual-symbol-prompt/4"
+        },
+        "schema_version": {
+          "const": "visual-symbol-review/2"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "input_image_count": {
+          "const": 1
+        },
+        "estimated_cost": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logical_task_reused": {
+          "const": false
+        },
+        "request_ref": {
+          "$ref": "#/$defs/safeRef"
+        },
+        "response_ref": {
+          "$ref": "#/$defs/safeRef"
+        }
+      }
+    }
+  }
+}

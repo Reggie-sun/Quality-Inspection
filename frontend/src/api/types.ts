@@ -261,6 +261,9 @@ export type ProcessingStage =
 export type ProjectStatus =
   components["schemas"]["ProjectStatusResponse"];
 
+export type RecognitionPreview =
+  components["schemas"]["RecognitionPreviewResponse"];
+
 export type GetJson = <Result>(
   path: string,
   signal?: AbortSignal,

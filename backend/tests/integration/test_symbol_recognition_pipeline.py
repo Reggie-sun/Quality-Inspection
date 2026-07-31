@@ -16,6 +16,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
 import app.candidates.advisor as advisor_module
+import app.candidates.symbol_escalation_planner as escalation_planner_module
 from app.candidates.advisor import (
     CandidateAdvisor,
     CandidateAdvisorFailure,
@@ -1274,6 +1275,175 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
     )
 
 
+def test_hard_budget_denial_preserves_admitted_siblings_as_partial(
+    monkeypatch: pytest.MonkeyPatch,
+    committed_db_session: Session,
+    tmp_path: Path,
+) -> None:
+    """A legal hard-budget denial is partial evidence, not whole-PDF failure."""
+    matrix = _partial_matrix_input(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        escalation_planner_module,
+        "MAX_VISUAL_PRIMARY_GROUPS_PER_PROJECT",
+        2,
+    )
+    storage = LocalFileStorage(tmp_path / "hard-budget-partial")
+    db_session = committed_db_session
+    project, source_file = _store_project_source(
+        db_session,
+        storage,
+        matrix.source.read_bytes(),
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
+    provider = _fixture_provider(matrix.source)
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        storage,
+        project_id=str(project.id),
+        provider_factory=lambda _settings: provider,
+        symbol_session_factory=SessionLocal,
+        require_symbol_persistence=True,
+    )
+    reviewed: CandidateSnapshot | None = None
+    failure: CandidateAdvisorFailure | None = None
+
+    try:
+        reviewed = advisor.review(
+            matrix.source,
+            matrix.pages,
+            matrix.snapshot,
+        )
+    except CandidateAdvisorFailure as exc:
+        failure = exc
+
+    db_session.expire_all()
+    attempts = tuple(
+        db_session.scalars(
+            select(SymbolEscalationAttemptEventRecord).where(
+                SymbolEscalationAttemptEventRecord.project_id == project.id,
+                SymbolEscalationAttemptEventRecord.event_code
+                == "not_started_budget_exhausted",
+            )
+        )
+    )
+    outcomes = tuple(
+        db_session.scalars(
+            select(SymbolEscalationOutcomeRecord).where(
+                SymbolEscalationOutcomeRecord.project_id == project.id,
+                SymbolEscalationOutcomeRecord.outcome_code
+                == "budget_exhausted",
+            )
+        )
+    )
+    assert len(attempts) == 1
+    assert len(outcomes) == 1
+    assert outcomes[0].observation_outcomes == [
+        {
+            "visual_observation_id": matrix.failed_visual.observation_id,
+            "outcome_code": "routing_budget_exhausted",
+        }
+    ]
+    assert failure is None, (
+        "a legitimate hard-budget denial must not invalidate the whole "
+        f"routing contract: {failure}"
+    )
+    assert reviewed is not None
+
+    called_visual_ids = {
+        observation_id
+        for observation_ids in provider.symbol_observation_ids
+        for observation_id in observation_ids
+    }
+    assert called_visual_ids == {
+        matrix.cache_visual.observation_id,
+        matrix.vlm_visual.observation_id,
+    }
+    assert matrix.failed_visual.observation_id not in called_visual_ids
+    coverage_by_id = {
+        entry.observation_id: entry
+        for entry in reviewed.coverage_entries
+    }
+    assert set(coverage_by_id) == set(
+        matrix.snapshot.expected_observation_ids
+    )
+    local_entry = coverage_by_id[matrix.local_visual.observation_id]
+    assert (
+        local_entry.disposition,
+        local_entry.source_location_id,
+    ) == (
+        "non_inspection",
+        matrix.local_visual.observation_id,
+    )
+    denied_entry = coverage_by_id[matrix.failed_visual.observation_id]
+    assert (
+        denied_entry.disposition,
+        denied_entry.candidate_id,
+        denied_entry.source_location_id,
+        denied_entry.coordinates,
+        denied_entry.requires_confirmation,
+    ) == (
+        "ambiguous",
+        None,
+        matrix.failed_visual.observation_id,
+        matrix.failed_visual.bbox_pdf,
+        True,
+    )
+    assert denied_entry.advisor_review is not None
+    assert denied_entry.advisor_review["failure_stage"] == (
+        "routing_budget_exhausted"
+    )
+    assert reviewed.completeness == "partial_review_required"
+    assert reviewed.recognition_summary["unresolved_roi_count"] == 1
+    assert matrix.failed_visual.observation_id not in (
+        reviewed.required_visual_observation_ids
+    )
+
+    result_ref = InventoryPipeline(
+        db_session,
+        storage,
+        PassingPreflight(),
+        inventory_builder=lambda _path: matrix.pages,
+        candidate_snapshot_builder=lambda _pages: reviewed,
+    ).run(
+        str(project.id),
+        source_file.resource_ref,
+        f"product-process:{project.id}",
+    )
+    raw = db_session.scalar(
+        select(AutomaticResult).where(
+            AutomaticResult.project_id == project.id
+        )
+    )
+    assert raw is not None
+    assert result_ref == f"automatic-result://{raw.id}"
+    assert raw.completeness == "partial_review_required"
+
+    service = ReviewService(db_session)
+    first = service.create_from_raw(raw.id)
+    second = service.create_from_raw(raw.id)
+    assert first.id == second.id
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(AutomaticResult)
+            .where(AutomaticResult.project_id == project.id)
+        )
+        == 1
+    )
+    assert (
+        db_session.scalar(
+            select(func.count())
+            .select_from(ReviewWorkingCopy)
+            .where(ReviewWorkingCopy.project_id == project.id)
+        )
+        == 1
+    )
+
+
 @pytest.mark.parametrize(
     "corruption",
     ("malformed_provenance", "incompatible_identity"),
@@ -1552,6 +1722,7 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
         advisor.review(matrix.source, matrix.pages, matrix.snapshot)
 
     assert str(advisor_failure.value) == "Visual symbol cache lookup failed"
+    assert advisor_failure.value.failure_origin == "routing_evidence"
     assert provider.calls == 0
 
     def candidate_builder(_pages: tuple[object, ...]) -> CandidateSnapshot:
@@ -1589,6 +1760,7 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
         == 0
     )
     assert job.result_ref is None
+    assert error.code == "symbol_routing_evidence_failed"
     assert error.stage == "candidate_advisor"
     assert error.cause_category == "processing_defect"
     assert (
