@@ -6,6 +6,10 @@ from typing import TypeAlias
 from openpyxl import load_workbook
 from openpyxl.utils.cell import range_boundaries
 
+from app.exports.sip_workbook_contract import (
+    NUMERIC_DETAIL_FIELDS,
+    expected_result_formula,
+)
 from app.exports.template_registry import TemplateRegistration
 
 
@@ -67,12 +71,23 @@ def validate_sip_workbook(
         sheet = workbook[registration.sheet]
         for offset in range(detail_count):
             row = registration.first_row + offset
-            for column in registration.detail_columns.values():
+            for field, column in registration.detail_columns.items():
                 cell = sheet[f"{column}{row}"]
-                if cell.value is not None and cell.data_type != "s":
-                    raise ValueError("generated detail cell is not plain text")
+                if field in NUMERIC_DETAIL_FIELDS:
+                    if cell.value not in (None, "") and cell.data_type != "n":
+                        raise ValueError("generated numeric detail cell is not numeric")
+                elif cell.value is not None and cell.data_type != "s":
+                    raise ValueError("generated text detail cell is not plain text")
                 if cell.protection.locked:
                     raise ValueError("generated detail cell is not editable")
+
+        for row in range(registration.first_row, registration.last_row + 1):
+            measurement = sheet[f"{registration.measurement_column}{row}"]
+            if measurement.value not in (None, "") or measurement.protection.locked:
+                raise ValueError("measurement cell is not blank and editable")
+            result = sheet[f"{registration.result_column}{row}"]
+            if result.value != expected_result_formula(row):
+                raise ValueError("trusted result formula changed")
 
         image_count = len(workbook[registration.image_sheet]._images)
         if image_count != source_page_count:

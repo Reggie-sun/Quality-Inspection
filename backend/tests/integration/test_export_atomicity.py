@@ -4,6 +4,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Iterator
+from copy import copy
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -20,6 +21,7 @@ from app.candidates.models import AutomaticResult
 from app.capabilities.service import ExportPreflight
 from app.db import engine
 from app.errors.models import ErrorRecord
+from app.exports.excel import render_sip_workbook
 from app.exports.models import ExportArtifact, ExportJob
 from app.exports.router import _content_disposition
 from app.exports.service import ExportInProgress, ExportService
@@ -189,10 +191,14 @@ def reviewed_result(
                     "scope": "local_feature",
                     "balloon_required": True,
                     "requires_confirmation": False,
+                    "nominal": "500",
                     **(
                         {"upper_tolerance": "0.2"}
                         if one_sided_tolerance
-                        else {}
+                        else {
+                            "upper_tolerance": "0.2",
+                            "lower_tolerance": "-0.2",
+                        }
                     ),
                 },
                 "source_location_ids": ["s1"],
@@ -366,7 +372,7 @@ def test_export_passes_v3_workbook_metadata_after_pdf_validation(
         "inspection_date": export.created_at.astimezone(
             ZoneInfo("Asia/Hong_Kong")
         ).strftime("%Y-%m-%d %H:%M"),
-        "toleranced_count": 0,
+        "toleranced_count": 1,
         "page_count": 1,
         "detail_count": 2,
         "unit": "mm / 按项目",
@@ -426,18 +432,100 @@ def test_success_exposes_exactly_three_verified_downloads(
     workbook = load_workbook(BytesIO(storage.read_bytes(excel_ref)), data_only=False)
     try:
         sheet = workbook[registration.sheet]
-        for field, address in registration.metadata_cells.items():
-            assert sheet[address].value == str(_export_metadata()[field])
-        for row_offset, item in enumerate(_confirmed_export_items()):
-            for field, column in registration.detail_columns.items():
-                expected = "1" if field == "balloon_number" and row_offset == 0 else ""
-                if field != "balloon_number":
-                    expected = str(item[field])
-                assert sheet[f"{column}{registration.first_row + row_offset}"].value == (
-                    expected or None
-                )
+        assert sheet["B2"].value == "drawing.pdf"
+        assert sheet["I2"].value == 1
+        assert sheet["B3"].value == 1
+        assert sheet["F3"].value == 2
+        assert sheet["A6"].value == 1
+        assert sheet["A6"].data_type == "n"
+        assert sheet["B6"].value == 1
+        assert sheet["B6"].data_type == "n"
+        assert sheet["C6"].value == "线性"
+        assert sheet["D6"].value == "500"
+        assert sheet["E6"].value == "±0.2"
+        assert sheet["F6"].value == 500.2
+        assert sheet["F6"].data_type == "n"
+        assert sheet["G6"].value == 499.8
+        assert sheet["G6"].data_type == "n"
+        assert sheet["H6"].value is None
+        assert sheet["H6"].protection.locked is False
+        assert sheet["I6"].value == (
+            '=IF(H6="","",IF(OR(F6="",G6=""),"",'
+            'IF(AND(ISNUMBER(H6),H6<=F6,H6>=G6),"OK","NG")))'
+        )
+        assert sheet["A7"].value is None
+        assert sheet["B7"].value == 1
+        assert sheet["C7"].value == "技术要求"
     finally:
         workbook.close()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "cell", "value"),
+    [
+        ("value", "F6", "500.2"),
+        ("value", "I6", "=1+1"),
+        ("lock", "A6", None),
+        ("unlock", "I517", None),
+    ],
+)
+def test_mutated_v3_workbook_never_publishes_artifacts(
+    db_session: Session,
+    reviewed_result: tuple[ReviewedResult, LocalFileStorage],
+    mutation: str,
+    cell: str,
+    value: str | None,
+) -> None:
+    """Catches staged numeric/formula mutations before any public artifact exists."""
+    reviewed, storage = reviewed_result
+
+    def corrupted_renderer(
+        template_path: Path,
+        registration: object,
+        metadata: dict[str, object],
+        rows: list[dict[str, object]],
+        page_images: list[Path],
+    ) -> bytes:
+        content = render_sip_workbook(
+            template_path,
+            registration,
+            metadata,
+            rows,
+            page_images,
+        )
+        workbook = load_workbook(BytesIO(content), data_only=False)
+        try:
+            target = workbook["尺寸质量检测表"][cell]
+            if mutation == "value":
+                target.value = value
+            else:
+                protection = copy(target.protection)
+                protection.locked = mutation == "lock"
+                target.protection = protection
+            corrupted = BytesIO()
+            workbook.save(corrupted)
+            return corrupted.getvalue()
+        finally:
+            workbook.close()
+
+    export = ExportService(
+        db_session,
+        storage=storage,
+        excel_renderer=corrupted_renderer,
+    ).create(reviewed.id)
+
+    assert export.status == "failed"
+    assert export.error_id is not None
+    artifacts = list(
+        db_session.scalars(
+            select(ExportArtifact).where(ExportArtifact.export_id == export.id)
+        )
+    )
+    assert all(artifact.published_ref is None for artifact in artifacts)
+    assert all(
+        ExportService(db_session, storage=storage).download_ref(export.id, kind) is None
+        for kind in ("ballooned_pdf", "sip_excel", "manifest")
+    )
 
 
 def test_export_preflight_runs_before_status_running(

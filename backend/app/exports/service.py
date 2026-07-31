@@ -28,6 +28,12 @@ from app.exports.excel import render_sip_workbook
 from app.exports.manifest import ArtifactDigest, ExportManifest, sha256_bytes
 from app.exports.models import ExportArtifact, ExportJob
 from app.exports.naming import safe_stem
+from app.exports.sip_workbook_contract import (
+    NUMERIC_DETAIL_FIELDS,
+    NUMERIC_METADATA_FIELDS,
+    TEXT_DETAIL_FIELDS,
+    expected_result_formula,
+)
 from app.exports.template_registry import (
     APPROVED_MAPPING_VERSION,
     APPROVED_TEMPLATE_VERSION,
@@ -57,15 +63,7 @@ _DETAIL_FIELDS = {
 }
 _DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
 _ARTIFACT_KINDS = {"ballooned_pdf", "sip_excel", "manifest"}
-_EXCEL_DETAIL_FIELDS = {
-    "number",
-    "source_page",
-    "type_label",
-    "basic_size",
-    "tolerance",
-    "upper_limit",
-    "lower_limit",
-}
+_EXCEL_DETAIL_FIELDS = NUMERIC_DETAIL_FIELDS | TEXT_DETAIL_FIELDS
 
 
 def _decimal(value: object) -> Decimal | None:
@@ -834,21 +832,70 @@ class ExportService:
         try:
             sheet = workbook[registration.sheet]
             for field, address in registration.metadata_cells.items():
-                if sheet[address].value != str(metadata[field]):
+                actual = sheet[address]
+                expected = metadata[field]
+                if field in NUMERIC_METADATA_FIELDS:
+                    if (
+                        actual.data_type != "n"
+                        or isinstance(actual.value, bool)
+                        or isinstance(expected, bool)
+                    ):
+                        raise ValueError("staged SIP numeric metadata differs from review")
+                    try:
+                        matches = Decimal(str(actual.value)) == Decimal(str(expected))
+                    except (InvalidOperation, ValueError) as error:
+                        raise ValueError(
+                            "staged SIP numeric metadata differs from review"
+                        ) from error
+                    if not matches:
+                        raise ValueError("staged SIP numeric metadata differs from review")
+                elif actual.value != (str(expected) if expected not in (None, "") else None):
                     raise ValueError("staged SIP metadata differs from review")
             for offset, row in enumerate(rows):
                 target_row = registration.first_row + offset
                 for field, column in registration.detail_columns.items():
                     expected = row[field]
-                    if (
-                        field == "balloon_number"
-                        and row.get("scope") == "global_requirement"
-                        and row.get("balloon_required") is False
+                    actual = sheet[f"{column}{target_row}"]
+                    if field in NUMERIC_DETAIL_FIELDS:
+                        if expected in (None, ""):
+                            if actual.value is not None:
+                                raise ValueError(
+                                    "staged SIP numeric detail differs from review"
+                                )
+                        else:
+                            if (
+                                actual.data_type != "n"
+                                or isinstance(actual.value, bool)
+                                or isinstance(expected, bool)
+                            ):
+                                raise ValueError(
+                                    "staged SIP numeric detail differs from review"
+                                )
+                            try:
+                                matches = Decimal(str(actual.value)) == Decimal(str(expected))
+                            except (InvalidOperation, ValueError) as error:
+                                raise ValueError(
+                                    "staged SIP numeric detail differs from review"
+                                ) from error
+                            if not matches:
+                                raise ValueError(
+                                    "staged SIP numeric detail differs from review"
+                                )
+                    elif actual.value != (
+                        str(expected) if expected not in (None, "") else None
                     ):
-                        expected = ""
-                    actual = sheet[f"{column}{target_row}"].value
-                    if actual != (str(expected) if expected != "" else None):
                         raise ValueError("staged SIP detail differs from review")
+                    if actual.protection.locked:
+                        raise ValueError("staged SIP detail cell is not editable")
+            for target_row in range(registration.first_row, registration.last_row + 1):
+                measurement = sheet[f"{registration.measurement_column}{target_row}"]
+                if measurement.value not in (None, "") or measurement.protection.locked:
+                    raise ValueError("measurement cell is not blank and editable")
+                result = sheet[f"{registration.result_column}{target_row}"]
+                if result.value != expected_result_formula(target_row):
+                    raise ValueError("trusted result formula changed")
+                if not result.protection.locked:
+                    raise ValueError("trusted result formula is not locked")
         finally:
             workbook.close()
 

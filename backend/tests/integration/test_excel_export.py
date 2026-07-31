@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from openpyxl import load_workbook
 from openpyxl.utils.cell import range_boundaries
 from PIL import Image as PillowImage
 
 from app.exports.excel import render_sip_workbook
 from app.exports.template_registry import TemplateRegistration, load_template_registration
+from app.exports.validators import snapshot_registered_ranges, validate_sip_workbook
 
 
 def _approved_assets() -> tuple[Path, Path, TemplateRegistration]:
@@ -24,54 +27,35 @@ def _approved_assets() -> tuple[Path, Path, TemplateRegistration]:
 
 def _metadata() -> dict[str, object]:
     return {
-        "material_code": "MAT-001",
-        "material_name": "上座",
-        "drawing_number": "JS26032501",
-        "material": "SUS304",
-        "revision": "A1",
+        "source_filename": "drawing.pdf",
+        "inspection_date": "2026-07-31 10:30",
+        "toleranced_count": 1,
+        "page_count": 2,
+        "detail_count": 2,
+        "unit": "mm / 按项目",
+        "general_tolerance_note": "【未注公差标准】未确认",
     }
 
 
 def _reviewed_items() -> list[dict[str, object]]:
     return [
         {
-            "item_id": "item-1",
-            "item_type": "dimension",
-            "active": True,
-            "balloon_required": True,
-            "balloon_number": 1,
-            "inspection_item": "已确认尺寸 Ø10 +0.1",
-            "inspection_standard": "10.0 ≤ x ≤ 10.1",
-            "inspection_method": "卡尺",
-            "key_dimension": "是",
-            "inspection_role": "IPQC",
+            "number": 1,
             "source_page": 1,
-            "raw_text": "=未经确认的建议值",
-            "suggested_values": {
-                "inspection_item": "未经确认的建议值",
-                "inspection_method": "建议方法",
-            },
+            "type_label": "线性",
+            "basic_size": "500",
+            "tolerance": "±0.2",
+            "upper_limit": Decimal("500.2"),
+            "lower_limit": Decimal("499.8"),
         },
         {
-            "item_id": "item-2",
-            "item_type": "general_requirement",
-            "scope": "global_requirement",
-            "active": True,
-            "balloon_required": False,
-            "balloon_number": 999,
-            "inspection_item": "去毛刺",
-            "inspection_standard": "不得有锐边",
-            "inspection_method": "目视",
-            "key_dimension": "否",
-            "inspection_role": "FQC",
+            "number": "",
             "source_page": 2,
-            "technical_requirement_refs": ["technical-requirement-2"],
-            "sip_suggestion_provenance": {
-                "inspection_standard": {
-                    "requirement_id": "technical-requirement-2",
-                    "rule_version": "technical-requirement/1",
-                }
-            },
+            "type_label": "技术要求",
+            "basic_size": "去毛刺",
+            "tolerance": "",
+            "upper_limit": "",
+            "lower_limit": "",
         },
     ]
 
@@ -125,6 +109,126 @@ def _registered_range_snapshot(
     return snapshot
 
 
+def test_v3_renderer_writes_numeric_cells_and_preserves_template_contract(
+    tmp_path: Path,
+) -> None:
+    """Catches renderer regressions that stringify v3 numbers or overwrite H/I."""
+    content, registration, _ = _render(tmp_path)
+
+    workbook = load_workbook(BytesIO(content), data_only=False)
+    try:
+        sheet = workbook[registration.sheet]
+        assert sheet["A6"].value == 1
+        assert sheet["B6"].value == 1
+        assert sheet["C6"].value == "线性"
+        assert sheet["D6"].value == "500"
+        assert sheet["E6"].value == "±0.2"
+        assert sheet["F6"].value == 500.2
+        assert sheet["G6"].value == 499.8
+        assert sheet["A6"].data_type == "n"
+        assert sheet["B6"].data_type == "n"
+        assert sheet["F6"].data_type == "n"
+        assert sheet["G6"].data_type == "n"
+        assert sheet["I2"].data_type == "n"
+        assert sheet["B3"].data_type == "n"
+        assert sheet["F3"].data_type == "n"
+        assert sheet["A7"].value is None
+        assert sheet["H6"].value is None
+        assert sheet["H6"].protection.locked is False
+        assert sheet["H517"].value is None
+        assert sheet["H517"].protection.locked is False
+        assert sheet["I6"].value == (
+            '=IF(H6="","",IF(OR(F6="",G6=""),"",'
+            'IF(AND(ISNUMBER(H6),H6<=F6,H6>=G6),"OK","NG")))'
+        )
+        assert sheet["I517"].value == (
+            '=IF(H517="","",IF(OR(F517="",G517=""),"",'
+            'IF(AND(ISNUMBER(H517),H517<=F517,H517>=G517),"OK","NG")))'
+        )
+        assert sheet["A1"].value == "机械图纸尺寸质量检测表"
+        assert sheet["A4"].font.color.rgb[-6:] == "D9272E"
+        assert sheet["A5"].fill.fgColor.rgb[-6:] == "4472C4"
+        assert str(sheet.print_area) == "'尺寸质量检测表'!$A$1:$I$522"
+        assert sheet.print_title_rows == "$1:$5"
+        assert sheet.page_setup.orientation == "landscape"
+        conditional_fills: dict[str, str] = {}
+        for conditional in sheet.conditional_formatting:
+            for rule in sheet.conditional_formatting[conditional]:
+                if rule.formula and rule.dxf is not None and rule.dxf.fill is not None:
+                    conditional_fills[rule.formula[0]] = rule.dxf.fill.fgColor.rgb[-6:]
+        assert conditional_fills['$C6="线性"'] == "E5334E"
+        assert conditional_fills['$C6="直径"'] == "178BFF"
+        assert conditional_fills['$C6="半径"'] == "22B14C"
+        assert conditional_fills['$C6="粗糙度"'] == "C23ACF"
+    finally:
+        workbook.close()
+
+
+def test_renderer_keeps_formula_like_text_as_plain_text(tmp_path: Path) -> None:
+    """Catches a text cell being promoted to an Excel formula by untrusted input."""
+    template_path, _, registration = _approved_assets()
+    page_images, _ = _page_images(tmp_path)
+    rows = _reviewed_items()
+    rows[0]["basic_size"] = '=HYPERLINK("https://invalid")'
+
+    content = render_sip_workbook(
+        template_path,
+        registration,
+        _metadata(),
+        rows,
+        page_images,
+    )
+
+    workbook = load_workbook(BytesIO(content), data_only=False)
+    try:
+        assert workbook[registration.sheet]["D6"].data_type == "s"
+    finally:
+        workbook.close()
+
+
+@pytest.mark.parametrize("invalid_value", ["500.2", True, float("nan")])
+def test_renderer_rejects_non_trusted_numeric_values(
+    tmp_path: Path,
+    invalid_value: object,
+) -> None:
+    """Catches numeric detail inputs that are strings, bools, or non-finite values."""
+    template_path, _, registration = _approved_assets()
+    page_images, _ = _page_images(tmp_path)
+    rows = _reviewed_items()
+    rows[0]["upper_limit"] = invalid_value
+
+    with pytest.raises(ValueError, match="upper_limit must be numeric"):
+        render_sip_workbook(
+            template_path,
+            registration,
+            _metadata(),
+            rows,
+            page_images,
+        )
+
+
+def test_validator_rejects_a_mutated_trusted_result_formula(tmp_path: Path) -> None:
+    """Catches a protected result cell whose formula was changed in the template."""
+    template_path, _, registration = _approved_assets()
+    workbook = load_workbook(template_path, data_only=False)
+    try:
+        workbook[registration.sheet]["I6"] = "=1+1"
+        protected_snapshot = snapshot_registered_ranges(workbook, registration)
+        content = BytesIO()
+        workbook.save(content)
+    finally:
+        workbook.close()
+
+    with pytest.raises(ValueError, match="trusted result formula changed"):
+        validate_sip_workbook(
+            content.getvalue(),
+            registration,
+            protected_snapshot=protected_snapshot,
+            detail_count=0,
+            source_page_count=0,
+        )
+
+
 def test_all_ballooned_pages_are_embedded_in_order(tmp_path: Path) -> None:
     """P0-EXP-005 embeds formal ballooned-PDF pages in source-page order."""
     content, registration, _ = _render(tmp_path)
@@ -144,67 +248,6 @@ def test_all_ballooned_pages_are_embedded_in_order(tmp_path: Path) -> None:
         workbook.close()
 
 
-def test_workbook_reopens(tmp_path: Path) -> None:
-    """P0-EXP-006 requires the generated workbook to reopen with openpyxl."""
-    content, registration, _ = _render(tmp_path)
-
-    workbook = load_workbook(BytesIO(content), data_only=False)
-    try:
-        assert registration.sheet in workbook.sheetnames
-        assert registration.image_sheet in workbook.sheetnames
-    finally:
-        workbook.close()
-
-
-def test_general_requirement_number_is_blank(tmp_path: Path) -> None:
-    """P0-EXP-007D leaves non-balloon global requirements unnumbered."""
-    content, registration, _ = _render(tmp_path)
-    workbook = load_workbook(BytesIO(content), data_only=False)
-    try:
-        detail_sheet = workbook[registration.sheet]
-        assert detail_sheet["A6"].value == "1"
-        assert detail_sheet["A7"].value in (None, "")
-    finally:
-        workbook.close()
-
-
-def test_general_requirement_exports_confirmed_business_values_only(
-    tmp_path: Path,
-) -> None:
-    content, registration, _ = _render(tmp_path)
-    workbook = load_workbook(BytesIO(content), data_only=False)
-    try:
-        detail_sheet = workbook[registration.sheet]
-        assert detail_sheet["A7"].value in (None, "")
-        assert detail_sheet["C7"].value == "不得有锐边"
-        visible_business_cells = (
-            cell.value
-            for row in detail_sheet.iter_rows()
-            for cell in row
-            if isinstance(cell.value, str)
-        )
-        assert all(
-            "technical-requirement/1" not in cell_value
-            for cell_value in visible_business_cells
-        )
-    finally:
-        workbook.close()
-
-
-def test_required_cells_use_confirmed_values(tmp_path: Path) -> None:
-    """P0-EXP-007E exports reviewed values without rereading raw suggestions."""
-    content, registration, _ = _render(tmp_path)
-    workbook = load_workbook(BytesIO(content), data_only=False)
-    try:
-        detail_sheet = workbook[registration.sheet]
-        reviewed_item = _reviewed_items()[0]
-        for field, column in registration.detail_columns.items():
-            assert detail_sheet[f"{column}6"].value == str(reviewed_item[field])
-        assert "未经确认" not in detail_sheet["B6"].value
-    finally:
-        workbook.close()
-
-
 def test_fixed_and_signoff_ranges_are_preserved(tmp_path: Path) -> None:
     """P0-EXP-007F preserves registered fixed/sign-off values and styles."""
     content, registration, template_path = _render(tmp_path)
@@ -217,32 +260,3 @@ def test_fixed_and_signoff_ranges_are_preserved(tmp_path: Path) -> None:
     finally:
         generated.close()
         original.close()
-
-
-def test_embedded_image_count_matches_pdf_pages(tmp_path: Path) -> None:
-    """P0-EXP-007G matches embedded-image count to formal PDF page count."""
-    content, registration, _ = _render(tmp_path)
-    workbook = load_workbook(BytesIO(content), data_only=False)
-    try:
-        assert len(workbook[registration.image_sheet]._images) == 2
-    finally:
-        workbook.close()
-
-
-def test_review_cells_are_editable_and_resavable(tmp_path: Path) -> None:
-    """P0-EXP-007H keeps review inputs unlocked and resavable after export."""
-    content, registration, _ = _render(tmp_path)
-    workbook = load_workbook(BytesIO(content), data_only=False)
-    review_sheet = workbook[registration.sheet]
-    assert review_sheet["D72"].protection.locked is False
-    assert review_sheet["A6"].protection.locked is False
-    review_sheet["D72"] = "复核员"
-    resaved = BytesIO()
-    workbook.save(resaved)
-    workbook.close()
-
-    reopened = load_workbook(BytesIO(resaved.getvalue()), data_only=False)
-    try:
-        assert reopened[registration.sheet]["D72"].value == "复核员"
-    finally:
-        reopened.close()
