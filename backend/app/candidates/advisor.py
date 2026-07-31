@@ -2168,6 +2168,7 @@ class CandidateAdvisor:
         local_resolution_evidence_by_observation: dict[
             str, dict[str, object]
         ] = {}
+        budget_denied_failure_stages: dict[str, str] = {}
         if (
             self._require_symbol_persistence
             and uncertainty_mode
@@ -2332,6 +2333,13 @@ class CandidateAdvisor:
                     for member_index, observation_id
                     in enumerate(observation_ids)
                 }
+                budget_denied_failure_stages = {
+                    observation_id: "routing_budget_exhausted"
+                    for denied_batch in plan.denied
+                    for observation_id in ordered_group_members[
+                        denied_batch.content_sha256
+                    ]
+                }
             else:
                 escalation_group_by_observation = {
                     decision.visual_observation_id: hashlib.sha256(
@@ -2440,10 +2448,7 @@ class CandidateAdvisor:
                     raise CandidateAdvisorFailure(
                         "Visual symbol routing evidence persistence failed"
                     ) from None
-            if routing_blocked or (
-                uncertainty_mode == "production_uncertainty"
-                and plan.denied
-            ):
+            if routing_blocked:
                 raise CandidateAdvisorFailure(
                     "Visual symbol routing contract is invalid"
                 )
@@ -2571,7 +2576,7 @@ class CandidateAdvisor:
         )
         candidates_changed = False
         visual_retry_available = True
-        localized_failure_stages: dict[str, str] = {}
+        localized_failure_stages = dict(budget_denied_failure_stages)
         actual_visual_calls_by_page = {
             page.page_index: 0
             for page in pages
