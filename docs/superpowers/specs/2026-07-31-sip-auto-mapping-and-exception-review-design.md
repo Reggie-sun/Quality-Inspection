@@ -3,10 +3,10 @@
 ## Status
 
 - Date: `2026-07-31`
-- Status: `awaiting user review`
+- Status: `approved`
 - Selected lane: `Heavy`
-- Selected plan: 尚未创建 implementation plan；本 spec 获批后使用
-  `superpowers:writing-plans` 建立唯一 current plan。
+- Selected plan:
+  `docs/superpowers/plans/2026-07-31-sip-auto-mapping-and-exception-review.md`
 - Selection evidence: 用户选择“检验项只审核一次，SIP 自动映射，仅异常人工处理”，
   并明确指出 SIP 是导出表格，不应对同一检验项再做第二遍业务判断。用户同时选择
   “规则预填 + 批量确认”：检测方法按版本化类型规则建议，检验角色在项目内选择一次
@@ -17,8 +17,21 @@
 - Writer ownership and order: 主线程是唯一 writer；先完成 SIP mapping Owner 与
   backend readiness contract，再完成 frontend exception flow，最后迁移当前真实
   working copy 的可修复路径。explorer、auditor 和 reviewer 始终只读。
-- Next verification: spec 获批后先写 backend RED，证明规则可完整映射的 item 不再因
-  缺少逐条人工确认而阻止 freeze。
+- Next verification: 先写 backend RED，证明规则可完整映射的 item 不再因缺少逐条
+  人工确认而阻止 freeze。
+
+### Open-Source Fusion Approval
+
+用户于 `2026-07-31` 批准融合 ERPNext、OCA Quality Control 和 OpenMES 的共同流程
+结构：
+
+- inspection template / reviewed item set 生成检验行；
+- 系统派生行级 readiness 和父级状态；
+- 缺失、失败或无法确定的行才进入异常处理；
+- 最终只执行一次项目级生成或提交，不制造逐行二次确认记录。
+
+只融合流程结构、provenance 和测试思路；不复制 GPL/AGPL 源码。OCA 的“自动填入正确
+测量值”不适用于本系统，因为 SIP 是检验计划而不是实测结果。
 
 ## Context
 
@@ -93,11 +106,11 @@ SIP 不再拥有独立的“是否纳入正式集合”判断。
 ### One Project-Level Apply Action
 
 frontend 在 SIP 区提供一个项目级“默认检验角色”输入和
-`自动填写 SIP 表格` action。该 action 提交一个 versioned batch command：
+`生成并检查 SIP 表格` action。该 action 提交一个 versioned batch command：
 
 ```json
 {
-  "type": "apply_sip_defaults",
+  "type": "generate_sip_table",
   "inspection_role": "IPQC"
 }
 ```
@@ -201,7 +214,7 @@ command 在同一 `ReviewWorkingCopy` transaction 内：
 
 - `ReviewWorkingCopy.items` 继续承载 resolved SIP fields、
   `sip_detail_fields_confirmed` 和 provenance；不新增数据库列。
-- 新增 `apply_sip_defaults` review command，属于稳定 write API schema 变更。
+- 新增 `generate_sip_table` review command，属于稳定 write API schema 变更。
 - 已存在 working copies 不在读取时执行 hidden fallback。用户首次点击 batch action 时，
   通过同一事务显式写入自动映射结果。
 - 新 working copy 可以预计算 suggestion/exception，但没有默认角色时不得伪造
@@ -220,7 +233,7 @@ command 在同一 `ReviewWorkingCopy` transaction 内：
 
 ### Integration And Contract
 
-- `apply_sip_defaults` 只增加一个 working-copy version 和一个 operation record；
+- `generate_sip_table` 只增加一个 working-copy version 和一个 operation record；
 - 规则完整的 active items 不再产生 SIP confirmation blocker；
 - exception 仍阻止 freeze；
 - edit/merge/split/requirement remap 使受影响 item 重新进入 exception；
