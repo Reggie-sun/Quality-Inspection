@@ -1646,6 +1646,51 @@ def test_confirmed_requirement_invalidates_automatic_sip_readiness(
     assert "sip_mapping_exceptions" not in row
 
 
+def test_requirement_retarget_marks_old_automatic_sip_row_for_regeneration(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = item["item_id"] in {"i1", "typed-1"}
+        if item["active"]:
+            item["page_index"] = 0
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+    generated = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+    assert _item(generated, "i1")["sip_detail_fields_confirmed"] is True
+
+    retargeted = review_service.apply(
+        generated.id,
+        expected_version=generated.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "matched_items",
+            "matched_item_ids": ["typed-1"],
+        },
+    )
+
+    old_target = _item(retargeted, "i1")
+    assert "inspection_standard" not in old_target
+    assert old_target["sip_detail_fields_confirmed"] is False
+    assert old_target["sip_mapping_exceptions"] == [
+        "sip_regeneration_required"
+    ]
+
+
 @pytest.mark.parametrize(
     ("item_id", "expected_exception"),
     [

@@ -1062,13 +1062,30 @@ class ReviewService:
                 isinstance(provenance, dict)
                 and not ReviewService._sip_fields_are_manual(item)
             ):
+                removed_projection = False
                 for field, source_requirement_id in list(provenance.items()):
                     if source_requirement_id != requirement_id:
                         continue
                     item.pop(field, None)
                     provenance.pop(field, None)
+                    removed_projection = True
                 if not provenance:
                     item.pop("sip_suggestion_provenance", None)
+                if removed_projection and item.get("active", True):
+                    item[_SIP_DETAIL_CONFIRMED] = False
+                    exceptions = item.get("sip_mapping_exceptions")
+                    normalized_exceptions = (
+                        [
+                            str(exception)
+                            for exception in exceptions
+                            if isinstance(exception, str)
+                        ]
+                        if isinstance(exceptions, list)
+                        else []
+                    )
+                    if "sip_regeneration_required" not in normalized_exceptions:
+                        normalized_exceptions.append("sip_regeneration_required")
+                    item["sip_mapping_exceptions"] = normalized_exceptions
             if item.get("item_id") == generated_id:
                 item["active"] = False
                 item["status"] = "superseded"

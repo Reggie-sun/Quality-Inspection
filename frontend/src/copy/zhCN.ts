@@ -143,6 +143,7 @@ export const zhCN = {
       unsupported_item_type: "未知检验项类型",
       missing_source_page: "缺少来源页码",
       missing_inspection_role: "缺少默认检验角色",
+      sip_regeneration_required: "技术要求已变更，请重新生成 SIP 表格",
     },
     confirmProjectSipInformation: "确认项目 SIP 信息",
     cancelProjectSipInformation: "取消项目 SIP 信息修改",

@@ -224,7 +224,10 @@ test("一次生成 SIP 表格并只转发下一条异常入口", () => {
       {...panelProps()}
       selectedItem={reviewItem({
         sip_detail_fields_confirmed: false,
-        sip_mapping_exceptions: ["composite_method_required"],
+        sip_mapping_exceptions: [
+          "composite_method_required",
+          "sip_regeneration_required",
+        ],
       })}
       readyItemCount={112}
       exceptionItemCount={3}
@@ -235,6 +238,7 @@ test("一次生成 SIP 表格并只转发下一条异常入口", () => {
 
   expect(screen.getByText("SIP 表格：已生成 112，异常 3")).not.toBeNull();
   expect(screen.getByText("复合项需要选择检验方法")).not.toBeNull();
+  expect(screen.getByText("技术要求已变更，请重新生成 SIP 表格")).not.toBeNull();
   fireEvent.change(screen.getByRole("textbox", {
     name: "默认检验角色",
   }), { target: { value: "IPQC" } });
