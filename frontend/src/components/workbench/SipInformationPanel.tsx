@@ -20,6 +20,7 @@ export type MetadataDraft = {
 export type SipInformationPanelProps = {
   metadata: MetadataDraft;
   metadataValues: ReadonlyArray<readonly [string, string?]>;
+  suggestedMetadataFields?: ReadonlyArray<keyof MetadataDraft>;
   metadataDirty: boolean;
   disabled: boolean;
   selectedItem?: ReviewItem;
@@ -39,6 +40,7 @@ export type SipInformationPanelProps = {
 export function SipInformationPanel({
   metadata,
   metadataValues,
+  suggestedMetadataFields = [],
   metadataDirty,
   disabled,
   selectedItem,
@@ -89,7 +91,12 @@ export function SipInformationPanel({
               ] as const
             ).map(([key, label]) => (
               <label key={key}>
-                {label}
+                <span className="sip-metadata-field-label">
+                  {label}
+                  {suggestedMetadataFields.includes(key) ? (
+                    <small>{zhCN.workbench.recognizedMetadataSuggestion}</small>
+                  ) : null}
+                </span>
                 <input
                   aria-label={label}
                   value={metadata[key]}

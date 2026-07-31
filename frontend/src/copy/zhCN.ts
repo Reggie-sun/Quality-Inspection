@@ -128,6 +128,7 @@ export const zhCN = {
     projectSipInformation: "项目基本信息",
     selectedSipInformation: "当前检验项",
     editProjectSipInformation: "编辑项目 SIP 信息",
+    recognizedMetadataSuggestion: "图纸识别，待确认",
     confirmProjectSipInformation: "确认项目 SIP 信息",
     cancelProjectSipInformation: "取消项目 SIP 信息修改",
     selectedSourceSipUnavailable: "当前选择的是待判定来源。",

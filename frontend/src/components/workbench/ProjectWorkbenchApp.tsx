@@ -333,6 +333,7 @@ export function ProjectWorkbenchApp({
           renderToPdfMatrix: page.render_to_pdf_matrix,
         }))}
         items={snapshot.working_copy.items}
+        sipMetadataSuggestions={snapshot.sip_metadata_suggestions}
         workingCopy={snapshot.working_copy}
         balloonBlockers={snapshot.balloon_blockers}
         projectState={snapshot.project.state}

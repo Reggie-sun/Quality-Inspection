@@ -174,6 +174,26 @@ test("项目 SIP 编辑通过受控回调提交精确草稿并支持取消", () 
   expect(onCancelMetadata).toHaveBeenCalledTimes(1);
 });
 
+test("图纸识别字段在编辑器中明确标记为待确认建议", () => {
+  render(
+    <SipInformationPanel
+      {...panelProps()}
+      suggestedMetadataFields={["material_name", "drawing_number"]}
+    />,
+  );
+
+  fireEvent.click(screen.getByText("编辑项目 SIP 信息", {
+    selector: "summary",
+  }));
+  expect(screen.getAllByText("图纸识别，待确认")).toHaveLength(2);
+  expect((
+    screen.getByRole("textbox", { name: "产品名称" }) as HTMLInputElement
+  ).value).toBe("上座");
+  expect((
+    screen.getByRole("textbox", { name: "图号" }) as HTMLInputElement
+  ).value).toBe("JS26032501");
+});
+
 test("disabled 状态由项目 SIP fieldset 统一承载", () => {
   renderPanel({ disabled: true, metadataDirty: true });
 

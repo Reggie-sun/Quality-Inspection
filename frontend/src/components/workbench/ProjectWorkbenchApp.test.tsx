@@ -60,6 +60,7 @@ function reviewedResponse(): ProjectWorkbenchView {
     }],
     candidates: [],
     sources: [],
+    sip_metadata_suggestions: [],
     balloons: [{
       id: "balloon-secret-uuid",
       project_id: "project-real",
@@ -115,6 +116,61 @@ function reviewedResponse(): ProjectWorkbenchView {
     },
   } as ProjectWorkbenchView;
 }
+
+test("workbench title-block suggestions only prefill local draft", async () => {
+  const snapshot = reviewedResponse();
+  snapshot.project.state = "editing";
+  snapshot.working_copy.items_frozen_at = null;
+  snapshot.working_copy.items_frozen_by = null;
+  snapshot.working_copy.items_frozen_version = null;
+  snapshot.working_copy.sip_metadata = {};
+  snapshot.reviewed_result_id = null;
+  snapshot.latest_export = null;
+  snapshot.sip_metadata_suggestions = [{
+    field: "drawing_number",
+    value: "ZHZS25032501-04",
+    observation_id: "drawing-number-value",
+    label_observation_id: "drawing-number-label",
+    page_index: 0,
+    bbox_pdf: [1088.29, 781.55, 1162.57, 796.3],
+    rule_version: "welli-title-metadata/1",
+    evidence_codes: ["native_line"],
+  }];
+  const fetchMock = vi.fn(async (
+    path: RequestInfo | URL,
+    _init?: RequestInit,
+  ) => new Response(JSON.stringify(
+    String(path).endsWith("/review/lock")
+      ? { operator_id: "operator-real" }
+      : snapshot,
+  ), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+    />,
+  );
+
+  const sipRegion = await screen.findByRole("region", { name: "SIP 信息" });
+  fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+    selector: "summary",
+  }));
+  expect((
+    within(sipRegion).getByRole("textbox", {
+      name: "图号",
+    }) as HTMLInputElement
+  ).value).toBe("ZHZS25032501-04");
+  expect(within(sipRegion).getByText("图纸识别，待确认")).not.toBeNull();
+  expect(fetchMock.mock.calls.some(([path]) => (
+    String(path).endsWith("/review/commands")
+  ))).toBe(false);
+});
 
 
 test("工作台加载态使用中文并标记 aria-busy", () => {

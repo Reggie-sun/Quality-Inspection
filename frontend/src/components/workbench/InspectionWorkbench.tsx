@@ -7,6 +7,7 @@ import type {
   PdfDocumentLike,
   PdfPageTransform,
   PostJson,
+  ProjectWorkbenchSipMetadataSuggestion,
   ReviewCommand,
   ReviewItem,
   ReviewWorkingCopyView,
@@ -48,6 +49,7 @@ type InspectionWorkbenchProps = {
   balloons: BalloonOverlay[];
   pageTransforms?: PdfPageTransform[];
   items: ReviewItem[];
+  sipMetadataSuggestions?: ProjectWorkbenchSipMetadataSuggestion[];
   onSave: (command: ReviewCommand) => Promise<void>;
   workingCopy?: ReviewWorkingCopyView;
   balloonBlockers?: string[];
@@ -95,6 +97,7 @@ const SIP_DETAIL_TEXT_FIELDS = [
   "key_dimension",
   "inspection_role",
 ] as const;
+const NO_SIP_METADATA_SUGGESTIONS: ProjectWorkbenchSipMetadataSuggestion[] = [];
 
 
 function hasResolvedReview(workingCopy: ReviewWorkingCopyView): boolean {
@@ -139,14 +142,39 @@ function hasContinuousFormalNumbers(balloons: BalloonOverlay[]): boolean {
 }
 
 
-function metadataDraft(workingCopy?: ReviewWorkingCopyView): MetadataDraft {
-  return {
-    material_code: workingCopy?.sip_metadata?.material_code ?? "",
-    material_name: workingCopy?.sip_metadata?.material_name ?? "",
-    drawing_number: workingCopy?.sip_metadata?.drawing_number ?? "",
-    material: workingCopy?.sip_metadata?.material ?? "",
-    revision: workingCopy?.sip_metadata?.revision ?? "",
-  };
+function metadataDraft(
+  workingCopy?: ReviewWorkingCopyView,
+  suggestions: ProjectWorkbenchSipMetadataSuggestion[] = (
+    NO_SIP_METADATA_SUGGESTIONS
+  ),
+): MetadataDraft {
+  const suggestedValues = new Map(
+    suggestions.map((suggestion) => [suggestion.field, suggestion.value]),
+  );
+  return Object.fromEntries(
+    SIP_METADATA_FIELDS.map((field) => {
+      const confirmed = workingCopy?.sip_metadata?.[field];
+      return [
+        field,
+        typeof confirmed === "string" && confirmed.trim() !== ""
+          ? confirmed
+          : suggestedValues.get(field) ?? "",
+      ];
+    }),
+  ) as MetadataDraft;
+}
+
+
+function suggestedMetadataFields(
+  workingCopy: ReviewWorkingCopyView | undefined,
+  suggestions: ProjectWorkbenchSipMetadataSuggestion[],
+): Array<keyof MetadataDraft> {
+  return suggestions
+    .map((suggestion) => suggestion.field)
+    .filter((field) => {
+      const confirmed = workingCopy?.sip_metadata?.[field];
+      return !(typeof confirmed === "string" && confirmed.trim() !== "");
+    });
 }
 
 
@@ -158,6 +186,7 @@ export function InspectionWorkbench({
   balloons,
   pageTransforms,
   items,
+  sipMetadataSuggestions = NO_SIP_METADATA_SUGGESTIONS,
   onSave,
   workingCopy,
   balloonBlockers = [],
@@ -188,7 +217,7 @@ export function InspectionWorkbench({
   const [pageIndex, setPageIndex] = useState(0);
   const [filter, setFilter] = useState<InspectionFilter>("all");
   const [metadata, setMetadata] = useState<MetadataDraft>(
-    () => metadataDraft(workingCopy),
+    () => metadataDraft(workingCopy, sipMetadataSuggestions),
   );
   const [reviewDraftDirty, setReviewDraftDirty] = useState(false);
   const [sourceDraftDirty, setSourceDraftDirty] = useState(false);
@@ -210,8 +239,12 @@ export function InspectionWorkbench({
   const prepareAttemptRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (metadataDraftDirty) return;
-    setMetadata(metadataDraft(workingCopy));
-  }, [metadataDraftDirty, workingCopy?.version]);
+    setMetadata(metadataDraft(workingCopy, sipMetadataSuggestions));
+  }, [
+    metadataDraftDirty,
+    sipMetadataSuggestions,
+    workingCopy?.version,
+  ]);
   useEffect(() => {
     if (!reviewDraftDirty) setSelectionBlocked(false);
   }, [reviewDraftDirty]);
@@ -353,7 +386,7 @@ export function InspectionWorkbench({
     return saved;
   };
   const cancelMetadata = (): void => {
-    setMetadata(metadataDraft(workingCopy));
+    setMetadata(metadataDraft(workingCopy, sipMetadataSuggestions));
     setMetadataDraftDirty(false);
   };
   const requestReturnToDrawingList = (): void => {
@@ -657,6 +690,10 @@ export function InspectionWorkbench({
               <SipInformationPanel
                 metadata={metadata}
                 metadataValues={metadataValues}
+                suggestedMetadataFields={suggestedMetadataFields(
+                  workingCopy,
+                  sipMetadataSuggestions,
+                )}
                 metadataDirty={metadataDraftDirty}
                 disabled={reviewCommandsDisabled}
                 selectedItem={selectedReviewItem}

@@ -230,6 +230,9 @@ export type BalloonRecord =
 export type ProjectWorkbenchTransport =
   components["schemas"]["ProjectWorkbenchResponse"];
 
+export type ProjectWorkbenchSipMetadataSuggestion =
+  components["schemas"]["ProjectWorkbenchSipMetadataSuggestionResponse"];
+
 export type ProjectWorkbenchView = Omit<
   ProjectWorkbenchTransport,
   "working_copy" | "candidates" | "sources"
