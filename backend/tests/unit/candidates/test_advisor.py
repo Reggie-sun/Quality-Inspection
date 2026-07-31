@@ -16,6 +16,7 @@ import app.candidates.advisor as advisor_module
 from app.candidates.advisor import (
     CandidateAdvisor,
     CandidateAdvisorFailure,
+    VisualEvidenceContext,
     VisualExecutionIdentity,
 )
 from app.candidates.coverage import CoverageEntry
@@ -1622,6 +1623,99 @@ def test_visual_execution_identity_crop_hash_mismatch_blocks_provider(
         )
 
     assert constructed == []
+
+
+def test_production_cache_evidence_failure_is_not_labeled_as_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    storage = LocalFileStorage(tmp_path / "storage")
+    constructed: list[str] = []
+    session = SimpleNamespace(
+        commit=lambda: None,
+        rollback=lambda: None,
+        close=lambda: None,
+    )
+    private_detail = "/srv/private/customer.pdf credential=do-not-leak"
+
+    class FailingEvidence:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        def load_terminal_outcome(self, **_kwargs: object) -> None:
+            raise RuntimeError(private_detail)
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        FailingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        storage,
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: (
+            constructed.append("provider") or object()
+        ),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+    document = pymupdf.open(source)
+    try:
+        crop_png = advisor_module._render_visual_crop(
+            document[0],
+            (0.0, 0.0, 80.0, 80.0),
+        )
+    finally:
+        document.close()
+    crop_sha256 = hashlib.sha256(
+        advisor_module.canonicalize_visual_png(crop_png)
+    ).hexdigest()
+
+    with pytest.raises(
+        CandidateAdvisorFailure,
+        match="^Visual symbol cache lookup failed$",
+    ) as raised:
+        advisor._visual_review_result(
+            provider=None,
+            crop_png=crop_png,
+            crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+            source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            visual_observations=(visual,),
+            text_observations={
+                observation.observation_id: observation
+                for observation in pages[0].observations
+            },
+            model="qwen3-vl-plus",
+            execution_identity=VisualExecutionIdentity(
+                page_index=0,
+                content_sha256="a" * 64,
+                lineage_sha256="b" * 64,
+                budget_sha256="c" * 64,
+                observation_member_bindings=(
+                    (visual.observation_id, "a" * 64),
+                ),
+                crop_sha256=crop_sha256,
+                member_content_sha256s=("a" * 64,),
+            ),
+            legacy_cache_enabled=False,
+            evidence_context=VisualEvidenceContext(
+                escalation_group_id="a" * 64,
+                routing_decision_sha256="b" * 64,
+            ),
+        )
+
+    assert getattr(raised.value, "failure_origin", None) == "routing_evidence"
+    assert private_detail not in str(raised.value)
+    assert constructed == []
+    assert not list(
+        storage.root.glob("projects/*/provider-inputs/qwen-symbol/*.png")
+    )
 
 
 def test_production_does_not_read_or_write_legacy_visual_cache(
