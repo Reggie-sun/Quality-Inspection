@@ -2726,7 +2726,7 @@ Actual live evidence on 2026-07-31:
   canary result is `failed_closed_provider_call`; production promotion remains
   blocked.
 
-- [ ] **Step 5: Commit evidence, review and stop before promotion**
+- [x] **Step 5: Commit evidence, review and stop before promotion**
 
 Run:
 
@@ -2749,6 +2749,23 @@ promotion reporting.
 Stop after review. Do not change the production default、mark the old path、run a
 second canary、start full-P0、merge `main` or push. The next action must be a new
 user decision based on the actual canary and Quality Owner evidence.
+
+Actual Step 5 closure:
+
+- Sanitized live evidence was committed as
+  `4a9eb1cc7450353009bf05ee5a2941a42065c45f`; that commit changed exactly this
+  plan.
+- The independent read-only reviewer returned `accept` with `0` blockers. It
+  independently confirmed the frozen runtime delta and hashes、legacy default、
+  plan-only boundary、identical terminal screenshot hashes、owner-labeled
+  preserved volumes/images、honest missing ledger arithmetic and
+  `promotion_eligible=false`.
+- The review accepts the accuracy and containment of the evidence record; it
+  does not accept the canary as successful. Canary outcome remains
+  `failed_closed_provider_call`, Quality Owner state remains
+  `blocked_quality_owner_verdict`, and production promotion remains blocked.
+- No second canary、Provider investigation、production default change、
+  full-P0、`main` merge or push was performed.
 
 ### Amendment-Only Commit Contract
 
