@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import uuid
 from typing import Any
 
@@ -199,6 +200,11 @@ class ReviewService:
             working.technical_requirements
         )
         sip_metadata = copy.deepcopy(working.sip_metadata)
+        sip_source_pages = (
+            self._sip_source_page_indices(working)
+            if isinstance(parsed, GenerateSipTable)
+            else {}
+        )
         target_ids, numbering_stale = self._apply_command(
             items,
             coverage,
@@ -206,6 +212,7 @@ class ReviewService:
             sip_metadata,
             parsed,
             numbering_stale=working.numbering_stale,
+            sip_source_pages=sip_source_pages,
         )
         self._validate_requirement_target_invariants(
             items,
@@ -575,6 +582,7 @@ class ReviewService:
         command: ReviewCommand,
         *,
         numbering_stale: bool,
+        sip_source_pages: dict[str, int],
     ) -> tuple[list[str], bool]:
         if isinstance(command, Keep):
             item = self._active_item(items, command.item_id)
@@ -840,8 +848,20 @@ class ReviewService:
                 target_ids.append(str(item["item_id"]))
                 if self._sip_fields_are_manual(item):
                     continue
+                mapping_item = item
+                if not isinstance(item.get("page_index"), int):
+                    page_index = next(
+                        (
+                            sip_source_pages[str(source_id)]
+                            for source_id in item.get("source_location_ids", [])
+                            if str(source_id) in sip_source_pages
+                        ),
+                        None,
+                    )
+                    if page_index is not None:
+                        mapping_item = {**item, "page_index": page_index}
                 result = map_sip_item(
-                    item,
+                    mapping_item,
                     inspection_role=command.inspection_role,
                 )
                 for field in (*SIP_DETAIL_FIELDS, *SIP_OPTIONAL_DETAIL_FIELDS):
@@ -1350,6 +1370,44 @@ class ReviewService:
             for source_id in item.get("source_location_ids", []):
                 if source_id not in result:
                     result.append(source_id)
+        return result
+
+    def _sip_source_page_indices(
+        self,
+        working: ReviewWorkingCopy,
+    ) -> dict[str, int]:
+        if self.storage is None:
+            return {}
+        raw = self.session.get(AutomaticResult, working.raw_result_id)
+        if raw is None:
+            return {}
+        try:
+            document = json.loads(self.storage.read_bytes(raw.inventory_ref))
+            pages = document["pages"]
+        except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
+            return {}
+        if not isinstance(pages, list):
+            return {}
+        result: dict[str, int] = {}
+        try:
+            for page in pages:
+                if not isinstance(page, dict):
+                    return {}
+                page_index = int(page["page_index"])
+                if page_index < 0:
+                    return {}
+                for collection in ("observations", "visual_observations"):
+                    values = page.get(collection, [])
+                    if not isinstance(values, list):
+                        return {}
+                    for observation in values:
+                        if not isinstance(observation, dict):
+                            return {}
+                        observation_id = observation.get("observation_id")
+                        if isinstance(observation_id, str) and observation_id:
+                            result[observation_id] = page_index
+        except (KeyError, TypeError, ValueError):
+            return {}
         return result
 
     @staticmethod

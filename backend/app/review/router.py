@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import SessionLocal
 from app.errors.api import api_error, error_responses
 from app.errors.schemas import ErrorSeverity
@@ -31,6 +32,7 @@ from app.review.service import (
     ReviewVersionConflict,
     manual_review_count,
 )
+from app.storage.local import LocalFileStorage
 
 
 router = APIRouter(prefix="/api/v1/projects", tags=["review"])
@@ -49,7 +51,10 @@ SessionDependency = Annotated[Session, Depends(get_session)]
 
 
 def get_review_service(session: SessionDependency) -> ReviewService:
-    return ReviewService(session)
+    return ReviewService(
+        session,
+        storage=LocalFileStorage(get_settings().storage_root),
+    )
 
 
 ReviewServiceDependency = Annotated[ReviewService, Depends(get_review_service)]

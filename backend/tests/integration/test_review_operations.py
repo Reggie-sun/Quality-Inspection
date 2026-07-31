@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import uuid
 from collections.abc import Iterator
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import event, func, select
@@ -19,6 +22,7 @@ from app.projects.state import ProjectState
 from app.review.locks import acquire_lock
 from app.review.models import ReviewWorkingCopy
 from app.review.service import ReviewNotFound, ReviewService, manual_review_count
+from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
 
@@ -1431,6 +1435,74 @@ def test_generate_sip_table_maps_active_rows_in_one_operation(
     assert operation.target_ids == ["i1", "typed-1"]
     assert operation.before_version == before_version
     assert operation.after_version == before_version + 1
+
+
+def test_generate_sip_table_resolves_page_from_owned_source_observation(
+    working_copy: ReviewWorkingCopy,
+    raw_result: AutomaticResult,
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    inventory = json.dumps(
+        {
+            "pages": [
+                {
+                    "page_index": 2,
+                    "observations": [
+                        {
+                            "observation_id": "s1",
+                            "bbox_pdf": [1, 2, 3, 4],
+                            "raw_text": "M6",
+                        }
+                    ],
+                }
+            ]
+        }
+    ).encode()
+    storage.write_verified(
+        f"tests/{raw_result.project_id}/inventory.json",
+        inventory,
+        hashlib.sha256(inventory).hexdigest(),
+    )
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = item["item_id"] == "i1"
+        item.pop("page_index", None)
+        item.pop("source_page", None)
+    working_copy.items = items
+    db_session.commit()
+    db_session.refresh(working_copy)
+
+    saved = ReviewService(db_session, storage=storage).apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+
+    row = _item(saved, "i1")
+    assert row["source_page"] == 3
+    assert row["sip_mapping_exceptions"] == []
+    assert row["sip_detail_fields_confirmed"] is True
+
+    regenerated = ReviewService(db_session, storage=storage).apply(
+        saved.id,
+        expected_version=saved.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "OQC",
+        },
+    )
+
+    regenerated_row = _item(regenerated, "i1")
+    assert regenerated_row["source_page"] == 3
+    assert regenerated_row["sip_mapping_exceptions"] == []
+    assert regenerated_row["sip_detail_fields_confirmed"] is True
 
 
 def test_generate_sip_table_preserves_manual_resolved_row(
