@@ -3299,14 +3299,13 @@ authorization.
   `cbf1453f7da75d733db4e516e8808f36837f9d13`; merge-base remains
   `50d118523181fe2edc9c240afe070faed22a7def`; feature is ahead `30` / behind
   `20`.
-- Live `main` after the PRT-8R snapshot contains only
-  `06a87cd fix(balloons): resolve later source geometry` and
-  `cbf1453 docs(exports): plan dimension inspection workbook v3`. Their
-  combined delta is limited to `.agent/bug-memory.md`、
-  `backend/app/balloons/service.py`、
-  `backend/tests/integration/test_balloon_service.py` and the two
-  leader-dimension inspection plan/spec files. It has no frozen symbol
-  runtime、Provider or sealed-source overlap. Do not merge `main`.
+- Live `main` after the PRT-8R snapshot adds only
+  `cbf1453 docs(exports): plan dimension inspection workbook v3`, limited to
+  the two leader-dimension inspection plan/spec files. The already recorded
+  `06a87cd fix(balloons): resolve later source geometry` delta remains limited
+  to `.agent/bug-memory.md`、`backend/app/balloons/service.py` and
+  `backend/tests/integration/test_balloon_service.py`. Neither delta overlaps
+  frozen symbol runtime、Provider or sealed-source paths. Do not merge `main`.
 - Index and unmerged entries are empty. All `188` dirty entries are preserved
   `pyc`、`__pycache__` or immutable Harness-run artifacts; non-artifact dirty
   count is `0`.
