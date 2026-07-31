@@ -1,33 +1,60 @@
-# SIP Confirmation Demo
+# SIP Table Generation Demo
 
-这套截图用于说明标题栏自动带入、项目 SIP 确认、检验项 SIP 连续处理，以及为什么
-技术要求已确认后，`生成正式文件` 仍可能保持禁用。
+这套教学材料说明当前终态：
 
-## Steps
+```text
+审核检验项一次
+→ 生成并检查 SIP 表格
+→ 只处理异常
+→ 异常归零后生成正式文件
+```
 
-1. 打开 [07-title-block-prefill-demo.png](07-title-block-prefill-demo.png)。新项目会从标题栏自动带入
-   `物料编码`、`产品名称`、`图号` 和 `版本号`，并标记为
-   `图纸识别，待确认`。图纸没有明确给出的 `材质` 仍需人工填写。
-2. 补齐缺失字段并点击 `确认项目 SIP 信息`。自动填写不是自动确认；只有这个按钮会把
-   项目级信息保存为正式 SIP。
-3. 打开 [05-live-guided-progress.png](05-live-guided-progress.png)。真实工作台顶部显示
-   `检验项 SIP 3 / 115`，右侧显示同一进度和 `处理下一条未确认 SIP`。
-4. 点击 `处理下一条未确认 SIP`。系统只在界面中选择下一条有效且未确认的检验项；
-   [08-live-next-unconfirmed.png](08-live-next-unconfirmed.png) 展示了选中后的审核表单。
-5. 在 `SIP 确认字段` 填写检验项目、检验标准、检验方法、关键尺寸、检验角色和页码，
-   然后点击 `确认当前检验项 SIP`。保存成功后系统自动进入下一条；保存失败时不跳转。
-6. 打开 [06-live-export-blocker.png](06-live-export-blocker.png)。正式文件区会明确显示
-   `还需确认 112 条检验项 SIP`，而不是含混地显示“尚未审核”。
+不再要求用户对每一条检验项重复执行一次“SIP 确认”。系统根据已经审核的 active
+检验项生成 SIP 字段；只有无法可靠确定的字段进入异常处理。
 
-旧版流程截图 `01`～`04` 保留用于对照，不代表当前最终文案。
+## Current Runtime Evidence
 
-## Final State
+以下截图来自 `2026-07-31` 本地真实 workbench，不是 instructional mock：
 
-终态不是“技术要求已确认 5”，而是：
+1. 打开
+   [09-live-sip-table-generated.png](09-live-sip-table-generated.png)。
+   在 `默认检验角色` 填入 `IPQC`，点击 `生成并检查 SIP 表格`。页面顶部和 SIP
+   区域都会显示 `已生成 113 / 异常 2`，而不是“已确认 113 / 115”。
+2. 打开
+   [10-live-exception-only.png](10-live-exception-only.png)。
+   点击 `处理下一条异常` 后，系统只定位到异常行，并明确说明
+   `未知检验项类型`。用户只需补全这类无法自动决定的字段，再点击
+   `保存当前 SIP 字段`。
+   如果之后修改了技术要求匹配关系，受影响的旧行会显示
+   `技术要求已变更，请重新生成 SIP 表格`，不会被误算为已完成。
+3. 打开
+   [11-live-metadata-conflict.png](11-live-metadata-conflict.png)。
+   标题栏已有值与图纸识别值不一致时，页面并列显示 `当前值` 和
+   `图纸识别值`。点击 `采用识别值` 只更新本地草稿；点击
+   `确认项目 SIP 信息` 后才正式保存项目级信息。
 
-1. 项目 SIP 信息已经人工确认；
-2. 所有有效检验项的 SIP 都已确认；
-3. freeze、编号和气泡校验通过；
-4. 正式审核完成。
+本次 runtime smoke 还验证了：
 
-随后系统才能生成带气泡 PDF、SIP Excel 和校验清单。
+- 生成按钮只发送一个 `generate_sip_table` command；
+- command 返回 HTTP `200`；
+- 旧的逐项 `已确认 x / y` 文案不存在；
+- `采用识别值` 不会提前发送保存请求；
+- console error 和异常 HTTP response 均为 `0`。
+
+## Export Boundary
+
+`生成并检查 SIP 表格` 只物化 SIP 字段，不会冻结、编号、生成气泡或导出。
+
+正式文件仍保持 fail-closed：
+
+1. 项目 SIP 信息完整并已保存；
+2. SIP 异常为 `0`；
+3. 检验项 freeze 完成；
+4. 编号与气泡校验通过；
+5. ReviewedResult 确认完成。
+
+满足以上条件后，系统才能原子生成带气泡 PDF、SIP Excel 和校验清单。
+
+## Historical Screenshots
+
+`01`～`08` 是旧版“逐项确认 SIP”流程的历史对照，不代表当前产品终态。

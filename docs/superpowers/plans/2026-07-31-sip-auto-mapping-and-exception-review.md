@@ -41,18 +41,19 @@ TypeScript、React、Vitest、Chrome DevTools、Micromamba `qi-p0`
 ## Status
 
 - Date: `2026-07-31`
-- Status: `approved / in progress`
+- Status: `completed`
 - Design source:
   `docs/superpowers/specs/2026-07-31-sip-auto-mapping-and-exception-review-design.md`
 - Selection evidence: 用户批准“检验项只审核一次，SIP 自动映射，仅异常人工处理”，
   并在开源对标后回复“可以”批准 template/materialize + exception-only 流程。
-- Validation action: `continue`
+- Validation action: `completed`
 - Writer ownership and order: parent/main thread，Task 1 → Task 4；无并发 writer。
-- Next verification: Task 2 integration RED。
+- Next verification: none；实现、runtime smoke 与独立复核均已完成。
 
 ## Allowed Paths
 
 - `backend/app/review/sip_mapping.py`
+- `backend/app/review/router.py`
 - `backend/app/review/schemas.py`
 - `backend/app/review/service.py`
 - `backend/tests/unit/review/test_sip_mapping.py`
@@ -380,7 +381,7 @@ npm --prefix frontend run build
 Expected: focused/full Vitest and production build PASS. Existing bundle-size warning
 may remain but no new error is accepted.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add frontend/src/api/types.ts frontend/src/components/workbench/InspectionWorkbench.tsx frontend/src/components/workbench/InspectionWorkbench.test.tsx frontend/src/components/workbench/SipInformationPanel.tsx frontend/src/components/workbench/SipInformationPanel.test.tsx frontend/src/components/workbench/SelectedSipDetailFields.tsx frontend/src/components/workbench/SelectedSipDetailFields.test.tsx frontend/src/components/workbench/ExportPanel.tsx frontend/src/components/workbench/ExportPanel.test.tsx frontend/src/copy/zhCN.ts frontend/src/styles/workbench.css docs/superpowers/plans/2026-07-31-sip-auto-mapping-and-exception-review.md
@@ -399,7 +400,7 @@ git commit -m "feat(frontend): review only SIP exceptions"
 - Smoke path: project-level generation → exception summary → exception selection →
   metadata conflict adoption without server write.
 
-- [ ] **Step 1: Run the combined backend gate**
+- [x] **Step 1: Run the combined backend gate**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
@@ -413,7 +414,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 
 Expected: PASS with no new warning attributable to this change.
 
-- [ ] **Step 2: Run targeted API verification**
+- [x] **Step 2: Run targeted API verification**
 
 Against an unfrozen disposable/test working copy with a valid lock:
 
@@ -424,7 +425,18 @@ Against an unfrozen disposable/test working copy with a valid lock:
 - assert a second stale-version request returns the existing version-conflict
   envelope and does not partially modify rows.
 
-- [ ] **Step 3: Run Chrome MCP smoke**
+- [x] **Step 3: Run Chrome MCP smoke**
+
+Chrome DevTools connector returned `Transport closed` on both `list_pages` and
+`new_page`, so the same smoke contract was executed with repository-installed
+Playwright against system `/usr/bin/google-chrome`. Runtime evidence:
+
+- exactly one `generate_sip_table` POST, HTTP `200`;
+- `115 active -> 113 ready / 2 exceptions`;
+- old `已确认 x/y` copy count `0`;
+- exception navigation showed `未知检验项类型`;
+- metadata adoption caused no save request;
+- console errors and HTTP `>=400` responses were both `0`.
 
 Open the affected localhost workbench and exercise:
 
@@ -437,7 +449,7 @@ Open the affected localhost workbench and exercise:
 7. click `采用识别值` and verify no save request occurs until project metadata save;
 8. verify console errors and unexpected HTTP `>=400` are zero.
 
-- [ ] **Step 4: Refresh the teaching artifact**
+- [x] **Step 4: Refresh the teaching artifact**
 
 Update `docs/operations/sip-confirmation-demo/` with current screenshots and concise
 Chinese steps showing:
@@ -452,7 +464,7 @@ Chinese steps showing:
 Clearly label screenshots as current runtime evidence or instructional mock; never mix
 the two.
 
-- [ ] **Step 5: Independent focused review**
+- [x] **Step 5: Independent focused review**
 
 Reviewer must inspect the complete Task 1–3 diff and report:
 
@@ -466,7 +478,13 @@ Reviewer must inspect the complete Task 1–3 diff and report:
 
 Any blocking finding returns to the owning task with a new RED before remediation.
 
-- [ ] **Step 6: Final diff, status and commit**
+初次复核发现 technical requirement 改绑后旧 automatic row 仍可能被前端误算为
+ready。新增精确 RED 后由 `3c1ab7a` 修复：旧 row 现在变为
+`sip_detail_fields_confirmed=False` 并携带 `sip_regeneration_required`，可由异常入口
+定位并通过重新生成恢复。相同 reviewer 复核最终 verdict 为 `accept`，无 blocking
+issue 或 non-blocking concern。
+
+- [x] **Step 6: Final diff, status and commit**
 
 Run:
 
@@ -485,3 +503,15 @@ git commit -m "docs: refresh SIP exception workflow demo"
 Set this plan status to `completed` only after automated gates, API smoke, Chrome smoke
 and independent review all pass. If runtime is unavailable, leave status
 `implementation complete / runtime blocked` and report the exact blocker.
+
+Final evidence:
+
+- isolated PostgreSQL full backend: `1506 passed, 2 existing warnings`;
+- frontend full Vitest: `268 passed`;
+- frontend production build: PASS（仅 existing bundle-size warning）;
+- frontend OpenAPI generated type check: PASS;
+- live API: one command returned HTTP `200`, `115 active -> 113 ready / 2 exceptions`;
+- stale replay: HTTP `409 review_version_conflict`，version 与 item hash 不变；
+- browser fallback smoke: console errors `0`，unexpected HTTP `>=400` `0`;
+- independent reviewer: `accept`;
+- final `git diff --check`: PASS。
