@@ -297,7 +297,7 @@ describe("ReviewPanel", () => {
     expect(screen.queryByLabelText("识别原文：48")).toBeNull();
   });
 
-  test("复杂项始终隐藏技术字段并在点击修改后直接编辑检验内容", async () => {
+  test("复杂项始终隐藏技术字段并直接展示可编辑的检验内容", async () => {
     const onCommand = vi.fn();
     render(
       <ReviewPanel
@@ -322,10 +322,6 @@ describe("ReviewPanel", () => {
     expect(screen.queryByText("待人工确认")).toBeNull();
     expect(screen.queryByRole("group", { name: "解析结果" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", {
-      name: "修改检验项：Ra 3.2",
-    }));
-
     expect(screen.queryByRole("group", { name: "复杂项信息" })).toBeNull();
     expect(screen.queryByLabelText("坐标：Ra 3.2")).toBeNull();
     expect(screen.queryByLabelText("粗分类：Ra 3.2")).toBeNull();
@@ -334,6 +330,11 @@ describe("ReviewPanel", () => {
       name: "检验内容：Ra 3.2",
     });
     expect((content as HTMLInputElement).value).toBe("Ra 3.2");
+
+    fireEvent.focus(content);
+    expect(screen.getByRole("button", {
+      name: "取消修改检验项：Ra 3.2",
+    })).not.toBeNull();
 
     fireEvent.change(content, { target: { value: "Ra 6.3" } });
     fireEvent.click(screen.getByRole("button", {

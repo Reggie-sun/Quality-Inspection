@@ -1159,3 +1159,50 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
   结构化字段 → 用户要求补充审核使用说明 → 两列动作下增加默认收起的判断指南 → 默认态、
   确认态、指南展开/收起和真实第 3 项浏览器复测通过。
 - final result: passed
+
+## Roughness Direct Content Editing — 2026-07-31
+
+### Grounding
+
+- source visual truth: `/tmp/codex-clipboard-jqQ3eZ.png`
+- source pixels / density: `521x466 / 1x`
+- rendered implementation:
+  `.local/design-qa/roughness-direct-edit-implementation.png`
+- implementation pixels / density: `489x687 / device scale 1`
+- browser viewport: `1900x950`
+- normalized comparison:
+  `.local/design-qa/roughness-direct-edit-comparison.png`
+- comparison pixels: `1900x950`
+- state: 已选择第 3 项粗糙度，尚未点击“修改”或聚焦输入框。
+
+### Comparison And Fidelity
+
+- Full-view evidence: 合并对照图同时展示参考截图的编辑态和实现截图的初始选择态；两者都显示
+  “检验项 3 · 粗糙度”“检验内容”和数值 `3.2`。
+- Focused evidence: 列表、所选项标题、检验内容和操作区在合并对照图中均清晰可读，无需额外
+  裁切。
+- Fonts and typography: 沿用现有页面字体、字号、字重和层级，没有新增视觉样式。
+- Spacing and layout rhythm: 复用原有字段组，参考与实现的内边距、边框和垂直间距一致。
+- Colors and visual tokens: 输入框、字段组、选中态和状态色均沿用现有 token。
+- Image quality and assets: 本轮不涉及图片、Logo、图标或其他资产。
+- Copy and content: “修改内容”“检验内容”和数值 `3.2` 与参考状态一致。
+- 参考图只截取面板上半部，实现图包含更长的面板内容；这是截图范围差异，不是布局漂移。
+
+### Interaction And Browser Evidence
+
+- 点击第 3 项粗糙度后，无需点击“修改”即可看到 `检验内容：3.2`。
+- Chrome 实际鼠标点击输入框后进入编辑态，“修改”切换为“取消修改”。
+- 点击“取消修改”后恢复原值，检验内容仍保持可见；未保存或修改业务数据。
+- “保存修改”在内容未变化时保持禁用。
+- Console checked: 发现既有的 `GET /api/v1/projects/null/workbench` 422；页面仍加载当前项目
+  数据，且该请求不由本次 `ReviewPanel` 修改产生。
+
+### Verification And Result
+
+- Initial finding: 粗糙度检验内容只有进入编辑态后才渲染。
+- Fix: 始终渲染复杂检验项的检验内容输入框，并在输入框获得焦点时进入既有编辑态。
+- Focused test: 新用例先因找不到 `检验内容：Ra 3.2` 失败，修复后通过。
+- Remaining P0: 0.
+- Remaining P1: 0.
+- Remaining P2: 0.
+- final result: passed

@@ -616,7 +616,7 @@ export function ReviewPanel({
           </header>
           <div className="review-selected-item__workspace review-selected-item__workspace--stacked">
           <div className="review-selected-item__form">
-          {selectedItem.coarse_type === undefined || !isEditingSelected ? null : (
+          {selectedItem.coarse_type === undefined ? null : (
             <fieldset
               className="review-field-group review-field-group--parsed"
               disabled={disabled}
@@ -632,6 +632,7 @@ export function ReviewPanel({
                   disabled={disabled}
                   type="text"
                   value={rawTexts[selectedItem.item_id] ?? selectedItem.raw_text}
+                  onFocus={beginEditingSelected}
                   onChange={(event) => {
                     setRawTexts((current) => ({
                       ...current,
