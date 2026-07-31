@@ -1846,6 +1846,7 @@ prompt_version=visual-symbol-prompt/4
 response_schema=visual-symbol-review/2
 adapter_version=qwen-openai-compatible/5
 cache_identity_schema=visual-symbol-cache-identity/1
+credential_env_file=/home/reggie/vscode_folder/Quality_Inspection/.env
 qwen_vl_sha256=f862fb012d919456299386b482f67672b4e18450fc3de597c4711c42f38f42ad
 symbol_review_sha256=fe40293d48903f1578bb9241367a16d0849034818b4fba71d137238056297bd4
 provider_runtime_sha256=1774815f29ca8302f7869697cafbc45c1cabc8f508b8a19c7ba4eb92cbff42f8
@@ -1906,10 +1907,13 @@ both data volumes until the later promotion decision.
   `.agent/harness/scripts/symbol_canary_evidence.py`
 - Create before any live authorization:
   `backend/tests/contract/harness/test_symbol_canary_evidence_contract.py`
-- Modify after execution:
+- Modify during Step 0 and after execution:
   `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
-- Do not modify: production code、tests、schemas、Harness、frontend source、
-  runtime config files or any existing immutable run.
+- Step 0 hard allowed paths are exactly the preceding schema、script、test and
+  this plan.
+- During live Steps 1–5 do not modify production code、tests、schemas、Harness、
+  frontend source、runtime config files or any existing immutable run; only this
+  plan may receive the sanitized canary evidence.
 - Temporary screenshot directory:
   `/tmp/qi-prt8-canary-evidence/`
 - Docker owns exactly eleven named canary operational resources above: one network、six
@@ -2141,16 +2145,38 @@ done
 if ss -ltn | rg -q ':(15432|18080|15173)\b'; then
   exit 1
 fi
-test -f .env || exit 1
+prt8_credential_env_file=/home/reggie/vscode_folder/Quality_Inspection/.env
+test -f "$prt8_credential_env_file"
+test -r "$prt8_credential_env_file"
+test "$(stat -c '%u:%a' "$prt8_credential_env_file")" = \
+  "$(id -u):600"
 
 test "$(docker image inspect python:3.11-slim --format '{{.Id}}')" = \
   "sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2"
+test "$(docker image inspect python:3.11-slim --format \
+  '{{json .RepoDigests}}')" = \
+  '["python@sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2"]'
 test "$(docker image inspect node:22-alpine --format '{{.Id}}')" = \
   "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2"
+test "$(docker image inspect node:22-alpine --format \
+  '{{json .RepoDigests}}')" = \
+  '["node@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2"]'
 test "$(docker image inspect postgres:17-alpine --format '{{.Id}}')" = \
   "sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
+test "$(docker image inspect postgres:17-alpine --format \
+  '{{json .RepoDigests}}')" = \
+  '["postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"]'
 test "$(docker image inspect redis:7-alpine --format '{{.Id}}')" = \
   "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"
+test "$(docker image inspect redis:7-alpine --format \
+  '{{json .RepoDigests}}')" = \
+  '["redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"]'
+docker image inspect \
+  postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193 \
+  >/dev/null
+docker image inspect \
+  redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99 \
+  >/dev/null
 
 trap prt8_cleanup_startup ERR INT TERM
 prt8_build_root="$(mktemp -d /tmp/qi-prt8-canary-build.XXXXXX)"
@@ -2220,7 +2246,7 @@ docker run --detach \
   --label qi.owner=prt8-canary \
   --network qi-prt8-canary \
   --network-alias api \
-  --env-file .env \
+  --env-file "$prt8_credential_env_file" \
   --env QI_DATABASE_URL=postgresql+psycopg://qi:qi@qi-prt8-canary-postgres:5432/qi \
   --env QI_REDIS_URL=redis://qi-prt8-canary-redis:6379/0 \
   --env QI_STORAGE_ROOT=/data \
@@ -2235,7 +2261,7 @@ docker run --detach \
   --name qi-prt8-canary-worker \
   --label qi.owner=prt8-canary \
   --network qi-prt8-canary \
-  --env-file .env \
+  --env-file "$prt8_credential_env_file" \
   --env QI_DATABASE_URL=postgresql+psycopg://qi:qi@qi-prt8-canary-postgres:5432/qi \
   --env QI_REDIS_URL=redis://qi-prt8-canary-redis:6379/0 \
   --env QI_STORAGE_ROOT=/data \
@@ -2450,14 +2476,15 @@ docker run --rm \
   --name qi-prt8-canary-collector \
   --label qi.owner=prt8-canary \
   --network qi-prt8-canary \
-  --volume /home/reggie/vscode_folder/Quality_Inspection/.worktrees/symbol-prt5-red-tests:/workspace:ro \
+  --mount type=bind,source=/home/reggie/vscode_folder/Quality_Inspection/.worktrees/symbol-prt5-red-tests/.agent/harness/scripts/symbol_canary_evidence.py,target=/collector/symbol_canary_evidence.py,readonly \
+  --mount type=bind,source=/home/reggie/vscode_folder/Quality_Inspection/.worktrees/symbol-prt5-red-tests/.agent/harness/schemas/symbol-routing-canary-evidence.schema.json,target=/collector/symbol-routing-canary-evidence.schema.json,readonly \
   --volume qi_prt8_canary_storage:/data:ro \
   qi-prt8-canary-api:12c88b5 \
-  python /workspace/.agent/harness/scripts/symbol_canary_evidence.py \
+  python /collector/symbol_canary_evidence.py \
     --database-url postgresql+psycopg://qi:qi@qi-prt8-canary-postgres:5432/qi \
     --storage-root /data \
     --project-id "$PRT8_PROJECT_ID" \
-    --schema /workspace/.agent/harness/schemas/symbol-routing-canary-evidence.schema.json \
+    --schema /collector/symbol-routing-canary-evidence.schema.json \
   > /tmp/qi-prt8-canary-evidence/symbol-routing-canary-evidence.json
 ```
 
@@ -2481,18 +2508,41 @@ non-canary runtime was not restarted or modified. This isolated stop is not a
 deployment rollback drill and must not be reported as one.
 
 ```bash
+prt8_assert_runtime_owners() {
+  for prt8_container in \
+    qi-prt8-canary-frontend \
+    qi-prt8-canary-worker \
+    qi-prt8-canary-api \
+    qi-prt8-canary-redis \
+    qi-prt8-canary-postgres
+  do
+    test "$(docker container inspect --format \
+      '{{index .Config.Labels "qi.owner"}}' \
+      "$prt8_container")" = "prt8-canary"
+  done
+  test "$(docker network inspect --format \
+    '{{index .Labels "qi.owner"}}' \
+    qi-prt8-canary)" = "prt8-canary"
+}
+
+set -Eeuo pipefail
+prt8_assert_runtime_owners
 docker stop \
   qi-prt8-canary-frontend \
   qi-prt8-canary-worker \
   qi-prt8-canary-api \
   qi-prt8-canary-redis \
   qi-prt8-canary-postgres
+prt8_assert_runtime_owners
 docker rm \
   qi-prt8-canary-frontend \
   qi-prt8-canary-worker \
   qi-prt8-canary-api \
   qi-prt8-canary-redis \
   qi-prt8-canary-postgres
+test "$(docker network inspect --format \
+  '{{index .Labels "qi.owner"}}' \
+  qi-prt8-canary)" = "prt8-canary"
 docker network rm qi-prt8-canary
 docker volume inspect qi_prt8_canary_postgres >/dev/null
 docker volume inspect qi_prt8_canary_storage >/dev/null
