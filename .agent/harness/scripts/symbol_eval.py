@@ -5,14 +5,104 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from math import isclose
 from typing import Any
 
 
 OVERLAP_THRESHOLD = 0.5
 _NEGATIVE_KINDS = frozenset({"frozen_negative"})
 _SEMANTIC_DISPOSITIONS = frozenset({"reference_context", "non_inspection"})
+_ROUTING_MODE_CACHE_STATES = frozenset(
+    {
+        ("legacy_high_recall", "cold"),
+        ("legacy_high_recall", "warm"),
+        ("production_uncertainty", "cold"),
+        ("production_uncertainty", "warm"),
+    }
+)
 
 BBox = tuple[float, float, float, float]
+
+
+def validate_routing_comparison_evidence(evidence: Mapping[str, Any]) -> None:
+    """Validate that offline routing evidence binds one sealed input identity."""
+    sealed_identity = evidence.get("sealed_input_identity")
+    if not isinstance(sealed_identity, Mapping):
+        raise ValueError("routing evidence sealed input identity is invalid")
+    sealed_digest = sealed_identity.get("digest")
+    if not isinstance(sealed_digest, str):
+        raise ValueError("routing evidence sealed input identity is invalid")
+
+    outputs = evidence.get("outputs")
+    if not isinstance(outputs, list):
+        raise ValueError("routing evidence outputs are invalid")
+
+    mode_cache_states: set[tuple[str, str]] = set()
+    content_identities: dict[str, str] = {}
+    for output in outputs:
+        if not isinstance(output, Mapping):
+            raise ValueError("routing evidence output is invalid")
+        mode = output.get("mode")
+        cache_state = output.get("cache_state")
+        if not isinstance(mode, str) or not isinstance(cache_state, str):
+            raise ValueError("routing evidence mode/cache output is invalid")
+        mode_cache_states.add((mode, cache_state))
+
+        if output.get("sealed_input_identity_sha256") != sealed_digest:
+            raise ValueError("output sealed input identity does not match shared sealed input identity")
+
+        latency_distribution = output.get("latency_distribution")
+        if not isinstance(latency_distribution, Mapping):
+            raise ValueError("routing evidence latency distribution is invalid")
+        sample_count = latency_distribution.get("sample_count")
+        durations_ms = latency_distribution.get("durations_ms")
+        if (
+            not isinstance(sample_count, int)
+            or isinstance(sample_count, bool)
+            or not isinstance(durations_ms, list)
+            or sample_count != len(durations_ms)
+        ):
+            raise ValueError(
+                "routing evidence latency distribution sample count does not "
+                "match durations"
+            )
+
+        content_identity = output.get("content_identity_sha256")
+        if not isinstance(content_identity, str):
+            raise ValueError("routing evidence content identity is invalid")
+        existing_content_identity = content_identities.setdefault(mode, content_identity)
+        if existing_content_identity != content_identity:
+            raise ValueError("cold/warm outputs must bind the same content identity")
+
+    if mode_cache_states != _ROUTING_MODE_CACHE_STATES or len(outputs) != len(
+        _ROUTING_MODE_CACHE_STATES
+    ):
+        raise ValueError(
+            "routing evidence must include exact legacy_high_recall and "
+            "production_uncertainty mode/cache outputs"
+        )
+
+    recall_delta = evidence.get("recall_delta")
+    if not isinstance(recall_delta, Mapping):
+        raise ValueError("routing evidence recall delta is invalid")
+    legacy_recall = recall_delta.get("legacy_positive_recall")
+    uncertainty_recall = recall_delta.get("uncertainty_positive_recall")
+    reported_delta = recall_delta.get("delta")
+    if (
+        not isinstance(legacy_recall, (int, float))
+        or isinstance(legacy_recall, bool)
+        or not isinstance(uncertainty_recall, (int, float))
+        or isinstance(uncertainty_recall, bool)
+        or not isinstance(reported_delta, (int, float))
+        or isinstance(reported_delta, bool)
+        or not isclose(
+            reported_delta,
+            uncertainty_recall - legacy_recall,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        )
+    ):
+        raise ValueError("routing evidence recall delta is invalid")
 
 
 def _bbox(value: Any) -> BBox:

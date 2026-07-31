@@ -34,6 +34,269 @@
     }
   },
   "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sealedInputIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "digest",
+        "components"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "latencyDistribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_count",
+        "durations_ms"
+      ],
+      "properties": {
+        "sample_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "durations_ms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "p50_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p95_ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "p50_ms"
+                ]
+              },
+              {
+                "required": [
+                  "p95_ms"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "p50_ms",
+              "p95_ms"
+            ],
+            "properties": {
+              "sample_count": {
+                "minimum": 20
+              },
+              "durations_ms": {
+                "minItems": 20
+              }
+            }
+          }
+        }
+      ]
+    },
+    "routingComparisonEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "sealed_input_identity",
+        "outputs",
+        "recall_delta",
+        "quality_owner_verdict_refs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "symbol-routing-comparison/1"
+        },
+        "sealed_input_identity": {
+          "$ref": "#/$defs/sealedInputIdentity"
+        },
+        "outputs": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/routingComparisonOutput"
+          }
+        },
+        "recall_delta": {
+          "$ref": "#/$defs/routingComparisonRecallDelta"
+        },
+        "quality_owner_verdict_refs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "legacy_high_recall",
+            "production_uncertainty"
+          ],
+          "properties": {
+            "legacy_high_recall": {
+              "$ref": "#/$defs/qualityOwnerVerdictRefs"
+            },
+            "production_uncertainty": {
+              "$ref": "#/$defs/qualityOwnerVerdictRefs"
+            }
+          }
+        }
+      }
+    },
+    "routingComparisonOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "cache_state",
+        "run_identity",
+        "sealed_input_identity_sha256",
+        "content_identity_sha256",
+        "counts",
+        "reason_distribution",
+        "latency_distribution",
+        "completeness_outcomes"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "legacy_high_recall",
+            "production_uncertainty"
+          ]
+        },
+        "cache_state": {
+          "enum": [
+            "cold",
+            "warm"
+          ]
+        },
+        "run_identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sealed_input_identity_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "content_identity_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "counts": {
+          "$ref": "#/$defs/routingComparisonCounts"
+        },
+        "reason_distribution": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "latency_distribution": {
+          "$ref": "#/$defs/latencyDistribution"
+        },
+        "completeness_outcomes": {
+          "$ref": "#/$defs/routingComparisonOutcomes"
+        }
+      }
+    },
+    "routingComparisonCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "admitted",
+        "local",
+        "escalated",
+        "deduped",
+        "cache_hits",
+        "calls",
+        "unresolved"
+      ],
+      "properties": {
+        "admitted": { "type": "integer", "minimum": 0 },
+        "local": { "type": "integer", "minimum": 0 },
+        "escalated": { "type": "integer", "minimum": 0 },
+        "deduped": { "type": "integer", "minimum": 0 },
+        "cache_hits": { "type": "integer", "minimum": 0 },
+        "calls": { "type": "integer", "minimum": 0 },
+        "unresolved": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "routingComparisonOutcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "complete",
+        "partial_review_required",
+        "blocked"
+      ],
+      "properties": {
+        "complete": { "type": "integer", "minimum": 0 },
+        "partial_review_required": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "routingComparisonRecallDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "legacy_positive_recall",
+        "uncertainty_positive_recall",
+        "delta",
+        "legacy_negative_candidate_count",
+        "uncertainty_negative_candidate_count"
+      ],
+      "properties": {
+        "legacy_positive_recall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "uncertainty_positive_recall": { "type": "number", "minimum": 0, "maximum": 1 },
+        "delta": { "type": "number" },
+        "legacy_negative_candidate_count": { "type": "integer", "minimum": 0 },
+        "uncertainty_negative_candidate_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "qualityOwnerVerdictRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ref",
+          "sha256"
+        ],
+        "properties": {
+          "ref": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
     "page": {
       "type": "object",
       "additionalProperties": false,

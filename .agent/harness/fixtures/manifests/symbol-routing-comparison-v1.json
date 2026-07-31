@@ -1,0 +1,71 @@
+{
+  "schema_version": "symbol-routing-comparison/1",
+  "sealed_input_identity": {
+    "algorithm": "sha256",
+    "digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "components": [
+      "fixture:symbol-routing-comparison-v1"
+    ]
+  },
+  "outputs": [
+    {
+      "mode": "legacy_high_recall",
+      "cache_state": "cold",
+      "run_identity": "fixture-legacy-cold",
+      "sealed_input_identity_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "content_identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "counts": { "admitted": 2, "local": 0, "escalated": 2, "deduped": 0, "cache_hits": 0, "calls": 0, "unresolved": 0 },
+      "reason_distribution": { "fixture_legacy": 2 },
+      "latency_distribution": { "sample_count": 2, "durations_ms": [10.0, 12.0] },
+      "completeness_outcomes": { "complete": 2, "partial_review_required": 0, "blocked": 0 }
+    },
+    {
+      "mode": "legacy_high_recall",
+      "cache_state": "warm",
+      "run_identity": "fixture-legacy-warm",
+      "sealed_input_identity_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "content_identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "counts": { "admitted": 2, "local": 0, "escalated": 2, "deduped": 0, "cache_hits": 2, "calls": 0, "unresolved": 0 },
+      "reason_distribution": { "fixture_legacy": 2 },
+      "latency_distribution": { "sample_count": 2, "durations_ms": [4.0, 5.0] },
+      "completeness_outcomes": { "complete": 2, "partial_review_required": 0, "blocked": 0 }
+    },
+    {
+      "mode": "production_uncertainty",
+      "cache_state": "cold",
+      "run_identity": "fixture-uncertainty-cold",
+      "sealed_input_identity_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "content_identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "counts": { "admitted": 2, "local": 1, "escalated": 1, "deduped": 0, "cache_hits": 0, "calls": 0, "unresolved": 0 },
+      "reason_distribution": { "fixture_local": 1, "fixture_unresolved": 1 },
+      "latency_distribution": { "sample_count": 2, "durations_ms": [11.0, 13.0] },
+      "completeness_outcomes": { "complete": 1, "partial_review_required": 1, "blocked": 0 }
+    },
+    {
+      "mode": "production_uncertainty",
+      "cache_state": "warm",
+      "run_identity": "fixture-uncertainty-warm",
+      "sealed_input_identity_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "content_identity_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "counts": { "admitted": 2, "local": 1, "escalated": 1, "deduped": 0, "cache_hits": 1, "calls": 0, "unresolved": 0 },
+      "reason_distribution": { "fixture_local": 1, "fixture_unresolved": 1 },
+      "latency_distribution": { "sample_count": 2, "durations_ms": [3.0, 4.0] },
+      "completeness_outcomes": { "complete": 1, "partial_review_required": 1, "blocked": 0 }
+    }
+  ],
+  "recall_delta": {
+    "legacy_positive_recall": 0.1,
+    "uncertainty_positive_recall": 0.3,
+    "delta": 0.2,
+    "legacy_negative_candidate_count": 0,
+    "uncertainty_negative_candidate_count": 0
+  },
+  "quality_owner_verdict_refs": {
+    "legacy_high_recall": [
+      { "ref": "fixture://sanitized/legacy-quality-owner", "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }
+    ],
+    "production_uncertainty": [
+      { "ref": "fixture://sanitized/uncertainty-quality-owner", "sha256": "1111111111111111111111111111111111111111111111111111111111111111" }
+    ]
+  }
+}

@@ -84,6 +84,10 @@ SYMBOL_TABLES = {
     "symbol_escalation_outcomes",
     "visual_symbol_cache_entries",
 }
+LATER_PRT6_RECOGNITION_PREVIEW_TABLES = {
+    "recognition_preview_revisions",
+    "recognition_preview_heads",
+}
 PRE_PRT4_TABLES = {
     "alembic_version",
     "projects",
@@ -827,7 +831,10 @@ def _execution_identity(crop_png: bytes) -> VisualExecutionIdentity:
 def test_prt4_adds_exactly_the_four_owned_tables() -> None:
     tables = set(inspect(engine).get_table_names())
 
-    assert tables == PRE_PRT4_TABLES | SYMBOL_TABLES
+    assert tables == (
+        PRE_PRT4_TABLES | SYMBOL_TABLES | LATER_PRT6_RECOGNITION_PREVIEW_TABLES
+    )
+    assert tables - PRE_PRT4_TABLES - LATER_PRT6_RECOGNITION_PREVIEW_TABLES == SYMBOL_TABLES
     assert {
         SymbolRoutingDecisionRecord.__tablename__,
         SymbolEscalationAttemptEventRecord.__tablename__,
@@ -850,6 +857,7 @@ def test_inventory_task_injects_required_independent_symbol_sessions(
             if model is Project and identity == project_id
             else None
         ),
+        scalar=lambda _statement: None,
         close=lambda: None,
     )
 

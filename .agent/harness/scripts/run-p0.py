@@ -25,6 +25,8 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
+from jsonschema import Draft202012Validator, FormatChecker
+
 
 ROOT = Path(__file__).resolve().parents[3]
 HARNESS = ROOT / ".agent/harness"
@@ -38,6 +40,10 @@ CURRENT_FOUR_ARTIFACT = "artifacts/current-four-manifest.json"
 SYMBOL_EVAL_ARTIFACT = "artifacts/visual-symbol-eval.json"
 SYMBOL_VERDICT_ARTIFACT = "artifacts/visual-symbol-annotation-verdict.json"
 SYMBOL_EVAL_ARTIFACTS = (SYMBOL_EVAL_ARTIFACT, SYMBOL_VERDICT_ARTIFACT)
+ROUTING_COMPARISON_ARTIFACT = "artifacts/symbol-routing-comparison.json"
+ROUTING_COMPARISON_FIXTURE = (
+    HARNESS / "fixtures/manifests/symbol-routing-comparison-v1.json"
+)
 SYMBOL_REGISTRATION_REPORT = "reports/symbol-eval-registration.json"
 SYMBOL_REGISTRATION_SELECTOR = "phase://live/symbol-eval-registration"
 SYMBOL_RECOGNITION_REPORT = "reports/symbol-recognition.json"
@@ -86,6 +92,22 @@ LIVE_CREDENTIAL_KEYS = (
     "QI_TENCENT_SECRET_KEY",
     "QI_QWEN_API_KEY",
     "QI_QWEN_WORKSPACE_ID",
+)
+FIXTURE_OFFLINE_PROOF = "reports/fixture-offline-proof.json"
+FIXTURE_PYTHON_TRIPWIRE = ".fixture-network-tripwire/sitecustomize.py"
+FIXTURE_NODE_TRIPWIRE = ".fixture-network-tripwire/node-network-tripwire.cjs"
+FIXTURE_PROVIDER_MODE_KEYS = (
+    "QI_PROVIDER_MODE",
+    "PROVIDER_MODE",
+    "OCR_PROVIDER_MODE",
+    "VISION_PROVIDER_MODE",
+    "VISION_LLM_PROVIDER_MODE",
+)
+FIXTURE_PROVIDER_NETWORK_KEYS = (
+    "QI_PROVIDER_NETWORK_ENABLED",
+    "PROVIDER_NETWORK_ENABLED",
+    "OCR_PROVIDER_NETWORK_ENABLED",
+    "VISION_PROVIDER_NETWORK_ENABLED",
 )
 LIVE_PROVIDER_MODE = "QI_PROVIDER_MODE"
 LIVE_PROVIDER_NETWORK = "QI_PROVIDER_NETWORK_ENABLED"
@@ -188,6 +210,27 @@ def _receipt_module() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _build_receipt(
+    receipt_module: ModuleType,
+    run: dict[str, Any],
+    results: list[dict[str, Any]],
+    mirror: dict[str, Any],
+    bindings: dict[str, Any],
+    policies: dict[str, dict[str, Any]],
+    run_dir: Path,
+) -> dict[str, Any]:
+    kwargs = {"run_dir": run_dir} if getattr(receipt_module, "SUPPORTS_RUN_DIR", False) else {}
+    return receipt_module.build_receipt(
+        ROOT,
+        run,
+        results,
+        mirror,
+        bindings,
+        policies,
+        **kwargs,
+    )
 
 
 def _script_module(name: str, filename: str) -> ModuleType:
@@ -464,24 +507,95 @@ def _selector_environment(
     return environment
 
 
-def _command_outcome(selector: str) -> tuple[int | None, str, str]:
+def _write_fixture_network_tripwires(run_dir: Path) -> None:
+    tripwire_dir = run_dir / Path(FIXTURE_PYTHON_TRIPWIRE).parent
+    tripwire_dir.mkdir(exist_ok=False)
+    (run_dir / FIXTURE_PYTHON_TRIPWIRE).write_text(
+        "import socket\n"
+        "_socket = socket.socket\n"
+        "def _blocked(*_args, **_kwargs):\n"
+        "    raise RuntimeError('fixture network access is blocked')\n"
+        "class _BlockedSocket(_socket):\n"
+        "    connect = _blocked\n"
+        "    connect_ex = _blocked\n"
+        "socket.socket = _BlockedSocket\n"
+        "socket.create_connection = _blocked\n",
+        encoding="utf-8",
+    )
+    (run_dir / FIXTURE_NODE_TRIPWIRE).write_text(
+        "const blocked = () => { throw new Error('fixture network access is blocked'); };\n"
+        "for (const name of ['net', 'tls']) {\n"
+        "  const module = require(name); module.connect = blocked; module.createConnection = blocked;\n"
+        "}\n"
+        "for (const name of ['http', 'https']) {\n"
+        "  const module = require(name); module.request = blocked; module.get = blocked;\n"
+        "}\n"
+        "globalThis.fetch = blocked;\n"
+        "try {\n"
+        "  const undici = require('undici'); undici.fetch = blocked; undici.request = blocked;\n"
+        "} catch (_error) {}\n",
+        encoding="utf-8",
+    )
+
+
+def _fixture_selector_environment(run_dir: Path) -> dict[str, str]:
+    environment = dict(os.environ)
+    backend_root = str(ROOT / "backend")
+    python_paths = [
+        path
+        for path in environment.get("PYTHONPATH", "").split(os.pathsep)
+        if path and path != backend_root
+    ]
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str((run_dir / FIXTURE_PYTHON_TRIPWIRE).parent), backend_root, *python_paths]
+    )
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    for key in LIVE_CREDENTIAL_KEYS:
+        environment[key] = ""
+    for key in FIXTURE_PROVIDER_MODE_KEYS:
+        environment[key] = "fixture"
+    for key in FIXTURE_PROVIDER_NETWORK_KEYS:
+        environment[key] = "disabled"
+    environment["QI_P0_FIXTURE_OFFLINE_PROOF"] = FIXTURE_OFFLINE_PROOF
+    existing_node_options = environment.get("NODE_OPTIONS", "").strip()
+    environment["NODE_OPTIONS"] = " ".join(
+        part
+        for part in (
+            existing_node_options,
+            "--require",
+            str(run_dir / FIXTURE_NODE_TRIPWIRE),
+        )
+        if part
+    )
+    return environment
+
+
+def _command_outcome(
+    selector: str,
+    mode: str,
+    run_dir: Path | None,
+) -> tuple[int | None, str, str, bool]:
     try:
         argv = shlex.split(selector)
     except ValueError as exc:
-        return None, "blocked", f"invalid selector argv: {exc}"
+        return None, "blocked", f"invalid selector argv: {exc}", False
     if not argv or any(token in SHELL_OPERATORS for token in argv):
-        return None, "blocked", "selector is not one exact argv command"
+        return None, "blocked", "selector is not one exact argv command", False
     try:
         result = subprocess.run(
             argv,
             cwd=ROOT,
-            env=_selector_environment(),
+            env=(
+                _fixture_selector_environment(run_dir)
+                if mode == "fixture" and run_dir is not None
+                else _selector_environment()
+            ),
             check=False,
             capture_output=True,
             text=True,
         )
     except (FileNotFoundError, PermissionError, OSError, RuntimeError) as exc:
-        return None, "blocked", f"selector could not start: {exc}"
+        return None, "blocked", f"selector could not start: {exc}", False
     state = "passed" if result.returncode == 0 else "failed"
     output = "\n".join(
         (
@@ -493,11 +607,14 @@ def _command_outcome(selector: str) -> tuple[int | None, str, str]:
             result.stderr,
         )
     )
-    return result.returncode, state, output
+    return result.returncode, state, output, True
 
 
 def _execute_selector(selector: str, mode: str) -> dict[str, Any]:
     started_at = _iso_now()
+    fixture_offline_enforced = False
+    subprocess_started = False
+    pre_execution_blocked = False
     if selector.startswith("phase://"):
         if _ACTIVE_RUN_DIR is None:
             exit_code, state, output, artifact_refs = (
@@ -512,9 +629,27 @@ def _execute_selector(selector: str, mode: str) -> dict[str, Any]:
                 mode,
                 _ACTIVE_RUN_DIR,
             )
+            fixture_offline_enforced = (
+                mode == "fixture"
+                and exit_code is None
+                and state == "blocked"
+                and not artifact_refs
+                and output == "phase mode mismatch: runner=fixture selector=live"
+            )
+            pre_execution_blocked = fixture_offline_enforced
     else:
-        exit_code, state, output = _command_outcome(selector)
+        exit_code, state, output, subprocess_started = _command_outcome(
+            selector,
+            mode,
+            _ACTIVE_RUN_DIR,
+        )
         artifact_refs = []
+        pre_execution_blocked = not subprocess_started
+        fixture_offline_enforced = (
+            mode == "fixture"
+            and _ACTIVE_RUN_DIR is not None
+            and (subprocess_started or pre_execution_blocked)
+        )
     return {
         "exit_code": exit_code,
         "result_state": state,
@@ -522,6 +657,9 @@ def _execute_selector(selector: str, mode: str) -> dict[str, Any]:
         "completed_at": _iso_now(),
         "output": output,
         "artifact_refs": artifact_refs,
+        "subprocess_started": subprocess_started,
+        "pre_execution_blocked": pre_execution_blocked,
+        "fixture_offline_enforced": fixture_offline_enforced,
     }
 
 
@@ -538,6 +676,37 @@ def _execute_selector_in_run(
         return _execute_selector(selector, mode)
     finally:
         _ACTIVE_RUN_DIR = None
+
+
+def _fixture_proof_complete(proof: Mapping[str, Any], selectors: list[str]) -> bool:
+    attempted = proof["attempted_selectors"]
+    executed = proof["executed_selectors"]
+    preblocked = proof["pre_execution_blocked_selectors"]
+    offline = proof["offline_enforced_selectors"]
+    if not all(isinstance(values, list) for values in (attempted, executed, preblocked, offline)):
+        return False
+    if not all(
+        isinstance(selector, str)
+        for values in (attempted, executed, preblocked, offline)
+        for selector in values
+    ):
+        return False
+    if attempted != selectors or offline != selectors:
+        return False
+    executed_set = set(executed)
+    preblocked_set = set(preblocked)
+    if (
+        len(executed) != len(executed_set)
+        or len(preblocked) != len(preblocked_set)
+        or executed_set & preblocked_set
+        or executed_set | preblocked_set != set(selectors)
+        or len(executed) + len(preblocked) != len(selectors)
+    ):
+        return False
+    return (
+        executed == [selector for selector in selectors if selector in executed_set]
+        and preblocked == [selector for selector in selectors if selector in preblocked_set]
+    )
 
 
 def _seal_run(run_dir: Path) -> None:
@@ -627,10 +796,11 @@ def _validate_input_artifacts(
         {CURRENT_FOUR_ARTIFACT},
         set(SYMBOL_EVAL_ARTIFACTS),
         {CURRENT_FOUR_ARTIFACT, *SYMBOL_EVAL_ARTIFACTS},
+        {ROUTING_COMPARISON_ARTIFACT},
     ):
         raise ValueError(
             "input artifacts must be the exact current-four-manifest artifact or exact "
-            "visual-symbol eval/verdict pair"
+            "visual-symbol eval/verdict pair, or routing comparison artifact"
         )
     if any(not isinstance(content, bytes) for content in artifacts.values()):
         raise TypeError("input artifact content must be bytes")
@@ -639,9 +809,32 @@ def _validate_input_artifacts(
         for name in (
             CURRENT_FOUR_ARTIFACT,
             *SYMBOL_EVAL_ARTIFACTS,
+            ROUTING_COMPARISON_ARTIFACT,
         )
         if name in artifacts
     }
+
+
+def _routing_comparison_fixture_artifacts() -> dict[str, bytes]:
+    artifact = ROUTING_COMPARISON_FIXTURE.read_bytes()
+    try:
+        document = json.loads(artifact)
+    except json.JSONDecodeError as exc:
+        raise ValueError("routing comparison fixture is invalid JSON") from exc
+    schema = _load_json(HARNESS / "schemas/visual-symbol-eval.schema.json")
+    Draft202012Validator(
+        {
+            "$schema": schema["$schema"],
+            "$defs": schema["$defs"],
+            "$ref": "#/$defs/routingComparisonEvidence",
+        },
+        format_checker=FormatChecker(),
+    ).validate(document)
+    _script_module(
+        "qi_routing_comparison_fixture_validator",
+        "symbol_eval.py",
+    ).validate_routing_comparison_evidence(document)
+    return {ROUTING_COMPARISON_ARTIFACT: artifact}
 
 
 def _is_sealed(path: Path) -> bool:
@@ -3829,13 +4022,14 @@ def resume_live_run(
         run["execution_state"] = "completed"
         run["completed_at"] = _iso_now()
         receipt_module.validate_schema(run, "run.schema.json", ROOT)
-        receipt = receipt_module.build_receipt(
-            ROOT,
+        receipt = _build_receipt(
+            receipt_module,
             run,
             results,
             preflight.mirror,
             preflight.bindings,
             preflight.policies,
+            run_dir,
         )
         _atomic_write_json(run_path, run)
         _write_json(run_dir / "receipt.json", receipt)
@@ -3865,13 +4059,22 @@ def run_task(
         raise ValueError("--task must be a literal Dn-Tn identifier")
 
     artifacts = _validate_input_artifacts(input_artifacts)
-    if artifacts and (
-        set(artifacts) != {CURRENT_FOUR_ARTIFACT}
-        or mode not in {"fixture", "live"}
-        or task_id != "D2-T1"
+    artifact_names = set(artifacts)
+    if artifact_names & set(SYMBOL_EVAL_ARTIFACTS):
+        raise ValueError("symbol-eval artifacts are registration-only and cannot run a task")
+    if (mode, scope, task_id) == ("fixture", "task", "D7-T2"):
+        fixture_artifacts = _routing_comparison_fixture_artifacts()
+        if artifacts and artifacts != fixture_artifacts:
+            raise ValueError("D7-T2 fixture routing evidence must use the sanitized fixture")
+        artifacts = fixture_artifacts
+    elif artifacts and not (
+        artifact_names == {CURRENT_FOUR_ARTIFACT}
+        and mode in {"fixture", "live"}
+        and task_id == "D2-T1"
     ):
         raise ValueError(
-            "current-four-manifest input is limited to fixture/live D2-T1 task runs"
+            "input artifacts are limited to fixture/live D2-T1 current-four evidence "
+            "or fixture D7-T2 routing evidence"
         )
 
     receipt_module = _receipt_module()
@@ -3885,11 +4088,12 @@ def run_task(
     receipt_module.validate_schema(mirror, "p0-contracts.schema.json", ROOT)
     receipt_module.validate_schema(bindings, "global-contract-bindings.schema.json", ROOT)
     if artifacts:
-        receipt_module.validate_schema(
-            json.loads(artifacts[CURRENT_FOUR_ARTIFACT]),
-            "current-four-manifest.schema.json",
-            ROOT,
-        )
+        if CURRENT_FOUR_ARTIFACT in artifacts:
+            receipt_module.validate_schema(
+                json.loads(artifacts[CURRENT_FOUR_ARTIFACT]),
+                "current-four-manifest.schema.json",
+                ROOT,
+            )
 
     selected = sorted(
         (row for row in mirror["contracts"] if row["task_id"] == task_id),
@@ -3929,14 +4133,46 @@ def run_task(
         (run_dir / name).mkdir()
     for name, content in artifacts.items():
         (run_dir / name).write_bytes(content)
+    selectors = list(dict.fromkeys(row["verification_selector"] for row in selected))
+    fixture_proof: dict[str, Any] | None = None
+    if mode == "fixture":
+        _write_fixture_network_tripwires(run_dir)
+        fixture_proof = {
+            "schema_version": "fixture-offline-proof/1",
+            "run_id": run_id,
+            "mode": "fixture",
+            "credential_keys_empty": list(LIVE_CREDENTIAL_KEYS),
+            "provider_mode": "fixture",
+            "provider_network_enabled": "disabled",
+            "selectors": selectors,
+            "attempted_selectors": [],
+            "executed_selectors": [],
+            "pre_execution_blocked_selectors": [],
+            "offline_enforced_selectors": [],
+            "external_calls_proven": False,
+        }
+        _write_json(run_dir / FIXTURE_OFFLINE_PROOF, fixture_proof)
     receipt_module.validate_schema(run, "run.schema.json", ROOT)
     _write_json(run_dir / "run.json", run)
 
     # Identical selectors execute once; every selected P0 ID still gets a result.
     outcomes: dict[str, dict[str, Any]] = {}
     log_refs: dict[str, str] = {}
-    for index, selector in enumerate(dict.fromkeys(row["verification_selector"] for row in selected), start=1):
+    for index, selector in enumerate(selectors, start=1):
         outcome = _execute_selector_in_run(selector, mode, run_dir)
+        if fixture_proof is not None:
+            fixture_proof["attempted_selectors"].append(selector)
+            if outcome.get("subprocess_started") is True:
+                fixture_proof["executed_selectors"].append(selector)
+            if outcome.get("pre_execution_blocked") is True:
+                fixture_proof["pre_execution_blocked_selectors"].append(selector)
+            if outcome.get("fixture_offline_enforced") is True:
+                fixture_proof["offline_enforced_selectors"].append(selector)
+            fixture_proof["external_calls_proven"] = _fixture_proof_complete(
+                fixture_proof,
+                selectors,
+            )
+            _write_json(run_dir / FIXTURE_OFFLINE_PROOF, fixture_proof)
         log_ref = f"logs/selector-{index:03d}.log"
         (run_dir / log_ref).write_text(outcome.pop("output") + "\n", encoding="utf-8")
         outcomes[selector] = outcome
@@ -3958,6 +4194,8 @@ def run_task(
             "artifact_refs": [
                 log_refs[selector],
                 *outcome.get("artifact_refs", []),
+                *([FIXTURE_OFFLINE_PROOF] if fixture_proof is not None else []),
+                *artifacts,
             ],
         }
         receipt_module.validate_schema(result, "contract-result.schema.json", ROOT)
@@ -3974,13 +4212,14 @@ def run_task(
     run["completed_at"] = _iso_now()
     receipt_module.validate_schema(run, "run.schema.json", ROOT)
     _write_json(run_dir / "run.json", run)
-    receipt = receipt_module.build_receipt(
-        ROOT,
+    receipt = _build_receipt(
+        receipt_module,
         run,
         results,
         mirror,
         bindings,
         policies,
+        run_dir,
     )
     _write_json(run_dir / "receipt.json", receipt)
     _seal_run(run_dir)

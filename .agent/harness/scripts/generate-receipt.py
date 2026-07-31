@@ -27,6 +27,7 @@ HARNESS = ROOT / ".agent/harness"
 RUNS = HARNESS / "runs"
 MIRROR_PATH = HARNESS / "contracts/p0-contracts.json"
 BINDINGS_PATH = HARNESS / "contracts/global-contract-bindings.json"
+SUPPORTS_RUN_DIR = True
 RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$")
 CURRENT_FOUR_ARTIFACT = "artifacts/current-four-manifest.json"
 SYMBOL_EVAL_ARTIFACT = "artifacts/visual-symbol-eval.json"
@@ -34,6 +35,8 @@ SYMBOL_VERDICT_ARTIFACT = "artifacts/visual-symbol-annotation-verdict.json"
 SYMBOL_EVAL_ARTIFACTS = frozenset(
     {SYMBOL_EVAL_ARTIFACT, SYMBOL_VERDICT_ARTIFACT}
 )
+ROUTING_COMPARISON_ARTIFACT = "artifacts/symbol-routing-comparison.json"
+FIXTURE_OFFLINE_PROOF = "reports/fixture-offline-proof.json"
 INPUT_ARTIFACT_PREFIX = "input-artifact:"
 PROVIDER_FIXTURE_PREFIX = "provider-fixture:"
 PROVIDER_FIXTURE_PATHS = (
@@ -346,6 +349,7 @@ def input_identity(
         {CURRENT_FOUR_ARTIFACT},
         SYMBOL_EVAL_ARTIFACTS,
         {CURRENT_FOUR_ARTIFACT, *SYMBOL_EVAL_ARTIFACTS},
+        {ROUTING_COMPARISON_ARTIFACT},
     ):
         raise ValueError("unsupported input artifact set")
     for name, artifact in artifacts.items():
@@ -394,6 +398,7 @@ def input_artifacts_from_run(
         {CURRENT_FOUR_ARTIFACT},
         SYMBOL_EVAL_ARTIFACTS,
         {CURRENT_FOUR_ARTIFACT, *SYMBOL_EVAL_ARTIFACTS},
+        {ROUTING_COMPARISON_ARTIFACT},
     ):
         raise ValueError("unsupported sealed input artifact set")
     if len(names) != len(name_set):
@@ -405,6 +410,79 @@ def input_artifacts_from_run(
             raise ValueError(f"missing sealed input artifact: {name}")
         artifacts[name] = artifact_path.read_bytes()
     return artifacts
+
+
+def _validated_run_dir(root: Path, run: Mapping[str, Any], run_dir: Path | None) -> Path:
+    candidate = run_dir or root / ".agent/harness/runs" / run["run_id"]
+    if (
+        candidate.name != run["run_id"]
+        or candidate.is_symlink()
+        or not candidate.is_dir()
+    ):
+        raise ValueError("run directory is unavailable or does not match run_id")
+    return candidate
+
+
+def _fixture_external_calls(
+    run: Mapping[str, Any],
+    results: list[Mapping[str, Any]],
+    run_dir: Path,
+) -> int | None:
+    if run["mode"] != "fixture":
+        return None
+    proof_path = run_dir / FIXTURE_OFFLINE_PROOF
+    if proof_path.is_symlink() or not proof_path.is_file():
+        return None
+    try:
+        proof = _load_json(proof_path)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None
+    selectors = list(dict.fromkeys(result["command"] for result in results))
+    attempted = proof.get("attempted_selectors")
+    executed = proof.get("executed_selectors")
+    preblocked = proof.get("pre_execution_blocked_selectors")
+    offline = proof.get("offline_enforced_selectors")
+    if not all(isinstance(values, list) for values in (attempted, executed, preblocked, offline)):
+        return None
+    if not all(
+        isinstance(selector, str)
+        for values in (attempted, executed, preblocked, offline)
+        for selector in values
+    ):
+        return None
+    executed_set = set(executed)
+    preblocked_set = set(preblocked)
+    partition_is_complete = (
+        attempted == selectors
+        and offline == selectors
+        and len(executed) == len(executed_set)
+        and len(preblocked) == len(preblocked_set)
+        and not (executed_set & preblocked_set)
+        and executed_set | preblocked_set == set(selectors)
+        and len(executed) + len(preblocked) == len(selectors)
+        and executed == [selector for selector in selectors if selector in executed_set]
+        and preblocked == [selector for selector in selectors if selector in preblocked_set]
+    )
+    if (
+        proof.get("schema_version") != "fixture-offline-proof/1"
+        or proof.get("run_id") != run["run_id"]
+        or proof.get("mode") != "fixture"
+        or proof.get("credential_keys_empty")
+        != [
+            "QI_TENCENT_SECRET_ID",
+            "QI_TENCENT_SECRET_KEY",
+            "QI_QWEN_API_KEY",
+            "QI_QWEN_WORKSPACE_ID",
+        ]
+        or proof.get("provider_mode") != "fixture"
+        or proof.get("provider_network_enabled") != "disabled"
+        or proof.get("selectors") != selectors
+        or not partition_is_complete
+        or proof.get("external_calls_proven") is not True
+        or any(FIXTURE_OFFLINE_PROOF not in result["artifact_refs"] for result in results)
+    ):
+        return None
+    return 0
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -485,6 +563,7 @@ def _freshness_reasons(
     policies: dict[str, dict[str, Any]],
     now: datetime,
     valid_until: datetime,
+    run_dir: Path | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     if run["contract_definition_hash"] != mirror["contract_definition_hash"]:
@@ -499,7 +578,7 @@ def _freshness_reasons(
         reasons.append("config_identity_changed")
     input_artifacts = input_artifacts_from_run(
         run,
-        root / ".agent/harness/runs" / run["run_id"],
+        run_dir or root / ".agent/harness/runs" / run["run_id"],
     )
     if run["input_identity"] != input_identity(
         run["mode"],
@@ -750,6 +829,7 @@ def build_receipt(
     *,
     generated_at: str | None = None,
     now: datetime | None = None,
+    run_dir: Path | None = None,
 ) -> dict[str, Any]:
     generated = _parse_iso(generated_at) if generated_at else datetime.now(timezone.utc)
     current_time = now or generated
@@ -834,6 +914,7 @@ def build_receipt(
         result_counts[state] += 1
         per_severity_counts[severity][state] += 1
 
+    actual_run_dir = _validated_run_dir(root, run, run_dir)
     reasons = _freshness_reasons(
         root,
         run,
@@ -841,6 +922,7 @@ def build_receipt(
         policies,
         current_time,
         valid_until,
+        actual_run_dir,
     )
     completed_at = _parse_iso(run["completed_at"])
     if generated < completed_at:
@@ -864,6 +946,7 @@ def build_receipt(
                 policies,
             )
     formal_verdict = overall if formal_allowed else None
+    external_calls = _fixture_external_calls(run, results, actual_run_dir)
 
     receipt = {
         "schema_version": "receipt/1",
@@ -883,6 +966,7 @@ def build_receipt(
         "result_counts": result_counts,
         "per_severity_counts": per_severity_counts,
         "binding_evidence": _binding_evidence(bindings, set(selected_ids)),
+        "external_calls": external_calls,
         "overall_verdict": overall,
         "formal_p0_verdict_allowed": formal_allowed,
         "formal_p0_verdict": formal_verdict,
@@ -936,7 +1020,10 @@ def check_run(run_id: str, root: Path = ROOT) -> dict[str, Any]:
         policies,
         generated_at=receipt["generated_at"],
         now=datetime.now(timezone.utc),
+        run_dir=run_dir,
     )
+    if "external_calls" not in receipt:
+        expected.pop("external_calls", None)
     if _canonical_bytes(expected) != _canonical_bytes(receipt):
         raise ValueError("receipt does not match current run evidence or is stale")
     return receipt

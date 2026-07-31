@@ -1,5 +1,5 @@
 {
-  "contract_definition_hash": "d083d5596b43b8b7d8d0fa206f7d91a8d731706dfedb49f43bc4235a32705ba5",
+  "contract_definition_hash": "072eb7353b633164ff70b6b0f003268cb828fcc37d0f26484a3380f502759c7e",
   "contracts": [
     {
       "blocking_level": "blocking",
@@ -1001,7 +1001,7 @@
       "stable_p0_requirement": "`ambiguous`/unresolved text/visual source 可进入审核并保持可定位、promote/ignore；缺 identity/disposition/source/coordinates、冲突归属或证据损坏仍为 blocking，Quality Owner 必须关闭 unresolved evidence 后才可越过正式 gate",
       "task_id": "D7-T2",
       "tier": "unit",
-      "verification_selector": "pytest backend/tests/unit/candidates/test_symbol_routing.py::test_conflicting_family_evidence_escalates backend/tests/unit/candidates/test_symbol_routing.py::test_unknown_reason_fails_closed backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_validation.py -q"
+      "verification_selector": "pytest backend/tests/unit/candidates/test_local_symbol_resolution.py::test_conflicting_family_evidence_escalates backend/tests/unit/candidates/test_symbol_routing.py::test_unknown_reason_fails_closed backend/tests/integration/test_review_freeze.py backend/tests/integration/test_balloon_validation.py -q"
     },
     {
       "blocking_level": "blocking",

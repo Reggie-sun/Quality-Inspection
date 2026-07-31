@@ -1533,6 +1533,26 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/contract/harness/test_live_run_contract.py -q
 ```
 
+**PRT-7 bounded scope amendment (`2026-07-31`):**
+
+- User authorization extends only the PRT-7 offline Harness boundary to a
+  sanitized `D7-T2` routing-comparison fixture, immutable receipt
+  `external_calls` evidence, one stale Harness selector correction, and four
+  pre-existing Ruff-only corrections. Harness remains validation-only;
+  `verification_high_recall` remains Harness-only and cross-project cache stays
+  `blocked_missing_security_scope_owner`.
+- New allowed paths are the receipt schema/generator, `run-p0.py`, P0 mirror,
+  sanitized manifest fixture, the three named lint-only files, the traceability
+  matrix selector Owner, hash-only global bindings, and the two named
+  integration-test baseline files. No Provider, upload, browser, formal live
+  Harness, promotion, PRT-8, main merge, or push is authorized.
+- Runtime rule: any later database verification must use a disposable isolated
+  PostgreSQL instance only; never mutate the existing dev or production database.
+- Next verification: focused Harness RED/GREEN, `check-contracts.py`, the
+  corrected `P0-REC-010` selector, full specified Ruff command, JSON/schema
+  validation, and `git diff --check`. Full backend/frontend/build/fixture CLI
+  remain a separate next step.
+
 - [x] **Step 1: RED evidence contract**
 
 Require both legacy and uncertainty outputs for the same sealed inputs:
@@ -1586,13 +1606,51 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   returned `accept` with `0 blockers`. Existing `__pycache__` / `.pyc` artifacts
   remain unstaged and unmodified by this step.
 
-- [ ] **Step 2: GREEN offline shadow**
+**PRT-7 Steps 2/3 selection record (`2026-07-31`):**
+
+- Selected lane: `Heavy`.
+- Selected plan:
+  `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`,
+  `PRT-7 Steps 2 and 3` only.
+- Selection evidence: the user selected option A and explicitly authorized
+  GREEN, task review, repository/fixture verification, commit and final review
+  while retaining the `PRT-8` stop. Feature HEAD is
+  `11961086e7a52ac203efbf77e4d9dea5d134ad19`; live main is
+  `f01a38883241256dc5f6a966566af0c4c96705b2`; merge-base remains
+  `50d118523181fe2edc9c240afe070faed22a7def`; feature is ahead `13` / behind
+  `2`. The new main-only `f01a388` delta changes only
+  `frontend/src/app/localContext.ts`, `frontend/src/main.tsx`, and
+  `frontend/src/main.test.tsx`, with no PRT-7 path overlap.
+- Validation action: `continue`; satisfy the accepted Step 1 RED with the
+  minimum closed schema definitions and offline validator, then run the exact
+  Step 3 commands and independent reviews.
+- Problem boundary: Harness validates already-owned offline evidence only. It
+  must not calculate candidate, coverage, completeness, recall success or
+  promotion success; `CandidateAdvisor` remains the sole business semantic
+  Owner. `verification_high_recall` remains Harness-only and
+  cross-project cache remains
+  `blocked_missing_security_scope_owner`.
+- Old-path action: preserve `legacy_high_recall` and the current production
+  paths. This task adds no production default, removal mark, fallback, shadow
+  writer or second final-write path.
+- Writer ownership and order: one bounded sequential `tdd_developer` writer
+  owns the five PRT-7 paths, followed by one independent read-only reviewer;
+  the parent owns final diff review, Step 3 verification and final decision.
+- Next verification:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
+  backend/tests/contract/harness/test_symbol_eval_contract.py \
+  backend/tests/contract/harness/test_live_run_contract.py -q
+```
+
+- [x] **Step 2: GREEN offline shadow**
 
 Generate fixture-only evidence with `external_calls=0`. Report current
 cross-project-cache gate as blocked, not passed. `verification_high_recall` remains
 Harness-only and cannot write production results.
 
-- [ ] **Step 3: Repository verification and stop**
+- [x] **Step 3: Repository verification and stop**
 
 Run:
 
@@ -1607,10 +1665,21 @@ micromamba run -n qi-p0 ruff check backend/app backend/tests \
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python \
   .agent/harness/scripts/run-p0.py fixture --scope task --task D7-T2
 git diff --check
-git add .agent/harness/schemas/visual-symbol-eval.schema.json \
+git add .agent/harness/contracts/global-contract-bindings.json \
+  .agent/harness/contracts/p0-contracts.json \
+  .agent/harness/fixtures/manifests/symbol-routing-comparison-v1.json \
+  .agent/harness/schemas/receipt.schema.json \
+  .agent/harness/schemas/visual-symbol-eval.schema.json \
+  .agent/harness/scripts/generate-receipt.py \
+  .agent/harness/scripts/run-p0.py \
   .agent/harness/scripts/symbol_eval.py \
+  backend/app/candidates/disposition.py \
+  backend/app/candidates/parser.py \
   backend/tests/contract/harness/test_symbol_eval_contract.py \
-  backend/tests/contract/harness/test_live_run_contract.py \
+  backend/tests/integration/test_project_intake_api.py \
+  backend/tests/integration/test_symbol_routing_evidence.py \
+  backend/tests/unit/helpers/test_welli_layout_regression.py \
+  docs/superpowers/plans/2026-07-21-p0-contract-traceability-matrix.md \
   docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md
 git commit -m "test: gate production symbol routing"
 ```
@@ -1627,3 +1696,55 @@ Rollback is `git revert <PRT-7-commit>` followed first by both Harness contract
 modules and `check-contracts.py`; preserve the immutable fixture run even if it
 becomes stale. The only next verification after successful PRT-7 is a new parent
 amendment decision for the still-blocked security-scope cache and `PRT-8`.
+
+**PRT-7 Steps 2/3 evidence (`2026-07-31`):**
+
+- Focused TDD closed the accepted RED plus three independent review cycles.
+  The final exact two-file Harness command exited `0` with `96 passed`.
+  `check-contracts.py` reported `global_contracts=69`, `p0_contracts=111`,
+  `mapped=101`, `unclassified=0`, and every drift/conflict count `0`.
+- The closed comparison contract binds one sanitized sealed input to exact
+  `legacy_high_recall` / `production_uncertainty` × cold/warm outputs, all seven
+  routing counts, reason distribution, raw latency samples, completeness
+  outcomes, recall delta, and per-mode Quality Owner refs. Harness validates
+  identity, membership, sample-count consistency and arithmetic only; it does
+  not calculate CandidateAdvisor business verdicts. A single
+  `513440.2794169728ms` sample remains ineligible for P50/P95.
+- The fixture runner preserves legacy `receipt/1` readability, rejects
+  registration-only symbol-eval artifacts from task execution, empties Provider
+  credentials, forces offline Provider controls, and binds Python/Node network
+  tripwires to a sealed lifecycle proof. Receipt generation independently
+  requires an ordered, disjoint, exact partition of attempted, executed and
+  pre-execution-blocked selectors before reporting `external_calls=0`;
+  non-fixture or incomplete proof reports `null`.
+- `P0-REC-010` now selects the existing
+  `test_local_symbol_resolution.py::test_conflicting_family_evidence_escalates`
+  Owner test. The traceability source, generated mirror and hash-only global
+  binding agree. Full Ruff passed after three behavior-neutral baseline lint
+  corrections.
+- On a fresh, migrated, disposable PostgreSQL container with no named volume,
+  the full backend command exited `0`: `1506 passed, 4 warnings in 52.04s`.
+  Two test-only baseline files were minimally corrected to assert relative
+  intake counts, distinguish the two later PRT-6 preview tables, and supply the
+  no-existing-job `scalar` stub. Frontend verification passed with `25` files /
+  `263` tests; production build passed with the existing chunk-size warning.
+- Exact fixture command:
+  `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python
+  .agent/harness/scripts/run-p0.py fixture --scope task --task D7-T2`.
+  It produced immutable run `20260731T023152459255Z-45112b99` and exited `1`
+  because its task receipt is intentionally `blocked`: the six live-only phase
+  selectors were stopped before execution in fixture mode. The seven offline
+  selectors passed, with `0 failed`, `0 not_run`, fresh receipt,
+  `formal_p0_verdict_allowed=false`, sealed routing/proof artifacts and
+  `external_calls=0`. Literal `generate-receipt.py --check-run
+  20260731T023152459255Z-45112b99` reported `receipt_valid=1`.
+- The disposable PostgreSQL container and network were removed after evidence
+  capture. `git diff --check`, mirror/binding checks and the full specified Ruff
+  command passed. The old immutable failure run
+  `20260731T010824036074Z-4ede5669` remains untouched.
+- Independent final review returned `accept with concerns`, `0 blockers`.
+  Its source-only staging concern is resolved by the explicit list above; the
+  remaining compatibility-cleanup suggestion is non-blocking and deferred.
+  No Provider, upload, browser, formal live Harness, production promotion,
+  production default/fallback, cache Owner, main merge, push, artifact cleanup
+  or `PRT-8` action occurred.
