@@ -3,21 +3,21 @@
 ## Status
 
 - Date: `2026-07-31`
-- Status: `implementation-verified-review-pending`
+- Status: `completed`
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-31-leader-dimension-inspection-excel.md`
-- Selection evidence: Task 1–4 production commits 已在同一批准 plan 下完成；Task 5 新增
-  代表性 LibreOffice 回算，并以 isolated-DB focused/broader export suites 验证 v3 合同。
-- Validation action: `continue`。本 design 只 supersede
+- Selection evidence: Task 1–5 production commits 已在同一批准 plan 下完成；代表性
+  LibreOffice 回算与 isolated-DB focused/broader export suites 验证 v3 合同；最终
+  independent review 发现的 manifest `mapping_sha256` 缺口已最小修复并复审接受。
+- Validation action: `close`。本 design 只 supersede
   `2026-07-31-sip-auto-mapping-and-exception-review-design.md` 中
   “不修改固定 Excel 模板、列 mapping”的 non-goal；该 design 已完成的
   item review、SIP auto-mapping、exception-only UI 和 project metadata 行为保持不变。
-- Writer ownership and order: Task 5 worker 仅修改 allowed test/docs files；parent 保留
-  独立 read-only reviewer gate 的唯一调度和最终判定权。
-- Next verification: parent 执行 independent review，检查唯一 Owner、无 v2 fallback、
-  formula trust、active rows、`气泡图`、atomic publish、rollback 和测试真实性；在 verdict
-  前不得将该 design 或正式实现标记为 completed。
+- Writer ownership and order: Task 1 → Task 5 串行完成；原 Task 5 worker 仅对 reviewer
+  指出的 mapping identity 缺口实施 scoped repair，parent 完成独立复审和最终判定。
+- Next verification: 后续只需按正常 export regression gate 复验；本 design 已无待决
+  implementation 或 review gate。
 
 ## Context
 

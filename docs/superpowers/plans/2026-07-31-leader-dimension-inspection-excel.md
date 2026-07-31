@@ -63,16 +63,16 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 ## Status
 
 - Date: `2026-07-31`
-- Status: `implementation-verified-review-pending`
+- Status: `completed`
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-07-31-leader-dimension-inspection-excel.md`
 - Selection evidence: 用户明确要求在批准的非生产对比稿之后建立正式 spec/plan。
-- Validation action: `continue`
-- Writer ownership and order: Task 1 → Task 5 的 production tasks 已串行完成；Task 5 worker
-  仅拥有 allowed test/docs files，parent 保留 independent reviewer gate 和最终闭环。
-- Next verification: independent reviewer 的 read-only verdict；在该 verdict 前不得标记计划
-  或正式实现 completed。
+- Validation action: `close`
+- Writer ownership and order: Task 1 → Task 5 的 production tasks 已串行完成；最终 reviewer
+  发现的 manifest mapping identity 缺口由原 Task 5 worker 最小修复并提交，parent 完成
+  独立复审和最终闭环。
+- Next verification: 后续只需按正常 export regression gate 复验；本 plan 不再有待执行步骤。
 
 ## Allowed Paths
 
@@ -1125,7 +1125,7 @@ Amend only these rows:
 
 Do not change `EXP-004/005/006/008/009`.
 
-- [ ] **Step 5: Perform an independent read-only review**
+- [x] **Step 5: Perform an independent read-only review**
 
 Dispatch the local `reviewer` profile with:
 
@@ -1180,8 +1180,11 @@ is staged.
   `b5a1ffac7cadba1cf1faac7ae6866be9482aca5fcd70fee24f385dbca854eea3`, mapping
   `bd0ed776123deaf2d043fbc0b816991f1560cfd4fb053ed2f69307864ab545e6`, both v3 and accepted by
   `load_template_registration()`; the atomicity suite continues to exercise manifest registration.
-- Implementation and verification are complete for this task. Final independent review remains
-  pending and is the required gate before any overall completion claim.
+- Final independent review initially rejected missing manifest `mapping_sha256`; commit
+  `6ae31a9f8220c20dba1801c9dcbbdbd6003a157d` closed the verified mapping bytes →
+  registration → canonical manifest identity chain. The same reviewer reverified the repair as
+  `accept with concerns`; its sole concern was inability to resolve the default `postgres` host,
+  which the parent closes with the isolated-DB final suite.
 
 - [x] **Step 7: Commit the closure**
 
@@ -1198,7 +1201,7 @@ git add \
 git commit -m "docs(exports): close dimension inspection workbook contract"
 ```
 
-- [ ] **Step 8: Record completion only after fresh evidence**
+- [x] **Step 8: Record completion only after fresh evidence**
 
 Set this plan status to `completed` only when:
 
