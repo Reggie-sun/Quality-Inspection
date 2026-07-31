@@ -49,6 +49,26 @@ def _valid_source_pdf() -> bytes:
     return content
 
 
+def _title_observation(
+    observation_id: str,
+    text: str,
+    bbox_pdf: list[float],
+) -> dict[str, object]:
+    return {
+        "observation_id": observation_id,
+        "source_type": "native",
+        "observation_level": "line",
+        "raw_text": text,
+        "normalized_text": text,
+        "page_index": 0,
+        "bbox_pdf": bbox_pdf,
+        "bbox_normalized": [0.0, 0.0, 0.0, 0.0],
+        "direction": [1.0, 0.0],
+        "direction_angle_degrees": 0.0,
+        "confidence": None,
+    }
+
+
 def test_project_workbench_delivers_real_pdf_without_internal_references(
     tmp_path: Path,
 ) -> None:
@@ -136,6 +156,117 @@ def test_project_workbench_delivers_real_pdf_without_internal_references(
         missing = client.get(f"/api/v1/projects/00000000-0000-0000-0000-000000000000/workbench")
         assert missing.status_code == 404
         assert missing.json()["error"]["code"] == "project_not_found"
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+        outer_transaction.rollback()
+        connection.close()
+
+
+def test_project_workbench_projects_title_block_suggestions_without_confirming(
+    tmp_path: Path,
+) -> None:
+    connection = engine.connect()
+    outer_transaction = connection.begin()
+    session = Session(
+        bind=connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    context = make_balloon_context(session, tmp_path, frozen=False)
+    raw = session.get(AutomaticResult, context.working_copy.raw_result_id)
+    assert raw is not None
+    inventory = json.loads(context.storage.read_bytes(raw.inventory_ref))
+    page = inventory["pages"][0]
+    page["width"] = 1190.550048828125
+    page["height"] = 841.8900146484375
+    page["observations"] = [
+        _title_observation(
+            "material-code-label",
+            "物料编码",
+            [1037.62, 806.98, 1071.06, 821.72],
+        ),
+        _title_observation(
+            "material-code-value",
+            "12320096476",
+            [1098.47, 807.02, 1152.38, 821.77],
+        ),
+        _title_observation(
+            "drawing-number-label",
+            "图样代号",
+            [1037.62, 781.46, 1071.07, 796.21],
+        ),
+        _title_observation(
+            "drawing-number-value",
+            "ZHZS25032501-04",
+            [1088.29, 781.55, 1162.57, 796.3],
+        ),
+        _title_observation(
+            "revision-label",
+            "版本号",
+            [818.01, 730.45, 843.1, 745.2],
+        ),
+        _title_observation(
+            "revision-value",
+            "A/0",
+            [821.55, 710.48, 839.54, 725.22],
+        ),
+        _title_observation(
+            "material-name-value",
+            "横行滑板",
+            [1088.47, 739.28, 1121.92, 754.02],
+        ),
+    ]
+    inventory_bytes = json.dumps(inventory).encode("utf-8")
+    context.storage.write_verified(
+        raw.inventory_ref.removeprefix("asset://"),
+        inventory_bytes,
+        hashlib.sha256(inventory_bytes).hexdigest(),
+    )
+    context.working_copy.sip_metadata = {}
+    session.commit()
+
+    def override_session() -> Iterator[Session]:
+        yield session
+
+    app.dependency_overrides[get_project_session] = override_session
+    app.dependency_overrides[get_storage] = lambda: context.storage
+    try:
+        response = TestClient(app).get(
+            f"/api/v1/projects/{context.working_copy.project_id}/workbench"
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["working_copy"]["sip_metadata"] == {}
+        assert payload["sip_metadata_suggestions"][0] == {
+            "field": "material_code",
+            "value": "12320096476",
+            "observation_id": "material-code-value",
+            "label_observation_id": "material-code-label",
+            "page_index": 0,
+            "bbox_pdf": [1098.47, 807.02, 1152.38, 821.77],
+            "rule_version": "welli-title-metadata/1",
+            "evidence_codes": [
+                "bottom_right_title_anchor",
+                "native_line",
+                "same_row_right_of_label",
+                "unique_candidate",
+            ],
+        }
+        assert {
+            suggestion["field"]: suggestion["value"]
+            for suggestion in payload["sip_metadata_suggestions"]
+        } == {
+            "material_code": "12320096476",
+            "material_name": "横行滑板",
+            "drawing_number": "ZHZS25032501-04",
+            "revision": "A/0",
+        }
+        serialized = response.text
+        assert "resource_ref" not in serialized
+        assert "asset://" not in serialized
+        assert str(tmp_path) not in serialized
     finally:
         app.dependency_overrides.clear()
         session.close()

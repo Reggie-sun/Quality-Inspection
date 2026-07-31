@@ -454,11 +454,38 @@ export interface components {
       project: components["schemas"]["WorkbenchProjectResponse"];
       /** Reviewed Result Id */
       reviewed_result_id: string | null;
+      /** Sip Metadata Suggestions */
+      sip_metadata_suggestions: components["schemas"]["ProjectWorkbenchSipMetadataSuggestionResponse"][];
       /** Source Pdf Url */
       source_pdf_url: string;
       /** Sources */
       sources: components["schemas"]["ProjectWorkbenchSourceResponse"][];
       working_copy: components["schemas"]["ReviewWorkingCopyProjection"];
+    };
+    /** ProjectWorkbenchSipMetadataSuggestionResponse */
+    ProjectWorkbenchSipMetadataSuggestionResponse: {
+      /** Bbox Pdf */
+      bbox_pdf: [number, number, number, number];
+      /** Evidence Codes */
+      evidence_codes: string[];
+      /**
+       * Field
+       * @enum {string}
+       */
+      field: "material_code" | "material_name" | "drawing_number" | "material" | "revision";
+      /** Label Observation Id */
+      label_observation_id: string | null;
+      /** Observation Id */
+      observation_id: string;
+      /** Page Index */
+      page_index: number;
+      /**
+       * Rule Version
+       * @constant
+       */
+      rule_version: "welli-title-metadata/1";
+      /** Value */
+      value: string;
     };
     /** ProjectWorkbenchSourceResponse */
     ProjectWorkbenchSourceResponse: {

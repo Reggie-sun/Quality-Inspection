@@ -93,6 +93,25 @@ class ProjectWorkbenchSourceResponse(BaseModel):
     source_type: Literal["text", "visual"]
 
 
+class ProjectWorkbenchSipMetadataSuggestionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field: Literal[
+        "material_code",
+        "material_name",
+        "drawing_number",
+        "material",
+        "revision",
+    ]
+    value: str
+    observation_id: str
+    label_observation_id: str | None
+    page_index: int
+    bbox_pdf: tuple[float, float, float, float]
+    rule_version: Literal["welli-title-metadata/1"]
+    evidence_codes: list[str]
+
+
 class ProjectWorkbenchResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -101,6 +120,9 @@ class ProjectWorkbenchResponse(BaseModel):
     pages: list[ProjectWorkbenchPageResponse]
     candidates: list[ProjectWorkbenchCandidateResponse]
     sources: list[ProjectWorkbenchSourceResponse]
+    sip_metadata_suggestions: list[
+        ProjectWorkbenchSipMetadataSuggestionResponse
+    ]
     balloons: list[BalloonResponse]
     balloon_blockers: list[str]
     source_pdf_url: str

@@ -1143,6 +1143,13 @@
             ],
             "title": "Reviewed Result Id"
           },
+          "sip_metadata_suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectWorkbenchSipMetadataSuggestionResponse"
+            },
+            "title": "Sip Metadata Suggestions",
+            "type": "array"
+          },
           "source_pdf_url": {
             "title": "Source Pdf Url",
             "type": "string"
@@ -1164,6 +1171,7 @@
           "pages",
           "candidates",
           "sources",
+          "sip_metadata_suggestions",
           "balloons",
           "balloon_blockers",
           "source_pdf_url",
@@ -1171,6 +1179,89 @@
           "latest_export"
         ],
         "title": "ProjectWorkbenchResponse",
+        "type": "object"
+      },
+      "ProjectWorkbenchSipMetadataSuggestionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox_pdf": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Bbox Pdf",
+            "type": "array"
+          },
+          "evidence_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Codes",
+            "type": "array"
+          },
+          "field": {
+            "enum": [
+              "material_code",
+              "material_name",
+              "drawing_number",
+              "material",
+              "revision"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "label_observation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Observation Id"
+          },
+          "observation_id": {
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "page_index": {
+            "title": "Page Index",
+            "type": "integer"
+          },
+          "rule_version": {
+            "const": "welli-title-metadata/1",
+            "title": "Rule Version",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "observation_id",
+          "label_observation_id",
+          "page_index",
+          "bbox_pdf",
+          "rule_version",
+          "evidence_codes"
+        ],
+        "title": "ProjectWorkbenchSipMetadataSuggestionResponse",
         "type": "object"
       },
       "ProjectWorkbenchSourceResponse": {

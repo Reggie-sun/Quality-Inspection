@@ -25,6 +25,7 @@ from app.errors.api import api_error, error_responses
 from app.errors.schemas import ErrorSeverity
 from app.exports.router import _export_payload
 from app.exports.service import ExportService
+from app.pdf.title_block_metadata import suggest_sip_metadata
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
 from app.projects.schemas import ProjectStatusResponse, ProjectWorkbenchResponse
@@ -279,6 +280,7 @@ def _workbench_payload(
         raise ProjectWorkbenchUnavailable("project page inventory is unavailable")
 
     projected_pages, observations = _project_pages(pages)
+    sip_metadata_suggestions = suggest_sip_metadata(pages)
     candidates, source_items = _project_items(
         working.items,
         working.coverage,
@@ -328,6 +330,7 @@ def _workbench_payload(
         "pages": projected_pages,
         "candidates": candidates,
         "sources": sources,
+        "sip_metadata_suggestions": sip_metadata_suggestions,
         "balloons": [balloon.snapshot() for balloon in balloons],
         "balloon_blockers": blockers,
         "source_pdf_url": f"/api/v1/projects/{project.id}/source-pdf",
