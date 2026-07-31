@@ -2434,7 +2434,7 @@ def test_chrome_identity_uses_the_resolved_binary_version_and_hash(
     }
 
 
-def test_all_eleven_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
+def test_all_twelve_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
     checker = _load_module(
         "qi_contract_checker_schema_inventory",
         HARNESS / "scripts/check-contracts.py",
@@ -2453,6 +2453,7 @@ def test_all_eleven_harness_schemas_are_checked_and_bound_to_code_identity() -> 
         "provider-fixture.schema.json",
         "receipt.schema.json",
         "run.schema.json",
+        "symbol-routing-canary-evidence.schema.json",
         "visual-symbol-annotation-verdict.schema.json",
         "visual-symbol-eval.schema.json",
     }

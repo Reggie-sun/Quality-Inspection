@@ -1913,10 +1913,18 @@ promotion decision.
   `.agent/harness/scripts/symbol_canary_evidence.py`
 - Create before any live authorization:
   `backend/tests/contract/harness/test_symbol_canary_evidence_contract.py`
+- Modify before any live authorization:
+  `.agent/harness/scripts/check-contracts.py`
+- Modify before any live authorization:
+  `.agent/harness/scripts/generate-receipt.py`
+- Modify before any live authorization:
+  `backend/tests/contract/harness/test_live_run_contract.py`
 - Modify during Step 0 and after execution:
   `docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md`
-- Step 0 hard allowed paths are exactly the preceding schema、script、test and
-  this plan.
+- Step 0 hard allowed paths are exactly the preceding seven paths. The three
+  schema-inventory Owner paths were added by explicit user authorization after
+  the first GREEN exposed the closed Harness inventory dependency; no other
+  scope expansion is authorized.
 - During live Steps 1–5 do not modify production code、tests、schemas、Harness、
   frontend source、runtime config files or any existing immutable run; only this
   plan may receive the sanitized canary evidence.
@@ -1930,7 +1938,7 @@ promotion decision.
   while producing the two labeled images; it is not canary evidence and must not
   be cleaned by this task.
 
-- [ ] **Step 0: Add the offline sanitized canary ledger contract**
+- [x] **Step 0: Add the offline sanitized canary ledger contract**
 
 Current persisted database summaries alone cannot prove per-page primary calls
 or distinguish a cache provenance request ID from a current external call.
@@ -1981,6 +1989,7 @@ Run RED, implement the minimum pure collector/schema, then require GREEN:
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/contract/harness/test_symbol_canary_evidence_contract.py \
+  backend/tests/contract/harness/test_live_run_contract.py::test_all_twelve_harness_schemas_are_checked_and_bound_to_code_identity \
   backend/tests/unit/candidates/test_symbol_routing.py::test_concurrent_budget_window_denial_reserves_zero_members \
   backend/tests/unit/candidates/test_advisor.py::test_concurrent_schema_failures_reserve_exactly_one_project_retry \
   backend/tests/unit/candidates/test_advisor.py::test_actual_wall_budget_stops_queued_job_with_fake_clock \
@@ -1989,16 +1998,71 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python \
   .agent/harness/scripts/check-contracts.py
 micromamba run -n qi-p0 ruff check \
   .agent/harness/scripts/symbol_canary_evidence.py \
-  backend/tests/contract/harness/test_symbol_canary_evidence_contract.py
+  .agent/harness/scripts/check-contracts.py \
+  .agent/harness/scripts/generate-receipt.py \
+  backend/tests/contract/harness/test_symbol_canary_evidence_contract.py \
+  backend/tests/contract/harness/test_live_run_contract.py
 git diff --check
 git add \
   .agent/harness/schemas/symbol-routing-canary-evidence.schema.json \
+  .agent/harness/scripts/check-contracts.py \
+  .agent/harness/scripts/generate-receipt.py \
   .agent/harness/scripts/symbol_canary_evidence.py \
   backend/tests/contract/harness/test_symbol_canary_evidence_contract.py \
+  backend/tests/contract/harness/test_live_run_contract.py \
   docs/superpowers/plans/2026-07-27-engineering-drawing-symbol-recognition.md
 git diff --cached --check
 git commit -m "test: add symbol routing canary ledger"
 ```
+
+Actual Step 0 evidence:
+
+- Collector RED command: the original focused command above before adding the
+  schema-inventory selector. Exit `1`; `10 failed, 4 passed`. Every new failure
+  was `missing PRT-8 Step 0 artifact: symbol_canary_evidence.py`; all four
+  carried scheduler/retry tests passed. No fixture、database、Provider or
+  environment failure occurred.
+- First collector GREEN: the same original focused command, exit `0`;
+  `14 passed`.
+- Closed-inventory discovery: `check-contracts.py` then failed only with
+  `JSON Schema inventory mismatch` because the new schema was not yet listed by
+  the checker/receipt Owners. This proved the original four-path allowlist was
+  inconsistent with its own required checker. The user explicitly authorized
+  the three Owner paths above.
+- Schema-inventory RED command:
+  `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest
+  backend/tests/contract/harness/test_live_run_contract.py::test_all_twelve_harness_schemas_are_checked_and_bound_to_code_identity
+  -q`. Exit `1`; the new schema was absent from
+  `checker.EXPECTED_SCHEMA_FILES`.
+- Schema-inventory GREEN: the same command, exit `0`; `1 passed`.
+- Real-shape visual coverage RED: after adding one legitimate text coverage
+  entry to the valid fixture, the valid-ledger selector exited `1` because the
+  collector compared all coverage IDs with the visual inventory. The minimum
+  fix validates exact one-to-one coverage only for inventory-owned visual IDs;
+  the same selector then exited `0` with `1 passed`.
+- Production disposition RED: after replacing the synthetic `blocked` value
+  with the actual persisted `block` value and production-owned reason codes,
+  the valid-ledger selector exited `1` at routing disposition validation. The
+  minimum fix accepts `block` and maps it only to the reported `blocked` count;
+  the same selector then exited `0` with `1 passed`.
+- One-canary latency RED: the valid-ledger selector exited `1` after requiring
+  the distribution to contain exactly one run-level accumulated Provider
+  duration sample rather than three call-level pseudo-samples. The ordered
+  `call_records` retain every raw call duration; the closed schema now fixes
+  `sample_count=1`, one duration, and both percentile eligibility flags to
+  `false`. The same selector then exited `0` with `1 passed`.
+- Combined focused GREEN: the command above, exit `0`; `15 passed`.
+- Extended offline contract GREEN: new collector contract file、the full
+  `test_live_run_contract.py` and the four carried scheduler/retry selectors,
+  exit `0`; `65 passed`.
+- `ruff check` on all five changed Python files reported
+  `All checks passed!`; `check-contracts.py` reported `69` global、`111` P0、
+  `mapped=101` and every drift/conflict counter `0`; `git diff --check`
+  passed.
+- No Docker build/container、Provider、upload、browser、live Harness、network、
+  production promotion、merge or push ran. The collector has no candidate、
+  coverage、completeness or promotion decision branch; it only rejects
+  inconsistent already-owned evidence and reports `promotion_eligible=false`.
 
 Harness remains a validator of already-owned records. It must not compute
 candidate、coverage、completeness or promotion semantics. After one independent
