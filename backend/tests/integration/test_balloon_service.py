@@ -282,6 +282,35 @@ def test_formal_numbers_require_frozen_item_set(
     assert items["i2"]["acceptance_source"] == "manual_override"
 
 
+def test_formal_generation_uses_first_source_with_page_geometry(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    context = make_balloon_context(db_session, tmp_path, frozen=False)
+    items = [dict(item) for item in context.working_copy.items]
+    target = next(item for item in items if item["item_id"] == "i1")
+    target["source_location_ids"] = ["derived-without-geometry", "s1"]
+    context.working_copy.items = items
+    db_session.commit()
+
+    frozen = context.review_service.freeze_items(
+        context.working_copy.id,
+        expected_version=context.working_copy.version,
+        operator_id="quality-1",
+    )
+    generated = context.balloon_service.generate_formal(
+        frozen.project_id,
+        expected_version=frozen.version,
+        operator_id="quality-1",
+    )
+
+    target_balloon = next(
+        balloon for balloon in generated if balloon.inspection_item_id == "i1"
+    )
+    assert target_balloon.source_location_id == "s1"
+    assert target_balloon.anchor_bbox_pdf == [20.0, 20.0, 40.0, 40.0]
+
+
 def test_global_requirement_is_not_assigned_a_formal_number(
     db_session: Session,
     tmp_path: Path,

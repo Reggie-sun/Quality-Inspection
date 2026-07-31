@@ -614,31 +614,32 @@ class BalloonService:
             raise BalloonSourceUnavailable(
                 f"item {item['item_id']} has no source identity"
             )
-        source_id = str(source_ids[0])
-        geometry = inventory.source_geometries.get(source_id)
-        if geometry is not None:
-            return geometry
         page_index = item.get("page_index")
-        if source_id.startswith("manual:") and isinstance(page_index, int):
-            page_size = inventory.page_sizes.get(page_index)
-            if page_size is None:
-                raise BalloonSourceUnavailable(
-                    f"manual item {item['item_id']} references an unknown page"
+        for value in source_ids:
+            source_id = str(value)
+            geometry = inventory.source_geometries.get(source_id)
+            if geometry is not None:
+                return geometry
+            if source_id.startswith("manual:") and isinstance(page_index, int):
+                page_size = inventory.page_sizes.get(page_index)
+                if page_size is None:
+                    raise BalloonSourceUnavailable(
+                        f"manual item {item['item_id']} references an unknown page"
+                    )
+                return SourceGeometry(
+                    source_location_id=source_id,
+                    page_index=page_index,
+                    anchor_bbox=self._pdf_bbox(item.get("coordinates")),
+                    direction=(1.0, 0.0),
+                    page_size=page_size,
+                    forbidden=tuple(
+                        self._expand(value.anchor_bbox, 10.0)
+                        for value in inventory.source_geometries.values()
+                        if value.page_index == page_index
+                    ),
                 )
-            return SourceGeometry(
-                source_location_id=source_id,
-                page_index=page_index,
-                anchor_bbox=self._pdf_bbox(item.get("coordinates")),
-                direction=(1.0, 0.0),
-                page_size=page_size,
-                forbidden=tuple(
-                    self._expand(value.anchor_bbox, 10.0)
-                    for value in inventory.source_geometries.values()
-                    if value.page_index == page_index
-                ),
-            )
         raise BalloonSourceUnavailable(
-            f"item {item['item_id']} source {source_id} has no page geometry"
+            f"item {item['item_id']} sources have no page geometry"
         )
 
     @staticmethod

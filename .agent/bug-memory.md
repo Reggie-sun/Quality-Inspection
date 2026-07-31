@@ -2,6 +2,49 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260731-multi-source-balloon-geometry-selection
+
+- Status: 已解决
+- First reported: 2026-07-31
+- Last reported: 2026-07-31
+- Recurrence: 1
+- Surface: `backend/app/balloons/service.py` 的 frozen item source geometry 选择与正式文件准备链
+- Symptom: SIP 已显示 `115 / 0`、检验项已冻结，但“生成正式文件”持续显示“尚未审核”并保持禁用
+- Previously correct behavior: 已冻结 item 只要任一已关联 source 具有真实 page geometry，就应能生成正式气泡并继续 reviewed result / formal export
+- Reproduction: live workbench 为 `items_frozen_at != null`、`numbering_stale=true`、`balloons=0`、`balloon_blockers=["missing_required_balloon"]`；API 日志显示 freeze HTTP `200` 后 `/balloons/generate` HTTP `409`。在同一 API container 内将 commit stubbed 为 no-op 并最终 rollback 的诊断调用精确返回 `BalloonSourceUnavailable: item 2faf49681bddeaab83b7fce8 source 7e1b1feed2af12be9031aaa1 has no page geometry`，且确认未生成任何 balloon
+- Root cause: item 同时关联 visual placeholder source `7e1b...` 与有 page geometry 的 text source `f0b1...`；`BalloonService._geometry_for_item()` 只检查 `source_location_ids[0]`，没有尝试同一 item 的后续 canonical source，因此一个不可定位的派生来源阻断全部 formal balloon materialization
+- Fix: 唯一 Owner 保持 `BalloonService._geometry_for_item()`；普通 source 按既有
+  `source_location_ids` 顺序选择第一个存在于 inventory 的 geometry，遇到无 geometry
+  的派生占位来源继续检查后项；`manual:` source 的既有 page/coordinates fallback、
+  无 source 和全无 geometry 的 fail-closed 合同保持不变。
+- Regression check: 新增真实 `generate_formal` 集成回归，使用
+  `["derived-without-geometry", "s1"]` 证明旧实现 RED 于首项
+  `BalloonSourceUnavailable`，修复后 GREEN 并持久化 `s1` 的 source identity 与 bbox；
+  balloon/freeze/export focused gate `31 passed`，隔离数据库全量 backend
+  `1507 passed, 2 warnings`。
+- Runtime proof: API bind-mounted source hot reload 后，对原项目重新调用 balloon generate
+  返回 `115` 个正式编号气泡；自动布局唯一的第 54 号气泡先为
+  `manual_required/source_text_overlap`，以 canonical placement evaluator 只读枚举得到
+  合法位置后通过既有 move command 调整为 `placed`，最终 `balloon_blockers=[]`。
+  运行中旧版工作台随后完成 review confirm 与 atomic export，两个 POST 均为 HTTP
+  `200`，项目状态为 `reviewed`，PDF、SIP Excel、manifest 三项均
+  `downloadable=true`；CDP 页面检查三条下载链接各 1 个、console error 与非预期
+  request failure 均为 0。Chrome MCP 返回环境级 `Transport closed`，未宣称其通过。
+- Change: `fix(balloons): resolve later source geometry`
+- Selected lane: `Standard`
+- Selected plan: `BUG-20260731-multi-source-balloon-geometry-selection` ad hoc bug task；不切换已完成的 SIP auto-mapping implementation plan
+- Selection evidence: 单一 backend owner 的错误 source choice 会阻断冻结后的 balloon/review/export 链；需要 integration regression、live API recovery 与独立 reviewer，但不改变稳定 schema、runtime config 或 formal artifact identity
+- Validation action: `completed`
+- Problem boundary: frozen active item 的多个既有 source identity 中选择可用 page geometry
+- Single owner: `BalloonService._geometry_for_item()`
+- Old path action: replace `source_location_ids[0]` only；preserve manual-source fallback、freeze、numbering、reviewed result、export fail-closed
+- Focused verification: multi-source first-missing/second-valid integration RED/GREEN，再运行 balloon/review/export focused gate
+- Writer ownership and order: 父 agent 唯一 writer；只读 explorer 仅核对现有 fixtures、调用链和风险
+- Independent review: `accept`；无 blocking defect 或 material risk。可选补充
+  all-sources-missing 与 manual fallback 的定向测试，但现有分支静态保持 fail closed，
+  不阻断本次修复。
+- Next verification: 已关闭；仅在新的 multi-source geometry 或正式导出回归时重开
+
 ## BUG-20260731-sip-terminal-action-no-feedback
 
 - Status: 已解决
