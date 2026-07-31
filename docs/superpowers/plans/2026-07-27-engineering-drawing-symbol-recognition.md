@@ -21,13 +21,13 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
 
 ## Status And Authority
 
-- Date: `2026-07-29`
+- Date: `2026-07-31`
 - Selected lane: `Heavy`
-- Status: `PRT-3 committed at ce546be0dcb4d7ffc8b47b41fa855fd6d6430dfd; PRT-4 next`
+- Status: `closed_implementation_merged_promotion_blocked`
 - Current parent plan:
   `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`
-- Current branch/worktree: `codex/symbol-production-routing` /
-  `/home/reggie/vscode_folder/Quality_Inspection/.worktrees/symbol-production-routing`
+- Current branch/worktree: `main` /
+  `/home/reggie/vscode_folder/Quality_Inspection`
 - Selection evidence: 用户在 design commit
   `4541c47dacb591f5c40cf3709d55d48163f82713` 后明确回复“执行,subagent”；
   canary `d61ec678-0133-4a22-ba55-b7dc58d26edf` 已证明 correctness 和 schema
@@ -35,16 +35,15 @@ OpenAI-compatible Qwen API、React/TypeScript、pytest、Vitest、P0 Harness
 - Writer ownership and order: parent agent 是 plan/contract 唯一 writer；每个
   `PRT-*` task 只有一个 sequential code writer，之后依次做独立 spec review 和
   quality review。Explorer、auditor、reviewer 和 OSS researcher 始终只读。
-- Validation action: `amend -> continue`；每个 code task 严格
-  RED -> minimal GREEN -> focused regression -> review -> exact commit。
-- Next verification: `PRT-4` missing evidence/cache schema RED in
-  `test_symbol_cache.py + test_symbol_routing_evidence.py +
-  test_provider_call_records.py`。
+- Validation action: `close`；implementation 已合入 `main`，PRT-8S 在 live
+  promotion evidence 未完成的状态下由用户明确终止。
+- Next verification: `none`。任何 future production promotion 必须由新的 parent
+  decision 重新选择 current-main evidence scope，不得恢复本计划的旧 canary。
 - This file owns only the bounded symbol-recognition convergence steps below. It
   does not become a second current plan and cannot authorize `D7-T3`、`SR-5`、
   `main` merge or frontend work outside the exact `PRT-6` files and checks.
-- 本文件顶部和下方 `Production Routing Implementation` 是当前可执行部分；
-  historical diagnostic/remediation/canary outcome 仅作为 immutable evidence，
+- 本文件及下方 `Production Routing Implementation` 已整体关闭，现仅作为
+  historical immutable evidence；所有残留 unchecked boxes 均不再授权执行，
   不得重放其 Provider/browser authorization。
 - This compact plan supersedes the previous executable body at commit
   `5ad308ad97137b4dc9783b95aaa32c82e8b6ee36`. Git preserves that complete
@@ -3414,7 +3413,7 @@ remain for audit.
 
 ### Alias-Lifecycle-Corrected Execution Contract
 
-- [ ] **Step S1: Revalidate identity and resources with zero live calls**
+- [x] **Step S1: Revalidate identity and resources with zero live calls**
 
   Require `9ea61f7` to remain an ancestor of HEAD and require a zero diff from
   that commit across the frozen backend/frontend runtime paths listed in
@@ -3424,7 +3423,8 @@ remain for audit.
   `cbf1453f7da75d733db4e516e8808f36837f9d13`; any frozen runtime overlap
   requires a new amendment. Do not merge `main`.
 
-- [ ] **Step S2: Build and start one fresh isolated runtime with zero Provider calls**
+- [ ] **Step S2: Build and start one fresh isolated runtime with zero Provider calls
+  — terminal startup failure; retired**
 
   Create only the four new persistent resources and the absent ephemeral
   network/containers under `qi.owner=prt8s-canary`. Run Alembic to head and
@@ -3434,7 +3434,8 @@ remain for audit.
   a file or call the Provider. Any startup failure stops without advancing to
   browser selection.
 
-- [ ] **Step S3: Keep the sealed alias readable through the exact-one submit**
+- [ ] **Step S3: Keep the sealed alias readable through the exact-one submit
+  — retired without execution**
 
   After a separate explicit user authorization:
 
@@ -3458,7 +3459,9 @@ remain for audit.
   terminal evidence、preserved siblings、bounded Provider admission、one
   partial `AutomaticResult` and honest browser evidence.
 
-- [ ] **Step S4: Collect sanitized evidence and perform isolated rollback**
+- [ ] **Step S4: Collect sanitized evidence and perform isolated rollback
+  — collector/browser evidence not executed; owner-fenced rollback completed;
+  retired**
 
   If a project UUID exists, run the committed closed-schema collector once
   against the PRT-8S database/read-only storage and report the actual routing、
@@ -3471,7 +3474,8 @@ remain for audit.
   containers and reused network only after exact owner assertions. Preserve
   the two new volumes/images and re-inspect both prior audit sets unchanged.
 
-- [ ] **Step S5: Record evidence, obtain reviews and stop**
+- [ ] **Step S5: Record evidence, obtain reviews and stop
+  — retired without execution**
 
   Only this plan may receive sanitized execution evidence. Commit it as a
   plan-only change and require an independent read-only reviewer to return
@@ -3482,9 +3486,9 @@ remain for audit.
   `reject`; otherwise keep `blocked_quality_owner_verdict`. Stop afterward.
   Do not promote、merge、push、clean artifacts or run another canary.
 
-### PRT-8S Amendment Commit Contract
+### Historical PRT-8S Amendment Commit Contract
 
-The currently authorized write is only this amendment. Run:
+At amendment time, the only authorized write was this amendment:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python \
@@ -3496,6 +3500,72 @@ git diff --cached --name-only
 git commit -m "docs: authorize alias-corrected routing canary"
 ```
 
-The staged path list must contain exactly this plan. After an independent
-read-only reviewer accepts with `0` blockers, stop before Step S1 and request
-one explicit authorization to consume the new exact-one canary.
+At amendment time, the staged path list had to contain exactly this plan. The
+then-required independent read-only review and explicit authorization gates are
+historical evidence only and no longer authorize execution.
+
+### Actual PRT-8S Closure On 2026-07-31
+
+PRT-8S reached a terminal fail-closed state before browser or Provider access:
+
+- Step S1 identity/resource preflight passed with zero live calls.
+- Step S2 created the two PRT-8S images and volumes and started the isolated
+  runtime. The first frontend health probe then returned `curl` exit `56` /
+  connection reset. The run stopped at the required startup failure boundary
+  without advancing to browser selection.
+- The five `qi.owner=prt8s-canary` operational containers and reused network
+  were removed, and all three loopback ports were released.
+- Authorization and side-effect accounting remained:
+
+  ```text
+  browser_file_selections=0
+  browser_submit_clicks=0
+  project_creations=0
+  direct_provider_calls=0
+  exact_one_authorization_consumed=false
+  ```
+
+- The following PRT-8S audit resources remain preserved and must not be
+  cleaned as part of this closure:
+
+  ```text
+  postgres_volume=qi_prt8s_canary_postgres owner=prt8s-canary
+  storage_volume=qi_prt8s_canary_storage owner=prt8s-canary
+  api_image_id=sha256:72410646f785f59b40f2812f129d054a79cd11cd4ff618dfb375c54c4de8ff25
+  frontend_image_id=sha256:1f3ea292501fcf8b27a953db986119c6d8ba4330f59ca37fb55c96454b324d01
+  ```
+
+The implementation was subsequently merged into local `main` at
+`59a0edba08fd85f7c47f97f6641b2c960817dab8`
+(`merge: integrate symbol production routing`). Previously reported merged-main
+verification was `1563 passed` for backend、`275 passed` for frontend and zero
+contract drift/conflict; this closure did not rerun those suites. That evidence
+supports the merged implementation but does not replace the missing live
+production-promotion evidence.
+
+After the merge, current `main` also contains later project API/workbench and
+frontend runtime changes relative to the PRT-8S frozen
+`9ea61f773633abaa348339e84ba3058214d79ef7` image source. Therefore resuming the
+preserved S2 runtime would no longer satisfy the current-main convergence gate
+or the zero-diff precondition in Step S1. It would require a new parent
+amendment and current-main runtime identity instead of a silent retry.
+
+The user explicitly chose to terminate PRT-8S rather than pursue that expanded
+live canary scope. Steps S3 through S5 above are retired and are no longer
+executable. Final closure state is:
+
+```text
+plan_status=closed_implementation_merged_promotion_blocked
+prt8s_outcome=terminated_after_fail_closed_startup
+quality_owner_state=blocked_quality_owner_verdict
+promotion_eligible=false
+budget_denial_fix_live_verified=false
+shared_default=legacy_high_recall
+```
+
+This is not a successful production-promotion verdict. It closes the
+symbol-recognition convergence implementation plan with the implementation
+merged and the unproven promotion claim explicitly blocked. Any future
+production promotion requires a new parent decision and fresh current-main
+evidence; it may not resume this PRT-8S authorization or reuse the preserved
+runtime as current evidence.
