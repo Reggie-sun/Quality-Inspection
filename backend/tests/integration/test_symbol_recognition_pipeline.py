@@ -1552,6 +1552,7 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
         advisor.review(matrix.source, matrix.pages, matrix.snapshot)
 
     assert str(advisor_failure.value) == "Visual symbol cache lookup failed"
+    assert advisor_failure.value.failure_origin == "routing_evidence"
     assert provider.calls == 0
 
     def candidate_builder(_pages: tuple[object, ...]) -> CandidateSnapshot:
@@ -1589,6 +1590,7 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
         == 0
     )
     assert job.result_ref is None
+    assert error.code == "symbol_routing_evidence_failed"
     assert error.stage == "candidate_advisor"
     assert error.cause_category == "processing_defect"
     assert (

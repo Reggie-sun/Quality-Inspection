@@ -401,12 +401,23 @@ class InventoryPipeline:
                 return existing
             raise
         except CandidateAdvisorFailure as exc:
+            routing_evidence_failure = (
+                exc.failure_origin == "routing_evidence"
+            )
             existing = self._record_failure(
                 project,
                 job,
                 state=ProjectState.PROCESSING_FAILED,
-                code="vision_provider_call_failed",
-                message="Vision candidate Advisor call failed",
+                code=(
+                    "symbol_routing_evidence_failed"
+                    if routing_evidence_failure
+                    else "vision_provider_call_failed"
+                ),
+                message=(
+                    "Symbol routing evidence validation failed"
+                    if routing_evidence_failure
+                    else "Vision candidate Advisor call failed"
+                ),
                 stage="candidate_advisor",
                 location_ref=None,
                 cause_category=(

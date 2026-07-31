@@ -373,6 +373,13 @@ def test_vision_provider_failure_projects_retryable_sanitized_status(
             "page_inventory",
         ),
         (
+            "symbol_routing_evidence_failed",
+            "processing_defect",
+            "processing_failed",
+            "failed",
+            "candidate_advisor",
+        ),
+        (
             "review_bootstrap_failed",
             "processing_defect",
             "ready_for_edit",

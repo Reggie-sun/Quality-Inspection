@@ -173,6 +173,7 @@ class CandidateAdvisorFailure(RuntimeError):
         message: str,
         *,
         failure_category: str | None = None,
+        failure_origin: str | None = None,
     ) -> None:
         super().__init__(message)
         if (
@@ -180,7 +181,10 @@ class CandidateAdvisorFailure(RuntimeError):
             and failure_category not in LOCALIZED_PROVIDER_FAILURE_CATEGORIES
         ):
             raise ValueError("CandidateAdvisor failure category is invalid")
+        if failure_origin not in {None, "routing_evidence"}:
+            raise ValueError("CandidateAdvisor failure origin is invalid")
         self.failure_category = failure_category
+        self.failure_origin = failure_origin
 
 
 def _recognition_preview_snapshot(
@@ -1511,7 +1515,8 @@ class CandidateAdvisor:
             except Exception:
                 session.rollback()
                 raise CandidateAdvisorFailure(
-                    "Visual symbol cache lookup failed"
+                    "Visual symbol cache lookup failed",
+                    failure_origin="routing_evidence",
                 ) from None
             finally:
                 session.close()

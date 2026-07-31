@@ -59,6 +59,7 @@ _SAFE_ERROR_STAGES = {
     "ocr_provider_unavailable": "preflight",
     "vision_provider_unavailable": "preflight",
     "vision_provider_call_failed": "candidate_advisor",
+    "symbol_routing_evidence_failed": "candidate_advisor",
     "unsupported_input": "page_inventory",
     "inventory_processing_failed": "page_inventory",
     "coverage_blocking": "coverage",
