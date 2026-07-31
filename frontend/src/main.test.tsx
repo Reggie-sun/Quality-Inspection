@@ -17,7 +17,7 @@ vi.mock("react-dom/client", () => ({
 }));
 
 const PROJECT_ID = "550e8400-e29b-41d4-a716-446655440000";
-const OPERATOR_ID = "11111111-1111-4111-8111-111111111111";
+const OPERATOR_ID = "quality-1";
 
 
 beforeEach(() => {
@@ -49,6 +49,24 @@ test("完整旧深链仍直接渲染指定工作台", async () => {
   expect(element.props.projectId).toBe(PROJECT_ID);
   expect(element.props.operatorId).toBe(OPERATOR_ID);
   expect(element.props.onReset).toEqual(expect.any(Function));
+});
+
+
+test("无效旧深链项目会回到列表且不挂载工作台", async () => {
+  window.history.replaceState(
+    {},
+    "",
+    `/?project_id=null&operator_id=${OPERATOR_ID}`,
+  );
+
+  await import("./main");
+
+  const element = renderRoot.mock.calls[0][0] as ReactElement<{
+    projectId?: string;
+  }>;
+  expect(element.props.projectId).toBeUndefined();
+  expect(window.location.pathname).toBe("/");
+  expect(window.location.search).toBe("");
 });
 
 
