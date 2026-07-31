@@ -1879,9 +1879,13 @@ storage_volume=qi_prt8_canary_storage
 api_image=qi-prt8-canary-api:12c88b5
 frontend_image=qi-prt8-canary-frontend:12c88b5
 python_base_image=python@sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2
+python_linux_amd64_manifest=sha256:ff71127c215572121f1991bacf17f39ec5fcfd2de1f1c01a595835495bb9adfc
 node_base_image=node@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2
+node_linux_amd64_manifest=sha256:b74031e546d7f4faf561d797ac1b76beccac856a042815ca77db4fd047581605
 postgres_image=postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+postgres_linux_amd64_manifest=sha256:af194ccf3e2d7fe367012c7b88ce8b816c5c889b18a5b316799a1f0d7eac746a
 redis_image=redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+redis_linux_amd64_manifest=sha256:b1addbe72465a718643cff9e60a58e6df1841e29d6d7d60c9a85d8d72f08d1a7
 postgres_port=127.0.0.1:15432
 api_port=127.0.0.1:18080
 frontend_port=127.0.0.1:15173
@@ -1892,10 +1896,12 @@ anything. The canary must not attach to the existing dev/QA/production database�
 Redis、storage、API、worker or frontend. The two canary data volumes are preserved
 after execution for audit; do not clean them as artifacts. Containers and the
 network may be removed only after they are stopped and the sanitized evidence
-has been captured and hashed. The four base-image digests must already exist
-locally and match exactly; execution uses `--pull=false` / `--pull=never` and
-must not resolve a mutable tag over the network. Preserve both canary images and
-both data volumes until the later promotion decision.
+has been captured and hashed. Each base image's OCI index digest and selected
+`linux/amd64` manifest digest must already exist locally and match separately;
+neither is called a config ID. Execution uses `--platform linux/amd64` plus
+`--pull=false` / `--pull=never` and must not resolve a mutable tag over the
+network. Preserve both canary images and both data volumes until the later
+promotion decision.
 
 ### PRT-8: Execute The One Authorized Canary
 
@@ -2151,32 +2157,34 @@ test -r "$prt8_credential_env_file"
 test "$(stat -c '%u:%a' "$prt8_credential_env_file")" = \
   "$(id -u):600"
 
-test "$(docker image inspect python:3.11-slim --format '{{.Id}}')" = \
-  "sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2"
 test "$(docker image inspect python:3.11-slim --format \
-  '{{json .RepoDigests}}')" = \
-  '["python@sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2"]'
-test "$(docker image inspect node:22-alpine --format '{{.Id}}')" = \
-  "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2"
+  '{{.Descriptor.digest}}')" = \
+  "sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2"
+test "$(docker image inspect --platform linux/amd64 \
+  python@sha256:6d85378d88a19cd4d76079817532d62232be95757cb45945a99fec8e8084b9c2 \
+  --format '{{.Descriptor.digest}}')" = \
+  "sha256:ff71127c215572121f1991bacf17f39ec5fcfd2de1f1c01a595835495bb9adfc"
 test "$(docker image inspect node:22-alpine --format \
-  '{{json .RepoDigests}}')" = \
-  '["node@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2"]'
-test "$(docker image inspect postgres:17-alpine --format '{{.Id}}')" = \
-  "sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
+  '{{.Descriptor.digest}}')" = \
+  "sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2"
+test "$(docker image inspect --platform linux/amd64 \
+  node@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 \
+  --format '{{.Descriptor.digest}}')" = \
+  "sha256:b74031e546d7f4faf561d797ac1b76beccac856a042815ca77db4fd047581605"
 test "$(docker image inspect postgres:17-alpine --format \
-  '{{json .RepoDigests}}')" = \
-  '["postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"]'
-test "$(docker image inspect redis:7-alpine --format '{{.Id}}')" = \
-  "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"
-test "$(docker image inspect redis:7-alpine --format \
-  '{{json .RepoDigests}}')" = \
-  '["redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"]'
-docker image inspect \
+  '{{.Descriptor.digest}}')" = \
+  "sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193"
+test "$(docker image inspect --platform linux/amd64 \
   postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193 \
-  >/dev/null
-docker image inspect \
+  --format '{{.Descriptor.digest}}')" = \
+  "sha256:af194ccf3e2d7fe367012c7b88ce8b816c5c889b18a5b316799a1f0d7eac746a"
+test "$(docker image inspect redis:7-alpine --format \
+  '{{.Descriptor.digest}}')" = \
+  "sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"
+test "$(docker image inspect --platform linux/amd64 \
   redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99 \
-  >/dev/null
+  --format '{{.Descriptor.digest}}')" = \
+  "sha256:b1addbe72465a718643cff9e60a58e6df1841e29d6d7d60c9a85d8d72f08d1a7"
 
 trap prt8_cleanup_startup ERR INT TERM
 prt8_build_root="$(mktemp -d /tmp/qi-prt8-canary-build.XXXXXX)"
@@ -2184,11 +2192,11 @@ git archive 12c88b5e509451030f373fad8dc748e0b01418e3 backend | \
   tar -x -C "$prt8_build_root"
 git archive 12c88b5e509451030f373fad8dc748e0b01418e3 frontend | \
   tar -x -C "$prt8_build_root"
-docker build --pull=false \
+docker build --platform linux/amd64 --pull=false \
   --label qi.owner=prt8-canary \
   --tag qi-prt8-canary-api:12c88b5 \
   "$prt8_build_root/backend"
-docker build --pull=false \
+docker build --platform linux/amd64 --pull=false \
   --label qi.owner=prt8-canary \
   --tag qi-prt8-canary-frontend:12c88b5 \
   "$prt8_build_root/frontend"
@@ -2205,6 +2213,7 @@ docker volume create \
   --label qi.owner=prt8-canary \
   qi_prt8_canary_storage
 docker run --detach \
+  --platform linux/amd64 \
   --pull=never \
   --name qi-prt8-canary-postgres \
   --label qi.owner=prt8-canary \
@@ -2216,6 +2225,7 @@ docker run --detach \
   --volume qi_prt8_canary_postgres:/var/lib/postgresql/data \
   postgres@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
 docker run --detach \
+  --platform linux/amd64 \
   --pull=never \
   --name qi-prt8-canary-redis \
   --label qi.owner=prt8-canary \
@@ -2241,6 +2251,7 @@ micromamba run -n qi-p0 alembic -c alembic.ini upgrade head
 cd ..
 
 docker run --detach \
+  --platform linux/amd64 \
   --pull=never \
   --name qi-prt8-canary-api \
   --label qi.owner=prt8-canary \
@@ -2257,6 +2268,7 @@ docker run --detach \
   --volume qi_prt8_canary_storage:/data \
   qi-prt8-canary-api:12c88b5
 docker run --detach \
+  --platform linux/amd64 \
   --pull=never \
   --name qi-prt8-canary-worker \
   --label qi.owner=prt8-canary \
@@ -2272,6 +2284,7 @@ docker run --detach \
   qi-prt8-canary-api:12c88b5 \
   celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=1
 docker run --detach \
+  --platform linux/amd64 \
   --pull=never \
   --name qi-prt8-canary-frontend \
   --label qi.owner=prt8-canary \
@@ -2472,6 +2485,7 @@ call/page/duration ledger with the committed Step 0 collector:
 set -Eeuo pipefail
 mkdir -p /tmp/qi-prt8-canary-evidence
 docker run --rm \
+  --platform linux/amd64 \
   --pull=never \
   --name qi-prt8-canary-collector \
   --label qi.owner=prt8-canary \
