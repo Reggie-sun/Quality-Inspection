@@ -570,10 +570,13 @@ def test_terminal_replay_reuses_valid_cache_without_new_attempt_or_provider(
     assert appended == []
 
 
-def test_denied_group_persists_budget_terminal_before_whole_pdf_failure(
+def test_denied_group_persists_budget_terminal_evidence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    class DownstreamReviewReached(Exception):
+        pass
+
     visual = _visual("visual-1")
     page = SimpleNamespace(
         page_index=0,
@@ -642,10 +645,17 @@ def test_denied_group_persists_budget_terminal_before_whole_pdf_failure(
         lambda **kwargs: terminals.append(kwargs),
     )
 
-    with pytest.raises(
-        CandidateAdvisorFailure,
-        match="routing contract is invalid",
-    ):
+    def stop_at_downstream_review(*_args: object, **_kwargs: object) -> None:
+        raise DownstreamReviewReached
+
+    monkeypatch.setattr(
+        advisor_module.pymupdf,
+        "open",
+        stop_at_downstream_review,
+    )
+    failure: CandidateAdvisorFailure | None = None
+    downstream_reached = False
+    try:
         advisor.review(
             tmp_path / "not-opened.pdf",
             (page,),
@@ -657,6 +667,10 @@ def test_denied_group_persists_budget_terminal_before_whole_pdf_failure(
                 required_visual_observation_ids=("visual-1",),
             ),
         )
+    except DownstreamReviewReached:
+        downstream_reached = True
+    except CandidateAdvisorFailure as exc:
+        failure = exc
 
     group_sha256 = routing_decision_group_sha256((SHA_A,))
     assert attempts == [
@@ -685,6 +699,11 @@ def test_denied_group_persists_budget_terminal_before_whole_pdf_failure(
             "attempt_event_sha256s": (SHA_B,),
         }
     ]
+    assert failure is None, (
+        "a legitimate hard-budget denial must reach downstream review: "
+        f"{failure}"
+    )
+    assert downstream_reached is True
 
 
 def _identity() -> SymbolCacheIdentity:
