@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>图纸标题栏自动带入 SIP 教学图</title>
+  <style>
+    :root {
+      color: #101828;
+      font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      background: #eef3f9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px;
+    }
+    .demo {
+      width: 1440px;
+      min-height: 860px;
+      margin: 0 auto;
+      padding: 26px;
+      border: 1px solid #cbd5e1;
+      border-radius: 18px;
+      background: #f8fafc;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, .10);
+    }
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -.5px;
+    }
+    .lead {
+      margin: 7px 0 22px;
+      color: #475467;
+      font-size: 16px;
+    }
+    .callout {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 22px;
+      padding: 12px 16px;
+      border: 1px solid #84caff;
+      border-radius: 10px;
+      background: #eff8ff;
+      color: #175cd3;
+      font-weight: 700;
+    }
+    .callout span {
+      display: inline-grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border-radius: 50%;
+      background: #1570ef;
+      color: white;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: 1.15fr 90px 1fr;
+      gap: 22px;
+      align-items: stretch;
+    }
+    .card {
+      padding: 20px;
+      border: 1px solid #d0d5dd;
+      border-radius: 14px;
+      background: white;
+    }
+    .card h2 {
+      margin: 0 0 6px;
+      font-size: 19px;
+    }
+    .card .hint {
+      margin: 0 0 16px;
+      color: #667085;
+      font-size: 13px;
+    }
+    .title-block {
+      display: grid;
+      grid-template-columns: 1.05fr 1.4fr;
+      border-top: 2px solid #344054;
+      border-left: 2px solid #344054;
+      font-family: "Noto Sans Mono CJK SC", monospace;
+    }
+    .cell {
+      min-height: 54px;
+      padding: 9px 12px;
+      border-right: 2px solid #344054;
+      border-bottom: 2px solid #344054;
+      background: #fff;
+    }
+    .cell.label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f2f4f7;
+      font-weight: 700;
+    }
+    .cell.value {
+      display: flex;
+      align-items: center;
+      color: #101828;
+      font-size: 16px;
+      font-weight: 800;
+    }
+    .cell.value.recognized {
+      position: relative;
+      outline: 3px solid #84caff;
+      outline-offset: -5px;
+      background: #eff8ff;
+    }
+    .cell.value.recognized::after {
+      position: absolute;
+      right: 8px;
+      bottom: 5px;
+      color: #1570ef;
+      content: "已识别";
+      font-family: "Noto Sans CJK SC", sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .arrow {
+      display: grid;
+      place-items: center;
+      color: #1570ef;
+      font-size: 54px;
+      font-weight: 800;
+    }
+    .sip-panel {
+      display: grid;
+      gap: 13px;
+    }
+    .sip-panel h3 {
+      margin: 0;
+      color: #344054;
+      font-size: 15px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-top: 1px solid #e4e7ec;
+      border-left: 1px solid #e4e7ec;
+    }
+    .summary div {
+      min-width: 0;
+      padding: 8px 10px;
+      border-right: 1px solid #e4e7ec;
+      border-bottom: 1px solid #e4e7ec;
+      background: #f8fafc;
+    }
+    .summary small {
+      display: block;
+      color: #667085;
+      font-size: 11px;
+    }
+    .summary strong {
+      display: block;
+      overflow: hidden;
+      margin-top: 3px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .editor {
+      display: grid;
+      gap: 10px;
+      padding-top: 12px;
+      border-top: 1px solid #d0d5dd;
+    }
+    label {
+      display: grid;
+      gap: 5px;
+      color: #475467;
+      font-size: 12px;
+    }
+    .label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .recognized-badge {
+      color: #067647;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .manual-badge {
+      color: #b54708;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    input {
+      width: 100%;
+      height: 38px;
+      padding: 0 10px;
+      border: 1px solid #b2ccff;
+      border-radius: 7px;
+      background: #f5f8ff;
+      color: #101828;
+      font: inherit;
+      font-weight: 700;
+    }
+    input.missing {
+      border-color: #fdb022;
+      background: #fffaeb;
+    }
+    button {
+      min-height: 42px;
+      border: 0;
+      border-radius: 8px;
+      background: #d0d5dd;
+      color: #667085;
+      font: inherit;
+      font-weight: 800;
+    }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .step {
+      min-height: 112px;
+      padding: 15px;
+      border: 1px solid #d0d5dd;
+      border-radius: 12px;
+      background: white;
+    }
+    .step b {
+      display: inline-grid;
+      width: 28px;
+      height: 28px;
+      margin-bottom: 8px;
+      place-items: center;
+      border-radius: 50%;
+      background: #1570ef;
+      color: white;
+    }
+    .step p {
+      margin: 0;
+      color: #344054;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .final {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-top: 18px;
+      padding: 14px 18px;
+      border: 1px solid #6ce9a6;
+      border-radius: 10px;
+      background: #ecfdf3;
+      color: #067647;
+      font-weight: 800;
+    }
+    .final .states {
+      display: flex;
+      gap: 10px;
+    }
+    .pill {
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: white;
+      box-shadow: inset 0 0 0 1px #a6f4c5;
+    }
+  </style>
+</head>
+<body>
+  <main class="demo">
+    <h1>新项目：标题栏识别后，项目 SIP 会先自动带入</h1>
+    <p class="lead">识别结果是“待确认建议”；系统不会跳过人工确认，也不会覆盖项目里已经正式保存的数据。</p>
+    <div class="callout"><span>!</span>自动填写 ≠ 自动确认。先核对图纸识别值，补齐缺失字段，再点击“确认项目 SIP 信息”。</div>
+
+    <section class="workspace">
+      <article class="card">
+        <h2>① 图纸标题栏</h2>
+        <p class="hint">只读取有明确标签和位置关系的原生 PDF 文本。</p>
+        <div class="title-block">
+          <div class="cell label">产品名称</div>
+          <div class="cell value recognized">横行滑板</div>
+          <div class="cell label">图样代号</div>
+          <div class="cell value recognized">ZHZS25032501-04</div>
+          <div class="cell label">物料编码</div>
+          <div class="cell value recognized">12320096476</div>
+          <div class="cell label">版本号</div>
+          <div class="cell value recognized">A/0</div>
+          <div class="cell label">材质</div>
+          <div class="cell value">图纸中未找到明确值</div>
+        </div>
+      </article>
+
+      <div class="arrow" aria-hidden="true">→</div>
+
+      <article class="card sip-panel">
+        <h2>② SIP 信息</h2>
+        <h3>项目基本信息</h3>
+        <div class="summary">
+          <div><small>产品名称</small><strong>横行滑板</strong></div>
+          <div><small>图号</small><strong>ZHZS25032501-04</strong></div>
+          <div><small>版本号</small><strong>A/0</strong></div>
+          <div><small>材质</small><strong>—</strong></div>
+        </div>
+        <div class="editor">
+          <label>
+            <span class="label-row"><span>物料编码</span><span class="recognized-badge">图纸识别，待确认</span></span>
+            <input value="12320096476" readonly>
+          </label>
+          <label>
+            <span class="label-row"><span>产品名称</span><span class="recognized-badge">图纸识别，待确认</span></span>
+            <input value="横行滑板" readonly>
+          </label>
+          <label>
+            <span class="label-row"><span>图号</span><span class="recognized-badge">图纸识别，待确认</span></span>
+            <input value="ZHZS25032501-04" readonly>
+          </label>
+          <label>
+            <span class="label-row"><span>版本号</span><span class="recognized-badge">图纸识别，待确认</span></span>
+            <input value="A/0" readonly>
+          </label>
+          <label>
+            <span class="label-row"><span>材质</span><span class="manual-badge">需人工填写</span></span>
+            <input class="missing" placeholder="例如：45# 钢" readonly>
+          </label>
+          <button disabled>确认项目 SIP 信息（补齐材质后可用）</button>
+        </div>
+      </article>
+    </section>
+
+    <section class="steps">
+      <div class="step"><b>1</b><p>核对 4 个带有“图纸识别，待确认”的字段。</p></div>
+      <div class="step"><b>2</b><p>人工补齐图纸没有明确给出的“材质”。</p></div>
+      <div class="step"><b>3</b><p>点击“确认项目 SIP 信息”，正式保存项目级信息。</p></div>
+      <div class="step"><b>4</b><p>点击“处理下一条未确认 SIP”，逐条完成检验项 SIP。</p></div>
+    </section>
+
+    <section class="final">
+      <span>终态：项目 SIP 已确认，并且全部有效检验项 SIP 已确认，才进入冻结、审核和正式文件生成。</span>
+      <div class="states">
+        <span class="pill">项目 SIP：已确认</span>
+        <span class="pill">检验项 SIP：115 / 115</span>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
