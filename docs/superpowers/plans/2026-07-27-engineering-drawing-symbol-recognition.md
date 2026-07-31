@@ -2767,6 +2767,85 @@ Actual Step 5 closure:
 - No second canary、Provider investigation、production default change、
   full-P0、`main` merge or push was performed.
 
+#### Post-Canary Offline Root-Cause And Correction Evidence
+
+The historical live canary record above remains unchanged: its observable
+terminal code was `vision_provider_call_failed`, its external call arithmetic
+was unobservable, and the canary itself failed closed. Subsequent offline
+diagnosis on 2026-07-31 established the code-path root cause without rewriting
+that historical telemetry:
+
+- An exact sealed-input replay used ephemeral PostgreSQL and storage with
+  Provider and OCR construction tripwires. It reproduced `198` escalated
+  groups、`190` `not_started_budget_exhausted` attempts、`190`
+  `budget_exhausted` outcomes、`0` cache entries、`0` crop files and `0`
+  Provider/OCR constructions.
+- A second in-memory trace observed `primary_starts=0` and reached
+  `CandidateAdvisorFailure("Visual symbol routing contract is invalid")`
+  immediately after denied-group evidence persistence. The frozen
+  `12c88b5` runtime had the same control flow.
+- The planner admitted `8` legitimate groups and denied `190` under the hard
+  project budget. `CandidateAdvisor.review()` then treated any non-empty
+  `plan.denied` as whole-PDF contract corruption before the admitted groups
+  could execute. This violated `CAND-005`、`P0-REC-009` and `P0-ACC-007`,
+  which require legitimate budget exhaustion to retain siblings and complete
+  unresolved coverage as `partial_review_required`.
+- This offline mechanism proof explains the terminal failure and absence of
+  execution in the replay. It does not backfill a historical live Provider
+  call count、duration or latency distribution; the original canary ledger
+  remains the only live arithmetic authority.
+
+The bounded TDD correction was committed separately:
+
+- RED commit `6744e466a75e8fe8be1e2de136a2166185af5aa5` added a real-planner
+  mixed-denial integration contract and retired the stale expectation that a
+  denied group must abort the whole PDF. On an ephemeral PostgreSQL database,
+  the exact two-test command returned exit `1` with `2 failed`; both failed
+  only because the current code raised
+  `Visual symbol routing contract is invalid`; denial attempt/outcome evidence
+  had already passed.
+- GREEN commit `9ea61f773633abaa348339e84ba3058214d79ef7` maps only legitimate
+  `plan.denied` observations to the existing localized
+  `routing_budget_exhausted` partial-result machinery. Admitted batches still
+  execute; denied batches cannot enter the Provider; source、coordinates、
+  disposition、siblings、coverage and unresolved count are preserved.
+- `routing_blocked`、planner/validation defects、routing evidence
+  incompleteness/conflict and evidence persistence failures remain systemic
+  fail-closed paths. `legacy_high_recall` and shadow behavior were not changed.
+
+Fresh offline verification:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
+  backend/tests/integration/test_symbol_routing_evidence.py::test_denied_group_persists_budget_terminal_evidence \
+  backend/tests/integration/test_symbol_recognition_pipeline.py::test_hard_budget_denial_preserves_admitted_siblings_as_partial \
+  -q -p no:cacheprovider
+# 2 passed
+
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
+  backend/tests/unit/candidates/test_advisor.py \
+  -q -p no:cacheprovider
+# 54 passed
+
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
+  backend/tests/integration/test_symbol_routing_evidence.py \
+  backend/tests/integration/test_symbol_recognition_pipeline.py \
+  -q -p no:cacheprovider
+# 46 passed
+```
+
+All database-backed runs used a fresh ephemeral PostgreSQL container upgraded
+to Alembic head; each container was removed after its command. Ruff passed and
+`check-contracts.py` reported every drift/conflict counter as `0`. An
+independent read-only reviewer returned `accept` with `0` blockers and `0`
+concerns for both the amended RED contract and GREEN behavior.
+
+This correction has not run in a second live canary and does not change the
+Quality Owner state. `blocked_quality_owner_verdict` and
+`promotion_eligible=false` remain in force. A second canary requires a new,
+explicit exact-one authorization and a separately reviewed runtime/source
+identity amendment.
+
 ### Amendment-Only Commit Contract
 
 The currently authorized write is only this parent amendment. Before committing
