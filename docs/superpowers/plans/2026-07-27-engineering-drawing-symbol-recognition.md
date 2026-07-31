@@ -3224,3 +3224,59 @@ Automated PRT-8R outcome is
 `promotion_eligible=false`. No Provider、collector、formal live Harness、
 production promotion、main merge、push or artifact cleanup ran. This evidence
 commit does not authorize a retry or another canary.
+
+#### Post-Canary Read-Only Upload Failure Diagnosis
+
+A bounded read-only investigation after the evidence commit corrected the
+causal classification without starting runtime、repeating upload、inspecting
+request headers or changing any file other than this plan:
+
+- The failed POST Performance entry had `nextHopProtocol=""`、
+  `responseStatus=null` and a `1ms` duration. Successful same-origin requests
+  used `http/1.1`; no Service Worker controlled the page. The POST therefore
+  failed before a usable HTTP request/response exchange.
+- The selected browser `File` still exposed the expected basename and
+  `size=345023`, but reading its first byte returned `NotFoundError`. The
+  temporary alias had already been removed between file selection and submit.
+- The frontend follows the standard browser upload path: it receives the
+  selected `File`, adds that object to `FormData` when `createProject()` runs
+  and passes the body to `fetch()`. It does not eagerly copy the file bytes.
+  Chromium opens referenced files while preparing an upload and terminates
+  request setup when a referenced file is unavailable.
+- Chrome had no inherited shell proxy variables or explicit proxy flags.
+  System proxy bypass rules included loopback hosts; direct and
+  frontend-proxied health checks were both HTTP `200` after the failure.
+  Together with the unreadable `File` and zero database/storage state, this
+  rules out the Vite proxy、API、Provider and a real server-side ALPN
+  negotiation as the causal failure surface.
+
+The browser-visible `net::ERR_ALPN_NEGOTIATION_FAILED` remains part of the
+historical evidence, but it was a misleading surface label. The corrected
+causal outcome is:
+
+```text
+initial_surface_classification=failed_closed_pre_project_browser_transport
+root_cause=operator_alias_removed_before_submit
+corrected_outcome=failed_closed_pre_project_unreadable_upload_source
+product_upload_code_change_required=false
+budget_denial_fix_live_verified=false
+authorization_consumed=true
+retry_allowed=false
+```
+
+Any future separately authorized browser canary must treat the owner-only
+upload alias as part of the sealed input lifecycle:
+
+1. Create it only after the unique basename/SHA-256 check.
+2. Keep it present and readable through file selection and the single submit.
+3. Remove it only after `createProject()` settles with a project-creation
+   response or terminal upload error, using an owner-fenced cleanup path.
+4. Prove the alias is absent during rollback and continue to preserve the
+   private original path.
+
+This is an operator/canary lifecycle correction, not a reason to add a
+production `Blob` copy or a second upload semantic Owner. It does not reopen
+PRT-8R or authorize a retry. Another exact-one canary would require a new
+plan-only authorization amendment、an independent reviewer verdict of `accept`
+with `0` blockers、fresh source/runtime identity checks and a new explicit user
+authorization.
