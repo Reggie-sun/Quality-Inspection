@@ -2069,7 +2069,7 @@ candidate、coverage、completeness or promotion semantics. After one independen
 read-only review accepts Step 0 with `0` blockers, stop and request a separate
 live-canary authorization before Step 1.
 
-- [ ] **Step 1: Revalidate source, Git and resource identity without live calls**
+- [x] **Step 1: Revalidate source, Git and resource identity without live calls**
 
 Run from the feature worktree:
 
@@ -2123,7 +2123,7 @@ Then inspect live `main` only for commits after
 frozen canary runtime, but any symbol-routing contract、Provider or sealed-source
 change requires a parent amendment before continuing. Do not merge `main`.
 
-- [ ] **Step 2: Start the isolated runtime with zero Provider calls**
+- [x] **Step 2: Start the isolated runtime with zero Provider calls**
 
 Run the exact preflight and startup sequence below. It refuses to reuse or
 delete an existing name、volume or listening port. Both build contexts come
@@ -2423,7 +2423,7 @@ ends after successful startup but before file selection, a later session may
 remove these resources only after confirming all owner labels and
 `SELECT count(*) FROM projects` returns `0`.
 
-- [ ] **Step 3: Consume exactly one browser canary**
+- [x] **Step 3: Consume exactly one browser canary**
 
 Use Chrome MCP against `http://127.0.0.1:15173/`:
 
@@ -2464,7 +2464,7 @@ project is non-terminal after the bounded worker budget has exhausted, capture
 sanitized status/call evidence, stop the isolated worker and record a failed
 canary. Never submit a second project.
 
-- [ ] **Step 4: Record sanitized evidence and perform isolated rollback**
+- [x] **Step 4: Record sanitized evidence and perform isolated rollback**
 
 Record in this plan:
 
@@ -2632,6 +2632,99 @@ An explicitly authorized Quality Owner must inspect the sealed positives、
 frozen negatives、unresolved sources、partial state and browser evidence and
 return `accept` or `reject`. Until that human verdict is recorded, the PRT-8
 result is `blocked_quality_owner_verdict` regardless of automated metrics.
+
+Actual live evidence on 2026-07-31:
+
+- Authorization consumption:
+  `browser_file_selections=1`、`browser_submit_clicks=1`、
+  `project_creations=1`、`direct_provider_calls=0` and
+  `authorization_consumed=true`. The browser never clicked retry、review
+  mutations、Confirm、freeze、balloon or export. No second project was created.
+  `direct_provider_calls=0` means the operator issued no out-of-band Provider
+  request; the isolated worker did enter the Provider path and failed closed.
+- Sealed identity: source basename and SHA-256 matched the frozen identity;
+  all seven frozen source hashes matched. The source environment variable was
+  absent from the agent shell, so a unique matching file was located without
+  printing its private path and exposed to Chrome through a temporary
+  owner-only alias. The alias was removed immediately after file selection.
+  The original worktree-sensitive `git diff --quiet <frozen> -- <runtime>`
+  command rejected preserved tracked `__pycache__` artifacts. The equivalent
+  commit-to-commit runtime delta was `0`, runtime non-artifact dirty was `0`,
+  and every frozen host source hash matched; no artifact was cleaned or
+  reverted.
+- Live `main` was `58de8dace5788ad4676bc9e1a6169d6c5e2421a2`.
+  Its post-`31f7bf3` delta remained SIP/review/frontend-only and had no
+  symbol-routing、Provider or sealed-source overlap. `main` was not merged.
+- Startup preflight passed the exact name、port、credential metadata、base OCI
+  index and `linux/amd64` manifest gates. Two startup attempts failed before
+  project creation and were owner-label cleaned. The first exposed a transient
+  frontend connection reset. The second exposed a false-negative worker gate:
+  under `set -o pipefail`, `docker exec ... inspect ping | rg -q pong` let the
+  early-exiting `rg -q` turn a successful worker response into an upstream
+  SIGPIPE failure. A zero-project diagnostic proved the worker was running、
+  connected to Redis、registered the intended task and returned `pong`. The
+  final startup kept the same semantic gate but captured the inspect output
+  before a Bash substring assertion; API、frontend、worker、Redis、Alembic
+  `0012`、mode、model、router and API/worker source hashes then all passed.
+  None of these startup attempts created a project or called the Provider.
+- Opaque refs:
+  `project_id=c7372155-7f30-4a00-9ba1-e31f14c81521`,
+  `logical_job_id=6dcaab46-c255-4c8e-b280-26b6c85ee437`,
+  `preview_revision_id=a110e8c4-0ba3-4d9f-a596-96e41096f3f1`,
+  `preview_revision=1`, and `terminal_result_id=null`.
+- The browser observed revision `1` at `local_ready` with counts
+  `local_resolved=250`、`cache_resolved=0`、`vlm_pending=199`、
+  `vlm_resolved=0` and `unresolved=0`. Before the screenshot could take its
+  frame, the page transitioned to the terminal error; therefore no distinct
+  visual preview screenshot exists and this is reported as missing evidence,
+  not reconstructed evidence.
+- Terminal result: project state `processing_failed`; logical job status
+  `failed` at `local_ready`; error code `vision_provider_call_failed`,
+  severity `blocking`, stage `candidate_advisor`, cause
+  `processing_defect`. The UI explicitly reported that no formal inspection
+  result was generated. The one-canary authorization was consumed and no retry
+  was attempted.
+- Persisted routing evidence before the fail-closed terminal:
+  `admitted=199`、`locally_resolved=1`、`escalated=198`、`blocked=0`,
+  `deduped_groups=198` and `cache_entries=0`. Reason distribution was
+  `deterministic_geometry_complete=1`、
+  `local_projection_complete=1` and `unknown_symbol_pattern=198`.
+  Persisted attempt/outcome distributions were
+  `not_started_budget_exhausted=190` and `budget_exhausted=190`.
+- No automatic result exists. Persisted current `provider_request_id` count、
+  cache-attempt count and redacted Provider call-record count were all `0`.
+  The eight escalated groups not represented by
+  `not_started_budget_exhausted` cannot be converted into a proved external
+  call count. The committed collector exited `2` with its generic rejection
+  because a closed-schema terminal ledger requires exactly one automatic
+  result. Consequently call arithmetic、per-page/project duration、latency
+  sample and live concurrency are unobservable. Report
+  `p50_eligible=false`、`p95_eligible=false` and
+  `promotion_eligible=false`; do not infer a zero-call success from absent
+  request IDs.
+- Cache namespace/provenance validation found no project-local cache entry or
+  cache event to reuse. No cross-project lookup was enabled; the existing
+  cross-project cache status remains `blocked_missing_security_scope_owner`.
+- Browser evidence:
+  `/tmp/qi-prt8-canary-evidence/preview-capture-raced-to-terminal.png` and
+  `/tmp/qi-prt8-canary-evidence/terminal-provider-failure.png`, both SHA-256
+  `e0dea9c2a8bd7d1f866583252da15726f1670f1a817aadd0d6266a7589eca8cc`.
+  The identical digest proves both actual frames are the terminal error. The
+  first filename records the capture race and is not a preview-pass claim.
+- Privacy: no raw Provider response、crop/image bytes、credential value、
+  private source path or unsanitized runtime log was written to repository or
+  temporary evidence. One Chrome network-inspection call surfaced a
+  pre-existing unrelated local cookie header in transient tool output; its
+  value was not copied into any file or plan, and no further header-level
+  inspection was performed.
+- Isolated stop removed the five runtime containers and network after evidence
+  capture. It preserved `qi_prt8_canary_postgres`、
+  `qi_prt8_canary_storage` and both labeled canary images. The repository
+  default remains `legacy_high_recall`; Docker events for the execution window
+  contained `0` non-canary lifecycle changes.
+- Quality Owner verdict state is `blocked_quality_owner_verdict`. Automated
+  canary result is `failed_closed_provider_call`; production promotion remains
+  blocked.
 
 - [ ] **Step 5: Commit evidence, review and stop before promotion**
 
