@@ -29,9 +29,8 @@ _REVISION_VALUE = re.compile(
     r"[A-Za-z0-9]{1,4}(?:[./-][A-Za-z0-9]{1,4})?"
 )
 _CJK_CHARACTER = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
-_DATE_VALUE = re.compile(r"(?:\d{2,4}年)?\d{1,2}月\d{1,2}日")
-_PAGE_VALUE = re.compile(
-    r"(?:第?\d+(?:页|张)|共\d+(?:页|张)(?:第\d+(?:页|张))?)"
+_STRUCTURAL_METADATA_TOKEN = re.compile(
+    r"[0-9第共年月日页张./\-()（）]+"
 )
 
 
@@ -345,8 +344,7 @@ def _material_name_candidates(
 def _is_material_name_value(value: str) -> bool:
     return (
         _CJK_CHARACTER.search(value) is not None
-        and _DATE_VALUE.fullmatch(value) is None
-        and _PAGE_VALUE.fullmatch(value) is None
+        and _STRUCTURAL_METADATA_TOKEN.fullmatch(value) is None
     )
 
 

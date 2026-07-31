@@ -238,7 +238,17 @@ def test_ambiguous_field_on_another_page_suppresses_unique_suggestion() -> None:
     assert "material_code" not in suggestions
 
 
-@pytest.mark.parametrize("non_name", ["2026年7月31日", "第1页"])
+@pytest.mark.parametrize(
+    "non_name",
+    [
+        "2026年7月31日",
+        "2026年7月",
+        "2026年",
+        "第1页",
+        "第1张共2张",
+        "第1/2页",
+    ],
+)
 def test_date_and_page_tokens_are_not_material_name_suggestions(
     non_name: str,
 ) -> None:
