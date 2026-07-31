@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+import types
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from shutil import copyfile
+from zipfile import ZipFile
 
 import pytest
 from openpyxl import Workbook, load_workbook
+from openpyxl.writer import excel as openpyxl_excel_writer
 
 from app.exports.template_registry import (
     AssetHashMismatch,
@@ -87,6 +92,16 @@ def _copy_approved_registration(tmp_path: Path) -> tuple[Path, Path]:
     return template_path, mapping_path
 
 
+def _load_template_builder():
+    backend_root = Path(__file__).resolve().parents[3]
+    builder_path = backend_root / "scripts/build_sip_template_v3.py"
+    spec = importlib.util.spec_from_file_location("sip_template_v3_builder", builder_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_p0_exp_001_loads_the_approved_v3_template_registration() -> None:
     """Catches a registered workbook that retains the v2 layout or row columns."""
     backend_root = Path(__file__).resolve().parents[3]
@@ -157,8 +172,87 @@ def test_p0_exp_003_approved_v3_template_has_fixed_print_capacity() -> None:
             for row in range(518, 523)
             for column in "ABCDEFGHI"
         )
+        assert sheet["A1"].font.name == "Noto Serif CJK SC"
+        assert sheet["A1"].font.sz == 20
+        assert sheet["A5"].font.name == "Noto Sans CJK SC"
+        assert sheet["A5"].font.sz == 10.5
+        assert sheet["A5"].font.color.rgb[-6:] == "FFFFFF"
+        assert {column: sheet.column_dimensions[column].width for column in "ABCDEFGHI"} == {
+            "A": 8,
+            "B": 8,
+            "C": 11,
+            "D": 14,
+            "E": 16,
+            "F": 13,
+            "G": 13,
+            "H": 13,
+            "I": 15,
+        }
+        assert {row: sheet.row_dimensions[row].height for row in range(1, 7)} == {
+            1: 36,
+            2: 24,
+            3: 24,
+            4: 28,
+            5: 27,
+            6: 24,
+        }
+        assert sheet["A6"].font.name == "Noto Sans CJK SC"
+        assert sheet["A6"].font.sz == 10
+        assert sheet["A6"].font.color.rgb[-6:] == "444444"
+        assert sheet["E6"].fill.fgColor.rgb[-6:] == "FFF2DF"
+        assert sheet["E6"].font.color.rgb[-6:] == "F06B2B"
+        assert sheet["H6"].fill.fgColor.rgb[-6:] == "FFF2DF"
+        assert sheet["H6"].font.color.rgb[-6:] == "F06B2B"
+        assert sheet["I6"].fill.fgColor.rgb[-6:] == "FFF2DF"
+        assert sheet["I6"].font.bold is True
+        type_rules = {}
+        for conditional in sheet.conditional_formatting:
+            for rule in sheet.conditional_formatting[conditional]:
+                if rule.formula and rule.dxf is not None and rule.dxf.font is not None:
+                    type_rules[rule.formula[0]] = rule.dxf.font
+        assert type_rules['$C6="线性"'].bold is True
+        assert type_rules['$C6="线性"'].color.rgb[-6:] == "FFFFFF"
     finally:
         workbook.close()
+
+
+def test_builder_normalizes_core_properties_across_distinct_save_times(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catches a builder whose XLSX bytes drift with openpyxl's writer clock."""
+    backend_root = Path(__file__).resolve().parents[3]
+    source = backend_root / "assets/templates/sip-v1.xlsx"
+    builder = _load_template_builder()
+
+    class WriterClock:
+        current = datetime(2026, 7, 31, 1, tzinfo=timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current if tz is not None else cls.current.replace(tzinfo=None)
+
+    monkeypatch.setattr(
+        openpyxl_excel_writer,
+        "datetime",
+        types.SimpleNamespace(datetime=WriterClock, timezone=timezone),
+    )
+    first_template = tmp_path / "first.xlsx"
+    first_mapping = tmp_path / "first.mapping.json"
+    builder.build_template(source, first_template)
+    builder.write_mapping(first_template, first_mapping)
+
+    WriterClock.current = datetime(2026, 7, 31, 2, tzinfo=timezone.utc)
+    second_template = tmp_path / "second.xlsx"
+    second_mapping = tmp_path / "second.mapping.json"
+    builder.build_template(source, second_template)
+    builder.write_mapping(second_template, second_mapping)
+
+    assert first_template.read_bytes() == second_template.read_bytes()
+    assert first_mapping.read_bytes() == second_mapping.read_bytes()
+    with ZipFile(first_template) as archive:
+        core_xml = archive.read("docProps/core.xml")
+    assert b"2026-07-31T00:00:00Z" in core_xml
 
 
 def test_p0_exp_001_registry_rejects_template_hash_drift(tmp_path: Path) -> None:

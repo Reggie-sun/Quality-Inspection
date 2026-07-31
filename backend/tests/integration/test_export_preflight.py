@@ -41,7 +41,7 @@ def test_p0_run_004_approved_export_assets_pass_preflight(tmp_path: Path) -> Non
     registration = _preflight(_approved_asset_paths(tmp_path)).check()
 
     assert registration.template_id == "sip-v1"
-    assert registration.sheet == "SIP检验记录"
+    assert registration.sheet == "尺寸质量检测表"
     assert registration.image_sheet == "气泡图"
 
 
@@ -142,7 +142,7 @@ def test_p0_run_004_missing_required_mapping_field_is_a_structured_blocker(
     """P0-RUN-004 rejects incomplete fixed mappings before export starts."""
     paths = _approved_asset_paths(tmp_path)
     mapping = json.loads(paths["mapping"].read_text(encoding="utf-8"))
-    mapping["metadata_cells"].pop("revision")
+    mapping["metadata_cells"].pop("source_filename")
     paths["mapping"].write_text(json.dumps(mapping), encoding="utf-8")
 
     with pytest.raises(CapabilityUnavailable) as error:

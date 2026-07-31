@@ -6,15 +6,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.exports.sip_workbook_contract import (
+    NUMERIC_DETAIL_FIELDS,
+    NUMERIC_METADATA_FIELDS,
+    TEXT_DETAIL_FIELDS,
+    TEXT_METADATA_FIELDS,
+)
 
 SIP_TEMPLATE_ID = "sip-v1"
-APPROVED_TEMPLATE_VERSION = "2"
+APPROVED_TEMPLATE_VERSION = "3"
 APPROVED_TEMPLATE_SHA256 = (
-    "6a946e9279a489f845e94f08d0ecb5917829a20378bba85cccc9171e50b16720"
+    "b5a1ffac7cadba1cf1faac7ae6866be9482aca5fcd70fee24f385dbca854eea3"
 )
-APPROVED_MAPPING_VERSION = "2"
+APPROVED_MAPPING_VERSION = "3"
 APPROVED_MAPPING_SHA256 = (
-    "edb6a1bda8c6a8d2953c481221380b76ba83947f9e0839680b8ac478f670edf7"
+    "bd0ed776123deaf2d043fbc0b816991f1560cfd4fb053ed2f69307864ab545e6"
 )
 
 _REQUIRED_TOP_LEVEL_FIELDS = {
@@ -26,27 +32,15 @@ _REQUIRED_TOP_LEVEL_FIELDS = {
     "capacity",
     "metadata_cells",
     "detail_columns",
+    "measurement_column",
+    "result_column",
     "image_sheet",
     "image_anchor",
     "protected_ranges",
     "signoff_ranges",
 }
-_REQUIRED_METADATA_FIELDS = {
-    "material_code",
-    "material_name",
-    "drawing_number",
-    "material",
-    "revision",
-}
-_REQUIRED_DETAIL_FIELDS = {
-    "balloon_number",
-    "inspection_item",
-    "inspection_standard",
-    "inspection_method",
-    "key_dimension",
-    "inspection_role",
-    "source_page",
-}
+_REQUIRED_METADATA_FIELDS = NUMERIC_METADATA_FIELDS | TEXT_METADATA_FIELDS
+_REQUIRED_DETAIL_FIELDS = NUMERIC_DETAIL_FIELDS | TEXT_DETAIL_FIELDS
 
 
 class AssetHashMismatch(RuntimeError):
@@ -76,6 +70,8 @@ class TemplateRegistration:
     last_row: int
     metadata_cells: dict[str, str]
     detail_columns: dict[str, str]
+    measurement_column: str
+    result_column: str
     image_sheet: str
     image_anchor: str
     protected_ranges: tuple[str, ...]
@@ -137,7 +133,13 @@ def load_template_registration(
         raw = json.loads(mapping_bytes.decode("utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise InvalidTemplateRegistration("mapping must be readable JSON") from exc
-    if not isinstance(raw, dict) or set(raw) != _REQUIRED_TOP_LEVEL_FIELDS:
+    if not isinstance(raw, dict):
+        raise InvalidTemplateRegistration(
+            "mapping must be the complete sip-v1 registration"
+        )
+    _nonempty_string(raw, "measurement_column")
+    _nonempty_string(raw, "result_column")
+    if set(raw) != _REQUIRED_TOP_LEVEL_FIELDS:
         raise InvalidTemplateRegistration(
             "mapping must be the complete sip-v1 registration"
         )
@@ -180,6 +182,22 @@ def load_template_registration(
         "detail_columns",
         _REQUIRED_DETAIL_FIELDS,
     )
+    measurement_column = _nonempty_string(raw, "measurement_column")
+    result_column = _nonempty_string(raw, "result_column")
+    for field, column in (
+        ("measurement_column", measurement_column),
+        ("result_column", result_column),
+    ):
+        if not _is_excel_column(column):
+            raise InvalidTemplateRegistration(f"{field} must be a single Excel column")
+    if measurement_column == result_column:
+        raise InvalidTemplateRegistration(
+            "measurement_column and result_column must not overlap"
+        )
+    if {measurement_column, result_column} & set(detail_columns.values()):
+        raise InvalidTemplateRegistration(
+            "detail_columns must not overlap measurement or result columns"
+        )
     image_sheet = _nonempty_string(raw, "image_sheet")
     image_anchor = _nonempty_string(raw, "image_anchor")
     protected_ranges = _ranges(raw, "protected_ranges")
@@ -217,8 +235,19 @@ def load_template_registration(
         last_row=last_row,
         metadata_cells=metadata_cells,
         detail_columns=detail_columns,
+        measurement_column=measurement_column,
+        result_column=result_column,
         image_sheet=image_sheet,
         image_anchor=image_anchor,
         protected_ranges=protected_ranges,
         signoff_ranges=signoff_ranges,
     )
+
+
+def _is_excel_column(value: str) -> bool:
+    if not value.isascii() or not value.isupper() or not value.isalpha() or len(value) > 3:
+        return False
+    index = 0
+    for character in value:
+        index = index * 26 + ord(character) - ord("A") + 1
+    return index <= 16384
