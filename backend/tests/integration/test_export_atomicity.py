@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import fitz
 import pytest
@@ -116,7 +117,9 @@ def _prepare_sip_review(
 def reviewed_result(
     db_session: Session,
     tmp_path: Path,
+    request: pytest.FixtureRequest,
 ) -> tuple[ReviewedResult, LocalFileStorage]:
+    one_sided_tolerance = getattr(request, "param", None) is True
     project_id = uuid.uuid4()
     source_bytes = _source_pdf()
     storage = LocalFileStorage(tmp_path / "storage")
@@ -186,6 +189,11 @@ def reviewed_result(
                     "scope": "local_feature",
                     "balloon_required": True,
                     "requires_confirmation": False,
+                    **(
+                        {"upper_tolerance": "0.2"}
+                        if one_sided_tolerance
+                        else {}
+                    ),
                 },
                 "source_location_ids": ["s1"],
             },
@@ -309,6 +317,62 @@ def test_no_artifact_is_downloadable_after_subartifact_failure(
     assert all(artifact.published_ref is None for artifact in artifacts)
     for kind in ("ballooned_pdf", "sip_excel", "manifest"):
         assert service.download_ref(export.id, kind) is None
+
+
+@pytest.mark.parametrize("reviewed_result", [True], indirect=True)
+def test_one_sided_tolerance_fails_before_export_artifacts_are_staged(
+    db_session: Session,
+    reviewed_result: tuple[ReviewedResult, LocalFileStorage],
+) -> None:
+    """Catches an incomplete reviewed tolerance that reaches any publish stage."""
+    reviewed, storage = reviewed_result
+
+    with pytest.raises(ValueError, match="one-sided structured tolerance"):
+        _service(db_session, storage).create(reviewed.id)
+
+    assert db_session.scalar(select(func.count()).select_from(ExportJob)) == 0
+    assert not (storage.root / "exports").exists()
+
+
+def test_export_passes_v3_workbook_metadata_after_pdf_validation(
+    db_session: Session,
+    reviewed_result: tuple[ReviewedResult, LocalFileStorage],
+) -> None:
+    """Catches v3 header metadata being built before PDF validation or from SIP metadata."""
+    reviewed, storage = reviewed_result
+    captured: dict[str, object] = {}
+
+    def capture_renderer(
+        _template_path: Path,
+        _registration: object,
+        metadata: dict[str, object],
+        _rows: list[dict[str, object]],
+        page_images: list[Path],
+    ) -> bytes:
+        captured["metadata"] = metadata
+        captured["page_images"] = page_images
+        raise RuntimeError("stop after v3 workbook metadata capture")
+
+    export = ExportService(
+        db_session,
+        storage=storage,
+        excel_renderer=capture_renderer,
+    ).create(reviewed.id)
+
+    assert export.status == "failed"
+    assert export.created_at is not None
+    assert captured["metadata"] == {
+        "source_filename": "drawing.pdf",
+        "inspection_date": export.created_at.astimezone(
+            ZoneInfo("Asia/Hong_Kong")
+        ).strftime("%Y-%m-%d %H:%M"),
+        "toleranced_count": 0,
+        "page_count": 1,
+        "detail_count": 2,
+        "unit": "mm / 按项目",
+        "general_tolerance_note": "【未注公差标准】未确认",
+    }
+    assert len(captured["page_images"]) == 1
 
 
 def test_success_exposes_exactly_three_verified_downloads(

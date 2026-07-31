@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.exports import service as export_service
 from app.exports.manifest import ArtifactDigest, ExportManifest, sha256_bytes
 from app.exports.models import ExportArtifact, ExportJob
 from app.exports.service import (
@@ -41,7 +42,7 @@ def _balloons() -> list[dict[str, object]]:
 
 
 def _excel_rows() -> list[dict[str, object]]:
-    return [{"balloon_number": 1}, {"balloon_number": ""}]
+    return [{"number": 1}, {"number": ""}]
 
 
 def test_logical_detail_count_matches_reviewed_items() -> None:
@@ -64,7 +65,7 @@ def test_pdf_and_excel_numbers_match() -> None:
     """P0-EXP-007C vetoes divergent PDF and Excel formal numbers."""
     assert_export_counts(_reviewed_items(), _balloons(), _excel_rows())
 
-    mismatched_rows = [{"balloon_number": 2}, {"balloon_number": ""}]
+    mismatched_rows = [{"number": 2}, {"number": ""}]
     with pytest.raises(ValueError, match="PDF and Excel balloon numbers differ"):
         assert_export_counts(_reviewed_items(), _balloons(), mismatched_rows)
 
@@ -79,7 +80,7 @@ def test_pdf_and_excel_number_identity_does_not_depend_on_row_order() -> None:
         {"inspection_item_id": "i1", "formal_number": 1},
         {"inspection_item_id": "i2", "formal_number": 2},
     ]
-    excel_rows = [{"balloon_number": 2}, {"balloon_number": 1}]
+    excel_rows = [{"number": 2}, {"number": 1}]
 
     assert_export_counts(reviewed_items, balloons, excel_rows)
 
@@ -334,6 +335,165 @@ def test_excel_rows_reject_one_sided_structured_tolerance() -> None:
 
     with pytest.raises(ValueError, match="one-sided structured tolerance"):
         ExportService._excel_rows([upper_only_item], [])
+
+
+@pytest.mark.parametrize(
+    ("item_type", "field"),
+    [
+        ("linear_dimension", "nominal"),
+        ("radius", "radius_value"),
+        ("angle", "angle_value"),
+    ],
+)
+def test_excel_rows_fall_back_for_non_finite_numeric_bases(
+    item_type: str,
+    field: str,
+) -> None:
+    """Catches a non-finite reviewed base leaking into a visible numeric limit."""
+    item = _confirmed_dimension_item(
+        item_type=item_type,
+        normalized_text="已审核文本",
+        upper_tolerance="0.2",
+        lower_tolerance="-0.2",
+        **{field: "NaN"},
+    )
+
+    row = ExportService._excel_rows([item], [])[0]
+
+    assert row["basic_size"] == "已审核文本"
+    assert row["upper_limit"] == ""
+    assert row["lower_limit"] == ""
+
+
+@pytest.mark.parametrize("non_finite", ["NaN", "Infinity", "-Infinity"])
+def test_excel_rows_reject_non_finite_structured_tolerances(
+    non_finite: str,
+) -> None:
+    """Catches a non-finite tolerance raising Decimal internals or reaching a row."""
+    item = _confirmed_dimension_item(
+        nominal="10",
+        upper_tolerance=non_finite,
+        lower_tolerance="-0.2",
+    )
+
+    with pytest.raises(ValueError):
+        ExportService._excel_rows([item], [])
+
+
+@pytest.mark.parametrize(
+    ("upper", "lower", "expected_tolerance", "expected_upper", "expected_lower"),
+    [
+        ("0.05", "0.01", "+0.05/+0.01", Decimal("10.05"), Decimal("10.01")),
+        ("-0.01", "-0.05", "-0.01/-0.05", Decimal("9.99"), Decimal("9.95")),
+        ("0.03", "-0.02", "+0.03/-0.02", Decimal("10.03"), Decimal("9.98")),
+        ("-0.03", "0.01", None, None, None),
+        ("-0.2", "0.2", None, None, None),
+    ],
+)
+def test_excel_rows_enforce_structured_tolerance_range_order(
+    upper: str,
+    lower: str,
+    expected_tolerance: str | None,
+    expected_upper: Decimal | None,
+    expected_lower: Decimal | None,
+) -> None:
+    """Catches an inverted range, including reversed symmetric values, reaching export."""
+    item = _confirmed_dimension_item(
+        nominal="10",
+        upper_tolerance=upper,
+        lower_tolerance=lower,
+    )
+
+    if expected_tolerance is None:
+        with pytest.raises(ValueError, match="inverted structured tolerance"):
+            ExportService._excel_rows([item], [])
+        return
+
+    row = ExportService._excel_rows([item], [])[0]
+    assert row["tolerance"] == expected_tolerance
+    assert row["upper_limit"] == expected_upper
+    assert row["lower_limit"] == expected_lower
+
+
+def test_general_tolerance_note_projects_only_controlled_frozen_standards() -> None:
+    """Catches a header note that reads arbitrary or unfrozen requirement text."""
+    assert export_service._general_tolerance_note(
+        [
+            {
+                "active": True,
+                "technical_requirement_refs": ["tr-1"],
+                "inspection_standard": "GB/T 1804-m",
+            }
+        ]
+    ) == "【未注公差标准】未注线性尺寸公差按 GB/T 1804-m 级执行"
+    assert export_service._general_tolerance_note(
+        [
+            {
+                "active": True,
+                "technical_requirement_refs": ["tr-1"],
+                "inspection_standard": "GB/T 1804-f",
+            },
+            {
+                "active": True,
+                "technical_requirement_refs": ["tr-2"],
+                "inspection_standard": "GB/T 1184-k",
+            },
+        ]
+    ) == (
+        "【未注公差标准】未注线性尺寸公差按 GB/T 1804-f 级执行；"
+        "未注形位公差按 GB/T 1184-k 级执行"
+    )
+    assert export_service._general_tolerance_note(
+        [{"active": True, "technical_requirement_refs": []}]
+    ) == "【未注公差标准】未确认"
+    assert export_service._general_tolerance_note(
+        [
+            {
+                "active": True,
+                "technical_requirement_refs": ["tr-1"],
+                "inspection_standard": "ISO 2768-m",
+            },
+            {
+                "active": False,
+                "technical_requirement_refs": ["tr-2"],
+                "inspection_standard": "GB/T 1804-f",
+            },
+        ]
+    ) == "【未注公差标准】未确认"
+    with pytest.raises(ValueError, match="conflicting general tolerance standards"):
+        export_service._general_tolerance_note(
+            [
+                {
+                    "active": True,
+                    "technical_requirement_refs": ["tr-1"],
+                    "inspection_standard": "GB/T 1804-f",
+                },
+                {
+                    "active": True,
+                    "technical_requirement_refs": ["tr-2"],
+                    "inspection_standard": "GB/T 1804-m",
+                },
+            ]
+        )
+
+
+def test_sip_metadata_keeps_the_frozen_five_field_shape() -> None:
+    """Catches a v3 export that mutates rollback-compatible review metadata."""
+    metadata = {
+        "material_code": "MAT-001",
+        "material_name": "上座",
+        "drawing_number": "JS26032501",
+        "material": "SUS304",
+        "revision": "A1",
+    }
+
+    assert ExportService._sip_metadata(metadata) == metadata
+    with pytest.raises(ValueError, match="incomplete confirmed SIP metadata"):
+        ExportService._sip_metadata(
+            {key: value for key, value in metadata.items() if key != "revision"}
+        )
+    with pytest.raises(ValueError, match="incomplete confirmed SIP metadata"):
+        ExportService._sip_metadata(metadata | {"unit": "mm / 按项目"})
 
 
 def test_artifacts_share_reviewed_result_id() -> None:

@@ -6,8 +6,10 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import fitz
 from openpyxl import load_workbook
@@ -22,7 +24,7 @@ from app.capabilities.service import (
 )
 from app.config import get_settings
 from app.errors.models import ErrorRecord
-from app.exports.excel import REQUIRED_METADATA_FIELDS, render_sip_workbook
+from app.exports.excel import render_sip_workbook
 from app.exports.manifest import ArtifactDigest, ExportManifest, sha256_bytes
 from app.exports.models import ExportArtifact, ExportJob
 from app.exports.naming import safe_stem
@@ -38,6 +40,7 @@ from app.jobs.idempotency import (
     complete_logical_job,
 )
 from app.review.models import ReviewedResult, ReviewWorkingCopy
+from app.review.schemas import SIP_METADATA_FIELDS
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -54,6 +57,144 @@ _DETAIL_FIELDS = {
 }
 _DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
 _ARTIFACT_KINDS = {"ballooned_pdf", "sip_excel", "manifest"}
+_EXCEL_DETAIL_FIELDS = {
+    "number",
+    "source_page",
+    "type_label",
+    "basic_size",
+    "tolerance",
+    "upper_limit",
+    "lower_limit",
+}
+
+
+def _decimal(value: object) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    try:
+        candidate = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    return candidate if candidate.is_finite() else None
+
+
+def _decimal_text(value: Decimal) -> str:
+    rendered = format(value.normalize(), "f")
+    return "0" if rendered in {"-0", ""} else rendered
+
+
+def _reviewed_text(item: dict[str, Any]) -> str:
+    for field in ("normalized_text", "raw_text"):
+        value = item.get(field)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def _type_label(item: dict[str, Any]) -> str:
+    if item.get("coarse_type") == "roughness":
+        return "粗糙度"
+    return {
+        "linear_dimension": "线性",
+        "diameter_dimension": "直径",
+        "radius": "半径",
+        "angle": "角度",
+        "thread": "螺纹",
+        "general_requirement": "技术要求",
+    }.get(item.get("item_type"), "复合")
+
+
+def _numeric_base(item: dict[str, Any]) -> Decimal | None:
+    field = {
+        "linear_dimension": "nominal",
+        "diameter_dimension": "nominal",
+        "radius": "radius_value",
+        "angle": "angle_value",
+    }.get(item.get("item_type"))
+    return _decimal(item.get(field)) if field is not None else None
+
+
+def _basic_size(item: dict[str, Any]) -> str:
+    item_type = item.get("item_type")
+    if item_type in {"linear_dimension", "diameter_dimension", "radius", "angle"}:
+        value = _numeric_base(item)
+        if value is not None:
+            rendered = _decimal_text(value)
+            if item_type == "diameter_dimension":
+                return f"Φ{rendered}"
+            if item_type == "radius":
+                return f"R{rendered}"
+            if item_type == "angle":
+                return f"{rendered}°"
+            return rendered
+    if item_type == "thread":
+        thread_spec = item.get("thread_spec")
+        if isinstance(thread_spec, str) and thread_spec.strip():
+            return thread_spec
+    return _reviewed_text(item)
+
+
+def _tolerance_text(upper: Decimal, lower: Decimal) -> str:
+    if upper == -lower:
+        return f"±{_decimal_text(upper)}"
+
+    def signed(value: Decimal) -> str:
+        rendered = _decimal_text(value)
+        return f"+{rendered}" if value > 0 else rendered
+
+    return f"{signed(upper)}/{signed(lower)}"
+
+
+def _tolerance_values(item: dict[str, Any]) -> tuple[str, Decimal | str, Decimal | str]:
+    upper_value = item.get("upper_tolerance")
+    lower_value = item.get("lower_tolerance")
+    upper = _decimal(upper_value)
+    lower = _decimal(lower_value)
+    invalid_tolerance = (
+        upper_value not in (None, "") and upper is None
+    ) or (lower_value not in (None, "") and lower is None)
+    if invalid_tolerance:
+        raise ValueError("reviewed item has invalid structured tolerance")
+    if upper is None and lower is None:
+        return "", "", ""
+    if upper is None or lower is None:
+        raise ValueError("reviewed item has one-sided structured tolerance")
+    if upper < lower:
+        raise ValueError("reviewed item has inverted structured tolerance")
+    base = _numeric_base(item)
+    if base is None:
+        return _tolerance_text(upper, lower), "", ""
+    return _tolerance_text(upper, lower), base + upper, base + lower
+
+
+def _general_tolerance_note(reviewed_items: list[dict[str, Any]]) -> str:
+    standards = {"GB/T 1804": set(), "GB/T 1184": set()}
+    allowed_classes = {
+        "GB/T 1804": {"f", "m", "c", "v"},
+        "GB/T 1184": {"h", "k", "l"},
+    }
+    for item in reviewed_items:
+        refs = item.get("technical_requirement_refs")
+        if item.get("active", True) is not True or not isinstance(refs, list) or not refs:
+            continue
+        value = item.get("inspection_standard")
+        if not isinstance(value, str):
+            continue
+        for code in standards:
+            prefix = f"{code}-"
+            tolerance_class = value[len(prefix) :].lower() if value.startswith(prefix) else ""
+            if tolerance_class in allowed_classes[code]:
+                standards[code].add(f"{code}-{tolerance_class}")
+    if any(len(values) > 1 for values in standards.values()):
+        raise ValueError("frozen reviewed items contain conflicting general tolerance standards")
+    dimensional = next(iter(standards["GB/T 1804"]), None)
+    geometric = next(iter(standards["GB/T 1184"]), None)
+    parts = []
+    if dimensional is not None:
+        parts.append(f"未注线性尺寸公差按 {dimensional} 级执行")
+    if geometric is not None:
+        parts.append(f"未注形位公差按 {geometric} 级执行")
+    return "【未注公差标准】" + ("；".join(parts) if parts else "未确认")
 
 PdfRenderer = Callable[[bytes, list[FrozenBalloon], Path], bytes]
 ExcelRenderer = Callable[
@@ -103,9 +244,9 @@ def assert_export_counts(
         raise ValueError("balloon count mismatch")
     pdf_numbers = [balloon["formal_number"] for balloon in balloons]
     excel_numbers = [
-        row["balloon_number"]
+        row["number"]
         for row in excel_rows
-        if row["balloon_number"] != ""
+        if row["number"] != ""
     ]
     if sorted(pdf_numbers) != sorted(excel_numbers):
         raise ValueError("PDF and Excel balloon numbers differ")
@@ -201,7 +342,7 @@ class ExportService:
             raise ExportInputUnavailable("approved export identity changed")
         frozen_balloons = self._frozen_balloons(reviewed.balloons)
         active_balloons = self._active_balloon_snapshots(reviewed.balloons)
-        sip_metadata = self._sip_metadata(reviewed.sip_metadata)
+        self._sip_metadata(reviewed.sip_metadata)
         excel_rows = self._excel_rows(reviewed.items, active_balloons)
         assert_export_counts(reviewed.items, active_balloons, excel_rows)
         claimed_export = self._claim_execution(logical_job, reviewed.id)
@@ -241,6 +382,20 @@ class ExportService:
                 staged_pdf,
                 frozen_balloons,
             )
+            workbook_metadata = {
+                "source_filename": source.filename,
+                "inspection_date": export.created_at.astimezone(
+                    ZoneInfo("Asia/Hong_Kong")
+                ).strftime("%Y-%m-%d %H:%M"),
+                "toleranced_count": sum(
+                    row["upper_limit"] != "" and row["lower_limit"] != ""
+                    for row in excel_rows
+                ),
+                "page_count": source_page_count,
+                "detail_count": len(excel_rows),
+                "unit": "mm / 按项目",
+                "general_tolerance_note": _general_tolerance_note(reviewed.items),
+            }
 
             stage = "excel"
             with tempfile.TemporaryDirectory(prefix="qi-export-pages-") as temp_dir:
@@ -251,7 +406,7 @@ class ExportService:
                 excel_content = self.excel_renderer(
                     self.template_path,
                     registration,
-                    sip_metadata,
+                    workbook_metadata,
                     excel_rows,
                     page_images,
                 )
@@ -265,7 +420,7 @@ class ExportService:
             self._validate_excel(
                 staged_excel,
                 registration,
-                sip_metadata,
+                workbook_metadata,
                 excel_rows,
             )
 
@@ -562,9 +717,15 @@ class ExportService:
             required = item.get("balloon_required") is True
             if required and item_id not in balloon_numbers:
                 raise ValueError("reviewed item is missing its formal balloon")
+            tolerance, upper_limit, lower_limit = _tolerance_values(item)
             row: dict[str, object] = {
-                "balloon_number": balloon_numbers.get(item_id, ""),
-                **{field: item[field] for field in sorted(_DETAIL_FIELDS)},
+                "number": balloon_numbers.get(item_id, ""),
+                "source_page": item["source_page"],
+                "type_label": _type_label(item),
+                "basic_size": _basic_size(item),
+                "tolerance": tolerance,
+                "upper_limit": upper_limit,
+                "lower_limit": lower_limit,
                 "scope": item.get("scope"),
                 "balloon_required": required,
             }
@@ -573,18 +734,19 @@ class ExportService:
 
     @staticmethod
     def _sip_metadata(metadata: dict[str, Any]) -> dict[str, object]:
-        missing = REQUIRED_METADATA_FIELDS - set(metadata)
-        extra = set(metadata) - REQUIRED_METADATA_FIELDS
+        required_review_metadata = set(SIP_METADATA_FIELDS)
+        missing = required_review_metadata - set(metadata)
+        extra = set(metadata) - required_review_metadata
         invalid = {
             field
-            for field in REQUIRED_METADATA_FIELDS & set(metadata)
+            for field in required_review_metadata & set(metadata)
             if not isinstance(metadata[field], str) or not metadata[field].strip()
         }
         if missing or extra or invalid:
             raise ValueError(
                 "reviewed result has incomplete confirmed SIP metadata"
             )
-        return {field: metadata[field] for field in sorted(REQUIRED_METADATA_FIELDS)}
+        return {field: metadata[field] for field in sorted(required_review_metadata)}
 
     @staticmethod
     def _filenames(source_filename: str) -> dict[str, str]:
