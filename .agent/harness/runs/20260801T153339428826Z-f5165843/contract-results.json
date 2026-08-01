@@ -1,0 +1,132 @@
+{
+  "results": [
+    {
+      "artifact_refs": [
+        "logs/selector-001.log",
+        "artifacts/current-four-manifest.json"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_classification.py -q",
+      "completed_at": "2026-08-01T15:33:39.745271Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-001",
+      "result_state": "passed",
+      "run_id": "20260801T153339428826Z-f5165843",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-08-01T15:33:39.459001Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-002.log",
+        "artifacts/current-four-manifest.json"
+      ],
+      "command": "pytest backend/tests/integration/test_pdf_inventory.py::test_multi_page_inventory_preserves_order -q",
+      "completed_at": "2026-08-01T15:33:40.094785Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-002",
+      "result_state": "passed",
+      "run_id": "20260801T153339428826Z-f5165843",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-08-01T15:33:39.745449Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-003.log",
+        "artifacts/current-four-manifest.json"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_inventory.py::test_native_observation_remains_authoritative -q",
+      "completed_at": "2026-08-01T15:33:41.459482Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-003",
+      "result_state": "passed",
+      "run_id": "20260801T153339428826Z-f5165843",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-08-01T15:33:40.094913Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-004.log",
+        "artifacts/current-four-manifest.json"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_inventory.py::test_span_and_line_text_round_trip -q",
+      "completed_at": "2026-08-01T15:33:42.858332Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006A",
+      "result_state": "passed",
+      "run_id": "20260801T153339428826Z-f5165843",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-08-01T15:33:41.459625Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-005.log",
+        "artifacts/current-four-manifest.json"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_inventory.py::test_observation_has_page_index -q",
+      "completed_at": "2026-08-01T15:33:44.211173Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006B",
+      "result_state": "passed",
+      "run_id": "20260801T153339428826Z-f5165843",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-08-01T15:33:42.858517Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-006.log",
+        "artifacts/current-four-manifest.json"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_coordinates.py::test_bbox_is_normalized_and_clipped_to_cropbox -q",
+      "completed_at": "2026-08-01T15:33:44.471154Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006C",
+      "result_state": "passed",
+      "run_id": "20260801T153339428826Z-f5165843",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-08-01T15:33:44.211338Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-007.log",
+        "artifacts/current-four-manifest.json"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_inventory.py::test_rotated_text_preserves_direction -q",
+      "completed_at": "2026-08-01T15:33:45.814417Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006D",
+      "result_state": "passed",
+      "run_id": "20260801T153339428826Z-f5165843",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-08-01T15:33:44.471286Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-008.log",
+        "artifacts/current-four-manifest.json"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_classification.py::test_classification_evidence_is_serializable -q",
+      "completed_at": "2026-08-01T15:33:46.067200Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006E",
+      "result_state": "passed",
+      "run_id": "20260801T153339428826Z-f5165843",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-08-01T15:33:45.814566Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-009.log",
+        "artifacts/current-four-manifest.json"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_coordinates.py::test_pdf_render_round_trip_error_budget -q",
+      "completed_at": "2026-08-01T15:33:46.320151Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006F",
+      "result_state": "passed",
+      "run_id": "20260801T153339428826Z-f5165843",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-08-01T15:33:46.067324Z"
+    }
+  ],
+  "run_id": "20260801T153339428826Z-f5165843",
+  "schema_version": "contract-results/1"
+}
