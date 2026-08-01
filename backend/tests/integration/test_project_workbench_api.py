@@ -364,7 +364,7 @@ def test_project_workbench_projects_title_block_suggestions_without_confirming(
         connection.close()
 
 
-def test_project_workbench_projects_source_only_coverage_for_review(
+def test_project_workbench_normalizes_legacy_source_only_coverage(
     tmp_path: Path,
 ) -> None:
     connection = engine.connect()
@@ -492,57 +492,28 @@ def test_project_workbench_projects_source_only_coverage_for_review(
         )
 
         assert response.status_code == 200
-        assert response.json()["working_copy"]["manual_review_count"] == 3
+        assert response.json()["working_copy"]["manual_review_count"] == 0
         assert (
             _review_working_copy(context.working_copy)["manual_review_count"]
-            == 3
+            == 0
         )
-        source = next(
-            item
-            for item in response.json()["sources"]
-            if item["id"] == "source-only"
-        )
-        assert source == {
-            "id": "source-only",
-            "item_ids": [],
-            "page_index": 0,
-            "bbox_pdf": [60.0, 70.0, 150.0, 84.0],
-            "raw_text": "技术要求：去除毛刺",
-            "source_type": "text",
+        projected_source_ids = {
+            source["id"] for source in response.json()["sources"]
         }
-        visual_source = next(
-            item
-            for item in response.json()["sources"]
-            if item["id"] == "visual-observation-id"
-        )
-        assert visual_source == {
-            "id": "visual-observation-id",
-            "item_ids": [],
-            "page_index": 0,
-            "bbox_pdf": [60.0, 70.0, 100.0, 90.0],
-            "raw_text": "图形符号待确认",
-            "source_type": "visual",
-        }
-        visual_revision = next(
-            item
-            for item in response.json()["sources"]
-            if item["id"] == "visual-revision-id"
-        )
-        assert visual_revision == {
-            "id": "visual-revision-id",
-            "item_ids": [],
-            "page_index": 0,
-            "bbox_pdf": [160.0, 70.0, 190.0, 100.0],
-            "raw_text": "图形符号待确认",
-            "source_type": "visual",
-        }
+        assert {
+            "source-only",
+            "visual-observation-id",
+            "visual-revision-id",
+        }.isdisjoint(projected_source_ids)
         projected_revision = next(
             entry
             for entry in response.json()["working_copy"]["coverage"]["entries"]
             if entry["observation_id"] == "visual-revision-id"
         )
         assert projected_revision["disposition"] == "non_inspection"
+        assert projected_revision["requires_confirmation"] is False
         assert projected_revision["symbol_kinds"] == ["revision_marker"]
+        assert context.working_copy.coverage["review_required_count"] == 3
         serialized = json.dumps(response.json(), ensure_ascii=False)
         assert "advisor_review" not in serialized
         assert "geometry_sha256" not in serialized
