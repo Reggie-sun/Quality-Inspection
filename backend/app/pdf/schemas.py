@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.pdf.coordinates import BBox, Matrix
+
+if TYPE_CHECKING:
+    from app.pdf.gdt_frames import GdtFrameObservation
 
 
 @dataclass(frozen=True)
@@ -83,12 +86,15 @@ class PageInventory:
     render_to_pdf_matrix: Matrix
     observations: tuple[TextObservation, ...]
     visual_observations: tuple[VisualObservation, ...] = ()
+    gdt_frame_observations: tuple["GdtFrameObservation", ...] = ()
     layout_profile_match: LayoutProfileMatch | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         if not self.visual_observations:
             payload.pop("visual_observations")
+        if not self.gdt_frame_observations:
+            payload.pop("gdt_frame_observations")
         if self.layout_profile_match is None:
             payload.pop("layout_profile_match")
         return payload

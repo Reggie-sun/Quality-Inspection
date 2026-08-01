@@ -179,7 +179,7 @@ class InventoryPipeline:
         pages: tuple[Any, ...],
     ) -> str:
         document = {
-            "schema_version": "page-inventory/1",
+            "schema_version": "page-inventory/2",
             "pages": [page.to_dict() for page in pages],
         }
         content = json.dumps(
