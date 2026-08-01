@@ -162,19 +162,19 @@ Run focused feature/list/app tests, then all frontend tests and `npm --prefix fr
 
 Confirm current DB Alembic head is `0012`, each of the four IDs exists, and no catalog columns exist yet. If any assertion fails, stop without mutation.
 
-- [ ] **Step 2: Upgrade schema and backfill in one checked transaction**
+- [x] **Step 2: Upgrade schema and backfill in one checked transaction**
 
 Run `alembic upgrade 0013`, then one SQL transaction that updates the four exact IDs and aborts unless the affected/visible row count is exactly four. Use stored-file `created_at` for each selected project's `created_at` and the spec's exact `last_opened_at` values.
 
-- [ ] **Step 3: Activate current main runtime after merge**
+- [x] **Step 3: Activate current main runtime after merge**
 
 Fast-forward/merge the reviewed branch into main without touching unrelated dirty files, restart `make dev-local-api` and `make dev-local-frontend`, and verify listener identity.
 
-- [ ] **Step 4: API and browser cross-origin smoke**
+- [x] **Step 4: API and browser cross-origin smoke**
 
 Verify GET list returns the same four IDs/names through loopback, LAN and public hostname. Open loopback and public pages in browser automation; assert both render `共 4 份图纸`, the same four filenames, working status calls and no console errors.
 
-- [ ] **Step 5: Failure-path and rollback proof**
+- [x] **Step 5: Failure-path and rollback proof**
 
 Against an isolated test database, prove a non-catalog project is absent and POST open for it returns sanitized 404. Verify migration downgrade/upgrade, but do not downgrade the live database unless rollback is required.
 
@@ -196,6 +196,6 @@ Require `accept` or resolve blockers. Reviewer must check global-anonymous visib
 
 Stage only allowed paths with explicit `git add`/`git rm`, verify cached diff, and commit `feat: share drawing list across origins`.
 
-- [ ] **Step 4: Integrate safely**
+- [x] **Step 4: Integrate safely**
 
 Follow `superpowers:finishing-a-development-branch`; preserve main's unrelated dirty work and verify the merged runtime before reporting completion.
