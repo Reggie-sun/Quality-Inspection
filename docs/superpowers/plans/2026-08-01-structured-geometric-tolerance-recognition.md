@@ -103,12 +103,22 @@
 - Unchanged contract / next verification: TDD 必须先证明 embedded Harness project creation 在 `production_uncertainty` 下仍错误得到 legacy defaults，再证明 explicit `production_uncertainty/symbol-uncertainty-router/1` pair；同时证明 legacy runtime 仍得到 legacy pair。运行 focused live contract、full Harness、Ruff、contracts、full backend relevant gate 和 independent reviewer。通过后只可另写一个明确的新 cycle selection 与 exact budget；不得把当前失败 invocation 当成可继续的同一 run。
 - GDT-10B verification result: RED 两项因缺少 `create_live_project` 失败；minimal GREEN 使用 canonical `symbol_routing_identity()` 并显式构造两个 frozen fields。Targeted `9 passed`、focused live contract `117 passed`、full Harness `229 passed`、contracts、Ruff、diff-check 通过。直接 `pytest backend/tests` 错误继承 Compose-only `postgres` 得到 `53 failed / 280 errors`，首个根因是 DNS；correct `make test-backend` 又命中 repo 已知 `all predefined address pools have been fully subnetted`。等价 isolated PostgreSQL 17 fallback 使用 host network、loopback `55433`、tmpfs 和明确临时 container，迁移后相同 suite 为 `1734 passed / 14 warnings`，container 已清理。`auto-feature-smoke-test` 以 targeted embedded identity gate 通过；无 UI 改动，Chrome smoke 不适用。Independent reviewer targeted tests `4 passed`、three run schemas `3 passed`，verdict `accept`；immutable live evidence committed at `e033752`。
 
+### GDT-10C Post-Fix Live Verification Cycle — 2026-08-01
+
+- Selected lane / plan: `Heavy`，继续本 GDT plan；不新建 roadmap。Selection evidence 为 standing authorization、已封存且不可复用的 failed run `20260801T151943793270Z-846f40a1`、根因修复 `7d7da66`、live evidence `e033752`、full backend `1734 passed` 与 independent reviewer `accept`。
+- Validation action: `continue` 到一个新的 post-fix verification cycle；这不是失败 run 的 resume、retry 或 blind replacement。Old run/project/evidence 保持 immutable；新 cycle 只有在本 selection 独立审查、单独提交和 fresh zero-paid gates 全部通过后才能创建新的 registrations/full run。
+- Exact paid ceiling: 本 cycle 最多一次 `make verify-p0-live` invocation，total estimated cost `<= CNY 50`，OCR `<=16/page`、Vision `<=16/page`、Vision `<=2/candidate`、crop expansion `<=1`；production route visual primary `<=4/page, <=8/project`、actual attempts `<=16/page`、wall `<=45s/page, <=90s/project`。Timeout/transport retry `0`；schema-invalid 仅由 `ProductionRetryCoordinator` 最多授权 `1` 次且计入同一 actual/wall budget。失败后不得追加 invocation、direct diagnostic、model fallback、budget 或 replacement run。
+- Inputs / identity / command: exact current-four source root、model `qwen3-vl-plus-2025-12-19`、mode/router `production_uncertainty/symbol-uncertainty-router/1`、isolated project `structured-geometric-tolerance-recognition-qa`、API/frontend `127.0.0.1:18000/14173`、database `0013`、temporary four-key allowlist override 与 literal `make verify-p0-live` 不变。Harness 必须创建全新的 registration/run IDs，禁止引用 previous `latest` 或复用 failed project。
+- Fresh zero-paid gates: clean committed `7d7da66`；targeted embedded constructor 明确输出 production mode/router pair；API/worker `12/12` hashes 和 runtime identity；published ports；health `200/200`；sanitized container key inventory；credential presence only；database `0013`；Provider-related rows仍为 `0|0|0`；feature failed project/evidence仍存在；run directory count不变。任一失败都不创建 run、不调用 Provider。
+- Writer/order/failure stop: 当前父 agent 只拥有 plan/status/evidence 更新；执行期间监控 feature API/worker/PostgreSQL/Redis/frontend 与 main container identities，任一漂移立即终止。Invocation 若达到 `visual_qa_pending:first-pdf-balloons` 才进入同一 run 的 headed QA；否则封存失败并停止，不自动开启 GDT-10D。
+- Selection review result: independent reviewer verified `e033752`/`7d7da66` ancestry、sealed evidence、policy/PROV-005 ceilings、new-cycle distinction and standing-authorization applicability；verdict `accept`。No new user decision is required；fresh zero-paid preflight remains the next gate。
+
 ## Status
 
 - Date: `2026-08-01`
-- Status: `GDT-10 Step 4 failed and sealed at 20260801T151943793270Z-846f40a1; GDT-10B reviewed and ready to commit; no replacement run authorized`
+- Status: `GDT-10C selection accepted; paid invocation count 0; fresh zero-paid preflight pending`
 - Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
-- Current blocker: the single invocation is consumed。Harness-created project identity drifted to `legacy_high_recall/legacy` despite correct isolated runtime settings，so Step 4 did not exercise the approved production route and Step 5 is forbidden。Implement and review GDT-10B first；the current run remains failed and cannot be resumed or replaced within this cycle。
+- Current blocker: fresh zero-paid preflight has not yet passed。The prior cycle remains consumed and immutable；no new Provider work is allowed until the gate passes。
 - Worktree: `.worktrees/structured-geometric-tolerance-recognition`
 - Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`, `b548191`, `4150ce8`, `5f4cfbf`, `bd75be6`, `1ba4c83`。
 
