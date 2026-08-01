@@ -7,6 +7,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from openpyxl.drawing.image import Image
+from openpyxl.styles import Font, PatternFill
 
 from app.exports.template_registry import TemplateRegistration
 from app.exports.sip_workbook_contract import (
@@ -14,6 +15,7 @@ from app.exports.sip_workbook_contract import (
     NUMERIC_METADATA_FIELDS,
     TEXT_DETAIL_FIELDS,
     TEXT_METADATA_FIELDS,
+    TYPE_FILL_COLORS,
     expected_result_formula,
 )
 from app.exports.validators import (
@@ -24,6 +26,12 @@ from app.exports.validators import (
 
 REQUIRED_METADATA_FIELDS = NUMERIC_METADATA_FIELDS | TEXT_METADATA_FIELDS
 REQUIRED_DETAIL_FIELDS = NUMERIC_DETAIL_FIELDS | TEXT_DETAIL_FIELDS
+_TYPE_FONT = Font(
+    name="Noto Sans CJK SC",
+    size=10,
+    bold=True,
+    color="FFFFFF",
+)
 
 
 class CapacityExceeded(RuntimeError):
@@ -62,6 +70,14 @@ def set_metadata_value(cell: Cell, field: str, value: object) -> None:
         raise ValueError(f"{field} must be a non-negative integer")
     cell.value = value
     cell.data_type = "n"
+
+
+def set_type_style(cell: Cell, value: object) -> None:
+    fill_color = TYPE_FILL_COLORS.get(value) if isinstance(value, str) else None
+    if fill_color is None:
+        return
+    cell.fill = PatternFill("solid", fgColor=fill_color)
+    cell.font = _TYPE_FONT
 
 
 def assert_capacity(
@@ -103,7 +119,11 @@ def render_sip_workbook(
         for offset, item in enumerate(reviewed_items):
             row = registration.first_row + offset
             for field, column in registration.detail_columns.items():
-                set_registered_value(sheet[f"{column}{row}"], field, item.get(field, ""))
+                value = item.get(field, "")
+                cell = sheet[f"{column}{row}"]
+                set_registered_value(cell, field, value)
+                if field == "type_label":
+                    set_type_style(cell, value)
             measurement = sheet[f"{registration.measurement_column}{row}"]
             if measurement.value not in (None, "") or measurement.protection.locked:
                 raise ValueError("measurement cell is not blank and editable")

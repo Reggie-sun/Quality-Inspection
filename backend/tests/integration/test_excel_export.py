@@ -175,6 +175,28 @@ def test_v3_renderer_writes_numeric_cells_and_preserves_template_contract(
         workbook.close()
 
 
+def test_renderer_materializes_base_type_styles_for_partial_viewers(
+    tmp_path: Path,
+) -> None:
+    """Catches WPS-visible type cells depending only on differential styles."""
+    content, registration, _ = _render(tmp_path)
+
+    workbook = load_workbook(BytesIO(content), data_only=False)
+    try:
+        sheet = workbook[registration.sheet]
+        assert sheet["C6"].value == "线性"
+        assert sheet["C6"].fill.fill_type == "solid"
+        assert sheet["C6"].fill.fgColor.rgb[-6:] == "E5334E"
+        assert sheet["C6"].font.bold is True
+        assert sheet["C6"].font.color.rgb[-6:] == "FFFFFF"
+        assert sheet["C8"].value == "技术要求"
+        assert sheet["C8"].fill.fill_type == "solid"
+        assert sheet["C8"].fill.fgColor.rgb[-6:] == "6B7280"
+        assert sheet["C8"].font.color.rgb[-6:] == "FFFFFF"
+    finally:
+        workbook.close()
+
+
 def test_dimension_result_formula_recalculates_with_libreoffice(
     tmp_path: Path,
 ) -> None:

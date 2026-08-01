@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import MappingProxyType
+
 
 NUMERIC_METADATA_FIELDS = frozenset(
     {"toleranced_count", "page_count", "detail_count"}
@@ -12,6 +14,18 @@ TEXT_METADATA_FIELDS = frozenset(
 )
 TEXT_DETAIL_FIELDS = frozenset(
     {"type_label", "basic_size", "tolerance"}
+)
+TYPE_FILL_COLORS = MappingProxyType(
+    {
+        "线性": "E5334E",
+        "直径": "178BFF",
+        "半径": "22B14C",
+        "粗糙度": "C23ACF",
+        "角度": "F39C3D",
+        "螺纹": "009688",
+        "技术要求": "6B7280",
+        "复合": "B7791F",
+    }
 )
 
 

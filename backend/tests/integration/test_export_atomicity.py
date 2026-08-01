@@ -602,6 +602,61 @@ def test_logical_export_claim_has_one_execution_owner(
         second._claim_execution(contender, reviewed.id)
 
 
+def test_current_renderer_claims_a_new_job_after_historical_v3_export(
+    db_session: Session,
+    reviewed_result: tuple[ReviewedResult, LocalFileStorage],
+) -> None:
+    """Catches a compatibility renderer reusing the immutable historical job."""
+    reviewed, _ = reviewed_result
+    historical = claim_logical_job(
+        db_session,
+        project_id=str(reviewed.project_id),
+        logical_task_key=f"export:{reviewed.id}:3:3:balloon-pdf/1",
+    )
+
+    current = claim_logical_job(
+        db_session,
+        project_id=str(reviewed.project_id),
+        logical_task_key=ExportService._logical_task_key(reviewed.id),
+    )
+
+    assert current.id != historical.id
+    assert current.logical_task_key == (
+        f"export:{reviewed.id}:3:3:balloon-pdf/1+xlsx-type-style/1"
+    )
+
+
+def test_current_processing_job_does_not_return_historical_renderer_export(
+    db_session: Session,
+    reviewed_result: tuple[ReviewedResult, LocalFileStorage],
+) -> None:
+    """Catches a current contender receiving an immutable historical artifact."""
+    reviewed, storage = reviewed_result
+    historical = ExportJob(
+        project_id=reviewed.project_id,
+        reviewed_result_id=reviewed.id,
+        status="success",
+        template_version="3",
+        mapping_version="3",
+        renderer_version="balloon-pdf/1",
+    )
+    db_session.add(historical)
+    db_session.commit()
+    current = claim_logical_job(
+        db_session,
+        project_id=str(reviewed.project_id),
+        logical_task_key=ExportService._logical_task_key(reviewed.id),
+    )
+    current.status = "processing"
+    db_session.commit()
+
+    with pytest.raises(ExportInProgress):
+        ExportService(db_session, storage=storage)._claim_execution(
+            current,
+            reviewed.id,
+        )
+
+
 def test_unicode_download_filename_has_rfc5987_fallback() -> None:
     """P0-EXP-009 keeps successful Unicode artifact downloads serializable."""
     header = _content_disposition("上座-sip.xlsx")

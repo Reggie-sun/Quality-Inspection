@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.exports import sip_workbook_contract as workbook_contract
 from app.exports.sip_workbook_contract import (
     NUMERIC_DETAIL_FIELDS,
     NUMERIC_METADATA_FIELDS,
@@ -9,6 +10,25 @@ from app.exports.sip_workbook_contract import (
     TEXT_METADATA_FIELDS,
     expected_result_formula,
 )
+
+
+def test_type_fill_colors_are_exact_and_immutable() -> None:
+    """Catches duplicated, incomplete, or mutable type-color ownership."""
+    colors = getattr(workbook_contract, "TYPE_FILL_COLORS", None)
+
+    assert colors is not None
+    assert dict(colors) == {
+        "线性": "E5334E",
+        "直径": "178BFF",
+        "半径": "22B14C",
+        "粗糙度": "C23ACF",
+        "角度": "F39C3D",
+        "螺纹": "009688",
+        "技术要求": "6B7280",
+        "复合": "B7791F",
+    }
+    with pytest.raises(TypeError):
+        colors["线性"] = "000000"
 
 
 def test_registered_v3_field_partitions_and_result_formula_are_exact() -> None:

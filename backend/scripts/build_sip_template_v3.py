@@ -15,7 +15,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Si
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.exports.sip_workbook_contract import expected_result_formula
+from app.exports.sip_workbook_contract import TYPE_FILL_COLORS, expected_result_formula
 
 
 FIRST_ROW = 6
@@ -41,16 +41,6 @@ _ORANGE_BODY_FONT = Font(name="Noto Sans CJK SC", size=10, color=_ORANGE)
 _RESULT_FONT = Font(name="Noto Sans CJK SC", size=10, bold=True, color="444444")
 _NOTE_FONT = Font(name="Noto Sans CJK SC", size=10.5, bold=True, color=_RED)
 _HEADER_FONT = Font(name="Noto Sans CJK SC", size=10.5, bold=True, color="FFFFFF")
-_TYPE_COLORS = {
-    "线性": "E5334E",
-    "直径": "178BFF",
-    "半径": "22B14C",
-    "粗糙度": "C23ACF",
-    "角度": "F39C3D",
-    "螺纹": "009688",
-    "技术要求": "6B7280",
-    "复合": "B7791F",
-}
 
 
 def _normalize_archive(path: Path) -> None:
@@ -189,7 +179,7 @@ def _build_dimension_sheet(workbook) -> None:
         sheet[f"I{row}"] = expected_result_formula(row)
         sheet[f"I{row}"].protection = Protection(locked=True)
 
-    for label, color in _TYPE_COLORS.items():
+    for label, color in TYPE_FILL_COLORS.items():
         sheet.conditional_formatting.add(
             f"C{FIRST_ROW}:C{LAST_ROW}",
             FormulaRule(

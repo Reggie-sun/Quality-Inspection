@@ -51,7 +51,7 @@ from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
 
-RENDERER_VERSION = "balloon-pdf/1"
+RENDERER_VERSION = "balloon-pdf/1+xlsx-type-style/1"
 MANIFEST_SCHEMA_VERSION = "export-manifest/2"
 _DETAIL_FIELDS = {
     "inspection_item",
@@ -571,6 +571,9 @@ class ExportService:
                 .where(
                     ExportJob.reviewed_result_id == reviewed_result_id,
                     ExportJob.status == "failed",
+                    ExportJob.template_version == APPROVED_TEMPLATE_VERSION,
+                    ExportJob.mapping_version == APPROVED_MAPPING_VERSION,
+                    ExportJob.renderer_version == RENDERER_VERSION,
                 )
                 .order_by(ExportJob.created_at.desc(), ExportJob.id.desc())
             )
@@ -614,6 +617,9 @@ class ExportService:
                 .where(
                     ExportJob.reviewed_result_id == reviewed_result_id,
                     ExportJob.status.in_(("running", "success")),
+                    ExportJob.template_version == APPROVED_TEMPLATE_VERSION,
+                    ExportJob.mapping_version == APPROVED_MAPPING_VERSION,
+                    ExportJob.renderer_version == RENDERER_VERSION,
                 )
                 .order_by(ExportJob.created_at.desc(), ExportJob.id.desc())
             )
