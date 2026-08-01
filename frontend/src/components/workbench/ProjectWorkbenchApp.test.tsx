@@ -419,7 +419,7 @@ test("后端 auto_accepted status/disposition 原样投影为红色 provisional 
   );
 
   const marker = await screen.findByRole("button", {
-    name: "自动通过气泡 1，待统一编号",
+    name: "自动通过气泡 1（候选编号）",
   });
   expect(marker.querySelector("circle")?.getAttribute("stroke")).toBe("#c23b3b");
 });
@@ -505,7 +505,7 @@ test("candidate 单边自动投影不得绕过 working item 完整合同", async
       name: `候选气泡 ${number}`,
     })).not.toBeNull();
     expect(screen.queryByRole("button", {
-      name: `自动通过气泡 ${number}，待统一编号`,
+      name: `自动通过气泡 ${number}（候选编号）`,
     })).toBeNull();
     expect(screen.getByRole("row", { name: new RegExp(rawText) })).not.toBeNull();
   }

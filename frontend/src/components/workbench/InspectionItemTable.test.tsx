@@ -902,7 +902,7 @@ test("全部筛选保留自动通过项的选择身份", () => {
 
   const row = screen.getByRole("row", { name: /自动通过可编辑/ });
   expect(row.getAttribute("data-selected")).toBe("true");
-  expect(screen.getByLabelText("自动通过气泡 7，待统一编号"))
+  expect(screen.getByLabelText("自动通过气泡 7（候选编号）"))
     .not.toBeNull();
   fireEvent.click(row);
   expect(onSelectItem).toHaveBeenCalledWith("auto-editable");
