@@ -2,6 +2,31 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-gdt-rejection-coverage-blocking
+
+- Status: 已解决；isolated fix branch 已验证，尚未合入 source feature runtime
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 2 次同一 PDF 上传均稳定复现
+- Surface: `project_visual_page()` 的 GD&T ambiguous projection 与 `check_coverage()` 的 required visual semantic validation
+- Symptom: `FB26042401-042#梯形螺杆固定座2#A0.PDF` 已完成 Provider 识别，却以 `coverage_blocking: 1 blocking observations` 终止，无法生成 `AutomaticResult`
+- Root cause: GDT projection 新增 `gdt_frame_not_found` 等可人工审核 rejection code，但 coverage 的 `_VISUAL_REJECTION_CODES` 仍只接受旧 visual code；唯一 live blocker `c404bfddf31ebbaa13d2d53c` 因此从 `ambiguous/requires_confirmation` 被错误升级为 fatal coverage failure
+- Selected lane: `Standard`；稳定 public API/schema、runtime entry 与配置均不变，但 producer/validator 跨模块 contract 需要 focused regression、同一缓存 evidence replay 与独立 review
+- Selected plan: 本 bug-memory entry 作为 ad hoc task contract；不切换当前 GDT implementation plan，也不扩展 live full-P0 scope
+- Selection evidence: 两次 live 上传、DB error、worker log 与保存的 inventory/provider cache 纯内存复算均指向同一 allowlist drift；Provider 23 个 required visual response 完整且无 schema rejection
+- Validation action: `continue`；先以 `gdt_frame_not_found` 写 RED，再补齐当前 producer 可发出的 reviewable GDT rejection codes并复跑同一缓存 evidence
+- Problem boundary: 只修合法 GDT ambiguous rejection 被 coverage 错判为 blocking；不放宽 malformed/unknown rejection、不自动接受 GD&T、不改变 candidate、Provider、routing、review command 或 API contract
+- Single owner: `backend/app/candidates/coverage.py::check_coverage()` 继续拥有 required visual completeness gate；`symbol_review.py` 继续拥有 GDT projection outcome
+- Old path action: replace 只认识旧 visual rejection code 的 validator allowlist；保留未知 rejection fail-closed
+- Unchanged contract: 合法 GDT projection failure 必须 `review_required`，未知/结构不完整 advisor review 仍 blocking，`AutomaticResult` 不得绕过 coverage gate
+- Allowed paths: `.agent/bug-memory.md`、`backend/app/candidates/coverage.py`、`backend/tests/unit/candidates/test_coverage.py`
+- Writer ownership and order: 父 agent 为唯一 writer；目标 feature worktree 的 Harness artifacts 保持不动；实现后派发独立只读 reviewer
+- Fix: 将六个 GDT projection rejection code 作为独立 allowlist；仅当 review 为 `ambiguous/requires_confirmation` 且包含单一、已知的 `gdt_` symbol kind 时转为人工审核，空 kind、非 GDT、多个 GDT、unknown code 和缺少 confirmation 继续 fail-closed
+- Regression check: 新增六个合法 GDT code 正向用例和空/非 GDT/canonical 多 GDT kind 负向用例；相关 coverage、GDT normalization、advisor 与 AutomaticResult contract 共 `151 passed`，Ruff 与 `git diff --check` 通过
+- Runtime proof: 对同一失败项目保存的 inventory/provider cache 使用 isolated worktree 代码、只读 storage 与 `--network none` 回放；`blocking_count=0`、`review_required_count=52`，目标 observation 保持 `ambiguous + gdt_frame_not_found + requires_confirmation=true`，未调用 Provider 或写入 storage
+- Review: 独立 reviewer 首轮发现 GDT code 可与非 GDT/空 kind 错误组合并 `reject`；收紧语义后复验合法/错误组合与旧 visual 语义均正确，阻断问题清零。其两项非阻断维护建议也已落实：移除第三份 GDT kind 清单，并让 canonical 多 kind 测试直接命中新 guard
+- Change: `fix(gdt): keep projection failures reviewable`
+
 ## BUG-20260801-live-qwen-symbol-timeout
 
 - Status: 未解决；GDT-10 Step 4 blocked

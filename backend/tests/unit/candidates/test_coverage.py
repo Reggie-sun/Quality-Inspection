@@ -652,3 +652,75 @@ def test_valid_visual_semantic_matrix_is_reviewable_not_blocking(
     assert report.review_required_count == int(
         entry.disposition == "ambiguous" or entry.requires_confirmation
     )
+
+
+@pytest.mark.parametrize(
+    "rejection_code",
+    (
+        "gdt_frame_not_found",
+        "gdt_projection_conflict",
+        "gdt_frame_segmentation_ambiguous",
+        "gdt_composite_truncated",
+        "gdt_value_missing",
+        "gdt_datum_association_ambiguous",
+    ),
+)
+def test_gdt_projection_failure_is_reviewable_not_coverage_blocking(
+    rejection_code: str,
+) -> None:
+    review = _visual_review(
+        rejection_code=rejection_code,
+        symbol_kinds=("gdt_perpendicularity",),
+    )
+    review["confidence_signal"] = None
+    entry = CoverageEntry(
+        "visual-gdt",
+        "ambiguous",
+        "visual-gdt",
+        (1, 2, 3, 4),
+        requires_confirmation=True,
+        advisor_review=review,
+    )
+
+    report = check_coverage(
+        [entry],
+        required_visual_observation_ids={"visual-gdt"},
+    )
+
+    assert report.blocking_observation_ids == ()
+    assert report.review_required_count == 1
+    assert report.coverage_checked is True
+
+
+@pytest.mark.parametrize(
+    "symbol_kinds",
+    (
+        (),
+        ("diameter",),
+        ("gdt_parallelism", "gdt_perpendicularity"),
+    ),
+)
+def test_gdt_projection_rejection_requires_single_gdt_kind(
+    symbol_kinds: tuple[str, ...],
+) -> None:
+    review = _visual_review(
+        rejection_code="gdt_frame_not_found",
+        symbol_kinds=symbol_kinds,
+    )
+    review["confidence_signal"] = None
+    entry = CoverageEntry(
+        "visual-gdt",
+        "ambiguous",
+        "visual-gdt",
+        (1, 2, 3, 4),
+        requires_confirmation=True,
+        advisor_review=review,
+    )
+
+    report = check_coverage(
+        [entry],
+        required_visual_observation_ids={"visual-gdt"},
+    )
+
+    assert report.blocking_observation_ids == ("visual-gdt",)
+    assert report.coverage_checked is False

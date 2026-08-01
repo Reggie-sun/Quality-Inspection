@@ -19,6 +19,14 @@ _DISPOSITIONS = {
     "non_inspection",
     "ambiguous",
 }
+_GDT_REJECTION_CODES = {
+    "gdt_composite_truncated",
+    "gdt_datum_association_ambiguous",
+    "gdt_frame_not_found",
+    "gdt_frame_segmentation_ambiguous",
+    "gdt_projection_conflict",
+    "gdt_value_missing",
+}
 _VISUAL_REJECTION_CODES = {
     "visual_bbox_invalid",
     "visual_source_mismatch",
@@ -180,10 +188,22 @@ def _valid_visual_semantics(
             not has_candidate
             and entry.requires_confirmation
             and not local_resolution_valid
-            and rejection_code in _VISUAL_REJECTION_CODES
             and (
-                (rejection_code == "visual_no_detection" and not kinds)
-                or rejection_code != "visual_no_detection"
+                (
+                    rejection_code in _GDT_REJECTION_CODES
+                    and len(kinds) == 1
+                    and kinds[0].startswith("gdt_")
+                )
+                or (
+                    rejection_code in _VISUAL_REJECTION_CODES
+                    and (
+                        (
+                            rejection_code == "visual_no_detection"
+                            and not kinds
+                        )
+                        or rejection_code != "visual_no_detection"
+                    )
+                )
             )
         )
     return False
@@ -350,7 +370,8 @@ def check_coverage(
                 )
                 and (
                     review.get("rejection_code") is None
-                    or review.get("rejection_code") in _VISUAL_REJECTION_CODES
+                    or review.get("rejection_code")
+                    in (_VISUAL_REJECTION_CODES | _GDT_REJECTION_CODES)
                 )
             )
             if not visual_review_valid:
