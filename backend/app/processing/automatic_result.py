@@ -53,9 +53,8 @@ from app.projects.state import InvalidTransition, ProjectState, transition
 
 
 LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"
-# [REMOVAL_CANDIDATE] automatic-result/2 GD&T compatibility reader.
-# Owner: GeometricToleranceNormalizer and automatic-result/3.
-# Trigger: GDT-10 proves zero /2 GD&T rows after migration and rollback proof.
+# automatic-result/2 remains only for the general confidence-decision
+# compatibility contract; GD&T coarse payloads must be migrated before review.
 COMPAT_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"
 AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/3"
 ROUGHNESS_TOKEN = re.compile(r"(?<![A-Za-z])Ra(?=\s*[0-9])", re.IGNORECASE)

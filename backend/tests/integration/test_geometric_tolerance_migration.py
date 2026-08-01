@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -191,6 +191,34 @@ def _automatic_payload(session: Session, result_id: uuid.UUID) -> dict[str, Any]
     return result.candidates[0]["payload"]
 
 
+def _legacy_gdt_counts(session: Session) -> dict[str, int]:
+    queries = {
+        "automatic_results": """
+            SELECT COUNT(*)
+            FROM automatic_results ar
+            CROSS JOIN LATERAL jsonb_array_elements(ar.candidates) candidate
+            WHERE candidate->'payload'->>'coarse_type'
+                = 'geometric_tolerance'
+        """,
+        "review_working_copies": """
+            SELECT COUNT(*)
+            FROM review_working_copies rwc
+            CROSS JOIN LATERAL jsonb_array_elements(rwc.items) item
+            WHERE item->>'coarse_type' = 'geometric_tolerance'
+        """,
+        "reviewed_results": """
+            SELECT COUNT(*)
+            FROM reviewed_results rr
+            CROSS JOIN LATERAL jsonb_array_elements(rr.items) item
+            WHERE item->>'coarse_type' = 'geometric_tolerance'
+        """,
+    }
+    return {
+        table: int(session.execute(text(query)).scalar_one())
+        for table, query in queries.items()
+    }
+
+
 def test_upgrade_converts_legacy_gdt_to_typed_unknown() -> None:
     _postgres_available()
     config = _config()
@@ -210,6 +238,30 @@ def test_upgrade_converts_legacy_gdt_to_typed_unknown() -> None:
         assert payload["raw_text"] == "∥ 0.1"
         assert payload["frames"] == []
         assert payload["requires_confirmation"] is True
+    finally:
+        session.close()
+        command.upgrade(config, "head")
+
+
+def test_upgrade_removes_legacy_gdt_from_all_result_layers() -> None:
+    _postgres_available()
+    config = _config()
+    command.downgrade(config, "0012")
+    session = SessionLocal()
+    try:
+        _seed_layers(
+            session,
+            candidate_payload=_legacy_payload(),
+            schema_version="automatic-result/2",
+            include_review_layers=True,
+        )
+        command.upgrade(config, "0013")
+        session.expire_all()
+        assert _legacy_gdt_counts(session) == {
+            "automatic_results": 0,
+            "review_working_copies": 0,
+            "reviewed_results": 0,
+        }
     finally:
         session.close()
         command.upgrade(config, "head")

@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Selected lane: `Heavy`，因为本计划改变稳定 candidate/OpenAPI schema、JSONB data shape、Provider response contract，并跨 PDF、candidate、review、API、frontend、export data-integrity boundary。
-- Plan status: `proposed / not selected as current plan`。本文件不覆盖 `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`，也不授权立即修改 production code。
+- Plan status: `selected as the current plan for this execution`。本文件不覆盖 `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`，也不改变 current P0 contract matrix、runtime config 或 production deployment。
 - Design source: `docs/superpowers/specs/2026-08-01-structured-geometric-tolerance-recognition-design.md`。
 - Current-state source: `docs/superpowers/audits/2026-08-01-geometric-tolerance-recognition-current-state.md`。
 - Live evidence source: `docs/superpowers/audits/evidence/2026-08-01-geometric-tolerance-live-receipt.json`。
@@ -39,19 +39,29 @@
 ## Plan Selection Record
 
 - Selected lane: `Heavy`。
-- Selected plan: 本文件目前为 proposed；只有用户显式切换后才成为 current plan。
-- Selection evidence: current audit、sealed Case A/B receipt、structured GD&T design、用户“写plan”。
-- Validation action: `replan`，因为目标新增 stable candidate/API contract 与 data migration；不是现有七天 P0 plan 的 amendment。
+- Selected plan: 本文件由用户显式选为 current plan，并在独立 worktree 中执行。
+- Selection evidence: 用户显式调用本 plan 的 `superpowers:executing-plans`。
+- Validation action: `execute`，因为目标新增 stable candidate/API contract 与 data migration；不是现有七天 P0 plan 的 amendment。
 - Writer ownership and order: 单 writer，严格顺序，reviewer/read-only explorer 不拥有写权限。
 - First execution verification: 对激活后的 worktree 运行 `git status --short && git rev-parse HEAD && rg -n "revision =|down_revision =" backend/alembic/versions/*.py`，确认 clean base、expected HEAD 和唯一 Alembic head。
 
 ## Status
 
 - Date: `2026-08-01`
-- Status: `proposed; audit/spec complete; implementation not authorized`
-- Proposed Task order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
-- Current blocker: 用户尚未把本文件切换为唯一 current plan，也尚未批准任何 implementation Task ID。
-- Next action after approval: create isolated worktree, record exact baseline/ownership, then run GDT-1 RED only。
+- Status: `implementation complete through offline GDT-10 gates; live evidence pending explicit authorization`
+- Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
+- Current blocker: `make verify-p0-live` and headed workbench/export proof were not run because this turn did not provide the plan-required explicit live authorization。
+- Worktree: `.worktrees/structured-geometric-tolerance-recognition`
+- Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`。
+
+## Execution Verification
+
+- Migration convergence: isolated PostgreSQL upgrade `0012 -> 0013` leaves zero legacy GDT rows in `automatic_results`、`review_working_copies` and `reviewed_results`；downgrade restores the old coarse shape for all three layers。
+- Rollback-first: previous application commit `6bbaf90` served the known workbench GET successfully against the isolated `0012` database；database was restored to `0013` afterward。
+- Contract/static: `check-contracts.py`、OpenAPI breaking gate (`0` changes)、frontend `api:check`、contract architecture gate and `git diff --check` passed；production coarse-writer search returned no matches。
+- Tests: offline backend full suite `1647 passed`；frontend full suite `26 files / 278 tests passed`；frontend production build passed；GDT backend/frontend offline E2E passed earlier in GDT-9。
+- Environment note: `make test-backend` could not create its fresh Docker network because Docker reported `all predefined address pools have been fully subnetted`；the equivalent full backend suite ran against the isolated PostgreSQL and passed。
+- Remaining completion gate: authorized current-four live Provider receipt and separately recorded headed workbench display/edit/reload/freeze/PDF/Excel proof。
 
 ## Rollback Contract
 
