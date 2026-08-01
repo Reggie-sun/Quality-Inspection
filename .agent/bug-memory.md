@@ -2,6 +2,21 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-live-api-runtime-identity-drift
+
+- Status: Harness guard 已解决；Compose deployment blocker 未解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `.agent/harness/scripts/run-p0.py` full-P0 zero-paid preflight 与 running Compose API GDT production runtime
+- Symptom: host/worktree code identity 与 credentials/source checks 全部通过，但 running API container 仍可使用旧 `visual-symbol-review/2` 执行 paid live calls；current GDT worktree 要求 `/3`
+- Reproduction: Harness-owned full-P0 run `20260801T054726079099Z-83f03a78` 完成 `28` 个 authenticated Qwen calls 后在 sealed symbol selector 阻断；只读 post-result evaluator 显示 `7` 个 approved GDT labels、`0` 个 structured GDT candidates，Case A/B missing/ambiguous
+- Root cause: preflight 只绑定 host Git/config 和 Compose topology，没有比较 API container 内实际 GDT production files；container schema hash 为 `8f331090...`、worktree schema hash 为 `cb4ee4ce...`，container 缺少 `app/candidates/geometric_tolerance.py`，因此旧 Provider/advisor/runtime path 无法生成 typed GDT
+- Fix: 在 source upload、fresh registration、run creation 和 Provider call 之前，exact 比较 API container 与 worktree 的 12-file GDT runtime hash set，覆盖 Provider schema/Qwen、advisor/evidence/normalizer/symbol/fallback、automatic/runtime recognition 以及 native/raster frame inventory；nonzero、non-JSON、missing/extra/stale hash 全部 fail-closed
+- Regression check: focused runtime guard GREEN；contract file `62 passed`、完整 Harness `174 passed`、Ruff 和 diff checks 通过。独立 reviewer 对单独 stale `advisor.py`、单独 stale `runtime_recognition.py` 及 parsing/hash bypass 复测后 verdict `accept`
+- Runtime proof: 修复后用同一 gitignored root `.env` 与 provided current-four `F` source root 重跑 `make verify-p0-live`，准确退出 `2`：`Compose API runtime identity does not match current worktree`；run directory count 保持 `17 -> 17`，没有重复 paid call 或新 run
+- Remaining blocker: current task 不授权 rebuild/restart/deployment mutation；必须先使 Compose API runtime 与本 worktree identity 收敛，再重跑 Step 4。不得把失败 run、只读 diagnostic replay 或旧 evidence 转为 formal success
+
 ## BUG-20260801-full-live-target-activation
 
 - Status: 已解决

@@ -44,16 +44,16 @@
 - Validation action: `amend` for GDT-10 Step 4/5。`make verify-p0-live` 当前没有传入 full-live start 所需的 registration/pause activation，且 final receipt 只能在 headed QA 后 resume 生成；目标和 Owner 不变，但 allowed paths 与验证顺序必须修正。
 - Writer ownership and order: 父 agent 为唯一 writer；先修改 plan/bug-memory，再按 TDD 修改 `Makefile`、Harness runner/policy 和单一 contract test file，最后派发独立 read-only reviewer。
 - Unchanged contract: current P0 contract matrix、runtime config、production deployment、literal run-ID validation、current authenticated Provider/no-synthetic requirement 均不改变；旧 registration 只能作为 approved annotation input，不得冒充本次 Provider evidence。
-- Next verification: 安全注入缺失的 Provider mode/network credential、operator 和 current-four source-root identity 后，原样重跑 repository-owned `make verify-p0-live`；只有真实进入 `visual_qa_pending:first-pdf-balloons` 且 symbol gate 通过才进入 headed Step 5。
+- Next verification: 先在不改变 contract/runtime config 的前提下，使 Compose API deployment 与本 worktree 的 12-file GDT runtime identity 完全一致，再原样重跑 repository-owned `make verify-p0-live`；只有真实进入 `visual_qa_pending:first-pdf-balloons` 且 symbol gate 通过才进入 headed Step 5。
 
 ## Status
 
 - Date: `2026-08-01`
-- Status: `GDT-10 Step 4 blocked at live runtime identity injection; repository activation amendment verified`
+- Status: `GDT-10 Step 4 blocked by stale Compose API runtime; fail-closed identity guard verified`
 - Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
-- Current blocker: fresh `make verify-p0-live` reaches the zero-paid live preflight and exits `2` because `QI_TENCENT_SECRET_ID`、`QI_TENCENT_SECRET_KEY`、`QI_QWEN_API_KEY` and `QI_QWEN_WORKSPACE_ID` are unset；presence-only identity check also finds `QI_PROVIDER_MODE`、`QI_PROVIDER_NETWORK_ENABLED`、`QI_P0_OPERATOR_ID` and `QI_CURRENT_FOUR_SOURCE_ROOT` unset。No run was created and Step 5 was not started。
+- Current blocker: live credentials/mode/network/operator were safely loaded from the gitignored root `.env` and current-four source root was bound to the provided `F` directory。Authenticated run `20260801T054726079099Z-83f03a78` then proved the running Compose API still uses `visual-symbol-review/2` while this worktree requires `/3`；the container lacks `geometric_tolerance.py` and its GDT runtime hashes differ。The selector produced `0` structured GDT candidates, so Step 4 failed and Step 5 was not started。A new zero-paid preflight guard now rejects this runtime drift before registration/run creation/Provider calls。
 - Worktree: `.worktrees/structured-geometric-tolerance-recognition`
-- Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`。
+- Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`, `b548191`。
 
 ## Execution Verification
 
@@ -61,7 +61,7 @@
 - Rollback-first: previous application commit `6bbaf90` served the known workbench GET successfully against the isolated `0012` database；database was restored to `0013` afterward。
 - Contract/static: `check-contracts.py`、OpenAPI breaking gate (`0` changes)、frontend `api:check`、contract architecture gate and `git diff --check` passed；production coarse-writer search returned no matches。
 - Tests: offline backend full suite `1647 passed`；frontend full suite `26 files / 278 tests passed`；frontend production build passed；GDT backend/frontend offline E2E passed earlier in GDT-9。
-- Live activation amendment: focused Harness RED reproduced target/CLI、false credential coverage、typed Case A/B、run-bound crop and malformed nested policy gaps；focused contract file is `61 passed`，final Harness contract suite is `173 passed`，Ruff/diff checks pass，and independent reviewer verdict is `accept`。Fresh `make verify-p0-live` passed all `69/111` contract mapping checks, then stopped before source reads/run creation/Provider calls with the exact missing-credential blocker；run directory count remained `14 -> 14`。
+- Live activation amendment: focused Harness RED reproduced target/CLI、false credential coverage、typed Case A/B、run-bound crop、malformed nested policy and stale API runtime identity gaps；focused contract file is `62 passed`，final Harness contract suite is `174 passed`，Ruff/diff checks pass，and final independent reviewer verdict is `accept`。Fresh registration runs `20260801T054718154038Z-b4e4b0de` and `20260801T054725654107Z-01c1bb35` were generated only by Harness。Full-P0 run `20260801T054726079099Z-83f03a78` made `28` authenticated Qwen calls with well-formed source/crop/model/prompt/schema hashes and matching crop bytes, but the stale `/2` API runtime produced `0` structured GDT candidates against `7` approved GDT labels；the evaluator matched only one perpendicularity label, Case A/B were absent, and no formal symbol report/receipt was sealed。After adding the exact 12-file runtime guard, `make verify-p0-live` exits `2` before run creation with `Compose API runtime identity does not match current worktree` and run directory count remains `17 -> 17`。
 - Environment note: `make test-backend` could not create its fresh Docker network because Docker reported `all predefined address pools have been fully subnetted`；the equivalent full backend suite ran against the isolated PostgreSQL and passed。
 - Remaining completion gate: authorized current-four live Provider receipt and separately recorded headed workbench display/edit/reload/freeze/PDF/Excel proof。
 

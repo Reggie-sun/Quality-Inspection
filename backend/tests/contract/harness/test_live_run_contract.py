@@ -1756,6 +1756,57 @@ def test_full_live_activation_preflights_bytes_before_fresh_registration(
     ]
 
 
+def test_live_preflight_rejects_stale_api_gdt_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_api_runtime_identity",
+        HARNESS / "scripts/run-p0.py",
+    )
+    assert set(runner.LIVE_API_GDT_RUNTIME_PATHS) == {
+        "app/providers/visual_symbol_review.schema.json",
+        "app/providers/qwen_vl.py",
+        "app/candidates/advisor.py",
+        "app/candidates/gdt_evidence.py",
+        "app/candidates/geometric_tolerance.py",
+        "app/candidates/symbol_review.py",
+        "app/candidates/complex_fallback.py",
+        "app/processing/automatic_result.py",
+        "app/processing/runtime_recognition.py",
+        "app/pdf/inventory.py",
+        "app/pdf/gdt_frames.py",
+        "app/pdf/gdt_raster_frames.py",
+    }
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        assert argv[:6] == [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "api",
+            "python",
+        ]
+        paths = json.loads(argv[-1])
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps({path: "0" * 64 for path in paths}),
+            "",
+        )
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    with pytest.raises(
+        ValueError,
+        match="Compose API runtime identity does not match current worktree",
+    ):
+        runner._require_api_runtime_identity()
+
+
 def test_typed_gdt_case_evidence_requires_exact_case_a_and_b() -> None:
     runner = _load_module(
         "qi_run_p0_typed_gdt_evidence",

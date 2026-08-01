@@ -120,6 +120,20 @@ LIVE_OPERATOR_ENV = "QI_P0_OPERATOR_ID"
 LIVE_API_BASE_ENV = "QI_P0_API_BASE"
 LIVE_FRONTEND_BASE_ENV = "QI_P0_FRONTEND_BASE"
 LIVE_SOURCE_ROOT_ENV = "QI_CURRENT_FOUR_SOURCE_ROOT"
+LIVE_API_GDT_RUNTIME_PATHS = (
+    "app/providers/visual_symbol_review.schema.json",
+    "app/providers/qwen_vl.py",
+    "app/candidates/advisor.py",
+    "app/candidates/gdt_evidence.py",
+    "app/candidates/geometric_tolerance.py",
+    "app/candidates/symbol_review.py",
+    "app/candidates/complex_fallback.py",
+    "app/processing/automatic_result.py",
+    "app/processing/runtime_recognition.py",
+    "app/pdf/inventory.py",
+    "app/pdf/gdt_frames.py",
+    "app/pdf/gdt_raster_frames.py",
+)
 _ACTIVE_RUN_DIR: Path | None = None
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 SAFE_BROWSER_ENV_KEYS = {
@@ -1405,6 +1419,49 @@ def _chrome_identity(environment: Mapping[str, str]) -> dict[str, str]:
     }
 
 
+def _require_api_runtime_identity() -> None:
+    expected: dict[str, str] = {}
+    for relative in LIVE_API_GDT_RUNTIME_PATHS:
+        path = ROOT / "backend" / relative
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("current worktree GDT runtime identity is incomplete")
+        expected[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    program = (
+        "import hashlib,json,sys; from pathlib import Path; "
+        "paths=json.loads(sys.argv[1]); result={}; "
+        "exec(\"for relative in paths:\\n"
+        " path=Path('/app')/relative\\n"
+        " result[relative]=(hashlib.sha256(path.read_bytes()).hexdigest() "
+        "if path.is_file() and not path.is_symlink() else None)\"); "
+        "print(json.dumps(result,sort_keys=True))"
+    )
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "api",
+            "python",
+            "-c",
+            program,
+            json.dumps(list(LIVE_API_GDT_RUNTIME_PATHS)),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        observed = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        observed = None
+    if result.returncode != 0 or observed != expected:
+        raise ValueError(
+            "Compose API runtime identity does not match current worktree"
+        )
+
+
 def preflight_full_p0_live(
     *,
     input_set: str,
@@ -1423,6 +1480,7 @@ def preflight_full_p0_live(
     _current_live_identity(current_environment)
     if source_root is None or not source_root.strip():
         raise ValueError(f"{LIVE_SOURCE_ROOT_ENV} is required")
+    _require_api_runtime_identity()
 
     receipt_module = _receipt_module()
     receipt_module.check_contract_authority(ROOT)
