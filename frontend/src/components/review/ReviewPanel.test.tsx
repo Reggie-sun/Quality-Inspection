@@ -630,6 +630,72 @@ describe("ReviewPanel", () => {
     })).not.toBeNull();
   });
 
+  test("全局要求只能确认进入 SIP 且不暴露无效气泡动作", () => {
+    const onCommand = vi.fn();
+    const item: ReviewItem = {
+      item_id: "global-requirement",
+      item_type: "general_requirement",
+      raw_text: "锐边去毛刺",
+      scope: "global_requirement",
+      balloon_required: false,
+      requires_confirmation: true,
+      status: "pending",
+      active: true,
+    };
+
+    const { rerender } = render(
+      <ReviewPanel
+        items={[item]}
+        onCommand={onCommand}
+        selectedItemId={item.item_id}
+      />,
+    );
+
+    expect(screen.queryByRole("group", { name: "气泡标记" })).toBeNull();
+    expect(screen.queryByRole("button", {
+      name: "设为需要气泡：锐边去毛刺",
+    })).toBeNull();
+    expect(screen.queryByRole("button", {
+      name: "确认候选项：锐边去毛刺",
+    })).toBeNull();
+    expect(screen.queryByRole("button", {
+      name: "拒绝候选项：锐边去毛刺",
+    })).toBeNull();
+    expect(screen.getByText(
+      "全局要求固定无需气泡；确认后进入 SIP，不生成图纸气泡。",
+    )).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "确认进入 SIP：锐边去毛刺",
+    }));
+
+    expect(onCommand).toHaveBeenCalledWith({
+      type: "keep",
+      item_id: item.item_id,
+    });
+
+    rerender(
+      <ReviewPanel
+        items={[{
+          ...item,
+          status: "kept",
+          requires_confirmation: false,
+        }]}
+        onCommand={onCommand}
+        selectedItemId={item.item_id}
+      />,
+    );
+
+    expect(screen.queryByRole("button", {
+      name: "确认进入 SIP：锐边去毛刺",
+    })).toBeNull();
+    expect(screen.getByText("已纳入 SIP 检验项集合")).not.toBeNull();
+    expect(screen.getByText(
+      "全局要求已纳入 SIP 检验项集合，固定不生成图纸气泡。",
+    )).not.toBeNull();
+    expect(onCommand).toHaveBeenCalledTimes(1);
+  });
+
   test("折叠说明解释无需气泡与排除的适用场景且不触发审核命令", () => {
     const onCommand = vi.fn();
     render(

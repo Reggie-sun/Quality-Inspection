@@ -73,6 +73,22 @@ describe("inspectionItemPresentation", () => {
     expect(isReviewRequiredItem(item)).toBe(true);
   });
 
+  test("待确认的全局要求显示为待确认进入 SIP", () => {
+    expect(inspectionItemPresentation({
+      item_id: "global-requirement",
+      item_type: "general_requirement",
+      raw_text: "锐边去毛刺",
+      scope: "global_requirement",
+      status: "pending",
+      requires_confirmation: true,
+      balloon_required: false,
+      active: true,
+    })).toMatchObject({
+      status: "pending",
+      statusLabel: "待确认进入 SIP",
+    });
+  });
+
   test("精确 auto_accepted 显示自动通过气泡名称", () => {
     expect(inspectionItemPresentation(
       {

@@ -2,6 +2,31 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-technical-requirement-balloon-sip-handoff
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: 技术要求确认后的检验项列表、`ReviewPanel` 气泡选择动作与 SIP handoff
+- Symptom: 用户从技术要求进入检验项后，同一条通用要求再次显示为“待人工审核”；点击“设为需要气泡”后没有可感知反馈，也没有进入 SIP，流程语义看起来互相矛盾
+- Previously correct behavior: 技术要求确认完成后应明确进入哪个后续审核步骤；气泡选择动作应反馈已保存状态，并在满足 SIP 前置条件后提供清晰的 SIP 下一步，而不是让用户误以为该按钮本身等于“进入 SIP”
+- Reproduction: 用户截图中 candidate 117～120 的通用要求与普通尺寸一起显示“待人工审核”；选择其中一项并点击“设为需要气泡”后未观察到 SIP 跳转或状态变化
+- Root cause: `TechnicalRequirementPanel` 将 `global_scope` 技术要求投影为 `scope="global_requirement"`、`balloon_required=false` 的待确认 `general_requirement`；`ReviewPanel` 却仍无条件暴露“设为需要气泡”。该 command 被后端 `global requirement target must remain global and unnumbered` invariant 以 422 拒绝，而选中项附近没有失败反馈，所以状态不变并表现为“没反应”。同时列表继续使用泛化“待人工审核”，未说明这里是在确认是否进入 SIP，而不是重复确认技术要求匹配关系
+- Fix: 对 `scope="global_requirement"` 的选中项将主结论改为“确认进入 SIP”，继续复用既有 `keep` command；移除该 scope 上必然非法的气泡切换和重复的候选确认/拒绝动作，显示固定无需气泡说明；列表状态改为“待确认进入 SIP”。普通 local item 的既有气泡动作保持不变
+- Regression check: TDD RED 精确证明旧 UI 仍暴露气泡 action 且状态仍为“待人工审核”；focused suite 为 `62 passed`；在当前 `main@a698951` 上完整 frontend suite 为 `277 passed`，production build 与 `git diff --check` 通过；pending -> kept rerender 证明确认动作退休且不会二次发送 command
+- Runtime proof: localhost 当前项目的 authenticated workbench API 返回 4 个 active `global_requirement`，均为 `status=pending`、`requires_confirmation=true`、`balloon_required=false`；headed Chrome 选择“锐边去毛刺”后，列表和详情均显示“待确认进入 SIP”，唯一有效结论动作为“确认进入 SIP”，无“设为需要气泡 / 设为无需气泡 / 确认候选项 / 拒绝候选项”；仅执行行选择，未提交 review command，console error 为 0
+- Change: `fix(frontend): clarify global SIP handoff`
+- Selected lane: `Standard`；现象跨越技术要求确认、检验项状态投影、气泡 command 与 SIP handoff，需要先完成只读调用链和真实浏览器复现
+- Writer ownership and order: 父 agent 唯一 writer；只读 `code-mapper` 仅提供调用链证据
+- Problem boundary: 只修 `global_requirement` 在检验项阶段的动作与状态表达；不改变技术要求匹配、`keep` / `set_balloon_required` command、SIP 生成、freeze 或编号 contract
+- Single owner: `ReviewPanel` 继续拥有当前检验项动作；`inspectionItemPresentation` 继续拥有列表状态文案
+- Old path action: 移除全局要求上必然失败的“设为需要气泡 / 设为无需气泡”选择器，以“确认进入 SIP”复用既有 `keep` command，并明确固定无需气泡
+- Unchanged contract: 全局要求仍需人工确认才进入 SIP，始终 `balloon_required=false` 且不生成图纸气泡；SIP 表格仍由现有 `generate_sip_table` 流程生成
+- Focused verification: `cd frontend && npm test -- --run src/components/review/ReviewPanel.test.tsx src/components/workbench/inspectionItemPresentation.test.ts`
+- Main advancement gate: 实现期间 `main` 从 `7891a94` 前进到 `a698951`；`git diff --name-only 7891a94..a698951` 未触碰本修复的六个 Owner/test 文件，且已在新 HEAD 上重跑完整 frontend suite/build
+- Independent review: 初审 `accept with concerns` 指出 kept global 仍可重复确认；修复按钮退休与 rerender/no-second-command 回归后 follow-up verdict 为 `accept`
+
 ## BUG-20260801-source-balloon-action-affordance
 
 - Status: 已解决

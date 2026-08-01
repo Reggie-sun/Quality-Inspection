@@ -312,6 +312,14 @@ export function ReviewPanel({
     ],
   );
   const selectedItem = activeItems.find((item) => item.item_id === selectedItemId);
+  const selectedItemIsGlobalRequirement =
+    selectedItem?.scope === "global_requirement";
+  const selectedGlobalRequirementIsPending =
+    selectedItemIsGlobalRequirement
+    && (
+      selectedItem?.requires_confirmation === true
+      || selectedItem?.status === "pending"
+    );
   const selectedCoreFields = selectedItem === undefined
     ? []
     : coreFieldsFor(selectedItem.item_type);
@@ -729,20 +737,34 @@ export function ReviewPanel({
           >
             <fieldset className="review-command-rail__group review-command-rail__group--decision">
               <legend>{zhCN.review.decisionGroup}</legend>
-              <button
-                type="button"
-                className="review-command-rail__secondary"
-                aria-label={zhCN.review.actionForItem(
-                  zhCN.review.keep,
-                  selectedItem.raw_text,
-                )}
-                disabled={disabled}
-                onClick={() =>
-                  onCommand({ type: "keep", item_id: selectedItem.item_id })
-                }
-              >
-                {zhCN.review.keep}
-              </button>
+              {selectedItemIsGlobalRequirement
+              && !selectedGlobalRequirementIsPending ? (
+                <p className="review-command-rail__helper">
+                  {zhCN.review.globalSipIncluded}
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  className="review-command-rail__secondary"
+                  aria-label={selectedItemIsGlobalRequirement
+                    ? zhCN.review.fieldForItem(
+                        zhCN.review.confirmGlobalSip,
+                        selectedItem.raw_text,
+                      )
+                    : zhCN.review.actionForItem(
+                        zhCN.review.keep,
+                        selectedItem.raw_text,
+                      )}
+                  disabled={disabled}
+                  onClick={() =>
+                    onCommand({ type: "keep", item_id: selectedItem.item_id })
+                  }
+                >
+                  {selectedItemIsGlobalRequirement
+                    ? zhCN.review.confirmGlobalSip
+                    : zhCN.review.keep}
+                </button>
+              )}
               <button
                 ref={excludeButtonRef}
                 type="button"
@@ -760,48 +782,56 @@ export function ReviewPanel({
                 {zhCN.review.excludeHelp}
               </p>
             </fieldset>
-            <fieldset className="review-command-rail__group review-command-rail__group--balloon">
-              <legend>{zhCN.review.balloonGroup}</legend>
-              <button
-                type="button"
-                className="review-command-rail__secondary"
-                aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.requireBalloon,
-                  selectedItem.raw_text,
-                )}
-                disabled={disabled || selectedItem.balloon_required === true}
-                onClick={() =>
-                  onCommand({
-                    type: "set_balloon_required",
-                    item_id: selectedItem.item_id,
-                    balloon_required: true,
-                  })
-                }
-              >
-                {zhCN.review.requireBalloon}
-              </button>
-              <button
-                type="button"
-                className="review-command-rail__secondary"
-                aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.noBalloon,
-                  selectedItem.raw_text,
-                )}
-                disabled={disabled || selectedItem.balloon_required === false}
-                onClick={() =>
-                  onCommand({
-                    type: "set_balloon_required",
-                    item_id: selectedItem.item_id,
-                    balloon_required: false,
-                  })
-                }
-              >
-                {zhCN.review.noBalloon}
-              </button>
+            {selectedItemIsGlobalRequirement ? (
               <p className="review-command-rail__helper">
-                {zhCN.review.noBalloonHelp}
+                {selectedGlobalRequirementIsPending
+                  ? zhCN.review.globalBalloonLocked
+                  : zhCN.review.globalBalloonConfirmed}
               </p>
-            </fieldset>
+            ) : (
+              <fieldset className="review-command-rail__group review-command-rail__group--balloon">
+                <legend>{zhCN.review.balloonGroup}</legend>
+                <button
+                  type="button"
+                  className="review-command-rail__secondary"
+                  aria-label={zhCN.review.fieldForItem(
+                    zhCN.review.requireBalloon,
+                    selectedItem.raw_text,
+                  )}
+                  disabled={disabled || selectedItem.balloon_required === true}
+                  onClick={() =>
+                    onCommand({
+                      type: "set_balloon_required",
+                      item_id: selectedItem.item_id,
+                      balloon_required: true,
+                    })
+                  }
+                >
+                  {zhCN.review.requireBalloon}
+                </button>
+                <button
+                  type="button"
+                  className="review-command-rail__secondary"
+                  aria-label={zhCN.review.fieldForItem(
+                    zhCN.review.noBalloon,
+                    selectedItem.raw_text,
+                  )}
+                  disabled={disabled || selectedItem.balloon_required === false}
+                  onClick={() =>
+                    onCommand({
+                      type: "set_balloon_required",
+                      item_id: selectedItem.item_id,
+                      balloon_required: false,
+                    })
+                  }
+                >
+                  {zhCN.review.noBalloon}
+                </button>
+                <p className="review-command-rail__helper">
+                  {zhCN.review.noBalloonHelp}
+                </p>
+              </fieldset>
+            )}
             {pendingExcludeItemId === selectedItem.item_id && (
               <div
                 className="review-command-rail__confirmation"
@@ -847,7 +877,9 @@ export function ReviewPanel({
                 <p>{zhCN.review.actionGuideIntro}</p>
                 <dl>
                   <div>
-                    <dt>{zhCN.review.noBalloon}</dt>
+                    <dt>{selectedItemIsGlobalRequirement
+                      ? zhCN.review.confirmGlobalSip
+                      : zhCN.review.noBalloon}</dt>
                     <dd>{zhCN.review.noBalloonGuide}</dd>
                   </div>
                   <div>
@@ -899,42 +931,46 @@ export function ReviewPanel({
               >
                 {zhCN.review.saveEdit}
               </button>
-              <button
-                type="button"
-                className="review-command-rail__secondary"
-                aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.accept,
-                  selectedItem.raw_text,
-                )}
-                disabled={disabled || !selectedItem.requires_confirmation}
-                onClick={() =>
-                  onCommand({
-                    type: "resolve_confirmation",
-                    item_id: selectedItem.item_id,
-                    accepted: true,
-                  })
-                }
-              >
-                {zhCN.review.accept}
-              </button>
-              <button
-                type="button"
-                className="review-command-rail__secondary"
-                aria-label={zhCN.review.fieldForItem(
-                  zhCN.review.reject,
-                  selectedItem.raw_text,
-                )}
-                disabled={disabled || !selectedItem.requires_confirmation}
-                onClick={() =>
-                  onCommand({
-                    type: "resolve_confirmation",
-                    item_id: selectedItem.item_id,
-                    accepted: false,
-                  })
-                }
-              >
-                {zhCN.review.reject}
-              </button>
+              {selectedItemIsGlobalRequirement ? null : (
+                <>
+                  <button
+                    type="button"
+                    className="review-command-rail__secondary"
+                    aria-label={zhCN.review.fieldForItem(
+                      zhCN.review.accept,
+                      selectedItem.raw_text,
+                    )}
+                    disabled={disabled || !selectedItem.requires_confirmation}
+                    onClick={() =>
+                      onCommand({
+                        type: "resolve_confirmation",
+                        item_id: selectedItem.item_id,
+                        accepted: true,
+                      })
+                    }
+                  >
+                    {zhCN.review.accept}
+                  </button>
+                  <button
+                    type="button"
+                    className="review-command-rail__secondary"
+                    aria-label={zhCN.review.fieldForItem(
+                      zhCN.review.reject,
+                      selectedItem.raw_text,
+                    )}
+                    disabled={disabled || !selectedItem.requires_confirmation}
+                    onClick={() =>
+                      onCommand({
+                        type: "resolve_confirmation",
+                        item_id: selectedItem.item_id,
+                        accepted: false,
+                      })
+                    }
+                  >
+                    {zhCN.review.reject}
+                  </button>
+                </>
+              )}
             </fieldset>
           </aside>
           </div>

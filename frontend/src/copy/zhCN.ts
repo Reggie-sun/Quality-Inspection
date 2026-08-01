@@ -295,6 +295,7 @@ export const zhCN = {
     confirmSip: "保存当前 SIP 字段",
     cancelSip: "取消当前 SIP 字段修改",
     statusPending: "待人工审核",
+    statusGlobalSipPending: "待确认进入 SIP",
     statusBalloonPending: "待选择气泡",
     statusAutoAccepted: "自动通过",
     autoAcceptedCandidateNumber: (number: number) =>
@@ -338,6 +339,8 @@ export const zhCN = {
     region: "审核命令",
     title: "检验项目",
     keep: "保留",
+    confirmGlobalSip: "确认进入 SIP",
+    globalSipIncluded: "已纳入 SIP 检验项集合",
     exclude: "排除",
     edit: "修改",
     cancelEdit: "取消修改",
@@ -351,6 +354,10 @@ export const zhCN = {
     balloonGroup: "气泡标记",
     excludeHelp: "不进入 SIP，也不生成气泡",
     noBalloonHelp: "仍进入 SIP，仅不生成图纸气泡",
+    globalBalloonLocked:
+      "全局要求固定无需气泡；确认后进入 SIP，不生成图纸气泡。",
+    globalBalloonConfirmed:
+      "全局要求已纳入 SIP 检验项集合，固定不生成图纸气泡。",
     actionGuideTitle: "怎么选择？",
     actionGuideIntro: "先判断这条内容是否仍是有效检验要求。",
     noBalloonGuide:

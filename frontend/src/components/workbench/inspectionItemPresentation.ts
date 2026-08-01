@@ -165,6 +165,9 @@ export function inspectionItemPresentation(
     status,
     statusLabel: isBalloonDecisionPending(item)
       ? zhCN.inspection.statusBalloonPending
+      : item.scope === "global_requirement"
+          && (item.requires_confirmation === true || item.status === "pending")
+        ? zhCN.inspection.statusGlobalSipPending
       : INSPECTION_ITEM_STATUS_LABELS[status],
   };
 }
