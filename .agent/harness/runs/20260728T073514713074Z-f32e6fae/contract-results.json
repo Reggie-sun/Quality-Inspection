@@ -1,0 +1,123 @@
+{
+  "results": [
+    {
+      "artifact_refs": [
+        "logs/selector-001.log"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_classification.py -q",
+      "completed_at": "2026-07-28T07:35:14.986110Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-001",
+      "result_state": "passed",
+      "run_id": "20260728T073514713074Z-f32e6fae",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-07-28T07:35:14.743736Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-002.log"
+      ],
+      "command": "pytest backend/tests/integration/test_pdf_inventory.py::test_multi_page_inventory_preserves_order -q",
+      "completed_at": "2026-07-28T07:35:15.306206Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-002",
+      "result_state": "passed",
+      "run_id": "20260728T073514713074Z-f32e6fae",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-07-28T07:35:14.986228Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-003.log"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_inventory.py::test_native_observation_remains_authoritative -q",
+      "completed_at": "2026-07-28T07:35:15.931292Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-003",
+      "result_state": "passed",
+      "run_id": "20260728T073514713074Z-f32e6fae",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-07-28T07:35:15.306328Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-004.log"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_inventory.py::test_span_and_line_text_round_trip -q",
+      "completed_at": "2026-07-28T07:35:16.567472Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006A",
+      "result_state": "passed",
+      "run_id": "20260728T073514713074Z-f32e6fae",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-07-28T07:35:15.931414Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-005.log"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_inventory.py::test_observation_has_page_index -q",
+      "completed_at": "2026-07-28T07:35:17.183104Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006B",
+      "result_state": "passed",
+      "run_id": "20260728T073514713074Z-f32e6fae",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-07-28T07:35:16.567593Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-006.log"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_coordinates.py::test_bbox_is_normalized_and_clipped_to_cropbox -q",
+      "completed_at": "2026-07-28T07:35:17.419810Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006C",
+      "result_state": "passed",
+      "run_id": "20260728T073514713074Z-f32e6fae",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-07-28T07:35:17.183226Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-007.log"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_inventory.py::test_rotated_text_preserves_direction -q",
+      "completed_at": "2026-07-28T07:35:18.095020Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006D",
+      "result_state": "passed",
+      "run_id": "20260728T073514713074Z-f32e6fae",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-07-28T07:35:17.419929Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-008.log"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_classification.py::test_classification_evidence_is_serializable -q",
+      "completed_at": "2026-07-28T07:35:18.337451Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006E",
+      "result_state": "passed",
+      "run_id": "20260728T073514713074Z-f32e6fae",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-07-28T07:35:18.095164Z"
+    },
+    {
+      "artifact_refs": [
+        "logs/selector-009.log"
+      ],
+      "command": "pytest backend/tests/unit/pdf/test_coordinates.py::test_pdf_render_round_trip_error_budget -q",
+      "completed_at": "2026-07-28T07:35:18.595424Z",
+      "exit_code": 0,
+      "p0_contract_id": "P0-REC-006F",
+      "result_state": "passed",
+      "run_id": "20260728T073514713074Z-f32e6fae",
+      "schema_version": "contract-result/1",
+      "started_at": "2026-07-28T07:35:18.337572Z"
+    }
+  ],
+  "run_id": "20260728T073514713074Z-f32e6fae",
+  "schema_version": "contract-results/1"
+}

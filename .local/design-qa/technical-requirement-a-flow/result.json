@@ -1,0 +1,30 @@
+{
+  "appUrl": "http://127.0.0.1:5173/?project_id=fb0572f9-4401-4d05-95ae-fde26b28d1d3&operator_id=4362748d-c0ce-460e-9f57-dc17b04a0dc9",
+  "sourceUrl": "http://127.0.0.1:54280/?key=1da758e3bc06b8953e9dc1d64a9ad558d4022d80c57125431b355185edfabc24",
+  "viewport": {
+    "width": 1565,
+    "height": 958,
+    "deviceScaleFactor": 1
+  },
+  "impactText": "确认后会发生什么\n\n这条规则将关联到 1 个检验项；对应 SIP 建议会自动预填。不会立即冻结、编号或生成气泡。",
+  "dirtyReturnGateVisible": true,
+  "capturedCommand": {
+    "expected_version": 63,
+    "command": {
+      "type": "set_technical_requirement_match",
+      "requirement_id": "3b69b273981964586a6dcefa",
+      "outcome": "matched_items",
+      "matched_item_ids": [
+        "3724d763d1baaa7d81cb8eaa"
+      ]
+    }
+  },
+  "selectedRow": "3724d763d1baaa7d81cb8eaa",
+  "editRadioChecked": true,
+  "handoffSelectedRow": "d46b72f2537856c78d80a027",
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "failedResponses": [],
+  "requestFailures": [],
+  "evidenceDir": "/home/reggie/vscode_folder/Quality_Inspection/.local/design-qa/technical-requirement-a-flow"
+}

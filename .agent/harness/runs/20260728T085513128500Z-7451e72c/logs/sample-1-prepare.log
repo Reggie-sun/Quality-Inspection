@@ -1,0 +1,21 @@
+exit_code=1
+stdout:
+
+stderr:
+Traceback (most recent call last):
+  File "<string>", line 48, in <module>
+  File "/app/app/processing/tasks.py", line 119, in inventory_project
+    ).run(
+      ^^^^
+  File "/app/app/processing/pipeline.py", line 275, in run
+    snapshot = self._candidate_snapshot_builder(pages)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/processing/runtime_recognition.py", line 131, in build_candidate_snapshot
+    return self._advisor.review(self._source_path, pages, snapshot)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/candidates/advisor.py", line 981, in review
+    result, provider = self._visual_review_result(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/candidates/advisor.py", line 728, in _visual_review_result
+    raise CandidateAdvisorFailure(
+app.candidates.advisor.CandidateAdvisorFailure: Visual symbol Advisor response is invalid

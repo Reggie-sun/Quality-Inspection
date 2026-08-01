@@ -1,0 +1,90 @@
+<h2>你说的“SIP 部分合并”，更接近哪一种？</h2>
+<p class="subtitle">蓝色区域表示合并后的唯一 SIP 工作区。点击一个方案；这一步只确认信息归属，不决定最终视觉细节。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:#eef3f8">
+      <div style="display:grid;grid-template-columns:1.25fr .85fr;gap:10px;min-height:250px">
+        <div style="border:1px solid #aebdca;border-radius:8px;background:#fff;padding:8px">
+          <div style="height:120px;border:1px dashed #9aa9b6;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#667788">工程图纸</div>
+          <div style="margin-top:8px;border:2px solid #2563eb;border-radius:6px;padding:8px;background:#eff6ff">
+            <strong style="font-size:12px">SIP 工作区</strong>
+            <div style="margin-top:6px;padding:6px;background:#fff;border:1px solid #cbd8e5;font-size:10px">项目基本信息</div>
+            <div style="margin-top:5px;padding:6px;background:#fff;border:1px solid #cbd8e5;font-size:10px">当前检验项 SIP 字段</div>
+            <div style="margin-top:5px;padding:6px;background:#fff;border:1px solid #cbd8e5;font-size:10px">正式文件</div>
+          </div>
+        </div>
+        <div style="border:1px solid #aebdca;border-radius:8px;background:#fff;padding:8px">
+          <div style="font-size:11px;font-weight:700">检验项列表与详情</div>
+          <div style="margin-top:8px;height:60px;background:#f4f6f8;border-radius:4px"></div>
+          <div style="margin-top:8px;height:110px;background:#f4f6f8;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#667788;font-size:10px">不再出现第二套 SIP 表单</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · 全部收进左侧 SIP 抽屉</h3>
+      <p>项目信息、当前检验项 SIP 字段、正式文件放在一个展开面板；右侧只保留检验项审核。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:#eef3f8">
+      <div style="display:grid;grid-template-columns:1.2fr .9fr;gap:10px;min-height:250px">
+        <div style="border:1px solid #aebdca;border-radius:8px;background:#fff;padding:8px">
+          <div style="height:170px;border:1px dashed #9aa9b6;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#667788">工程图纸</div>
+          <div style="margin-top:8px;padding:7px;border:1px solid #cbd8e5;background:#f7f9fb;font-size:10px">正式文件 / 公司记录</div>
+        </div>
+        <div style="border:2px solid #2563eb;border-radius:8px;background:#eff6ff;padding:8px">
+          <strong style="font-size:12px">统一 SIP 与检验详情</strong>
+          <div style="margin-top:7px;padding:6px;background:#fff;border:1px solid #cbd8e5;font-size:10px">项目 SIP 基本信息（折叠摘要）</div>
+          <div style="margin-top:5px;padding:6px;background:#fff;border:1px solid #cbd8e5;font-size:10px">当前检验项身份与审核字段</div>
+          <div style="margin-top:5px;padding:6px;background:#fff;border:1px solid #cbd8e5;font-size:10px">当前检验项 SIP 确认字段</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 合并到右侧当前检验项详情</h3>
+      <p>项目 SIP 摘要和当前项 SIP 字段在右侧形成一个连续详情；正式文件仍留在左侧辅助面板。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:14px;background:#eef3f8">
+      <div style="display:grid;grid-template-columns:1.15fr .95fr;gap:10px;min-height:250px">
+        <div style="border:1px solid #aebdca;border-radius:8px;background:#fff;padding:8px">
+          <div style="height:205px;border:1px dashed #9aa9b6;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#667788">工程图纸</div>
+        </div>
+        <div style="border:2px solid #2563eb;border-radius:8px;background:#eff6ff;padding:8px">
+          <strong style="font-size:12px">右侧双层工作区</strong>
+          <div style="display:flex;gap:4px;margin-top:7px;font-size:10px">
+            <span style="padding:5px 8px;background:#2563eb;color:#fff;border-radius:4px">检验项审核</span>
+            <span style="padding:5px 8px;background:#fff;border:1px solid #cbd8e5;border-radius:4px">SIP 与导出</span>
+          </div>
+          <div style="margin-top:7px;padding:7px;background:#fff;border:1px solid #cbd8e5;font-size:10px">选中“SIP 与导出”后统一显示基本信息、当前项 SIP 字段和正式文件</div>
+          <div style="margin-top:7px;height:85px;background:#fff;border:1px solid #cbd8e5;border-radius:4px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 右侧增加“SIP 与导出”页签</h3>
+      <p>把全部 SIP 内容统一成单独页签，空间最完整，但会增加一次视图切换。</p>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>我的建议</h4>
+    <ul>
+      <li><strong>B</strong>：当前项 SIP 字段跟随当前项详情，状态和草稿边界最自然。</li>
+      <li>项目级摘要可默认折叠，不会长期挤占首屏。</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>需要避免</h4>
+    <ul>
+      <li>只做视觉拼接，却保留两套草稿或两条提交路径。</li>
+      <li>把正式导出与尚未确认的当前项草稿混成同一提交动作。</li>
+    </ul>
+  </div>
+</div>

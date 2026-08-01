@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Review compact header comparison</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 20px;
+        background: #e9eef5;
+        color: #152033;
+        font: 14px/1.5 Inter, "Microsoft YaHei", sans-serif;
+      }
+      h1 { margin: 0 0 16px; font-size: 20px; }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        align-items: start;
+      }
+      section {
+        overflow: hidden;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #fff;
+      }
+      h2 { margin: 0; padding: 10px 12px; font-size: 14px; }
+      img { display: block; width: 100%; height: auto; border-top: 1px solid #e2e8f0; }
+      .intent { display: grid; gap: 8px; padding: 10px; }
+      .intent img { border: 1px solid #e2e8f0; }
+    </style>
+  </head>
+  <body>
+    <h1>审核工作台顶部压缩对比</h1>
+    <div class="grid">
+      <section>
+        <h2>Source visual truth：原工作台与待删除/压缩区域</h2>
+        <img src="/.local/design-qa/review-compact-header-reference-full.png" alt="原工作台" />
+        <div class="intent">
+          <img src="/.local/design-qa/review-compact-header-reference-remove.png" alt="待删除步骤条" />
+          <img src="/.local/design-qa/review-compact-header-reference-reset.png" alt="处理另一份图纸" />
+          <img src="/.local/design-qa/review-compact-header-reference-summary.png" alt="待压缩项目摘要与操作" />
+        </div>
+      </section>
+      <section>
+        <h2>Implementation：两行顶部与放大的图纸视野</h2>
+        <img
+          src="/.local/design-qa/review-compact-header-implementation-final.png"
+          alt="压缩后的审核工作台"
+        />
+      </section>
+    </div>
+  </body>
+</html>

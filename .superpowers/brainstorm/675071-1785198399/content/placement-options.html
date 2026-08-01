@@ -1,0 +1,317 @@
+<style>
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(260px, 1fr));
+    gap: 18px;
+    align-items: stretch;
+  }
+  .design-card {
+    border: 1px solid #d8e1ee;
+    border-radius: 14px;
+    background: #ffffff;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+  }
+  .design-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(39, 68, 112, .12);
+  }
+  .design-card.selected {
+    border-color: #2f6fed;
+    box-shadow: 0 0 0 3px rgba(47, 111, 237, .14);
+  }
+  .card-top {
+    padding: 16px 16px 12px;
+    border-bottom: 1px solid #e7edf5;
+  }
+  .option-name {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .option-letter {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    background: #edf3ff;
+    color: #255cc7;
+    font-weight: 700;
+  }
+  .recommended {
+    margin-left: auto;
+    padding: 3px 8px;
+    border-radius: 999px;
+    color: #1c5a35;
+    background: #e7f7ed;
+    font-size: 12px;
+    font-weight: 650;
+  }
+  .option-summary {
+    margin: 8px 0 0 38px;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .panel {
+    margin: 14px;
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid #dbe4ef;
+    border-radius: 10px;
+    min-height: 405px;
+  }
+  .panel-title {
+    color: #23324a;
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  .group {
+    background: #fff;
+    border: 1px solid #dbe4ef;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  .group-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #53637a;
+    font-size: 12px;
+    font-weight: 650;
+    margin-bottom: 8px;
+  }
+  .button-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+  .ui-button {
+    border: 1px solid #cbd7e6;
+    background: #fff;
+    color: #26364f;
+    border-radius: 6px;
+    padding: 8px 7px;
+    text-align: center;
+    font-size: 12px;
+  }
+  .ui-button.primary {
+    background: #edf3ff;
+    color: #255cc7;
+    border-color: #9bb9f1;
+  }
+  .ui-button.danger {
+    color: #a63a3a;
+    border-color: #e3b5b5;
+  }
+  .helper-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-top: 7px;
+  }
+  .helper {
+    color: #6c7a8f;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .helper strong {
+    color: #334155;
+  }
+  .confirm {
+    margin-top: 11px;
+    padding: 10px;
+    border-radius: 8px;
+    background: #fff8f4;
+    border: 1px solid #efd2c4;
+  }
+  .confirm-title {
+    color: #923f26;
+    font-weight: 700;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+  .confirm-text {
+    color: #6d554b;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .mini-action {
+    padding: 5px 8px;
+    border-radius: 5px;
+    border: 1px solid #d4dde9;
+    background: #fff;
+    font-size: 11px;
+  }
+  .mini-action.danger {
+    background: #b64b40;
+    color: #fff;
+    border-color: #b64b40;
+  }
+  .notice {
+    padding: 9px 10px;
+    margin-bottom: 10px;
+    border: 1px solid #b9cdef;
+    border-radius: 8px;
+    background: #f1f6ff;
+    color: #40536d;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .notice b {
+    color: #244b8b;
+  }
+  .tooltip-preview {
+    position: relative;
+    margin: 8px 0 0 auto;
+    width: 148px;
+    padding: 8px;
+    border-radius: 7px;
+    background: #27364a;
+    color: #fff;
+    font-size: 11px;
+    line-height: 1.4;
+    box-shadow: 0 5px 14px rgba(20, 35, 55, .22);
+  }
+  .tradeoff {
+    margin: 0 16px 16px;
+    color: #5e6d82;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  @media (max-width: 980px) {
+    .comparison-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<h2>“排除”和“无需气泡”的提示放哪里？</h2>
+<p class="subtitle">三种方案都兼顾首次理解和防误操作；差别主要在提示是否持续可见、占用多少空间。</p>
+
+<div class="comparison-grid">
+  <div class="design-card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-top">
+      <div class="option-name">
+        <span class="option-letter">A</span>
+        <strong>按语义分组 + 排除确认</strong>
+        <span class="recommended">推荐</span>
+      </div>
+      <p class="option-summary">解释紧贴对应动作，用户不需要猜两个按钮之间的关系。</p>
+    </div>
+    <div class="panel">
+      <div class="panel-title">检验项操作</div>
+      <div class="group">
+        <div class="group-label"><span>检验结论</span></div>
+        <div class="button-row">
+          <div class="ui-button primary">保留</div>
+          <div class="ui-button danger">排除</div>
+        </div>
+        <div class="helper-grid">
+          <div class="helper">继续作为正式检验项</div>
+          <div class="helper"><strong>不进入 SIP</strong>，也不生成气泡</div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label"><span>气泡标记</span></div>
+        <div class="button-row">
+          <div class="ui-button">需要气泡</div>
+          <div class="ui-button primary">无需气泡</div>
+        </div>
+        <div class="helper-grid">
+          <div class="helper">进入 SIP，并在图纸上编号</div>
+          <div class="helper"><strong>仍进入 SIP</strong>，仅不在图纸上编号</div>
+        </div>
+      </div>
+      <div class="confirm">
+        <div class="confirm-title">确认排除这条检验项？</div>
+        <div class="confirm-text">排除后不会进入正式 SIP，也不会生成图纸气泡。原始识别记录仍保留。</div>
+        <div class="confirm-actions">
+          <span class="mini-action">取消</span>
+          <span class="mini-action danger">确认排除</span>
+        </div>
+      </div>
+    </div>
+    <p class="tradeoff">优点：认知最清楚，误操作风险最低。代价：操作栏会增加少量高度。</p>
+  </div>
+
+  <div class="design-card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-top">
+      <div class="option-name">
+        <span class="option-letter">B</span>
+        <strong>顶部说明条 + 排除确认</strong>
+      </div>
+      <p class="option-summary">只在操作区顶部解释一次，按钮布局保持紧凑。</p>
+    </div>
+    <div class="panel">
+      <div class="panel-title">检验项操作</div>
+      <div class="notice"><b>两者不同：</b>“排除”不会进入 SIP；“无需气泡”仍进入 SIP，只是不在图纸上编号。</div>
+      <div class="group">
+        <div class="button-row">
+          <div class="ui-button primary">保留</div>
+          <div class="ui-button danger">排除</div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="button-row">
+          <div class="ui-button">需要气泡</div>
+          <div class="ui-button primary">无需气泡</div>
+        </div>
+      </div>
+      <div class="confirm">
+        <div class="confirm-title">确认排除这条检验项？</div>
+        <div class="confirm-text">它将不会进入正式 SIP。</div>
+        <div class="confirm-actions">
+          <span class="mini-action">取消</span>
+          <span class="mini-action danger">确认排除</span>
+        </div>
+      </div>
+    </div>
+    <p class="tradeoff">优点：节省空间、改动小。代价：说明离按钮较远，用户操作时容易略过。</p>
+  </div>
+
+  <div class="design-card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-top">
+      <div class="option-name">
+        <span class="option-letter">C</span>
+        <strong>悬浮提示 + 排除确认</strong>
+      </div>
+      <p class="option-summary">界面最简洁，只有悬浮或聚焦时才展示说明。</p>
+    </div>
+    <div class="panel">
+      <div class="panel-title">检验项操作</div>
+      <div class="group">
+        <div class="group-label"><span>检验结论</span><span>ⓘ</span></div>
+        <div class="button-row">
+          <div class="ui-button primary">保留</div>
+          <div class="ui-button danger">排除 ⓘ</div>
+        </div>
+        <div class="tooltip-preview">排除后不作为正式检验项，不进入 SIP。</div>
+      </div>
+      <div class="group">
+        <div class="group-label"><span>气泡标记</span><span>ⓘ</span></div>
+        <div class="button-row">
+          <div class="ui-button">需要气泡</div>
+          <div class="ui-button primary">无需气泡 ⓘ</div>
+        </div>
+        <div class="tooltip-preview">仍是正式检验项并进入 SIP，只是不生成图纸气泡。</div>
+      </div>
+      <div class="confirm">
+        <div class="confirm-title">确认排除？</div>
+        <div class="confirm-actions">
+          <span class="mini-action">取消</span>
+          <span class="mini-action danger">确认</span>
+        </div>
+      </div>
+    </div>
+    <p class="tradeoff">优点：最省空间。代价：触屏用户和首次用户更容易错过说明，不建议单独采用。</p>
+  </div>
+</div>

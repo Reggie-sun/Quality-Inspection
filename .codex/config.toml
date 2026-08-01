@@ -1,0 +1,4 @@
+[mcp_servers.codegraph]
+command = "node"
+args = ["/home/reggie/vscode_folder/MCP/mcp-server-codegraph/dist/index.js", "/home/reggie/vscode_folder/Quality_Inspection"]
+cwd = "/home/reggie/vscode_folder/MCP/mcp-server-codegraph"

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Balloon selection comparison</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #f8fafc;
+        color: #172033;
+        font: 16px/1.4 system-ui, sans-serif;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 1.5fr repeat(3, 1fr);
+        gap: 20px;
+      }
+      figure {
+        margin: 0;
+        padding: 16px;
+        border: 1px solid #dbe3ef;
+        border-radius: 12px;
+        background: #fff;
+      }
+      figcaption {
+        margin-bottom: 12px;
+        font-weight: 650;
+      }
+      img {
+        display: block;
+        width: 100%;
+        height: 420px;
+        object-fit: contain;
+        background: #fff;
+      }
+      .reference img {
+        object-fit: cover;
+        object-position: center 42%;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <figure class="reference">
+        <figcaption>Reference — option 1</figcaption>
+        <img src="file:///home/reggie/.codex/generated_images/019fb1ba-e09c-7660-90be-c1362c2a34c3/call_R5UEgH4VyR5hazbv4L2yda61.png" />
+      </figure>
+      <figure>
+        <figcaption>Selected candidate</figcaption>
+        <img src="balloon-selection-candidate.png" />
+      </figure>
+      <figure>
+        <figcaption>Selected auto-accepted</figcaption>
+        <img src="balloon-selection-auto.png" />
+      </figure>
+      <figure>
+        <figcaption>Selected formal</figcaption>
+        <img src="balloon-selection-formal.png" />
+      </figure>
+    </main>
+  </body>
+</html>

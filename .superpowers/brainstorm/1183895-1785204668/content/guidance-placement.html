@@ -1,0 +1,164 @@
+<style>
+  .review-demo {
+    display: grid;
+    gap: 10px;
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d7e0ec;
+    border-radius: 8px;
+    background: #fff;
+    color: #1d2939;
+    font: 12px/1.45 system-ui, sans-serif;
+  }
+  .review-groups {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .review-group {
+    display: grid;
+    gap: 6px;
+  }
+  .review-group + .review-group {
+    padding-left: 12px;
+    border-left: 1px solid #d7e0ec;
+  }
+  .review-title {
+    font-weight: 700;
+  }
+  .review-button {
+    padding: 7px;
+    border: 1px solid #c8d5e5;
+    border-radius: 6px;
+    background: #fff;
+    text-align: center;
+  }
+  .review-button.danger {
+    border-color: #e3aca5;
+    color: #aa3c34;
+  }
+  .review-help {
+    color: #667085;
+    font-size: 10px;
+  }
+  .guide-summary {
+    padding-top: 8px;
+    border-top: 1px solid #d7e0ec;
+    color: #2463db;
+    font-weight: 700;
+  }
+  .guide-box {
+    display: grid;
+    gap: 6px;
+    padding: 9px;
+    border: 1px solid #c9d7ea;
+    border-radius: 6px;
+    background: #f7faff;
+    font-size: 11px;
+  }
+  .guide-row strong {
+    display: block;
+  }
+  .guide-icon {
+    display: inline-grid;
+    width: 18px;
+    height: 18px;
+    margin-left: 4px;
+    place-items: center;
+    border: 1px solid #9eb4d0;
+    border-radius: 50%;
+    color: #2463db;
+    font-size: 11px;
+  }
+  .content-divider {
+    padding-top: 9px;
+    border-top: 1px solid #d7e0ec;
+    font-weight: 700;
+  }
+</style>
+
+<h2>“排除 / 无需气泡”使用说明放在哪里？</h2>
+<p class="subtitle">三种方案都不改变业务行为，只补充审核判断规则。点击卡片选择。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="review-demo">
+        <div class="review-groups">
+          <div class="review-group">
+            <div class="review-title">检验结论</div>
+            <div class="review-button">保留</div>
+            <div class="review-button danger">排除</div>
+            <div class="review-help">不进入 SIP，也不生成气泡</div>
+          </div>
+          <div class="review-group">
+            <div class="review-title">气泡标记</div>
+            <div class="review-button">设为需要气泡</div>
+            <div class="review-button">设为无需气泡</div>
+            <div class="review-help">仍进入 SIP，仅不生成图纸气泡</div>
+          </div>
+        </div>
+        <div class="guide-summary">▸ 怎么选择？</div>
+        <div class="content-divider">内容调整</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · 跨组折叠说明（推荐）</h3>
+      <p>说明横跨两组，默认只占一行；展开后给出判断原则和典型例子。关系最清楚，也不会长期挤压窄栏。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="review-demo">
+        <div class="review-groups">
+          <div class="review-group">
+            <div class="review-title">检验结论</div>
+            <div class="review-button">保留</div>
+            <div class="review-button danger">排除</div>
+            <div class="review-help">不进入 SIP，也不生成气泡</div>
+          </div>
+          <div class="review-group">
+            <div class="review-title">气泡标记 <span class="guide-icon">?</span></div>
+            <div class="review-button">设为需要气泡</div>
+            <div class="review-button">设为无需气泡</div>
+            <div class="review-help">仍进入 SIP，仅不生成图纸气泡</div>
+          </div>
+        </div>
+        <div class="content-divider">内容调整</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · 标题问号提示</h3>
+      <p>最省空间，但说明容易被忽略，而且只挂在“气泡标记”标题上，看不出它同时解释“排除”。触屏可发现性也较弱。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="review-demo">
+        <div class="review-groups">
+          <div class="review-group">
+            <div class="review-title">检验结论</div>
+            <div class="review-button">保留</div>
+            <div class="review-button danger">排除</div>
+          </div>
+          <div class="review-group">
+            <div class="review-title">气泡标记</div>
+            <div class="review-button">设为需要气泡</div>
+            <div class="review-button">设为无需气泡</div>
+          </div>
+        </div>
+        <div class="guide-box">
+          <div class="guide-row"><strong>无需气泡</strong>仍是有效检验项，进入 SIP；仅不在图纸上编号。</div>
+          <div class="guide-row"><strong>排除</strong>不是有效检验项，不进入 SIP，也不生成气泡。</div>
+        </div>
+        <div class="content-divider">内容调整</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · 常驻说明卡</h3>
+      <p>首次使用最直接，但会永久增加高度；在当前窄栏中会把“内容调整”和后续操作继续向下推。</p>
+    </div>
+  </div>
+</div>

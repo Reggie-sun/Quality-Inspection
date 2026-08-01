@@ -1,0 +1,58 @@
+<style>
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .evidence {
+    padding: 14px;
+    border: 1px solid #d8e1ee;
+    border-radius: 12px;
+    background: #fff;
+  }
+  .evidence h3 {
+    margin: 0 0 6px;
+  }
+  .evidence p {
+    margin: 0 0 12px;
+    color: #64748b;
+    font-size: 13px;
+  }
+  .evidence img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid #d8e1ee;
+    border-radius: 8px;
+  }
+  .focused {
+    margin-top: 16px;
+    max-width: 800px;
+  }
+  @media (max-width: 900px) {
+    .comparison { grid-template-columns: 1fr; }
+  }
+</style>
+
+<h2>方案 A：设计目标与真实实现对比</h2>
+<p class="subtitle">同一比较画面内检查分组、常驻说明、危险操作确认和窄屏可读性。</p>
+
+<div class="comparison">
+  <section class="evidence">
+    <h3>Source visual target</h3>
+    <p>用户选择的方案 A 概念稿。</p>
+    <img src="source-options.png" alt="方案 A 概念稿">
+  </section>
+  <section class="evidence">
+    <h3>Rendered implementation</h3>
+    <p>真实 workbench 中打开“排除”确认后的宽屏状态。</p>
+    <img src="implementation-confirmation.png" alt="真实 workbench 排除确认状态">
+  </section>
+</div>
+
+<section class="evidence focused">
+  <h3>Responsive focused evidence</h3>
+  <p>800px 窗口中的操作栏分组与常驻说明。</p>
+  <img src="implementation-narrow.png" alt="窄屏操作栏">
+</section>

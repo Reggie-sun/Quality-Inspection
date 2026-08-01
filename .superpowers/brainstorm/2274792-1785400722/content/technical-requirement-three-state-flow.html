@@ -1,0 +1,347 @@
+<style>
+  .flow-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(270px, 1fr));
+    gap: 16px;
+    align-items: stretch;
+    margin: 20px 0 26px;
+  }
+  .state-card {
+    border: 1px solid #d9e2ec;
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+    box-shadow: 0 3px 12px rgba(16, 24, 40, .06);
+  }
+  .state-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid #edf1f5;
+    background: #f8fafc;
+  }
+  .state-number {
+    display: inline-grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: #e8f1ff;
+    color: #175cd3;
+    font-size: 12px;
+    font-weight: 750;
+  }
+  .status {
+    border-radius: 999px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .status.pending { color: #b54708; background: #fff6e8; }
+  .status.ready { color: #175cd3; background: #eff8ff; }
+  .status.done { color: #067647; background: #ecfdf3; }
+  .state-body { padding: 14px; }
+  .requirement-title {
+    margin: 0 0 4px;
+    color: #101828;
+    font-size: 14px;
+    font-weight: 750;
+  }
+  .muted { color: #667085; font-size: 11px; line-height: 1.5; }
+  .choice-list {
+    display: grid;
+    gap: 8px;
+    margin: 14px 0;
+  }
+  .choice {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    gap: 8px;
+    align-items: start;
+    padding: 10px;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #fff;
+  }
+  .choice.selected {
+    border-color: #1570ef;
+    background: #f5f9ff;
+    box-shadow: inset 0 0 0 1px #1570ef;
+  }
+  .radio {
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+    border: 1.5px solid #98a2b3;
+    border-radius: 50%;
+  }
+  .selected .radio {
+    border: 4px solid #1570ef;
+  }
+  .choice strong {
+    display: block;
+    color: #344054;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .choice small {
+    display: block;
+    margin-top: 3px;
+    color: #667085;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+  .link {
+    color: #175cd3;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .summary-box {
+    margin: 14px 0;
+    padding: 11px;
+    border: 1px solid #b2ddff;
+    border-radius: 8px;
+    background: #f5fbff;
+  }
+  .summary-box strong {
+    display: block;
+    margin-bottom: 4px;
+    color: #175cd3;
+    font-size: 11px;
+  }
+  .summary-box span {
+    color: #344054;
+    font-size: 10px;
+    line-height: 1.45;
+  }
+  .action-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .primary, .secondary, .disabled-action {
+    min-height: 32px;
+    padding: 6px 10px;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 750;
+  }
+  .primary {
+    border: 1px solid #1570ef;
+    background: #1570ef;
+    color: #fff;
+  }
+  .secondary {
+    border: 1px solid #d0d5dd;
+    background: #fff;
+    color: #344054;
+  }
+  .disabled-action {
+    border: 1px solid #d0d5dd;
+    background: #eef2f6;
+    color: #98a2b3;
+  }
+  .confirmed-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: center;
+    margin: 14px 0;
+    padding: 12px;
+    border: 1px solid #abefc6;
+    border-radius: 8px;
+    background: #f6fef9;
+  }
+  .confirmed-row strong {
+    display: block;
+    color: #067647;
+    font-size: 11px;
+  }
+  .confirmed-row span {
+    display: block;
+    margin-top: 3px;
+    color: #475467;
+    font-size: 10px;
+  }
+  .next-step {
+    margin-top: 18px;
+    padding: 12px;
+    border-left: 3px solid #1570ef;
+    border-radius: 0 8px 8px 0;
+    background: #f5f9ff;
+  }
+  .next-step b {
+    display: block;
+    color: #175cd3;
+    font-size: 11px;
+  }
+  .next-step span {
+    display: block;
+    margin-top: 4px;
+    color: #344054;
+    font-size: 10px;
+    line-height: 1.45;
+  }
+  .decision-options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .decision-options .option { min-height: 118px; }
+  .recommendation {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    color: #175cd3;
+    background: #eff8ff;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  @media (max-width: 980px) {
+    .flow-grid, .decision-options { grid-template-columns: 1fr; }
+  }
+</style>
+
+<h2>技术要求确认：过渡态不该直接变成一堆按钮</h2>
+<p class="subtitle">推荐把它做成清楚的三步状态：先选择处理方式，再确认影响范围，最后收敛为只读结果并进入检验项审核。</p>
+
+<div class="flow-grid">
+  <section class="state-card">
+    <div class="state-head">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="state-number">1</span>
+        <strong>待确认</strong>
+      </div>
+      <span class="status pending">需要决策</span>
+    </div>
+    <div class="state-body">
+      <p class="requirement-title">未注公差按 GB/T 1804-m 级执行</p>
+      <p class="muted">系统识别到了规则，但还不知道你要把它应用到哪里。</p>
+      <div class="choice-list">
+        <div class="choice">
+          <span class="radio"></span>
+          <div>
+            <strong>应用到系统建议的检验项</strong>
+            <small>建议覆盖 121 个无显式公差的尺寸项</small>
+          </div>
+          <span class="link">查看 121 项</span>
+        </div>
+        <div class="choice">
+          <span class="radio"></span>
+          <div>
+            <strong>只应用到部分检验项</strong>
+            <small>打开可搜索的多选列表，不在这里铺满候选按钮</small>
+          </div>
+          <span class="link">选择</span>
+        </div>
+        <div class="choice">
+          <span class="radio"></span>
+          <div>
+            <strong>作为全局 SIP 要求</strong>
+            <small>保留在 SIP 中，但不关联单个气泡</small>
+          </div>
+        </div>
+        <div class="choice">
+          <span class="radio"></span>
+          <div>
+            <strong>排除此要求</strong>
+            <small>确认它不是本次检验范围的一部分</small>
+          </div>
+        </div>
+      </div>
+      <div class="action-row">
+        <button class="disabled-action">请先选择处理方式</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="state-card">
+    <div class="state-head">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="state-number">2</span>
+        <strong>已选择，待提交</strong>
+      </div>
+      <span class="status ready">可确认</span>
+    </div>
+    <div class="state-body">
+      <p class="requirement-title">未注公差按 GB/T 1804-m 级执行</p>
+      <div class="choice-list">
+        <div class="choice selected">
+          <span class="radio"></span>
+          <div>
+            <strong>应用到系统建议的检验项</strong>
+            <small>已选择 121 个无显式公差的尺寸项</small>
+          </div>
+          <span class="link">检查范围</span>
+        </div>
+      </div>
+      <div class="summary-box">
+        <strong>确认后会发生什么</strong>
+        <span>这条规则将关联到 121 个检验项；对应 SIP 建议会自动预填。不会立即冻结、编号或生成气泡。</span>
+      </div>
+      <div class="action-row">
+        <button class="primary">确认并处理下一条</button>
+        <button class="secondary">取消</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="state-card">
+    <div class="state-head">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="state-number">3</span>
+        <strong>终态</strong>
+      </div>
+      <span class="status done">已确认</span>
+    </div>
+    <div class="state-body">
+      <p class="requirement-title">未注公差按 GB/T 1804-m 级执行</p>
+      <div class="confirmed-row">
+        <div>
+          <strong>已应用到 121 个检验项</strong>
+          <span>GB/T 1804-m · 规则来源：图纸第 1 页</span>
+        </div>
+        <span class="status done">完成</span>
+      </div>
+      <div class="action-row">
+        <button class="secondary">查看关联项</button>
+        <button class="secondary">修改</button>
+      </div>
+      <div class="next-step">
+        <b>下一步：检验项审核</b>
+        <span>自动定位到受影响的检验项，检查预填的 SIP 信息；全部技术要求完成后，本区默认收起为“5 条 · 已确认 5”。</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="section">
+  <h3>你更倾向哪种落地方式？</h3>
+  <div class="decision-options options">
+    <div class="option" data-choice="inline-sequential" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>内联逐条确认 <span class="recommendation">推荐</span></h3>
+        <p>就在技术要求区完成选择、确认和终态收敛；最符合当前工作台结构。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="compact-final" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>终态更极简</h3>
+        <p>确认后只保留一行“已确认 · 121 项”，详情通过查看按钮展开。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="side-drawer" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>侧边抽屉处理</h3>
+        <p>主区只显示摘要，所有范围选择放进抽屉；更干净，但操作路径更长。</p>
+      </div>
+    </div>
+  </div>
+</div>

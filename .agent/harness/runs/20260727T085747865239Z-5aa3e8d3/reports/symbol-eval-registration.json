@@ -1,0 +1,11 @@
+{
+  "artifact_refs": [
+    "artifacts/visual-symbol-eval.json",
+    "artifacts/visual-symbol-annotation-verdict.json"
+  ],
+  "completed_at": "2026-07-27T08:57:47.889119Z",
+  "run_id": "20260727T085747865239Z-5aa3e8d3",
+  "schema_version": "symbol-eval-registration/1",
+  "selector": "phase://live/symbol-eval-registration",
+  "started_at": "2026-07-27T08:57:47.866839Z"
+}

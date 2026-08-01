@@ -26,6 +26,30 @@
 - Independent review: `accept with concerns`；无 blocking issue，concern 仅为不得将 4 个既有 semantic failures 报告为 full backend GREEN
 - Next verification: 另起 bounded source-disposition task 判定 4 个 residual 是 stale expectation 还是 behavior regression；不在本任务顺手修改
 
+## BUG-20260801-dimension-export-type-blank
+
+- Status: 阻塞
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: v3 `机械图纸尺寸质量检测表` 的 `类型` 列、`ReviewedResult.items -> ExportService._excel_rows()` 投影
+- Symptom: 新生成的 v3 Excel 已显示编号、页码、基本尺寸和公差，但所有可见明细行的 `类型` 列为空
+- Previously correct behavior: `类型` 应按 reviewed item 的 `item_type/coarse_type` 显示固定中文 label，例如线性、直径、半径、粗糙度
+- Reproduction: 用户提供的正式 v3 导出截图中，表头和尺寸/公差列已升级，编号 26、31、34、35、36、37 等行的 C 列视觉为空；本机实际下载文件 `/home/reggie/下载/source-sip (5).xlsx` 与 export artifact SHA-256 均为 `44f9b46766509645c1d5da56e928dd10f7f474ea210c2467bfebf40cf8837347`，openpyxl 读取这些行分别得到 `粗糙度/线性/直径` 等非空值
+- Root cause: WPS 对 `C6:C517` 类型条件格式只呈现白色字体、没有呈现对应 solid background fill，导致白字落在白底上；`ReviewedResult.items` 保有 `item_type/coarse_type`，`ExportService._excel_rows()` 和实际 workbook C 列均已正确写值，因此不是 recognition 或 field mapping 丢失
+- Fix: 待用户选择是否实施 production WPS compatibility revision；最小方向是在 renderer 写入类型值时同时固化初始 fill/font，并保留 conditional formatting 支持后续编辑
+- Regression check: 待锁定 WPS-compatible static style、focused workbook test 与 artifact identity versioning
+- Runtime proof: 同一 artifact 用 LibreOffice 24.2 headless 转 PDF 后，第一页正确显示线性、粗糙度、直径及对应颜色；WPS 当前 GUI 截图仍视觉为空
+- Change: 待实现
+- Selected lane: `Standard`
+- Selected plan: `docs/superpowers/plans/2026-08-01-wps-type-cell-compatibility.md`；parent plan `docs/superpowers/plans/2026-07-31-leader-dimension-inspection-excel.md` 保持 completed
+- Selection evidence: 稳定 v3 row contract 不变；当前是既有类型字段未进入正式 Excel的实现偏差，需要 focused export integration 与同一 runtime artifact proof
+- Validation action: `blocked`；正式兼容修复需要改变受控 renderer identity，等待用户选择 production revision、workaround 或先做非生产对比稿
+- Problem boundary: 只修 immutable reviewed item 到 v3 `type_label` 的投影；不修改 recognition pipeline、review command、schema、template layout 或历史 artifact
+- Single owner: `backend/app/exports/excel.py` 的 registered detail-cell rendering；artifact rematerialization identity 仍由 `ExportService._logical_task_key()` 和 manifest `renderer_version` 约束
+- Writer ownership and order: 父 agent 唯一 writer；现有子任务均已结束，无并发 file ownership
+- Next verification: 用户选择 production revision 后先写 WPS compatibility RED，再最小实现并用同一项目生成新的 immutable artifact；不覆盖历史 v3 文件
+
 ## BUG-20260801-source-editor-wrong-pane
 
 - Status: 阻塞

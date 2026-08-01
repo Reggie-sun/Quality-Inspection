@@ -1,0 +1,84 @@
+<h2>方案 B · 最终设计确认</h2>
+<p class="subtitle">把两块 SIP 信息收敛为右侧详情中的一个组件；左侧浮层只保留正式文件与公司处理记录。</p>
+
+<div class="mockup">
+  <div class="mockup-header">工作台结构预览</div>
+  <div class="mockup-body" style="background:#eef3f8;padding:14px">
+    <div style="display:grid;grid-template-columns:1.45fr 1fr;gap:10px;min-height:390px">
+      <section style="border:1px solid #aebdca;border-radius:8px;background:#fff;padding:9px">
+        <div style="display:flex;gap:5px;align-items:center;margin-bottom:8px">
+          <button class="mock-button" style="font-size:10px">适合页面</button>
+          <button class="mock-button" style="font-size:10px">展开导出与处理信息</button>
+        </div>
+        <div style="height:245px;border:1px dashed #9aa9b6;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#667788">工程图纸</div>
+        <div style="margin-top:8px;padding:7px;border:1px solid #cbd8e5;background:#f7f9fb;font-size:10px">
+          左侧辅助浮层：正式文件 + 公司处理记录
+        </div>
+      </section>
+
+      <section style="border:1px solid #aebdca;border-radius:8px;background:#fff;padding:9px">
+        <div style="font-size:11px;font-weight:700">检验项列表</div>
+        <div style="display:grid;grid-template-columns:.72fr 1.28fr;gap:7px;margin-top:7px">
+          <div>
+            <div style="height:42px;background:#eef4ff;border:1px solid #b7cdf5;border-radius:4px;margin-bottom:5px;padding:5px;font-size:9px">440 · 已选中</div>
+            <div style="height:42px;background:#f4f6f8;border-radius:4px;margin-bottom:5px"></div>
+            <div style="height:42px;background:#f4f6f8;border-radius:4px"></div>
+          </div>
+          <div>
+            <div style="padding:7px;border:1px solid #cbd8e5;border-radius:5px;background:#fff;font-size:10px">
+              <strong>检验项 440 · 线性尺寸</strong>
+              <div style="height:62px;background:#f5f7f9;border-radius:4px;margin-top:6px;display:flex;align-items:center;justify-content:center;color:#667788">图纸原文 / 解析结果 / 操作</div>
+            </div>
+            <article style="margin-top:7px;border:2px solid #2563eb;border-radius:6px;background:#eff6ff;padding:7px">
+              <strong style="font-size:11px">SIP 信息</strong>
+              <details open style="margin-top:6px;background:#fff;border:1px solid #cbd8e5;border-radius:4px;padding:6px">
+                <summary style="font-size:10px;font-weight:700">项目基本信息</summary>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:5px">
+                  <span style="padding:4px;background:#f7f9fb;font-size:9px">产品名称 —</span>
+                  <span style="padding:4px;background:#f7f9fb;font-size:9px">图号 —</span>
+                  <span style="padding:4px;background:#f7f9fb;font-size:9px">版本 —</span>
+                  <span style="padding:4px;background:#f7f9fb;font-size:9px">材质 —</span>
+                </div>
+                <div style="margin-top:5px;color:#2563eb;font-size:9px">编辑项目 SIP 信息</div>
+              </details>
+              <fieldset style="margin-top:6px;border:1px solid #cbd8e5;border-radius:4px;background:#fff;padding:6px">
+                <legend style="font-size:10px;font-weight:700">当前检验项</legend>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+                  <span style="padding:4px;background:#f7f9fb;font-size:9px">检验项目</span>
+                  <span style="padding:4px;background:#f7f9fb;font-size:9px">检验标准</span>
+                  <span style="padding:4px;background:#f7f9fb;font-size:9px">检验方法</span>
+                  <span style="padding:4px;background:#f7f9fb;font-size:9px">关键尺寸</span>
+                </div>
+                <button class="mock-button" style="margin-top:6px;font-size:9px">确认当前检验项 SIP</button>
+              </fieldset>
+            </article>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Behavior Contract</h3>
+  <ul>
+    <li>只移动呈现位置；`set_sip_metadata` 与 `set_sip_detail_fields` 继续经过唯一的 <code>submitCommand()</code>。</li>
+    <li>“项目基本信息”和“当前检验项”保留明确小标题，避免把项目级字段误认为单项字段。</li>
+    <li>切换检验项时，当前项 SIP 内容同步切换；未保存草稿继续触发现有 dirty guard。</li>
+    <li>保存失败保留草稿；选中待判定来源时隐藏“当前检验项”，项目信息仍可见。</li>
+    <li>正式文件、公司记录、freeze/export 语义和后端 API 全部不变。</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>Verification</h3>
+  <p>锁定组件测试中的合并位置、切换/取消/失败重试/收起保持，再运行 frontend focused tests、full suite、production build 和 Chrome smoke。</p>
+</div>
+
+<div class="option" data-choice="approve" onclick="toggleSelect(this)">
+  <div class="letter">✓</div>
+  <div class="content">
+    <h3>批准这个最终设计</h3>
+    <p>批准后写入 spec、做自审并提交；随后给出 implementation plan 供你复核。</p>
+  </div>
+</div>

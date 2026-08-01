@@ -1,0 +1,798 @@
+{
+  "annotation_verdict_sha256": "0394193a73b436a218e895350d1c0c0a52c267cf6d45fee5a491a30b8a483901",
+  "automatic_result_id": "3ad9b559-2957-448d-882c-14c3b8091d53",
+  "evaluation": {
+    "counts": {
+      "candidate_label_count": 49,
+      "candidate_match_count": 0,
+      "excluded_candidate_count": 272,
+      "negative_false_positive_count": 0,
+      "negative_label_count": 16,
+      "non_inspection_match_count": 0,
+      "participating_candidate_count": 0,
+      "positive_label_count": 56,
+      "reference_match_count": 0
+    },
+    "excluded_candidate_ids": [
+      "026c949fea2dd3392f9d01ec",
+      "02f8299aa7e4f82d6e282012",
+      "0322b21dd35ca608ed0245af",
+      "03331ba8f733c81a716bec96",
+      "04d272fb241f9acf234d9376",
+      "0ab66904319b40f705c68999",
+      "0aed612eb95076e9e709e3f6",
+      "0b37373fe8881a8c19237e6e",
+      "0bc924a46f49b4026c187993",
+      "0c68c2d6dad5aba7a92ab0b3",
+      "0d2b57e0def1092df5ca93d8",
+      "0df9b88122ce82b6d2d38546",
+      "0e65582147ae3c07d3e243e1",
+      "0e8c70fb72fe932753965f8f",
+      "0ffd1f714ac924a8cadbb491",
+      "12f7f97382e812349fa13c1c",
+      "1419d0218315ac598cb3e83a",
+      "167b26675e0ff47a50ec82d5",
+      "169fbc5cf62f3ab7e29b4fda",
+      "170e3f0d567a7bcb3c2e0710",
+      "188681f7d5b731a68fcb3478",
+      "18f5b65d9abebe298595c19f",
+      "1a8a5793aa87f99f02c6b42c",
+      "1ab15a0dbbce7f6deff664fb",
+      "1c245903796c79b77200d2f7",
+      "1df61cbd253ff1886b371b96",
+      "1e5b96b5728664338038631d",
+      "20dd56b08de0e472f1ccecf5",
+      "2140defcf8ad64688997b9ff",
+      "2146144a0d6a7656a29b18ac",
+      "2180bb9446346fee6b8fa193",
+      "2315db0ed8b2bc788c32073b",
+      "245536da6a57f0b4e170a810",
+      "27fcd58c26a3a80ec4ea70c9",
+      "29ab2a1f38deb2a612fcb938",
+      "2a3c1c32b5a6543e2b890406",
+      "2aadf9cfec172c84c9cbd25b",
+      "2c0f8c11ad955ded29c2c127",
+      "2ece83285f68ee7d4292449f",
+      "2ee80308a6d3e372c276b59b",
+      "2f00a7af1cdc6e47356f585c",
+      "2f6c3f95cf5d0be6f2ebd8fb",
+      "325f3df453005b67112be62d",
+      "32c75b8f736e88e6d11fb465",
+      "3352e71f08e627021a5ab185",
+      "34175a56b5d25a69eb644a7d",
+      "34294c68289857a246f2fad0",
+      "34f6bd6524d23f1b847eb76a",
+      "353634835beb28d7eff19fb1",
+      "35c8b1082099b12074e4cf85",
+      "35d3e0d426e05123fd85ad4d",
+      "36bf1b215abb2263a773728c",
+      "3748c3d11b12416908369514",
+      "37f7dd1ba6ce7d9bc82605c8",
+      "37fd97b1ba8b8ad14ea6dcc8",
+      "38f2f6743e4e3e4c12af8a80",
+      "38fae5648122872c31def14e",
+      "391da914bb65d9705f78fa02",
+      "39733350c24ed0ff4cb29dc1",
+      "39b09d38f4656dad7ba96ad4",
+      "3a01f6bd2ad673ee4e235bdc",
+      "3acf17064f7a5516b6b5c693",
+      "3af08e629794dd74ed7190e5",
+      "3c166d2a4b7f4d73c3313972",
+      "3c9dd89663d96b4968f74843",
+      "3edefdf2b675d835bc1a01a5",
+      "3f9cc2047f1e816332b1d559",
+      "42c27809ed1694286eacd9b2",
+      "43130c0fc021973abf35527c",
+      "44074c2ab693ed549ce4152f",
+      "44ded3b5ed7b828f32591ee7",
+      "465d6c365f7880f3e1db26a8",
+      "469fd1306237a5990e783577",
+      "476106c300ad0ac25acdc7d5",
+      "485eda2caaebe41f2977f216",
+      "48797265982bcc432e7fe755",
+      "49227d6e6d891e2745bf22bc",
+      "4c80c09824fbf54323b5324a",
+      "4cfa89789a15ec12ebdd63f3",
+      "4eeeba21511e3f1fe106cb10",
+      "4f2f89cd296ff3e944ff63ff",
+      "501c8468706d57f16d6f150d",
+      "51255ec38bbfaa830f88efdd",
+      "518e5d66fe67b75c1a9a50fc",
+      "51c52410a0b3e493634bb119",
+      "537cf4a786222f77a753f9bb",
+      "546c9e6ab02c4be057fb6635",
+      "54912cea871f48b50696396b",
+      "54b232a531eeb2ba7e5134cf",
+      "57e0c46ef87ba01fce5f256b",
+      "580213a660d82a994565acbe",
+      "58e6e5e3a763dae36b816841",
+      "5992cee301f7e27aaf47ef21",
+      "5b102a3c6d7a50795d4b7ddb",
+      "5c6c1e1d63a44eb00bfbdcab",
+      "5d2d8b7c734a7af3c7aa8ff6",
+      "5e322f6d05efcc4be5a28207",
+      "5e7d43f84dd31cdcf5b5836a",
+      "5f7cfbe2f87b0221e2ae1d8f",
+      "615fb7f8260028773c3c2f05",
+      "62c872b4b82c1ed05efcd841",
+      "62ce02b93cbb70e7bceec4f8",
+      "64a7fa26c09d8eda92d3f172",
+      "654dfc06584e62db146f789c",
+      "6a978e89754d0f058f31e03d",
+      "6b620aae351ff7186b32829b",
+      "6bda7dcf7a24baced9d35e25",
+      "6e3216c29147de1eea02c170",
+      "6f2904b3ee5bf7be97fb5d2d",
+      "6ff724122b4fe637155c7a86",
+      "70aa977eeffbbb69e3e8efbb",
+      "70b751f7b6249f61496f5de7",
+      "70f181a5e895652cff56b2c8",
+      "73a519d6aeb8230669a89f2e",
+      "73d21cc19ba1b793f61d42f7",
+      "74c21459b5ce24988aad17cf",
+      "759b336c336e2215789ad734",
+      "75d833c29e9f39c2e6cc90fc",
+      "761461da187ed1f04e9c3a02",
+      "76d73c3c04c69f401526ab39",
+      "770d3657124b282c71a99078",
+      "78228c127509a0bb76ff44a0",
+      "797831f6195b2e3800657803",
+      "7a25d00e286a20913090843e",
+      "7a71a80d7965f7b742373995",
+      "7b260aae1a981cc583ee3459",
+      "7b40acddb139747ccb3138cc",
+      "7ba05711f5ac9557ad36ff77",
+      "7bfcba887afdd35afddd0665",
+      "7e401a505a2d2ed6a23ddf9f",
+      "7ed13e2f603adfe57fb54084",
+      "7f778405d816eabff5c417ad",
+      "831dfac816b930f718520660",
+      "857fe4971e36d66a810317c8",
+      "85bd4bafaa09673ada991e13",
+      "86161f0916df462d90c48a51",
+      "888248cbe21e00cfef765571",
+      "8979b5127394761923bebb4e",
+      "8a5f79a16db973980f44bb5d",
+      "8be616354d4ecede9b4f5ba7",
+      "8cc5430d606c00df361ddc42",
+      "8d398435d9db7bfe532b7393",
+      "8dab6885ec23cddbad9b163b",
+      "8db506bd3decdb768f114408",
+      "8e2efc673b0c52aaa5679cc4",
+      "8e55bccc96cde757a0222db9",
+      "8eceaa638208437468849d6f",
+      "8f7d085fa737cd663ec570e4",
+      "9039d3fe4127b194f66c69dc",
+      "90985235b3a0ef3979a28c5d",
+      "90c6f104ab920e45337f703f",
+      "9111dccad6fceaa30cfa9eea",
+      "9112a9481bd788191d25f3c3",
+      "93828ebd4519f4a87475ea4b",
+      "954f3a9ee447122e0e11a1c9",
+      "956c8ed472c445e79de5fec8",
+      "9729698aca8e8004526e963c",
+      "9839da5f68d641e8d0100ce1",
+      "9923cea6af3ff27c388ef153",
+      "9b2421c1286a474c324a9e17",
+      "9b71819f48fe57d110c73c7c",
+      "9d08c602802e030c2a309b2e",
+      "9dba2e2bd2407517a7b16f27",
+      "9f7ccf241620f091bea321d8",
+      "a04322d5208482f056655256",
+      "a0a87fd1fa414861b5ae9485",
+      "a0c1ca3426d47e5860b66226",
+      "a29f72d73541c16c01a95940",
+      "a2e5aabc143a924faff43774",
+      "a33623f0f6104c4cac805956",
+      "a372e2983b10411432756140",
+      "a56d840bf33316288bb140c7",
+      "a5abd347290d7d29e4dd0b05",
+      "a611aa7fcc70c200db9bc441",
+      "a7ddfe8204192ada1a3bcf2c",
+      "a9a75c2eb90727b5d8e751b2",
+      "a9a97a1a241687b9aaa095cc",
+      "a9f729d19e2cdefcc763c5a5",
+      "ac0e7729b6546103af75d14c",
+      "ac0fed7fa861d4851f5a997f",
+      "ac4cc0997425e1a72d588c67",
+      "ac9b11c55db9b2f72dfe7708",
+      "af4a4e6fbfb4a90fb431e10e",
+      "aff601b984c7930affdecc6d",
+      "b002bb67dd994753bbf13df9",
+      "b1ee1e5c7a918626a4d80aaf",
+      "b21aaa6c2e25bd76b20db8fb",
+      "b22944a6940e9eafe2992761",
+      "b4e90fd0b65d511dbab7cd73",
+      "b53b8abc49a963d013ecf125",
+      "b55e2c6004b4be9daf187169",
+      "b9251e1d2fe2ed3804fa0cec",
+      "b92b92245bd72c874da089d2",
+      "b932ff962389f35864b29946",
+      "ba1777b21917dcba7ebb5435",
+      "bc1a636bab44196909fb4a6d",
+      "bc673d3285cbd41520ee3881",
+      "bd0981b36ccbd268cbb3b6ce",
+      "bddef248f9a58391f160f1f1",
+      "c00d250c72ffe451099b508a",
+      "c1002bbce377eadbca4c410b",
+      "c1d84d577f1aeeeb6ea198e5",
+      "c28fc47b88169aebaaf6b475",
+      "c3c565a1fba021f5f6f507da",
+      "c3d35c01e39c802a30e8ed25",
+      "c409feb03a0aee4797ef3269",
+      "c471f10d1316eec646d83353",
+      "c4781714777b6b1815df9ce2",
+      "c4fd291df9d9aa9ddaa2fadc",
+      "c54acf7e0f9f460d59e818dc",
+      "c5956155fe7c923873e5cacd",
+      "c5a9215138cb3dc4919d5ff9",
+      "c7f0c4b971bbc6d2201e80a6",
+      "c872de9b600d5eb564f8f51d",
+      "c916e3368cbb2fa7bbd67117",
+      "ca887549f76c18b606a7f8f3",
+      "cc054f03194383dbad1e8aff",
+      "cc4c6900319d938b3c36e663",
+      "ce55d90718b2607998374291",
+      "ce9a63ee9a0de760da5eabcc",
+      "d03a2bf52d2b4ad31c3c5c48",
+      "d1eedfc642ef7949e2f66a25",
+      "d39c658424a7832b8f51bad0",
+      "d537b8e86f262eaea9b6e460",
+      "d5431917c9ee208e2564589f",
+      "d57edf5ca70886fee5703ec0",
+      "d617bd49cc91ed59f045bd76",
+      "d630490ff2f89ff922a21bc7",
+      "d66d6f994dbd68896ceb4ae3",
+      "d6d43d4bcc4580894130efd2",
+      "d8563037449c0f6b974800ae",
+      "da252936d9add58bcb143d0d",
+      "dbb553432dc88e2843b35552",
+      "def75278e4a4b7854ac3317e",
+      "e0079a7c901e5f009d5d15d5",
+      "e00f65de1077790b945560cb",
+      "e1034c3dbb74d77736975cf5",
+      "e29f7b931472926f868059da",
+      "e2ffd9ef7fd2df3dd78473fb",
+      "e3b3648e9ec04ea556ee70a0",
+      "e4dc58584f1916cb960e203b",
+      "e72eba0917a4de5280fb5c16",
+      "e7d4e533e954bf976ec0fea9",
+      "e7fcc8e94b7979c83b83152b",
+      "e8f2cc99fa8b5f6216982ceb",
+      "e94436d508cf692b21e54193",
+      "ea20b6f71f887b9f738238ea",
+      "ea3b3fc6d59966d1612b6e63",
+      "ebeea6dc7eed2e39b493d92f",
+      "ebfba091887a6afb2532b47d",
+      "ec0d7d3bf43f78cb4bc647c6",
+      "ec4f2f689b3001b8a3d6d1ea",
+      "ecf24e3f483b295cd71150cc",
+      "ee3f42b1022b923d93c80173",
+      "ee7d26f790a8a8c9b21ffe97",
+      "ee8bbfa3e0230f13bcc15db5",
+      "eeeca3dec5a92b1fa2a08504",
+      "ef29ff3fedb77c8aec90201a",
+      "ef389879b064d2eae3813747",
+      "ef7a81e2827d2c0d94b776c0",
+      "f0593541732545a0c4225085",
+      "f0d46a9b44c2087973fa398d",
+      "f135cc244281434b9b3e8f68",
+      "f159ce750ab6b0e096bed382",
+      "f3fb120549fbf532232c4c97",
+      "f48865cbe6020f00f03c83bd",
+      "f6189e4a25a795830fbc9bbf",
+      "f6491e7674afbd7b608446fb",
+      "fbbcde0d70f38e4ad9c8c4d8",
+      "fc2cf03dd9db87f6248444e2",
+      "fdb169caaccc5904b0510817",
+      "fdc50bf9806bba6b90c8fa20"
+    ],
+    "failures": [
+      {
+        "label_id": "P1-P01",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P02",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P06",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P07",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P08",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P09",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P10",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P11",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P12",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P13",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P15",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P16",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P17",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P18",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P19",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P20",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P21",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P22",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P23",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P24",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P25",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P26",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P02",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P03",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P04",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P05",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P06",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P07",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P09",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P11",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P12",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P13",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P14",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P16",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P17",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P18",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P19",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P20",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P21",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P22",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P23",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P24",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P25",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P26",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P27",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P28",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P29",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P30",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P2-P31",
+        "reason": "positive_label_degree_not_one"
+      },
+      {
+        "label_id": "P1-P03",
+        "reason": "semantic_label_match_not_one"
+      },
+      {
+        "label_id": "P1-P04",
+        "reason": "semantic_label_match_not_one"
+      },
+      {
+        "label_id": "P1-P05",
+        "reason": "semantic_label_match_not_one"
+      },
+      {
+        "label_id": "P1-P14",
+        "reason": "semantic_label_match_not_one"
+      },
+      {
+        "label_id": "P2-P08",
+        "reason": "semantic_label_match_not_one"
+      },
+      {
+        "label_id": "P2-P10",
+        "reason": "semantic_label_match_not_one"
+      },
+      {
+        "label_id": "P2-P15",
+        "reason": "semantic_label_match_not_one"
+      }
+    ],
+    "label_matches": [],
+    "negative_family_counts": {
+      "datum_like_letter_or_table_cell": 1,
+      "dimension_leader_or_section_line": 2,
+      "hatch_center_or_cross": 1,
+      "isometric_hole_slot_or_edge": 1,
+      "ordinary_text_number_material_or_requirement": 1,
+      "part_or_hole_geometry": 1,
+      "revision_table_or_invalid_marker": 6,
+      "view_or_section_label": 2,
+      "watermark_logo_title_or_signoff": 1
+    },
+    "overlap_threshold": 0.5,
+    "passed": false,
+    "positive_family_counts": {
+      "counterbore": 5,
+      "datum_reference": 1,
+      "depth": 24,
+      "diameter": 15,
+      "gdt_flatness": 2,
+      "gdt_parallelism": 2,
+      "gdt_perpendicularity": 3,
+      "revision_marker": 6,
+      "surface_roughness": 10
+    },
+    "schema_version": "symbol-eval-report/1"
+  },
+  "failures": [
+    {
+      "label_id": "P1-P01",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P02",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P06",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P07",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P08",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P09",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P10",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P11",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P12",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P13",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P15",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P16",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P17",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P18",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P19",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P20",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P21",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P22",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P23",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P24",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P25",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P26",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P02",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P03",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P04",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P05",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P06",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P07",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P09",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P11",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P12",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P13",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P14",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P16",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P17",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P18",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P19",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P20",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P21",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P22",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P23",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P24",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P25",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P26",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P27",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P28",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P29",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P30",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P2-P31",
+      "reason": "positive_label_degree_not_one"
+    },
+    {
+      "label_id": "P1-P03",
+      "reason": "semantic_label_match_not_one"
+    },
+    {
+      "label_id": "P1-P04",
+      "reason": "semantic_label_match_not_one"
+    },
+    {
+      "label_id": "P1-P05",
+      "reason": "semantic_label_match_not_one"
+    },
+    {
+      "label_id": "P1-P14",
+      "reason": "semantic_label_match_not_one"
+    },
+    {
+      "label_id": "P2-P08",
+      "reason": "semantic_label_match_not_one"
+    },
+    {
+      "label_id": "P2-P10",
+      "reason": "semantic_label_match_not_one"
+    },
+    {
+      "label_id": "P2-P15",
+      "reason": "semantic_label_match_not_one"
+    }
+  ],
+  "manifest_sha256": "0de369a4dee5c119197d973efa0368458f6f27651ef82fd5b9951a6d61cb6448",
+  "order": 1,
+  "passed": false,
+  "project_id": "70deb7f5-db05-4b28-a94a-397e42c95eff",
+  "run_id": "20260728T081859991061Z-f8daa778",
+  "schema_version": "symbol-recognition-live-report/1",
+  "selector": "phase://live/symbol-recognition?input_set=current-four",
+  "source_command_count": 0,
+  "source_sha256": "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec",
+  "total_vision_calls_by_page": [
+    {
+      "count": 16,
+      "page_index": 0
+    },
+    {
+      "count": 16,
+      "page_index": 1
+    }
+  ],
+  "visual_calls_by_page": [
+    {
+      "count": 13,
+      "page_index": 0
+    },
+    {
+      "count": 16,
+      "page_index": 1
+    }
+  ]
+}
