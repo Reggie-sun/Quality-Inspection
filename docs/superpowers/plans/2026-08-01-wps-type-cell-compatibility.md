@@ -164,13 +164,13 @@ In both `_existing_export()` failed lookup and `_claim_execution()` processing l
 `APPROVED_TEMPLATE_VERSION`、`APPROVED_MAPPING_VERSION` and `RENDERER_VERSION` in addition to
 reviewed result/status。Rerun the concurrency RED、full atomicity file and broader export gate。
 
-- [ ] **Step 6: Verify the same live project and close the bug record**
+- [x] **Step 6: Verify the same live project and close the bug record**
 
 通过当前 frontend 对同一 project 再次执行“生成正式文件”，断言 response 的
 `renderer_version` 为新 identity、export ID 与历史 ID 不同；下载 actual workbook，检查 C
 列值和 base style，并用 WPS 打开确认视觉。更新同一 bug-memory entry，不创建重复记录。
 
-- [ ] **Step 7: Review, commit and preserve unrelated dirt**
+- [x] **Step 7: Review, commit and preserve unrelated dirt**
 
 运行 focused independent review，检查 stable contract、artifact immutability、测试真实 failure
 surface 和 allowed-path diff。然后只 stage 本 Task 文件并提交：
@@ -191,3 +191,13 @@ git commit -m "fix(exports): materialize WPS type styles"
 
 `.agent/bug-memory.md` 已含其他未提交记录时不得整文件 stage；只在能够隔离本 entry 时单独
 提交，否则保留并在 handoff 报告 overlap。
+
+## Completion
+
+- Implementation commit: `5e5096d fix(exports): materialize WPS type styles`，已进入 `main`。
+- Independent review: `accept with concerns`；唯一 concern 为 live WPS/frontend proof，现已关闭。
+- Live export: `2cb55361-4768-4bec-aaaf-51c873b6521b`，template/mapping `3/3`，renderer
+  `balloon-pdf/1+xlsx-type-style/1`。
+- Workbook proof: C 列 label 非空且具有 solid base fill、白色粗体；conditional formatting 保留。
+- WPS proof: 新文件中 `线性`、`直径`、`螺纹` 等类型和值对应颜色均可见。
+- Immutability proof: 历史 export `57a46870-5c5e-4e30-8603-d72a6a3a8bb1` 仍返回 HTTP `200`。

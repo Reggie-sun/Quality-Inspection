@@ -3,7 +3,7 @@
 ## Status
 
 - Date: `2026-08-01`
-- Status: `approved`
+- Status: `completed`
 - Selected lane: `Heavy`
 - Selected plan:
   `docs/superpowers/plans/2026-08-01-wps-type-cell-compatibility.md`
@@ -12,6 +12,10 @@
 - Validation action: `replan`；只 supersede
   `2026-07-31-leader-dimension-inspection-excel-design.md` 中“本 change 保持
   `RENDERER_VERSION` 不变”的一次性实施约束。
+- Completion evidence: `main` 包含 `5e5096d`；同一 project 通过 frontend 生成 export
+  `2cb55361-4768-4bec-aaaf-51c873b6521b`，identity 为 template/mapping `3/3`、renderer
+  `balloon-pdf/1+xlsx-type-style/1`。实际 workbook C 列具有静态 fill/font，WPS 已显示
+  `线性/直径/螺纹` 等 label 和对应颜色；历史 export 仍可下载。
 
 ## Context
 
