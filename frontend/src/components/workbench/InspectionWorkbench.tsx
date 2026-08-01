@@ -278,7 +278,8 @@ export function InspectionWorkbench({
           coordinates: entry.coordinates,
           pageIndex: source?.pageIndex,
         };
-      });
+      })
+      .filter((source) => /\d/.test(source.rawText));
   }, [sources, workingCopy?.coverage.entries]);
 
   const finalized = projectState === "reviewed";
@@ -470,6 +471,9 @@ export function InspectionWorkbench({
     return true;
   };
   const selectSource = (sourceId: string): boolean => {
+    if (!pendingSources.some((source) => source.sourceId === sourceId)) {
+      return false;
+    }
     if (reviewDraftDirty && sourceId !== selectedSourceId) {
       setSelectionBlocked(true);
       return false;

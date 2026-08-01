@@ -92,3 +92,30 @@ micromamba run -n qi-p0 npm --prefix frontend run build
 2. 独立 reviewer 检查 raw/working separation、system-default provenance、public command
    preservation、frontend old-path removal 和 runtime proof。
 3. `git diff --check`，只 stage allowed paths，提交本 amendment。
+
+## 2026-08-01 Numeric Source Visibility Amendment
+
+### Goal And Boundary
+
+- Selected lane: `Standard`
+- Problem boundary: 黄色“待判来源”列表混入纯文字 technical requirement 来源，造成重复且低价值的人工审核噪声。
+- Single Owner: `InspectionWorkbench` 的 `pendingSources` 可见列表投影。
+- Old path to replace: 所有 unresolved source-only coverage 都直接进入黄色列表。
+- New path: 黄色列表只展示 `rawText` 含 ASCII 数字的 unresolved source-only coverage。
+- Unchanged contract: backend coverage、`manual_review_count`、technical requirement 审核、freeze、编号、气泡、SIP、public command/API 均保持不变；纯文字来源不删除，只从该列表隐藏。
+- Rollback: revert 本 amendment 的前端投影过滤；第一项验证为 focused `InspectionWorkbench` regression test。
+
+### Allowed Paths
+
+- `.agent/bug-memory.md`
+- `docs/superpowers/plans/2026-07-31-automatic-source-disposition.md`
+- `frontend/src/components/workbench/InspectionWorkbench.tsx`
+- `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+
+### Verification
+
+1. RED/GREEN regression：含数字来源可见，纯文字来源不在黄色列表，纯文字 technical requirement 仍在其 Owner 面板可见。
+2. 运行 `InspectionWorkbench`、`InspectionItemTable`、`RecognitionSummary` focused suites。
+3. 运行 frontend build。
+4. 使用 Chrome MCP 做当前可达 runtime smoke；若截图项目不属于当前 runtime，明确记录 runtime identity blocker，不以其他项目冒充。
+5. 独立 reviewer 检查可见性过滤没有改变 backend truth 或 freeze contract。

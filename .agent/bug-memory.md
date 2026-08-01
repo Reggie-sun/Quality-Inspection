@@ -2,6 +2,27 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-numeric-source-visibility
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `InspectionWorkbench` 的 source-only coverage 可见列表投影、`InspectionItemTable` 黄色“待判来源”行与 `TechnicalRequirementPanel`
+- Symptom: 新图纸的黄色列表混入“标记 / 其余 / A / 贯穿 / E”等纯文字来源，挤占紧凑列表；用户只需要保留 `1518 / 18 29 18 / 4x / 125 X...` 等含数字来源
+- Previously correct behavior: 黄色“待判来源”队列只承载仍值得逐项检查的数字型工程标注；纯文字 technical requirement 仍应在“技术要求”Owner 面板处理，不重复出现在黄色列表
+- Root cause: `InspectionWorkbench.pendingSources` 将所有 `requires_confirmation=true && candidate_id=null` 的 coverage 原样投影为黄色行，没有区分含数字工程标注与已由 `TechnicalRequirementPanel` 承接的纯文字 requirement source
+- Fix: 在唯一前端投影 Owner 取得并 trim `rawText` 后，以 `/\d/` 仅保留含 ASCII 数字的黄色来源；`selectSource` 同时拒绝不可见 source，避免 PDF overlay 产生 ghost selection；不修改 backend coverage、`manual_review_count`、technical requirement decision、freeze、编号、气泡、SIP 或 public command/API
+- Regression check: TDD 用 `125 X 2` 与 `贯穿` 复现旧实现 RED，并证明纯文字 PDF overlay 原本会进入 ghost selection；修复后断言数字来源行可见、纯文字来源行不可见且不可选、“技术要求匹配”仍显示“贯穿”；`InspectionWorkbench`、`InspectionItemTable`、`RecognitionSummary` 共 `68/68` 通过，frontend build 通过
+- Runtime proof: Chrome MCP 返回 `Transport closed`，且用户截图项目不属于当前可达 backend/runtime；本次不以其他项目冒充实机证据，待同一 runtime 可达后补验
+- Change: `frontend/src/components/workbench/InspectionWorkbench.tsx` 的单点可见性 filter、对应组件 regression、plan amendment 与本 bug-memory 记录
+- Selected lane: `Standard`
+- Problem boundary: 只收窄黄色来源队列的可见内容；隐藏不等于 disposition 或删除，后台 unresolved truth 与正式流程门禁保持原样
+- Single owner: `frontend/src/components/workbench/InspectionWorkbench.tsx` 的 `pendingSources`
+- Rollback: 回退 `/\d/` filter；第一项验证为“黄色待判来源只展示含数字的原始来源”focused test
+- Writer ownership and order: 父 agent 唯一 writer；无并发 writer
+- Next verification: 当前自动化已关闭；同一截图 runtime 恢复后补 Chrome smoke，或在纯文字重新出现、含数字来源消失时重开
+
 ## BUG-20260731-compact-source-batch-overflow
 
 - Status: 已解决

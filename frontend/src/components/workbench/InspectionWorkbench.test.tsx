@@ -379,7 +379,7 @@ describe("InspectionWorkbench", () => {
           id: "pending-source",
           pageIndex: 0,
           bbox: [60, 70, 150, 84],
-          rawText: "来源待判定",
+          rawText: "来源待判定 12",
         }]}
         balloons={[]}
         items={items}
@@ -472,7 +472,7 @@ describe("InspectionWorkbench", () => {
           id: "pending-source",
           pageIndex: 0,
           bbox: [60, 70, 150, 84],
-          rawText: "来源待判定",
+          rawText: "来源待判定 12",
         }]}
         balloons={[{
           id: "balloon-20",
@@ -1727,7 +1727,7 @@ describe("InspectionWorkbench", () => {
           id: "pending-source",
           pageIndex: 0,
           bbox: [1, 2, 3, 4],
-          rawText: "去除毛刺",
+          rawText: "去除毛刺 2",
         }]}
         balloons={[]}
         items={items}
@@ -1766,7 +1766,7 @@ describe("InspectionWorkbench", () => {
     }), { target: { value: "三针法复核" } });
     expect(saveStatus.textContent).toBe("有未保存修改");
 
-    fireEvent.click(screen.getByRole("row", { name: /去除毛刺/ }));
+    fireEvent.click(screen.getByRole("row", { name: /去除毛刺 2/ }));
     const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
     expect(within(sipRegion).getByText("当前选择的是待判定来源。"))
       .not.toBeNull();
@@ -1798,7 +1798,7 @@ describe("InspectionWorkbench", () => {
     ).toBe("螺纹规");
     expect(saveStatus.textContent).toBe("有未保存修改");
 
-    fireEvent.click(screen.getByRole("row", { name: /去除毛刺/ }));
+    fireEvent.click(screen.getByRole("row", { name: /去除毛刺 2/ }));
     expect(
       (screen.getByRole("textbox", {
         name: "原始标注",
@@ -1891,7 +1891,7 @@ describe("InspectionWorkbench", () => {
           id: "hidden-source-id",
           pageIndex: 0,
           bbox: [60, 70, 150, 84],
-          rawText: "技术要求：去除毛刺",
+          rawText: "技术要求 2：去除毛刺",
         }]}
         balloons={[]}
         items={items}
@@ -1923,7 +1923,7 @@ describe("InspectionWorkbench", () => {
     );
 
     expect(screen.queryByRole("region", { name: "来源待确认" })).toBeNull();
-    const sourceRow = screen.getByRole("row", { name: /技术要求：去除毛刺/ });
+    const sourceRow = screen.getByRole("row", { name: /技术要求 2：去除毛刺/ });
     fireEvent.click(sourceRow);
     expect(screen.getByTestId("source-hidden-source-id").getAttribute("data-selected"))
       .toBe("true");
@@ -1937,7 +1937,7 @@ describe("InspectionWorkbench", () => {
       expect(onSave).toHaveBeenCalledWith({
         type: "promote_source",
         observation_id: "hidden-observation-id",
-        raw_text: "技术要求：去除毛刺",
+        raw_text: "技术要求 2：去除毛刺",
         item_type: "general_requirement",
         scope: "local_feature",
         balloon_required: true,
@@ -1966,13 +1966,13 @@ describe("InspectionWorkbench", () => {
             id: "batch-source-1",
             pageIndex: 0,
             bbox: [10, 20, 30, 40],
-            rawText: "设计",
+            rawText: "设计 1",
           },
           {
             id: "batch-source-2",
             pageIndex: 0,
             bbox: [50, 60, 70, 80],
-            rawText: "日期",
+            rawText: "日期 2",
           },
         ]}
         balloons={[]}
@@ -2018,9 +2018,102 @@ describe("InspectionWorkbench", () => {
     expect(
       screen.queryByRole("button", { name: "确认当前有效项" }),
     ).toBeNull();
-    expect(screen.getByRole("row", { name: /设计/ })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /设计 1/ })).not.toBeNull();
     expect(onSave).not.toHaveBeenCalled();
     expect(onPrepareReview).not.toHaveBeenCalled();
+  });
+
+  test("黄色待判来源只展示含数字的原始来源", () => {
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[
+          {
+            id: "numeric-source",
+            pageIndex: 0,
+            bbox: [10, 20, 30, 40],
+            rawText: "125 X 2",
+          },
+          {
+            id: "text-source",
+            pageIndex: 0,
+            bbox: [50, 60, 70, 80],
+            rawText: "贯穿",
+          },
+        ]}
+        balloons={[]}
+        items={[]}
+        workingCopy={{
+          id: "numeric-source-working-id",
+          project_id: "numeric-source-project-id",
+          raw_result_id: "numeric-source-result-id",
+          version: 1,
+          items: [],
+          coverage: {
+            blocking_count: 0,
+            review_required_count: 2,
+            entries: [
+              {
+                observation_id: "numeric-observation",
+                source_location_id: "numeric-source",
+                candidate_id: null,
+                disposition: "ambiguous",
+                coordinates: [10, 20, 30, 40],
+                requires_confirmation: true,
+              },
+              {
+                observation_id: "text-observation",
+                source_location_id: "text-source",
+                candidate_id: null,
+                disposition: "ambiguous",
+                coordinates: [50, 60, 70, 80],
+                requires_confirmation: true,
+              },
+            ],
+          },
+          technical_requirements: [{
+            requirement_id: "text-requirement",
+            ordinal: 1,
+            raw_text: "贯穿",
+            normalized_text: "贯穿",
+            source_location_ids: ["text-source"],
+            page_index: 0,
+            category: "standalone_check",
+            subtype: "through_feature",
+            parsed_parameters: {},
+            match_outcome: "unresolved",
+            matched_candidate_ids: [],
+            rule_version: "technical-requirement/1",
+            review_required: true,
+          }],
+          manual_review_count: 2,
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByRole("row", {
+      name: /125 X 2.*原始来源.*待判定来源/,
+    })).not.toBeNull();
+    expect(screen.queryByRole("row", {
+      name: /贯穿.*原始来源.*待判定来源/,
+    })).toBeNull();
+    const textSourceOverlay = screen.getByTestId("source-text-source");
+    fireEvent.click(textSourceOverlay);
+    expect(textSourceOverlay.getAttribute("data-selected")).toBe("false");
+
+    const technicalRequirements = screen.getByRole("region", {
+      name: "技术要求匹配",
+    });
+    fireEvent.click(within(technicalRequirements).getByRole("button", {
+      name: "展开技术要求",
+    }));
+    expect(within(technicalRequirements).getByText("贯穿")).not.toBeNull();
   });
 
   test("来源 promote 保存失败后保留选择和草稿供重试", async () => {
@@ -2041,7 +2134,7 @@ describe("InspectionWorkbench", () => {
           id: "retry-source-id",
           pageIndex: 0,
           bbox: [60, 70, 150, 84],
-          rawText: "技术要求：去除毛刺",
+          rawText: "技术要求 2：去除毛刺",
         }]}
         balloons={[]}
         items={items}
@@ -2072,7 +2165,7 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("row", { name: /技术要求：去除毛刺/ }));
+    fireEvent.click(screen.getByRole("row", { name: /技术要求 2：去除毛刺/ }));
     fireEvent.change(screen.getByRole("textbox", { name: "原始标注" }), {
       target: { value: "技术要求：去除全部毛刺" },
     });
@@ -2107,7 +2200,7 @@ describe("InspectionWorkbench", () => {
       .hasAttribute("disabled")).toBe(false);
   });
 
-  test("workbench 不把空白来源的显示占位符传入 promote 草稿", async () => {
+  test("workbench 不把空白来源显示为待判来源", () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
       <InspectionWorkbench
@@ -2148,29 +2241,10 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("row", {
+    expect(screen.queryByRole("row", {
       name: /原始来源.*待判定来源/,
-    }));
-    const rawText = screen.getByRole("textbox", { name: "原始标注" });
-    const promote = screen.getByRole("button", { name: "添加为检验项" });
-    expect((rawText as HTMLInputElement).value).toBe("");
-    fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
-      target: { value: "general_requirement" },
-    });
-    expect(promote.hasAttribute("disabled")).toBe(true);
-
-    fireEvent.change(rawText, { target: { value: "人工补录的真实要求" } });
-    expect(promote.hasAttribute("disabled")).toBe(false);
-    fireEvent.click(promote);
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
-      type: "promote_source",
-      observation_id: "blank-observation-id",
-      raw_text: "人工补录的真实要求",
-      item_type: "general_requirement",
-      scope: "local_feature",
-      balloon_required: true,
-      page_index: 0,
-    }));
+    })).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   test("自动通过项可选择编辑且列表与详情不显示置信度内部元数据", () => {
