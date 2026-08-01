@@ -1,4 +1,5 @@
 QA_DEV_COMPOSE = docker compose -p quality-inspection-qa -f compose.yaml -f compose.qa-dev.yaml
+TEST_BACKEND_COMPOSE = docker compose -f compose.test.yaml
 LOCAL_API_PORT ?= 8000
 LOCAL_FRONTEND_PORT ?= 5173
 
@@ -40,7 +41,40 @@ check-api-contracts:
 	npm --prefix frontend run api:check
 
 test-backend:
-	micromamba run -n qi-p0 pytest backend/tests -q
+	@set -eu; \
+	test_project="quality-inspection-test-$$$$"; \
+	cleanup() { \
+		test_status="$$?"; \
+		trap - EXIT INT TERM; \
+		if $(TEST_BACKEND_COMPOSE) -p "$$test_project" down --volumes --remove-orphans; then \
+			cleanup_status=0; \
+		else \
+			cleanup_status="$$?"; \
+		fi; \
+		if [ "$$test_status" -ne 0 ]; then \
+			exit "$$test_status"; \
+		fi; \
+		exit "$$cleanup_status"; \
+	}; \
+	trap cleanup EXIT; \
+	trap 'exit 130' INT; \
+	trap 'exit 143' TERM; \
+	$(TEST_BACKEND_COMPOSE) -p "$$test_project" up -d --wait; \
+	test_db_endpoint="$$( \
+		$(TEST_BACKEND_COMPOSE) -p "$$test_project" port postgres 5432 \
+	)"; \
+	test_db_port="$${test_db_endpoint##*:}"; \
+	case "$$test_db_port" in \
+		''|*[!0-9]*) echo "isolated PostgreSQL port is unavailable" >&2; exit 1 ;; \
+	esac; \
+	test_database_url="postgresql+psycopg://qi@127.0.0.1:$$test_db_port/qi"; \
+	( \
+		cd backend; \
+		PYTHONDONTWRITEBYTECODE=1 QI_DATABASE_URL="$$test_database_url" \
+			micromamba run -n qi-p0 alembic -c alembic.ini upgrade head \
+	); \
+	PYTHONDONTWRITEBYTECODE=1 QI_DATABASE_URL="$$test_database_url" \
+		micromamba run -n qi-p0 python -m pytest backend/tests -q
 
 test-frontend:
 	micromamba run -n qi-p0 npm --prefix frontend test -- --run

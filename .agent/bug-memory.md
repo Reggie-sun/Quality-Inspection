@@ -2,6 +2,30 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-test-backend-compose-dns
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `Makefile:test-backend`、backend integration/e2e database setup
+- Symptom: `make test-backend` 在 `1273 passed` 之外产生 `53 failed / 274 errors`，绝大多数为宿主机无法解析数据库 host `postgres`
+- Previously correct behavior: 单一命令应在隔离、已迁移的 PostgreSQL 上执行完整 backend suite，不能依赖 Compose-only DNS 或开发数据库
+- Reproduction: 当前 `make test-backend` 从宿主机启动 pytest；`getaddrinfo('postgres', 5432)` 失败，而将同一连接重定向到当前 Compose PostgreSQL 的 host-reachable IP 后只读 `SELECT 1` 成功
+- Root cause: `test-backend` 没有数据库 lifecycle，宿主机 pytest 直接读取 `.env` 中仅在 Compose 网络可解析的 `postgres`；production Compose PostgreSQL 也没有 host port，且其持久化卷不允许作为 migration tests 的隔离目标
+- Fix: `test-backend` 每次启动唯一 Compose project 的 PostgreSQL 17，使用 loopback 动态端口和 tmpfs；healthcheck 后对空库执行 Alembic upgrade，再运行原 backend suite。EXIT/INT/TERM 清理只命中该 test project，并保留 migration/pytest/signal 的原始非零状态
+- Regression check: topology 初始 RED 为 `2 failed / 1 passed`；实现及 failure-status follow-up GREEN 为 `4 passed`；fake lifecycle 证明 cleanup failure 不再把 pytest `Error 7` 覆盖成 `Error 1`
+- Runtime proof: fresh `make test-backend` 成功创建、迁移和连接隔离 PostgreSQL，不再出现 `postgres` DNS/connection error；完整收集为 `1599 passed / 4 failed / 4 warnings`，4 个 residual 均是 `test_symbol_recognition_pipeline.py` 中 source disposition 语义偏差，不属于本 test runtime entry 修复。pytest 失败后 test container/network/volume 无残留
+- Change: `fix: isolate backend test database`
+- Selected lane: `Heavy`
+- Selected plan: `docs/superpowers/plans/2026-08-01-test-backend-isolated-postgres.md`
+- Validation action: `completed` for test runtime entry；backend full-suite verdict 仍为 `failed` due to 4 bounded semantic residuals
+- Problem boundary: 仅修 test runtime entry；production/development/QA database config 与测试语义保持不变
+- Single owner: `Makefile:test-backend`
+- Writer ownership and order: 父 agent 唯一 writer；只读 explorer 已完成且未修改文件
+- Independent review: `accept with concerns`；无 blocking issue，concern 仅为不得将 4 个既有 semantic failures 报告为 full backend GREEN
+- Next verification: 另起 bounded source-disposition task 判定 4 个 residual 是 stale expectation 还是 behavior regression；不在本任务顺手修改
+
 ## BUG-20260801-source-editor-wrong-pane
 
 - Status: 阻塞
