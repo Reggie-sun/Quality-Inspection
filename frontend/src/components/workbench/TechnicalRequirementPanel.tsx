@@ -212,6 +212,14 @@ export function TechnicalRequirementPanel({
     && suggestedIds.length > 0
     && suggestedIds.length === activeRequirement.matched_candidate_ids.length
   );
+  const globalSuggested = (
+    activeRequirement?.match_outcome === "global_scope"
+    && activeRequirement.review_status === "suggested"
+  );
+  const allCandidateItemsSelected = (
+    candidateItems.length > 0
+    && selectedMatchedIds.length === candidateItems.length
+  );
   const draftValid = (
     (draft.mode === "suggested" && suggestedAvailable)
     || (draft.mode === "subset" && selectedMatchedIds.length > 0)
@@ -443,9 +451,7 @@ export function TechnicalRequirementPanel({
                     </div>
                     <fieldset className="technical-requirement__choices">
                       <legend>{zhCN.technicalRequirements.chooseMode}</legend>
-                      {suggestedAvailable && (
-                        draft.mode === "" || draft.mode === "suggested"
-                      ) ? (
+                      {suggestedAvailable ? (
                         <label data-selected={draft.mode === "suggested"}>
                           <input
                             type="radio"
@@ -477,78 +483,63 @@ export function TechnicalRequirementPanel({
                           </span>
                         </label>
                       ) : null}
-                      {draft.mode === "" || draft.mode === "subset" ? (
-                        <label data-selected={draft.mode === "subset"}>
-                          <input
-                            type="radio"
-                            name={radioName}
-                            aria-label={zhCN.technicalRequirements.useSubset}
-                            checked={draft.mode === "subset"}
-                            disabled={disabled || commandBusy}
-                            onChange={() => chooseMode("subset")}
-                          />
-                          <span>
-                            <strong>
-                              {zhCN.technicalRequirements.useSubset}
-                            </strong>
-                            <small>
-                              {zhCN.technicalRequirements.subsetHint}
-                            </small>
-                          </span>
-                        </label>
-                      ) : null}
-                      {draft.mode === "" || draft.mode === "global" ? (
-                        <label data-selected={draft.mode === "global"}>
-                          <input
-                            type="radio"
-                            name={radioName}
-                            aria-label={zhCN.technicalRequirements.useGlobal}
-                            checked={draft.mode === "global"}
-                            disabled={disabled || commandBusy}
-                            onChange={() => chooseMode("global")}
-                          />
-                          <span>
-                            <strong>
-                              {zhCN.technicalRequirements.useGlobal}
-                            </strong>
-                            <small>
-                              {zhCN.technicalRequirements.globalHint}
-                            </small>
-                          </span>
-                        </label>
-                      ) : null}
-                      {draft.mode === "" || draft.mode === "excluded" ? (
-                        <label data-selected={draft.mode === "excluded"}>
-                          <input
-                            type="radio"
-                            name={radioName}
-                            aria-label={zhCN.technicalRequirements.exclude}
-                            checked={draft.mode === "excluded"}
-                            disabled={disabled || commandBusy}
-                            onChange={() => chooseMode("excluded")}
-                          />
-                          <span>
-                            <strong>
-                              {zhCN.technicalRequirements.exclude}
-                            </strong>
-                            <small>
-                              {zhCN.technicalRequirements.excludeHint}
-                            </small>
-                          </span>
-                        </label>
-                      ) : null}
+                      <label data-selected={draft.mode === "global"}>
+                        <input
+                          type="radio"
+                          name={radioName}
+                          aria-label={zhCN.technicalRequirements.useGlobal}
+                          checked={draft.mode === "global"}
+                          disabled={disabled || commandBusy}
+                          onChange={() => chooseMode("global")}
+                        />
+                        <span>
+                          <strong>
+                            {zhCN.technicalRequirements.useGlobal}
+                          </strong>
+                          <small>
+                            {globalSuggested
+                              ? zhCN.technicalRequirements.globalSuggestedHint
+                              : zhCN.technicalRequirements.globalHint}
+                          </small>
+                        </span>
+                      </label>
+                      <label data-selected={draft.mode === "subset"}>
+                        <input
+                          type="radio"
+                          name={radioName}
+                          aria-label={zhCN.technicalRequirements.useSubset}
+                          checked={draft.mode === "subset"}
+                          disabled={disabled || commandBusy}
+                          onChange={() => chooseMode("subset")}
+                        />
+                        <span>
+                          <strong>
+                            {zhCN.technicalRequirements.useSubset}
+                          </strong>
+                          <small>
+                            {zhCN.technicalRequirements.subsetHint}
+                          </small>
+                        </span>
+                      </label>
+                      <label data-selected={draft.mode === "excluded"}>
+                        <input
+                          type="radio"
+                          name={radioName}
+                          aria-label={zhCN.technicalRequirements.exclude}
+                          checked={draft.mode === "excluded"}
+                          disabled={disabled || commandBusy}
+                          onChange={() => chooseMode("excluded")}
+                        />
+                        <span>
+                          <strong>
+                            {zhCN.technicalRequirements.exclude}
+                          </strong>
+                          <small>
+                            {zhCN.technicalRequirements.excludeHint}
+                          </small>
+                        </span>
+                      </label>
                     </fieldset>
-
-                    {draft.mode === "" ? null : (
-                      <button
-                        type="button"
-                        className="technical-requirement__change-mode"
-                        disabled={disabled || commandBusy}
-                        onClick={() => setDraft(EMPTY_DRAFT)}
-                      >
-                        {zhCN.technicalRequirements.changeMode}
-                      </button>
-                    )}
 
                     {suggestedAvailable ? (
                       <button
@@ -576,6 +567,19 @@ export function TechnicalRequirementPanel({
                             search: event.target.value,
                           }))}
                         />
+                        <p
+                          className="technical-requirement__selection-status"
+                          role="status"
+                        >
+                          {allCandidateItemsSelected
+                            ? zhCN.technicalRequirements.allCurrentItemsSelected(
+                              candidateItems.length,
+                            )
+                            : zhCN.technicalRequirements.selectedItems(
+                              selectedMatchedIds.length,
+                              candidateItems.length,
+                            )}
+                        </p>
                         <div className="technical-requirement__picker-list">
                           {visibleCandidateItems.map((item) => (
                             <label key={item.item_id}>

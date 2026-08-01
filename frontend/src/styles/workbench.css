@@ -2046,8 +2046,7 @@
   line-height: 1.4;
 }
 
-.technical-requirement__view-suggestion,
-.technical-requirement__change-mode {
+.technical-requirement__view-suggestion {
   justify-self: start;
   min-height: 28px;
   padding: 4px 8px;
@@ -2058,15 +2057,20 @@
   font-weight: 700;
 }
 
-.technical-requirement__change-mode {
-  border-color: transparent;
-  background: transparent;
-  color: #475467;
-}
-
 .technical-requirement__picker {
   display: grid;
   gap: 7px;
+}
+
+.technical-requirement__selection-status {
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid #fedf89;
+  border-radius: 6px;
+  background: #fffaeb;
+  color: #93370d;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .technical-requirement__picker > input {

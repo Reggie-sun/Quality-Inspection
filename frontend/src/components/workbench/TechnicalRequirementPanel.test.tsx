@@ -145,18 +145,12 @@ test("系统建议先形成草稿，预览影响后才提交并进入下一条",
     name: "应用到系统建议的检验项",
   }));
   expect(onCommand).not.toHaveBeenCalled();
-  expect(within(current!).queryByRole("radio", {
-    name: "只应用到部分检验项",
-  })).toBeNull();
-  fireEvent.click(within(current!).getByRole("button", {
-    name: "更改处理方式",
-  }));
   expect(within(current!).getByRole("radio", {
     name: "只应用到部分检验项",
   })).not.toBeNull();
-  fireEvent.click(within(current!).getByRole("radio", {
-    name: "应用到系统建议的检验项",
-  }));
+  expect(within(current!).getByRole("radio", {
+    name: "作为全局 SIP 要求",
+  })).not.toBeNull();
   expect(within(current!).getByText(
     "这条规则将关联到 2 个检验项；对应 SIP 建议会自动预填。不会立即冻结、编号或生成气泡。",
   )).not.toBeNull();
@@ -221,6 +215,12 @@ test("部分检验项使用可搜索多选，并一次提交完整 target 集合
   fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
   const current = screen.getByText("未注尺寸公差").closest("li");
   expect(current).not.toBeNull();
+  expect(within(current!).getAllByRole("radio").map((radio) =>
+    radio.getAttribute("aria-label"))).toEqual([
+    "作为全局 SIP 要求",
+    "只应用到部分检验项",
+    "排除此要求",
+  ]);
   fireEvent.click(within(current!).getByRole("radio", {
     name: "只应用到部分检验项",
   }));
@@ -233,6 +233,12 @@ test("部分检验项使用可搜索多选，并一次提交完整 target 集合
   fireEvent.click(within(current!).getByRole("checkbox", { name: "30" }));
   fireEvent.change(search, { target: { value: "" } });
   fireEvent.click(within(current!).getByRole("checkbox", { name: "25" }));
+  expect(within(current!).getByRole("status").textContent).toBe(
+    "已选择当前全部 2 项；这仍是指定关联，不等于全局要求。后续新增检验项不会自动包含。",
+  );
+  expect(within(current!).getByRole("radio", {
+    name: "作为全局 SIP 要求",
+  })).not.toBeNull();
   fireEvent.click(within(current!).getByRole("button", {
     name: "确认并处理下一条",
   }));
@@ -323,6 +329,9 @@ test("全局和排除选择只在显式确认后提交", async () => {
   );
 
   fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
+  expect(screen.getByText(
+    "系统建议：适用于整张图纸及后续新增检验项，作为一条无气泡 SIP 要求保留",
+  )).not.toBeNull();
   fireEvent.click(screen.getByRole("radio", { name: "作为全局 SIP 要求" }));
   expect(onCommand).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", {
@@ -333,6 +342,73 @@ test("全局和排除选择只在显式确认后提交", async () => {
     requirement_id: "global",
     outcome: "global_scope",
   }));
+});
+
+test("修改已确认全局要求时不再把用户决策标成系统建议", () => {
+  render(
+    <TechnicalRequirementPanel
+      requirements={[requirement("confirmed-global", "锐边去毛刺", {
+        category: "standalone_check",
+        subtype: "deburr",
+        match_outcome: "global_scope",
+        review_required: false,
+        review_status: "confirmed",
+      })]}
+      items={[]}
+      onSelectItem={vi.fn()}
+      onEnterReview={vi.fn()}
+      onCommand={vi.fn()}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
+  fireEvent.click(screen.getByRole("button", { name: "修改" }));
+
+  expect(screen.queryByText(
+    "系统建议：适用于整张图纸及后续新增检验项，作为一条无气泡 SIP 要求保留",
+  )).toBeNull();
+  expect(screen.getByText(
+    "适用于整张图纸及后续新增检验项，作为一条无气泡 SIP 要求保留",
+  )).not.toBeNull();
+});
+
+test("从部分检验项切回全局时只提交最终模式且不携带旧关联项", async () => {
+  const onCommand = vi.fn();
+  render(
+    <TechnicalRequirementPanel
+      requirements={[requirement("switch-mode", "未注尺寸公差")]}
+      items={[{
+        item_id: "dimension-25",
+        raw_text: "25",
+        item_type: "linear_dimension",
+        active: true,
+      }]}
+      onSelectItem={vi.fn()}
+      onEnterReview={vi.fn()}
+      onCommand={onCommand}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
+  fireEvent.click(screen.getByRole("radio", {
+    name: "只应用到部分检验项",
+  }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "25" }));
+  fireEvent.click(screen.getByRole("radio", {
+    name: "作为全局 SIP 要求",
+  }));
+
+  expect(onCommand).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", {
+    name: "确认并处理下一条",
+  }));
+
+  await waitFor(() => expect(onCommand).toHaveBeenCalledOnce());
+  expect(onCommand).toHaveBeenCalledWith({
+    type: "set_technical_requirement_match",
+    requirement_id: "switch-mode",
+    outcome: "global_scope",
+  });
 });
 
 test("提交失败保留草稿，取消后才清除 dirty 状态", async () => {
