@@ -160,11 +160,11 @@ test("未完成审核时优先显示精确的 SIP 异常阻断", () => {
       balloonBlockers={[]}
       sipExceptionCount={0}
       projectMetadataConfirmed={false}
-      missingProjectMetadataFields={["材质"]}
+      missingProjectMetadataFields={["物料编码"]}
       post={post}
     />,
   );
-  expect(screen.getByRole("status").textContent).toBe("待补充项目 SIP：材质");
+  expect(screen.getByRole("status").textContent).toBe("待补充项目 SIP：物料编码");
 });
 
 test("项目 SIP 识别冲突时正式文件门禁显示精确原因", () => {
@@ -218,6 +218,28 @@ test("待生成的 SIP 行与真实异常分开显示", () => {
   );
   expect(screen.getByRole("status").textContent)
     .toBe("SIP 异常 2 项");
+});
+
+test("正式文件门禁显示真实待审核与待选择气泡数量", () => {
+  const post = vi.fn() as unknown as PostJson;
+  render(
+    <ExportPanel
+      projectId="project-1"
+      reviewedResultId={undefined}
+      canFinalize={false}
+      pendingReviewCount={13}
+      pendingBalloonDecisionCount={4}
+      balloonBlockers={[]}
+      projectMetadataConfirmed
+      post={post}
+    />,
+  );
+
+  expect(screen.getByRole("status").textContent).toBe(
+    "待审核检验项 13 项 · 待选择气泡 4 项",
+  );
+  expect(screen.getByRole("button", { name: "生成正式文件" })
+    .hasAttribute("disabled")).toBe(true);
 });
 
 test("恢复投影如实渲染导出中、失败和三产物原子下载", () => {

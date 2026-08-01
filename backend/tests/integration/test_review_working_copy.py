@@ -12,8 +12,10 @@ from app.candidates.schemas import stable_candidate_id
 from app.db import engine
 from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
+from app.projects.router import _working_copy as _project_working_copy
 from app.projects.state import ProjectState
 from app.review.locks import acquire_lock
+from app.review.router import _working_copy as _review_working_copy
 from app.review.service import FreezeBlocked, ReviewService, manual_review_count
 from app.storage.models import StoredFile
 
@@ -652,6 +654,76 @@ def test_manual_review_count_skips_malformed_historical_values() -> None:
         None,
     ) == 1
     assert manual_review_count([], {"entries": [None, "malformed"]}) == 0
+
+
+def test_legacy_normalization_keeps_malformed_entries_pending() -> None:
+    malformed_entries = [
+        {
+            "observation_id": "missing-candidate-id",
+            "source_location_id": "missing-candidate-id",
+            "disposition": "ambiguous",
+            "coordinates": [1, 2, 3, 4],
+            "requires_confirmation": True,
+        },
+        {
+            "observation_id": "string-confirmation",
+            "source_location_id": "string-confirmation",
+            "candidate_id": None,
+            "disposition": "ambiguous",
+            "coordinates": [5, 6, 7, 8],
+            "requires_confirmation": "true",
+        },
+    ]
+
+    normalized = ReviewService.normalized_coverage(
+        {
+            "blocking_count": 0,
+            "review_required_count": 2,
+            "entries": malformed_entries,
+        },
+        [],
+    )
+
+    assert normalized["entries"] == malformed_entries
+    assert normalized["review_required_count"] == 2
+
+
+def test_legacy_projection_preserves_malformed_coverage_without_auto_resolution(
+    db_session: Session,
+    raw_result: AutomaticResult,
+) -> None:
+    working = ReviewService(db_session).create_from_raw(raw_result.id)
+    malformed_entries = [
+        {
+            "observation_id": "missing-candidate-id",
+            "source_location_id": "missing-candidate-id",
+            "disposition": "ambiguous",
+            "coordinates": [1, 2, 3, 4],
+            "requires_confirmation": True,
+        },
+        {
+            "observation_id": "string-confirmation",
+            "source_location_id": "string-confirmation",
+            "candidate_id": None,
+            "disposition": "ambiguous",
+            "coordinates": [5, 6, 7, 8],
+            "requires_confirmation": "true",
+        },
+    ]
+    working.coverage = {
+        "blocking_count": 0,
+        "review_required_count": 2,
+        "entries": malformed_entries,
+    }
+    db_session.commit()
+
+    review_projection = _review_working_copy(working)
+    project_projection = _project_working_copy(working)
+
+    assert review_projection["coverage"]["entries"] == malformed_entries
+    assert project_projection["coverage"]["entries"] == malformed_entries
+    assert review_projection["coverage"]["review_required_count"] == 2
+    assert project_projection["coverage"]["review_required_count"] == 2
 
 
 def test_visual_coverage_exposes_only_owner_committed_discriminator() -> None:

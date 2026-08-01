@@ -48,7 +48,8 @@ from app.projects.service import (
     ProjectNotFound,
 )
 from app.review.models import ReviewedResult, ReviewWorkingCopy
-from app.review.service import manual_review_count
+from app.review.schemas import normalize_sip_metadata
+from app.review.service import ReviewService, manual_review_count
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -411,9 +412,13 @@ def _workbench_payload(
 
     projected_pages, observations = _project_pages(pages)
     sip_metadata_suggestions = suggest_sip_metadata(pages)
+    projected_coverage = ReviewService.normalized_coverage(
+        working.coverage,
+        working.technical_requirements,
+    )
     candidates, source_items = _project_items(
         working.items,
-        working.coverage,
+        projected_coverage,
         observations,
     )
     sources = [
@@ -638,22 +643,26 @@ def _is_bbox(value: object) -> bool:
 
 
 def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
+    coverage = ReviewService.normalized_coverage(
+        working.coverage,
+        working.technical_requirements,
+    )
     return {
         "id": working.id,
         "project_id": working.project_id,
         "raw_result_id": working.raw_result_id,
         "version": working.version,
         "items": working.items,
-        "coverage": working.coverage,
+        "coverage": coverage,
         "technical_requirements": working.technical_requirements,
-        "sip_metadata": working.sip_metadata,
+        "sip_metadata": normalize_sip_metadata(working.sip_metadata),
         "numbering_stale": working.numbering_stale,
         "items_frozen_at": working.items_frozen_at,
         "items_frozen_by": working.items_frozen_by,
         "items_frozen_version": working.items_frozen_version,
         "manual_review_count": manual_review_count(
             working.items,
-            working.coverage,
+            coverage,
         ),
     }
 

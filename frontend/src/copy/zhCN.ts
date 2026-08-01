@@ -160,7 +160,7 @@ export const zhCN = {
     editResolvedSipRow: "可选修改当前 SIP 行",
     optionalResolvedSipEdit: "以下修改为可选操作，不属于异常处理。",
     partialProjectSipMetadata: (confirmed: number, missing: string[]) =>
-      `系统已自动采纳 ${confirmed}/5，待补充：${missing.join("、")}`,
+      `系统已自动采纳 ${confirmed}/4，待补充：${missing.join("、")}`,
     projectSipMetadataConflict: (missing: string[]) => missing.length > 0
       ? `识别信息与已保存内容不一致，请检查；待补充：${missing.join("、")}`
       : "识别信息与已保存内容不一致，请检查后保存。",
@@ -185,12 +185,14 @@ export const zhCN = {
       materialName: "产品名称",
       drawingNumber: "图号",
       material: "材质",
+      materialOptional: "材质（可选）",
       revision: "版本号",
       unit: "单位",
       inspectionStandard: "检验标准",
       inspectionRole: "检验人员角色",
       reviewerRole: "审核人员角色",
     },
+    optionalMaterialPlaceholder: "图纸未标注可留空",
     reviewCommands: "候选项编辑与审核命令",
     unknown: "—",
     actionSubmitted: "审核修改已提交",
@@ -243,7 +245,6 @@ export const zhCN = {
     decisionRequired: "需要决策",
     editing: "修改已确认结果",
     chooseMode: "选择处理方式",
-    changeMode: "更改处理方式",
     useSuggestion: "应用到系统建议的检验项",
     keepCurrent: "保留当前关联项",
     suggestedTargets: (count: number) =>
@@ -251,12 +252,18 @@ export const zhCN = {
     viewSuggestion: (count: number) => `查看系统建议关联项（${count} 项）`,
     currentTargets: (count: number) => `当前关联 ${count} 个检验项`,
     useSubset: "只应用到部分检验项",
-    subsetHint: "从可搜索列表中选择一个或多个检验项",
+    subsetHint: "仅关联当前勾选项；后续新增检验项不会自动包含",
     useGlobal: "作为全局 SIP 要求",
-    globalHint: "保留在 SIP 中，但不关联单个气泡",
+    globalHint: "适用于整张图纸及后续新增检验项，作为一条无气泡 SIP 要求保留",
+    globalSuggestedHint:
+      "系统建议：适用于整张图纸及后续新增检验项，作为一条无气泡 SIP 要求保留",
     exclude: "排除此要求",
     excludeHint: "确认它不是本次检验范围的一部分",
     searchItems: "搜索检验项",
+    selectedItems: (selected: number, total: number) =>
+      `已选择 ${selected}/${total} 项；仅当前勾选项会关联此要求。`,
+    allCurrentItemsSelected: (count: number) =>
+      `已选择当前全部 ${count} 项；这仍是指定关联，不等于全局要求。后续新增检验项不会自动包含。`,
     noMatchingItems: "没有符合搜索条件的检验项。",
     impactTitle: "确认后会发生什么",
     matchedImpact: (count: number) =>
@@ -508,6 +515,10 @@ export const zhCN = {
     title: "正式文件",
     action: "生成正式文件",
     notReviewed: "尚未审核",
+    pendingReviewActions: (reviewCount: number, balloonCount: number) => [
+      reviewCount > 0 ? `待审核检验项 ${reviewCount} 项` : "",
+      balloonCount > 0 ? `待选择气泡 ${balloonCount} 项` : "",
+    ].filter(Boolean).join(" · "),
     sipPending: (count: number) => `SIP 待生成 ${count} 项`,
     sipExceptions: (count: number) => `SIP 异常 ${count} 项`,
     pendingProjectSip: "项目 SIP 信息未确认",

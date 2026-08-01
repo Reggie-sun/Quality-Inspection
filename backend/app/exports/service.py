@@ -46,7 +46,11 @@ from app.jobs.idempotency import (
     complete_logical_job,
 )
 from app.review.models import ReviewedResult, ReviewWorkingCopy
-from app.review.schemas import SIP_METADATA_FIELDS
+from app.review.schemas import (
+    SIP_METADATA_FIELDS,
+    SIP_REQUIRED_METADATA_FIELDS,
+    normalize_sip_metadata,
+)
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 
@@ -738,15 +742,21 @@ class ExportService:
 
     @staticmethod
     def _sip_metadata(metadata: dict[str, Any]) -> dict[str, object]:
+        metadata = normalize_sip_metadata(metadata)
         required_review_metadata = set(SIP_METADATA_FIELDS)
         missing = required_review_metadata - set(metadata)
         extra = set(metadata) - required_review_metadata
         invalid = {
             field
-            for field in required_review_metadata & set(metadata)
+            for field in set(SIP_REQUIRED_METADATA_FIELDS) & set(metadata)
             if not isinstance(metadata[field], str) or not metadata[field].strip()
         }
-        if missing or extra or invalid:
+        if (
+            missing
+            or extra
+            or invalid
+            or not isinstance(metadata.get("material"), str)
+        ):
             raise ValueError(
                 "reviewed result has incomplete confirmed SIP metadata"
             )

@@ -498,6 +498,34 @@ def test_sip_metadata_keeps_the_frozen_five_field_shape() -> None:
         ExportService._sip_metadata(metadata | {"unit": "mm / 按项目"})
 
 
+def test_sip_metadata_exports_optional_material_as_blank() -> None:
+    """Catches export reintroducing a synthetic material placeholder."""
+    metadata = {
+        "material_code": "MAT-001",
+        "material_name": "上座",
+        "drawing_number": "JS26032501",
+        "material": "none",
+        "revision": "A1",
+    }
+
+    assert ExportService._sip_metadata(metadata) == {
+        **metadata,
+        "material": "",
+    }
+
+
+def test_sip_metadata_preserves_non_sentinel_material_text() -> None:
+    metadata = {
+        "material_code": "MAT-001",
+        "material_name": "上座",
+        "drawing_number": "JS26032501",
+        "material": "NONE",
+        "revision": "A1",
+    }
+
+    assert ExportService._sip_metadata(metadata) == metadata
+
+
 def test_artifacts_share_reviewed_result_id() -> None:
     """P0-RES-004 binds all three formal artifacts to one reviewed result."""
     reviewed_result_id = uuid.uuid4()

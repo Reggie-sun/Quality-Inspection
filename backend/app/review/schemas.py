@@ -25,6 +25,10 @@ NonBlankText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1),
 ]
+OptionalText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True),
+]
 
 
 class Keep(CommandBase):
@@ -126,6 +130,21 @@ SIP_METADATA_FIELDS = (
     "material",
     "revision",
 )
+SIP_REQUIRED_METADATA_FIELDS = (
+    "material_code",
+    "material_name",
+    "drawing_number",
+    "revision",
+)
+
+
+def normalize_sip_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(metadata)
+    material = normalized.get("material")
+    if isinstance(material, str):
+        stripped = material.strip()
+        normalized["material"] = "" if stripped == "none" else stripped
+    return normalized
 
 
 class SetSipDetailFields(CommandBase):
@@ -150,7 +169,7 @@ class SetSipMetadata(CommandBase):
     material_code: NonBlankText
     material_name: NonBlankText
     drawing_number: NonBlankText
-    material: NonBlankText
+    material: OptionalText
     revision: NonBlankText
 
 

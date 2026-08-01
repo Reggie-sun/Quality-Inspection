@@ -91,6 +91,12 @@ const SIP_METADATA_FIELDS = [
   "material",
   "revision",
 ] as const;
+const SIP_REQUIRED_METADATA_FIELDS = [
+  "material_code",
+  "material_name",
+  "drawing_number",
+  "revision",
+] as const;
 const SIP_METADATA_FIELD_LABELS: Record<keyof MetadataDraft, string> = {
   material_code: zhCN.workbench.metadataFields.materialCode,
   material_name: zhCN.workbench.metadataFields.materialName,
@@ -141,7 +147,8 @@ function hasConfirmedSipMetadata(
   return (
     metadata !== undefined
     && Object.keys(metadata).length === SIP_METADATA_FIELDS.length
-    && SIP_METADATA_FIELDS.every(
+    && typeof metadata.material === "string"
+    && SIP_REQUIRED_METADATA_FIELDS.every(
       (field) => typeof metadata[field] === "string" && metadata[field]!.trim() !== "",
     )
   );
@@ -164,11 +171,18 @@ function metadataDraft(
     NO_SIP_METADATA_SUGGESTIONS
   ),
 ): MetadataDraft {
+  const confirmedMetadata = workingCopy !== undefined
+    && hasConfirmedSipMetadata(workingCopy)
+    ? workingCopy.sip_metadata
+    : undefined;
   const suggestedValues = new Map(
     suggestions.map((suggestion) => [suggestion.field, suggestion.value]),
   );
   return Object.fromEntries(
     SIP_METADATA_FIELDS.map((field) => {
+      if (confirmedMetadata !== undefined) {
+        return [field, confirmedMetadata[field] ?? ""];
+      }
       const confirmed = workingCopy?.sip_metadata?.[field];
       return [
         field,
@@ -346,7 +360,7 @@ export function InspectionWorkbench({
   const frozen = workingCopy?.items_frozen_at != null;
   const projectMetadataConfirmed =
     workingCopy !== undefined && hasConfirmedSipMetadata(workingCopy);
-  const missingProjectMetadataFields = SIP_METADATA_FIELDS
+  const missingProjectMetadataFields = SIP_REQUIRED_METADATA_FIELDS
     .filter((field) => metadata[field].trim() === "")
     .map((field) => SIP_METADATA_FIELD_LABELS[field]);
   const metadataSuggestionConflict = workingCopy !== undefined
@@ -380,6 +394,13 @@ export function InspectionWorkbench({
     && !busy
     && !saving
     && !localDraftDirty;
+  const pendingReviewCount = workingCopy?.items.filter(
+    (item) => item.active && item.requires_confirmation === true,
+  ).length ?? 0;
+  const pendingBalloonDecisionCount = workingCopy?.items.filter(
+    (item) => item.active
+      && (item.balloon_required === null || item.balloon_required === undefined),
+  ).length ?? 0;
   useEffect(() => {
     if (!canPrepareReview || onPrepareReview === undefined || workingCopy === undefined) {
       return;
@@ -622,6 +643,8 @@ export function InspectionWorkbench({
         projectMetadataConfirmed={projectMetadataConfirmed}
         missingProjectMetadataFields={missingProjectMetadataFields}
         projectMetadataBlocker={projectMetadataBlocker}
+        pendingReviewCount={pendingReviewCount}
+        pendingBalloonDecisionCount={pendingBalloonDecisionCount}
         balloonBlockers={balloonBlockers}
         post={exportPost}
         initialExport={initialExport}

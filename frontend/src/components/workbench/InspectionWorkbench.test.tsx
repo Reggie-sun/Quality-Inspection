@@ -1265,7 +1265,9 @@ describe("InspectionWorkbench", () => {
       (sipCard.getByRole("textbox", { name: "版本号" }) as HTMLInputElement).value,
     ).toBe("A1");
     expect(
-      (sipCard.getByRole("textbox", { name: "材质" }) as HTMLInputElement).value,
+      (sipCard.getByRole("textbox", {
+        name: "材质（可选）",
+      }) as HTMLInputElement).value,
     ).toBe("SUS304");
 
     fireEvent.change(sipCard.getByRole("textbox", { name: "产品名称" }), {
@@ -1385,6 +1387,109 @@ describe("InspectionWorkbench", () => {
       material: "6061-T6",
       revision: "A/0",
     });
+  });
+
+  test("已确认的空材质不被后续识别建议静默回填", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        sipMetadataSuggestions={[
+          metadataSuggestion("material", "6061-T6"),
+        ]}
+        workingCopy={{
+          id: "confirmed-blank-material-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "12320096476",
+            material_name: "横行滑板",
+            drawing_number: "ZHZS25032501-04",
+            material: "",
+            revision: "A/0",
+          },
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    await waitFor(() => expect(onSave).not.toHaveBeenCalled());
+    const sipRegion = getSipRegion();
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    expect((within(sipRegion).getByRole("textbox", {
+      name: "材质（可选）",
+    }) as HTMLInputElement).value).toBe("");
+  });
+
+  test("正式文件待审核数量只统计真实检验项", () => {
+    const items = [{
+      item_id: "balloon-choice-only",
+      item_type: "linear_dimension" as const,
+      raw_text: "10",
+      status: "kept",
+      requires_confirmation: false,
+      balloon_required: null,
+      inspection_item: "尺寸 10",
+      inspection_standard: "图纸要求",
+      inspection_method: "卡尺",
+      key_dimension: "否",
+      inspection_role: "尺寸检验员",
+      source_page: 1,
+      remarks: "",
+      sip_detail_fields_confirmed: true,
+      active: true,
+    }];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        projectId="project"
+        reviewedResultId={undefined}
+        exportPost={vi.fn()}
+        workingCopy={{
+          id: "source-count-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 1 },
+          manual_review_count: 1,
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {
+            material_code: "12320096476",
+            material_name: "横行滑板",
+            drawing_number: "ZHZS25032501-04",
+            material: "",
+            revision: "A/0",
+          },
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    openAuxiliaryPanel();
+    expect(screen.getByText("待选择气泡 1 项", {
+      selector: "[role='status']",
+    })).not.toBeNull();
   });
 
   test("完整识别在命令通道恢复后只自动确认一次", async () => {
@@ -1532,7 +1637,7 @@ describe("InspectionWorkbench", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
   });
 
-  test("项目 SIP 只要求补充缺失字段并通过既有命令保存", async () => {
+  test("项目 SIP 识别四个必填字段后以空材质自动保存", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
       <InspectionWorkbench
@@ -1601,6 +1706,15 @@ describe("InspectionWorkbench", () => {
     );
 
     const sipRegion = getSipRegion();
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave).toHaveBeenCalledWith({
+      type: "set_sip_metadata",
+      material_code: "12320096476",
+      material_name: "横行滑板",
+      drawing_number: "ZHZS25032501-04",
+      material: "",
+      revision: "A/0",
+    });
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -1626,37 +1740,11 @@ describe("InspectionWorkbench", () => {
     ).value).toBe("A/0");
     expect((
       within(sipRegion).getByRole("textbox", {
-        name: "材质",
+        name: "材质（可选）",
       }) as HTMLInputElement
     ).value).toBe("");
-    expect(within(sipRegion).getByText(
-      "系统已自动采纳 4/5，待补充：材质",
-    )).not.toBeNull();
     expect(within(sipRegion).getAllByText("图纸识别，已自动采纳"))
       .toHaveLength(4);
-    expect(onSave).not.toHaveBeenCalled();
-
-    const confirm = within(sipRegion).getByRole("button", {
-      name: "保存补充信息",
-    });
-    expect(confirm.hasAttribute("disabled")).toBe(true);
-    fireEvent.change(within(sipRegion).getByRole("textbox", {
-      name: "材质",
-    }), { target: { value: "6061-T6" } });
-    expect(within(sipRegion).getByRole("status").textContent).toBe(
-      "信息已补全，请保存项目 SIP 信息。",
-    );
-    expect(confirm.textContent).toBe("保存项目 SIP 信息");
-    fireEvent.click(confirm);
-
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
-      type: "set_sip_metadata",
-      material_code: "12320096476",
-      material_name: "横行滑板",
-      drawing_number: "ZHZS25032501-04",
-      material: "6061-T6",
-      revision: "A/0",
-    }));
   });
 
   test("SIP 表格已生成后不重复显示生成入口并在异常修复后自动推进", async () => {
@@ -3177,7 +3265,6 @@ describe("InspectionWorkbench", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
     fireEvent.click(screen.getByRole("button", { name: "修改" }));
-    fireEvent.click(screen.getByRole("button", { name: "更改处理方式" }));
     fireEvent.click(screen.getByRole("radio", { name: "排除此要求" }));
     const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {

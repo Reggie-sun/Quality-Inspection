@@ -1803,6 +1803,73 @@ def test_set_sip_metadata_replaces_the_fixed_review_snapshot(
     }
 
 
+def test_set_sip_metadata_keeps_optional_material_blank(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+) -> None:
+    """Catches optional material being restored to the nonblank SIP gate."""
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_metadata",
+            "material_code": "MAT-001",
+            "material_name": "上座",
+            "drawing_number": "JS26032501",
+            "material": "none",
+            "revision": "A1",
+        },
+    )
+
+    assert saved.sip_metadata == {
+        "material_code": "MAT-001",
+        "material_name": "上座",
+        "drawing_number": "JS26032501",
+        "material": "",
+        "revision": "A1",
+    }
+
+
+def test_non_source_command_normalizes_legacy_source_only_coverage(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    """Catches ordinary review progress preserving obsolete source blockers."""
+    coverage = copy.deepcopy(working_copy.coverage)
+    coverage["entries"] = [
+        {
+            "observation_id": "legacy-source",
+            "source_location_id": "legacy-source",
+            "candidate_id": None,
+            "disposition": "ambiguous",
+            "coordinates": [1, 2, 3, 4],
+            "requires_confirmation": True,
+        }
+    ]
+    coverage["review_required_count"] = 1
+    working_copy.coverage = coverage
+    db_session.commit()
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "set_sip_metadata",
+            "material_code": "MAT-001",
+            "material_name": "上座",
+            "drawing_number": "JS26032501",
+            "material": "",
+            "revision": "A1",
+        },
+    )
+
+    assert saved.coverage["review_required_count"] == 0
+    assert saved.coverage["entries"][0]["resolution_source"] == "system_default"
+
+
 def test_simple_merge_preserves_sources_without_quantity_sum(
     review_service: ReviewService,
     working_copy: ReviewWorkingCopy,

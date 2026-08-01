@@ -21,6 +21,7 @@ from app.review.schemas import (
     ReviewCommandRequest,
     ReviewLockResponse,
     ReviewWorkingCopyResponse,
+    normalize_sip_metadata,
 )
 from app.review.service import (
     FreezeBlocked,
@@ -277,15 +278,19 @@ def confirm_review(
 
 
 def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
+    coverage = ReviewService.normalized_coverage(
+        working.coverage,
+        working.technical_requirements,
+    )
     return {
         "id": working.id,
         "project_id": working.project_id,
         "raw_result_id": working.raw_result_id,
         "version": working.version,
         "items": working.items,
-        "coverage": working.coverage,
+        "coverage": coverage,
         "technical_requirements": working.technical_requirements,
-        "sip_metadata": working.sip_metadata,
+        "sip_metadata": normalize_sip_metadata(working.sip_metadata),
         "numbering_stale": working.numbering_stale,
         "items_frozen_at": working.items_frozen_at,
         "items_frozen_by": working.items_frozen_by,
@@ -294,7 +299,7 @@ def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
         "updated_at": working.updated_at,
         "manual_review_count": manual_review_count(
             working.items,
-            working.coverage,
+            coverage,
         ),
     }
 

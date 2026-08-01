@@ -159,6 +159,23 @@ test("项目 SIP 信息不完整时禁用保存，补全后启用", () => {
   expect(confirm.hasAttribute("disabled")).toBe(false);
 });
 
+test("材质未标注时仍可保存四个必填项目 SIP 字段", () => {
+  renderPanel({
+    metadata: { ...metadata, material: "" },
+    metadataConfirmed: false,
+    metadataDirty: true,
+  });
+
+  fireEvent.click(screen.getByText("编辑项目 SIP 信息", {
+    selector: "summary",
+  }));
+  expect(screen.getByRole("textbox", { name: "材质（可选）" })
+    .getAttribute("placeholder")).toBe("图纸未标注可留空");
+  expect(screen.getByRole("button", {
+    name: "保存项目 SIP 信息",
+  }).hasAttribute("disabled")).toBe(false);
+});
+
 test("项目 SIP 编辑通过受控回调提交精确草稿并支持取消", () => {
   const onMetadataChange = vi.fn();
   const onConfirmMetadata = vi.fn();
@@ -197,7 +214,7 @@ test("图纸识别字段在编辑器中明确标记为已自动采纳", () => {
       {...panelProps()}
       persistedMetadata={{}}
       metadataConfirmed={false}
-      missingMetadataFields={["物料编码", "版本号", "材质"]}
+      missingMetadataFields={["物料编码", "版本号"]}
       metadataSuggestions={[
         {
           field: "material_name",

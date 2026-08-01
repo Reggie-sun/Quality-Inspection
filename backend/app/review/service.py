@@ -40,8 +40,10 @@ from app.review.schemas import (
     SetTechnicalRequirementMatch,
     SIP_DETAIL_FIELDS,
     SIP_METADATA_FIELDS,
+    SIP_REQUIRED_METADATA_FIELDS,
     SIP_OPTIONAL_DETAIL_FIELDS,
     Split,
+    normalize_sip_metadata,
     parse_review_command,
     validate_edit_fields,
 )
@@ -158,26 +160,14 @@ class ReviewService:
             technical_requirements,
             items,
         )
-        technical_requirement_source_ids: set[str] = set()
-        for requirement in technical_requirements:
-            source_ids = requirement.get("source_location_ids", [])
-            if not isinstance(source_ids, list):
-                continue
-            technical_requirement_source_ids.update(
-                source_id
-                for source_id in source_ids
-                if isinstance(source_id, str)
-            )
         working = ReviewWorkingCopy(
             project_id=raw_result.project_id,
             raw_result_id=raw_result.id,
             version=1,
             items=items,
-            coverage=self._review_coverage(
+            coverage=self.normalized_coverage(
                 raw_result.coverage,
-                technical_requirement_source_ids=frozenset(
-                    technical_requirement_source_ids
-                ),
+                technical_requirements,
             ),
             technical_requirements=technical_requirements,
             sip_metadata={},
@@ -212,11 +202,18 @@ class ReviewService:
             raise ItemsFrozen("review item set is frozen")
 
         items = copy.deepcopy(working.items)
-        coverage = copy.deepcopy(working.coverage)
         technical_requirements = copy.deepcopy(
             working.technical_requirements
         )
-        sip_metadata = copy.deepcopy(working.sip_metadata)
+        coverage = (
+            copy.deepcopy(working.coverage)
+            if isinstance(parsed, (PromoteSource, IgnoreSource, IgnoreSources))
+            else self.normalized_coverage(
+                working.coverage,
+                technical_requirements,
+            )
+        )
+        sip_metadata = normalize_sip_metadata(working.sip_metadata)
         needs_sip_source_pages = (
             isinstance(parsed, GenerateSipTable)
             and any(
@@ -321,10 +318,15 @@ class ReviewService:
             self.session.rollback()
             raise ItemsFrozen("review item set is already frozen")
 
+        coverage = self.normalized_coverage(
+            working.coverage,
+            working.technical_requirements,
+        )
+        sip_metadata = normalize_sip_metadata(working.sip_metadata)
         blockers = self.freeze_blockers(
             working.items,
-            working.coverage,
-            working.sip_metadata,
+            coverage,
+            sip_metadata,
         )
         if blockers:
             self.session.rollback()
@@ -341,6 +343,8 @@ class ReviewService:
                 ReviewWorkingCopy.items_frozen_at.is_(None),
             )
             .values(
+                coverage=coverage,
+                sip_metadata=sip_metadata,
                 items_frozen_at=frozen_at,
                 items_frozen_by=operator_id,
                 items_frozen_version=expected_version,
@@ -365,15 +369,24 @@ class ReviewService:
         sip_metadata: dict[str, Any],
     ) -> list[str]:
         blockers: list[str] = []
-        if coverage.get("blocking_count", 0):
+        coverage_entries = coverage.get("entries", [])
+        coverage_malformed = (
+            not isinstance(coverage_entries, list)
+            or any(
+                not isinstance(entry, dict)
+                or not ReviewService._valid_coverage_entry(entry)
+                for entry in coverage_entries
+            )
+        )
+        if coverage.get("blocking_count", 0) or coverage_malformed:
             blockers.append("coverage_blocking")
         unresolved_item = any(
             item.get("active", True) and item.get("requires_confirmation")
             for item in items
         )
-        unresolved_coverage = any(
-            entry.get("requires_confirmation")
-            for entry in coverage.get("entries", [])
+        unresolved_coverage = not coverage_malformed and any(
+            entry.get("requires_confirmation") is True
+            for entry in coverage_entries
         )
         sip_unconfirmed = bool(
             ReviewService._sip_confirmation_blockers(items, sip_metadata)
@@ -434,9 +447,10 @@ class ReviewService:
         if working.numbering_stale:
             self.session.rollback()
             raise ReviewConfirmationBlocked(["numbering_stale"])
+        sip_metadata = normalize_sip_metadata(working.sip_metadata)
         sip_blockers = self._sip_confirmation_blockers(
             working.items,
-            working.sip_metadata,
+            sip_metadata,
         )
         if sip_blockers:
             self.session.rollback()
@@ -479,7 +493,7 @@ class ReviewService:
                 if item.get("active", True)
             ],
             balloons=[balloon.snapshot() for balloon in balloons],
-            sip_metadata=copy.deepcopy(working.sip_metadata),
+            sip_metadata=sip_metadata,
             schema_version="reviewed-result/2",
         )
         self.session.add(reviewed)
@@ -553,6 +567,26 @@ class ReviewService:
         return current
 
     @staticmethod
+    def normalized_coverage(
+        raw_coverage: dict[str, Any],
+        technical_requirements: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        source_ids: set[str] = set()
+        for requirement in technical_requirements:
+            requirement_source_ids = requirement.get("source_location_ids", [])
+            if not isinstance(requirement_source_ids, list):
+                continue
+            source_ids.update(
+                source_id
+                for source_id in requirement_source_ids
+                if isinstance(source_id, str)
+            )
+        return ReviewService._review_coverage(
+            raw_coverage,
+            technical_requirement_source_ids=frozenset(source_ids),
+        )
+
+    @staticmethod
     def _review_coverage(
         raw_coverage: dict[str, Any],
         *,
@@ -603,7 +637,7 @@ class ReviewService:
                 entry.pop("advisor_review", None)
                 if (
                     entry.get("requires_confirmation") is True
-                    and entry.get("candidate_id") is None
+                    and ReviewService._valid_source_only_entry(entry)
                     and entry.get("source_location_id")
                     not in technical_requirement_source_ids
                 ):
@@ -930,7 +964,7 @@ class ReviewService:
                 numbering_stale=numbering_stale,
             )
         if isinstance(command, SetSipMetadata):
-            values = command.model_dump(mode="json")
+            values = normalize_sip_metadata(command.model_dump(mode="json"))
             sip_metadata.clear()
             sip_metadata.update(
                 {field: values[field] for field in SIP_METADATA_FIELDS}
@@ -1516,10 +1550,14 @@ class ReviewService:
         sip_metadata: dict[str, Any],
     ) -> list[str]:
         blockers: list[str] = []
-        if set(sip_metadata) != set(SIP_METADATA_FIELDS) or any(
-            not isinstance(sip_metadata.get(field), str)
-            or not sip_metadata[field].strip()
-            for field in SIP_METADATA_FIELDS
+        if (
+            set(sip_metadata) != set(SIP_METADATA_FIELDS)
+            or not isinstance(sip_metadata.get("material"), str)
+            or any(
+                not isinstance(sip_metadata.get(field), str)
+                or not sip_metadata[field].strip()
+                for field in SIP_REQUIRED_METADATA_FIELDS
+            )
         ):
             blockers.append("sip_metadata_unconfirmed")
         active_items = [item for item in items if item.get("active", True)]
@@ -1588,10 +1626,77 @@ class ReviewService:
         return entries
 
     @staticmethod
+    def _valid_source_only_entry(entry: dict[str, Any]) -> bool:
+        return (
+            ReviewService._valid_coverage_entry(entry)
+            and entry.get("candidate_id") is None
+            and isinstance(entry.get("observation_id"), str)
+            and bool(entry["observation_id"].strip())
+            and isinstance(entry.get("source_location_id"), str)
+            and bool(entry["source_location_id"].strip())
+        )
+
+    @staticmethod
+    def _valid_coverage_entry(entry: dict[str, Any]) -> bool:
+        required_fields = {
+            "observation_id",
+            "disposition",
+            "source_location_id",
+            "coordinates",
+            "candidate_id",
+            "requires_confirmation",
+        }
+        if not required_fields.issubset(entry):
+            return False
+        observation_id = entry["observation_id"]
+        disposition = entry["disposition"]
+        source_location_id = entry["source_location_id"]
+        coordinates = entry["coordinates"]
+        candidate_id = entry["candidate_id"]
+        return (
+            isinstance(observation_id, str)
+            and bool(observation_id.strip())
+            and (
+                disposition is None
+                or (isinstance(disposition, str) and bool(disposition.strip()))
+            )
+            and (
+                source_location_id is None
+                or (
+                    isinstance(source_location_id, str)
+                    and bool(source_location_id.strip())
+                )
+            )
+            and (
+                coordinates is None
+                or (
+                    isinstance(coordinates, (list, tuple))
+                    and len(coordinates) == 4
+                    and all(
+                        isinstance(value, (int, float))
+                        and not isinstance(value, bool)
+                        for value in coordinates
+                    )
+                )
+            )
+            and (
+                candidate_id is None
+                or (isinstance(candidate_id, str) and bool(candidate_id.strip()))
+            )
+            and isinstance(entry["requires_confirmation"], bool)
+        )
+
+    @staticmethod
     def _refresh_review_required_count(coverage: dict[str, Any]) -> None:
+        entries = coverage.get("entries", [])
+        if not isinstance(entries, list):
+            coverage["review_required_count"] = 1
+            return
         coverage["review_required_count"] = sum(
-            entry.get("requires_confirmation") is True
-            for entry in ReviewService._coverage_entries(coverage)
+            not isinstance(entry, dict)
+            or not ReviewService._valid_coverage_entry(entry)
+            or entry.get("requires_confirmation") is True
+            for entry in entries
         )
 
     @staticmethod

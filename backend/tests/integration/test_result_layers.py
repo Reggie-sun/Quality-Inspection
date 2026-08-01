@@ -703,6 +703,35 @@ def test_review_remarks_persist_without_mutating_raw_or_export_contract(
     assert raw.candidates[0]["payload"].get("remarks") is None
 
 
+def test_optional_blank_material_persists_in_reviewed_result(
+    db_session: Session,
+    tmp_path: Path,
+) -> None:
+    context = make_balloon_context(db_session, tmp_path, frozen=False)
+    metadata = dict(context.working_copy.sip_metadata)
+    metadata["material"] = ""
+    context.working_copy.sip_metadata = metadata
+    db_session.commit()
+
+    working = context.review_service.freeze_items(
+        context.working_copy.id,
+        expected_version=context.working_copy.version,
+        operator_id="quality-1",
+    )
+    context.balloon_service.generate_formal(
+        working.project_id,
+        expected_version=working.version,
+        operator_id="quality-1",
+    )
+    reviewed = context.review_service.confirm(
+        working.id,
+        expected_version=working.version,
+        operator_id="quality-1",
+    )
+
+    assert reviewed.sip_metadata["material"] == ""
+
+
 def test_rejected_confirmation_never_enters_reviewed_export_source(
     db_session: Session,
     tmp_path: Path,

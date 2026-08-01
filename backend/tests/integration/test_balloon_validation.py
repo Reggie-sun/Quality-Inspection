@@ -173,6 +173,7 @@ def test_unresolved_evidence_blocks_balloon_confirm_and_export_chain(
         {
             "observation_id": "partial-visual",
             "source_location_id": "partial-visual",
+            "candidate_id": "i1",
             "disposition": "ambiguous",
             "coordinates": [10, 20, 30, 40],
             "requires_confirmation": True,

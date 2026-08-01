@@ -2284,7 +2284,6 @@
             "type": "string"
           },
           "material": {
-            "minLength": 1,
             "title": "Material",
             "type": "string"
           },

@@ -17,6 +17,12 @@ export type MetadataDraft = {
   material: string;
   revision: string;
 };
+const REQUIRED_METADATA_FIELDS: Array<keyof MetadataDraft> = [
+  "material_code",
+  "material_name",
+  "drawing_number",
+  "revision",
+];
 
 export type SipInformationPanelProps = {
   metadata: MetadataDraft;
@@ -101,7 +107,7 @@ export function SipInformationPanel({
   const suggestionByField = new Map(
     metadataSuggestions.map((suggestion) => [suggestion.field, suggestion]),
   );
-  const adoptedMetadataCount = 5 - missingMetadataFields.length;
+  const adoptedMetadataCount = 4 - missingMetadataFields.length;
 
   return (
     <>
@@ -154,7 +160,7 @@ export function SipInformationPanel({
                   ["material_name", zhCN.workbench.metadataFields.materialName],
                   ["drawing_number", zhCN.workbench.metadataFields.drawingNumber],
                   ["revision", zhCN.workbench.metadataFields.revision],
-                  ["material", zhCN.workbench.metadataFields.material],
+                  ["material", zhCN.workbench.metadataFields.materialOptional],
                 ] as const
               ).map(([key, label]) => {
                 const suggestion = suggestionByField.get(key);
@@ -176,7 +182,9 @@ export function SipInformationPanel({
                       <input
                         aria-label={label}
                         value={metadata[key]}
-                        placeholder={zhCN.workbench.unknown}
+                        placeholder={key === "material"
+                          ? zhCN.workbench.optionalMaterialPlaceholder
+                          : zhCN.workbench.unknown}
                         onChange={(event) => {
                           onMetadataChange({
                             ...metadata,
@@ -209,8 +217,8 @@ export function SipInformationPanel({
               <div className="sip-metadata-actions">
                 <button
                   type="button"
-                  disabled={Object.values(metadata).some(
-                    (value) => value.trim() === "",
+                  disabled={REQUIRED_METADATA_FIELDS.some(
+                    (field) => metadata[field].trim() === "",
                   )}
                   onClick={onConfirmMetadata}
                 >

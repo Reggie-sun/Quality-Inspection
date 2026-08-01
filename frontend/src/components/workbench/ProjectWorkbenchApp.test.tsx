@@ -171,7 +171,7 @@ test("workbench title-block suggestions adopt recognized values without submitti
   ).value).toBe("ZHZS25032501-04");
   expect(within(sipRegion).getByText("图纸识别，已自动采纳")).not.toBeNull();
   expect(within(sipRegion).getByText(
-    "系统已自动采纳 1/5，待补充：物料编码、产品名称、材质、版本号",
+    "系统已自动采纳 1/4，待补充：物料编码、产品名称、版本号",
   )).not.toBeNull();
   expect(fetchMock.mock.calls.some(([path]) => (
     String(path).endsWith("/review/commands")
