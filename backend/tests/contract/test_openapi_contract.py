@@ -163,6 +163,37 @@ def test_openapi_matches_the_approved_api_v1_snapshot() -> None:
     assert app.openapi() == approved
 
 
+def test_openapi_exposes_exact_review_item_union_for_structured_gdt() -> None:
+    components = app.openapi()["components"]["schemas"]
+    working_items = components["ReviewWorkingCopyProjection"]["properties"][
+        "items"
+    ]["items"]
+    reviewed_items = components["ReviewedResultResponse"]["properties"][
+        "items"
+    ]["items"]
+    expected_refs = {
+        "#/components/schemas/GeometricToleranceReviewItem",
+        "#/components/schemas/TypedReviewItem",
+        "#/components/schemas/CoarseReviewItem",
+    }
+    assert {item["$ref"] for item in working_items["anyOf"]} == expected_refs
+    assert {item["$ref"] for item in reviewed_items["anyOf"]} == expected_refs
+    gdt = components["GeometricToleranceReviewItem"]
+    assert {
+        "item_id",
+        "item_type",
+        "tolerance_type",
+        "frames",
+        "source_location_ids",
+        "tolerance_symbol",
+        "tolerance_value",
+        "diameter_modifier",
+        "datum_references",
+        "evidence_ref",
+    } <= set(gdt["required"])
+    assert "object" not in str(working_items)
+
+
 def test_human_api_index_projects_every_formal_operation_once() -> None:
     """Catches the derived index omitting or misidentifying a formal operation."""
     indexed: dict[tuple[str, str], str] = {}

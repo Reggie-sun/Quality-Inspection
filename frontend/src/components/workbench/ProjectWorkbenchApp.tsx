@@ -76,7 +76,7 @@ export function ProjectWorkbenchApp({
     const transport = await getJson<ProjectWorkbenchTransport>(
       `/api/v1/projects/${projectId}/workbench`,
     );
-    const loaded = transport as ProjectWorkbenchView;
+    const loaded = transport as unknown as ProjectWorkbenchView;
     const controlledSource = `/api/v1/projects/${projectId}/source-pdf`;
     if (
       loaded.project.id !== projectId ||

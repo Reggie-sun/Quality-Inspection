@@ -236,7 +236,8 @@ def test_visual_schema_failure_retries_once_with_same_input_and_safe_audits(
             return VisionResult(
                 request_id="fixture-retry-success",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={"total_tokens": 12},
@@ -481,8 +482,9 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
                                         arguments=json.dumps(
                                             {
                                                 "schema_version": (
-                                                    "visual-symbol-review/2"
+                                                    "visual-symbol-review/3"
                                                 ),
+                                                "gdt_frames": [],
                                                 "detections": [],
                                             }
                                         ),
@@ -607,7 +609,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         success_request["crop_sha256"]
     )
     assert success_response == {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
+        "gdt_frames": [],
         "detections": [],
     }
     assert Path(success_record["response_ref"]).name == (
@@ -733,7 +736,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
             response_path.write_text(
                 json.dumps(
                     {
-                        "schema_version": "visual-symbol-review/2",
+                        "schema_version": "visual-symbol-review/3",
+                        "gdt_frames": [],
                         "detections": [
                             {
                                 "visual_observation_id": "visual-001",
@@ -807,7 +811,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         VisionResult(
             request_id="secret-request-id",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [],
             },
             usage={"total_tokens": 1},
@@ -815,7 +820,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         VisionResult(
             request_id="fixture-safe-request-id",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [],
             },
             usage={"api_key": 1},

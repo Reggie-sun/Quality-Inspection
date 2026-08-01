@@ -692,7 +692,7 @@ test("confidence policy routes only exceptions to review and preserves publicati
     operatorId,
   );
   expect(confirmed.status).toBe(200);
-  expect(confirmed.payload.schema_version).toBe("reviewed-result/2");
+  expect(confirmed.payload.schema_version).toBe("reviewed-result/3");
   const finalActiveItems = confirmed.payload.items.filter((item) => item.active);
   const finalAutoIds = new Set(
     finalActiveItems

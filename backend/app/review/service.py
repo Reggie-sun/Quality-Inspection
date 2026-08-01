@@ -15,6 +15,7 @@ from app.candidates.confidence import (
     ConfidenceDecisionContractError,
     validate_confidence_decision,
 )
+from app.candidates.geometric_tolerance import GeometricToleranceCandidate
 from app.candidates.models import AutomaticResult
 from app.candidates.schemas import Candidate, stable_candidate_id
 from app.config import get_settings
@@ -480,7 +481,7 @@ class ReviewService:
             ],
             balloons=[balloon.snapshot() for balloon in balloons],
             sip_metadata=copy.deepcopy(working.sip_metadata),
-            schema_version="reviewed-result/2",
+            schema_version="reviewed-result/3",
         )
         self.session.add(reviewed)
         self.session.flush()
@@ -519,6 +520,25 @@ class ReviewService:
         payload = copy.deepcopy(candidate["payload"])
         payload.pop("candidate_id", None)
         payload.pop("confidence_decision", None)
+        if (
+            raw_schema_version == "automatic-result/2"
+            and payload.get("coarse_type") == "geometric_tolerance"
+        ):
+            legacy_candidate = GeometricToleranceCandidate.from_legacy_unknown(
+                candidate_id=item_id,
+                raw_text=payload["raw_text"],
+                coordinates=_COORDINATES.validate_python(
+                    payload["coordinates"]
+                ),
+                source_location_ids=tuple(
+                    str(source_id)
+                    for source_id in candidate.get("source_location_ids", [])
+                ),
+            )
+            payload = legacy_candidate.model_dump(
+                mode="json",
+                exclude={"candidate_id", "source_location_ids"},
+            )
         validated_decision = None
         if raw_schema_version == "automatic-result/2":
             try:

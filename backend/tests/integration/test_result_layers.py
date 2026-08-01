@@ -877,7 +877,7 @@ def test_reviewed_result_is_immutable(
     )
 
     assert duplicate.id == reviewed.id
-    assert reviewed.schema_version == "reviewed-result/2"
+    assert reviewed.schema_version == "reviewed-result/3"
     assert reviewed.sip_metadata == {
         "material_code": "MAT-001",
         "material_name": "fixture",

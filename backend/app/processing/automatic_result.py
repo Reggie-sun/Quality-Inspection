@@ -53,7 +53,11 @@ from app.projects.state import InvalidTransition, ProjectState, transition
 
 
 LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"
-AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"
+# [REMOVAL_CANDIDATE] automatic-result/2 GD&T compatibility reader.
+# Owner: GeometricToleranceNormalizer and automatic-result/3.
+# Trigger: GDT-10 proves zero /2 GD&T rows after migration and rollback proof.
+COMPAT_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"
+AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/3"
 ROUGHNESS_TOKEN = re.compile(r"(?<![A-Za-z])Ra(?=\s*[0-9])", re.IGNORECASE)
 SYMBOL_RECOGNITION_SUMMARY_VERSION = "symbol-recognition-summary/1"
 _ROUTED_RECOGNITION_MODES = frozenset(
@@ -844,7 +848,10 @@ def _validated_candidates_for_schema(
 ) -> Sequence[Mapping[str, Any]]:
     if schema_version == LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION:
         return candidates
-    if schema_version != AUTOMATIC_RESULT_SCHEMA_VERSION:
+    if schema_version not in {
+        COMPAT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+        AUTOMATIC_RESULT_SCHEMA_VERSION,
+    }:
         raise ConfidenceDecisionContractError(
             f"automatic result schema_version is unknown: {schema_version}"
         )
@@ -854,7 +861,7 @@ def _validated_candidates_for_schema(
         or isinstance(candidates, Mapping)
     ):
         raise ConfidenceDecisionContractError(
-            "automatic-result/2 candidates must be a non-string sequence"
+            f"{schema_version} candidates must be a non-string sequence"
         )
     for index, candidate in enumerate(candidates):
         if not isinstance(candidate, Mapping):
