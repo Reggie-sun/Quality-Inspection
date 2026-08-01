@@ -13,6 +13,8 @@ type ExportPanelProps = {
   sipPendingCount?: number;
   sipExceptionCount?: number;
   projectMetadataConfirmed?: boolean;
+  missingProjectMetadataFields?: string[];
+  projectMetadataBlocker?: "conflict" | "save_failed" | "ready_to_save" | "auto_saving";
   balloonBlockers: string[];
   post: PostJson;
   initialExport?: ExportJob | null;
@@ -42,6 +44,8 @@ export function ExportPanel({
   sipPendingCount = 0,
   sipExceptionCount = 0,
   projectMetadataConfirmed = true,
+  missingProjectMetadataFields = [],
+  projectMetadataBlocker,
   balloonBlockers,
   post,
   initialExport,
@@ -79,7 +83,11 @@ export function ExportPanel({
     : reviewedResultId === undefined && sipPendingCount > 0
       ? zhCN.export.sipPending(sipPendingCount)
     : reviewedResultId === undefined && !projectMetadataConfirmed
-      ? zhCN.export.pendingProjectSip
+      ? missingProjectMetadataFields.length > 0
+        ? zhCN.export.missingProjectSip(missingProjectMetadataFields)
+        : projectMetadataBlocker !== undefined
+          ? zhCN.export.projectSipBlockers[projectMetadataBlocker]
+        : zhCN.export.pendingProjectSip
       : reviewedResultId === undefined && !canFinalize
         ? zhCN.export.notReviewed
     : balloonBlockers.length > 0

@@ -138,7 +138,7 @@ export const zhCN = {
     projectSipInformation: "项目基本信息",
     selectedSipInformation: "当前检验项",
     editProjectSipInformation: "编辑项目 SIP 信息",
-    recognizedMetadataSuggestion: "图纸识别，待确认",
+    recognizedMetadataAdopted: "图纸识别，已自动采纳",
     recognizedMetadataConsistent: "图纸识别一致",
     currentMetadataValue: (value: string) => `当前值：${value}`,
     recognizedMetadataValue: (value: string) => `图纸识别值：${value}`,
@@ -159,6 +159,15 @@ export const zhCN = {
       `全局另有 ${count} 条 SIP 异常待处理。`,
     editResolvedSipRow: "可选修改当前 SIP 行",
     optionalResolvedSipEdit: "以下修改为可选操作，不属于异常处理。",
+    partialProjectSipMetadata: (confirmed: number, missing: string[]) =>
+      `系统已自动采纳 ${confirmed}/5，待补充：${missing.join("、")}`,
+    projectSipMetadataConflict: (missing: string[]) => missing.length > 0
+      ? `识别信息与已保存内容不一致，请检查；待补充：${missing.join("、")}`
+      : "识别信息与已保存内容不一致，请检查后保存。",
+    projectSipMetadataSaveFailed:
+      "项目 SIP 信息保存失败，请点击“保存项目 SIP 信息”重试。",
+    projectSipMetadataReadyToSave: "信息已补全，请保存项目 SIP 信息。",
+    autoConfirmingProjectSipMetadata: "识别信息完整，将自动保存。",
     sipMappingExceptions: {
       composite_method_required: "复合项需要选择检验方法",
       unsupported_item_type: "未知检验项类型",
@@ -166,7 +175,8 @@ export const zhCN = {
       missing_inspection_role: "缺少默认检验角色",
       sip_regeneration_required: "技术要求已变更，请重新生成 SIP 表格",
     },
-    confirmProjectSipInformation: "确认项目 SIP 信息",
+    saveProjectSipInformation: "保存项目 SIP 信息",
+    saveMissingProjectSipInformation: "保存补充信息",
     cancelProjectSipInformation: "取消项目 SIP 信息修改",
     selectedSourceSipUnavailable: "当前选择的是待判定来源。",
     selectItemForSip: "请选择一个有效检验项以填写 SIP 信息。",
@@ -501,6 +511,14 @@ export const zhCN = {
     sipPending: (count: number) => `SIP 待生成 ${count} 项`,
     sipExceptions: (count: number) => `SIP 异常 ${count} 项`,
     pendingProjectSip: "项目 SIP 信息未确认",
+    missingProjectSip: (missing: string[]) =>
+      `待补充项目 SIP：${missing.join("、")}`,
+    projectSipBlockers: {
+      conflict: "项目 SIP 信息存在识别冲突",
+      save_failed: "项目 SIP 信息保存失败",
+      ready_to_save: "项目 SIP 信息待保存",
+      auto_saving: "项目 SIP 信息等待自动保存",
+    },
     blocked: "存在气泡阻断项",
     ready: "待生成",
     running: "正在生成",

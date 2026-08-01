@@ -2,6 +2,30 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-sip-metadata-auto-confirm
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `InspectionWorkbench` 的项目级 SIP metadata 建议、`SipInformationPanel` 编辑入口与 `ExportPanel` 正式文件门禁提示
+- Symptom: 图纸已经识别并展示物料编码、产品名称、图号和版本号，客户确认完技术要求后，正式文件仍显示“项目 SIP 信息未确认”；客户必须再次展开整张项目 SIP 表单，且无法知道实际只缺“材质”
+- Previously correct behavior: 无；旧合同要求所有识别建议都由人工整表确认
+- Reproduction: live `266e00ec-b97f-43a8-9f46-9af753374b01` 的 6 条技术要求均已确认、逐行 SIP 为 `121 / 0`，但 `working_copy.sip_metadata` 五字段均未持久化；项目基本信息已从 suggestions 展示 4 个识别值，只有材质缺失，`ExportPanel` 仍只显示泛化“项目 SIP 信息未确认”
+- Root cause: `metadataDraft()` 只将图纸识别 suggestions 预填到 frontend local draft，`hasConfirmedSipMetadata()` 与 backend freeze 只接受持久化的 `working_copy.sip_metadata`；完整识别结果不会自动走既有 `set_sip_metadata` command，缺失场景也没有把具体字段投影到正式文件门禁
+- Selected lane: `Standard`；保留既有 backend command、freeze/review/export contract，仅调整 frontend 自动提交和缺失/冲突呈现，并需要 focused/full tests、headed Chrome smoke 与独立只读 review
+- Problem boundary: 识别值完整且无待补字段时自动通过既有 `set_sip_metadata` 保存；不完整时只提示并要求补充缺失字段，不把 suggestions 直接当作 backend 已确认状态；已持久化人工值继续优先，识别冲突不自动覆盖
+- Single owner: `InspectionWorkbench` 继续拥有项目 metadata draft 与 `submitCommand()`；`SipInformationPanel` 和 `ExportPanel` 只消费同一字段状态作客户提示
+- Old path action: 退役“所有识别建议都标为待确认并要求整表二次确认”的默认路径；保留人工修改和保存失败后的显式重试入口
+- Unchanged contract: `set_sip_metadata` payload、working-copy versioning、dirty/save/return、freeze、reviewed result、balloon 与 atomic export contract 均不变
+- Focused verification: `micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/SipInformationPanel.test.tsx src/components/workbench/ExportPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx`
+- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/InspectionWorkbench.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`frontend/src/components/workbench/ProjectWorkbenchApp.test.tsx`、`frontend/src/components/workbench/SipInformationPanel.tsx`、`frontend/src/components/workbench/SipInformationPanel.test.tsx`、`frontend/src/components/workbench/ExportPanel.tsx`、`frontend/src/components/workbench/ExportPanel.test.tsx`、`frontend/src/copy/zhCN.ts`、`frontend/src/styles/workbench.css`
+- Writer ownership: 父 agent 唯一 writer；实现后派发独立只读 reviewer
+- Fix: 完整且无冲突的 5 个识别值会在既有命令通道可用时恰好一次提交 `set_sip_metadata`；命令繁忙时等待恢复，不提前消耗 attempt。缺失值只要求补充具体字段；冲突、人工补全、保存失败和等待自动保存分别显示真实状态，失败后保留显式重试。`ExportPanel` 同步投影同一阻断原因，不改变正式导出门禁。
+- Regression check: TDD RED 精确暴露完整识别不自动提交、缺失字段仍泛化、busy attempt 被消耗、冲突误报自动保存、失败无明确重试和 Export conflict 泛化；GREEN focused `4 files / 85 tests`、full frontend `24 files / 287 tests`，`npm run build` 与 `git diff --check` 通过。独立 `reviewer` 初审 `reject` 后复核上述状态机修复，最终 verdict `accept`，无 blocking/non-blocking concern。
+- Runtime proof: headed Chrome 读取 live `266e00ec-b97f-43a8-9f46-9af753374b01`：正式文件显示“待补充项目 SIP：材质”，SIP 显示“系统已自动采纳 4/5，待补充：材质”，4 个识别字段标为“已自动采纳”，材质为空时“保存补充信息”禁用；本次页面加载仅有 lock/workbench/source-pdf 请求，无 `/review/commands` 写入，console warning/error 为 0。
+- Change: 本提交
+
 ## BUG-20260801-sip-exception-second-confirmation
 
 - Status: 已解决

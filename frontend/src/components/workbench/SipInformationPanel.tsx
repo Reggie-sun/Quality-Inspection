@@ -23,6 +23,10 @@ export type SipInformationPanelProps = {
   metadataValues: ReadonlyArray<readonly [string, string?]>;
   persistedMetadata?: Partial<MetadataDraft>;
   metadataSuggestions?: ProjectWorkbenchSipMetadataSuggestion[];
+  metadataConfirmed?: boolean;
+  missingMetadataFields?: string[];
+  metadataConflict?: boolean;
+  metadataSaveFailed?: boolean;
   metadataDirty: boolean;
   disabled: boolean;
   selectedItem?: ReviewItem;
@@ -50,6 +54,10 @@ export function SipInformationPanel({
   metadataValues,
   persistedMetadata = {},
   metadataSuggestions = [],
+  metadataConfirmed = true,
+  missingMetadataFields = [],
+  metadataConflict = false,
+  metadataSaveFailed = false,
   metadataDirty,
   disabled,
   selectedItem,
@@ -93,6 +101,7 @@ export function SipInformationPanel({
   const suggestionByField = new Map(
     metadataSuggestions.map((suggestion) => [suggestion.field, suggestion]),
   );
+  const adoptedMetadataCount = 5 - missingMetadataFields.length;
 
   return (
     <>
@@ -115,6 +124,24 @@ export function SipInformationPanel({
               </div>
             ))}
           </dl>
+          {!metadataConfirmed ? (
+            <p className="sip-metadata-status" role="status">
+              {metadataConflict
+                ? zhCN.workbench.projectSipMetadataConflict(
+                    missingMetadataFields,
+                  )
+                : missingMetadataFields.length > 0
+                ? zhCN.workbench.partialProjectSipMetadata(
+                    adoptedMetadataCount,
+                    missingMetadataFields,
+                  )
+                : metadataSaveFailed
+                  ? zhCN.workbench.projectSipMetadataSaveFailed
+                  : metadataDirty
+                    ? zhCN.workbench.projectSipMetadataReadyToSave
+                : zhCN.workbench.autoConfirmingProjectSipMetadata}
+            </p>
+          ) : null}
           <details className="sip-metadata-editor">
             <summary>{zhCN.workbench.editProjectSipInformation}</summary>
             <fieldset disabled={disabled}>
@@ -141,7 +168,7 @@ export function SipInformationPanel({
                       <span className="sip-metadata-field-label">
                         {label}
                         {suggested !== "" && persisted === "" ? (
-                          <small>{zhCN.workbench.recognizedMetadataSuggestion}</small>
+                          <small>{zhCN.workbench.recognizedMetadataAdopted}</small>
                         ) : suggested !== "" && persisted === suggested ? (
                           <small>{zhCN.workbench.recognizedMetadataConsistent}</small>
                         ) : null}
@@ -187,7 +214,9 @@ export function SipInformationPanel({
                   )}
                   onClick={onConfirmMetadata}
                 >
-                  {zhCN.workbench.confirmProjectSipInformation}
+                  {missingMetadataFields.length > 0
+                    ? zhCN.workbench.saveMissingProjectSipInformation
+                    : zhCN.workbench.saveProjectSipInformation}
                 </button>
                 <button
                   type="button"

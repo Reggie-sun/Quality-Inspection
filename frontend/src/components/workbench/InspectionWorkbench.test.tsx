@@ -12,6 +12,7 @@ import type {
   ExportArtifactKind,
   ExportJob,
   PostJson,
+  ProjectWorkbenchSipMetadataSuggestion,
   ReviewWorkingCopyView,
 } from "../../api/types";
 import { InspectionWorkbench } from "./InspectionWorkbench";
@@ -54,6 +55,22 @@ function successfulExport(): ExportJob {
       artifact("sip_excel"),
       artifact("manifest"),
     ],
+  };
+}
+
+function metadataSuggestion(
+  field: ProjectWorkbenchSipMetadataSuggestion["field"],
+  value: string,
+): ProjectWorkbenchSipMetadataSuggestion {
+  return {
+    field,
+    value,
+    observation_id: `${field}-value`,
+    label_observation_id: `${field}-label`,
+    page_index: 0,
+    bbox_pdf: [1, 2, 3, 4],
+    rule_version: "welli-title-metadata/1",
+    evidence_codes: ["native_line"],
   };
 }
 
@@ -1229,7 +1246,7 @@ describe("InspectionWorkbench", () => {
     expect(editorSummary?.textContent).toBe("编辑项目 SIP 信息");
     fireEvent.click(editorSummary as HTMLElement);
     const confirmMetadata = sipCard.getByRole("button", {
-      name: "确认项目 SIP 信息",
+      name: "保存补充信息",
     });
     expect(confirmMetadata.hasAttribute("disabled")).toBe(true);
     fireEvent.change(sipCard.getByRole("textbox", { name: "物料编码" }), {
@@ -1326,7 +1343,196 @@ describe("InspectionWorkbench", () => {
     })).toBeNull();
   });
 
-  test("项目 SIP 从图纸建议预填但只在人工确认后提交正式值", async () => {
+  test("完整图纸识别自动确认项目 SIP 信息", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        sipMetadataSuggestions={[
+          metadataSuggestion("material_code", "12320096476"),
+          metadataSuggestion("material_name", "横行滑板"),
+          metadataSuggestion("drawing_number", "ZHZS25032501-04"),
+          metadataSuggestion("material", "6061-T6"),
+          metadataSuggestion("revision", "A/0"),
+        ]}
+        workingCopy={{
+          id: "complete-suggestion-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {},
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(onSave).toHaveBeenCalledWith({
+      type: "set_sip_metadata",
+      material_code: "12320096476",
+      material_name: "横行滑板",
+      drawing_number: "ZHZS25032501-04",
+      material: "6061-T6",
+      revision: "A/0",
+    });
+  });
+
+  test("完整识别在命令通道恢复后只自动确认一次", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const workingCopy = {
+      id: "busy-suggestion-working-copy",
+      project_id: "project",
+      raw_result_id: "raw",
+      version: 1,
+      items: [],
+      coverage: { blocking_count: 0, review_required_count: 0 },
+      numbering_stale: false,
+      items_frozen_at: null,
+      items_frozen_by: null,
+      items_frozen_version: null,
+      sip_metadata: {},
+    };
+    const suggestions = [
+      metadataSuggestion("material_code", "12320096476"),
+      metadataSuggestion("material_name", "横行滑板"),
+      metadataSuggestion("drawing_number", "ZHZS25032501-04"),
+      metadataSuggestion("material", "6061-T6"),
+      metadataSuggestion("revision", "A/0"),
+    ];
+    const { rerender } = render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        sipMetadataSuggestions={suggestions}
+        workingCopy={workingCopy}
+        busy
+        onSave={onSave}
+      />,
+    );
+
+    expect(onSave).not.toHaveBeenCalled();
+    rerender(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        sipMetadataSuggestions={suggestions}
+        workingCopy={workingCopy}
+        busy={false}
+        onSave={onSave}
+      />,
+    );
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  });
+
+  test("识别值与已保存值冲突时不自动覆盖并要求人工检查", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        sipMetadataSuggestions={[
+          metadataSuggestion("material_code", "12320096476"),
+          metadataSuggestion("material_name", "识别产品名"),
+          metadataSuggestion("drawing_number", "ZHZS25032501-04"),
+          metadataSuggestion("material", "6061-T6"),
+          metadataSuggestion("revision", "A/0"),
+        ]}
+        workingCopy={{
+          id: "conflicting-suggestion-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: { material_name: "人工产品名" },
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    await waitFor(() => expect(onSave).not.toHaveBeenCalled());
+    expect(within(getSipRegion()).getByRole("status").textContent).toBe(
+      "识别信息与已保存内容不一致，请检查后保存。",
+    );
+  });
+
+  test("完整识别自动保存失败后不循环并允许显式重试", async () => {
+    const onSave = vi.fn()
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockResolvedValueOnce(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        sipMetadataSuggestions={[
+          metadataSuggestion("material_code", "12320096476"),
+          metadataSuggestion("material_name", "横行滑板"),
+          metadataSuggestion("drawing_number", "ZHZS25032501-04"),
+          metadataSuggestion("material", "6061-T6"),
+          metadataSuggestion("revision", "A/0"),
+        ]}
+        workingCopy={{
+          id: "failed-suggestion-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items: [],
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+          sip_metadata: {},
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    const sipRegion = getSipRegion();
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+    expect(within(sipRegion).getByRole("status").textContent).toBe(
+      "项目 SIP 信息保存失败，请点击“保存项目 SIP 信息”重试。",
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(onSave).toHaveBeenCalledOnce();
+
+    fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
+      selector: "summary",
+    }));
+    fireEvent.click(within(sipRegion).getByRole("button", {
+      name: "保存项目 SIP 信息",
+    }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+  });
+
+  test("项目 SIP 只要求补充缺失字段并通过既有命令保存", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
       <InspectionWorkbench
@@ -1423,16 +1629,24 @@ describe("InspectionWorkbench", () => {
         name: "材质",
       }) as HTMLInputElement
     ).value).toBe("");
-    expect(within(sipRegion).getAllByText("图纸识别，待确认")).toHaveLength(4);
+    expect(within(sipRegion).getByText(
+      "系统已自动采纳 4/5，待补充：材质",
+    )).not.toBeNull();
+    expect(within(sipRegion).getAllByText("图纸识别，已自动采纳"))
+      .toHaveLength(4);
     expect(onSave).not.toHaveBeenCalled();
 
     const confirm = within(sipRegion).getByRole("button", {
-      name: "确认项目 SIP 信息",
+      name: "保存补充信息",
     });
     expect(confirm.hasAttribute("disabled")).toBe(true);
     fireEvent.change(within(sipRegion).getByRole("textbox", {
       name: "材质",
     }), { target: { value: "6061-T6" } });
+    expect(within(sipRegion).getByRole("status").textContent).toBe(
+      "信息已补全，请保存项目 SIP 信息。",
+    );
+    expect(confirm.textContent).toBe("保存项目 SIP 信息");
     fireEvent.click(confirm);
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({
@@ -1751,7 +1965,7 @@ describe("InspectionWorkbench", () => {
       name: "产品名称",
     }) as HTMLInputElement;
     const confirm = within(sipRegion).getByRole("button", {
-      name: "确认项目 SIP 信息",
+      name: "保存项目 SIP 信息",
     });
     const saveStatus = within(
       screen.getByRole("region", { name: "项目摘要" }),

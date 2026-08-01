@@ -56,6 +56,7 @@ function panelProps(
   return {
     metadata,
     metadataValues,
+    metadataConfirmed: true,
     metadataDirty: false,
     disabled: false,
     selectedItem: reviewItem(),
@@ -140,16 +141,17 @@ test("切到待判定来源时保留真实异常的当前检验项草稿", () =>
   ).toBe("三针法复核");
 });
 
-test("项目 SIP 信息不完整时禁用确认，补全后启用", () => {
+test("项目 SIP 信息不完整时禁用保存，补全后启用", () => {
   const incompleteMetadata = { ...metadata, material_code: "" };
-  const props = panelProps({ metadata: incompleteMetadata });
+  const props = panelProps({
+    metadata: incompleteMetadata,
+    metadataConfirmed: false,
+    missingMetadataFields: ["物料编码"],
+  });
   const { rerender } = render(<SipInformationPanel {...props} />);
 
-  fireEvent.click(screen.getByText("编辑项目 SIP 信息", {
-    selector: "summary",
-  }));
   const confirm = screen.getByRole("button", {
-    name: "确认项目 SIP 信息",
+    name: "保存补充信息",
   });
   expect(confirm.hasAttribute("disabled")).toBe(true);
 
@@ -180,7 +182,7 @@ test("项目 SIP 编辑通过受控回调提交精确草稿并支持取消", () 
   });
 
   fireEvent.click(screen.getByRole("button", {
-    name: "确认项目 SIP 信息",
+    name: "保存项目 SIP 信息",
   }));
   fireEvent.click(screen.getByRole("button", {
     name: "取消项目 SIP 信息修改",
@@ -189,11 +191,13 @@ test("项目 SIP 编辑通过受控回调提交精确草稿并支持取消", () 
   expect(onCancelMetadata).toHaveBeenCalledTimes(1);
 });
 
-test("图纸识别字段在编辑器中明确标记为待确认建议", () => {
+test("图纸识别字段在编辑器中明确标记为已自动采纳", () => {
   render(
     <SipInformationPanel
       {...panelProps()}
       persistedMetadata={{}}
+      metadataConfirmed={false}
+      missingMetadataFields={["物料编码", "版本号", "材质"]}
       metadataSuggestions={[
         {
           field: "material_name",
@@ -219,10 +223,7 @@ test("图纸识别字段在编辑器中明确标记为待确认建议", () => {
     />,
   );
 
-  fireEvent.click(screen.getByText("编辑项目 SIP 信息", {
-    selector: "summary",
-  }));
-  expect(screen.getAllByText("图纸识别，待确认")).toHaveLength(2);
+  expect(screen.getAllByText("图纸识别，已自动采纳")).toHaveLength(2);
   expect((
     screen.getByRole("textbox", { name: "产品名称" }) as HTMLInputElement
   ).value).toBe("上座");

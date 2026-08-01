@@ -160,10 +160,30 @@ test("未完成审核时优先显示精确的 SIP 异常阻断", () => {
       balloonBlockers={[]}
       sipExceptionCount={0}
       projectMetadataConfirmed={false}
+      missingProjectMetadataFields={["材质"]}
       post={post}
     />,
   );
-  expect(screen.getByRole("status").textContent).toBe("项目 SIP 信息未确认");
+  expect(screen.getByRole("status").textContent).toBe("待补充项目 SIP：材质");
+});
+
+test("项目 SIP 识别冲突时正式文件门禁显示精确原因", () => {
+  const post = vi.fn() as unknown as PostJson;
+  render(
+    <ExportPanel
+      projectId="project"
+      canFinalize={false}
+      reviewedResultId={undefined}
+      balloonBlockers={[]}
+      projectMetadataConfirmed={false}
+      projectMetadataBlocker="conflict"
+      post={post}
+    />,
+  );
+
+  expect(screen.getByRole("status").textContent).toBe(
+    "项目 SIP 信息存在识别冲突",
+  );
 });
 
 test("待生成的 SIP 行与真实异常分开显示", () => {

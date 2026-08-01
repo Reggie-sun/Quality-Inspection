@@ -907,6 +907,17 @@
   border-top: 1px solid var(--qi-border);
 }
 
+.sip-metadata-status {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border: 1px solid #fedf89;
+  border-radius: 6px;
+  color: #93370d;
+  background: #fffaeb;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .sip-metadata-editor > summary {
   padding-top: 7px;
   color: var(--qi-blue-hover);

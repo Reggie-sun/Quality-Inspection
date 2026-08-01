@@ -117,7 +117,7 @@ function reviewedResponse(): ProjectWorkbenchView {
   } as ProjectWorkbenchView;
 }
 
-test("workbench title-block suggestions only prefill local draft", async () => {
+test("workbench title-block suggestions adopt recognized values without submitting incomplete metadata", async () => {
   const snapshot = reviewedResponse();
   snapshot.project.state = "editing";
   snapshot.working_copy.items_frozen_at = null;
@@ -169,7 +169,10 @@ test("workbench title-block suggestions only prefill local draft", async () => {
       name: "图号",
     }) as HTMLInputElement
   ).value).toBe("ZHZS25032501-04");
-  expect(within(sipRegion).getByText("图纸识别，待确认")).not.toBeNull();
+  expect(within(sipRegion).getByText("图纸识别，已自动采纳")).not.toBeNull();
+  expect(within(sipRegion).getByText(
+    "系统已自动采纳 1/5，待补充：物料编码、产品名称、材质、版本号",
+  )).not.toBeNull();
   expect(fetchMock.mock.calls.some(([path]) => (
     String(path).endsWith("/review/commands")
   ))).toBe(false);

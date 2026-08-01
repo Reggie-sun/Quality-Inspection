@@ -91,6 +91,13 @@ const SIP_METADATA_FIELDS = [
   "material",
   "revision",
 ] as const;
+const SIP_METADATA_FIELD_LABELS: Record<keyof MetadataDraft, string> = {
+  material_code: zhCN.workbench.metadataFields.materialCode,
+  material_name: zhCN.workbench.metadataFields.materialName,
+  drawing_number: zhCN.workbench.metadataFields.drawingNumber,
+  material: zhCN.workbench.metadataFields.material,
+  revision: zhCN.workbench.metadataFields.revision,
+};
 const SIP_DETAIL_TEXT_FIELDS = [
   "inspection_item",
   "inspection_standard",
@@ -174,6 +181,19 @@ function metadataDraft(
 }
 
 
+function hasSipMetadataSuggestionConflict(
+  workingCopy: ReviewWorkingCopyView,
+  suggestions: ProjectWorkbenchSipMetadataSuggestion[],
+): boolean {
+  return suggestions.some((suggestion) => {
+    const persisted = workingCopy.sip_metadata?.[suggestion.field]?.trim() ?? "";
+    return persisted !== ""
+      && suggestion.value.trim() !== ""
+      && persisted !== suggestion.value.trim();
+  });
+}
+
+
 export function InspectionWorkbench({
   pdfDocument,
   pageCount,
@@ -223,6 +243,7 @@ export function InspectionWorkbench({
     setTechnicalRequirementDraftDirty,
   ] = useState(false);
   const [metadataDraftDirty, setMetadataDraftDirty] = useState(false);
+  const [metadataSaveFailed, setMetadataSaveFailed] = useState(false);
   const [selectionBlocked, setSelectionBlocked] = useState(false);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [returnSaving, setReturnSaving] = useState(false);
@@ -233,6 +254,7 @@ export function InspectionWorkbench({
   const returnActionRef = useRef<HTMLButtonElement>(null);
   const saveAndReturnRef = useRef<HTMLButtonElement>(null);
   const prepareAttemptRef = useRef<string | undefined>(undefined);
+  const autoMetadataSaveRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (metadataDraftDirty) return;
     setMetadata(metadataDraft(workingCopy, sipMetadataSuggestions));
@@ -321,6 +343,22 @@ export function InspectionWorkbench({
     || returnSaving
     || reviewImmutable;
   const frozen = workingCopy?.items_frozen_at != null;
+  const projectMetadataConfirmed =
+    workingCopy !== undefined && hasConfirmedSipMetadata(workingCopy);
+  const missingProjectMetadataFields = SIP_METADATA_FIELDS
+    .filter((field) => metadata[field].trim() === "")
+    .map((field) => SIP_METADATA_FIELD_LABELS[field]);
+  const metadataSuggestionConflict = workingCopy !== undefined
+    && hasSipMetadataSuggestionConflict(workingCopy, sipMetadataSuggestions);
+  const projectMetadataBlocker = metadataSuggestionConflict
+    ? "conflict" as const
+    : metadataSaveFailed
+      ? "save_failed" as const
+      : metadataDraftDirty && missingProjectMetadataFields.length === 0
+        ? "ready_to_save" as const
+        : missingProjectMetadataFields.length === 0
+          ? "auto_saving" as const
+          : undefined;
   const activeBalloonCount = balloons.filter(
     (balloon) => balloon.status !== "deleted",
   ).length;
@@ -383,16 +421,46 @@ export function InspectionWorkbench({
     }
   };
   const confirmMetadata = async (): Promise<boolean> => {
+    setMetadataSaveFailed(false);
     const saved = await submitCommand({
       type: "set_sip_metadata",
       ...metadata,
     });
     if (saved) setMetadataDraftDirty(false);
+    else setMetadataSaveFailed(true);
     return saved;
   };
+  useEffect(() => {
+    if (
+      workingCopy === undefined
+      || projectMetadataConfirmed
+      || metadataDraftDirty
+      || reviewCommandsDisabled
+      || sipMetadataSuggestions.length === 0
+      || missingProjectMetadataFields.length > 0
+      || metadataSuggestionConflict
+    ) return;
+    const autoSaveKey = [
+      workingCopy.id,
+      ...SIP_METADATA_FIELDS.map((field) => metadata[field].trim()),
+    ].join("\u0000");
+    if (autoMetadataSaveRef.current === autoSaveKey) return;
+    autoMetadataSaveRef.current = autoSaveKey;
+    void confirmMetadata();
+  }, [
+    metadata,
+    metadataDraftDirty,
+    missingProjectMetadataFields.length,
+    projectMetadataConfirmed,
+    reviewCommandsDisabled,
+    sipMetadataSuggestions,
+    metadataSuggestionConflict,
+    workingCopy,
+  ]);
   const cancelMetadata = (): void => {
     setMetadata(metadataDraft(workingCopy, sipMetadataSuggestions));
     setMetadataDraftDirty(false);
+    setMetadataSaveFailed(false);
   };
   const requestReturnToDrawingList = (): void => {
     if (onReset === undefined) return;
@@ -538,9 +606,9 @@ export function InspectionWorkbench({
         canFinalize={canFinalize}
         sipPendingCount={pendingSipItemCount}
         sipExceptionCount={sipExceptionCount}
-        projectMetadataConfirmed={
-          workingCopy !== undefined && hasConfirmedSipMetadata(workingCopy)
-        }
+        projectMetadataConfirmed={projectMetadataConfirmed}
+        missingProjectMetadataFields={missingProjectMetadataFields}
+        projectMetadataBlocker={projectMetadataBlocker}
         balloonBlockers={balloonBlockers}
         post={exportPost}
         initialExport={initialExport}
@@ -565,6 +633,10 @@ export function InspectionWorkbench({
         metadataValues={metadataValues}
         persistedMetadata={workingCopy?.sip_metadata ?? {}}
         metadataSuggestions={sipMetadataSuggestions}
+        metadataConfirmed={projectMetadataConfirmed}
+        missingMetadataFields={missingProjectMetadataFields}
+        metadataConflict={metadataSuggestionConflict}
+        metadataSaveFailed={metadataSaveFailed}
         metadataDirty={metadataDraftDirty}
         disabled={reviewCommandsDisabled}
         selectedItem={selectedReviewItem}
@@ -577,6 +649,7 @@ export function InspectionWorkbench({
         onMetadataChange={(next) => {
           setMetadata(next);
           setMetadataDraftDirty(true);
+          setMetadataSaveFailed(false);
         }}
         onConfirmMetadata={confirmMetadata}
         onCancelMetadata={cancelMetadata}
