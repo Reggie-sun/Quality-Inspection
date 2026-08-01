@@ -2,6 +2,30 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-drawing-list-get-405
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `QualityInspectionApp` 图纸目录加载、`GET /api/v1/projects` 与本地 `5173 -> 8000` API proxy
+- Symptom: 打开 `http://127.0.0.1:5173/` 后页面一直显示“图纸列表加载中”，并提示“网络异常，请检查连接后重试。”
+- Previously correct behavior: 根地址应从服务端加载图纸目录，并显示图纸数量、空目录状态或已有图纸列表
+- Reproduction: 用户截图确认故障；本次 `GET http://127.0.0.1:5173/api/v1/health` 返回 HTTP `200`，而页面实际请求的 `GET http://127.0.0.1:5173/api/v1/projects` 返回 HTTP `405 Method Not Allowed`
+- Root cause: `5173` frontend 来自当前 `main`，但共享 Compose project `quality-inspection` 的 `8000` API 被 sibling worktree `.worktrees/structured-geometric-tolerance-recognition` 重建并占用；live container label 的 working dir 指向该 worktree，容器内 `projects.router` 不含后来由 `423a2e4` 加入的目录 GET，live OpenAPI 因而只声明同路径 `POST`。frontend 与 API checkout 身份分裂，精确导致目录 GET 返回 `405`
+- Fix: 等待 sibling worktree 正在运行的 `verify-p0-live` 自然结束，避免破坏其 runtime identity evidence；随后从当前 `main` 执行 canonical `make dev-local-api`，重建并替换 API。新容器 working dir 与 bind mount 均指向当前仓库根，未修改 production code、API contract 或 runtime config 文件
+- Regression check: 在独立临时 PostgreSQL 中运行 `PYTHONDONTWRITEBYTECODE=1 QI_DATABASE_URL=<isolated-postgres> micromamba run -n qi-p0 python -m pytest backend/tests/integration/test_project_catalog_api.py -q`，结果 `3 passed`；唯一 warning 为既有 Starlette `httpx` deprecation
+- Runtime proof: live container working dir 为 `/home/reggie/vscode_folder/Quality_Inspection` 且 bind mount 为当前 `backend/app`；`/openapi.json` 的 `/api/v1/projects` 同时包含 `get`、`post`；经 `5173` proxy 的目录 GET 返回 HTTP `200`、`count=8`。`browse` Chromium smoke 确认“网络异常”与“图纸列表加载中”均消失，显示“共 8 份图纸”，console error 为 0，目录请求及 8 个项目状态请求全部为 HTTP `200`
+- Change: runtime recovery only；`.agent/bug-memory.md` 记录本次回归
+- Selected lane: `Standard`；故障跨 frontend request、Vite proxy 与 backend route，需要 focused test 和真实 browser/API smoke，但不预设改变稳定 API 或 runtime config
+- Problem boundary: 只恢复既有图纸目录读取；不改变 PDF 上传、处理状态、审核、锁、freeze 或 export 语义
+- Unchanged contract: frontend 继续通过同源 `GET /api/v1/projects` 读取服务端目录；现有 `POST /api/v1/projects` 上传合同保持不变
+- Allowed paths: `.agent/bug-memory.md`；已确认当前 `main` 的 route Owner 与 focused test 正确，因此不修改 production code 或 runtime config
+- Writer ownership and order: 父 agent 为唯一 writer；只读 explorer 仅做独立调用链核查；实现完成后派发独立只读 reviewer
+- Validation action: `completed`；focused integration、live API identity、OpenAPI、同源目录 GET 与浏览器 smoke 均已覆盖原始 failure surface
+- Independent review: verdict 为 `accept with concerns`，无 blocker；reviewer 独立确认 API container working dir/mount、live OpenAPI 与 `5173` 目录 GET 均已恢复。唯一 material concern 是 `quality-inspection-worker-1` 仍来自 sibling worktree；worker 不参与本次目录 GET，因此不阻断当前修复，但上传后的异步处理 runtime identity 尚未在本任务中收敛
+- Next verification: 已关闭；仅在共享 Compose project 再次由缺少 catalog GET 的 sibling checkout 占用 `8000` 时重开
+
 ## BUG-20260801-recognition-preview-unstyled
 
 - Status: 已解决
