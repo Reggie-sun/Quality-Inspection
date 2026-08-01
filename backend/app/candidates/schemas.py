@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.candidates.geometric_tolerance import GeometricToleranceCandidate
+
 
 CandidateType = Literal[
     "linear_dimension",
@@ -52,3 +54,6 @@ class Candidate(BaseModel):
     sub_requirements: list[dict[str, Any]] = Field(default_factory=list)
     balloon_required: bool = True
     requires_confirmation: bool = False
+
+
+StructuredCandidate = Candidate | GeometricToleranceCandidate
