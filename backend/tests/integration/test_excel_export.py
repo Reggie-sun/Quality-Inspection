@@ -12,6 +12,7 @@ from openpyxl.utils.cell import range_boundaries
 from PIL import Image as PillowImage
 
 from app.exports.excel import render_sip_workbook
+from app.exports.service import ExportService, format_geometric_tolerance
 from app.exports.template_registry import TemplateRegistration, load_template_registration
 from app.exports.validators import snapshot_registered_ranges, validate_sip_workbook
 
@@ -79,6 +80,85 @@ def _page_images(tmp_path: Path) -> tuple[list[Path], list[tuple[int, int, int]]
         PillowImage.new("RGB", (24, 16), color=color).save(path)
         paths.append(path)
     return paths, colors
+
+
+def _structured_gdt_item(
+    *,
+    tolerance_type: str = "parallelism",
+    frames: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "item_id": "case-a",
+        "item_type": "geometric_tolerance",
+        "raw_text": "must not be consulted",
+        "tolerance_type": tolerance_type,
+        "frames": frames,
+        "active": True,
+        "balloon_required": False,
+        "source_page": 1,
+        "scope": "local_feature",
+        "inspection_item": "几何公差",
+        "inspection_standard": "GB/T 1184",
+        "inspection_method": "量具",
+        "key_dimension": "否",
+        "inspection_role": "关键尺寸",
+        "sip_detail_fields_confirmed": True,
+    }
+
+
+def test_structured_gdt_export_uses_canonical_parallelism_fields() -> None:
+    item = _structured_gdt_item(
+        frames=[{
+            "segments": [{
+                "tolerance_value": "0.1",
+                "diameter_modifier": False,
+                "modifiers": [],
+                "datum_references": [{"datum": "A", "modifiers": []}],
+            }],
+        }],
+    )
+
+    assert format_geometric_tolerance(item) == "平行度 | 0.1 | 基准 A"
+    row = ExportService._excel_rows([item], [])[0]
+    assert row["type_label"] == "平行度"
+    assert row["basic_size"] == "0.1 | 基准 A"
+    assert row["tolerance"] == ""
+
+
+def test_structured_gdt_export_keeps_composite_segment_order() -> None:
+    item = _structured_gdt_item(
+        tolerance_type="position",
+        frames=[{
+            "segments": [
+                {
+                    "tolerance_value": "0.10",
+                    "diameter_modifier": True,
+                    "modifiers": [{
+                        "kind": "maximum_material_condition",
+                        "raw_symbol": "M",
+                    }],
+                    "datum_references": [
+                        {"datum": "A", "modifiers": []},
+                        {"datum": "B", "modifiers": []},
+                        {"datum": "C", "modifiers": []},
+                    ],
+                },
+                {
+                    "tolerance_value": "0.20",
+                    "diameter_modifier": False,
+                    "modifiers": [],
+                    "datum_references": [
+                        {"datum": "A", "modifiers": []},
+                        {"datum": "B", "modifiers": []},
+                    ],
+                },
+            ],
+        }],
+    )
+
+    assert format_geometric_tolerance(item) == (
+        "位置度 | ⌀0.10 M | A | B | C / 0.20 | A | B"
+    )
 
 
 def _render(tmp_path: Path) -> tuple[bytes, TemplateRegistration, Path]:

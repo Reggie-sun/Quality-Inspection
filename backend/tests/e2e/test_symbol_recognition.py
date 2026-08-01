@@ -84,6 +84,7 @@ class FrozenSymbolProvider:
         assert set(request) == {
             "constraints",
             "detection_reporting_contract",
+            "gdt_frame_contexts",
             "prompt_version",
             "response_schema",
             "schema_version",
@@ -123,12 +124,70 @@ class FrozenSymbolProvider:
                 }
                 for symbol_kind in _SYMBOL_KINDS_BY_TEXTS[line_texts]
             )
+        gdt_frames = []
+        tolerance_symbols = {
+            "gdt_parallelism": "∥",
+            "gdt_perpendicularity": "⊥",
+            "gdt_flatness": "⏥",
+        }
+        for frame_context in request["gdt_frame_contexts"]:
+            frame_text_ids = {
+                item["observation_id"]
+                for item in frame_context["associated_text_allowlist"]
+                if item["observation_level"] == "line"
+            }
+            frame_texts = tuple(
+                item["raw_text"]
+                for item in frame_context["associated_text_allowlist"]
+                if item["observation_level"] == "line"
+            )
+            frame_kinds = _SYMBOL_KINDS_BY_TEXTS.get(frame_texts, ())
+            gdt_kind = next(
+                kind for kind in frame_kinds if kind.startswith("gdt_")
+            )
+            value_and_datum = frame_texts[0].split()
+            cells = frame_context["cells"]
+            cell_evidence = [
+                {
+                    "cell_index": cells[0]["cell_index"],
+                    "cell_role": "symbol",
+                    "bbox_normalized": cells[0]["bbox_normalized"],
+                    "raw_token": tolerance_symbols[gdt_kind],
+                    "associated_text_observation_ids": list(frame_text_ids),
+                    "confidence_signal": 0.98,
+                },
+                {
+                    "cell_index": cells[1]["cell_index"],
+                    "cell_role": "tolerance",
+                    "bbox_normalized": cells[1]["bbox_normalized"],
+                    "raw_token": value_and_datum[0],
+                    "associated_text_observation_ids": list(frame_text_ids),
+                    "confidence_signal": 0.98,
+                },
+            ]
+            if len(cells) == 3:
+                assert len(value_and_datum) == 2
+                cell_evidence.append({
+                    "cell_index": cells[2]["cell_index"],
+                    "cell_role": "datum",
+                    "bbox_normalized": cells[2]["bbox_normalized"],
+                    "raw_token": value_and_datum[1],
+                    "associated_text_observation_ids": list(frame_text_ids),
+                    "confidence_signal": 0.98,
+                })
+            gdt_frames.append({
+                "frame_observation_id": frame_context["frame_observation_id"],
+                "frame_bbox_normalized": frame_context["frame_bbox_normalized"],
+                "tolerance_type_signal": gdt_kind.removeprefix("gdt_"),
+                "cells": cell_evidence,
+                "confidence_signal": 0.98,
+            })
         return VisionResult(
             request_id=f"fixture-symbol-{self.symbol_calls}",
             payload={
                 "schema_version": "visual-symbol-review/3",
                 "detections": detections,
-                "gdt_frames": [],
+                "gdt_frames": gdt_frames,
             },
             usage={},
         )
@@ -522,6 +581,21 @@ def test_symbol_fixture_positive_flow(symbol_flow: SymbolFlow) -> None:
                     f"{label['label_id']}: item projection="
                     f"{item.get('item_type') or item.get('coarse_type')}"
                 )
+            if projection == "geometric_tolerance":
+                expected_gdt = {
+                    "gdt_parallelism": ("parallelism", "∥", "0.1", "A"),
+                    "gdt_perpendicularity": ("perpendicularity", "⊥", "0.2", "B"),
+                    "gdt_flatness": ("flatness", "⏥", "0.05", None),
+                }[label["fixture_family"]]
+                for payload, name in ((candidate["payload"], "candidate"), (item, "item")):
+                    assert payload["item_type"] == "geometric_tolerance", name
+                    assert payload["tolerance_type"] == expected_gdt[0], name
+                    assert payload["tolerance_symbol"] == expected_gdt[1], name
+                    assert payload["tolerance_value"] == expected_gdt[2], name
+                    if expected_gdt[3] is None:
+                        assert payload["datum_references"] == [], name
+                    else:
+                        assert [datum["datum"] for datum in payload["datum_references"]] == [expected_gdt[3]], name
         else:
             if entry["candidate_id"] is not None:
                 failures.append(f"{label['label_id']}: unexpected candidate id")

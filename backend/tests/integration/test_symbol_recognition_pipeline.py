@@ -172,12 +172,70 @@ class FixtureVisionProvider:
                             "confidence_signal": 0.98,
                         }
                     )
+        gdt_frames = []
+        tolerance_symbols = {
+            "gdt_parallelism": "∥",
+            "gdt_perpendicularity": "⊥",
+            "gdt_flatness": "⏥",
+        }
+        for frame_context in request["gdt_frame_contexts"]:
+            frame_text_ids = {
+                item["observation_id"]
+                for item in frame_context["associated_text_allowlist"]
+                if item["observation_level"] == "line"
+            }
+            frame_texts = tuple(
+                item["raw_text"]
+                for item in frame_context["associated_text_allowlist"]
+                if item["observation_level"] == "line"
+            )
+            frame_kinds = _SYMBOL_KINDS_BY_TEXT.get(frame_texts[0], ())
+            gdt_kind = next(
+                kind for kind in frame_kinds if kind.startswith("gdt_")
+            )
+            value_and_datum = frame_texts[0].split()
+            cells = frame_context["cells"]
+            cell_evidence = [
+                {
+                    "cell_index": cells[0]["cell_index"],
+                    "cell_role": "symbol",
+                    "bbox_normalized": cells[0]["bbox_normalized"],
+                    "raw_token": tolerance_symbols[gdt_kind],
+                    "associated_text_observation_ids": list(frame_text_ids),
+                    "confidence_signal": 0.98,
+                },
+                {
+                    "cell_index": cells[1]["cell_index"],
+                    "cell_role": "tolerance",
+                    "bbox_normalized": cells[1]["bbox_normalized"],
+                    "raw_token": value_and_datum[0],
+                    "associated_text_observation_ids": list(frame_text_ids),
+                    "confidence_signal": 0.98,
+                },
+            ]
+            if len(cells) == 3:
+                assert len(value_and_datum) == 2
+                cell_evidence.append({
+                    "cell_index": cells[2]["cell_index"],
+                    "cell_role": "datum",
+                    "bbox_normalized": cells[2]["bbox_normalized"],
+                    "raw_token": value_and_datum[1],
+                    "associated_text_observation_ids": list(frame_text_ids),
+                    "confidence_signal": 0.98,
+                })
+            gdt_frames.append({
+                "frame_observation_id": frame_context["frame_observation_id"],
+                "frame_bbox_normalized": frame_context["frame_bbox_normalized"],
+                "tolerance_type_signal": gdt_kind.removeprefix("gdt_"),
+                "cells": cell_evidence,
+                "confidence_signal": 0.98,
+            })
         return VisionResult(
             request_id=f"fixture-visual-{self.symbol_calls}",
             payload={
                 "schema_version": "visual-symbol-review/3",
                 "detections": detections,
-                "gdt_frames": [],
+                "gdt_frames": gdt_frames,
             },
             usage={},
         )
@@ -466,12 +524,22 @@ def _bounded_symbol_input(
 ) -> tuple[Path, tuple[PageInventory, ...], CandidateSnapshot]:
     source, _manifest = build_symbol_fixture(tmp_path / "bounded-fixture")
     original_pages = tuple(build_inventory(source))
-    selected_ids = {
+    text_by_id = {
+        observation.observation_id: observation
+        for page in original_pages
+        for observation in page.observations
+    }
+    preferred_ids = [
         visual.observation_id
         for page in original_pages
         for visual in page.visual_observations
-    }
-    selected_ids = set(sorted(selected_ids)[:2])
+        if any(
+            text_by_id[text_id].raw_text in {"18", "20"}
+            and text_by_id[text_id].observation_level == "line"
+            for text_id in visual.associated_text_observation_ids
+        )
+    ]
+    selected_ids = set(preferred_ids[:2])
     assert len(selected_ids) == 2
     contexts = tuple(
         context
@@ -1141,7 +1209,7 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
     assert local_review["symbol_kinds"] == ["revision_marker"]
 
     cache_candidate_id = "f6c9f7280582b7403b89108c"
-    vlm_candidate_id = "9e9f419c9d84cd74f263dc3b"
+    vlm_candidate_id = "914e3d058f97c3a3356655f5"
     cache_entry = coverage_by_id[matrix.cache_visual.observation_id]
     vlm_entry = coverage_by_id[matrix.vlm_visual.observation_id]
     assert (
@@ -2101,7 +2169,7 @@ def test_roughness_gdt_and_datum_project_without_schema_expansion(
     task_session_factory: Callable[[], Session],
     tmp_path: Path,
 ) -> None:
-    """INT-03 reuses coarse shapes and keeps datum as source-only context."""
+    """INT-03 reuses coarse shapes and keeps typed GDTs separate."""
     project, _provider, _result_ref, visual_ids = _fixture_task(
         monkeypatch,
         task_session_factory,
@@ -2120,11 +2188,15 @@ def test_roughness_gdt_and_datum_project_without_schema_expansion(
         )
         assert raw is not None
         assert working is not None
-        assert {
+        assert "roughness" in {
             item["coarse_type"]
             for item in working.items
             if "coarse_type" in item
-        }.issuperset({"roughness", "geometric_tolerance"})
+        }
+        assert any(
+            item.get("item_type") == "geometric_tolerance"
+            for item in working.items
+        )
         datum_entries = [
             entry
             for entry in raw.coverage["entries"]
@@ -2205,7 +2277,6 @@ def test_roughness_gdt_and_datum_project_without_schema_expansion(
             "composite",
         }
         assert set(get_args(CoarseType)) == {
-            "geometric_tolerance",
             "roughness",
             "weld",
             "cross_view_duplicate",

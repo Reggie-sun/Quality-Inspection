@@ -65,6 +65,28 @@ _DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
 _ARTIFACT_KINDS = {"ballooned_pdf", "sip_excel", "manifest"}
 _EXCEL_DETAIL_FIELDS = NUMERIC_DETAIL_FIELDS | TEXT_DETAIL_FIELDS
 
+_GDT_TYPE_LABELS = {
+    "straightness": "直线度",
+    "flatness": "平面度",
+    "circularity": "圆度",
+    "cylindricity": "圆柱度",
+    "profile_of_line": "线轮廓度",
+    "profile_of_surface": "面轮廓度",
+    "angularity": "倾斜度",
+    "perpendicularity": "垂直度",
+    "parallelism": "平行度",
+    "position": "位置度",
+    "concentricity_or_coaxiality": "同心度 / 同轴度",
+    "symmetry": "对称度",
+    "circular_runout": "圆跳动",
+    "total_runout": "全跳动",
+}
+_GDT_MODIFIER_SYMBOLS = {
+    "maximum_material_condition": "M",
+    "least_material_condition": "L",
+    "regardless_of_feature_size": "S",
+}
+
 
 def _decimal(value: object) -> Decimal | None:
     if value in (None, ""):
@@ -90,6 +112,8 @@ def _reviewed_text(item: dict[str, Any]) -> str:
 
 
 def _type_label(item: dict[str, Any]) -> str:
+    if item.get("item_type") == "geometric_tolerance":
+        return format_geometric_tolerance(item).split(" | ", 1)[0]
     if item.get("coarse_type") == "roughness":
         return "粗糙度"
     return {
@@ -114,6 +138,8 @@ def _numeric_base(item: dict[str, Any]) -> Decimal | None:
 
 def _basic_size(item: dict[str, Any]) -> str:
     item_type = item.get("item_type")
+    if item_type == "geometric_tolerance":
+        return format_geometric_tolerance(item).split(" | ", 1)[1]
     if item_type in {"linear_dimension", "diameter_dimension", "radius", "angle"}:
         value = _numeric_base(item)
         if value is not None:
@@ -132,6 +158,63 @@ def _basic_size(item: dict[str, Any]) -> str:
     return _reviewed_text(item)
 
 
+def _gdt_segment_text(segment: dict[str, Any]) -> str:
+    raw_value = segment.get("tolerance_value")
+    value = _decimal(raw_value)
+    if value is None or value <= 0:
+        raise ValueError("reviewed geometric tolerance has invalid value")
+    rendered = format(value, "f")
+    if rendered in {"-0", ""}:
+        rendered = "0"
+    if segment.get("diameter_modifier") is True:
+        rendered = f"⌀{rendered}"
+    modifiers = segment.get("modifiers", [])
+    if not isinstance(modifiers, list):
+        raise ValueError("reviewed geometric tolerance has invalid modifiers")
+    for modifier in modifiers:
+        if not isinstance(modifier, dict):
+            raise ValueError("reviewed geometric tolerance has invalid modifier")
+        symbol = _GDT_MODIFIER_SYMBOLS.get(modifier.get("kind"))
+        if symbol is None:
+            raise ValueError("reviewed geometric tolerance has unknown modifier")
+        rendered = f"{rendered} {symbol}"
+    datums = segment.get("datum_references", [])
+    if not isinstance(datums, list):
+        raise ValueError("reviewed geometric tolerance has invalid datums")
+    datum_values: list[str] = []
+    for datum in datums:
+        if not isinstance(datum, dict) or not isinstance(datum.get("datum"), str):
+            raise ValueError("reviewed geometric tolerance has invalid datum")
+        datum_values.append(datum["datum"])
+    if len(datum_values) == 1:
+        rendered = f"{rendered} | 基准 {datum_values[0]}"
+    else:
+        rendered = " | ".join([rendered, *datum_values]) if datum_values else rendered
+    return rendered
+
+
+def format_geometric_tolerance(item: dict[str, Any]) -> str:
+    """Format frozen GDT semantics without consulting source glyphs or raw text."""
+    tolerance_type = item.get("tolerance_type")
+    type_label = _GDT_TYPE_LABELS.get(tolerance_type)
+    if type_label is None:
+        raise ValueError("reviewed geometric tolerance has unknown type")
+    frames = item.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError("reviewed geometric tolerance has no frames")
+    segments: list[str] = []
+    for frame in frames:
+        if not isinstance(frame, dict) or not isinstance(frame.get("segments"), list):
+            raise ValueError("reviewed geometric tolerance has invalid frame")
+        for segment in frame["segments"]:
+            if not isinstance(segment, dict):
+                raise ValueError("reviewed geometric tolerance has invalid segment")
+            segments.append(_gdt_segment_text(segment))
+    if not segments:
+        raise ValueError("reviewed geometric tolerance has no segments")
+    return f"{type_label} | {' / '.join(segments)}"
+
+
 def _tolerance_text(upper: Decimal, lower: Decimal) -> str:
     if upper == -lower:
         return f"±{_decimal_text(upper)}"
@@ -144,6 +227,9 @@ def _tolerance_text(upper: Decimal, lower: Decimal) -> str:
 
 
 def _tolerance_values(item: dict[str, Any]) -> tuple[str, Decimal | str, Decimal | str]:
+    if item.get("item_type") == "geometric_tolerance":
+        format_geometric_tolerance(item)
+        return "", "", ""
     upper_value = item.get("upper_tolerance")
     lower_value = item.get("lower_tolerance")
     upper = _decimal(upper_value)
