@@ -180,15 +180,23 @@ export function PdfWorkspace({
       locatedSourceRef.current = undefined;
       return;
     }
+    if (locatedSourceRef.current === selectedSourceId) return;
     const sourcePage = sources.find(
       (source) => source.id === selectedSourceId,
     )?.pageIndex;
     if (sourcePage === undefined) return;
-    const isNewSource = locatedSourceRef.current !== selectedSourceId;
-    locatedSourceRef.current = selectedSourceId;
-    if (isNewSource && sourcePage !== pageIndex) {
+    if (sourcePage !== pageIndex) {
       setPageIndex(sourcePage);
+      return;
     }
+    const selectedSource = Array.from(
+      workspaceRef.current?.querySelectorAll<SVGElement>(
+        ".pdf-overlay-source",
+      ) ?? [],
+    ).find((element) => element.dataset.sourceId === selectedSourceId);
+    if (selectedSource === undefined) return;
+    selectedSource.scrollIntoView?.({ block: "center", inline: "center" });
+    locatedSourceRef.current = selectedSourceId;
   }, [pageIndex, selectedSourceId, sources]);
 
   useEffect(() => {

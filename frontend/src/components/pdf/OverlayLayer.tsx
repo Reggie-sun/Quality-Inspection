@@ -350,24 +350,30 @@ export function OverlayLayer({
       })}
       {sources.map((item) => {
         const [x0, y0, x1, y1] = transformBox(matrix, item.bbox);
+        const isDirectlySelected = item.id === selectedSourceId;
         const isSelected = selectedRelation(
           { itemId: item.itemId, itemIds: item.itemIds },
           selected,
-        ) || item.id === selectedSourceId;
+        ) || isDirectlySelected;
         return (
           <rect
             className="pdf-overlay-source"
             key={item.id}
             data-testid={`source-${item.id}`}
+            data-source-id={item.id}
             data-selected={isSelected}
             x={x0}
             y={y0}
             width={x1 - x0}
             height={y1 - y0}
-            fill="transparent"
-            stroke={isSelected ? "#0e7490" : "#0891b2"}
-            strokeDasharray="4 3"
-            strokeWidth={1.5}
+            fill={isDirectlySelected
+              ? "rgba(245, 158, 11, 0.24)"
+              : "transparent"}
+            stroke={isDirectlySelected
+              ? "#f59e0b"
+              : isSelected ? "#0e7490" : "#0891b2"}
+            strokeDasharray={isDirectlySelected ? "none" : "4 3"}
+            strokeWidth={isDirectlySelected ? 4 : 1.5}
             onClick={() => {
               const itemId = selectRelationItem(item, selected);
               if (itemId !== undefined) {

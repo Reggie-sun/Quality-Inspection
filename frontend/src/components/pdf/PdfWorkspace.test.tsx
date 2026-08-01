@@ -228,8 +228,13 @@ describe("PdfWorkspace", () => {
   });
 
   test("来源待确认选择会跳页并高亮真实来源框", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
     const onSelectSource = vi.fn();
-    render(
+    const { rerender } = render(
       <PdfWorkspace
         pdfDocument={documentFixture()}
         candidates={[]}
@@ -239,6 +244,12 @@ describe("PdfWorkspace", () => {
             pageIndex: 1,
             bbox: [10, 20, 30, 40],
             rawText: "技术要求：去除毛刺",
+          },
+          {
+            id: "source-next",
+            pageIndex: 1,
+            bbox: [50, 60, 70, 80],
+            rawText: "125 X 2",
           },
         ]}
         balloons={[]}
@@ -252,8 +263,83 @@ describe("PdfWorkspace", () => {
     });
     const source = await screen.findByTestId("source-source-only");
     expect(source.getAttribute("data-selected")).toBe("true");
+    expect(source.getAttribute("fill")).not.toBe("transparent");
+    expect(source.getAttribute("stroke")).toBe("#f59e0b");
+    expect(source.getAttribute("stroke-dasharray")).toBe("none");
+    expect(Number(source.getAttribute("stroke-width"))).toBeGreaterThan(1.5);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      block: "center",
+      inline: "center",
+    });
     fireEvent.click(source);
     expect(onSelectSource).toHaveBeenCalledWith("source-only");
+
+    scrollIntoView.mockClear();
+    rerender(
+      <PdfWorkspace
+        pdfDocument={documentFixture()}
+        candidates={[]}
+        sources={[
+          {
+            id: "source-only",
+            itemIds: ["item-other"],
+            pageIndex: 1,
+            bbox: [10, 20, 30, 40],
+            rawText: "技术要求：去除毛刺",
+          },
+          {
+            id: "source-next",
+            pageIndex: 1,
+            bbox: [50, 60, 70, 80],
+            rawText: "125 X 2",
+          },
+        ]}
+        balloons={[]}
+        selectedItemId="item-other"
+        selectedSourceId="source-next"
+        onSelectSource={onSelectSource}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("source-source-next").getAttribute("data-selected"))
+        .toBe("true");
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        block: "center",
+        inline: "center",
+      });
+    });
+    const locatedSource = scrollIntoView.mock.instances[
+      scrollIntoView.mock.instances.length - 1
+    ] as Element;
+    expect(locatedSource.getAttribute("data-testid")).toBe("source-source-next");
+
+    scrollIntoView.mockClear();
+    rerender(
+      <PdfWorkspace
+        pdfDocument={documentFixture()}
+        candidates={[]}
+        sources={[
+          {
+            id: "source-only",
+            itemIds: ["item-other"],
+            pageIndex: 1,
+            bbox: [10, 20, 30, 40],
+            rawText: "技术要求：去除毛刺",
+          },
+          {
+            id: "source-next",
+            pageIndex: 1,
+            bbox: [50, 60, 70, 80],
+            rawText: "125 X 2",
+          },
+        ]}
+        balloons={[]}
+        selectedSourceId="source-next"
+        onSelectSource={onSelectSource}
+      />,
+    );
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
   test("来源定位完成后仍允许手动切换 PDF 页面", async () => {
