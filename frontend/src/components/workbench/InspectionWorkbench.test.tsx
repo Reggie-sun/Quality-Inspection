@@ -1094,6 +1094,7 @@ describe("InspectionWorkbench", () => {
         raw_text: "M6",
         status: "kept",
         sip_detail_fields_confirmed: false,
+        sip_mapping_exceptions: ["unsupported_item_type"],
         inspection_item: "螺纹检验",
         inspection_standard: "GB/T 197",
         inspection_method: "螺纹规",
@@ -1180,25 +1181,27 @@ describe("InspectionWorkbench", () => {
     expect(sipSummary).not.toBeNull();
     const sipCard = within(projectRegion);
     for (const label of [
+      "物料编码",
       "产品名称",
       "图号",
       "版本号",
       "材质",
+    ]) {
+      expect(sipSummary?.textContent).toContain(label);
+    }
+    for (const duplicate of [
       "单位",
       "检验标准",
       "检验人员角色",
       "审核人员角色",
     ]) {
-      expect(sipSummary?.textContent).toContain(label);
+      expect(sipSummary?.textContent).not.toContain(duplicate);
     }
-    expect(sipSummary?.textContent).not.toContain("物料编码");
     expect(sipSummary?.textContent).toContain("产品名称上座");
     expect(sipSummary?.textContent).toContain("图号JS26032501");
     expect(sipSummary?.textContent).toContain("版本号A1");
     expect(sipSummary?.textContent).toContain("材质SUS304");
-    expect(sipSummary?.textContent).toContain("检验标准GB/T 197");
-    expect(sipSummary?.textContent).toContain("检验人员角色尺寸检验员");
-    expect(sipSummary?.querySelectorAll("dd")).toHaveLength(8);
+    expect(sipSummary?.querySelectorAll("dd")).toHaveLength(5);
     const selectedFields = within(currentRegion).getByRole("group", {
       name: "SIP 字段",
     });
@@ -1265,6 +1268,62 @@ describe("InspectionWorkbench", () => {
       expect(summary.getByText("保存状态").nextElementSibling?.textContent)
         .toBe("已保存");
     });
+  });
+
+  test("尚未生成的 SIP 行不计入真实异常且不显示逐项空表单", () => {
+    const items = [
+      {
+        item_id: "pending-sip-item",
+        item_type: "thread" as const,
+        raw_text: "M6",
+        sip_detail_fields_confirmed: false,
+        active: true,
+      },
+      {
+        item_id: "ready-sip-item",
+        item_type: "linear_dimension" as const,
+        raw_text: "10",
+        sip_detail_fields_confirmed: true,
+        active: true,
+      },
+    ];
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          id: "pending-sip-working-copy",
+          project_id: "project",
+          raw_result_id: "raw",
+          version: 1,
+          items,
+          coverage: { blocking_count: 0, review_required_count: 0 },
+          numbering_stale: false,
+          items_frozen_at: null,
+          items_frozen_by: null,
+          items_frozen_version: null,
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    const summary = within(screen.getByRole("region", { name: "项目摘要" }));
+    expect(summary.getByText("SIP 表格").nextElementSibling?.textContent)
+      .toBe("待生成 1 / 已生成 1 / 异常 0");
+    openAuxiliaryPanel();
+    const currentRegion = within(
+      screen.getByRole("complementary", { name: "检验、导出与处理信息" }),
+    ).getByRole("region", { name: "当前检验项" });
+    expect(currentRegion.textContent).toContain("SIP 表格：待生成 1");
+    expect(within(currentRegion).queryByRole("group", {
+      name: "SIP 字段",
+    })).toBeNull();
+    expect(within(currentRegion).queryByRole("button", {
+      name: "处理下一条异常",
+    })).toBeNull();
   });
 
   test("项目 SIP 从图纸建议预填但只在人工确认后提交正式值", async () => {
@@ -1386,7 +1445,7 @@ describe("InspectionWorkbench", () => {
     }));
   });
 
-  test("SIP 表格只生成一次并在异常修复后自动推进", async () => {
+  test("SIP 表格已生成后不重复显示生成入口并在异常修复后自动推进", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const sipItem = (
       itemId: string,
@@ -1452,16 +1511,12 @@ describe("InspectionWorkbench", () => {
     getSipRegion();
     expect(screen.getByText("SIP 表格：已生成 1，异常 2")).not.toBeNull();
 
-    fireEvent.change(screen.getByRole("textbox", {
+    expect(screen.queryByRole("textbox", {
       name: "默认检验角色",
-    }), { target: { value: "IPQC" } });
-    fireEvent.click(screen.getByRole("button", {
+    })).toBeNull();
+    expect(screen.queryByRole("button", {
       name: "生成并检查 SIP 表格",
-    }));
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
-      type: "generate_sip_table",
-      inspection_role: "IPQC",
-    }));
+    })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", {
       name: "处理下一条异常",
@@ -1744,6 +1799,8 @@ describe("InspectionWorkbench", () => {
       key_dimension: "是",
       inspection_role: "检验员",
       source_page: 1,
+      sip_detail_fields_confirmed: true,
+      sip_mapping_exceptions: [],
       active: true,
     }];
     render(
@@ -1789,6 +1846,9 @@ describe("InspectionWorkbench", () => {
       screen.getByRole("region", { name: "项目摘要" }),
     ).getByRole("status");
     getSipRegion();
+    fireEvent.click(screen.getByRole("button", {
+      name: "查看或修改当前 SIP 行",
+    }));
     fireEvent.change(screen.getByRole("textbox", {
       name: "检验方法：M16",
     }), { target: { value: "三针法复核" } });
@@ -1860,6 +1920,8 @@ describe("InspectionWorkbench", () => {
       key_dimension: "是",
       inspection_role: "检验员",
       source_page: 1,
+      sip_detail_fields_confirmed: true,
+      sip_mapping_exceptions: [],
       active: true,
     }];
     render(
@@ -1902,13 +1964,11 @@ describe("InspectionWorkbench", () => {
         name: "编辑项目 SIP 信息",
       }) as HTMLFieldSetElement
     ).disabled).toBe(true);
-    expect((
-      within(screen.getByRole("region", {
-        name: "当前检验项",
-      })).getByRole("group", {
-        name: "SIP 字段",
-      }) as HTMLFieldSetElement
-    ).disabled).toBe(true);
+    expect((within(screen.getByRole("region", {
+      name: "当前检验项",
+    })).getByRole("button", {
+      name: "查看或修改当前 SIP 行",
+    }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   test("source-only coverage 从左侧列表选择并在右侧详情中处理", async () => {

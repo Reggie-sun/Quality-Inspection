@@ -166,6 +166,40 @@ test("未完成审核时优先显示精确的 SIP 异常阻断", () => {
   expect(screen.getByRole("status").textContent).toBe("项目 SIP 信息未确认");
 });
 
+test("待生成的 SIP 行与真实异常分开显示", () => {
+  const post = vi.fn() as unknown as PostJson;
+  const { rerender } = render(
+    <ExportPanel
+      projectId="project-1"
+      reviewedResultId={undefined}
+      canFinalize={false}
+      balloonBlockers={[]}
+      sipPendingCount={112}
+      sipExceptionCount={0}
+      projectMetadataConfirmed
+      post={post}
+    />,
+  );
+
+  expect(screen.getByRole("status").textContent)
+    .toBe("SIP 待生成 112 项");
+
+  rerender(
+    <ExportPanel
+      projectId="project-1"
+      reviewedResultId={undefined}
+      canFinalize={false}
+      balloonBlockers={[]}
+      sipPendingCount={112}
+      sipExceptionCount={2}
+      projectMetadataConfirmed
+      post={post}
+    />,
+  );
+  expect(screen.getByRole("status").textContent)
+    .toBe("SIP 异常 2 项");
+});
+
 test("恢复投影如实渲染导出中、失败和三产物原子下载", () => {
   const post = vi.fn() as unknown as PostJson;
   const { rerender } = render(

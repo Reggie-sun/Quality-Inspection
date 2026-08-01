@@ -59,6 +59,7 @@ function panelProps(
     metadataDirty: false,
     disabled: false,
     selectedItem: reviewItem(),
+    pendingItemCount: 1,
     onMetadataChange: vi.fn(),
     onConfirmMetadata: vi.fn(),
     onCancelMetadata: vi.fn(),
@@ -73,7 +74,7 @@ function renderPanel(
   return render(<SipInformationPanel {...panelProps(overrides)} />);
 }
 
-test("SIP 信息和当前检验项呈现为两个独立区域", () => {
+test("待生成状态不常驻渲染当前检验项 SIP 表单", () => {
   renderPanel();
 
   const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
@@ -90,19 +91,30 @@ test("SIP 信息和当前检验项呈现为两个独立区域", () => {
     level: 3,
     name: "当前检验项",
   })).toBeTruthy();
-  expect(within(currentRegion).getByRole("group", {
+  expect(within(currentRegion).queryByRole("group", {
     name: "SIP 字段",
-  })).toBeTruthy();
+  })).toBeNull();
+  expect(currentRegion.textContent).toContain("请先生成 SIP 表格");
   expect(sipRegion.contains(currentRegion)).toBe(false);
   expect(sipRegion.textContent).toContain("产品名称上座");
   expect(sipRegion.textContent).toContain("图号JS26032501");
   expect(sipRegion.textContent).toContain("单位—");
 });
 
-test("切到待判定来源时保留项目区和当前检验项草稿", () => {
-  const props = panelProps();
+test("切到待判定来源时保留真实异常的当前检验项草稿", () => {
+  const props = panelProps({
+    pendingItemCount: 0,
+    exceptionItemCount: 1,
+    selectedItem: reviewItem({
+      sip_detail_fields_confirmed: false,
+      sip_mapping_exceptions: ["composite_method_required"],
+    }),
+  });
   const { rerender } = render(<SipInformationPanel {...props} />);
 
+  expect(screen.queryByRole("textbox", {
+    name: "默认检验角色",
+  })).toBeNull();
   fireEvent.change(screen.getByRole("textbox", { name: "检验方法：M6" }), {
     target: { value: "三针法复核" },
   });
@@ -219,9 +231,9 @@ test("图纸识别字段在编辑器中明确标记为待确认建议", () => {
   ).value).toBe("JS26032501");
 });
 
-test("一次生成 SIP 表格并只转发下一条异常入口", () => {
-  const onCommand = vi.fn().mockResolvedValue(true);
+test("生成后只向真实异常提供逐项编辑和下一条入口", () => {
   const onSelectNextException = vi.fn();
+  const onCommand = vi.fn();
   render(
     <SipInformationPanel
       {...panelProps()}
@@ -232,8 +244,10 @@ test("一次生成 SIP 表格并只转发下一条异常入口", () => {
           "sip_regeneration_required",
         ],
       })}
+      pendingItemCount={0}
       readyItemCount={112}
       exceptionItemCount={3}
+      regenerationRequired
       onSelectNextException={onSelectNextException}
       onCommand={onCommand}
     />,
@@ -242,6 +256,9 @@ test("一次生成 SIP 表格并只转发下一条异常入口", () => {
   expect(screen.getByText("SIP 表格：已生成 112，异常 3")).not.toBeNull();
   expect(screen.getByText("复合项需要选择检验方法")).not.toBeNull();
   expect(screen.getByText("技术要求已变更，请重新生成 SIP 表格")).not.toBeNull();
+  expect(screen.getByRole("textbox", {
+    name: "默认检验角色",
+  })).not.toBeNull();
   fireEvent.change(screen.getByRole("textbox", {
     name: "默认检验角色",
   }), { target: { value: "IPQC" } });
@@ -252,6 +269,7 @@ test("一次生成 SIP 表格并只转发下一条异常入口", () => {
     type: "generate_sip_table",
     inspection_role: "IPQC",
   });
+  expect(screen.getByRole("group", { name: "SIP 字段" })).not.toBeNull();
   fireEvent.click(screen.getByRole("button", {
     name: "处理下一条异常",
   }));
@@ -259,10 +277,38 @@ test("一次生成 SIP 表格并只转发下一条异常入口", () => {
   expect(document.body.textContent).not.toContain("已确认 112 / 115");
 });
 
+test("混合状态下待生成行不遮蔽当前真实异常", () => {
+  render(
+    <SipInformationPanel
+      {...panelProps()}
+      selectedItem={reviewItem({
+        sip_detail_fields_confirmed: false,
+        sip_mapping_exceptions: ["missing_inspection_role"],
+      })}
+      pendingItemCount={1}
+      readyItemCount={111}
+      exceptionItemCount={3}
+      onSelectNextException={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("SIP 表格：待生成 1")).not.toBeNull();
+  expect(screen.getByText("缺少默认检验角色")).not.toBeNull();
+  expect(screen.getByRole("group", { name: "SIP 字段" })).not.toBeNull();
+  expect(screen.getByRole("button", {
+    name: "处理下一条异常",
+  })).not.toBeNull();
+});
+
 test("没有 SIP 异常时显示完成终态并移除重复生成动作", () => {
   render(
     <SipInformationPanel
       {...panelProps()}
+      selectedItem={reviewItem({
+        sip_detail_fields_confirmed: true,
+        sip_mapping_exceptions: [],
+      })}
+      pendingItemCount={0}
       readyItemCount={115}
       exceptionItemCount={0}
       onSelectNextException={vi.fn()}
@@ -283,6 +329,29 @@ test("没有 SIP 异常时显示完成终态并移除重复生成动作", () => 
   expect(screen.getByText(
     "正式文件将在审核和冻结完成后从左侧统一生成。",
   )).not.toBeNull();
+  expect(screen.queryByRole("group", { name: "SIP 字段" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", {
+    name: "查看或修改当前 SIP 行",
+  }));
+  expect(screen.getByRole("group", { name: "SIP 字段" })).not.toBeNull();
+});
+
+test("尚未生成的检验项与真实异常分开计数", () => {
+  renderPanel({
+    pendingItemCount: 122,
+    readyItemCount: 0,
+    exceptionItemCount: 0,
+  });
+
+  expect(screen.getByText("SIP 表格：待生成 122")).not.toBeNull();
+  expect(screen.queryByText(/异常 122/)).toBeNull();
+  expect(screen.queryByRole("button", {
+    name: "处理下一条异常",
+  })).toBeNull();
+  expect(screen.queryByRole("group", { name: "SIP 字段" })).toBeNull();
+  expect(screen.getByRole("textbox", {
+    name: "默认检验角色",
+  })).not.toBeNull();
 });
 
 test("没有有效检验项时保留首次生成入口", () => {
@@ -396,6 +465,12 @@ test("向当前检验项转发显式 draft save handle", async () => {
   renderPanel({
     onCommand,
     selectedSipDraftSaveRef,
+    pendingItemCount: 0,
+    exceptionItemCount: 1,
+    selectedItem: reviewItem({
+      sip_detail_fields_confirmed: false,
+      sip_mapping_exceptions: ["composite_method_required"],
+    }),
   });
 
   fireEvent.change(screen.getByRole("textbox", { name: "检验方法：M6" }), {

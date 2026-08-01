@@ -447,7 +447,18 @@ export function InspectionWorkbench({
       && item.sip_detail_fields_confirmed === true
       && (item.sip_mapping_exceptions?.length ?? 0) === 0,
   ).length;
-  const sipExceptionCount = activeItemCount - readyItemCount;
+  const sipExceptionCount = items.filter(
+    (item) =>
+      item.active && (item.sip_mapping_exceptions?.length ?? 0) > 0,
+  ).length;
+  const sipRegenerationRequired = items.some(
+    (item) =>
+      item.active
+      && item.sip_mapping_exceptions?.includes("sip_regeneration_required"),
+  );
+  const pendingSipItemCount = activeItemCount
+    - readyItemCount
+    - sipExceptionCount;
   const selectedReviewItem = items.find(
     (item) => item.active && item.item_id === selectedItemId,
   );
@@ -502,8 +513,7 @@ export function InspectionWorkbench({
       (item) =>
         item.active
         && (
-          item.sip_detail_fields_confirmed !== true
-          || (item.sip_mapping_exceptions?.length ?? 0) > 0
+          (item.sip_mapping_exceptions?.length ?? 0) > 0
         )
         && item.item_id !== justResolvedItemId,
     );
@@ -526,6 +536,7 @@ export function InspectionWorkbench({
         projectId={projectId}
         reviewedResultId={reviewedResultId}
         canFinalize={canFinalize}
+        sipPendingCount={pendingSipItemCount}
         sipExceptionCount={sipExceptionCount}
         projectMetadataConfirmed={
           workingCopy !== undefined && hasConfirmedSipMetadata(workingCopy)
@@ -537,20 +548,11 @@ export function InspectionWorkbench({
       />
     );
   const metadataValues: Array<readonly [string, string | undefined]> = [
+    [zhCN.workbench.metadataFields.materialCode, metadata.material_code],
     [zhCN.workbench.metadataFields.materialName, metadata.material_name],
     [zhCN.workbench.metadataFields.drawingNumber, metadata.drawing_number],
     [zhCN.workbench.metadataFields.revision, metadata.revision],
     [zhCN.workbench.metadataFields.material, metadata.material],
-    [zhCN.workbench.metadataFields.unit, undefined],
-    [
-      zhCN.workbench.metadataFields.inspectionStandard,
-      selectedReviewItem?.inspection_standard,
-    ],
-    [
-      zhCN.workbench.metadataFields.inspectionRole,
-      selectedReviewItem?.inspection_role,
-    ],
-    [zhCN.workbench.metadataFields.reviewerRole, undefined],
   ];
   const auxiliaryPanel = (
     <aside
@@ -568,8 +570,10 @@ export function InspectionWorkbench({
         selectedItem={selectedReviewItem}
         selectedBalloon={selectedReviewBalloon}
         selectedSourceActive={selectedSourceId !== undefined}
+        pendingItemCount={pendingSipItemCount}
         readyItemCount={readyItemCount}
         exceptionItemCount={sipExceptionCount}
+        regenerationRequired={sipRegenerationRequired}
         onMetadataChange={(next) => {
           setMetadata(next);
           setMetadataDraftDirty(true);
@@ -633,7 +637,11 @@ export function InspectionWorkbench({
               </div>
               <div>
                 <dt>{zhCN.workbench.confirmedItems}</dt>
-                <dd>已生成 {readyItemCount} / 异常 {sipExceptionCount}</dd>
+                <dd>
+                  {pendingSipItemCount > 0
+                    ? `待生成 ${pendingSipItemCount} / 已生成 ${readyItemCount} / 异常 ${sipExceptionCount}`
+                    : `已生成 ${readyItemCount} / 异常 ${sipExceptionCount}`}
+                </dd>
               </div>
               <div>
                 <dt>{zhCN.workbench.currentState}</dt>

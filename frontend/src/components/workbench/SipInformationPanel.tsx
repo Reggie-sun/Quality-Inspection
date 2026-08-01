@@ -28,8 +28,10 @@ export type SipInformationPanelProps = {
   selectedItem?: ReviewItem;
   selectedBalloon?: BalloonOverlay;
   selectedSourceActive?: boolean;
+  pendingItemCount?: number;
   readyItemCount?: number;
   exceptionItemCount?: number;
+  regenerationRequired?: boolean;
   onMetadataChange: (next: MetadataDraft) => void;
   onConfirmMetadata: () => void;
   onCancelMetadata: () => void;
@@ -53,8 +55,10 @@ export function SipInformationPanel({
   selectedItem,
   selectedBalloon,
   selectedSourceActive = false,
+  pendingItemCount = 0,
   readyItemCount = 0,
   exceptionItemCount = 0,
+  regenerationRequired = false,
   onMetadataChange,
   onConfirmMetadata,
   onCancelMetadata,
@@ -65,9 +69,18 @@ export function SipInformationPanel({
   selectedSipDraftSaveRef,
 }: SipInformationPanelProps) {
   const selectedItemActive = selectedItem?.active === true;
+  const selectedItemHasException = selectedItemActive
+    && (selectedItem.sip_mapping_exceptions?.length ?? 0) > 0;
+  const selectedItemPending = selectedItemActive
+    && !selectedItemHasException
+    && selectedItem.sip_detail_fields_confirmed !== true;
+  const itemCount = pendingItemCount + readyItemCount + exceptionItemCount;
   const sipTableComplete =
-    readyItemCount + exceptionItemCount > 0 && exceptionItemCount === 0;
+    itemCount > 0 && pendingItemCount === 0 && exceptionItemCount === 0;
+  const showGeneration =
+    pendingItemCount > 0 || itemCount === 0 || regenerationRequired;
   const [inspectionRole, setInspectionRole] = useState("");
+  const [manualEditorItemId, setManualEditorItemId] = useState<string>();
   const suggestionByField = new Map(
     metadataSuggestions.map((suggestion) => [suggestion.field, suggestion]),
   );
@@ -193,7 +206,7 @@ export function SipInformationPanel({
             <strong>{zhCN.workbench.sipTableComplete}</strong>
             <span>{zhCN.workbench.sipTableCompleteNextStep}</span>
           </div>
-        ) : (
+        ) : showGeneration ? (
           <div className="sip-table-generation">
             <label>
               {zhCN.workbench.defaultInspectionRole}
@@ -216,15 +229,17 @@ export function SipInformationPanel({
               {zhCN.workbench.generateSipTable}
             </button>
           </div>
-        )}
+        ) : null}
         <div className="sip-selected-information__heading">
           <div>
             <h3>{zhCN.workbench.selectedSipInformation}</h3>
             <p>
-              {zhCN.workbench.sipTableProgress(
-                readyItemCount,
-                exceptionItemCount,
-              )}
+              {pendingItemCount > 0
+                ? zhCN.workbench.sipTablePendingProgress(pendingItemCount)
+                : zhCN.workbench.sipTableProgress(
+                    readyItemCount,
+                    exceptionItemCount,
+                  )}
             </p>
           </div>
           {exceptionItemCount === 0
@@ -238,8 +253,7 @@ export function SipInformationPanel({
             </button>
           )}
         </div>
-        {!selectedItemActive
-        || (selectedItem.sip_mapping_exceptions?.length ?? 0) === 0 ? null : (
+        {!selectedItemHasException ? null : (
           <ul className="sip-mapping-exceptions" aria-label="当前 SIP 异常">
             {selectedItem.sip_mapping_exceptions!.map((exception) => (
               <li key={exception}>
@@ -258,24 +272,38 @@ export function SipInformationPanel({
           <p className="sip-information-panel__empty">
             {zhCN.workbench.selectItemForSip}
           </p>
-        ) : null}
-        <SelectedSipDetailFields
-          item={
-            !selectedSourceActive && selectedItemActive
-              ? selectedItem
-              : undefined
-          }
-          balloon={
-            !selectedSourceActive && selectedItemActive
-              ? selectedBalloon
-              : undefined
-          }
-          disabled={disabled}
-          onCommand={onCommand}
-          onDraftChange={onSelectedSipDraftChange}
-          onConfirmed={onSelectedSipConfirmed}
-          draftSaveRef={selectedSipDraftSaveRef}
-        />
+        ) : selectedItemPending ? (
+          <p className="sip-information-panel__empty">
+            {zhCN.workbench.pendingSipGeneration}
+          </p>
+        ) : selectedItemHasException ? null : (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setManualEditorItemId(selectedItem.item_id)}
+          >
+            {zhCN.workbench.editResolvedSipRow}
+          </button>
+        )}
+        <div hidden={
+          selectedSourceActive
+          || !selectedItemActive
+          || selectedItemPending
+          || (
+            !selectedItemHasException
+            && manualEditorItemId !== selectedItem.item_id
+          )
+        }>
+          <SelectedSipDetailFields
+            item={selectedItemActive ? selectedItem : undefined}
+            balloon={selectedBalloon}
+            disabled={disabled}
+            onCommand={onCommand}
+            onDraftChange={onSelectedSipDraftChange}
+            onConfirmed={onSelectedSipConfirmed}
+            draftSaveRef={selectedSipDraftSaveRef}
+          />
+        </div>
       </section>
     </>
   );

@@ -145,12 +145,16 @@ export const zhCN = {
     adoptRecognizedMetadata: (label: string) => `采用识别值：${label}`,
     sipTableProgress: (ready: number, exceptions: number) =>
       `SIP 表格：已生成 ${ready}，异常 ${exceptions}`,
+    sipTablePendingProgress: (pending: number) =>
+      `SIP 表格：待生成 ${pending}`,
     defaultInspectionRole: "默认检验角色",
     generateSipTable: "生成并检查 SIP 表格",
     sipTableComplete: "SIP 表格已完成",
     sipTableCompleteNextStep:
       "正式文件将在审核和冻结完成后从左侧统一生成。",
     nextSipException: "处理下一条异常",
+    pendingSipGeneration: "请先生成 SIP 表格，系统会自动填写可确定字段。",
+    editResolvedSipRow: "查看或修改当前 SIP 行",
     sipMappingExceptions: {
       composite_method_required: "复合项需要选择检验方法",
       unsupported_item_type: "未知检验项类型",
@@ -479,6 +483,7 @@ export const zhCN = {
     title: "正式文件",
     action: "生成正式文件",
     notReviewed: "尚未审核",
+    sipPending: (count: number) => `SIP 待生成 ${count} 项`,
     sipExceptions: (count: number) => `SIP 异常 ${count} 项`,
     pendingProjectSip: "项目 SIP 信息未确认",
     blocked: "存在气泡阻断项",
