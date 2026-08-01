@@ -16,22 +16,22 @@
 - Runtime identity proof: API health passed、database revision is `0013`、container schema is `visual-symbol-review/3`, and both API/worker exactly matched the current 12-file GDT hash set before paid calls。Sample 1 source SHA matches the fresh manifest；all `12` completed request-bound crop hashes match their bytes
 - Contract result: no typed Case A/B、non-GD&T symbol report、pause identity or receipt was sealed；Step 4 remains failed and Step 5 was not run
 - Action taken: preserved the exact Harness failure evidence and left runtime config/retry policy unchanged；did not rerun paid calls or convert the failure to accepted risk
-- Remaining blocker: a subsequent authorized execution must resolve or outlive the real Provider timeout while preserving current Provider/error/identity contracts, then rerun the repository-owned target from fresh current inputs
+- Remaining blocker: a subsequent authorized execution must first restore one current `/3` API/worker topology, then resolve or outlive the real Provider timeout while preserving current Provider/error/identity contracts and rerun the repository-owned target from fresh current inputs
 
 ## BUG-20260801-live-api-runtime-identity-drift
 
-- Status: 已解决；Harness guard and Compose runtime convergence verified
+- Status: Harness guard 已解决；Compose API runtime drift recurred after the live run
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
-- Recurrence: 1
+- Recurrence: 2
 - Surface: `.agent/harness/scripts/run-p0.py` full-P0 zero-paid preflight 与 running Compose API GDT production runtime
 - Symptom: host/worktree code identity 与 credentials/source checks 全部通过，但 running API container 仍可使用旧 `visual-symbol-review/2` 执行 paid live calls；current GDT worktree 要求 `/3`
 - Reproduction: Harness-owned full-P0 run `20260801T054726079099Z-83f03a78` 完成 `28` 个 authenticated Qwen calls 后在 sealed symbol selector 阻断；只读 post-result evaluator 显示 `7` 个 approved GDT labels、`0` 个 structured GDT candidates，Case A/B missing/ambiguous
 - Root cause: preflight 只绑定 host Git/config 和 Compose topology，没有比较 API container 内实际 GDT production files；container schema hash 为 `8f331090...`、worktree schema hash 为 `cb4ee4ce...`，container 缺少 `app/candidates/geometric_tolerance.py`，因此旧 Provider/advisor/runtime path 无法生成 typed GDT
 - Fix: 在 source upload、fresh registration、run creation 和 Provider call 之前，exact 比较 API container 与 worktree 的 12-file GDT runtime hash set，覆盖 Provider schema/Qwen、advisor/evidence/normalizer/symbol/fallback、automatic/runtime recognition 以及 native/raster frame inventory；nonzero、non-JSON、missing/extra/stale hash 全部 fail-closed
 - Regression check: focused runtime guard GREEN；contract file `62 passed`、完整 Harness `174 passed`、Ruff 和 diff checks 通过。独立 reviewer 对单独 stale `advisor.py`、单独 stale `runtime_recognition.py` 及 parsing/hash bypass 复测后 verdict `accept`
-- Runtime proof: authorized local Compose rebuild 后，API health passed、schema `/3`、database `0013`，API/worker 的 exact 12-file hashes 均与 worktree 一致；zero-paid runtime guard passed。Fresh full-live run then crossed this gate and made authenticated `/3` calls, proving stale runtime is no longer the active blocker
-- Remaining blocker: none for runtime identity；the later authenticated Qwen timeout is tracked separately and does not reopen or weaken this guard
+- Runtime proof: authorized local Compose rebuild 后，API health passed、schema `/3`、database `0013`，API/worker 的 exact 12-file hashes 均与 worktree 一致；zero-paid runtime guard passed。Fresh full-live run crossed this gate and made authenticated `/3` calls。About 25 seconds after that run failed on a separate Provider timeout, API container `dbaae635f952` was recreated from the main-worktree Compose config；it now reports `/2` and the exact guard rejects it, while worker `f3adcef47eea` remains this worktree `/3`
+- Remaining blocker: current mixed API `/2` + worker `/3` topology must converge before another live run；the guard correctly prevents using this state and no second deployment was attempted
 
 ## BUG-20260801-full-live-target-activation
 
