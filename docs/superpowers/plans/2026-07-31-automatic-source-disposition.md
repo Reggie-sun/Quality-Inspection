@@ -166,3 +166,37 @@ micromamba run -n qi-p0 npm --prefix frontend run build
 - Production build: passed；仅有既有 Vite large-chunk warning。
 - Independent reviewer: `accept with concerns`；无 code blocker，唯一 concern 为 Chrome visual QA 未完成。
 - Chrome MCP: 两次 `list_pages` 均返回 `Transport closed`；左右 pane、overflow 与 console runtime proof 保持 `blocked`。
+
+## 2026-08-01 Source-Disposition Residual Test Amendment
+
+### Selection
+
+- Selected lane: 继续沿用本 plan 的 `Heavy` contract-convergence lane。
+- Validation action: `amend`；只收敛被现行 automatic-source-default contract supersede 的 integration expectations。
+- Problem boundary: 完整 backend suite 中 4 个 symbol-recognition case 仍期待初始 working copy 保留 source-only pending，并继续执行旧的逐条 `promote_source` / `ignore_source` 流程。
+- Single Owner: `ReviewService._review_coverage()` 继续拥有初始 working-copy system-default projection；本 amendment 只修测试契约，不改 production Owner。
+- Old path to retire: visual no-detection 与 revision-marker integration test 对新 working copy 的手工 pending-source resolution 期待。
+- Unchanged contract: immutable raw coverage、advisor evidence、technical requirement exemption、legacy pending-source public commands、numbering、freeze、balloon、SIP、reviewed result 与 export 均保持不变。
+- Writer ownership and order: 父 agent 为唯一 writer；只读 debugger 独立核对根因，完成后由只读 reviewer 复核。
+- Next verification: 将 4 个既有 RED case 改为锁定 raw/working separation、exact system-default provenance 与 settled source command rejection，再运行完整 `make test-backend`。
+
+### Allowed Paths
+
+- `.agent/bug-memory.md`
+- `docs/superpowers/plans/2026-07-31-automatic-source-disposition.md`
+- `backend/tests/integration/test_symbol_recognition_pipeline.py`
+
+### Required Checks
+
+1. 4 个 residual case 对新 working copy 断言 `non_inspection`、`requires_confirmation=false`、`resolution_source=system_default` 和 `resolution_rule_version=review-source-default/1`，同时证明 raw coverage 不变。
+2. `promote_source` / `ignore_source` 不得把已由 system default 收口的 entry 当作 legacy pending target；legacy command behavior 继续由 `test_review_operations.py` 的真实 command tests 覆盖。
+3. 运行完整 `make test-backend`、`git diff --check`，并由独立 reviewer 检查没有修改 production semantics。
+
+### Execution Evidence
+
+- RED: 隔离 PostgreSQL 上的完整 suite 为 `1599 passed / 4 failed`；失败仅为本 amendment 指定的 4 个 stale parametrized cases。
+- Root cause: 旧 case 早于 approved automatic-source-default amendment，错误地把新 working copy 的 system-default settled entry 当作 legacy pending source；production Owner 行为未回退。
+- Focused GREEN: 4 个更新后的 case 为 `4 passed / 19 deselected`。
+- Full GREEN: fresh `make test-backend` 为 `1607 passed / 4 warnings`，并清理 test container/network。
+- Smoke: tests-only contract convergence 未改变 API、backend runtime behavior 或 UI；`auto-feature-smoke-test` 的额外 API/Chrome smoke 不适用。
+- Independent reviewer: `accept`；无 blocking issue、non-blocking concern 或建议项。

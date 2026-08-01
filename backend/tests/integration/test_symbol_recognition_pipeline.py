@@ -78,7 +78,7 @@ from app.providers.qwen_vl import (
 )
 from app.review.locks import acquire_lock
 from app.review.models import ReviewWorkingCopy
-from app.review.service import ReviewService
+from app.review.service import ReviewNotFound, ReviewService
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
 from tests.helpers.symbol_fixture import build_symbol_fixture
@@ -2422,13 +2422,13 @@ def test_systemic_symbol_failure_creates_no_result(
     )
 
 
-@pytest.mark.parametrize("resolution", ("promote", "ignore"))
-def test_visual_no_detection_remains_actionable_source_review(
+@pytest.mark.parametrize("command_type", ("promote", "ignore"))
+def test_visual_no_detection_uses_system_default_source_disposition(
     db_session: Session,
     tmp_path: Path,
-    resolution: str,
+    command_type: str,
 ) -> None:
-    """INT-05 exposes source context without silently creating an item."""
+    """INT-05 preserves raw evidence while settling the new working copy."""
     fixture_source, _manifest = build_symbol_fixture(
         tmp_path / "no-detection-fixture"
     )
@@ -2486,15 +2486,20 @@ def test_visual_no_detection_remains_actionable_source_review(
         [],
         "visual_no_detection",
     )
+    assert raw_entry["disposition"] == "ambiguous"
+    assert raw_entry["requires_confirmation"] is True
     assert entry == {
         "observation_id": observation_id,
-        "disposition": "ambiguous",
+        "disposition": "non_inspection",
         "source_location_id": observation_id,
         "coordinates": list(visual.bbox_pdf),
         "candidate_id": None,
-        "requires_confirmation": True,
+        "requires_confirmation": False,
         "symbol_kinds": [],
         "rejection_code": "visual_no_detection",
+        "confirmation_accepted": False,
+        "resolution_source": "system_default",
+        "resolution_rule_version": "review-source-default/1",
     }
     inventory = json.loads(storage.read_bytes(raw.inventory_ref))
     persisted_visual = next(
@@ -2508,51 +2513,45 @@ def test_visual_no_detection_remains_actionable_source_review(
         observation_id in item["source_location_ids"]
         for item in working.items
     )
-    initial_item_count = len(working.items)
+    before_items = list(working.items)
+    before_coverage = dict(working.coverage)
+    before_version = working.version
 
     service = ReviewService(db_session)
     acquire_lock(db_session, working.project_id, "quality-1")
-    if resolution == "promote":
-        saved = service.apply(
-            working.id,
-            expected_version=working.version,
-            operator_id="quality-1",
-            command={
-                "type": "promote_source",
-                "observation_id": observation_id,
-                "raw_text": "M6",
-                "item_type": "thread",
-                "scope": "local_feature",
-                "balloon_required": True,
-                "page_index": 0,
-            },
-        )
-        saved_entry = next(
-            entry
-            for entry in saved.coverage["entries"]
-            if entry["observation_id"] == observation_id
-        )
-        assert len(saved.items) == initial_item_count + 1
-        assert saved.items[-1]["source_location_ids"] == [observation_id]
-        assert saved_entry["candidate_id"] == saved.items[-1]["item_id"]
+    command: dict[str, object]
+    if command_type == "promote":
+        command = {
+            "type": "promote_source",
+            "observation_id": observation_id,
+            "raw_text": "M6",
+            "item_type": "thread",
+            "scope": "local_feature",
+            "balloon_required": True,
+            "page_index": 0,
+        }
     else:
-        saved = service.apply(
+        command = {
+            "type": "ignore_source",
+            "observation_id": observation_id,
+        }
+    with pytest.raises(
+        ReviewNotFound,
+        match=f"source review target {observation_id} was not found",
+    ):
+        service.apply(
             working.id,
-            expected_version=working.version,
+            expected_version=before_version,
             operator_id="quality-1",
-            command={
-                "type": "ignore_source",
-                "observation_id": observation_id,
-            },
+            command=command,
         )
-        saved_entry = next(
-            entry
-            for entry in saved.coverage["entries"]
-            if entry["observation_id"] == observation_id
-        )
-        assert len(saved.items) == initial_item_count
-        assert saved_entry["disposition"] == "non_inspection"
-    assert saved_entry["requires_confirmation"] is False
+
+    db_session.expire_all()
+    persisted = db_session.get(ReviewWorkingCopy, working.id)
+    assert persisted is not None
+    assert persisted.version == before_version
+    assert persisted.items == before_items
+    assert persisted.coverage == before_coverage
 
 
 def test_visual_processing_replay_is_idempotent(
@@ -2613,11 +2612,11 @@ def test_visual_processing_replay_is_idempotent(
         verify.close()
 
 
-@pytest.mark.parametrize("resolution", ("promote", "ignore"))
-def test_revision_marker_stays_noninspection_until_explicit_promote_source(
+@pytest.mark.parametrize("command_type", ("promote", "ignore"))
+def test_revision_marker_uses_system_default_source_disposition(
     db_session: Session,
     tmp_path: Path,
-    resolution: str,
+    command_type: str,
 ) -> None:
     observation_id = "visual-revision"
     snapshot = _snapshot(
@@ -2640,43 +2639,62 @@ def test_revision_marker_stays_noninspection_until_explicit_promote_source(
     )
     assert raw.candidates == []
     assert working.items == []
+    raw_entry = raw.coverage["entries"][0]
+    assert raw_entry["disposition"] == "non_inspection"
+    assert raw_entry["requires_confirmation"] is True
+    assert raw_entry["advisor_review"] == _visual_review(
+        ["revision_marker"],
+        None,
+    )
     entry = working.coverage["entries"][0]
-    assert entry["disposition"] == "non_inspection"
-    assert entry["candidate_id"] is None
-    assert entry["requires_confirmation"] is True
-    assert entry["symbol_kinds"] == ["revision_marker"]
-    assert entry["rejection_code"] is None
+    assert entry == {
+        "observation_id": observation_id,
+        "disposition": "non_inspection",
+        "source_location_id": observation_id,
+        "coordinates": [10, 20, 30, 40],
+        "candidate_id": None,
+        "requires_confirmation": False,
+        "symbol_kinds": ["revision_marker"],
+        "rejection_code": None,
+        "confirmation_accepted": False,
+        "resolution_source": "system_default",
+        "resolution_rule_version": "review-source-default/1",
+    }
+    before_coverage = dict(working.coverage)
+    before_version = working.version
 
     service = ReviewService(db_session)
     acquire_lock(db_session, working.project_id, "quality-1")
-    if resolution == "promote":
-        saved = service.apply(
-            working.id,
-            expected_version=working.version,
-            operator_id="quality-1",
-            command={
-                "type": "promote_source",
-                "observation_id": observation_id,
-                "raw_text": "REV 1",
-                "item_type": "general_requirement",
-                "scope": "global_requirement",
-                "balloon_required": False,
-                "page_index": 0,
-            },
-        )
-        assert len(saved.items) == 1
-        assert saved.items[0]["source_type"] == "manual"
-        assert saved.coverage["entries"][0]["candidate_id"] == saved.items[0]["item_id"]
+    command: dict[str, object]
+    if command_type == "promote":
+        command = {
+            "type": "promote_source",
+            "observation_id": observation_id,
+            "raw_text": "REV 1",
+            "item_type": "general_requirement",
+            "scope": "global_requirement",
+            "balloon_required": False,
+            "page_index": 0,
+        }
     else:
-        saved = service.apply(
+        command = {
+            "type": "ignore_source",
+            "observation_id": observation_id,
+        }
+    with pytest.raises(
+        ReviewNotFound,
+        match=f"source review target {observation_id} was not found",
+    ):
+        service.apply(
             working.id,
-            expected_version=working.version,
+            expected_version=before_version,
             operator_id="quality-1",
-            command={
-                "type": "ignore_source",
-                "observation_id": observation_id,
-            },
+            command=command,
         )
-        assert saved.items == []
-        assert saved.coverage["entries"][0]["candidate_id"] is None
-    assert saved.coverage["entries"][0]["requires_confirmation"] is False
+
+    db_session.expire_all()
+    persisted = db_session.get(ReviewWorkingCopy, working.id)
+    assert persisted is not None
+    assert persisted.version == before_version
+    assert persisted.items == []
+    assert persisted.coverage == before_coverage

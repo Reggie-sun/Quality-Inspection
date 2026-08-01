@@ -2,6 +2,28 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-source-disposition-stale-tests
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `backend/tests/integration/test_symbol_recognition_pipeline.py` 的 source-only visual/revision working-copy assertions
+- Symptom: 隔离 PostgreSQL 上的完整 `make test-backend` 仅剩 4 个失败；测试期待 working coverage 保持 `requires_confirmation=true` 并允许显式 `promote_source` / `ignore_source`，实际 bootstrap 已投影为 `non_inspection`、`requires_confirmation=false`
+- Previously correct behavior: raw automatic coverage 保留 advisor evidence；working-copy bootstrap 按现行 automatic-source-default contract 自动收口非 technical-requirement source-only pending，并保留 legacy/manual correction seam
+- Reproduction: fresh full backend suite 为 `1599 passed / 4 failed`；失败仅为 `test_visual_no_detection_remains_actionable_source_review[promote|ignore]` 与 `test_revision_marker_stays_noninspection_until_explicit_promote_source[promote|ignore]`
+- Root cause: 这 4 个 parametrized case 早于 approved automatic-source-default amendment；它们仍把新 working copy 的 source-only entry 当作 `requires_confirmation=true` 的 legacy pending target，和 `CAND-005` / `CAND-006` / `REV-004` 现行 raw/working 分层契约冲突。production `ReviewService._review_coverage()` 行为正确
+- Fix: 仅更新 `test_symbol_recognition_pipeline.py` 的 4 个旧 case：继续断言 immutable raw advisor evidence，改为锁定 working-copy exact system-default provenance，并证明已收口 entry 的 `promote_source` / `ignore_source` 会原子拒绝且不改变 version、items 或 coverage；production code 未修改
+- Regression check: `test_visual_no_detection_uses_system_default_source_disposition[promote|ignore]`、`test_revision_marker_uses_system_default_source_disposition[promote|ignore]`；完整 `make test-backend` 为 `1607 passed`
+- Runtime proof: fresh `make test-backend` 在隔离且已迁移的 PostgreSQL 上 `1607 passed / 4 warnings`，退出后 test container/network 已清理；tests-only contract convergence 无 API/UI/runtime behavior change，`auto-feature-smoke-test` 的额外 API/Chrome smoke 不适用
+- Change: `test: align source disposition regression expectations`
+- Selected lane: `Heavy`，沿用 `docs/superpowers/plans/2026-07-31-automatic-source-disposition.md`
+- Problem boundary: 判定并修复 4 个 source-disposition residual；不改变 raw evidence、technical requirement exemption、public correction command、数据库 runtime entry 或 frontend
+- Single owner: `ReviewService._review_coverage()` 继续拥有 production bootstrap projection；本修复只更新 integration test contract
+- Writer ownership and order: 父 agent 唯一 writer；只读 debugger 已确认 stale-test 根因且未修改文件
+- Independent review: `accept`；无 blocking issue、non-blocking concern 或建议项；确认 raw/working separation、exact provenance、settled command rejection 与 legacy pending command coverage 均完整
+- Next verification: 已完成；focused 4 cases、完整 backend suite、diff check 与独立 review 均通过
+
 ## BUG-20260801-test-backend-compose-dns
 
 - Status: 已解决
