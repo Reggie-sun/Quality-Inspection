@@ -148,6 +148,12 @@ describe("OverlayLayer", () => {
     expect(selectedCandidate.querySelector(
       ".balloon-selection-ring",
     )?.getAttribute("stroke")).toBe("#f59e0b");
+    expect(screen.getByTestId("candidate-candidate-2")
+      .getAttribute("stroke")).toBe("none");
+    expect(screen.getByTestId("candidate-candidate-2")
+      .getAttribute("data-selected")).toBe("true");
+    expect(screen.getByTestId("candidate-candidate-1")
+      .getAttribute("stroke")).toBe("#2563eb");
     expect(screen.getByRole("button", { name: "正式气泡 3" })
       .getAttribute("tabindex")).toBe("0");
     expect(screen.getByRole("button", { name: "正式气泡 4" })
