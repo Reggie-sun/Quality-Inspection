@@ -1873,7 +1873,7 @@ describe("InspectionWorkbench", () => {
     ).disabled).toBe(true);
   });
 
-  test("source-only coverage 在统一列表中添加为真实检验项并保存", async () => {
+  test("source-only coverage 从左侧列表选择并在右侧详情中处理", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
     const items = [{
       item_id: "item-1",
@@ -1883,7 +1883,30 @@ describe("InspectionWorkbench", () => {
       requires_confirmation: false,
       active: true,
     }];
-    render(
+    const workingCopy: ReviewWorkingCopyView = {
+      id: "hidden-working-id",
+      project_id: "hidden-project-id",
+      raw_result_id: "hidden-result-id",
+      version: 4,
+      items,
+      coverage: {
+        blocking_count: 0,
+        review_required_count: 1,
+        entries: [{
+          observation_id: "hidden-observation-id",
+          source_location_id: "hidden-source-id",
+          candidate_id: null,
+          disposition: "ambiguous",
+          coordinates: [60, 70, 150, 84],
+          requires_confirmation: true,
+        }],
+      },
+      numbering_stale: false,
+      items_frozen_at: null,
+      items_frozen_by: null,
+      items_frozen_version: null,
+    };
+    const view = render(
       <InspectionWorkbench
         pdfDocument={null}
         candidates={[]}
@@ -1895,29 +1918,7 @@ describe("InspectionWorkbench", () => {
         }]}
         balloons={[]}
         items={items}
-        workingCopy={{
-          id: "hidden-working-id",
-          project_id: "hidden-project-id",
-          raw_result_id: "hidden-result-id",
-          version: 4,
-          items,
-          coverage: {
-            blocking_count: 0,
-            review_required_count: 1,
-            entries: [{
-              observation_id: "hidden-observation-id",
-              source_location_id: "hidden-source-id",
-              candidate_id: null,
-              disposition: "ambiguous",
-              coordinates: [60, 70, 150, 84],
-              requires_confirmation: true,
-            }],
-          },
-          numbering_stale: false,
-          items_frozen_at: null,
-          items_frozen_by: null,
-          items_frozen_version: null,
-        }}
+        workingCopy={workingCopy}
         onSave={onSave}
       />,
     );
@@ -1928,6 +1929,21 @@ describe("InspectionWorkbench", () => {
     expect(screen.getByTestId("source-hidden-source-id").getAttribute("data-selected"))
       .toBe("true");
     expect(screen.queryByRole("region", { name: "所选检验项" })).toBeNull();
+    const mergedWorkspace = screen.getByRole("group", {
+      name: "检验项列表与编辑",
+    });
+    const listPane = mergedWorkspace.querySelector(
+      ".inspection-review-workspace__list",
+    ) as HTMLElement;
+    const detailPane = mergedWorkspace.querySelector(
+      ".inspection-review-workspace__detail",
+    ) as HTMLElement;
+    expect(within(listPane).queryByRole("group", {
+      name: "待判定来源处理",
+    })).toBeNull();
+    expect(within(detailPane).getByRole("group", {
+      name: "待判定来源处理",
+    })).not.toBeNull();
     fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
       target: { value: "general_requirement" },
     });
@@ -1943,6 +1959,42 @@ describe("InspectionWorkbench", () => {
         balloon_required: true,
         page_index: 0,
       });
+    });
+
+    view.rerender(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[{
+          id: "hidden-source-id",
+          pageIndex: 0,
+          bbox: [60, 70, 150, 84],
+          rawText: "技术要求 2：去除毛刺",
+        }]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          ...workingCopy,
+          version: 5,
+          coverage: {
+            blocking_count: 0,
+            review_required_count: 0,
+            entries: [],
+          },
+        }}
+        onSave={onSave}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("group", {
+        name: "待判定来源处理",
+      })).toBeNull();
+      expect(screen.getByRole("region", { name: "审核命令" })).not.toBeNull();
+      expect(screen.queryByText("当前选择的是待判定来源。")).toBeNull();
+      expect(screen.getByTestId("source-hidden-source-id").getAttribute(
+        "data-selected",
+      )).toBe("false");
     });
   });
 

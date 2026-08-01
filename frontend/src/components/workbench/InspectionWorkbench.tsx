@@ -21,6 +21,7 @@ import {
   InspectionItemTable,
   type PendingSourceReview,
 } from "./InspectionItemTable";
+import { SourceReviewPanel } from "./SourceReviewPanel";
 import {
   saveDraftHandlesInOrder,
   type DraftSaveHandle,
@@ -281,6 +282,14 @@ export function InspectionWorkbench({
       })
       .filter((source) => /\d/.test(source.rawText));
   }, [sources, workingCopy?.coverage.entries]);
+  useEffect(() => {
+    if (
+      selectedSourceId !== undefined
+      && !pendingSources.some((source) => source.sourceId === selectedSourceId)
+    ) {
+      setSelectedSourceId(undefined);
+    }
+  }, [pendingSources, selectedSourceId]);
 
   const finalized = projectState === "reviewed";
   const localDraftDirty =
@@ -699,26 +708,32 @@ export function InspectionWorkbench({
                 filter={filter}
                 selectedItemId={selectedItemId}
                 selectedSourceId={selectedSourceId}
-                disabled={reviewCommandsDisabled}
                 onSelectItem={selectItem}
                 onSelectSource={selectSource}
+              />
+            </div>
+            <div className="inspection-review-workspace__detail">
+              <SourceReviewPanel
+                pendingSources={pendingSources}
+                selectedSourceId={selectedSourceId}
+                disabled={reviewCommandsDisabled}
                 onCommand={submitCommand}
                 onDraftChange={setSourceDraftDirty}
                 draftSaveRef={sourceDraftSaveRef}
               />
-            </div>
-            <div className="inspection-review-workspace__detail">
-              <ReviewPanel
-                items={items}
-                disabled={reviewCommandsDisabled}
-                selectedItemId={selectedItemId}
-                selectedItemPresentation={selectedItemPresentation}
-                onSelectItem={selectItem}
-                pageIndex={pageIndex}
-                onCommand={submitCommand}
-                onDraftChange={setReviewDraftDirty}
-                draftSaveRef={reviewDraftSaveRef}
-              />
+              {selectedSourceId === undefined ? (
+                <ReviewPanel
+                  items={items}
+                  disabled={reviewCommandsDisabled}
+                  selectedItemId={selectedItemId}
+                  selectedItemPresentation={selectedItemPresentation}
+                  onSelectItem={selectItem}
+                  pageIndex={pageIndex}
+                  onCommand={submitCommand}
+                  onDraftChange={setReviewDraftDirty}
+                  draftSaveRef={reviewDraftSaveRef}
+                />
+              ) : null}
               <SipInformationPanel
                 metadata={metadata}
                 metadataValues={metadataValues}

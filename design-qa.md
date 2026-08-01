@@ -1295,3 +1295,56 @@ comparison 将 source 与 implementation 顶部区域统一显示为 `1292px` �
 - production build: passed；仅保留既有 Vite large-chunk warning。
 - OpenAPI generated client drift check: passed。
 - final result: passed
+
+## Source Editor Right Pane — 2026-08-01
+
+### Grounding
+
+- source visual truth: `/tmp/codex-clipboard-lCx0k4.png`
+- source visual pixels / density: `514x683 / 1x` focused crop
+- wrong-state evidence: `/tmp/codex-clipboard-ZyrQ9s.png`
+- wrong-state pixels / density: `190x667 / 1x` focused crop
+- intended state: 左侧只显示可选择的检验项/来源 row；选中黄色待判来源后，完整来源处理表单显示在右侧 detail pane，复用蓝色检验项详情的空间层级。
+- implementation screenshot: unavailable
+- browser viewport: unavailable
+- density normalization: not performed because no implementation capture exists
+
+### Comparison Evidence
+
+- Full-view comparison: blocked；Chrome MCP `list_pages` 返回 `Transport closed`，无法打开当前 localhost runtime。
+- Focused-region comparison: blocked；没有右侧来源处理态的 browser-rendered implementation screenshot，不能与两个 source crops 组成同状态对照。
+- Fonts and typography: not visually evaluated。
+- Spacing and layout rhythm: not visually evaluated。
+- Colors and visual tokens: not visually evaluated。
+- Image quality and asset fidelity: 本轮不涉及图片、Logo、图标或新增资产；仍因缺少 implementation capture 无法完成整体验证。
+- Copy and content: automated component assertions覆盖既有来源处理文案和 command controls，但不能替代视觉证据。
+
+### Findings
+
+- [P1] Browser-rendered right-pane state missing
+  - Location: `InspectionWorkbench` source-selected state。
+  - Evidence: source truth 与 wrong-state screenshot 可用，但 Chrome MCP transport closed，无法取得实现截图。
+  - Impact: 不能确认实际 runtime 中表单宽度、换行、滚动、pane 占比和交互状态是否符合目标。
+  - Fix: 恢复 Chrome MCP transport，在同一项目选择一个黄色数字来源，捕获完整 workspace 与 focused detail pane，检查 console 与横向溢出后重新比较。
+
+### Interaction And Browser Evidence
+
+- Primary interaction attempted: Chrome MCP `list_pages`；实现完成并通过 focused tests/build 后再次重试。
+- Result: 两次均 blocked by `Transport closed` before page selection。
+- Console errors checked: unavailable。
+- Network requests checked: unavailable。
+
+### Comparison History
+
+- Initial source: 蓝色检验项详情正确位于右侧；错误来源处理态完整表单位于狭窄左栏。
+- Code/test iteration: source editor 从 table inline path 提取为右侧 detail component；focused RED/GREEN 证明 DOM Owner 已移动。
+- Post-fix visual iteration: blocked；尚无 browser-rendered screenshot。
+
+### Implementation Checklist
+
+- [x] 左侧 table 不再渲染 source editor。
+- [x] 右侧 detail pane 渲染 source editor。
+- [x] 保留 source commands、draft dirty state 与 save handle。
+- [ ] Chrome MCP 同状态截图、交互、console 与 overflow verification。
+
+- final result: blocked

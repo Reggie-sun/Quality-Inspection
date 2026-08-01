@@ -2,6 +2,25 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-source-editor-wrong-pane
+
+- Status: 阻塞
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `InspectionItemTable`、`InspectionWorkbench` 右侧 detail pane 与待判来源编辑表单
+- Symptom: 选中黄色待判来源后，来源处理表单展开在狭窄左侧列表中，字段和按钮被压成竖排；普通蓝色检验项的编辑表单则正确显示在右侧详情区
+- Previously correct behavior: 左侧只显示可选择的检验项/来源行；无论选择普通检验项还是待判来源，对应处理表单都应显示在右侧详情区
+- Reproduction: 用户截图中左侧约 135px 宽度内显示“原始标注 / 检验类型 / 范围 / 需要气泡 / 忽略 / 添加为检验项”完整表单，而对照蓝色检验项在右侧 detail pane 正常显示
+- Root cause: `InspectionItemTable` 同时拥有 source draft、`promote_source` / `ignore_source` command 与完整 `.source-review-fields` 渲染，因此表单被固定组合在左侧 `.inspection-review-workspace__list`；来源处理后 coverage 移除该 source 时，旧 `selectedSourceId` 还会继续占用右侧详情 Owner
+- Fix: 提取独立 `SourceReviewPanel`，由 `InspectionWorkbench` 在右侧 `.inspection-review-workspace__detail` 渲染；table 只保留 row/分页/选择；当所选 source 不再属于 `pendingSources` 时清除 `selectedSourceId` 并恢复普通 `ReviewPanel`
+- Regression check: `InspectionWorkbench.test.tsx` 先证实旧实现在左侧仍存在 source editor，修复后验证左侧无表单、右侧有表单；coverage 刷新移除 source 后 editor 关闭、ReviewPanel 恢复、SIP source mode 清除、PDF source overlay 取消选中。focused frontend suites `68/68` 通过，production build 通过
+- Runtime proof: Chrome MCP 两次 `list_pages` 均返回 `Transport closed`，无法取得同状态截图、console 与横向溢出证据；`design-qa.md` 保持 `blocked`
+- Change: `InspectionItemTable.tsx` 退役 inline source editor；新增 `SourceReviewPanel.tsx`；`InspectionWorkbench.tsx` 迁移右侧 Owner 并协调 stale selection；相关 component tests 更新
+- Selected lane: `Standard`
+- Selected plan: `docs/superpowers/plans/2026-07-31-automatic-source-disposition.md` 的 `2026-08-01 Source Editor Right-Pane Amendment`
+- Validation action: code/test/reviewer 已完成；Chrome MCP visual closeout 阻塞
+
 ## BUG-20260801-numeric-source-visibility
 
 - Status: 已解决

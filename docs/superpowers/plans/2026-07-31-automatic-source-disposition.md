@@ -119,3 +119,50 @@ micromamba run -n qi-p0 npm --prefix frontend run build
 3. 运行 frontend build。
 4. 使用 Chrome MCP 做当前可达 runtime smoke；若截图项目不属于当前 runtime，明确记录 runtime identity blocker，不以其他项目冒充。
 5. 独立 reviewer 检查可见性过滤没有改变 backend truth 或 freeze contract。
+
+## 2026-08-01 Source Editor Right-Pane Amendment
+
+### Selection
+
+- Selected lane: `Standard`
+- Selected plan: 本 plan 的 source-editor right-pane amendment
+- Selection evidence: 单一 frontend review workspace，但需要组件联动、Chrome smoke 和视觉 QA；不改变稳定 API/schema、runtime config 或 backend workflow。
+- Validation action: `amend`
+- Writer ownership and order: 父 agent 为唯一 writer；无并发 writer。
+- Next verification: 先新增“来源表单只在右侧 detail pane”回归并确认旧实现 RED。
+
+### Goal And Boundary
+
+- Problem boundary: 左侧列表只保留 row；选中待判来源时，来源编辑表单显示在右侧 detail pane。
+- Single Owner after: `InspectionWorkbench` 负责决定右侧渲染 `ReviewPanel` 或 source editor；`InspectionItemTable` 只负责列表、分页和选择。
+- Old path to retire: `InspectionItemTable` 内联渲染完整 source editor。
+- Unchanged contract: `promote_source` / `ignore_source` command payload、source draft/save/return gate、数字来源过滤、technical requirement Owner、backend coverage、freeze、编号、气泡和 SIP 均保持不变。
+- Rollback: 回退 right-pane composition 并恢复 table inline editor；第一项验证为本 amendment 的 focused regression test。
+
+### Allowed Paths
+
+- `.agent/bug-memory.md`
+- `docs/superpowers/plans/2026-07-31-automatic-source-disposition.md`
+- `frontend/src/components/workbench/InspectionItemTable.tsx`
+- `frontend/src/components/workbench/InspectionItemTable.test.tsx`
+- `frontend/src/components/workbench/InspectionWorkbench.tsx`
+- `frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- `frontend/src/components/workbench/SourceReviewPanel.tsx`
+- `frontend/src/styles/workbench.css`
+- `design-qa.md`
+
+### Required Checks
+
+1. TDD RED/GREEN：左侧 list 容器不含 source editor；右侧 detail 容器包含并保持既有 source commands/draft behavior。
+2. `InspectionItemTable`、`InspectionWorkbench`、`RecognitionSummary` focused suites。
+3. frontend production build 与 `git diff --check`。
+4. Chrome MCP 在同一来源选中状态验证左右 pane、无横向溢出、console error/warning 为 0。
+5. 独立 reviewer 检查旧 inline path 已退役且 draft/save seams 未分叉。
+
+### Execution Evidence
+
+- TDD: 旧 inline owner 与 stale source selection 均先得到 focused RED，再完成 GREEN。
+- Focused suites: `RecognitionSummary`、`InspectionItemTable`、`InspectionWorkbench` 共 `68/68` 通过。
+- Production build: passed；仅有既有 Vite large-chunk warning。
+- Independent reviewer: `accept with concerns`；无 code blocker，唯一 concern 为 Chrome visual QA 未完成。
+- Chrome MCP: 两次 `list_pages` 均返回 `Transport closed`；左右 pane、overflow 与 console runtime proof 保持 `blocked`。

@@ -1,4 +1,5 @@
 import { createRef } from "react";
+import type { ComponentProps } from "react";
 import {
   act,
   cleanup,
@@ -12,6 +13,34 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import type { DraftSaveHandle } from "./draftSave";
 import { InspectionItemTable } from "./InspectionItemTable";
+import { SourceReviewPanel } from "./SourceReviewPanel";
+
+
+type SourceReviewHarnessProps = ComponentProps<typeof InspectionItemTable> & {
+  onCommand: ComponentProps<typeof SourceReviewPanel>["onCommand"];
+  onDraftChange?: ComponentProps<typeof SourceReviewPanel>["onDraftChange"];
+  draftSaveRef?: ComponentProps<typeof SourceReviewPanel>["draftSaveRef"];
+};
+
+function SourceReviewHarness({
+  onCommand,
+  onDraftChange,
+  draftSaveRef,
+  ...tableProps
+}: SourceReviewHarnessProps) {
+  return (
+    <>
+      <InspectionItemTable {...tableProps} />
+      <SourceReviewPanel
+        pendingSources={tableProps.pendingSources ?? []}
+        selectedSourceId={tableProps.selectedSourceId}
+        onCommand={onCommand}
+        onDraftChange={onDraftChange}
+        draftSaveRef={draftSaveRef}
+      />
+    </>
+  );
+}
 
 
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(
@@ -333,7 +362,6 @@ test("缺少真实页码时列表保持空状态且不回填第 1 页", () => {
       filter="all"
       selectedItemId="page-unknown"
       onSelectItem={vi.fn()}
-      onCommand={vi.fn()}
     />,
   );
 
@@ -354,7 +382,6 @@ test("检验项列表不再渲染 legacy SIP 字段组或确认操作", () => {
       filter="all"
       selectedItemId="legacy-sip-item"
       onSelectItem={vi.fn()}
-      onCommand={vi.fn()}
     />,
   );
 
@@ -418,7 +445,6 @@ test("legacy 待确认来源不再渲染批量确认条", () => {
       filter="review_required"
       onSelectItem={vi.fn()}
       onSelectSource={vi.fn()}
-      onCommand={vi.fn()}
     />,
   );
 
@@ -433,7 +459,7 @@ test("待判定来源进入统一列表并产生显式 source review commands", 
   const onSelectSource = vi.fn();
   const onCommand = vi.fn();
   render(
-    <InspectionItemTable
+    <SourceReviewHarness
       items={[]}
       balloons={[]}
       pendingSources={[{
@@ -487,7 +513,7 @@ test("待判定来源进入统一列表并产生显式 source review commands", 
 
 test("待判定来源编辑器使用分层决策布局并突出纳入动作", () => {
   render(
-    <InspectionItemTable
+    <SourceReviewHarness
       items={[]}
       balloons={[]}
       pendingSources={[{
@@ -589,7 +615,7 @@ test("来源命令成功后保留草稿值并只清理未保存标记", async ()
   const onDraftChange = vi.fn();
   const onCommand = vi.fn();
   render(
-    <InspectionItemTable
+    <SourceReviewHarness
       items={[]}
       balloons={[]}
       pendingSources={[{
@@ -632,7 +658,7 @@ test("来源 promote 失败时保留编辑后的文字、类型和未保存状�
   const onCommand = vi.fn().mockResolvedValue(false);
   const onDraftChange = vi.fn();
   render(
-    <InspectionItemTable
+    <SourceReviewHarness
       items={[]}
       balloons={[]}
       pendingSources={[{
@@ -683,7 +709,7 @@ test("来源 ignore 失败时保留来源草稿和未保存状态", async () => 
   const onCommand = vi.fn().mockResolvedValue(false);
   const onDraftChange = vi.fn();
   render(
-    <InspectionItemTable
+    <SourceReviewHarness
       items={[]}
       balloons={[]}
       pendingSources={[{
@@ -724,7 +750,7 @@ test("来源 ignore 失败时保留来源草稿和未保存状态", async () => 
 test("空白来源只在列表显示占位符且补全真实文字后才允许 promote", () => {
   const onCommand = vi.fn();
   render(
-    <InspectionItemTable
+    <SourceReviewHarness
       items={[]}
       balloons={[]}
       pendingSources={[{
@@ -913,7 +939,7 @@ test("显式 draft save handle 保存待判定来源草稿", async () => {
   const onCommand = vi.fn().mockResolvedValue(true);
   const onDraftChange = vi.fn();
   render(
-    <InspectionItemTable
+    <SourceReviewHarness
       items={[]}
       balloons={[]}
       pendingSources={[{
