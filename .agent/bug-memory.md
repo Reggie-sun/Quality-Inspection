@@ -4,7 +4,7 @@
 
 ## BUG-20260801-gdt-rejection-coverage-blocking
 
-- Status: 已解决；isolated fix branch 已验证，尚未合入 source feature runtime
+- Status: 已解决；fix 已合入 source feature branch 并在 shared worker 激活
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
 - Recurrence: 2 次同一 PDF 上传均稳定复现
@@ -24,6 +24,7 @@
 - Fix: 将六个 GDT projection rejection code 作为独立 allowlist；仅当 review 为 `ambiguous/requires_confirmation` 且包含单一、已知的 `gdt_` symbol kind 时转为人工审核，空 kind、非 GDT、多个 GDT、unknown code 和缺少 confirmation 继续 fail-closed
 - Regression check: 新增六个合法 GDT code 正向用例和空/非 GDT/canonical 多 GDT kind 负向用例；相关 coverage、GDT normalization、advisor 与 AutomaticResult contract 共 `151 passed`，Ruff 与 `git diff --check` 通过
 - Runtime proof: 对同一失败项目保存的 inventory/provider cache 使用 isolated worktree 代码、只读 storage 与 `--network none` 回放；`blocking_count=0`、`review_required_count=52`，目标 observation 保持 `ambiguous + gdt_frame_not_found + requires_confirmation=true`，未调用 Provider 或写入 storage
+- Runtime activation: source feature branch 已 fast-forward 到 `a588bd8`；shared `quality_inspection-worker-1` 的 `coverage.py` hash 与 source 一致，Celery `inspect ping` 返回 `pong`，API OpenAPI 为 HTTP 200，Postgres healthy 且原 `137` 个项目完整保留
 - Review: 独立 reviewer 首轮发现 GDT code 可与非 GDT/空 kind 错误组合并 `reject`；收紧语义后复验合法/错误组合与旧 visual 语义均正确，阻断问题清零。其两项非阻断维护建议也已落实：移除第三份 GDT kind 清单，并让 canonical 多 kind 测试直接命中新 guard
 - Change: `fix(gdt): keep projection failures reviewable`
 
