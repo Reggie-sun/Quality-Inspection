@@ -62,10 +62,10 @@
 
 ## BUG-20260801-full-live-target-activation
 
-- Status: 已解决
+- Status: 已解决；Recurrence 2 isolated runtime target binding 已通过回归与 independent reviewer `accept`
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
-- Recurrence: 1
+- Recurrence: 2
 - Surface: `Makefile:verify-p0-live`、`.agent/harness/scripts/run-p0.py` full-P0 live start/resume lifecycle、symbol-recognition live report
 - Symptom: repository-owned `make verify-p0-live` 在任何 Provider preflight 之前必然退出，无法生成 current-four authenticated Provider evidence；plan 同时要求 Step 4 在 Step 5 headed QA 之前产生 final receipt，但 Harness 只有 resume 后才写 receipt
 - Previously correct behavior: 单一 repository target 应自行生成 fresh registration IDs、以 literal IDs 启动 full-live、完成 authenticated symbol gate后暂停；headed QA 通过后 resume 同一 run 才生成 final receipt
@@ -75,6 +75,18 @@
 - Regression check: `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness -q` 返回 `173 passed`；focused contract file `61 passed`，`ruff check` 和 `git diff --check` 通过。独立 reviewer 对 malformed counts 与真实 crop-byte tamper 复测均 fail-closed，final verdict `accept`
 - Runtime proof: fresh `make verify-p0-live` 先通过 `69` global / `111` P0 contract mapping，再准确退出 `2`：四项 server-only Provider credential 未注入；run directory count 保持 `14 -> 14`，未创建 run、未调用 Provider。activation regression 已解决，GDT-10 live evidence 仍由外部 runtime identity injection 阻塞
 - Change: `fix(harness): activate structured GDT live gate`
+
+### Recurrence 2 — isolated runtime target binding
+
+- Last reported: 2026-08-01
+- Symptom: GDT-10 feature-only runtime 已按 approved Compose isolation contract 运行在 loopback `127.0.0.1:18000/14173`，但 `run-p0.py::_current_live_identity()` 仍只接受 `http://localhost:8000/3000`；继续执行 `make verify-p0-live` 会拒绝正确 isolated target，或在省略显式 target 时命中 main runtime。
+- Previously correct behavior: full-live preflight 必须把 HTTP API/frontend target 与同一次 `_require_compose_runtime_identity()` 验证的 feature-only Compose project 绑定，并在 registration、run creation、upload 和 Provider work 前拒绝 main/feature 混用。
+- Reproduction: current source 在 `run-p0.py:1331-1343` 对 API/frontend 使用固定字面量；running Compose labels 证明 feature project 为 `structured-geometric-tolerance-recognition-qa` 且 ports 为 `18000/14173`，main project 仍独立占用 `8000`。尚未运行 Provider/live command。
+- Root cause: Compose isolation prerequisite 把 GDT-10 QA runtime 切到 feature-only project 和 `18000/14173`，但 Harness active target、published-port preflight 与 `run.schema.json` receipt identity 仍保留 main `8000/3000`。第一次 schema amendment 又把 old/new bases 写成两个独立 `enum`，会错误接受 mixed API/frontend pair；independent reviewer 的 in-memory probe 捕获该 false success。
+- Fix: `_current_live_identity()` 现在要求显式 exact feature project + isolated API/frontend bases；`_require_compose_runtime_identity()` 绑定真实 published ports；`_http_json()` 与 `_browser_environment()` 移除 main defaults；`run.schema.json` 只接受 old-old historical pair 或 isolated-isolated current pair，拒绝 mixed pair并保留历史 sealed receipt 兼容。
+- Regression check: exact target/main-default-mixed target 与 published-port tests 已完成 RED→GREEN；schema old/new/mixed 四组测试完成 RED→GREEN。Focused live contract `115 passed`、full Harness `227 passed`、`check-contracts.py`、`ruff`、`git diff --check` 全部通过。
+- Runtime proof: fresh zero-paid feature runtime target/health/identity proof 在实现前通过；代码修复后 historical sealed run `20260728T080321805661Z-b59c87de` schema validation 通过。paid invocation count `0`；提交后仍须重跑 fresh real-runtime preflight。
+- Change: `fix(harness): bind live gate to isolated runtime`（pending commit at record update）
 
 ## BUG-20260801-source-disposition-stale-tests
 

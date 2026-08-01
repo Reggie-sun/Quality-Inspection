@@ -120,6 +120,10 @@ LIVE_OPERATOR_ENV = "QI_P0_OPERATOR_ID"
 LIVE_API_BASE_ENV = "QI_P0_API_BASE"
 LIVE_FRONTEND_BASE_ENV = "QI_P0_FRONTEND_BASE"
 LIVE_SOURCE_ROOT_ENV = "QI_CURRENT_FOUR_SOURCE_ROOT"
+LIVE_COMPOSE_PROJECT_ENV = "COMPOSE_PROJECT_NAME"
+EXPECTED_LIVE_API_BASE = "http://127.0.0.1:18000"
+EXPECTED_LIVE_FRONTEND_BASE = "http://127.0.0.1:14173"
+EXPECTED_LIVE_COMPOSE_PROJECT = f"{ROOT.name.lower()}-qa"
 LIVE_API_GDT_RUNTIME_PATHS = (
     "app/providers/visual_symbol_review.schema.json",
     "app/providers/qwen_vl.py",
@@ -1328,18 +1332,16 @@ def _current_live_identity(
     operator_id = current.get(LIVE_OPERATOR_ENV, "").strip()
     if not operator_id:
         raise ValueError(f"{LIVE_OPERATOR_ENV} is required")
-    api_base = current.get(LIVE_API_BASE_ENV, "http://localhost:8000").rstrip("/")
-    frontend_base = current.get(
-        LIVE_FRONTEND_BASE_ENV,
-        "http://localhost:3000",
-    ).rstrip("/")
-    if api_base != "http://localhost:8000":
+    api_base = current.get(LIVE_API_BASE_ENV, "").rstrip("/")
+    frontend_base = current.get(LIVE_FRONTEND_BASE_ENV, "").rstrip("/")
+    compose_project = current.get(LIVE_COMPOSE_PROJECT_ENV, "").strip()
+    if (
+        api_base != EXPECTED_LIVE_API_BASE
+        or frontend_base != EXPECTED_LIVE_FRONTEND_BASE
+        or compose_project != EXPECTED_LIVE_COMPOSE_PROJECT
+    ):
         raise ValueError(
-            f"{LIVE_API_BASE_ENV} must target the verified Compose API topology"
-        )
-    if frontend_base != "http://localhost:3000":
-        raise ValueError(
-            f"{LIVE_FRONTEND_BASE_ENV} must target the verified Compose frontend"
+            "live identity must target the verified isolated Compose project"
         )
     return {
         "operator_id": operator_id,
@@ -1473,6 +1475,21 @@ def _require_compose_runtime_identity() -> None:
         except json.JSONDecodeError:
             observed = None
         if result.returncode != 0 or observed != expected:
+            raise ValueError(
+                "Compose runtime identity does not match GDT-10 live contract"
+            )
+    for service, container_port, expected_binding in (
+        ("api", "8000", "127.0.0.1:18000"),
+        ("frontend", "4173", "127.0.0.1:14173"),
+    ):
+        binding = subprocess.run(
+            ["docker", "compose", "port", service, container_port],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if binding.returncode != 0 or binding.stdout.strip() != expected_binding:
             raise ValueError(
                 "Compose runtime identity does not match GDT-10 live contract"
             )
@@ -1691,7 +1708,9 @@ def _http_json(
     operator_id: str | None = None,
     timeout: int = 30,
 ) -> dict[str, Any]:
-    base = os.environ.get(LIVE_API_BASE_ENV, "http://localhost:8000").rstrip("/")
+    base = os.environ.get(LIVE_API_BASE_ENV, "").rstrip("/")
+    if base != EXPECTED_LIVE_API_BASE:
+        raise ValueError("live API target is not the verified isolated runtime")
     payload = None
     headers = {"Accept": "application/json"}
     if body is not None:
@@ -4040,10 +4059,9 @@ def _browser_environment(
     base_environment: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     source = dict(os.environ if base_environment is None else base_environment)
-    frontend = source.get(
-        LIVE_FRONTEND_BASE_ENV,
-        "http://localhost:3000",
-    ).rstrip("/")
+    frontend = source.get(LIVE_FRONTEND_BASE_ENV, "").rstrip("/")
+    if frontend != EXPECTED_LIVE_FRONTEND_BASE:
+        raise ValueError("live frontend target is not the verified isolated runtime")
     environment = {
         key: value
         for key, value in source.items()

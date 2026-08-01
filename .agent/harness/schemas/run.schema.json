@@ -331,8 +331,8 @@
       ],
       "properties": {
         "operator_id": { "type": "string", "minLength": 1 },
-        "api_base": { "const": "http://localhost:8000" },
-        "frontend_base": { "const": "http://localhost:3000" },
+        "api_base": { "type": "string" },
+        "frontend_base": { "type": "string" },
         "browser": {
           "type": "object",
           "additionalProperties": false,
@@ -358,7 +358,21 @@
             "height": { "const": 796 }
           }
         }
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "api_base": { "const": "http://localhost:8000" },
+            "frontend_base": { "const": "http://localhost:3000" }
+          }
+        },
+        {
+          "properties": {
+            "api_base": { "const": "http://127.0.0.1:18000" },
+            "frontend_base": { "const": "http://127.0.0.1:14173" }
+          }
+        }
+      ]
     },
     "policy_versions": {
       "type": "object",

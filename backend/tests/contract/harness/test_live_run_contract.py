@@ -136,8 +136,8 @@ def _run(execution_state: str = "running") -> dict[str, object]:
         "selected_contract_ids": ["P0-ACC-001"],
         "live_identity": {
             "operator_id": "quality-1",
-            "api_base": "http://localhost:8000",
-            "frontend_base": "http://localhost:3000",
+            "api_base": "http://127.0.0.1:18000",
+            "frontend_base": "http://127.0.0.1:14173",
             "browser": {
                 "name": "chrome",
                 "executable": "google-chrome",
@@ -1313,6 +1313,31 @@ def test_full_p0_run_schema_adds_lifecycle_without_invalidating_task_runs() -> N
     _validate(legacy_task, "run.schema.json")
 
 
+@pytest.mark.parametrize(
+    ("api_base", "frontend_base", "valid"),
+    [
+        ("http://localhost:8000", "http://localhost:3000", True),
+        ("http://127.0.0.1:18000", "http://127.0.0.1:14173", True),
+        ("http://localhost:8000", "http://127.0.0.1:14173", False),
+        ("http://127.0.0.1:18000", "http://localhost:3000", False),
+    ],
+)
+def test_live_run_schema_requires_a_paired_runtime_identity(
+    api_base: str,
+    frontend_base: str,
+    valid: bool,
+) -> None:
+    run = _run()
+    run["live_identity"]["api_base"] = api_base
+    run["live_identity"]["frontend_base"] = frontend_base
+
+    if valid:
+        _validate(run, "run.schema.json")
+    else:
+        with pytest.raises(jsonschema.ValidationError):
+            _validate(run, "run.schema.json")
+
+
 def test_live_and_human_verdict_schemas_are_closed() -> None:
     runner = _load_module(
         "qi_run_p0_live_evidence_version",
@@ -1773,6 +1798,7 @@ def _runtime_identity_run(
     *,
     payloads: dict[str, object],
     returncodes: dict[str, int] | None = None,
+    ports: dict[str, str] | None = None,
 ):
     calls: list[str] = []
 
@@ -1780,10 +1806,18 @@ def _runtime_identity_run(
         argv: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
-        assert argv[:4] == ["docker", "compose", "exec", "-T"]
-        service = argv[4]
+        assert argv[:2] == ["docker", "compose"]
+        if argv[2:4] == ["port", "api"]:
+            service = "api-port"
+            payload = (ports or {}).get(service, "127.0.0.1:18000\n")
+        elif argv[2:4] == ["port", "frontend"]:
+            service = "frontend-port"
+            payload = (ports or {}).get(service, "127.0.0.1:14173\n")
+        else:
+            assert argv[2:4] == ["exec", "-T"]
+            service = argv[4]
+            payload = payloads[service]
         calls.append(service)
-        payload = payloads[service]
         stdout = payload if isinstance(payload, str) else json.dumps(payload)
         return subprocess.CompletedProcess(
             argv,
@@ -1793,6 +1827,38 @@ def _runtime_identity_run(
         )
 
     return calls, fake_run
+
+
+@pytest.mark.parametrize(
+    ("port", "observed"),
+    [
+        ("api-port", "0.0.0.0:8000\n"),
+        ("frontend-port", "127.0.0.1:3000\n"),
+    ],
+)
+def test_live_runtime_identity_rejects_unbound_published_port(
+    monkeypatch: pytest.MonkeyPatch,
+    port: str,
+    observed: str,
+) -> None:
+    runner = _load_module(
+        f"qi_run_p0_unbound_{port}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    valid = _expected_gdt_runtime_payload(runner)
+    payloads = {"api": valid, "worker": valid, "postgres": "0013\n"}
+    _calls, fake_run = _runtime_identity_run(
+        runner,
+        payloads=payloads,
+        ports={port: observed},
+    )
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    with pytest.raises(
+        ValueError,
+        match="Compose runtime identity does not match GDT-10 live contract",
+    ):
+        runner._require_compose_runtime_identity()
 
 
 @pytest.mark.parametrize("service", ["api", "worker"])
@@ -1971,7 +2037,7 @@ def test_live_preflight_accepts_exact_api_worker_and_database_identity(
 
     runner._require_compose_runtime_identity()
 
-    assert calls == ["api", "worker", "postgres"]
+    assert calls == ["api", "worker", "api-port", "frontend-port", "postgres"]
 
 
 def test_live_runtime_identity_fails_before_registration_or_run_creation(
@@ -2400,7 +2466,10 @@ def test_resume_loads_the_paused_live_evidence_before_continuing(
     monkeypatch.setattr(
         runner,
         "_current_live_identity",
-        lambda: {"operator_id": "quality-1", "frontend_base": "http://localhost:3000"},
+        lambda: {
+            "operator_id": "quality-1",
+            "frontend_base": "http://127.0.0.1:14173",
+        },
     )
     monkeypatch.setattr(runner, "_wait_seconds", lambda: 1)
     monkeypatch.setattr(runner, "_resume_identity_preflight", lambda _run_dir: preflight)
@@ -2783,6 +2852,7 @@ def test_browser_e2e_environment_does_not_forward_server_credentials(
         "QI_PROVIDER_NETWORK_ENABLED": "enabled",
         "QI_DATABASE_URL": "postgresql://server-only",
         "QI_REDIS_URL": "redis://server-only",
+        "QI_P0_FRONTEND_BASE": "http://127.0.0.1:14173",
     }
     browser = runner._browser_environment(
         tmp_path / RUN_ID,
@@ -2795,6 +2865,7 @@ def test_browser_e2e_environment_does_not_forward_server_credentials(
     assert browser["PATH"] == "/usr/bin"
     assert browser["QI_P0_RUN_ID"] == RUN_ID
     assert browser["QI_P0_SAMPLE_ORDER"] == "1"
+    assert browser["QI_P0_PROJECT_URL"].startswith("http://127.0.0.1:14173/")
     assert all(key not in browser for key in runner.LIVE_CREDENTIAL_KEYS)
     assert "QI_PROVIDER_MODE" not in browser
     assert "QI_PROVIDER_NETWORK_ENABLED" not in browser
@@ -3073,8 +3144,12 @@ def test_live_operator_and_runtime_identity_are_bound_across_resume(
 ) -> None:
     runner = _load_module("qi_run_p0_live_identity", HARNESS / "scripts/run-p0.py")
     monkeypatch.setenv("QI_P0_OPERATOR_ID", "quality-1")
-    monkeypatch.setenv("QI_P0_API_BASE", "http://localhost:8000")
-    monkeypatch.setenv("QI_P0_FRONTEND_BASE", "http://localhost:3000")
+    monkeypatch.setenv("QI_P0_API_BASE", "http://127.0.0.1:18000")
+    monkeypatch.setenv("QI_P0_FRONTEND_BASE", "http://127.0.0.1:14173")
+    monkeypatch.setenv(
+        "COMPOSE_PROJECT_NAME",
+        "structured-geometric-tolerance-recognition-qa",
+    )
     monkeypatch.setattr(
         runner,
         "_chrome_identity",
@@ -3084,6 +3159,82 @@ def test_live_operator_and_runtime_identity_are_bound_across_resume(
 
     monkeypatch.setenv("QI_P0_OPERATOR_ID", "quality-2")
     assert runner._current_live_identity() != _run()["live_identity"]
+
+
+def test_live_identity_accepts_exact_isolated_compose_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_isolated_live_target",
+        HARNESS / "scripts/run-p0.py",
+    )
+    monkeypatch.setattr(
+        runner,
+        "_chrome_identity",
+        lambda environment: _run()["live_identity"]["browser"],
+    )
+
+    identity = runner._current_live_identity(
+        {
+            "QI_P0_OPERATOR_ID": "quality-1",
+            "QI_P0_API_BASE": "http://127.0.0.1:18000",
+            "QI_P0_FRONTEND_BASE": "http://127.0.0.1:14173",
+            "COMPOSE_PROJECT_NAME": "structured-geometric-tolerance-recognition-qa",
+        }
+    )
+
+    assert identity["api_base"] == "http://127.0.0.1:18000"
+    assert identity["frontend_base"] == "http://127.0.0.1:14173"
+
+
+@pytest.mark.parametrize(
+    ("api_base", "frontend_base", "compose_project"),
+    [
+        (
+            "http://localhost:8000",
+            "http://localhost:3000",
+            "structured-geometric-tolerance-recognition-qa",
+        ),
+        (
+            "http://127.0.0.1:18000",
+            "http://127.0.0.1:14173",
+            "quality_inspection",
+        ),
+        (
+            "http://127.0.0.1:18000",
+            "http://127.0.0.1:14173",
+            "",
+        ),
+    ],
+)
+def test_live_identity_rejects_main_or_unbound_compose_target(
+    monkeypatch: pytest.MonkeyPatch,
+    api_base: str,
+    frontend_base: str,
+    compose_project: str,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_reject_unbound_live_target_"
+        + hashlib.sha256(
+            f"{api_base}|{frontend_base}|{compose_project}".encode()
+        ).hexdigest()[:8],
+        HARNESS / "scripts/run-p0.py",
+    )
+    monkeypatch.setattr(
+        runner,
+        "_chrome_identity",
+        lambda environment: _run()["live_identity"]["browser"],
+    )
+
+    with pytest.raises(ValueError, match="verified isolated Compose"):
+        runner._current_live_identity(
+            {
+                "QI_P0_OPERATOR_ID": "quality-1",
+                "QI_P0_API_BASE": api_base,
+                "QI_P0_FRONTEND_BASE": frontend_base,
+                "COMPOSE_PROJECT_NAME": compose_project,
+            }
+        )
 
 
 def test_chrome_identity_uses_the_resolved_binary_version_and_hash(
