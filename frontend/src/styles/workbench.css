@@ -1603,6 +1603,17 @@
   font-weight: 500;
 }
 
+.source-review-field select[aria-invalid="true"] {
+  border-color: #f04438;
+}
+
+.source-review-field__error {
+  color: #b42318;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 .source-review-toggle {
   display: flex;
   min-height: 36px;

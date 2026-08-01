@@ -1,6 +1,7 @@
 import {
   useEffect,
   useImperativeHandle,
+  useRef,
   useState,
 } from "react";
 import type { Ref } from "react";
@@ -62,6 +63,8 @@ export function SourceReviewPanel({
     },
   );
   const [dirtySourceIds, setDirtySourceIds] = useState<string[]>([]);
+  const [itemTypeRequired, setItemTypeRequired] = useState(false);
+  const itemTypeRef = useRef<HTMLSelectElement>(null);
   const selectedSourceDraft = selectedSource && (
     sourceDrafts[selectedSource.observationId] ?? selectedSourceBaseline);
 
@@ -78,6 +81,9 @@ export function SourceReviewPanel({
   useEffect(() => {
     onDraftChange?.(dirtySourceIds.length > 0);
   }, [dirtySourceIds, onDraftChange]);
+  useEffect(() => {
+    setItemTypeRequired(false);
+  }, [selectedSource?.observationId]);
 
   const updateSourceDraft = (change: Partial<SourceDraft>) => {
     if (selectedSource === undefined || selectedSourceBaseline === undefined) {
@@ -172,18 +178,34 @@ export function SourceReviewPanel({
         <label className="source-review-field">
           <span>{zhCN.inspection.sourceItemType}</span>
           <select
+            ref={itemTypeRef}
             aria-label={zhCN.inspection.sourceItemType}
+            aria-invalid={itemTypeRequired || undefined}
+            aria-describedby={itemTypeRequired
+              ? "source-review-item-type-error"
+              : undefined}
             value={selectedSourceDraft.itemType}
-            onChange={(event) =>
+            onChange={(event) => {
+              setItemTypeRequired(false);
               updateSourceDraft({
                 itemType: event.target.value as CandidateType | "",
-              })}
+              });
+            }}
           >
             <option value="">{zhCN.inspection.selectItemType}</option>
             {Object.entries(INSPECTION_ITEM_TYPE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
+          {itemTypeRequired ? (
+            <small
+              id="source-review-item-type-error"
+              className="source-review-field__error"
+              role="alert"
+            >
+              {zhCN.inspection.selectItemType}
+            </small>
+          ) : null}
         </label>
         <label className="source-review-field">
           <span>{zhCN.inspection.sourceScope}</span>
@@ -235,11 +257,15 @@ export function SourceReviewPanel({
           type="button"
           disabled={
             disabled
-            || selectedSourceDraft.itemType === ""
             || selectedSource.pageIndex === undefined
             || selectedSourceDraft.rawText.trim() === ""
           }
           onClick={async () => {
+            if (selectedSourceDraft.itemType === "") {
+              setItemTypeRequired(true);
+              itemTypeRef.current?.focus();
+              return;
+            }
             await saveSourceDraft(selectedSource);
           }}
         >

@@ -484,14 +484,19 @@ test("待判定来源进入统一列表并产生显式 source review commands", 
   fireEvent.click(row);
   expect(onSelectSource).toHaveBeenCalledWith("source-1");
 
-  expect(
-    screen.getByRole("button", { name: "添加并生成气泡" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
-  fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
+  const promote = screen.getByRole("button", { name: "添加并生成气泡" });
+  const itemType = screen.getByRole("combobox", { name: "检验类型" });
+  expect(promote.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(promote);
+  expect(onCommand).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(itemType);
+  expect(screen.getByRole("alert").textContent).toBe("请选择检验类型");
+  expect(itemType.getAttribute("aria-invalid")).toBe("true");
+  fireEvent.change(itemType, {
     target: { value: "general_requirement" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "添加并生成气泡" }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.click(promote);
   expect(onCommand).toHaveBeenLastCalledWith({
     type: "promote_source",
     observation_id: "observation-1",
@@ -557,7 +562,7 @@ test("待判定来源编辑器使用分层决策布局并突出纳入动作", ()
   fireEvent.click(within(editor).getByRole("checkbox", { name: "需要气泡" }));
   const promoteWithoutBalloon = within(actions as HTMLElement)
     .getByRole("button", { name: "仅添加检验项" });
-  expect(promoteWithoutBalloon.hasAttribute("disabled")).toBe(true);
+  expect(promoteWithoutBalloon.hasAttribute("disabled")).toBe(false);
   fireEvent.change(within(editor).getByRole("combobox", { name: "检验类型" }), {
     target: { value: "general_requirement" },
   });

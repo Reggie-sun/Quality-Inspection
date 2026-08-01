@@ -7,27 +7,29 @@
 - Status: 已解决
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
-- Recurrence: 1
-- Surface: `frontend/src/components/workbench/SourceReviewPanel.tsx` 的待判定来源处理动作与 `frontend/src/copy/zhCN.ts` 文案
-- Symptom: 用户点击黄色待判定来源后，右侧只看到“需要气泡”复选框和“添加为检验项”按钮，没有明确的“添加后生成气泡”动作；按钮未选检验类型时为禁用态，用户无法直接判断下一步
+- Recurrence: 2
+- Surface: `frontend/src/components/workbench/SourceReviewPanel.tsx` 的待判定来源处理动作、内联类型校验与 `frontend/src/styles/workbench.css`
+- Symptom: 首次修复后按钮已区分“添加并生成气泡”和“仅添加检验项”，但未选择检验类型时两种按钮仍使用原生禁用态置灰；用户无法点击动作获得下一步提示
 - Previously correct behavior: 待判定来源详情应明确区分“添加并生成气泡”和“仅添加检验项”，同时继续要求用户显式选择检验类型，不绕过 review、freeze 或正式编号流程
-- Reproduction: 用户截图中 `4 x` 来源已选中且“需要气泡”已勾选，但主按钮仍只显示“添加为检验项”并处于禁用态；当前 `SourceReviewPanel` 的主按钮文案不随 `balloonRequired` 改变
-- Root cause: `SourceReviewPanel` 将 `balloonRequired` 只呈现在“需要气泡”复选框及辅助说明中，主动作始终使用静态“添加为检验项”；因此用户无法从实际提交按钮判断勾选状态会产生哪种结果，禁用态也显得像没有气泡动作
-- Fix: 保留现有复选框、显式 `item_type` gate 和 `promote_source` command，主按钮改为随 draft 显示“添加并生成气泡”或“仅添加检验项”；不新增业务状态、endpoint 或正式气泡旁路
-- Regression check: TDD RED 精确失败于旧静态按钮文案；`npm test -- --run src/components/workbench/InspectionItemTable.test.tsx src/components/workbench/InspectionWorkbench.test.tsx` 为 `64 passed`，并验证 unchecked 分支在未选类型时禁用、选类型后提交完整 `balloon_required: false` payload；完整 frontend suite 为 `273 passed`，production build 通过
-- Runtime proof: localhost browser 选择真实 pending source 后，默认显示禁用的“添加并生成气泡”；选择 `general_requirement` 后启用，取消勾选变为“仅添加检验项”，重新勾选恢复“添加并生成气泡”；未点击提交或产生 backend mutation，console error 为 0，证据截图 `/tmp/qi-source-add-balloon-action.png`
-- Change: `fix(ui): expose source balloon action`
+- Reproduction: 2026-08-01 第二次用户截图中，原始标注 `1` 的“需要气泡”勾选和未勾选状态分别显示正确动态文案，但主按钮都呈灰色；当前 `SourceReviewPanel` 在 `selectedSourceDraft.itemType === ""` 时直接设置 `disabled`
+- Root cause: 首次原因是主动作使用静态文案，已由 `ec0f5c9` 修复；第二次原因是按钮仍把 `itemType === ""` 纳入原生 `disabled` 条件，导致正确的动态文案不可交互，也无法在点击时告诉用户缺少哪个必填项
+- Fix: 首次修复保留动态“添加并生成气泡 / 仅添加检验项”；第二次修复只移除缺少 `itemType` 造成的原生禁用，点击时阻止 command、显示红色“请选择检验类型”并聚焦 select；原始标注为空、页码缺失或整体只读时继续真正禁用
+- Regression check: 第二次 TDD RED 精确失败于按钮仍有 `disabled`；`npm test -- --run src/components/workbench/InspectionItemTable.test.tsx src/components/workbench/InspectionWorkbench.test.tsx` 为 `64 passed`，覆盖可点击、零 command、alert、`aria-invalid`、focus 和选型后正常 payload；完整 frontend suite 为 `273 passed`，production build 通过
+- Runtime proof: localhost 真实 pending source 默认 `itemType=""` 时，“添加并生成气泡”为蓝色且可点击；点击后 select 获得 focus、显示红色提示，network 为 0 requests；取消勾选后“仅添加检验项”同样可点击，选择 `general_requirement` 后提示消失；console error 为 0，证据截图 `/tmp/qi-source-balloon-action-enabled.png`
+- Change: `ec0f5c9 fix(ui): expose source balloon action`；第二次 follow-up 为 `fix(ui): keep source actions interactive`
 - Selected lane: `Standard`，只改变一个现有 frontend form 的可见动作语义，但需要真实 browser smoke 证明用户路径
 - Selected plan: 本 bug-memory entry 作为 ad hoc task contract；不切换或扩展当前 P0 implementation plan
 - Problem boundary: 只让现有来源纳入动作明确表达气泡结果；不新增 endpoint、command、默认检验类型或直接正式气泡旁路
 - Single owner: `SourceReviewPanel` 继续拥有 source draft 和 `promote_source` producer
 - Old path action: 退役不表达 `balloonRequired` 结果的静态“添加为检验项”主按钮文案
 - Unchanged contract: `promote_source` 继续要求显式 `item_type` 并携带 `balloon_required`；正式气泡仍由现有 review/freeze/numbering 流程生成
-- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/SourceReviewPanel.tsx`、`frontend/src/components/workbench/InspectionItemTable.test.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`frontend/src/copy/zhCN.ts`
+- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/SourceReviewPanel.tsx`、`frontend/src/components/workbench/InspectionItemTable.test.tsx`、`frontend/src/styles/workbench.css`
 - Amendment: 实现后 focused suite 证明 `InspectionWorkbench.test.tsx` 也是旧静态 accessible name 的直接 consumer；只更新其现有 source-promote 查询，不改变 workbench behavior 或扩大 production scope
-- Writer ownership and order: 父 agent 唯一 writer；保留用户未跟踪的 `docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md`
-- Independent review: 初始 verdict 为 `accept with concerns`；唯一 concern 是 unchecked 分支缺少行为级 payload 断言，已补充 explicit type gate 与 `balloon_required: false` regression 后重新验证
-- Next verification: 已完成；仅在主按钮再次不表达当前 `balloonRequired` 结果，或 unchecked 提交不再携带 `false` 时重开
+- Writer ownership and order: 父 agent 唯一 writer；保留并发出现的 `docs/superpowers/specs/2026-07-23-public-qa-development-deployment-design.md` 与 `docs/superpowers/plans/2026-08-01-lan-frontend-binding.md`
+- Independent review: 首次修复最终 verdict 为 `accept`；第二次 recurrence focused review 同样为 `accept`，确认 click interception 不发送 command、双层 `itemType` gate、错误状态清理、native disabled 边界、draft payload 和 CSS scope 均无 findings
+- Current amendment: `Standard` lane 继续；按钮不再因缺少 `itemType` 原生禁用，点击时必须阻止提交、显示“请选择检验类型”并聚焦对应 select；不默认或猜测类型，不改变 `promote_source`、draft save、freeze 或 numbering contract
+- Validation action: `continue`；同一目标、Owner 和 command seam 不变，只修首次改动遗留的不可交互状态
+- Next verification: 已完成；仅在按钮再次因缺少类型变灰，或点击缺少类型时发送 command / 不显示提示时重开
 
 ## BUG-20260801-source-disposition-stale-tests
 
