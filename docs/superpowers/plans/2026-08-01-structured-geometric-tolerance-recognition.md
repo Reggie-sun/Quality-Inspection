@@ -11,8 +11,9 @@
 ## Global Constraints
 
 - Selected lane: `Heavy`，因为本计划改变稳定 candidate/OpenAPI schema、JSONB data shape、Provider response contract，并跨 PDF、candidate、review、API、frontend、export data-integrity boundary。
-- Plan status: `selected as the current plan for this execution`。本文件不覆盖 `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`，也不改变 current P0 contract matrix、runtime config 或 production deployment。
+- Plan status: `selected as the current plan for this execution`。本文件不覆盖 `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`，也不改变 current P0 contract matrix、public runtime config 或 production deployment；GDT-10 isolated verification runtime 的 frozen recognition identity 由本计划的 timeout amendment 明确约束。
 - Design source: `docs/superpowers/specs/2026-08-01-structured-geometric-tolerance-recognition-design.md`。
+- GDT-10 timeout design source: `docs/superpowers/specs/2026-08-01-provider-timeout-retry-and-partial-failure-design.md`。
 - Current-state source: `docs/superpowers/audits/2026-08-01-geometric-tolerance-recognition-current-state.md`。
 - Live evidence source: `docs/superpowers/audits/evidence/2026-08-01-geometric-tolerance-live-receipt.json`。
 - Execution activation: 用户必须明确将本文件选为唯一 current plan，并点名从 `GDT-1` 开始；不得与七天 P0 task 并行执行。
@@ -41,15 +42,20 @@
 - Selected lane: `Heavy`。
 - Selected plan: 本文件由用户显式选为 current plan，并在独立 worktree 中执行。
 - Selection evidence: 用户显式调用本 plan 的 `superpowers:executing-plans`。
-- Validation action: `amend` for GDT-10 Step 4/5。`make verify-p0-live` 当前没有传入 full-live start 所需的 registration/pause activation，且 final receipt 只能在 headed QA 后 resume 生成；目标和 Owner 不变，但 allowed paths 与验证顺序必须修正。
-- Writer ownership and order: 父 agent 为唯一 writer；先修改 plan/bug-memory，再按 TDD 修改 `Makefile`、Harness runner/policy 和单一 contract test file，最后派发独立 read-only reviewer。
-- Unchanged contract: current P0 contract matrix、runtime config、production deployment、literal run-ID validation、current authenticated Provider/no-synthetic requirement 均不改变；旧 registration 只能作为 approved annotation input，不得冒充本次 Provider evidence。
-- Next verification: fresh retry 前 API/worker 已重新收敛为本 worktree `/3`，数据库为 `0013`，两侧 exact 12-file hashes 与 Provider controls preflight 均通过；但 full run 的 sample 1 `docker compose exec api` 尚未完成时，API 又被 main-worktree Compose recreate 为 `/2` 并返回 exit `137`。下次 live 前必须先建立不会被 main worktree 覆盖的 exclusive Compose ownership，再重新收敛并运行同一 repository target；先前的 Provider timeout 仍未解决，runtime config/retry policy 保持不变。
+- Prior validation action: `amend` for GDT-10 Step 4/5，已补齐 registration/pause/resume 与 literal run-ID evidence sequence。
+- Current validation action: `replan` only for the GDT-10 Provider timeout boundary。两次 authenticated timeout 已证明这不是可继续重跑规避的偶发 Harness noise；stable failure/retry/runtime identity 必须先由独立 design spec 冻结，再修改 GDT-10，不重写 GDT-1..9。
+- Problem boundary: 只修正 GDT-10 isolated live project 的 recognition identity preflight 和 localized Provider timeout proof；不改 GD&T domain schema、normalizer、API、frontend、export 或 current-four semantics。
+- Single owner: `CandidateAdvisor`/`ProductionRetryCoordinator` 继续唯一拥有 `production_uncertainty` visual retry authorization 和 localized failure disposition；Provider wrapper 只分类，`ReviewService` 只保留 Owner-committed failure entry，Harness 只做 activation preflight。现有 legacy sequential schema retry 不属于 GDT-10 isolated path，本 amendment 不重构它。
+- Old path action: retire GDT-10 中“继承 `legacy_high_recall` default 后直接进入 paid processing”的未验证 activation path，并替换 `ReviewService._review_coverage()` 把 localized Provider failure 静默改成 `non_inspection` 的 generic default；不删除仍有 consumer 的 global legacy mode，也不改变普通 `visual_no_detection` default。
+- Writer ownership and order: 一个 writer 先按 GDT-10A 增补 Harness、localized timeout/transport 和 review-projection RED，再最小修改 `run-p0.py` 与 `ReviewService`；只有 integration RED 证明 CandidateAdvisor evidence 缺口时才允许修改 `advisor.py`。最后派发独立 read-only reviewer。
+- Unchanged contract: current P0 contract matrix、public runtime config、production deployment、`timeout=60.0`、SDK `max_retries=0`、现有 wall/call budget、schema-only single retry、literal run-ID validation 和 authenticated Provider/no-synthetic requirement 均不改变。
+- Focused verification command: `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_symbol_recognition_pipeline.py -k 'runtime_identity or provider_failure or owner_committed_discriminator' -q`。
+- Next verification: 先完成 GDT-10A offline tests/reviewer，并等待 `docs/superpowers/specs/2026-08-01-compose-worktree-runtime-isolation-design.md` 与 `docs/superpowers/plans/2026-08-01-compose-worktree-runtime-isolation.md` 合入本 branch、通过其 topology/runtime completion contract；随后由 GDT-10A zero-paid preflight 直接证明 API/worker current worktree `/3` hashes、database exact `0013`、`production_uncertainty`、`symbol-uncertainty-router/1` 和 exact model。未满足前不得再次运行 `make verify-p0-live`。
 
 ## Status
 
 - Date: `2026-08-01`
-- Status: `GDT-10 Step 4 blocked by recurrent authenticated Provider timeout; shared Compose API ownership also recurred after the failed run`
+- Status: `GDT-10 Step 4 blocked pending GDT-10A timeout-boundary implementation and separate Compose runtime isolation`
 - Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
 - Current blocker: after the external main-worktree writer formally handed off and stayed quiet for 60 seconds, API/worker were restored to the exact worktree `/3` identity；health passed、database was `0013`、all 12 host/API/worker hashes matched and all Provider controls were present without exposing values。The single repository-owned run generated current-four registration `20260801T071155661189Z-0acc0a66`、symbol registration `20260801T071202897748Z-f7514006` and full-P0 run `20260801T071203401727Z-09cb5cc6`。Sample 1 completed `18` authenticated `/3` request/response/cache/call records, then the 19th crop remained without request/response/call evidence；the crop-to-failure interval was `60.236s`, matching the unchanged `timeout=60.0`。Full run state is `failed` with `live_start_failed:RuntimeError`。No symbol report、typed Case A/B、pause identity or full-P0 receipt was sealed；Step 5 was not started。Thirty seconds after the Harness failure, main-worktree `make dev-local-api` independently recreated API as `/2`, so current topology is again main API `/2` + worktree worker `/3`
 - Worktree: `.worktrees/structured-geometric-tolerance-recognition`
@@ -67,8 +73,9 @@
 - Mid-run runtime recurrence: authorized retry passed API health、database `0013`、API/worker `/3`、exact 12-file equality and Provider set/unset checks。Exactly one `make verify-p0-live` passed `69` global / `111` P0 contract mapping and generated three Harness runs (`20 -> 23`)。Before sample 1 completed, API was recreated from `/home/reggie/vscode_folder/Quality_Inspection/compose.yaml`；the run-bound `docker compose exec api` returned `137` and full run `20260801T063642486237Z-bbcb7b3d` failed closed。Harness artifacts are preserved by `5f4cfbf`；they contain no samples、symbol report、typed Case A/B、pause evidence or full-P0 receipt。Worker remained this worktree `/3`；current API is main-worktree `/2`。
 - Recurrent Provider timeout: after an observed 60-second external-writer quiet window, API/worker were rebuilt from this worktree and preflight again proved health、database `0013`、both `/3` schemas、exact 12/12 host/API/worker hashes and required Provider set/unset controls。Exactly one repository-owned `make verify-p0-live` generated three fresh Harness runs and kept both container IDs stable through command exit。Full run `20260801T071203401727Z-09cb5cc6` completed `18` authenticated request/response/cache/call records with `visual-symbol-prompt/4` and `visual-symbol-review/3` identity, then wrote a 19th crop without its matching records；Harness failed `60.236s` later with `CandidateAdvisorFailure: Visual symbol Advisor call failed`。This matches the unchanged `backend/app/providers/runtime.py` `timeout=60.0` and is the second confirmed Provider-timeout recurrence。Evidence is preserved by `1ba4c83`；Step 4 did not reach pause and Step 5 was not run。
 - Post-timeout runtime recurrence: the timeout failure was sealed at `15:20:12+08:00` before main-worktree `make dev-local-api` started at `15:20:42+08:00`。That later command recreated API from `/home/reggie/vscode_folder/Quality_Inspection` as `/2` at `15:23:11+08:00` while worker remained this worktree `/3`。It did not cause the timeout, but it reconfirms that the shared Compose project lacks an exclusive owner for any future live window。
+- Timeout root-cause decision: the failing stack entered the `legacy_high_recall` sequential visual branch even though the symbol canary contract requires `production_uncertainty`。The existing production path already persists localized `provider_timeout` and preserves siblings as `partial_review_required`。Automatic timeout retry is rejected: `timeout=60.0` already exceeds the `45.0s` page wall budget, and a no-response attempt has no Provider request ID proving it is safe to resubmit。The approved design is `docs/superpowers/specs/2026-08-01-provider-timeout-retry-and-partial-failure-design.md`。
 - Environment note: `make test-backend` could not create its fresh Docker network because Docker reported `all predefined address pools have been fully subnetted`；the equivalent full backend suite ran against the isolated PostgreSQL and passed。
-- Remaining completion gate: resolve or outlive the authenticated Provider timeout without changing current timeout/retry runtime config or weakening current contracts, and establish exclusive ownership for the shared `quality-inspection` Compose project before any future live window。Only a fresh current-four run with typed Case A/B、all non-GD&T results and `visual_qa_pending:first-pdf-balloons` may enter headed Step 5。
+- Remaining completion gate: implement and independently review GDT-10A，including working-copy failure preservation；then merge and complete the named Compose worktree-isolation prerequisite。Only a zero-paid preflight proving isolated API/worker `/3` hashes + `production_uncertainty` + exact router/model + database `0013` may authorize a fresh current-four run。A localized timeout may preserve AutomaticResult/project phase as `partial_review_required` but does not satisfy Step 4 unless typed Case A/B、all non-GD&T results and `visual_qa_pending:first-pdf-balloons` are present。
 
 ## Rollback Contract
 
@@ -1138,6 +1145,9 @@ git commit -m "test(gdt): close export and offline e2e"
 - Modify: `.agent/harness/scripts/run-p0.py` only after the plan is explicitly activated for the symbol-recognition current-four contract。
 - Modify: `.agent/harness/scripts/live_evidence_policy.py` with the same activation, only to validate typed Case A/B and sealed Provider identity hashes in the symbol report。
 - Modify: `backend/tests/contract/harness/test_live_run_contract.py` only with the same activation。
+- Modify: `backend/tests/integration/test_symbol_recognition_pipeline.py` only to freeze the existing production localized-timeout/no-retry/partial-result contract。
+- Modify: `backend/app/review/service.py` only to preserve Owner-committed localized Provider failure coverage instead of applying the generic system default。
+- Modify: `backend/tests/integration/test_review_working_copy.py` to lock failure preservation and unchanged no-detection default。
 - Modify: `Makefile` only to invoke repository-owned current input registration/full-live pause activation；do not add implicit `latest` selection。
 - Modify: `.agent/bug-memory.md` to record and close the confirmed live-target regression。
 - Generate under: `.agent/harness/runs/` only through the existing Harness command；never choose a run ID or hand-write run evidence。
@@ -1181,6 +1191,185 @@ rg -n 'coarse_type.?=.?("|\x27)geometric_tolerance|coarse_candidate\([^\n]*geome
 
 Expected: all gates pass；final `rg` returns no production writer or compatibility reader for GD&T coarse semantics。
 
+#### GDT-10A: Bind Recognition Identity And Freeze Localized Timeout Semantics
+
+**Design source:**
+
+- `docs/superpowers/specs/2026-08-01-provider-timeout-retry-and-partial-failure-design.md`
+
+**Runtime prerequisite:**
+
+- Merge `docs/superpowers/specs/2026-08-01-compose-worktree-runtime-isolation-design.md` and `docs/superpowers/plans/2026-08-01-compose-worktree-runtime-isolation.md` into this branch before live。
+- The isolation owner is checkout/worktree root identity；its completion proof must include distinct main/feature Compose project、network and volume identities，unchanged main data identities，port-conflict fail-closed behavior，focused topology tests and runtime/public smoke。
+- Required prerequisite commands are the isolation plan's `micromamba run -n qi-p0 pytest backend/tests/integration/test_runtime_topology.py -q`、two Compose config checks and runtime health/project-list checks。GDT-10A does not edit or stage those files。
+- During the eventual GDT live window，this worktree's project must be the exclusive owner of the configured API/frontend ports；another project may not be stopped、recreated or overwritten implicitly。
+
+**Problem boundary:**
+
+- Single owner: `CandidateAdvisor`/`ProductionRetryCoordinator` own `production_uncertainty` retry and localized disposition；`ReviewService` only preserves that decision。
+- Old activation path: GDT-10 live project inherits unchecked `legacy_high_recall` and reaches paid processing before mode mismatch is observable。
+- Old review path: `ReviewService._review_coverage()` applies generic `system_default` to localized Provider failures and silently changes them to `non_inspection`。
+- Replacement: zero-paid API/worker/hash/database recognition preflight，existing production localized-failure path，and working-copy preservation of the Owner-committed failure stage。
+- Unchanged: `timeout=60.0`、SDK `max_retries=0`、production schema-only single retry、page/project/call budgets、public runtime default、legacy sequential retry behavior、ordinary `visual_no_detection` default and all GDT semantics。
+
+**Files:**
+
+- Modify: `.agent/harness/scripts/run-p0.py`
+- Modify: `backend/tests/contract/harness/test_live_run_contract.py`
+- Modify: `backend/tests/integration/test_symbol_recognition_pipeline.py`
+- Modify: `backend/app/review/service.py`
+- Modify: `backend/tests/integration/test_review_working_copy.py`
+- Modify: `backend/app/candidates/advisor.py` only if the focused integration RED proves the documented production path is not already satisfied；do not refactor or modify legacy behavior otherwise。
+
+**Interfaces:**
+
+- Consumes: API/worker code hashes、`Settings.symbol_recognition_mode`、`symbol_routing_identity()`、model identity、PostgreSQL Alembic revision and CandidateAdvisor coverage entry。
+- Produces: zero-paid exact runtime preflight；timeout/transport attempt event/outcome with no fabricated Provider identity；sibling-preserving `AutomaticResult.completeness`/project phase；working-copy `ambiguous + requires_confirmation` coverage。
+
+- [ ] **Step 1: Write RED Harness runtime-identity tests**
+
+Add contract cases around `preflight_full_p0_live()` proving:
+
+```python
+def test_full_live_rejects_mixed_runtime_before_run_or_paid_work(...) -> None:
+    observed = {
+        "api": {
+            "mode": "legacy_high_recall",
+            "router": "legacy",
+            "model": "qwen3-vl-plus-2025-12-19",
+            "hashes": current_hashes(),
+        },
+        "worker": {
+            "mode": "production_uncertainty",
+            "router": "symbol-uncertainty-router/1",
+            "model": "qwen3-vl-plus-2025-12-19",
+            "hashes": stale_hashes(),
+        },
+        "database_revision": "0012",
+    }
+    with pytest.raises(ValueError, match="runtime identity"):
+        preflight_with_runtime_identity(observed)
+    assert harness_run_directories() == before
+    assert registration_calls == []
+    assert provider_calls == []
+```
+
+Add isolated cases for API/worker mode、model、router、each of the 12 code hashes、missing container、invalid JSON and database revision mismatch，plus one exact success case。Do not assert or print credential、database URL or environment values。
+
+Run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -k 'runtime_identity' -q
+```
+
+Expected: RED because current preflight validates only API file hashes，not worker hashes、mode/model/router or database revision。
+
+- [ ] **Step 2: Write RED working-copy failure-preservation tests**
+
+In `test_review_working_copy.py`，call `ReviewService._review_coverage()` with the exact production failure shape:
+
+```python
+{
+    "observation_id": "visual-timeout",
+    "disposition": "ambiguous",
+    "source_location_id": "visual-timeout",
+    "coordinates": [1, 2, 3, 4],
+    "candidate_id": None,
+    "requires_confirmation": True,
+    "advisor_review": {
+        "route": "visual_symbol",
+        "schema_version": "visual-symbol-review/3",
+        "failure_stage": "provider_timeout",
+    },
+}
+```
+
+Assert the projected entry retains `disposition="ambiguous"`、`requires_confirmation=true`、coordinates/source ID and a safe top-level `failure_stage="provider_timeout"`，with `review_required_count=1` and no raw exception。Parameterize `provider_timeout|provider_transport_failure|provider_schema_invalid`。Keep the existing `visual_no_detection -> non_inspection + system_default` test unchanged and GREEN。
+
+Run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_review_working_copy.py -k 'provider_failure or owner_committed_discriminator' -q
+```
+
+Expected: localized Provider case is RED because current generic default silently resolves it；ordinary no-detection remains GREEN。
+
+- [ ] **Step 3: Strengthen production localized-failure characterization**
+
+Extend `test_one_localized_provider_failure_preserves_every_sibling_as_partial` for `failure_family in {"timeout", "transport"}` to assert:
+
+- failed ROI Provider method is invoked exactly once；
+- attempt event is the exact safe failure stage with `attempt_index=0` and null `provider_request_id`；
+- terminal outcome is `unresolved` with the corresponding observation outcome；
+- no call record、request/response artifact、cache winner or retry artifact exists for the failed timeout/transport crop；
+- successful/cache siblings、technical requirements、Coverage coordinates and candidates remain intact；
+- `AutomaticResult.completeness="partial_review_required"` and `ProjectService.status().phase="partial_review_required"`；do not add a duplicate working-copy completeness field；
+- exception text/path/token is absent from persisted and returned evidence。
+
+Run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_symbol_recognition_pipeline.py -k 'localized_provider_failure' -q
+```
+
+Expected: CandidateAdvisor/AutomaticResult behavior should remain GREEN；new exact call-count/artifact/project-phase assertions expose any real gap。If RED，change only the exact owning seam and do not add timeout/transport retry。
+
+- [ ] **Step 4: Preserve localized Provider failure through review projection**
+
+In `ReviewService._review_coverage()`，recognize only the exact allowlisted advisor-review shape with `route="visual_symbol"`、`schema_version="visual-symbol-review/3"` and one of the three localized failure stages。Copy only `failure_stage` to the projected entry before removing `advisor_review`，and exclude that entry from the generic system-default conversion。Do not preserve arbitrary Provider metadata。Do not change regular no-detection、technical-requirement or candidate coverage handling。
+
+- [ ] **Step 5: Implement zero-paid API/worker/hash/database preflight**
+
+In `run-p0.py`，replace the API-only helper with one bounded `_require_compose_runtime_identity()` called by `preflight_full_p0_live()` before registration/run creation/source upload。For both `api` and `worker`，compare every `LIVE_API_GDT_RUNTIME_PATHS` SHA against current worktree bytes and compare this exact sanitized identity:
+
+```python
+EXPECTED_RECOGNITION_IDENTITY = {
+    "mode": "production_uncertainty",
+    "router": "symbol-uncertainty-router/1",
+    "model": "qwen3-vl-plus-2025-12-19",
+}
+```
+
+Then query only `SELECT version_num FROM alembic_version` through the current Compose `postgres` service and require exact `0013`。The container programs may import `get_settings()` and `symbol_routing_identity()` but must output only hashes/mode/router/model；the database command may output only revision。Any missing container、nonzero exit、invalid/extra/missing field or mismatch raises `ValueError("Compose runtime identity does not match GDT-10 live contract")`。Do not output database URL、mutate container env/project rows or run migration inside preflight。
+
+- [ ] **Step 6: Run focused GREEN and retry invariants**
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -k 'runtime_identity' -q
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_review_working_copy.py -k 'provider_failure or owner_committed_discriminator' -q
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_symbol_recognition_pipeline.py -k 'localized_provider_failure or actual_primary_wall_blocks_retry' -q
+rg -n 'timeout=60\.0|max_retries=0' backend/app/providers/runtime.py
+rg -n 'MAX_VISUAL_PAGE_WALL_SECONDS = 45\.0|MAX_VISUAL_PROJECT_WALL_SECONDS = 90\.0' backend/app/candidates/symbol_escalation_contracts.py
+git diff --check
+```
+
+Expected: focused tests pass；timeout/transport use zero retry；production schema invalid remains the only `ProductionRetryCoordinator`-authorized retry；legacy sequential retry remains unchanged；all four runtime/budget constants are unchanged。
+
+- [ ] **Step 7: Run full offline regression gates**
+
+```bash
+python .agent/harness/scripts/check-contracts.py
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness -q
+make test-backend
+git diff --check
+```
+
+No live Provider command is allowed in this step。
+
+- [ ] **Step 8: Independent timeout-boundary review**
+
+Reviewer must return `accept|accept with concerns|reject` and verify production single retry Owner、zero timeout/transport retry、no fabricated Provider identity、working-copy failure preservation、unchanged no-detection default、legacy activation retirement、API/worker/hash/database preflight ordering、privacy、budget invariants and false-success boundary。Any new production retry outside `ProductionRetryCoordinator`、mode/hash/DB check after paid work、silent failure-to-non-inspection conversion or partial-to-success conversion is blocking。
+
+- [ ] **Step 9: Commit GDT-10A implementation only**
+
+```bash
+git add .agent/harness/scripts/run-p0.py backend/tests/contract/harness/test_live_run_contract.py backend/tests/integration/test_symbol_recognition_pipeline.py backend/app/review/service.py backend/tests/integration/test_review_working_copy.py
+git add backend/app/candidates/advisor.py  # only when Step 3 proved a real implementation gap
+git commit -m "fix(gdt): bind live timeout disposition"
+```
+
+The approved spec/plan amendment is committed separately before implementation。Do not stage Compose isolation files、generated run evidence or unrelated dirty artifacts in the implementation commit。
+
 - [ ] **Step 4: Run current-four live Provider evidence only after explicit live authorization**
 
 Run the repository-owned command:
@@ -1189,7 +1378,7 @@ Run the repository-owned command:
 make verify-p0-live
 ```
 
-The command must first perform zero-paid runtime/source/contract preflight, create fresh Harness-owned current-four and symbol-input registration runs from exact current sources plus the unique Git-HEAD-approved annotation bytes, then pass those literal generated IDs into the unchanged full-live start path。Step 4 success means current authenticated Provider calls、sealed source/crop/model/prompt/schema identity hashes、typed Case A/B、all existing non-GD&T symbol results and `execution_state=visual_qa_pending:first-pdf-balloons`。A final receipt is not expected before headed QA；any failure remains an exact blocker and is not converted to accepted risk。
+The command must first perform zero-paid runtime/source/contract preflight，including exact API/worker current-worktree hashes、`production_uncertainty` + router/model、database `0013` and the named Compose-isolation proof；then create fresh Harness-owned current-four and symbol-input registration runs from exact current sources plus the unique Git-HEAD-approved annotation bytes，并把 literal generated IDs 传入 unchanged full-live start path。Step 4 success means current authenticated Provider calls、sealed source/crop/model/prompt/schema identity hashes、typed Case A/B、all existing non-GD&T symbol results and `execution_state=visual_qa_pending:first-pdf-balloons`。A localized timeout may yield a valid partial result but is not Step 4 success if any required acceptance evidence is absent。A final receipt is not expected before headed QA；any failure remains an exact blocker and is not converted to accepted risk。
 
 - [ ] **Step 5: Run headed workbench QA and export proof**
 
@@ -1238,6 +1427,7 @@ git commit -m "feat(gdt): close structured recognition rollout"
 | Frontend subtype/value/datum/modifier presentation without raw parser | GDT-8 |
 | Same-reviewed-result export and frozen/offline E2E | GDT-9 |
 | Legacy zero-count, rollback-first proof, authorized live and headed UI | GDT-10 |
+| Provider timeout ownership, zero-retry boundary and isolated recognition identity | GDT-10A |
 
 ## Self-Review Record
 
@@ -1248,6 +1438,7 @@ git commit -m "feat(gdt): close structured recognition rollout"
 - Old-path convergence: all new GD&T inputs reach `GeometricToleranceNormalizer`；legacy coarse payloads become typed unknown；the temporary `/2` adapter has a real consumer、trigger、deadline and explicit removal in GDT-10。
 - Rollback: isolated downgrade and workbench GET are ordered before broader tests；production rollback remains vetoed without snapshot/backup authority。
 - Verification separation: unit、contract、integration、offline E2E、live Provider、headed UI and export evidence are each explicit and are not treated as interchangeable。
+- Timeout boundary: `60s` Provider timeout is not retried against a `45s` page wall budget；GDT-10 uses the existing production localized partial path and rejects legacy mode before paid work。
 
 ## Completion Contract
 
@@ -1262,4 +1453,4 @@ git commit -m "feat(gdt): close structured recognition rollout"
 - upgrade/downgrade 和 rollback-first workbench GET 已验证；
 - focused/full backend、frontend、OpenAPI、build、offline E2E、authorized live current-four、headed UI、export proof 全部实际运行；
 - independent reviewer verdict 为 `accept`；
-- current P0 contract matrix、runtime config 或 production deployment 未经额外授权不改变。
+- current P0 contract matrix、public runtime config 或 production deployment 未经额外授权不改变；GDT-10 isolated verification runtime 必须显式证明 `production_uncertainty` identity。
