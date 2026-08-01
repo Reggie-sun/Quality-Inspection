@@ -73,28 +73,30 @@ function renderPanel(
   return render(<SipInformationPanel {...panelProps(overrides)} />);
 }
 
-test("统一 SIP 区域同时呈现项目信息和当前检验项", () => {
+test("SIP 信息和当前检验项呈现为两个独立区域", () => {
   renderPanel();
 
-  const region = screen.getByRole("region", { name: "SIP 信息" });
-  expect(within(region).getByRole("heading", {
+  const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+  const currentRegion = screen.getByRole("region", { name: "当前检验项" });
+  expect(within(sipRegion).getByRole("heading", {
     level: 2,
     name: "SIP 信息",
   })).toBeTruthy();
-  expect(within(region).getByRole("heading", {
+  expect(within(sipRegion).getByRole("heading", {
     level: 3,
     name: "项目基本信息",
   })).toBeTruthy();
-  expect(within(region).getByRole("heading", {
+  expect(within(currentRegion).getByRole("heading", {
     level: 3,
     name: "当前检验项",
   })).toBeTruthy();
-  expect(within(region).getByRole("group", {
+  expect(within(currentRegion).getByRole("group", {
     name: "SIP 字段",
   })).toBeTruthy();
-  expect(region.textContent).toContain("产品名称上座");
-  expect(region.textContent).toContain("图号JS26032501");
-  expect(region.textContent).toContain("单位—");
+  expect(sipRegion.contains(currentRegion)).toBe(false);
+  expect(sipRegion.textContent).toContain("产品名称上座");
+  expect(sipRegion.textContent).toContain("图号JS26032501");
+  expect(sipRegion.textContent).toContain("单位—");
 });
 
 test("切到待判定来源时保留项目区和当前检验项草稿", () => {
@@ -106,14 +108,15 @@ test("切到待判定来源时保留项目区和当前检验项草稿", () => {
   });
   rerender(<SipInformationPanel {...props} selectedSourceActive />);
 
-  const region = screen.getByRole("region", { name: "SIP 信息" });
-  expect(within(region).getByRole("heading", {
+  const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+  const currentRegion = screen.getByRole("region", { name: "当前检验项" });
+  expect(within(sipRegion).getByRole("heading", {
     level: 3,
     name: "项目基本信息",
   })).toBeTruthy();
-  expect(region.textContent).toContain("产品名称上座");
-  expect(region.textContent).toContain("当前选择的是待判定来源。");
-  expect(within(region).queryByRole("group", {
+  expect(sipRegion.textContent).toContain("产品名称上座");
+  expect(currentRegion.textContent).toContain("当前选择的是待判定来源。");
+  expect(within(currentRegion).queryByRole("group", {
     name: "SIP 字段",
   })).toBeNull();
 
@@ -353,7 +356,7 @@ test("disabled 状态由项目 SIP fieldset 统一承载", () => {
 test("没有当前检验项时显示精确 SIP 空状态", () => {
   renderPanel({ selectedItem: undefined });
 
-  const region = screen.getByRole("region", { name: "SIP 信息" });
+  const region = screen.getByRole("region", { name: "当前检验项" });
   expect(region.textContent).toContain(
     "请选择一个有效检验项以填写 SIP 信息。",
   );
@@ -365,7 +368,7 @@ test("没有当前检验项时显示精确 SIP 空状态", () => {
 test("非 active 检验项显示精确 SIP 空状态", () => {
   renderPanel({ selectedItem: reviewItem({ active: false }) });
 
-  const region = screen.getByRole("region", { name: "SIP 信息" });
+  const region = screen.getByRole("region", { name: "当前检验项" });
   expect(region.textContent).toContain(
     "请选择一个有效检验项以填写 SIP 信息。",
   );
@@ -374,16 +377,17 @@ test("非 active 检验项显示精确 SIP 空状态", () => {
   })).toBeNull();
 });
 
-test("项目和当前检验项子区是具名可访问区域", () => {
+test("项目和当前检验项是互不嵌套的具名可访问区域", () => {
   renderPanel();
 
-  const region = screen.getByRole("region", { name: "SIP 信息" });
-  expect(within(region).getByRole("region", {
+  const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+  expect(within(sipRegion).getByRole("region", {
     name: "项目基本信息",
   })).toBeTruthy();
-  expect(within(region).getByRole("region", {
+  const currentRegion = screen.getByRole("region", {
     name: "当前检验项",
-  })).toBeTruthy();
+  });
+  expect(sipRegion.contains(currentRegion)).toBe(false);
 });
 
 test("向当前检验项转发显式 draft save handle", async () => {

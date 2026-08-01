@@ -629,7 +629,8 @@
   padding: 4px 8px;
 }
 
-.sip-information-panel {
+.sip-information-panel,
+.sip-selected-information {
   display: grid;
   gap: 10px;
   padding: 10px;

@@ -123,8 +123,9 @@ async function processReviewRequiredItems(page: Page): Promise<number> {
       await submitReviewAction(page, requireBalloon);
     }
 
-    const sip = page.getByRole("region", { name: "SIP 信息" });
-    const sipDetails = sip.getByRole("group", { name: "SIP 确认字段" });
+    const sipDetails = page.getByRole("region", {
+      name: "当前检验项",
+    }).getByRole("group", { name: "SIP 确认字段" });
     await expect(sipDetails).toBeVisible();
     const textInputs = sipDetails.locator("input:not([type='number'])");
     await expect(textInputs).toHaveCount(5);
@@ -555,6 +556,16 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
       ?.trim(),
   );
   expect(reviewRequiredCount).toBeGreaterThanOrEqual(0);
+  await page.getByRole("button", {
+    name: "展开导出与处理信息",
+  }).click();
+  const auxiliary = page.getByRole("complementary", {
+    name: "导出与处理信息",
+  });
+  await expect(auxiliary.getByRole("region", { name: "SIP 信息" }))
+    .toBeVisible();
+  await expect(auxiliary.getByRole("region", { name: "当前检验项" }))
+    .toBeVisible();
   expect(await processReviewRequiredItems(page)).toBe(reviewRequiredCount);
   await populateSipMetadata(page);
   await confirmRemainingSipDetails(page);

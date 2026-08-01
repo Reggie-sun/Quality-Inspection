@@ -25,6 +25,13 @@ function openAuxiliaryPanel(): void {
   }));
 }
 
+function getSipRegion(): HTMLElement {
+  const visibleRegion = screen.queryByRole("region", { name: "SIP 信息" });
+  if (visibleRegion !== null) return visibleRegion;
+  openAuxiliaryPanel();
+  return screen.getByRole("region", { name: "SIP 信息" });
+}
+
 function successfulExport(): ExportJob {
   const artifact = (kind: ExportArtifactKind) => ({
     kind,
@@ -577,7 +584,7 @@ describe("InspectionWorkbench", () => {
 
     const summary = screen.getByRole("region", { name: "项目摘要" });
     expect(within(summary).getByRole("status").textContent).toBe("审核修改已提交");
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -926,7 +933,7 @@ describe("InspectionWorkbench", () => {
     expect(screen.queryByLabelText("识别原文：M8")).toBeNull();
   });
 
-  test("正式导出完成时辅助区只显示导出与处理信息", () => {
+  test("导出与处理信息展开后将 SIP 与当前检验项显示为独立区块", () => {
     const items = [{
       item_id: "reviewed-item",
       item_type: "thread" as const,
@@ -971,6 +978,9 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
+    expect(screen.queryByRole("region", { name: "SIP 信息" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "当前检验项" })).toBeNull();
+
     openAuxiliaryPanel();
 
     const aside = screen.getByRole("complementary", {
@@ -979,9 +989,24 @@ describe("InspectionWorkbench", () => {
     const exportRegion = screen.getByRole("region", {
       name: "正式文件导出",
     });
-    expect(within(aside).queryByRole("region", { name: "SIP基本信息" }))
-      .toBeNull();
+    const sipRegion = within(aside).getByRole("region", {
+      name: "SIP 信息",
+    });
+    const selectedItemRegion = within(aside).getByRole("region", {
+      name: "当前检验项",
+    });
+    expect(Array.from(aside.children).map((child) => (
+      child.getAttribute("aria-label")
+    ))).toEqual([
+      "正式文件导出",
+      "SIP 信息",
+      "当前检验项",
+      "公司处理记录",
+    ]);
     expect(aside.firstElementChild).toBe(exportRegion);
+    expect(sipRegion.parentElement).toBe(aside);
+    expect(selectedItemRegion.parentElement).toBe(aside);
+    expect(sipRegion.contains(selectedItemRegion)).toBe(false);
     expect(
       within(exportRegion).getAllByRole("link").map((link) => link.textContent),
     ).toEqual([
@@ -1137,19 +1162,20 @@ describe("InspectionWorkbench", () => {
     expect(summary.getByText("保存状态").nextElementSibling?.textContent)
       .toBe("已保存");
 
+    const sipRegion = getSipRegion();
+    const aside = screen.getByRole("complementary", {
+      name: "导出与处理信息",
+    });
     expect(screen.getAllByRole("region", { name: "SIP 信息" })).toHaveLength(1);
-    const detail = container.querySelector(
-      ".inspection-review-workspace__detail",
-    ) as HTMLElement;
-    const sipRegion = within(detail).getByRole("region", { name: "SIP 信息" });
-    expect(detail.querySelector(".review-panel")?.nextElementSibling)
-      .toBe(sipRegion);
+    expect(sipRegion.parentElement).toBe(aside);
     const projectRegion = within(sipRegion).getByRole("region", {
       name: "项目基本信息",
     });
-    const currentRegion = within(sipRegion).getByRole("region", {
+    const currentRegion = within(aside).getByRole("region", {
       name: "当前检验项",
     });
+    expect(currentRegion.parentElement).toBe(aside);
+    expect(sipRegion.contains(currentRegion)).toBe(false);
     const sipSummary = projectRegion.querySelector("dl");
     expect(sipSummary).not.toBeNull();
     const sipCard = within(projectRegion);
@@ -1309,7 +1335,7 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -1423,6 +1449,7 @@ describe("InspectionWorkbench", () => {
     );
     expect(summary.getByText("SIP 表格").nextElementSibling?.textContent)
       .toBe("已生成 1 / 异常 2");
+    getSipRegion();
     expect(screen.getByText("SIP 表格：已生成 1，异常 2")).not.toBeNull();
 
     fireEvent.change(screen.getByRole("textbox", {
@@ -1497,7 +1524,7 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -1545,7 +1572,7 @@ describe("InspectionWorkbench", () => {
       />
     );
     const { rerender } = render(workbench(1, "横行滑板"));
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -1600,7 +1627,7 @@ describe("InspectionWorkbench", () => {
     );
     const { rerender } = render(workbench(1));
 
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -1661,7 +1688,7 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -1761,16 +1788,25 @@ describe("InspectionWorkbench", () => {
     const saveStatus = within(
       screen.getByRole("region", { name: "项目摘要" }),
     ).getByRole("status");
+    getSipRegion();
     fireEvent.change(screen.getByRole("textbox", {
       name: "检验方法：M16",
     }), { target: { value: "三针法复核" } });
     expect(saveStatus.textContent).toBe("有未保存修改");
+    fireEvent.click(screen.getByRole("button", {
+      name: "收起导出与处理信息",
+    }));
+    openAuxiliaryPanel();
+    expect((screen.getByRole("textbox", {
+      name: "检验方法：M16",
+    }) as HTMLInputElement).value).toBe("三针法复核");
 
     fireEvent.click(screen.getByRole("row", { name: /去除毛刺 2/ }));
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
-    expect(within(sipRegion).getByText("当前选择的是待判定来源。"))
+    getSipRegion();
+    const currentRegion = screen.getByRole("region", { name: "当前检验项" });
+    expect(within(currentRegion).getByText("当前选择的是待判定来源。"))
       .not.toBeNull();
-    expect(within(sipRegion).queryByRole("group", {
+    expect(within(currentRegion).queryByRole("group", {
       name: "SIP 字段",
     })).toBeNull();
     expect(saveStatus.textContent).toBe("有未保存修改");
@@ -1857,7 +1893,7 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -1867,7 +1903,9 @@ describe("InspectionWorkbench", () => {
       }) as HTMLFieldSetElement
     ).disabled).toBe(true);
     expect((
-      within(sipRegion).getByRole("group", {
+      within(screen.getByRole("region", {
+        name: "当前检验项",
+      })).getByRole("group", {
         name: "SIP 字段",
       }) as HTMLFieldSetElement
     ).disabled).toBe(true);
@@ -2617,7 +2655,7 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -2680,7 +2718,7 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -2732,7 +2770,7 @@ describe("InspectionWorkbench", () => {
       />,
     );
 
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));
@@ -2806,7 +2844,7 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "修改" }));
     fireEvent.click(screen.getByRole("button", { name: "更改处理方式" }));
     fireEvent.click(screen.getByRole("radio", { name: "排除此要求" }));
-    const sipRegion = screen.getByRole("region", { name: "SIP 信息" });
+    const sipRegion = getSipRegion();
     fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
       selector: "summary",
     }));

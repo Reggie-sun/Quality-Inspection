@@ -73,109 +73,111 @@ export function SipInformationPanel({
   );
 
   return (
-    <section
-      className="sip-information-panel"
-      role="region"
-      aria-label={zhCN.workbench.sipInformation}
-    >
-      <h2>{zhCN.workbench.sipInformation}</h2>
+    <>
       <section
-        className="sip-project-information"
-        aria-label={zhCN.workbench.projectSipInformation}
+        className="sip-information-panel"
+        role="region"
+        aria-label={zhCN.workbench.sipInformation}
       >
-        <h3>{zhCN.workbench.projectSipInformation}</h3>
-        <dl className="sip-metadata-summary">
-          {metadataValues.map(([label, value]) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd title={value}>{value || zhCN.workbench.unknown}</dd>
-            </div>
-          ))}
-        </dl>
-        <details className="sip-metadata-editor">
-          <summary>{zhCN.workbench.editProjectSipInformation}</summary>
-          <fieldset disabled={disabled}>
-            <legend className="visually-hidden">
-              {zhCN.workbench.editProjectSipInformation}
-            </legend>
-            {(
-              [
-                ["material_code", zhCN.workbench.metadataFields.materialCode],
-                ["material_name", zhCN.workbench.metadataFields.materialName],
-                ["drawing_number", zhCN.workbench.metadataFields.drawingNumber],
-                ["revision", zhCN.workbench.metadataFields.revision],
-                ["material", zhCN.workbench.metadataFields.material],
-              ] as const
-            ).map(([key, label]) => {
-              const suggestion = suggestionByField.get(key);
-              const persisted = persistedMetadata[key]?.trim() ?? "";
-              const suggested = suggestion?.value.trim() ?? "";
-              const metadataConflict =
-                persisted !== "" && suggested !== "" && persisted !== suggested;
-              return (
-                <div className="sip-metadata-editor__field" key={key}>
-                  <label>
-                    <span className="sip-metadata-field-label">
-                      {label}
-                      {suggested !== "" && persisted === "" ? (
-                        <small>{zhCN.workbench.recognizedMetadataSuggestion}</small>
-                      ) : suggested !== "" && persisted === suggested ? (
-                        <small>{zhCN.workbench.recognizedMetadataConsistent}</small>
-                      ) : null}
-                    </span>
-                    <input
-                      aria-label={label}
-                      value={metadata[key]}
-                      placeholder={zhCN.workbench.unknown}
-                      onChange={(event) => {
-                        onMetadataChange({
-                          ...metadata,
-                          [key]: event.target.value,
-                        });
-                      }}
-                    />
-                  </label>
-                  {metadataConflict ? (
-                    <div className="sip-metadata-conflict">
-                      <span>{zhCN.workbench.currentMetadataValue(persisted)}</span>
-                      <span>{zhCN.workbench.recognizedMetadataValue(suggested)}</span>
-                      <button
-                        type="button"
-                        aria-label={zhCN.workbench.adoptRecognizedMetadata(label)}
-                        onClick={() => {
+        <h2>{zhCN.workbench.sipInformation}</h2>
+        <section
+          className="sip-project-information"
+          aria-label={zhCN.workbench.projectSipInformation}
+        >
+          <h3>{zhCN.workbench.projectSipInformation}</h3>
+          <dl className="sip-metadata-summary">
+            {metadataValues.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd title={value}>{value || zhCN.workbench.unknown}</dd>
+              </div>
+            ))}
+          </dl>
+          <details className="sip-metadata-editor">
+            <summary>{zhCN.workbench.editProjectSipInformation}</summary>
+            <fieldset disabled={disabled}>
+              <legend className="visually-hidden">
+                {zhCN.workbench.editProjectSipInformation}
+              </legend>
+              {(
+                [
+                  ["material_code", zhCN.workbench.metadataFields.materialCode],
+                  ["material_name", zhCN.workbench.metadataFields.materialName],
+                  ["drawing_number", zhCN.workbench.metadataFields.drawingNumber],
+                  ["revision", zhCN.workbench.metadataFields.revision],
+                  ["material", zhCN.workbench.metadataFields.material],
+                ] as const
+              ).map(([key, label]) => {
+                const suggestion = suggestionByField.get(key);
+                const persisted = persistedMetadata[key]?.trim() ?? "";
+                const suggested = suggestion?.value.trim() ?? "";
+                const metadataConflict =
+                  persisted !== "" && suggested !== "" && persisted !== suggested;
+                return (
+                  <div className="sip-metadata-editor__field" key={key}>
+                    <label>
+                      <span className="sip-metadata-field-label">
+                        {label}
+                        {suggested !== "" && persisted === "" ? (
+                          <small>{zhCN.workbench.recognizedMetadataSuggestion}</small>
+                        ) : suggested !== "" && persisted === suggested ? (
+                          <small>{zhCN.workbench.recognizedMetadataConsistent}</small>
+                        ) : null}
+                      </span>
+                      <input
+                        aria-label={label}
+                        value={metadata[key]}
+                        placeholder={zhCN.workbench.unknown}
+                        onChange={(event) => {
                           onMetadataChange({
                             ...metadata,
-                            [key]: suggested,
+                            [key]: event.target.value,
                           });
                         }}
-                      >
-                        {zhCN.workbench.adoptRecognizedMetadata(label)}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-            <div className="sip-metadata-actions">
-              <button
-                type="button"
-                disabled={Object.values(metadata).some(
-                  (value) => value.trim() === "",
-                )}
-                onClick={onConfirmMetadata}
-              >
-                {zhCN.workbench.confirmProjectSipInformation}
-              </button>
-              <button
-                type="button"
-                disabled={!metadataDirty}
-                onClick={onCancelMetadata}
-              >
-                {zhCN.workbench.cancelProjectSipInformation}
-              </button>
-            </div>
-          </fieldset>
-        </details>
+                      />
+                    </label>
+                    {metadataConflict ? (
+                      <div className="sip-metadata-conflict">
+                        <span>{zhCN.workbench.currentMetadataValue(persisted)}</span>
+                        <span>{zhCN.workbench.recognizedMetadataValue(suggested)}</span>
+                        <button
+                          type="button"
+                          aria-label={zhCN.workbench.adoptRecognizedMetadata(label)}
+                          onClick={() => {
+                            onMetadataChange({
+                              ...metadata,
+                              [key]: suggested,
+                            });
+                          }}
+                        >
+                          {zhCN.workbench.adoptRecognizedMetadata(label)}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+              <div className="sip-metadata-actions">
+                <button
+                  type="button"
+                  disabled={Object.values(metadata).some(
+                    (value) => value.trim() === "",
+                  )}
+                  onClick={onConfirmMetadata}
+                >
+                  {zhCN.workbench.confirmProjectSipInformation}
+                </button>
+                <button
+                  type="button"
+                  disabled={!metadataDirty}
+                  onClick={onCancelMetadata}
+                >
+                  {zhCN.workbench.cancelProjectSipInformation}
+                </button>
+              </div>
+            </fieldset>
+          </details>
+        </section>
       </section>
       <section
         className="sip-selected-information"
@@ -275,6 +277,6 @@ export function SipInformationPanel({
           draftSaveRef={selectedSipDraftSaveRef}
         />
       </section>
-    </section>
+    </>
   );
 }

@@ -558,6 +558,34 @@ export function InspectionWorkbench({
       aria-label={zhCN.workbench.asideRegion}
     >
       {exportPanel}
+      <SipInformationPanel
+        metadata={metadata}
+        metadataValues={metadataValues}
+        persistedMetadata={workingCopy?.sip_metadata ?? {}}
+        metadataSuggestions={sipMetadataSuggestions}
+        metadataDirty={metadataDraftDirty}
+        disabled={reviewCommandsDisabled}
+        selectedItem={selectedReviewItem}
+        selectedBalloon={selectedReviewBalloon}
+        selectedSourceActive={selectedSourceId !== undefined}
+        readyItemCount={readyItemCount}
+        exceptionItemCount={sipExceptionCount}
+        onMetadataChange={(next) => {
+          setMetadata(next);
+          setMetadataDraftDirty(true);
+        }}
+        onConfirmMetadata={confirmMetadata}
+        onCancelMetadata={cancelMetadata}
+        onSelectNextException={() => {
+          selectNextException();
+        }}
+        onSelectedSipConfirmed={(itemId) => {
+          selectNextException(itemId);
+        }}
+        onCommand={submitCommand}
+        onSelectedSipDraftChange={setSelectedSipDraftDirty}
+        selectedSipDraftSaveRef={selectedSipDraftSaveRef}
+      />
       <section className="company-log" aria-label={zhCN.workbench.companyLog}>
         <h2>{zhCN.workbench.companyLog}</h2>
         <p>{zhCN.workbench.emptyCompanyLog}</p>
@@ -734,34 +762,6 @@ export function InspectionWorkbench({
                   draftSaveRef={reviewDraftSaveRef}
                 />
               ) : null}
-              <SipInformationPanel
-                metadata={metadata}
-                metadataValues={metadataValues}
-                persistedMetadata={workingCopy?.sip_metadata ?? {}}
-                metadataSuggestions={sipMetadataSuggestions}
-                metadataDirty={metadataDraftDirty}
-                disabled={reviewCommandsDisabled}
-                selectedItem={selectedReviewItem}
-                selectedBalloon={selectedReviewBalloon}
-                selectedSourceActive={selectedSourceId !== undefined}
-                readyItemCount={readyItemCount}
-                exceptionItemCount={sipExceptionCount}
-                onMetadataChange={(next) => {
-                  setMetadata(next);
-                  setMetadataDraftDirty(true);
-                }}
-                onConfirmMetadata={confirmMetadata}
-                onCancelMetadata={cancelMetadata}
-                onSelectNextException={() => {
-                  selectNextException();
-                }}
-                onSelectedSipConfirmed={(itemId) => {
-                  selectNextException(itemId);
-                }}
-                onCommand={submitCommand}
-                onSelectedSipDraftChange={setSelectedSipDraftDirty}
-                selectedSipDraftSaveRef={selectedSipDraftSaveRef}
-              />
             </div>
           </div>
           {onDeleteBalloon === undefined || onRebuildBalloon === undefined
