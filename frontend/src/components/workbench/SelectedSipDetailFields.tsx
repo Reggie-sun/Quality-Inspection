@@ -33,6 +33,32 @@ type DetailDraft = {
   remarks: string;
 };
 
+type RequiredDetailFieldKey = Exclude<keyof DetailDraft, "remarks">;
+
+const TEXT_DETAIL_FIELDS = [
+  ["inspectionItem", zhCN.inspection.inspectionItem],
+  ["inspectionStandard", zhCN.inspection.standard],
+  ["inspectionMethod", zhCN.inspection.method],
+  ["keyDimension", zhCN.inspection.keyDimension],
+  ["inspectionRole", zhCN.inspection.role],
+] as const;
+
+const REQUIRED_DETAIL_FIELD_KEYS: RequiredDetailFieldKey[] = [
+  "inspectionItem",
+  "inspectionStandard",
+  "inspectionMethod",
+  "keyDimension",
+  "inspectionRole",
+  "sourcePage",
+];
+
+const EXCEPTION_FIELDS: Readonly<Record<string, RequiredDetailFieldKey[]>> = {
+  composite_method_required: ["inspectionMethod"],
+  unsupported_item_type: ["inspectionMethod"],
+  missing_inspection_role: ["inspectionRole"],
+  missing_source_page: ["sourcePage"],
+};
+
 
 function detailDraft(
   item?: ReviewItem,
@@ -78,6 +104,20 @@ export function SelectedSipDetailFields({
   const draft = item === undefined
     ? baseline
     : drafts[item.item_id] ?? baseline;
+  const editableExceptions = item?.sip_mapping_exceptions?.filter(
+    (exception) => exception !== "sip_regeneration_required",
+  ) ?? [];
+  const exceptionMode = editableExceptions.length > 0;
+  const exceptionFieldKeys = new Set<RequiredDetailFieldKey>();
+  for (const exception of editableExceptions) {
+    const mappedFields = EXCEPTION_FIELDS[exception];
+    for (const field of mappedFields ?? REQUIRED_DETAIL_FIELD_KEYS) {
+      exceptionFieldKeys.add(field);
+    }
+  }
+  for (const field of REQUIRED_DETAIL_FIELD_KEYS) {
+    if (draft[field].trim() === "") exceptionFieldKeys.add(field);
+  }
 
   useEffect(() => {
     if (item === undefined || dirtyItemIds.includes(item.item_id)) return;
@@ -89,6 +129,9 @@ export function SelectedSipDetailFields({
   useEffect(() => {
     onDraftChange?.(dirtyItemIds.length > 0);
   }, [dirtyItemIds, onDraftChange]);
+  useEffect(() => () => {
+    onDraftChange?.(false);
+  }, [onDraftChange]);
 
   const clearDraft = (itemId: string) => {
     setDirtyItemIds((current) =>
@@ -158,54 +201,108 @@ export function SelectedSipDetailFields({
   const clearSelectedDraft = () => {
     clearDraft(item.item_id);
   };
+  const renderTextField = (
+    key: typeof TEXT_DETAIL_FIELDS[number][0],
+    label: string,
+    exceptionField: boolean,
+  ) => (
+    <label
+      key={key}
+      className={exceptionField
+        ? "sip-detail-fields__exception-field"
+        : undefined}
+    >
+      <span className="sip-detail-fields__field-label">
+        {label}
+        {exceptionField ? (
+          <small>{zhCN.inspection.exceptionFieldRequired}</small>
+        ) : null}
+      </span>
+      <input
+        aria-label={`${label}：${item.raw_text}`}
+        value={draft[key]}
+        onChange={(event) => {
+          updateDraft({ [key]: event.target.value });
+        }}
+      />
+    </label>
+  );
+  const renderSourcePage = (exceptionField: boolean) => (
+    <label
+      className={exceptionField
+        ? "sip-detail-fields__exception-field"
+        : undefined}
+    >
+      <span className="sip-detail-fields__field-label">
+        {zhCN.inspection.page}
+        {exceptionField ? (
+          <small>{zhCN.inspection.exceptionFieldRequired}</small>
+        ) : null}
+      </span>
+      <input
+        aria-label={`${zhCN.inspection.page}：${item.raw_text}`}
+        type="number"
+        min={1}
+        value={draft.sourcePage}
+        onChange={(event) => {
+          updateDraft({ sourcePage: event.target.value });
+        }}
+      />
+    </label>
+  );
+  const remarksField = (
+    <label>
+      {zhCN.inspection.remarks}
+      <textarea
+        aria-label={`${zhCN.inspection.remarks}：${item.raw_text}`}
+        maxLength={2000}
+        rows={3}
+        value={draft.remarks}
+        onChange={(event) => {
+          updateDraft({ remarks: event.target.value });
+        }}
+      />
+    </label>
+  );
 
   return (
     <fieldset className="sip-detail-fields" disabled={disabled}>
       <legend>{zhCN.inspection.selectedSip}</legend>
-      {(
-        [
-          ["inspectionItem", zhCN.inspection.inspectionItem],
-          ["inspectionStandard", zhCN.inspection.standard],
-          ["inspectionMethod", zhCN.inspection.method],
-          ["keyDimension", zhCN.inspection.keyDimension],
-          ["inspectionRole", zhCN.inspection.role],
-        ] as const
-      ).map(([key, label]) => (
-        <label key={key}>
-          {label}
-          <input
-            aria-label={`${label}：${item.raw_text}`}
-            value={draft[key]}
-            onChange={(event) => {
-              updateDraft({ [key]: event.target.value });
-            }}
-          />
-        </label>
-      ))}
-      <label>
-        {zhCN.inspection.page}
-        <input
-          aria-label={`${zhCN.inspection.page}：${item.raw_text}`}
-          type="number"
-          min={1}
-          value={draft.sourcePage}
-          onChange={(event) => {
-            updateDraft({ sourcePage: event.target.value });
-          }}
-        />
-      </label>
-      <label>
-        {zhCN.inspection.remarks}
-        <textarea
-          aria-label={`${zhCN.inspection.remarks}：${item.raw_text}`}
-          maxLength={2000}
-          rows={3}
-          value={draft.remarks}
-          onChange={(event) => {
-            updateDraft({ remarks: event.target.value });
-          }}
-        />
-      </label>
+      {exceptionMode ? (
+        <>
+          <p className="sip-detail-fields__exception-prompt">
+            {zhCN.inspection.exceptionFieldsPrompt}
+          </p>
+          <div className="sip-detail-fields__exception-fields">
+            {TEXT_DETAIL_FIELDS
+              .filter(([key]) => exceptionFieldKeys.has(key))
+              .map(([key, label]) => renderTextField(key, label, true))}
+            {exceptionFieldKeys.has("sourcePage")
+              ? renderSourcePage(true)
+              : null}
+          </div>
+          <details className="sip-detail-fields__other-fields">
+            <summary>{zhCN.inspection.editOtherSipFields}</summary>
+            <div>
+              {TEXT_DETAIL_FIELDS
+                .filter(([key]) => !exceptionFieldKeys.has(key))
+                .map(([key, label]) => renderTextField(key, label, false))}
+              {exceptionFieldKeys.has("sourcePage")
+                ? null
+                : renderSourcePage(false)}
+              {remarksField}
+            </div>
+          </details>
+        </>
+      ) : (
+        <>
+          {TEXT_DETAIL_FIELDS.map(([key, label]) =>
+            renderTextField(key, label, false)
+          )}
+          {renderSourcePage(false)}
+          {remarksField}
+        </>
+      )}
       <div className="sip-detail-actions">
         <button
           type="button"
@@ -221,7 +318,9 @@ export function SelectedSipDetailFields({
             await saveDetailDraft(item.item_id);
           }}
         >
-          {zhCN.inspection.confirmSip}
+          {exceptionMode
+            ? zhCN.inspection.resolveSipException
+            : zhCN.inspection.confirmSip}
         </button>
         <button
           type="button"

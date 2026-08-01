@@ -231,7 +231,7 @@ test("图纸识别字段在编辑器中明确标记为待确认建议", () => {
   ).value).toBe("JS26032501");
 });
 
-test("生成后只向真实异常提供逐项编辑和下一条入口", () => {
+test("技术要求变更时优先重新生成而不保留逐项 SIP 编辑 owner", () => {
   const onSelectNextException = vi.fn();
   const onCommand = vi.fn();
   render(
@@ -269,7 +269,7 @@ test("生成后只向真实异常提供逐项编辑和下一条入口", () => {
     type: "generate_sip_table",
     inspection_role: "IPQC",
   });
-  expect(screen.getByRole("group", { name: "SIP 字段" })).not.toBeNull();
+  expect(screen.queryByRole("group", { name: "SIP 字段" })).toBeNull();
   fireEvent.click(screen.getByRole("button", {
     name: "处理下一条异常",
   }));
@@ -298,6 +298,76 @@ test("混合状态下待生成行不遮蔽当前真实异常", () => {
   expect(screen.getByRole("button", {
     name: "处理下一条异常",
   })).not.toBeNull();
+});
+
+test("纯重新生成异常不展示第二套手工 SIP 表单", () => {
+  const selectedSipDraftSaveRef = createRef<DraftSaveHandle>();
+  render(
+    <SipInformationPanel
+      {...panelProps()}
+      selectedSipDraftSaveRef={selectedSipDraftSaveRef}
+      selectedItem={reviewItem({
+        sip_detail_fields_confirmed: false,
+        sip_mapping_exceptions: ["sip_regeneration_required"],
+      })}
+      pendingItemCount={0}
+      readyItemCount={114}
+      exceptionItemCount={1}
+      regenerationRequired
+    />,
+  );
+
+  expect(screen.getByText(
+    "技术要求已变更，请重新生成 SIP 表格",
+  )).not.toBeNull();
+  expect(screen.getByRole("button", {
+    name: "生成并检查 SIP 表格",
+  })).not.toBeNull();
+  expect(screen.queryByRole("group", {
+    name: "SIP 字段",
+  })).toBeNull();
+  expect(screen.queryByRole("button", {
+    name: "保存当前 SIP 字段",
+  })).toBeNull();
+  expect(selectedSipDraftSaveRef.current).toBeNull();
+});
+
+test("重新生成异常卸载已失效的单行 SIP 草稿 owner", () => {
+  const selectedSipDraftSaveRef = createRef<DraftSaveHandle>();
+  const onSelectedSipDraftChange = vi.fn();
+  const onCommand = vi.fn();
+  const props = panelProps({
+    selectedSipDraftSaveRef,
+    onSelectedSipDraftChange,
+    onCommand,
+    pendingItemCount: 0,
+    exceptionItemCount: 1,
+    selectedItem: reviewItem({
+      sip_detail_fields_confirmed: false,
+      sip_mapping_exceptions: ["composite_method_required"],
+    }),
+  });
+  const { rerender } = render(<SipInformationPanel {...props} />);
+
+  fireEvent.change(screen.getByRole("textbox", { name: "检验方法：M6" }), {
+    target: { value: "三针法" },
+  });
+  expect(onSelectedSipDraftChange).toHaveBeenLastCalledWith(true);
+
+  rerender(
+    <SipInformationPanel
+      {...props}
+      selectedItem={reviewItem({
+        sip_detail_fields_confirmed: false,
+        sip_mapping_exceptions: ["sip_regeneration_required"],
+      })}
+      regenerationRequired
+    />,
+  );
+
+  expect(selectedSipDraftSaveRef.current).toBeNull();
+  expect(onSelectedSipDraftChange).toHaveBeenLastCalledWith(false);
+  expect(onCommand).not.toHaveBeenCalled();
 });
 
 test("没有 SIP 异常时显示完成终态并移除重复生成动作", () => {

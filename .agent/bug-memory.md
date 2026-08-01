@@ -2,6 +2,29 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-sip-exception-second-confirmation
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `SipInformationPanel` 的异常行与 `SelectedSipDetailFields` 编辑器
+- Symptom: SIP 自动映射已填好大部分字段后，`未知检验项类型` 等真实异常仍展开整张 SIP 表单和“保存当前 SIP 字段”，让用户感觉需要对检验项做第二次完整校验
+- Root cause: `SipInformationPanel` 已按 exception-only contract 只在异常行挂载编辑器，但 `SelectedSipDetailFields` 不区分异常修复和主动修改，始终渲染全部字段及通用保存文案；`sip_regeneration_required` 也沿同一路径展示了不必要的手工表单
+- Selected lane: `Standard`；局部 frontend 行为和文案调整，保留现有 command、draft/save/freeze/export contract，并需要真实 browser smoke
+- Problem boundary: 只改变 SIP 异常行的字段显隐、引导和主按钮文案；不改变 `generate_sip_table`、`set_sip_detail_fields` payload、自动 mapping、异常判定或 readiness bit
+- Single owner: `SipInformationPanel` 继续决定何时进入异常编辑；`SelectedSipDetailFields` 继续拥有单行草稿与既有 command producer
+- Old path action: 退役异常态下默认展开全部 SIP 字段和泛化“保存当前 SIP 字段”的呈现；完整 resolved 行的按需编辑保持不变
+- Unchanged contract: 自动映射完整的行不出现逐项确认；缺失字段仍必须补齐，人工保存仍通过 `set_sip_detail_fields` 原子清除该行异常；纯 regeneration exception 仍通过 `generate_sip_table` 处理
+- Focused verification: `cd frontend && npm test -- --run src/components/workbench/SelectedSipDetailFields.test.tsx src/components/workbench/SipInformationPanel.test.tsx`
+- Writer ownership: 父 agent 唯一 writer；实现后派发独立只读 reviewer
+- Main advancement gate: 当前从 `2aaebf4` 前进到 `fe173c1` 的 delta 只与本任务共同触碰 `.agent/bug-memory.md`；production Owner/test 文件无重叠，新条目基于当前 HEAD 追加
+- Fix: 可编辑异常只突出 exception code 对应字段，所有自动字段默认折叠并保留按需修改入口，主动作改为“解决并保存 SIP 异常”；完整映射行继续不显示逐项确认。任何包含 `sip_regeneration_required` 的行都不再挂载 `SelectedSipDetailFields` 或 `set_sip_detail_fields` draft/save handle，失效 dirty owner 在卸载时清除，重新生成继续由 `generate_sip_table` 单独拥有
+- Regression check: TDD RED 分别证明旧 UI 仍展开全部字段、纯 regeneration 仍保留 hidden draft handle；修复后 focused 3 files 为 `67 passed`，完整 frontend suite 为 `281 passed`，production build 与 `git diff --check` 通过
+- Runtime proof: headed Chrome 在真实 `BK20101401-09L1000 / 0.08 / 未知检验项类型` 异常上只显示“检验方法（需补充）”，其他字段默认折叠，主动作是“解决并保存 SIP 异常”，不存在“保存当前 SIP 字段”；仅进行选择/展开，未提交 review command，console error 为 0
+- Independent review: 初审 `reject` 指出 regeneration-only 表单虽 hidden 但旧 save handle 仍挂载；改为不挂载并增加 editable dirty → regeneration 的 ref/null、dirty false、no-command 回归后，follow-up verdict 为 `accept with concerns`，无 blocker；仅保留 exception mapping 参数化覆盖建议
+- Change: `fix(frontend): focus SIP exception resolution`
+
 ## BUG-20260801-root-resumes-locked-project
 
 - Status: 已解决

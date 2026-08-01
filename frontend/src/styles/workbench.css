@@ -768,6 +768,55 @@
   font-size: 11px;
 }
 
+.sip-detail-fields__exception-prompt {
+  margin: 0;
+  color: #93370d;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sip-detail-fields__exception-fields,
+.sip-detail-fields__other-fields > div {
+  display: grid;
+  gap: 7px;
+}
+
+.sip-detail-fields__exception-field {
+  padding: 7px;
+  border: 1px solid #fdb022;
+  border-radius: 6px;
+  background: #fffaeb;
+}
+
+.sip-detail-fields__field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sip-detail-fields__field-label small {
+  color: #b54708;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sip-detail-fields__other-fields {
+  border-top: 1px solid var(--qi-border);
+}
+
+.sip-detail-fields__other-fields summary {
+  padding-top: 7px;
+  color: var(--qi-blue);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.sip-detail-fields__other-fields > div {
+  padding-top: 7px;
+}
+
 .sip-detail-actions,
 .sip-metadata-actions {
   display: flex;

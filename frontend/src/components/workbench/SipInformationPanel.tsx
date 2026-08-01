@@ -71,6 +71,15 @@ export function SipInformationPanel({
   const selectedItemActive = selectedItem?.active === true;
   const selectedItemHasException = selectedItemActive
     && (selectedItem.sip_mapping_exceptions?.length ?? 0) > 0;
+  const selectedItemRequiresRegeneration = selectedItemHasException
+    && selectedItem.sip_mapping_exceptions!.includes(
+      "sip_regeneration_required",
+    );
+  const selectedItemHasEditableException = selectedItemHasException
+    && !selectedItemRequiresRegeneration
+    && selectedItem.sip_mapping_exceptions!.some(
+      (exception) => exception !== "sip_regeneration_required",
+    );
   const selectedItemPending = selectedItemActive
     && !selectedItemHasException
     && selectedItem.sip_detail_fields_confirmed !== true;
@@ -285,25 +294,31 @@ export function SipInformationPanel({
             {zhCN.workbench.editResolvedSipRow}
           </button>
         )}
-        <div hidden={
-          selectedSourceActive
-          || !selectedItemActive
-          || selectedItemPending
-          || (
-            !selectedItemHasException
-            && manualEditorItemId !== selectedItem.item_id
-          )
-        }>
-          <SelectedSipDetailFields
-            item={selectedItemActive ? selectedItem : undefined}
-            balloon={selectedBalloon}
-            disabled={disabled}
-            onCommand={onCommand}
-            onDraftChange={onSelectedSipDraftChange}
-            onConfirmed={onSelectedSipConfirmed}
-            draftSaveRef={selectedSipDraftSaveRef}
-          />
-        </div>
+        {selectedItemRequiresRegeneration ? null : (
+          <div hidden={
+            selectedSourceActive
+            || !selectedItemActive
+            || selectedItemPending
+            || (
+              selectedItemHasException
+              && !selectedItemHasEditableException
+            )
+            || (
+              !selectedItemHasException
+              && manualEditorItemId !== selectedItem.item_id
+            )
+          }>
+            <SelectedSipDetailFields
+              item={selectedItemActive ? selectedItem : undefined}
+              balloon={selectedBalloon}
+              disabled={disabled}
+              onCommand={onCommand}
+              onDraftChange={onSelectedSipDraftChange}
+              onConfirmed={onSelectedSipConfirmed}
+              draftSaveRef={selectedSipDraftSaveRef}
+            />
+          </div>
+        )}
       </section>
     </>
   );

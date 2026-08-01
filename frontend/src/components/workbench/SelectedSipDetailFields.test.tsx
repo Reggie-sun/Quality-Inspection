@@ -257,6 +257,69 @@ test("技术要求建议只预填可证明字段，补全后才允许确认", as
   }));
 });
 
+test("未知类型异常只突出检验方法并折叠已自动填写字段", async () => {
+  const onCommand = vi.fn().mockResolvedValue(true);
+  render(
+    <SelectedSipDetailFields
+      item={reviewItem("unsupported-item", "0.08", {
+        item_type: undefined,
+        inspection_item: "检验项目：0.08",
+        inspection_standard: "图纸要求",
+        inspection_method: "",
+        key_dimension: "否",
+        inspection_role: "reggie",
+        source_page: 1,
+        remarks: "",
+        sip_detail_fields_confirmed: false,
+        sip_mapping_exceptions: ["unsupported_item_type"],
+      })}
+      onCommand={onCommand}
+    />,
+  );
+
+  expect(screen.getByText("只需补充以下 SIP 异常字段")).not.toBeNull();
+  expect(screen.getByRole("textbox", {
+    name: "检验方法：0.08",
+  })).not.toBeNull();
+  expect(screen.queryByRole("button", {
+    name: "保存当前 SIP 字段",
+  })).toBeNull();
+
+  const otherFields = screen.getByText("查看或修改其他 SIP 字段", {
+    selector: "summary",
+  }).closest("details") as HTMLDetailsElement;
+  expect(otherFields.open).toBe(false);
+
+  const resolve = screen.getByRole("button", {
+    name: "解决并保存 SIP 异常",
+  }) as HTMLButtonElement;
+  expect(resolve.disabled).toBe(true);
+
+  fireEvent.click(otherFields.querySelector("summary") as HTMLElement);
+  expect(otherFields.open).toBe(true);
+  expect(screen.getByRole("textbox", {
+    name: "检验项目：0.08",
+  })).not.toBeNull();
+
+  fireEvent.change(screen.getByRole("textbox", {
+    name: "检验方法：0.08",
+  }), { target: { value: "千分尺" } });
+  expect(resolve.disabled).toBe(false);
+  fireEvent.click(resolve);
+
+  await waitFor(() => expect(onCommand).toHaveBeenCalledWith({
+    type: "set_sip_detail_fields",
+    item_id: "unsupported-item",
+    inspection_item: "检验项目：0.08",
+    inspection_standard: "图纸要求",
+    inspection_method: "千分尺",
+    key_dimension: "否",
+    inspection_role: "reggie",
+    source_page: 1,
+    remarks: "",
+  }));
+});
+
 test("显式 draft save handle 保存当前检验项 SIP 草稿", async () => {
   const draftSaveRef = createRef<DraftSaveHandle>();
   const onCommand = vi.fn().mockResolvedValue(true);

@@ -1525,7 +1525,7 @@ describe("InspectionWorkbench", () => {
       .not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", {
-      name: "保存当前 SIP 字段",
+      name: "解决并保存 SIP 异常",
     }));
 
     await waitFor(() => {
