@@ -2,6 +2,29 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-root-resumes-locked-project
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `QualityInspectionApp` 根地址启动恢复、`sessionStorage qi.current-project-id` 与 `ProjectWorkbenchApp` review lock acquisition
+- Symptom: 用户打开 `http://127.0.0.1:5173/` 后没有看到图纸列表，而是整页显示“审核项目正由其他人员编辑，请稍后重试。”
+- Previously correct behavior: 根地址应显示图纸列表；用户显式选择图纸后才进入对应处理/审核流程，锁冲突不应让根入口失去返回列表的操作
+- Reproduction: 用户截图确认 `127.0.0.1:5173` 根地址稳定渲染 review lock conflict 文案；当前代码的 `initialScreen()` 会在 `qi.current-project-id` 存在时直接恢复 processing/workbench
+- Root cause: `QualityInspectionApp.initialScreen()` 会按设计恢复 `qi.current-project-id`，而 `ProjectWorkbenchApp` 首次获取 review lock 遇到 409 时进入 `error !== undefined && snapshot === undefined` 分支；该分支只渲染错误文案，没有透传已有 `onReset` 操作，因此用户既不能进入被锁项目，也不能清除当前项目上下文返回列表
+- Fix: 保留既有 review lock 冲突和安全中文提示，只在 `ProjectWorkbenchApp` 启动错误分支存在 `onReset` 时渲染“回到图纸列表”；点击继续复用 `QualityInspectionApp.returnToDrawingList()` 清除 session project 并加载服务端图纸目录，不删除、不抢占、不绕过有效锁
+- Regression check: TDD RED 精确失败于 409 lock conflict 页面找不到“回到图纸列表”；focused `ProjectWorkbenchApp.test.tsx` 为 `12 passed`；完整 frontend suite 为 `278 passed`，production build 通过
+- Runtime proof: headed Chrome 在 `127.0.0.1:5173` 和 `https://qa.srj666.com` 均用不同 operator 恢复一个仍由其他 operator 持有锁的项目，页面保留 409 文案并显示“回到图纸列表”；点击后 `qi.current-project-id=null`，两处均返回服务端目录并显示 `共 4 份图纸`
+- Change: `fix(frontend): escape locked project startup`
+- Selected lane: `Standard`；修复面只有一个既有 frontend startup error branch，但需确认 session 恢复、review lock 与公网开发入口的真实联动行为
+- Problem boundary: 只修 lock conflict 启动页缺少退出路径；不改变根地址恢复策略、锁租约、锁 owner、API、目录过滤或项目状态
+- Single owner: `ProjectWorkbenchApp` 继续拥有工作台启动错误展示；`QualityInspectionApp.returnToDrawingList()` 继续拥有清除当前项目上下文和返回目录
+- Old path action: 将“只有错误文本的不可退出启动分支”替换为“错误文本加既有 reset callback”；不存在第二套返回逻辑
+- Unchanged contract: 有效 review lock 仍阻止其他 operator 进入审核；没有 `onReset` 的兼容调用方仍只显示错误，不新增隐式导航
+- Focused verification: `cd frontend && npm test -- --run src/components/workbench/ProjectWorkbenchApp.test.tsx`
+- Independent review: verdict 为 `accept with concerns`，无 confirmed defect；reviewer 指出新用例未单独集成验证 session 清理/目录恢复，但既有 `QualityInspectionApp` 测试已覆盖 reset callback 的这两个行为，localhost 与公网 headed Chrome 又验证了 lock conflict 到 4 份图纸目录的完整链路；按钮适用于所有 snapshot 前错误属于轻微 scope concern，保留该行为以确保任何不可进入的恢复项目都能显式退出，同时不影响无 `onReset` 的兼容调用方
+
 ## BUG-20260801-technical-requirement-balloon-sip-handoff
 
 - Status: 已解决

@@ -280,7 +280,18 @@ export function ProjectWorkbenchApp({
 
   if (error !== undefined && snapshot === undefined) {
     return (
-      <main className="workbench-shell" role="alert">{error}</main>
+      <main className="workbench-shell">
+        <p role="alert">{error}</p>
+        {onReset === undefined ? null : (
+          <button
+            type="button"
+            className="workbench-reset-action"
+            onClick={onReset}
+          >
+            {zhCN.workbench.returnToDrawingList}
+          </button>
+        )}
+      </main>
     );
   }
   if (snapshot === undefined) {

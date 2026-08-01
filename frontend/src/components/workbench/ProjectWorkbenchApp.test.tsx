@@ -218,6 +218,35 @@ test.each([
 });
 
 
+test("审核锁冲突时仍可回到图纸列表", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    error: {
+      code: "review_lock_conflict",
+      message: "project is locked by another operator",
+    },
+  }), {
+    status: 409,
+    headers: { "Content-Type": "application/json" },
+  })));
+  const onReset = vi.fn();
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn()}
+      onReset={onReset}
+    />,
+  );
+
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "审核项目正由其他人员编辑，请稍后重试。",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+  expect(onReset).toHaveBeenCalledOnce();
+});
+
+
 test("刷新后从只读 projection 恢复 reviewed result 和三项下载", async () => {
   const snapshot = reviewedResponse();
   const fetchMock = vi.fn(async (
