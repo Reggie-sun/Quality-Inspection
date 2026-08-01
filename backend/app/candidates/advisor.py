@@ -22,6 +22,11 @@ from app.candidates.confidence import (
     CandidateSourceSignal,
     normalize_visual_signal,
 )
+from app.candidates.gdt_evidence import (
+    GdtFrameEvidence,
+    GdtEvidenceValidationError,
+    validate_gdt_frame_evidence_batch,
+)
 from app.candidates.duplicates import (
     DuplicateCandidate,
     DuplicateRelation,
@@ -101,6 +106,7 @@ from app.candidates.technical_requirements import (
 )
 from app.config import Settings
 from app.pdf.coordinates import BBox
+from app.pdf.gdt_frames import GdtFrameObservation
 from app.pdf.schemas import TextObservation, VisualObservation
 from app.pdf.visual_observations import (
     PROPOSAL_RULE_VERSION,
@@ -332,6 +338,7 @@ class ProductionVisualJob:
     crop_bbox_pdf: BBox
     crop_png: bytes
     visual_observations: tuple[VisualObservation, ...]
+    gdt_frame_observations: tuple[GdtFrameObservation, ...]
     execution_identity: VisualExecutionIdentity
     escalation_group_id: str
     routing_decision_sha256: str
@@ -341,6 +348,31 @@ class ProductionVisualJob:
 class VisualEvidenceContext:
     escalation_group_id: str
     routing_decision_sha256: str
+
+
+def _gdt_frames_for_crop(
+    frames: Sequence[GdtFrameObservation],
+    crop_bbox_pdf: BBox,
+) -> tuple[GdtFrameObservation, ...]:
+    """Bind deterministic frame proposals to the crop sent to the Provider."""
+    crop_x0, crop_y0, crop_x1, crop_y1 = crop_bbox_pdf
+    return tuple(
+        sorted(
+            (
+                frame
+                for frame in frames
+                if min(frame.bbox_pdf[2], crop_x1)
+                > max(frame.bbox_pdf[0], crop_x0)
+                and min(frame.bbox_pdf[3], crop_y1)
+                > max(frame.bbox_pdf[1], crop_y0)
+            ),
+            key=lambda frame: (
+                frame.bbox_pdf[1],
+                frame.bbox_pdf[0],
+                frame.observation_id,
+            ),
+        )
+    )
 
 
 class ProductionRetryCoordinator:
@@ -1378,6 +1410,7 @@ class CandidateAdvisor:
         source_sha256: str,
         visual_observations: Sequence[VisualObservation],
         text_observations: dict[str, TextObservation],
+        gdt_frame_observations: Sequence[GdtFrameObservation] = (),
         model: str,
         allow_schema_retry: bool = False,
         execution_identity: VisualExecutionIdentity | None = None,
@@ -1658,6 +1691,7 @@ class CandidateAdvisor:
             visual_observations,
             text_observations=text_observations,
             crop_bbox_pdf=crop_bbox_pdf,
+            gdt_frames=gdt_frame_observations,
         )
 
         def call_once() -> tuple[
@@ -2589,6 +2623,7 @@ class CandidateAdvisor:
             rejection_sets_by_page: list[dict[str, set[str]]] = [
                 {} for _ in pages
             ]
+            gdt_evidence_by_frame_id: dict[str, GdtFrameEvidence] = {}
 
             def consume_visual_outcome(
                 *,
@@ -2596,6 +2631,9 @@ class CandidateAdvisor:
                 page_index: int,
                 observation_ids: tuple[str, ...],
                 batch_observations: tuple[VisualObservation, ...],
+                batch_gdt_frame_observations: tuple[
+                    GdtFrameObservation, ...
+                ],
                 crop_bbox_pdf: BBox,
                 outcome: VisualReviewOutcome,
                 evidence_context: VisualEvidenceContext | None = None,
@@ -2620,6 +2658,27 @@ class CandidateAdvisor:
                     )
                 ):
                     visual_retry_available = False
+                try:
+                    gdt_evidence = validate_gdt_frame_evidence_batch(
+                        provider_frames=tuple(
+                            result.payload.get("gdt_frames", [])
+                        ),
+                        observations=batch_gdt_frame_observations,
+                        crop_bbox_pdf=crop_bbox_pdf,
+                    )
+                except GdtEvidenceValidationError as exc:
+                    for observation_id in observation_ids:
+                        rejection_sets_by_page[page_position].setdefault(
+                            observation_id,
+                            set(),
+                        ).add(f"gdt_provider_evidence_invalid_{exc.code}")
+                else:
+                    gdt_evidence_by_frame_id.update(
+                        {
+                            evidence.frame_observation_id: evidence
+                            for evidence in gdt_evidence
+                        }
+                    )
                 accepted, rejected = validate_symbol_detections(
                     result.payload,
                     visual_observation_ids=observation_ids,
@@ -2748,6 +2807,10 @@ class CandidateAdvisor:
                                 "Visual symbol execution crop is invalid"
                             )
                         crop_bbox_pdf = packed_batches[0].crop_bbox_pdf
+                        batch_gdt_frame_observations = _gdt_frames_for_crop(
+                            page_inventory.gdt_frame_observations,
+                            crop_bbox_pdf,
+                        )
                         crop_png = _render_visual_crop(
                             page,
                             crop_bbox_pdf,
@@ -2779,6 +2842,9 @@ class CandidateAdvisor:
                                 crop_bbox_pdf=crop_bbox_pdf,
                                 crop_png=crop_png,
                                 visual_observations=batch_observations,
+                                gdt_frame_observations=(
+                                    batch_gdt_frame_observations
+                                ),
                                 execution_identity=VisualExecutionIdentity(
                                     page_index=batch.page_index,
                                     content_sha256=batch.content_sha256,
@@ -2878,6 +2944,9 @@ class CandidateAdvisor:
                             source_sha256=source_sha256,
                             visual_observations=job.visual_observations,
                             text_observations=text_observations_by_id,
+                            gdt_frame_observations=(
+                                job.gdt_frame_observations
+                            ),
                             model=model,
                             allow_schema_retry=True,
                             execution_identity=(
@@ -2970,6 +3039,9 @@ class CandidateAdvisor:
                         page_index=job.page_index,
                         observation_ids=job.observation_ids,
                         batch_observations=job.visual_observations,
+                        batch_gdt_frame_observations=(
+                            job.gdt_frame_observations
+                        ),
                         crop_bbox_pdf=job.crop_bbox_pdf,
                         outcome=outcome,
                         evidence_context=VisualEvidenceContext(
@@ -3009,6 +3081,10 @@ class CandidateAdvisor:
                             visual_observations[identity]
                             for identity in batch.observation_ids
                         )
+                        batch_gdt_frame_observations = _gdt_frames_for_crop(
+                            page_inventory.gdt_frame_observations,
+                            crop_bbox_pdf,
+                        )
                         crop_png = _render_visual_crop(
                             page,
                             crop_bbox_pdf,
@@ -3020,6 +3096,9 @@ class CandidateAdvisor:
                             source_sha256=source_sha256,
                             visual_observations=batch_observations,
                             text_observations=text_observations_by_id,
+                            gdt_frame_observations=(
+                                batch_gdt_frame_observations
+                            ),
                             model=model,
                             allow_schema_retry=(
                                 visual_retry_available
@@ -3032,6 +3111,9 @@ class CandidateAdvisor:
                             page_index=page_inventory.page_index,
                             observation_ids=batch.observation_ids,
                             batch_observations=batch_observations,
+                            batch_gdt_frame_observations=(
+                                batch_gdt_frame_observations
+                            ),
                             crop_bbox_pdf=crop_bbox_pdf,
                             outcome=outcome,
                         )
@@ -3063,6 +3145,10 @@ class CandidateAdvisor:
                         geometry_contexts=contexts,
                         local_decisions=tuple(
                             production_local_decisions[page_position]
+                        ),
+                        gdt_evidence_by_frame_id=gdt_evidence_by_frame_id,
+                        gdt_frame_observations=(
+                            page.gdt_frame_observations
                         ),
                     )
                 )

@@ -31,9 +31,10 @@ def _assert_four_field_fallback(raw_text: str, coarse_type: str) -> None:
 
 
 @pytest.mark.parametrize("raw_text", ["⌖ 0.02 A", "⌒ 0.01 A B"])
-def test_gdt_field_allowlist(raw_text: str) -> None:
-    """P0-REC-008A: GD&T fallback exposes exactly four coarse fields."""
-    _assert_four_field_fallback(raw_text, "geometric_tolerance")
+def test_gdt_is_not_a_coarse_fallback(raw_text: str) -> None:
+    """New GD&T input must converge on the typed candidate owner."""
+    with pytest.raises(ValidationError):
+        coarse_candidate(raw_text, "geometric_tolerance", (1, 2, 3, 4))
 
 
 @pytest.mark.parametrize("raw_text", ["Ra 3.2", "其余表面 Ra 6.3"])

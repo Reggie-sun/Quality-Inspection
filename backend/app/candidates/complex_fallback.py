@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict
 
 
 CoarseType = Literal[
-    "geometric_tolerance",
     "roughness",
     "weld",
     "cross_view_duplicate",

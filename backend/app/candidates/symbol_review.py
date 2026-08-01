@@ -17,6 +17,11 @@ import jsonschema
 import pymupdf
 
 from app.candidates.coverage import Disposition
+from app.candidates.gdt_evidence import GdtFrameEvidence
+from app.candidates.geometric_tolerance import (
+    GdtNormalizationFailure,
+    GeometricToleranceNormalizer,
+)
 from app.candidates.grouping import group_observations
 from app.candidates.parser import NUMBER, normalize_text, parse_annotation
 from app.candidates.schemas import Candidate, stable_candidate_id
@@ -1299,21 +1304,6 @@ def _distinct_ascii_decimals(
     )
 
 
-def _gdt_datum_tokens(
-    texts: Sequence[TextObservation],
-) -> tuple[str, ...] | None:
-    datums: list[str] = []
-    for item in texts:
-        for token in item.raw_text.split():
-            if re.fullmatch(NUMBER, token):
-                continue
-            if re.fullmatch(r"[A-Z]", token):
-                datums.append(token)
-                continue
-            return None
-    return tuple(dict.fromkeys(datums))
-
-
 def _typed_depth_projection(
     texts: Sequence[TextObservation],
 ) -> tuple[dict[str, Any], str] | None:
@@ -2069,6 +2059,8 @@ def project_visual_observation(
     candidates: Sequence[Mapping[str, Any]],
     geometry_context: VisualGeometryContext | None,
     source_observations: Sequence[VisualObservation] = (),
+    gdt_evidence_by_frame_id: Mapping[str, GdtFrameEvidence] = {},
+    gdt_frame_observations: Sequence[GdtFrameObservation] = (),
 ) -> VisualReviewDecision:
     """Project one validated visual response through deterministic local rules."""
     visual_sources = tuple(
@@ -2587,21 +2579,49 @@ def project_visual_observation(
                 "coarse_type": "roughness",
             }
     elif kinds[0].startswith("gdt_"):
-        tolerances = _distinct_ascii_decimals(texts)
-        datums = _gdt_datum_tokens(texts)
-        if len(tolerances) == 1 and datums is not None:
-            symbols = {
-                "gdt_parallelism": "∥",
-                "gdt_perpendicularity": "⊥",
-                "gdt_flatness": "⏥",
-            }
-            payload = {
-                "raw_text": f"{symbols[kinds[0]]} {raw_text}",
-                "coordinates": coordinates,
-                "coarse_type": "geometric_tolerance",
-            }
-        elif len(tolerances) > 1:
-            projection_rejection_code = "visual_projection_conflict"
+        matching_frames = tuple(
+            frame
+            for frame in gdt_frame_observations
+            if _overlap_fraction(frame.bbox_pdf, coordinates) >= 0.5
+        )
+        if len(matching_frames) != 1:
+            projection_rejection_code = (
+                "gdt_frame_not_found"
+                if not matching_frames
+                else "gdt_projection_conflict"
+            )
+        else:
+            frame = matching_frames[0]
+            frame_evidence = gdt_evidence_by_frame_id.get(
+                frame.observation_id
+            )
+            if frame_evidence is None:
+                projection_rejection_code = "gdt_frame_segmentation_ambiguous"
+            else:
+                normalized = GeometricToleranceNormalizer().normalize(
+                    evidence=frame_evidence,
+                    observation=frame,
+                    evidence_ref=frame_evidence.frame_observation_id,
+                )
+                if isinstance(normalized, GdtNormalizationFailure):
+                    if normalized.code in {
+                        "gdt_symbol_unknown",
+                        "gdt_modifier_unknown",
+                    }:
+                        payload = normalized.typed_unknown.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                        )
+                    else:
+                        projection_rejection_code = normalized.code
+                else:
+                    payload = normalized.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                    )
+                if payload is not None:
+                    payload["coordinates"] = coordinates
+                    payload["source_location_ids"] = list(source_ids)
 
     if payload is None:
         return _ambiguous(
@@ -2831,6 +2851,8 @@ def project_visual_page(
     candidates: Sequence[Mapping[str, Any]],
     geometry_contexts: Mapping[str, VisualGeometryContext],
     local_decisions: Sequence[VisualReviewDecision] = (),
+    gdt_evidence_by_frame_id: Mapping[str, GdtFrameEvidence] = {},
+    gdt_frame_observations: Sequence[GdtFrameObservation] = (),
 ) -> tuple[VisualReviewDecision, ...]:
     """Project one page only after every batch response has been validated."""
     ordered_visuals = tuple(sorted(visual_observations, key=_visual_reading_key))
@@ -2964,6 +2986,8 @@ def project_visual_page(
                     None,
                 ),
                 source_observations=sources,
+                gdt_evidence_by_frame_id=gdt_evidence_by_frame_id,
+                gdt_frame_observations=gdt_frame_observations,
             )
         decisions.append(primary)
         for alias in sources[1:]:

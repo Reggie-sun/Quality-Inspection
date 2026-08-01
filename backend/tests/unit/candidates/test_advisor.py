@@ -122,12 +122,13 @@ class UnifiedRecordingProvider(EchoVisionProvider):
 
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
-        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/2"
+        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/3"
         self.call_order.append("visual")
         return VisionResult(
             request_id="fixture-visual-request-1",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [],
             },
             usage={},
@@ -141,7 +142,7 @@ class UnifiedRecordingProvider(EchoVisionProvider):
 class RetryRecordingProvider(UnifiedRecordingProvider):
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
-        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/2"
+        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/3"
         self.call_order.append("visual")
         call_count = self.call_order.count("visual")
         if call_count == 1:
@@ -153,7 +154,8 @@ class RetryRecordingProvider(UnifiedRecordingProvider):
         return VisionResult(
             request_id="fixture-visual-retry-success",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [],
             },
             usage={"total_tokens": 12},
@@ -168,7 +170,7 @@ class VisualDiameterProvider(EchoVisionProvider):
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
         request = json.loads(prompt)
-        assert request["schema_version"] == "visual-symbol-review/2"
+        assert request["schema_version"] == "visual-symbol-review/3"
         assert request["prompt_version"] == "visual-symbol-prompt/4"
         assert len(request["visual_contexts"]) == 1
         context = request["visual_contexts"][0]
@@ -189,7 +191,8 @@ class VisualDiameterProvider(EchoVisionProvider):
         return VisionResult(
             request_id="fixture-visual-diameter-request",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [
                     {
                         "visual_observation_id": context[
@@ -231,7 +234,8 @@ class VisualRoughnessProvider(EchoVisionProvider):
         return VisionResult(
             request_id="fixture-visual-roughness-request",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [
                     {
                         "visual_observation_id": context[
@@ -841,7 +845,7 @@ def test_production_locally_resolved_visual_skips_provider(
         if key != "local_resolution_evidence"
     } == {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "symbol_kinds": ["revision_marker"],
         "rejection_code": None,
         "confidence_signal": None,
@@ -1162,7 +1166,8 @@ def test_production_sends_only_escalated_visuals_to_provider(
             return VisionResult(
                 request_id="fixture-escalated-request",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -1836,7 +1841,8 @@ def test_production_visual_executor_is_bounded_and_prepares_crops_first(
                 return VisionResult(
                     request_id=f"fixture-bounded-{call_index}",
                     payload={
-                        "schema_version": "visual-symbol-review/2",
+                        "schema_version": "visual-symbol-review/3",
+                        "gdt_frames": [],
                         "detections": [],
                     },
                     usage={},
@@ -1899,7 +1905,8 @@ def test_success_terminal_refills_sliding_window_while_peer_is_blocked(
             return VisionResult(
                 request_id=f"sliding-{identity}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -1999,7 +2006,8 @@ def test_production_failure_stops_before_queued_job_provider_call(
             return VisionResult(
                 request_id=f"success-{identity}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -2081,7 +2089,8 @@ def test_actual_wall_budget_stops_queued_job_with_fake_clock(
             return VisionResult(
                 request_id=f"slow-{identity}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -2199,7 +2208,8 @@ def test_production_completion_permutations_keep_planner_ordered_bytes(
                 return VisionResult(
                     request_id=f"request-{identity}",
                     payload={
-                        "schema_version": "visual-symbol-review/2",
+                        "schema_version": "visual-symbol-review/3",
+                        "gdt_frames": [],
                         "detections": [],
                     },
                     usage={},
@@ -2319,7 +2329,8 @@ def test_concurrent_schema_failures_reserve_exactly_one_project_retry(
             return VisionResult(
                 request_id=f"success-{identity}-{attempt}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -2865,7 +2876,7 @@ def test_visual_calls_precede_the_text_budget_remainder(tmp_path: Path) -> None:
     )
     assert visual_coverage.advisor_review == {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "symbol_kinds": [],
         "rejection_code": "visual_no_detection",
         "confidence_signal": None,
@@ -2957,7 +2968,8 @@ def test_second_visual_schema_failure_in_document_is_not_retried(
             return VisionResult(
                 request_id=f"fixture-schema-success-{self.calls}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={"total_tokens": self.calls},
@@ -3018,7 +3030,8 @@ def test_second_cached_visual_retry_chain_in_document_fails_closed(
             return VisionResult(
                 request_id=f"fixture-cached-success-{self.calls}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={"total_tokens": self.calls},
@@ -3111,7 +3124,8 @@ def test_full_visual_page_has_no_retry_spare(
             return VisionResult(
                 request_id="fixture-no-spare-success",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={"total_tokens": 1},
