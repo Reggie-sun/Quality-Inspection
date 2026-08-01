@@ -24,6 +24,8 @@
 - Writer ownership and order: 父 agent 为唯一 writer；只读 explorer 仅做独立调用链核查；实现完成后派发独立只读 reviewer
 - Validation action: `completed`；focused integration、live API identity、OpenAPI、同源目录 GET 与浏览器 smoke 均已覆盖原始 failure surface
 - Independent review: verdict 为 `accept with concerns`，无 blocker；reviewer 独立确认 API container working dir/mount、live OpenAPI 与 `5173` 目录 GET 均已恢复。唯一 material concern 是 `quality-inspection-worker-1` 仍来自 sibling worktree；worker 不参与本次目录 GET，因此不阻断当前修复，但上传后的异步处理 runtime identity 尚未在本任务中收敛
+- Follow-up runtime convergence: 用户批准后，先确认旧 worker 的 active/reserved/scheduled 均为空，再从当前 `main` 以 `docker compose -p quality_inspection -f compose.yaml -f compose.dev-local.yaml up -d --build --no-deps worker` 精确替换 worker；API container ID 保持不变，PostgreSQL、Redis 和 volume 均未重建或删除。新 worker 的 Compose working dir/config 指向当前仓库，`celery_app.py`、`processing/tasks.py`、`candidates/advisor.py` 与 main 文件哈希一致；Celery `ping=pong` 且 active/reserved/scheduled 均为空，`5173` health 为 `ok`、目录 GET 为 HTTP `200`、`count=8`
+- Follow-up independent review: verdict 为 `accept`，无 blocker 或 concern；reviewer 独立复核 worker/main 文件哈希、Celery 状态、API container identity、PostgreSQL/Redis/volume 未替换证据及 `5173` health/projects live response
 - Next verification: 已关闭；仅在共享 Compose project 再次由缺少 catalog GET 的 sibling checkout 占用 `8000` 时重开
 
 ## BUG-20260801-recognition-preview-unstyled
