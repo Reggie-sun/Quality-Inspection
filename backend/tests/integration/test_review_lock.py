@@ -4,14 +4,17 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import func, text, update
 from sqlalchemy.orm import Session
 
 from app.db import engine
+from app.main import app
 from app.projects.models import Project
 from app.projects.state import ProjectState
-from app.review.locks import LockConflict, acquire_lock
+from app.review.locks import LockConflict, acquire_lock, release_lock
 from app.review.models import ReviewLock
+from app.review.router import get_session
 
 
 @pytest.fixture
@@ -80,3 +83,95 @@ def test_same_operator_can_renew_active_lock(
 
     assert renewed.project_id == first.project_id
     assert renewed.expires_at >= first.expires_at
+
+
+def test_exact_owner_and_lease_version_can_release_lock(
+    db_session: Session,
+    project: Project,
+) -> None:
+    lock = acquire_lock(db_session, project.id, "quality-1")
+
+    released = release_lock(
+        db_session,
+        project.id,
+        "quality-1",
+        expires_at=lock.expires_at,
+    )
+
+    assert released is True
+    assert db_session.get(ReviewLock, project.id) is None
+    assert acquire_lock(db_session, project.id, "quality-2").operator_id == "quality-2"
+
+
+def test_stale_lease_version_cannot_release_renewed_lock(
+    db_session: Session,
+    project: Project,
+) -> None:
+    original = acquire_lock(db_session, project.id, "quality-1", ttl_seconds=30)
+    original_expires_at = original.expires_at
+    renewed = acquire_lock(db_session, project.id, "quality-1", ttl_seconds=60)
+
+    released = release_lock(
+        db_session,
+        project.id,
+        "quality-1",
+        expires_at=original_expires_at,
+    )
+
+    assert released is False
+    persisted = db_session.get(ReviewLock, project.id)
+    assert persisted is not None
+    assert persisted.expires_at == renewed.expires_at
+
+
+def test_other_operator_and_repeated_release_are_idempotent_noops(
+    db_session: Session,
+    project: Project,
+) -> None:
+    lock = acquire_lock(db_session, project.id, "quality-1")
+
+    assert release_lock(
+        db_session,
+        project.id,
+        "quality-2",
+        expires_at=lock.expires_at,
+    ) is False
+    assert db_session.get(ReviewLock, project.id) is not None
+    assert release_lock(
+        db_session,
+        project.id,
+        "quality-1",
+        expires_at=lock.expires_at,
+    ) is True
+    assert release_lock(
+        db_session,
+        project.id,
+        "quality-1",
+        expires_at=lock.expires_at,
+    ) is False
+
+
+def test_review_lock_release_route_projects_exact_lease_result(
+    db_session: Session,
+    project: Project,
+) -> None:
+    lock = acquire_lock(db_session, project.id, "quality-1")
+
+    def override_session() -> Iterator[Session]:
+        yield db_session
+
+    app.dependency_overrides[get_session] = override_session
+    try:
+        response = TestClient(app).post(
+            f"/api/v1/projects/{project.id}/review/lock/release",
+            headers={"X-QI-Operator": "quality-1"},
+            json={"expires_at": lock.expires_at.isoformat()},
+        )
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "project_id": str(project.id),
+        "released": True,
+    }

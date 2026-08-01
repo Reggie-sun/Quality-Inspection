@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -6,6 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { ProjectWorkbenchView } from "../../api/types";
@@ -14,6 +16,7 @@ import { ProjectWorkbenchApp } from "./ProjectWorkbenchApp";
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -248,6 +251,237 @@ test("审核锁冲突时仍可回到图纸列表", async () => {
   fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
   expect(onReset).toHaveBeenCalledOnce();
 });
+
+
+test("返回图纸列表时用最后一次 lease version 主动释放审核锁", async () => {
+  const snapshot = reviewedResponse();
+  const expiresAt = "2026-08-01T09:05:00Z";
+  const fetchMock = vi.fn(async (
+    path: RequestInfo | URL,
+    _init?: RequestInit,
+  ) => {
+    if (String(path).endsWith("/review/lock/release")) {
+      return new Response(JSON.stringify({
+        project_id: "project-real",
+        released: true,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify(
+      String(path).endsWith("/review/lock")
+        ? {
+            project_id: "project-real",
+            operator_id: "operator-real",
+            expires_at: expiresAt,
+          }
+        : snapshot,
+    ), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const onReset = vi.fn();
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+      onReset={onReset}
+    />,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "回到图纸列表" }));
+  expect(onReset).toHaveBeenCalledOnce();
+  await waitFor(() => expect(fetchMock.mock.calls.some(([path, init]) => (
+    String(path).endsWith("/review/lock/release")
+      && init?.method === "POST"
+      && init.keepalive === true
+      && init.headers !== undefined
+      && (init.headers as Record<string, string>)["X-QI-Operator"] === "operator-real"
+      && JSON.parse(String(init.body)).expires_at === expiresAt
+  ))).toBe(true));
+});
+
+
+test("pagehide 主动释放 lease，React cleanup 本身不发送 release", async () => {
+  const snapshot = reviewedResponse();
+  const expiresAt = "2026-08-01T09:05:00Z";
+  const fetchMock = vi.fn(async (
+    path: RequestInfo | URL,
+    _init?: RequestInit,
+  ) => new Response(JSON.stringify(
+    String(path).endsWith("/review/lock")
+      ? {
+          project_id: "project-real",
+          operator_id: "operator-real",
+          expires_at: expiresAt,
+        }
+      : String(path).endsWith("/review/lock/release")
+        ? { project_id: "project-real", released: true }
+        : snapshot,
+  ), { status: 200, headers: { "Content-Type": "application/json" } }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  const rendered = render(
+    <StrictMode>
+      <ProjectWorkbenchApp
+        projectId="project-real"
+        operatorId="operator-real"
+        loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+      />
+    </StrictMode>,
+  );
+
+  await screen.findByRole("region", { name: "项目摘要" });
+  rendered.unmount();
+  expect(fetchMock.mock.calls.some(([path]) => (
+    String(path).endsWith("/review/lock/release")
+  ))).toBe(false);
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+    />,
+  );
+  await screen.findByRole("region", { name: "项目摘要" });
+  fireEvent(window, new Event("pagehide"));
+
+  await waitFor(() => expect(fetchMock.mock.calls.some(([path, init]) => (
+    String(path).endsWith("/review/lock/release")
+      && init?.keepalive === true
+  ))).toBe(true));
+});
+
+
+test("hidden 页面跳过 interval renew，恢复 visible 时立即续期", async () => {
+  vi.useFakeTimers();
+  let visibility: DocumentVisibilityState = "visible";
+  vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+  const snapshot = reviewedResponse();
+  let leaseNumber = 0;
+  const fetchMock = vi.fn(async (
+    path: RequestInfo | URL,
+    _init?: RequestInit,
+  ) => {
+    if (String(path).endsWith("/review/lock")) {
+      leaseNumber += 1;
+      return new Response(JSON.stringify({
+        project_id: "project-real",
+        operator_id: "operator-real",
+        expires_at: `2026-08-01T09:0${leaseNumber}:00Z`,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify(snapshot), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  render(
+    <ProjectWorkbenchApp
+      projectId="project-real"
+      operatorId="operator-real"
+      loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+    />,
+  );
+  await vi.advanceTimersByTimeAsync(0);
+  expect(leaseNumber).toBe(1);
+
+  visibility = "hidden";
+  await vi.advanceTimersByTimeAsync(240_000);
+  expect(leaseNumber).toBe(1);
+
+  visibility = "visible";
+  fireEvent(document, new Event("visibilitychange"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(leaseNumber).toBe(2);
+});
+
+
+test.each([
+  { scenario: "reset", leaveBy: "reset", resumeFromBfcache: false },
+  { scenario: "pagehide", leaveBy: "pagehide", resumeFromBfcache: false },
+  { scenario: "bfcache", leaveBy: "pagehide", resumeFromBfcache: true },
+] as const)(
+  "$scenario 离开时等待中的 renew 保持 single-flight 并协调最新 lease release",
+  async ({ leaveBy, resumeFromBfcache }) => {
+    const snapshot = reviewedResponse();
+    const firstExpiry = "2026-08-01T09:05:00Z";
+    const renewedExpiry = "2026-08-01T09:09:00Z";
+    let lockCalls = 0;
+    let resolveRenewal!: () => void;
+    const renewalGate = new Promise<void>((resolve) => {
+      resolveRenewal = resolve;
+    });
+    const releasedVersions: string[] = [];
+    const fetchMock = vi.fn(async (
+      path: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      if (String(path).endsWith("/review/lock/release")) {
+        releasedVersions.push(JSON.parse(String(init?.body)).expires_at);
+        return new Response(JSON.stringify({
+          project_id: "project-real",
+          released: true,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (String(path).endsWith("/review/lock")) {
+        lockCalls += 1;
+        if (lockCalls > 1) await renewalGate;
+        return new Response(JSON.stringify({
+          project_id: "project-real",
+          operator_id: "operator-real",
+          expires_at: lockCalls === 1 ? firstExpiry : renewedExpiry,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify(snapshot), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const onReset = vi.fn();
+
+    render(
+      <ProjectWorkbenchApp
+        projectId="project-real"
+        operatorId="operator-real"
+        loadPdf={vi.fn().mockResolvedValue({ numPages: 1, getPage: vi.fn() })}
+        onReset={onReset}
+      />,
+    );
+    await screen.findByRole("region", { name: "项目摘要" });
+
+    fireEvent.focus(window);
+    fireEvent(window, new Event("pageshow"));
+    if (leaveBy === "reset") {
+      fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+    } else {
+      fireEvent(window, new Event("pagehide"));
+    }
+    await waitFor(() => expect(releasedVersions).toEqual([firstExpiry]));
+    if (resumeFromBfcache) {
+      fireEvent(window, new Event("pageshow"));
+    }
+
+    await act(async () => {
+      resolveRenewal();
+      await renewalGate;
+    });
+    if (resumeFromBfcache) {
+      expect(lockCalls).toBe(2);
+      expect(releasedVersions).toEqual([firstExpiry]);
+      fireEvent(window, new Event("pagehide"));
+    }
+    await waitFor(() => expect(releasedVersions).toEqual([
+      firstExpiry,
+      renewedExpiry,
+    ]));
+    expect(lockCalls).toBe(2);
+    expect(onReset).toHaveBeenCalledTimes(leaveBy === "reset" ? 1 : 0);
+  },
+);
 
 
 test("刷新后从只读 projection 恢复 reviewed result 和三项下载", async () => {

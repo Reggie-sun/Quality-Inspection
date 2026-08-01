@@ -1,6 +1,7 @@
 import type {
   PostJson,
   ReviewedResultResponse,
+  ReviewLockReleaseResponse,
   ReviewLockResponse,
   ReviewWorkingCopyView,
   ReviewWorkingCopyTransport,
@@ -22,6 +23,30 @@ export function acquireReviewLock(
     { ttl_seconds: 300 },
     operatorHeaders(operatorId),
   );
+}
+
+
+export async function releaseReviewLock(
+  projectId: string,
+  operatorId: string,
+  expiresAt: string,
+): Promise<ReviewLockReleaseResponse> {
+  const response = await fetch(
+    `/api/v1/projects/${projectId}/review/lock/release`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...operatorHeaders(operatorId),
+      },
+      body: JSON.stringify({ expires_at: expiresAt }),
+      keepalive: true,
+    },
+  );
+  if (!response.ok) {
+    throw new Error("review lock release failed");
+  }
+  return await response.json() as ReviewLockReleaseResponse;
 }
 
 

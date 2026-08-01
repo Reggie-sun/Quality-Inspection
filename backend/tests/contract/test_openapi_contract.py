@@ -25,6 +25,10 @@ EXPECTED_OPERATIONS = {
     ): "QI-API-PRJ-007",
     ("POST", "/api/v1/projects/{project_id}/review/lock"): "QI-API-REV-001",
     (
+        "POST",
+        "/api/v1/projects/{project_id}/review/lock/release",
+    ): "QI-API-REV-006",
+    (
         "GET",
         "/api/v1/projects/{project_id}/review/working-copy",
     ): "QI-API-REV-002",

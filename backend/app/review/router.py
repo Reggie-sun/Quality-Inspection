@@ -11,14 +11,16 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.errors.api import api_error, error_responses
 from app.errors.schemas import ErrorSeverity
-from app.review.locks import LockConflict, LockRequired, acquire_lock
+from app.review.locks import LockConflict, LockRequired, acquire_lock, release_lock
 from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.schemas import (
     ConfirmReviewRequest,
     FreezeItemsRequest,
     LockRequest,
+    ReleaseLockRequest,
     ReviewedResultResponse,
     ReviewCommandRequest,
+    ReviewLockReleaseResponse,
     ReviewLockResponse,
     ReviewWorkingCopyResponse,
     normalize_sip_metadata,
@@ -90,6 +92,41 @@ def lock_review(
         "project_id": lock.project_id,
         "operator_id": lock.operator_id,
         "expires_at": lock.expires_at,
+    }
+
+
+@router.post(
+    "/{project_id}/review/lock/release",
+    operation_id="QI-API-REV-006",
+    response_model=ReviewLockReleaseResponse,
+    responses=error_responses(
+        {
+            404: ("project_not_found",),
+            422: ("review_operator_invalid", "request_validation_failed"),
+            500: ("internal_server_error",),
+        }
+    ),
+)
+def release_review_lock(
+    project_id: uuid.UUID,
+    body: ReleaseLockRequest,
+    operator_id: OperatorHeader,
+    session: SessionDependency,
+) -> JSONResponse:
+    try:
+        released = release_lock(
+            session,
+            project_id,
+            operator_id,
+            expires_at=body.expires_at,
+        )
+    except ValueError as error:
+        return _error(422, "review_operator_invalid", str(error))
+    except LookupError as error:
+        return _error(404, "project_not_found", str(error))
+    return {
+        "project_id": project_id,
+        "released": released,
     }
 
 

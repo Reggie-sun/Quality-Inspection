@@ -216,6 +216,10 @@ class LockRequest(CommandBase):
     ttl_seconds: int = Field(default=300, ge=1, le=3600)
 
 
+class ReleaseLockRequest(CommandBase):
+    expires_at: datetime
+
+
 class ReviewCommandRequest(CommandBase):
     expected_version: int = Field(ge=1)
     command: ReviewCommand
@@ -233,6 +237,11 @@ class ReviewLockResponse(CommandBase):
     project_id: uuid.UUID
     operator_id: str
     expires_at: datetime
+
+
+class ReviewLockReleaseResponse(CommandBase):
+    project_id: uuid.UUID
+    released: bool
 
 
 class ReviewWorkingCopyProjection(CommandBase):

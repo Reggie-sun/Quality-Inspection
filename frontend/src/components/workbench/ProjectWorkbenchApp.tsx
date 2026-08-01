@@ -8,6 +8,7 @@ import type {
   ProjectWorkbenchView,
   ProjectWorkbenchTransport,
   ReviewCommand,
+  ReviewLockResponse,
 } from "../../api/types";
 import { applyBalloonCommand, generateBalloons } from "../../features/balloons/api";
 import { BALLOON_RADIUS_PDF } from "../balloons/BalloonOverlay";
@@ -15,6 +16,7 @@ import {
   acquireReviewLock,
   confirmReviewedResult,
   freezeReviewItems,
+  releaseReviewLock,
 } from "../../features/review/api";
 import { saveWorkingCopy } from "../../features/review/saveWorkingCopy";
 import { apiErrorCopy, zhCN } from "../../copy/zhCN";
@@ -67,6 +69,9 @@ export function ProjectWorkbenchApp({
   const [error, setError] = useState<string>();
   const [reviewedResultId, setReviewedResultId] = useState<string>();
   const snapshotRef = useRef<ProjectWorkbenchView | undefined>(undefined);
+  const leaseExpiresAtRef = useRef<string | undefined>(undefined);
+  const renewInFlightRef = useRef<Promise<ReviewLockResponse> | undefined>(undefined);
+  const leavingRef = useRef(false);
 
   const safeError = (caught: unknown) => (
     caught instanceof ApiError ? apiErrorCopy(caught.code) : zhCN.errors.fallback
@@ -91,27 +96,67 @@ export function ProjectWorkbenchApp({
     return loaded;
   }, [projectId]);
 
+  const acquireLatestLease = useCallback(() => {
+    const inFlight = renewInFlightRef.current;
+    if (inFlight !== undefined) return inFlight;
+
+    const pending = acquireReviewLock(postJson, projectId, operatorId).finally(() => {
+      if (renewInFlightRef.current === pending) {
+        renewInFlightRef.current = undefined;
+      }
+    });
+    renewInFlightRef.current = pending;
+    return pending;
+  }, [operatorId, projectId]);
+
+  const releaseLatestLease = useCallback(() => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+
+    const expiresAt = leaseExpiresAtRef.current;
+    leaseExpiresAtRef.current = undefined;
+    if (expiresAt !== undefined) {
+      void releaseReviewLock(projectId, operatorId, expiresAt).catch(() => undefined);
+    }
+
+    const pending = renewInFlightRef.current;
+    if (pending !== undefined) {
+      void pending.then((lock) => {
+        if (!leavingRef.current || lock.expires_at === expiresAt) return;
+        return releaseReviewLock(
+          projectId,
+          operatorId,
+          lock.expires_at,
+        );
+      }).catch(() => undefined);
+    }
+  }, [operatorId, projectId]);
+
   useEffect(() => {
     let cancelled = false;
     let renewal: number | undefined;
+    leavingRef.current = false;
 
     const renew = async () => {
-      await acquireReviewLock(postJson, projectId, operatorId);
-      if (!cancelled) {
-        setLockBlocked(false);
-        setError((current) => (
-          current === zhCN.errors.lockRenewal ? undefined : current
-        ));
-      }
+      if (leavingRef.current) return false;
+      const lock = await acquireLatestLease();
+      if (cancelled || leavingRef.current) return false;
+      leaseExpiresAtRef.current = lock.expires_at;
+      setLockBlocked(false);
+      setError((current) => (
+        current === zhCN.errors.lockRenewal ? undefined : current
+      ));
+      return true;
     };
     const start = async () => {
       try {
-        await renew();
+        if (!await renew()) return;
         const loaded = await refresh();
-        const document = await loadPdf(loaded.source_pdf_url);
+        const loadedPdf = await loadPdf(loaded.source_pdf_url);
         if (cancelled) return;
-        setPdfDocument(document);
+        setPdfDocument(loadedPdf);
         renewal = window.setInterval(() => {
+          if (document.visibilityState === "hidden") return;
           void renew().catch(() => {
             setLockBlocked(true);
             setError(zhCN.errors.lockRenewal);
@@ -125,19 +170,39 @@ export function ProjectWorkbenchApp({
       }
     };
     const onFocus = () => {
+      if (leavingRef.current || document.visibilityState === "hidden") return;
       void renew().catch(() => {
         setLockBlocked(true);
         setError(zhCN.errors.lockRenewal);
       });
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") onFocus();
+    };
+    const onPageShow = () => {
+      leavingRef.current = false;
+      onFocus();
+    };
+    const onPageHide = () => releaseLatestLease();
     window.addEventListener("focus", onFocus);
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     void start();
     return () => {
       cancelled = true;
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (renewal !== undefined) window.clearInterval(renewal);
     };
-  }, [loadPdf, operatorId, projectId, refresh]);
+  }, [acquireLatestLease, loadPdf, refresh, releaseLatestLease]);
+
+  const handleReset = onReset === undefined ? undefined : () => {
+    releaseLatestLease();
+    onReset();
+  };
 
   const balloons = useMemo<BalloonOverlay[]>(
     () => snapshot?.balloons.map((balloon) => ({
@@ -282,11 +347,11 @@ export function ProjectWorkbenchApp({
     return (
       <main className="workbench-shell">
         <p role="alert">{error}</p>
-        {onReset === undefined ? null : (
+        {handleReset === undefined ? null : (
           <button
             type="button"
             className="workbench-reset-action"
-            onClick={onReset}
+            onClick={handleReset}
           >
             {zhCN.workbench.returnToDrawingList}
           </button>
@@ -355,7 +420,7 @@ export function ProjectWorkbenchApp({
         operatorId={operatorId}
         actionState={status}
         busy={busy || startupBlocked || lockBlocked}
-        onReset={onReset}
+        onReset={handleReset}
         onSave={save}
         onPrepareReview={prepareReview}
         onConfirmReview={confirmReviewForExport}

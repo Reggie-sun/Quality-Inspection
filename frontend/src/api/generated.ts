@@ -63,6 +63,10 @@ export interface paths {
     /** Lock Review */
     post: operations["QI-API-REV-001"];
   };
+  "/api/v1/projects/{project_id}/review/lock/release": {
+    /** Release Review Lock */
+    post: operations["QI-API-REV-006"];
+  };
   "/api/v1/projects/{project_id}/review/working-copy": {
     /** Get Working Copy */
     get: operations["QI-API-REV-002"];
@@ -658,6 +662,14 @@ export interface components {
       /** Source Type */
       source_type: string;
     };
+    /** ReleaseLockRequest */
+    ReleaseLockRequest: {
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+    };
     /** RenumberBalloons */
     RenumberBalloons: {
       /** Expected Versions */
@@ -707,6 +719,16 @@ export interface components {
       command: components["schemas"]["Keep"] | components["schemas"]["Exclude"] | components["schemas"]["Edit"] | components["schemas"]["Add"] | components["schemas"]["PromoteSource"] | components["schemas"]["IgnoreSource"] | components["schemas"]["IgnoreSources"] | components["schemas"]["Merge"] | components["schemas"]["Split"] | components["schemas"]["ResolveConfirmation"] | components["schemas"]["SetBalloonRequired"] | components["schemas"]["SetSipDetailFields"] | components["schemas"]["GenerateSipTable"] | components["schemas"]["SetSipMetadata"] | components["schemas"]["SetTechnicalRequirementMatch"];
       /** Expected Version */
       expected_version: number;
+    };
+    /** ReviewLockReleaseResponse */
+    ReviewLockReleaseResponse: {
+      /**
+       * Project Id
+       * Format: uuid
+       */
+      project_id: string;
+      /** Released */
+      released: boolean;
     };
     /** ReviewLockResponse */
     ReviewLockResponse: {
@@ -1546,6 +1568,48 @@ export interface operations {
       };
       /** @description Request conflicts with current aggregate or capability state. */
       409: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Request failed transport or business validation. */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Unexpected internal failure. */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+    };
+  };
+  /** Release Review Lock */
+  "QI-API-REV-006": {
+    parameters: {
+      header: {
+        "X-QI-Operator": string;
+      };
+      path: {
+        project_id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReleaseLockRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ReviewLockReleaseResponse"];
+        };
+      };
+      /** @description Requested resource was not found. */
+      404: {
         content: {
           "application/json": components["schemas"]["ErrorEnvelope"];
         };

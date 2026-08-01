@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -59,6 +59,37 @@ def acquire_lock(
     session.commit()
     session.refresh(lock)
     return lock
+
+
+def release_lock(
+    session: Session,
+    project_id: uuid.UUID,
+    operator_id: str,
+    *,
+    expires_at: datetime,
+) -> bool:
+    operator_id = _operator_id(operator_id)
+    project = session.scalar(
+        select(Project).where(Project.id == project_id).with_for_update()
+    )
+    if project is None:
+        raise LookupError(f"project {project_id} was not found")
+    lock = session.scalar(
+        select(ReviewLock)
+        .where(ReviewLock.project_id == project_id)
+        .with_for_update()
+    )
+    if (
+        lock is None
+        or lock.operator_id != operator_id
+        or lock.expires_at != expires_at
+    ):
+        session.commit()
+        return False
+
+    session.delete(lock)
+    session.commit()
+    return True
 
 
 def require_active_lock(

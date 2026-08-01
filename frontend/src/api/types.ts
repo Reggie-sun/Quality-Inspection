@@ -152,6 +152,9 @@ export type ReviewWorkingCopyTransport =
 export type ReviewLockResponse =
   components["schemas"]["ReviewLockResponse"];
 
+export type ReviewLockReleaseResponse =
+  components["schemas"]["ReviewLockReleaseResponse"];
+
 export type ReviewedResultResponse =
   components["schemas"]["ReviewedResultResponse"];
 

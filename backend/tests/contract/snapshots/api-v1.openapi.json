@@ -1658,6 +1658,21 @@
         "title": "RecognitionPreviewSource",
         "type": "object"
       },
+      "ReleaseLockRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expires_at"
+        ],
+        "title": "ReleaseLockRequest",
+        "type": "object"
+      },
       "RenumberBalloons": {
         "additionalProperties": false,
         "properties": {
@@ -1837,6 +1852,26 @@
           "command"
         ],
         "title": "ReviewCommandRequest",
+        "type": "object"
+      },
+      "ReviewLockReleaseResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "released": {
+            "title": "Released",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project_id",
+          "released"
+        ],
+        "title": "ReviewLockReleaseResponse",
         "type": "object"
       },
       "ReviewLockResponse": {
@@ -3766,6 +3801,98 @@
           }
         },
         "summary": "Lock Review",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/review/lock/release": {
+      "post": {
+        "operationId": "QI-API-REV-006",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-QI-Operator",
+            "required": true,
+            "schema": {
+              "title": "X-Qi-Operator",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseLockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewLockReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "review_operator_invalid",
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Release Review Lock",
         "tags": [
           "review"
         ]
