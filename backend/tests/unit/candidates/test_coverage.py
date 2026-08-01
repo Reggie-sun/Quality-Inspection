@@ -168,7 +168,7 @@ def _visual_review(
 ) -> dict[str, object]:
     return {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "symbol_kinds": list(symbol_kinds),
         "rejection_code": rejection_code,
         "confidence_signal": (
@@ -435,7 +435,7 @@ def test_complete_visual_candidate_may_clear_semantic_confirmation() -> None:
         },
         {
             "route": "visual_symbol",
-            "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
             "symbol_kinds": ["diameter"],
             "rejection_code": None,
         },

@@ -126,8 +126,9 @@ class FrozenSymbolProvider:
         return VisionResult(
             request_id=f"fixture-symbol-{self.symbol_calls}",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
                 "detections": detections,
+                "gdt_frames": [],
             },
             usage={},
         )

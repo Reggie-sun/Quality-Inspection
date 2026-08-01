@@ -15,7 +15,11 @@ from pydantic import (
     model_validator,
 )
 
-from app.candidates.geometric_tolerance import GdtModifierKind, ToleranceType
+from app.candidates.geometric_tolerance import (
+    GdtFrame,
+    GdtModifierKind,
+    ToleranceType,
+)
 from app.candidates.schemas import CandidateType
 
 
@@ -43,6 +47,14 @@ class Edit(CommandBase):
     type: Literal["edit"]
     item_id: str = Field(min_length=1)
     fields: dict[str, Any] = Field(min_length=1)
+
+
+class EditGeometricTolerance(CommandBase):
+    type: Literal["edit_geometric_tolerance"]
+    item_id: str = Field(min_length=1)
+    tolerance_type: ToleranceType
+    frames: tuple[GdtFrame, ...] = Field(min_length=1)
+    standard_context: Literal["unspecified"]
 
 
 class Add(CommandBase):
@@ -178,6 +190,7 @@ ReviewCommand = Annotated[
         Keep,
         Exclude,
         Edit,
+        EditGeometricTolerance,
         Add,
         PromoteSource,
         IgnoreSource,
@@ -310,10 +323,13 @@ class GeometricToleranceReviewItem(ReviewItemBase):
     evidence_ref: NonBlankText
 
 
-ReviewItemProjection = Union[
-    GeometricToleranceReviewItem,
-    TypedReviewItem,
-    CoarseReviewItem,
+ReviewItemProjection = Annotated[
+    Union[
+        GeometricToleranceReviewItem,
+        TypedReviewItem,
+        CoarseReviewItem,
+    ],
+    Field(json_schema_extra={"type": "object"}),
 ]
 
 
@@ -359,6 +375,20 @@ COMPLEX_EDITABLE_FIELDS = {
     "requires_confirmation",
 }
 PROTECTED_TYPED_EDIT_FIELDS = {"candidate_id", "balloon_required"}
+PROTECTED_GDT_EDIT_FIELDS = {
+    "item_type",
+    "schema_version",
+    "normalized_text",
+    "tolerance_type",
+    "tolerance_symbol",
+    "tolerance_value",
+    "diameter_modifier",
+    "modifiers",
+    "datum_references",
+    "frames",
+    "standard_context",
+    "evidence_ref",
+}
 
 
 def parse_review_command(command: dict[str, object]) -> ReviewCommand:
@@ -369,6 +399,13 @@ def validate_edit_fields(
     item: dict[str, object],
     fields: dict[str, object],
 ) -> None:
+    if item.get("item_type") == "geometric_tolerance":
+        protected = set(fields) & PROTECTED_GDT_EDIT_FIELDS
+        if protected:
+            raise ValueError(
+                "derived geometric tolerance fields are editable only with "
+                f"edit_geometric_tolerance: {sorted(protected)}"
+            )
     if "coarse_type" not in item:
         protected = set(fields) & PROTECTED_TYPED_EDIT_FIELDS
         if protected:

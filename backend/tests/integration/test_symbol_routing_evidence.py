@@ -715,7 +715,7 @@ def _identity() -> SymbolCacheIdentity:
         router_version=SYMBOL_ROUTER_VERSION,
         proposal_version="visual-observation-proposal/1",
         prompt_version="visual-symbol-prompt/4",
-        response_schema_version="visual-symbol-review/2",
+        response_schema_version="visual-symbol-review/3",
         adapter_version="qwen-visual-symbol-adapter/5",
         model_identity="qwen3-vl-plus",
         pymupdf_version="1.26.3",
@@ -725,8 +725,9 @@ def _identity() -> SymbolCacheIdentity:
 
 def _response() -> dict[str, object]:
     return {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "detections": [],
+        "gdt_frames": [],
     }
 
 

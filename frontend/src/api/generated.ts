@@ -247,6 +247,16 @@ export interface components {
        */
       reviewed_result_id: string;
     };
+    /** DatumReference */
+    DatumReference: {
+      /** Datum */
+      datum: string;
+      /**
+       * Modifiers
+       * @default []
+       */
+      modifiers?: components["schemas"]["GdtModifier"][];
+    };
     /** DeleteBalloon */
     DeleteBalloon: {
       /**
@@ -275,6 +285,28 @@ export interface components {
        * @constant
        */
       type: "edit";
+    };
+    /** EditGeometricTolerance */
+    EditGeometricTolerance: {
+      /** Frames */
+      frames: components["schemas"]["GdtFrame"][];
+      /** Item Id */
+      item_id: string;
+      /**
+       * Standard Context
+       * @constant
+       */
+      standard_context: "unspecified";
+      /**
+       * Tolerance Type
+       * @enum {string}
+       */
+      tolerance_type: "straightness" | "flatness" | "circularity" | "cylindricity" | "profile_of_line" | "profile_of_surface" | "angularity" | "perpendicularity" | "parallelism" | "position" | "concentricity_or_coaxiality" | "symmetry" | "circular_runout" | "total_runout" | "unknown";
+      /**
+       * Type
+       * @constant
+       */
+      type: "edit_geometric_tolerance";
     };
     /** ErrorDetail */
     ErrorDetail: {
@@ -374,6 +406,38 @@ export interface components {
     FreezeItemsRequest: {
       /** Expected Version */
       expected_version: number;
+    };
+    /** GdtFrame */
+    GdtFrame: {
+      /** Segments */
+      segments: components["schemas"]["GdtSegment"][];
+    };
+    /** GdtModifier */
+    GdtModifier: {
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "maximum_material_condition" | "least_material_condition" | "regardless_of_feature_size" | "unknown";
+      /** Raw Symbol */
+      raw_symbol: string;
+    };
+    /** GdtSegment */
+    GdtSegment: {
+      /**
+       * Datum References
+       * @default []
+       */
+      datum_references?: components["schemas"]["DatumReference"][];
+      /** Diameter Modifier */
+      diameter_modifier: boolean;
+      /**
+       * Modifiers
+       * @default []
+       */
+      modifiers?: components["schemas"]["GdtModifier"][];
+      /** Tolerance Value */
+      tolerance_value: number | string;
     };
     /** GenerateBalloonsRequest */
     GenerateBalloonsRequest: {
@@ -881,7 +945,7 @@ export interface components {
     /** ReviewCommandRequest */
     ReviewCommandRequest: {
       /** Command */
-      command: components["schemas"]["Keep"] | components["schemas"]["Exclude"] | components["schemas"]["Edit"] | components["schemas"]["Add"] | components["schemas"]["PromoteSource"] | components["schemas"]["IgnoreSource"] | components["schemas"]["IgnoreSources"] | components["schemas"]["Merge"] | components["schemas"]["Split"] | components["schemas"]["ResolveConfirmation"] | components["schemas"]["SetBalloonRequired"] | components["schemas"]["SetSipDetailFields"] | components["schemas"]["GenerateSipTable"] | components["schemas"]["SetSipMetadata"] | components["schemas"]["SetTechnicalRequirementMatch"];
+      command: components["schemas"]["Keep"] | components["schemas"]["Exclude"] | components["schemas"]["Edit"] | components["schemas"]["EditGeometricTolerance"] | components["schemas"]["Add"] | components["schemas"]["PromoteSource"] | components["schemas"]["IgnoreSource"] | components["schemas"]["IgnoreSources"] | components["schemas"]["Merge"] | components["schemas"]["Split"] | components["schemas"]["ResolveConfirmation"] | components["schemas"]["SetBalloonRequired"] | components["schemas"]["SetSipDetailFields"] | components["schemas"]["GenerateSipTable"] | components["schemas"]["SetSipMetadata"] | components["schemas"]["SetTechnicalRequirementMatch"];
       /** Expected Version */
       expected_version: number;
     };

@@ -191,7 +191,8 @@ def test_openapi_exposes_exact_review_item_union_for_structured_gdt() -> None:
         "datum_references",
         "evidence_ref",
     } <= set(gdt["required"])
-    assert "object" not in str(working_items)
+    assert working_items["type"] == "object"
+    assert reviewed_items["type"] == "object"
 
 
 def test_human_api_index_projects_every_formal_operation_once() -> None:

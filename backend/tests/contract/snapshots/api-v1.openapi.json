@@ -627,6 +627,29 @@
         "title": "CreateExportRequest",
         "type": "object"
       },
+      "DatumReference": {
+        "additionalProperties": false,
+        "properties": {
+          "datum": {
+            "pattern": "^[A-Z]$",
+            "title": "Datum",
+            "type": "string"
+          },
+          "modifiers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GdtModifier"
+            },
+            "title": "Modifiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "datum"
+        ],
+        "title": "DatumReference",
+        "type": "object"
+      },
       "DeleteBalloon": {
         "additionalProperties": false,
         "properties": {
@@ -680,6 +703,64 @@
           "fields"
         ],
         "title": "Edit",
+        "type": "object"
+      },
+      "EditGeometricTolerance": {
+        "additionalProperties": false,
+        "properties": {
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/GdtFrame"
+            },
+            "minItems": 1,
+            "title": "Frames",
+            "type": "array"
+          },
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "standard_context": {
+            "const": "unspecified",
+            "title": "Standard Context",
+            "type": "string"
+          },
+          "tolerance_type": {
+            "enum": [
+              "straightness",
+              "flatness",
+              "circularity",
+              "cylindricity",
+              "profile_of_line",
+              "profile_of_surface",
+              "angularity",
+              "perpendicularity",
+              "parallelism",
+              "position",
+              "concentricity_or_coaxiality",
+              "symmetry",
+              "circular_runout",
+              "total_runout",
+              "unknown"
+            ],
+            "title": "Tolerance Type",
+            "type": "string"
+          },
+          "type": {
+            "const": "edit_geometric_tolerance",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_id",
+          "tolerance_type",
+          "frames",
+          "standard_context"
+        ],
+        "title": "EditGeometricTolerance",
         "type": "object"
       },
       "ErrorDetail": {
@@ -952,6 +1033,94 @@
           "expected_version"
         ],
         "title": "FreezeItemsRequest",
+        "type": "object"
+      },
+      "GdtFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/GdtSegment"
+            },
+            "minItems": 1,
+            "title": "Segments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "segments"
+        ],
+        "title": "GdtFrame",
+        "type": "object"
+      },
+      "GdtModifier": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "maximum_material_condition",
+              "least_material_condition",
+              "regardless_of_feature_size",
+              "unknown"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "raw_symbol": {
+            "minLength": 1,
+            "title": "Raw Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "raw_symbol"
+        ],
+        "title": "GdtModifier",
+        "type": "object"
+      },
+      "GdtSegment": {
+        "additionalProperties": false,
+        "properties": {
+          "datum_references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DatumReference"
+            },
+            "title": "Datum References",
+            "type": "array"
+          },
+          "diameter_modifier": {
+            "title": "Diameter Modifier",
+            "type": "boolean"
+          },
+          "modifiers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GdtModifier"
+            },
+            "title": "Modifiers",
+            "type": "array"
+          },
+          "tolerance_value": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Tolerance Value"
+          }
+        },
+        "required": [
+          "tolerance_value",
+          "diameter_modifier"
+        ],
+        "title": "GdtSegment",
         "type": "object"
       },
       "GenerateBalloonsRequest": {
@@ -2553,6 +2722,7 @@
               "mapping": {
                 "add": "#/components/schemas/Add",
                 "edit": "#/components/schemas/Edit",
+                "edit_geometric_tolerance": "#/components/schemas/EditGeometricTolerance",
                 "exclude": "#/components/schemas/Exclude",
                 "generate_sip_table": "#/components/schemas/GenerateSipTable",
                 "ignore_source": "#/components/schemas/IgnoreSource",
@@ -2578,6 +2748,9 @@
               },
               {
                 "$ref": "#/components/schemas/Edit"
+              },
+              {
+                "$ref": "#/components/schemas/EditGeometricTolerance"
               },
               {
                 "$ref": "#/components/schemas/Add"
@@ -2694,7 +2867,8 @@
                 {
                   "$ref": "#/components/schemas/CoarseReviewItem"
                 }
-              ]
+              ],
+              "type": "object"
             },
             "title": "Items",
             "type": "array"
@@ -2829,7 +3003,8 @@
                 {
                   "$ref": "#/components/schemas/CoarseReviewItem"
                 }
-              ]
+              ],
+              "type": "object"
             },
             "title": "Items",
             "type": "array"
@@ -2962,7 +3137,8 @@
                 {
                   "$ref": "#/components/schemas/CoarseReviewItem"
                 }
-              ]
+              ],
+              "type": "object"
             },
             "title": "Items",
             "type": "array"

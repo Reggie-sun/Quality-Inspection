@@ -323,7 +323,7 @@ def check_coverage(
                     else _VISUAL_REVIEW_KEYS
                 )
                 and review.get("route") == "visual_symbol"
-                and review.get("schema_version") == "visual-symbol-review/2"
+                and review.get("schema_version") == "visual-symbol-review/3"
                 and symbol_kinds_valid
                 and (
                     not local_resolution_present

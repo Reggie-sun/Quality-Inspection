@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timezone
+from decimal import Decimal
 import hashlib
 import importlib.util
 import json
 import sys
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -23,7 +26,8 @@ from app.projects.router import _project_items
 from app.projects.router import get_session as get_project_session
 from app.projects.router import get_storage
 from app.review.router import _working_copy as _review_working_copy
-from app.review.models import ReviewedResult
+from app.review.models import ReviewedResult, ReviewWorkingCopy
+from app.review.schemas import ReviewWorkingCopyResponse
 from app.review.service import ReviewService
 from app.storage.models import StoredFile
 
@@ -67,6 +71,92 @@ def _title_observation(
         "direction_angle_degrees": 0.0,
         "confidence": None,
     }
+
+
+def test_project_workbench_projection_keeps_structured_gdt_frames_order() -> None:
+    item = {
+        "item_id": "gdt-workbench",
+        "raw_text": "⌖ | ⌀0.10 M | A | B | C / ⌀0.20 | A | B",
+        "normalized_text": "⌖ | ⌀0.10 M | A | B | C / ⌀0.20 | A | B",
+        "coordinates": [1.0, 2.0, 3.0, 4.0],
+        "source_location_ids": ["gdt-source"],
+        "source_type": "automatic",
+        "status": "pending",
+        "requires_confirmation": True,
+        "acceptance_source": None,
+        "active": True,
+        "item_type": "geometric_tolerance",
+        "schema_version": "geometric-tolerance-candidate/1",
+        "tolerance_type": "position",
+        "tolerance_symbol": "⌖",
+        "tolerance_value": "0.10",
+        "diameter_modifier": True,
+        "modifiers": [
+            {"kind": "maximum_material_condition", "raw_symbol": "M"}
+        ],
+        "datum_references": [
+            {"datum": "A", "modifiers": []},
+            {"datum": "B", "modifiers": []},
+            {"datum": "C", "modifiers": []},
+        ],
+        "frames": [
+            {
+                "segments": [
+                    {
+                        "tolerance_value": "0.10",
+                        "diameter_modifier": True,
+                        "modifiers": [
+                            {
+                                "kind": "maximum_material_condition",
+                                "raw_symbol": "M",
+                            }
+                        ],
+                        "datum_references": [
+                            {"datum": "A", "modifiers": []},
+                            {"datum": "B", "modifiers": []},
+                            {"datum": "C", "modifiers": []},
+                        ],
+                    }
+                ]
+            },
+            {
+                "segments": [
+                    {
+                        "tolerance_value": "0.20",
+                        "diameter_modifier": True,
+                        "modifiers": [],
+                        "datum_references": [
+                            {"datum": "A", "modifiers": []},
+                            {"datum": "B", "modifiers": []},
+                        ],
+                    }
+                ]
+            },
+        ],
+        "standard_context": "unspecified",
+        "evidence_ref": "asset://tests/gdt-workbench.json",
+    }
+    working = ReviewWorkingCopy(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        raw_result_id=uuid.uuid4(),
+        version=2,
+        items=[item],
+        coverage={"entries": []},
+        technical_requirements=[],
+        sip_metadata={},
+        numbering_stale=False,
+        items_frozen_at=None,
+        items_frozen_by=None,
+        items_frozen_version=None,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    projection = ReviewWorkingCopyResponse.model_validate(_review_working_copy(working))
+    gdt = projection.items[0]
+    assert gdt.frames[0].segments[0].datum_references[2].datum == "C"
+    assert gdt.frames[1].segments[0].tolerance_value == Decimal("0.20")
 
 
 def test_project_workbench_delivers_real_pdf_without_internal_references(

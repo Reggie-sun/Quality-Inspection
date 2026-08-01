@@ -26,6 +26,7 @@ from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.schemas import (
     Add,
     Edit,
+    EditGeometricTolerance,
     Exclude,
     GenerateSipTable,
     IgnoreSource,
@@ -600,7 +601,7 @@ class ReviewService:
                         or (
                             set(advisor_review) == active_fields
                             and advisor_review.get("schema_version")
-                            == "visual-symbol-review/2"
+                            == "visual-symbol-review/3"
                         )
                     )
                     and advisor_review.get("route") == "visual_symbol"
@@ -672,6 +673,14 @@ class ReviewService:
             self._clear_sip_detail_fields(item)
             self._complete_manual_item(item, coverage, accepted=True)
             return [command.item_id], numbering_stale or "coordinates" in command.fields
+        if isinstance(command, EditGeometricTolerance):
+            item = self._active_item(items, command.item_id)
+            self._edit_geometric_tolerance(item, command)
+            self._clear_sip_detail_fields(item)
+            item.pop("confidence_decision", None)
+            self._complete_manual_item(item, coverage, accepted=True)
+            item["acceptance_source"] = "manual"
+            return [command.item_id], numbering_stale
         if isinstance(command, Add):
             item_id = str(uuid.uuid4())
             source_location_ids = (
@@ -1446,6 +1455,44 @@ class ReviewService:
             ).model_dump(mode="json")
             validated = {key: validated_candidate[key] for key in fields}
         item.update(validated)
+        item["source_type"] = "manual"
+
+    @staticmethod
+    def _edit_geometric_tolerance(
+        item: dict[str, Any],
+        command: EditGeometricTolerance,
+    ) -> None:
+        if item.get("item_type") != "geometric_tolerance":
+            raise ValueError(
+                "edit_geometric_tolerance requires a geometric tolerance item"
+            )
+        evidence_ref = item.get("evidence_ref")
+        if not isinstance(evidence_ref, str) or not evidence_ref.strip():
+            raise ValueError("geometric tolerance item is missing evidence_ref")
+        source_location_ids = item.get("source_location_ids", [])
+        if not isinstance(source_location_ids, list) or not all(
+            isinstance(source_id, str) and source_id.strip()
+            for source_id in source_location_ids
+        ):
+            raise ValueError("geometric tolerance item has invalid source IDs")
+        coordinates = _COORDINATES.validate_python(item.get("coordinates"))
+        updated = GeometricToleranceCandidate.from_frames(
+            candidate_id=str(item["item_id"]),
+            raw_text=str(item.get("raw_text", "")),
+            tolerance_type=command.tolerance_type,
+            frames=command.frames,
+            coordinates=coordinates,
+            source_location_ids=tuple(source_location_ids),
+            evidence_ref=evidence_ref,
+            standard_context=command.standard_context,
+        ).model_dump(
+            mode="json",
+            exclude={"candidate_id", "source_location_ids"},
+        )
+        preserved = copy.deepcopy(item)
+        item.clear()
+        item.update(preserved)
+        item.update(updated)
         item["source_type"] = "manual"
 
     @staticmethod

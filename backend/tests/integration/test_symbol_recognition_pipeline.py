@@ -175,8 +175,9 @@ class FixtureVisionProvider:
         return VisionResult(
             request_id=f"fixture-visual-{self.symbol_calls}",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
                 "detections": detections,
+                "gdt_frames": [],
             },
             usage={},
         )
@@ -368,7 +369,7 @@ def _visual_review(
 ) -> dict[str, object]:
     return {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "symbol_kinds": symbol_kinds,
         "rejection_code": rejection_code,
         "confidence_signal": (
@@ -1497,8 +1498,9 @@ def test_invalid_project_cache_is_quarantined_before_fresh_recomputation(
         )
     )
     response = {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "detections": [],
+        "gdt_frames": [],
     }
     response_sha256 = sha256(
         json.dumps(
@@ -1643,8 +1645,9 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
             return VisionResult(
                 request_id="provider-must-not-run",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
                     "detections": [],
+                    "gdt_frames": [],
                 },
                 usage={},
             )
@@ -2298,7 +2301,7 @@ def test_systemic_symbol_failure_creates_no_result(
                     requires_confirmation=True,
                     advisor_review={
                         "route": "visual_symbol",
-                        "schema_version": "visual-symbol-review/2",
+                        "schema_version": "visual-symbol-review/3",
                         "symbol_kinds": ["diameter"],
                         "rejection_code": "visual_no_detection",
                         "confidence_signal": None,

@@ -279,6 +279,29 @@ def test_original_is_immutable_and_current_is_separate(
     assert working.items is not persisted.candidates
 
 
+def test_legacy_gdt_reader_projects_typed_unknown_without_inference() -> None:
+    item = ReviewService._current_item(
+        {
+            "candidate_id": "legacy-gdt",
+            "payload": {
+                "raw_text": "∥ 0.1",
+                "coordinates": [1, 2, 3, 4],
+                "coarse_type": "geometric_tolerance",
+                "requires_confirmation": True,
+            },
+            "source_location_ids": ["legacy-source"],
+        },
+        "automatic-result/2",
+    )
+
+    assert item["item_type"] == "geometric_tolerance"
+    assert item["tolerance_type"] == "unknown"
+    assert item["tolerance_symbol"] is None
+    assert item["tolerance_value"] is None
+    assert item["frames"] == []
+    assert item["normalized_text"] == "∥ 0.1"
+
+
 def test_create_working_copy_moves_ready_project_to_editing(
     db_session: Session,
     raw_result: AutomaticResult,
@@ -664,7 +687,7 @@ def test_visual_coverage_exposes_only_owner_committed_discriminator() -> None:
         },
         {
             "route": "visual_symbol",
-            "schema_version": "visual-symbol-review/2",
+            "schema_version": "visual-symbol-review/3",
             "symbol_kinds": [],
             "rejection_code": "visual_no_detection",
             "confidence_signal": None,

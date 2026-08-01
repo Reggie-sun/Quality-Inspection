@@ -107,25 +107,28 @@ def _seed_layers(
                 status="succeeded",
                 result_ref=f"automatic-result://{automatic_result_id}",
             ),
-            AutomaticResult(
-                id=automatic_result_id,
-                project_id=project_id,
-                source_file_id=source_file_id,
-                logical_job_id=logical_job_id,
-                inventory_ref=f"asset://tests/{project_id}/inventory.json",
-                candidates=[
-                    {
-                        "candidate_id": "candidate-1",
-                        "payload": candidate_payload,
-                        "source_location_ids": ["source-structured"],
-                    }
-                ],
-                coverage={"entries": [], "coverage_checked": True},
-                technical_requirements=[],
-                provider_call_ids=[],
-                schema_version=schema_version,
-            ),
         ]
+    )
+    session.flush()
+    session.add(
+        AutomaticResult(
+            id=automatic_result_id,
+            project_id=project_id,
+            source_file_id=source_file_id,
+            logical_job_id=logical_job_id,
+            inventory_ref=f"asset://tests/{project_id}/inventory.json",
+            candidates=[
+                {
+                    "candidate_id": "candidate-1",
+                    "payload": candidate_payload,
+                    "source_location_ids": ["source-structured"],
+                }
+            ],
+            coverage={"entries": [], "coverage_checked": True},
+            technical_requirements=[],
+            provider_call_ids=[],
+            schema_version=schema_version,
+        )
     )
     working_copy_id: uuid.UUID | None = None
     if include_review_layers:
