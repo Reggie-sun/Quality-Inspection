@@ -30,10 +30,10 @@
 
 ## BUG-20260801-live-qwen-symbol-timeout
 
-- Status: 未解决；GDT-10 Step 4 blocked
+- Status: 未解决；GDT-10 Step 4 blocked after production-path Provider classification gap
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
-- Recurrence: 3
+- Recurrence: 4
 - Surface: authenticated `qwen3-vl-plus` visual-symbol call during repository-owned full-P0 live sample preparation
 - Symptom: current runtime identity and `/3` Provider contract are correct, but `make verify-p0-live` fails before the first sample creates an automatic result；Harness reports `sample 1 application upload/process failed` and `CandidateAdvisorFailure: Visual symbol Advisor call failed`
 - Previously correct behavior: every required symbol crop must receive a current authenticated response, persist request/response/call identity, complete typed Case A/B + existing non-GD&T evaluation, and pause at `visual_qa_pending:first-pdf-balloons`
@@ -55,7 +55,15 @@
 - Fix: `_PREPARE_PROJECT_PROGRAM::create_live_project()` 通过 canonical `symbol_routing_identity(settings.symbol_recognition_mode)` 枡结项目 mode/router，并把二者显式传给 `Project`；legacy runtime 仍得到 `legacy_high_recall/legacy`，不改变 database default 或正式 intake Owner。
 - Regression check: RED 为 production/legacy 两项均因缺少 frozen project constructor 失败；GREEN targeted identity/runtime `9 passed`、focused live contract `117 passed`、full Harness `229 passed`、`check-contracts.py`、Ruff 和 diff-check 通过。直接 full pytest 因错误继承 Compose-only `postgres` host 得到 DNS 级联，不作为 code verdict；`make test-backend` 又被已知 Docker address-pool exhaustion 阻断。等价 host-network + tmpfs disposable PostgreSQL 17 完成 migration 和相同 backend suite，结果 `1734 passed / 14 warnings`，临时 container 已移除。
 - Smoke: `auto-feature-smoke-test` 选择 embedded project identity targeted gate；API/UI contract 未变，Chrome smoke 不适用。
-- Review/Change: independent reviewer confirmed model defaults、formal intake Owner、worker trust rule、sealed run state and both production/legacy pairs；verdict `accept`。Immutable registrations/full-run failure are preserved by `e033752`；fix commit pending at record update。The paid invocation is consumed and no replacement run is authorized by this bug record。
+- Review/Change: independent reviewer confirmed model defaults、formal intake Owner、worker trust rule、sealed run state and both production/legacy pairs；verdict `accept`。Immutable registrations/full-run failure are preserved by `e033752`，and the Harness identity fix is committed at `7d7da66`。The paid invocation is consumed and no replacement run is authorized by this bug record。
+
+### Recurrence 4 — correct production identity, unclassified fast Provider failures
+
+- Reproduction: new reviewed post-fix cycle created registrations `20260801T153339428826Z-f5165843`、`20260801T153346779223Z-fb6bee16` and full run `20260801T153347947042Z-0fea7c81`。Runtime stayed stable；project `b6db6078-9839-4cf0-8a31-4465a0057012` correctly froze `production_uncertainty/symbol-uncertainty-router/1`，proving GDT-10B is active。
+- Observed failure: production routing persisted `199` decisions、`194` attempt events and `192` outcomes。Of `198` escalated groups，`190` were denied by the plan budget and recorded `not_started_budget_exhausted` / `budget_exhausted`；`8` were admitted，but only the first two reached Provider work、wrote run-bound crops and then recorded `provider_transport_failure` with no Provider request ID in under one second。The other `6` admitted groups were not submitted after the first-batch worker failures and therefore have no attempt/outcome terminal evidence。No Provider call record、cache、AutomaticResult、pause、symbol report or receipt exists；run sealed `live_start_failed:RuntimeError` and evidence is committed at `91e02b5`。
+- Classification gap: `QwenVisionProvider.review_symbols()` only localizes timeout/connection exceptions；a status/metadata/other exception reaches `CandidateAdvisor.call_once()` as unclassified。`_visual_review_result()` persists unknown `CandidateAdvisorFailure` as `provider_transport_failure` but rethrows it with `failure_category=None`；the production collector therefore cannot place it in `localized_failure_stages` and fails the entire document。The current redacted evidence cannot distinguish HTTP 4xx/5xx、fast transport or metadata failure，so treating every unknown as transport/partial would be unsafe。
+- Stop boundary: GDT-10C is consumed。No GDT-10D、direct Provider diagnostic or additional live call is authorized。Next work requires a separate approved design/plan for safe Provider status classification and redacted durable diagnostic evidence before any implementation or new verification cycle。
+- Review/cleanup: independent reviewer first rejected the record because it omitted the `6` admitted-but-never-submitted groups；the corrected `190 + 8 = 2 + 6` evidence account and safe stop boundary received final verdict `accept`。After the cycle ended，only isolated `api/worker` were recreated without the four credential keys while preserving `production_uncertainty/symbol-uncertainty-router/1` and the pinned model；other running-container identity hash stayed unchanged，health remained `200/200`，and the 12/12 runtime/database identity check passed。The live、safe-identity and retained root-`.env` temporary Compose override files were all removed。
 
 ## BUG-20260801-live-api-runtime-identity-drift
 
