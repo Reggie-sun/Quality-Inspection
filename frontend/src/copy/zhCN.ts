@@ -321,7 +321,7 @@ export const zhCN = {
     cancelSip: "取消当前 SIP 字段修改",
     statusPending: "待人工审核",
     statusGlobalSipPending: "待确认进入 SIP",
-    statusBalloonPending: "待选择气泡",
+    statusBalloonPending: "待确认是否需要气泡",
     statusAutoAccepted: "自动通过",
     autoAcceptedCandidateNumber: (number: number) =>
       `自动通过气泡 ${number}`,
@@ -497,7 +497,7 @@ export const zhCN = {
     collapse: "收起工作区",
     renderFailed: "PDF 页面渲染失败，请切换页面后重试。",
     overlay: "工程图纸标注层",
-    candidateMarker: (number: number) => `候选气泡 ${number}`,
+    candidateMarker: (number: number) => `候选编号 ${number}（非正式气泡）`,
     autoAcceptedMarker: (number: number) =>
       `自动通过气泡 ${number}`,
     legend: "图纸标注图例",
@@ -506,7 +506,7 @@ export const zhCN = {
     thumbnailUnavailable: (page: number) => `第 ${page} 页预览不可用`,
     formalBalloon: "正式气泡",
     autoAcceptedPendingNumber: "自动通过",
-    candidate: "候选项",
+    candidate: "候选编号（非正式气泡）",
     source: "来源标注",
     excluded: "已排除",
   },
@@ -517,7 +517,7 @@ export const zhCN = {
     notReviewed: "尚未审核",
     pendingReviewActions: (reviewCount: number, balloonCount: number) => [
       reviewCount > 0 ? `待审核检验项 ${reviewCount} 项` : "",
-      balloonCount > 0 ? `待选择气泡 ${balloonCount} 项` : "",
+      balloonCount > 0 ? `待确认是否需要气泡 ${balloonCount} 项` : "",
     ].filter(Boolean).join(" · "),
     sipPending: (count: number) => `SIP 待生成 ${count} 项`,
     sipExceptions: (count: number) => `SIP 异常 ${count} 项`,

@@ -920,7 +920,9 @@ test("已保留但未选择气泡的项目仍留在待人工审核筛选", () =>
     />,
   );
 
-  expect(screen.getByRole("row", { name: /3.2.*待选择气泡/ })).not.toBeNull();
+  expect(screen.getByRole("row", {
+    name: /3.2.*待确认是否需要气泡/,
+  })).not.toBeNull();
   expect(screen.queryByText("没有符合条件的检验项。")).toBeNull();
 });
 

@@ -38,7 +38,7 @@ describe("OverlayLayer", () => {
     expect(candidate.getAttribute("data-selected")).toBe("true");
   });
 
-  test("候选气泡显示在首个候选框并可通过鼠标和键盘选择", () => {
+  test("非正式候选编号显示在首个候选框并可通过鼠标和键盘选择", () => {
     const onSelectItem = vi.fn();
     render(
       <OverlayLayer
@@ -65,7 +65,9 @@ describe("OverlayLayer", () => {
       />,
     );
 
-    const markers = screen.getAllByRole("button", { name: "候选气泡 3" });
+    const markers = screen.getAllByRole("button", {
+      name: "候选编号 3（非正式气泡）",
+    });
     expect(markers).toHaveLength(1);
     expect(markers[0].getAttribute("data-testid")).toBe(
       "candidate-number-candidate-first",
@@ -132,9 +134,13 @@ describe("OverlayLayer", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "候选气泡 1" })
+    expect(screen.getByRole("button", {
+      name: "候选编号 1（非正式气泡）",
+    })
       .getAttribute("tabindex")).toBe("-1");
-    const selectedCandidate = screen.getByRole("button", { name: "候选气泡 2" });
+    const selectedCandidate = screen.getByRole("button", {
+      name: "候选编号 2（非正式气泡）",
+    });
     expect(selectedCandidate.getAttribute("tabindex")).toBe("0");
     expect(selectedCandidate.querySelector("circle")?.getAttribute("fill"))
       .toBe("#FFFBEB");
@@ -186,7 +192,7 @@ describe("OverlayLayer", () => {
     expect(balloon.getAttribute("data-read-only")).toBe("true");
   });
 
-  test("候选气泡优先放在候选框外且相邻序号不会互相重叠", () => {
+  test("非正式候选编号优先放在候选框外且相邻序号不会互相重叠", () => {
     render(
       <OverlayLayer
         pageWidth={200}
@@ -211,9 +217,13 @@ describe("OverlayLayer", () => {
       />,
     );
 
-    const firstCircle = screen.getByRole("button", { name: "候选气泡 1" })
+    const firstCircle = screen.getByRole("button", {
+      name: "候选编号 1（非正式气泡）",
+    })
       .querySelector("circle")!;
-    const secondCircle = screen.getByRole("button", { name: "候选气泡 2" })
+    const secondCircle = screen.getByRole("button", {
+      name: "候选编号 2（非正式气泡）",
+    })
       .querySelector("circle")!;
     const firstX = Number(firstCircle.getAttribute("cx"));
     const firstY = Number(firstCircle.getAttribute("cy"));
@@ -225,7 +235,7 @@ describe("OverlayLayer", () => {
     expect(Math.hypot(secondX - firstX, secondY - firstY)).toBeGreaterThanOrEqual(20);
   });
 
-  test("候选气泡使用黑色箭头指向对应候选框", () => {
+  test("非正式候选编号使用黑色箭头指向对应候选框", () => {
     render(
       <OverlayLayer
         pageWidth={200}
@@ -251,11 +261,13 @@ describe("OverlayLayer", () => {
     expect(leader.getAttribute("marker-end")).toBe("url(#candidate-arrowhead)");
     expect(leader.getAttribute("aria-hidden")).toBe("true");
     expect(
-      screen.getByRole("button", { name: "候选气泡 1" }).contains(leader),
+      screen.getByRole("button", {
+        name: "候选编号 1（非正式气泡）",
+      }).contains(leader),
     ).toBe(false);
   });
 
-  test("候选气泡位于来源标注之后并在重叠时保持可选择", () => {
+  test("非正式候选编号位于来源标注之后并在重叠时保持可选择", () => {
     const onSelectItem = vi.fn();
     render(
       <OverlayLayer
@@ -279,7 +291,9 @@ describe("OverlayLayer", () => {
     );
 
     const source = screen.getByTestId("source-source-overlap");
-    const marker = screen.getByRole("button", { name: "候选气泡 1" });
+    const marker = screen.getByRole("button", {
+      name: "候选编号 1（非正式气泡）",
+    });
     expect(source.compareDocumentPosition(marker) & Node.DOCUMENT_POSITION_FOLLOWING)
       .not.toBe(0);
 
@@ -304,10 +318,12 @@ describe("OverlayLayer", () => {
     );
 
     expect(screen.getByTestId("candidate-candidate-without-item")).not.toBeNull();
-    expect(screen.queryByRole("button", { name: "候选气泡 1" })).toBeNull();
+    expect(screen.queryByRole("button", {
+      name: "候选编号 1（非正式气泡）",
+    })).toBeNull();
   });
 
-  test("有效正式气泡抑制候选气泡，已删除正式气泡不抑制", () => {
+  test("有效正式气泡抑制非正式候选编号，已删除正式气泡不抑制", () => {
     const candidate = {
       id: "candidate-1",
       itemId: "item-1",
@@ -331,7 +347,9 @@ describe("OverlayLayer", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "候选气泡 1" })).toBeNull();
+    expect(screen.queryByRole("button", {
+      name: "候选编号 1（非正式气泡）",
+    })).toBeNull();
     expect(screen.getByRole("button", { name: "正式气泡 7" })).not.toBeNull();
 
     rerender(
@@ -351,7 +369,9 @@ describe("OverlayLayer", () => {
       />,
     );
 
-    const restoredCandidate = screen.getByRole("button", { name: "候选气泡 1" });
+    const restoredCandidate = screen.getByRole("button", {
+      name: "候选编号 1（非正式气泡）",
+    });
     expect(restoredCandidate).not.toBeNull();
     expect(restoredCandidate.getAttribute("tabindex")).toBeNull();
     expect(screen.getByTestId("candidate-leader-candidate-1")).not.toBeNull();
@@ -469,9 +489,13 @@ describe("OverlayLayer", () => {
     expect(autoCircle.getAttribute("stroke")).toBe("#c23b3b");
     expect(auto.querySelector("text")?.getAttribute("fill")).toBe("#c23b3b");
 
-    const unknown = screen.getByRole("button", { name: "候选气泡 2" });
+    const unknown = screen.getByRole("button", {
+      name: "候选编号 2（非正式气泡）",
+    });
     expect(unknown.querySelector("circle")?.getAttribute("stroke")).toBe("#2563EB");
-    const unknownBand = screen.getByRole("button", { name: "候选气泡 3" });
+    const unknownBand = screen.getByRole("button", {
+      name: "候选编号 3（非正式气泡）",
+    });
     expect(unknownBand.querySelector("circle")?.getAttribute("stroke"))
       .toBe("#2563EB");
 

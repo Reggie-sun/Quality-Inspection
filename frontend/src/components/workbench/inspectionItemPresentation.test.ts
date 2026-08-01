@@ -68,7 +68,7 @@ describe("inspectionItemPresentation", () => {
 
     expect(inspectionItemPresentation(item)).toMatchObject({
       status: "pending",
-      statusLabel: "待选择气泡",
+      statusLabel: "待确认是否需要气泡",
     });
     expect(isReviewRequiredItem(item)).toBe(true);
   });

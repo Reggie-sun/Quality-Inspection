@@ -220,7 +220,7 @@ test("待生成的 SIP 行与真实异常分开显示", () => {
     .toBe("SIP 异常 2 项");
 });
 
-test("正式文件门禁显示真实待审核与待选择气泡数量", () => {
+test("正式文件门禁显示真实待审核与待确认气泡需求数量", () => {
   const post = vi.fn() as unknown as PostJson;
   render(
     <ExportPanel
@@ -236,7 +236,7 @@ test("正式文件门禁显示真实待审核与待选择气泡数量", () => {
   );
 
   expect(screen.getByRole("status").textContent).toBe(
-    "待审核检验项 13 项 · 待选择气泡 4 项",
+    "待审核检验项 13 项 · 待确认是否需要气泡 4 项",
   );
   expect(screen.getByRole("button", { name: "生成正式文件" })
     .hasAttribute("disabled")).toBe(true);

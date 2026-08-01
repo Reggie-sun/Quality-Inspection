@@ -362,7 +362,7 @@ test("工作台加载完成后不保留过期识别状态", async () => {
 });
 
 
-test("无正式气泡时显示候选气泡并在检验项详情复用候选序号", async () => {
+test("无正式气泡时显示非正式候选编号并在检验项详情复用候选序号", async () => {
   const snapshot = reviewedResponse();
   snapshot.project.state = "editing";
   snapshot.working_copy.items_frozen_at = null;
@@ -397,7 +397,9 @@ test("无正式气泡时显示候选气泡并在检验项详情复用候选序�
     />,
   );
 
-  expect(await screen.findByRole("button", { name: "候选气泡 1" })).not.toBeNull();
+  expect(await screen.findByRole("button", {
+    name: "候选编号 1（非正式气泡）",
+  })).not.toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "筛选全部" }));
   fireEvent.click(screen.getByRole("row", { name: /M6/ }));
   const detail = screen.getByRole("article", { name: "检验项 1 · 螺纹" });
@@ -537,7 +539,7 @@ test("candidate 单边自动投影不得绕过 working item 完整合同", async
 
   for (const [number, rawText] of [[1, "10"], [2, "20"], [3, "30"]] as const) {
     expect(await screen.findByRole("button", {
-      name: `候选气泡 ${number}`,
+      name: `候选编号 ${number}（非正式气泡）`,
     })).not.toBeNull();
     expect(screen.queryByRole("button", {
       name: `自动通过气泡 ${number}`,

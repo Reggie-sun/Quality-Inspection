@@ -1487,7 +1487,7 @@ describe("InspectionWorkbench", () => {
     );
 
     openAuxiliaryPanel();
-    expect(screen.getByText("待选择气泡 1 项", {
+    expect(screen.getByText("待确认是否需要气泡 1 项", {
       selector: "[role='status']",
     })).not.toBeNull();
   });

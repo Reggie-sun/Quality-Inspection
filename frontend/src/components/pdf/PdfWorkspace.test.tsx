@@ -458,7 +458,7 @@ describe("PdfWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "展开工作区" }));
     expect(screen.getByTestId("pdf-workspace").getAttribute("data-expanded")).toBe("true");
     expect(screen.getByRole("list", { name: "图纸标注图例" }).textContent)
-      .toContain("正式气泡候选项来源标注已排除");
+      .toContain("正式气泡候选编号（非正式气泡）来源标注已排除");
   });
 
   test("图例以同一红色色相区分自动通过空心气泡与正式实心气泡", () => {
