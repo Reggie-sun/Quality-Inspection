@@ -22,6 +22,7 @@ from app.candidates.symbol_review import (
     visual_cache_key,
     visual_review_prompt,
 )
+from app.pdf.gdt_frames import GdtCellObservation, GdtFrameObservation
 from app.pdf.schemas import TextObservation, VisualObservation
 from app.pdf.visual_observations import PROPOSAL_RULE_VERSION
 from app.providers.qwen_vl import (
@@ -215,9 +216,10 @@ def test_qwen_visual_symbol_sampling_temperature_is_pinned_to_zero() -> None:
                                     json.dumps(
                                         {
                                             "schema_version": (
-                                                "visual-symbol-review/2"
+                                                "visual-symbol-review/3"
                                             ),
                                             "detections": [],
+                                            "gdt_frames": [],
                                         }
                                     )
                                 )
@@ -246,7 +248,7 @@ def test_qwen_visual_symbol_sampling_temperature_is_pinned_to_zero() -> None:
         for key, value in completions.calls[0].items()
         if key in sampling_keys
     } == {"temperature": 0}
-    assert VISUAL_SCHEMA_VERSION == "visual-symbol-review/2"
+    assert VISUAL_SCHEMA_VERSION == "visual-symbol-review/3"
 
 
 def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
@@ -255,8 +257,9 @@ def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
 ) -> None:
     valid_arguments = json.dumps(
         {
-            "schema_version": "visual-symbol-review/2",
+            "schema_version": "visual-symbol-review/3",
             "detections": [],
+            "gdt_frames": [],
         }
     )
     private_marker = "private-marker-provider-response"
@@ -550,7 +553,7 @@ def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
     private_marker = "private-marker-provider-response"
     arguments = json.dumps(
         {
-            "schema_version": "visual-symbol-review/2",
+            "schema_version": "visual-symbol-review/3",
             "detections": [
                 {
                     "visual_observation_id": "visual-001",
@@ -559,6 +562,7 @@ def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
                     "confidence_signal": 0.98,
                 }
             ],
+            "gdt_frames": [],
         }
     )
 
@@ -598,8 +602,8 @@ def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
             "instance_type": "object",
             "required_member": "symbol_kind",
             "schema_sha256": (
-                "8f331090b210d1057e4da36cd9b61b82"
-                "c9b07f5a308f29d07ca999f9ffc92b66"
+                "cb4ee4ce69568b863dd8a2b5b1e96112"
+                "59b2284fe47859f83246f8b6fb39767a"
             ),
         },
     }
@@ -647,8 +651,9 @@ def test_qwen_native_integer_bbox_is_normalized_before_strict_schema() -> None:
         "confidence_signal": 0.98,
     }
     canonical = {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "detections": [canonical_detection],
+        "gdt_frames": [],
     }
     assert (
         provider_for(canonical).review_symbols(image, "safe prompt").payload
@@ -672,10 +677,11 @@ def test_qwen_native_integer_bbox_is_normalized_before_strict_schema() -> None:
 
 def test_qwen_missing_structural_schema_version_is_normalized() -> None:
     canonical = {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "detections": [],
+        "gdt_frames": [],
     }
-    qwen_native = {"detections": []}
+    qwen_native = {"detections": [], "gdt_frames": []}
 
     class FixedCompletions:
         @staticmethod
@@ -768,7 +774,7 @@ def test_qwen_native_bbox_normalization_rejects_other_invalid_forms(
     bbox: list[object],
 ) -> None:
     payload = {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "detections": [
             {
                 "visual_observation_id": "visual-001",
@@ -778,6 +784,7 @@ def test_qwen_native_bbox_normalization_rejects_other_invalid_forms(
                 "confidence_signal": 0.98,
             }
         ],
+        "gdt_frames": [],
     }
 
     class InvalidCompletions:
@@ -855,6 +862,63 @@ def test_visual_prompt_requires_independent_exact_multikind_reporting() -> None:
     ]
 
 
+def test_visual_prompt_includes_ordered_gdt_frame_context() -> None:
+    frame = GdtFrameObservation(
+        observation_id="frame-a",
+        page_index=0,
+        bbox_pdf=(20.0, 40.0, 90.0, 60.0),
+        bbox_normalized=(0.2, 0.4, 0.9, 0.6),
+        cells=(
+            GdtCellObservation(0, (20.0, 40.0, 40.0, 60.0), (0.2, 0.4, 0.4, 0.6)),
+            GdtCellObservation(1, (40.0, 40.0, 65.0, 60.0), (0.4, 0.4, 0.65, 0.6)),
+            GdtCellObservation(2, (65.0, 40.0, 90.0, 60.0), (0.65, 0.4, 0.9, 0.6)),
+        ),
+        associated_text_observation_ids=("text-line-001",),
+        proposal_source="native_vector",
+        proposal_state="complete",
+        geometry_sha256="a" * 64,
+    )
+    prompt = json.loads(
+        visual_review_prompt(
+            (
+                _visual_observation(
+                    "visual-frame-a",
+                    (20.0, 40.0, 90.0, 60.0),
+                    ("text-line-001",),
+                ),
+            ),
+            text_observations={
+                "text-line-001": _text_observation(
+                    "text-line-001",
+                    "0.1 A",
+                    observation_level="line",
+                )
+            },
+            crop_bbox_pdf=(10.0, 20.0, 110.0, 120.0),
+            gdt_frames=(frame,),
+        )
+    )
+
+    assert prompt["gdt_frame_contexts"] == [
+        {
+            "frame_observation_id": "frame-a",
+            "frame_bbox_normalized": [0.1, 0.2, 0.8, 0.4],
+            "cells": [
+                {"cell_index": 0, "bbox_normalized": [0.1, 0.2, 0.3, 0.4]},
+                {"cell_index": 1, "bbox_normalized": [0.3, 0.2, 0.55, 0.4]},
+                {"cell_index": 2, "bbox_normalized": [0.55, 0.2, 0.8, 0.4]},
+            ],
+            "associated_text_allowlist": [
+                {
+                    "observation_id": "text-line-001",
+                    "observation_level": "line",
+                    "raw_text": "0.1 A",
+                }
+            ],
+        }
+    ]
+
+
 def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     """PROV-01: the visual request and every cache identity dimension are frozen."""
     fixture = json.loads(
@@ -865,6 +929,17 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         ).read_text(encoding="utf-8")
     )
     qwen_symbol_fixture = fixture["payload"]
+    fixture_response = json.loads(qwen_symbol_fixture["arguments"])
+    fixture_response["schema_version"] = VISUAL_SCHEMA_VERSION
+    fixture_response["gdt_frames"] = []
+    qwen_symbol_fixture = {
+        **qwen_symbol_fixture,
+        "arguments": json.dumps(
+            fixture_response,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    }
     assert (
         fixture["adapter_version"]
         == VISUAL_ADAPTER_VERSION
@@ -945,7 +1020,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     expected_prompt = {
         "task": "review_local_engineering_drawing_symbol_contexts",
         "prompt_version": "visual-symbol-prompt/4",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "visual_observation_ids": ["visual-001", "visual-002"],
         "visual_contexts": [
             {
@@ -976,6 +1051,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                 ],
             },
         ],
+        "gdt_frame_contexts": [],
         "symbol_kind_guide": {
             "diameter": "Φ/∅/⌀ beside a size value",
             "depth": "depth symbol beside a depth value",
@@ -1016,6 +1092,8 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                 "use_only_associated_text_observation_ids_from_the_matching_"
                 "visual_context"
             ),
+            "emit_empty_gdt_frames_when_no_frame_is_present",
+            "use_only_ordered_gdt_frame_cells_and_allowlisted_text_ids",
             "detection_bbox_normalized_is_relative_to_the_entire_crop",
             "detection_bbox_must_have_positive_width_and_height",
             "prefer_line_level_text_when_line_and_span_duplicate_raw_text",
