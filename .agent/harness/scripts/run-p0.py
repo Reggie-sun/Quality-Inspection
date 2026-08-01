@@ -134,6 +134,11 @@ LIVE_API_GDT_RUNTIME_PATHS = (
     "app/pdf/gdt_frames.py",
     "app/pdf/gdt_raster_frames.py",
 )
+EXPECTED_RECOGNITION_IDENTITY = {
+    "mode": "production_uncertainty",
+    "router": "symbol-uncertainty-router/1",
+    "model": "qwen3-vl-plus-2025-12-19",
+}
 _ACTIVE_RUN_DIR: Path | None = None
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 SAFE_BROWSER_ENV_KEYS = {
@@ -1419,46 +1424,83 @@ def _chrome_identity(environment: Mapping[str, str]) -> dict[str, str]:
     }
 
 
-def _require_api_runtime_identity() -> None:
-    expected: dict[str, str] = {}
+def _require_compose_runtime_identity() -> None:
+    expected_hashes: dict[str, str] = {}
     for relative in LIVE_API_GDT_RUNTIME_PATHS:
         path = ROOT / "backend" / relative
         if path.is_symlink() or not path.is_file():
             raise ValueError("current worktree GDT runtime identity is incomplete")
-        expected[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        expected_hashes[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    expected = {
+        **EXPECTED_RECOGNITION_IDENTITY,
+        "hashes": expected_hashes,
+    }
     program = (
         "import hashlib,json,sys; from pathlib import Path; "
-        "paths=json.loads(sys.argv[1]); result={}; "
+        "from app.candidates.symbol_routing import symbol_routing_identity; "
+        "from app.config import get_settings; "
+        "paths=json.loads(sys.argv[1]); hashes={}; "
         "exec(\"for relative in paths:\\n"
         " path=Path('/app')/relative\\n"
-        " result[relative]=(hashlib.sha256(path.read_bytes()).hexdigest() "
+        " hashes[relative]=(hashlib.sha256(path.read_bytes()).hexdigest() "
         "if path.is_file() and not path.is_symlink() else None)\"); "
+        "settings=get_settings(); "
+        "mode,router=symbol_routing_identity(settings.symbol_recognition_mode); "
+        "result={'mode':mode,'router':router,'model':settings.qwen_model.strip(),"
+        "'hashes':hashes}; "
         "print(json.dumps(result,sort_keys=True))"
     )
-    result = subprocess.run(
+    for service in ("api", "worker"):
+        result = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "exec",
+                "-T",
+                service,
+                "python",
+                "-c",
+                program,
+                json.dumps(list(LIVE_API_GDT_RUNTIME_PATHS)),
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        try:
+            observed = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            observed = None
+        if result.returncode != 0 or observed != expected:
+            raise ValueError(
+                "Compose runtime identity does not match GDT-10 live contract"
+            )
+    database = subprocess.run(
         [
             "docker",
             "compose",
             "exec",
             "-T",
-            "api",
-            "python",
-            "-c",
-            program,
-            json.dumps(list(LIVE_API_GDT_RUNTIME_PATHS)),
+            "postgres",
+            "psql",
+            "--username",
+            "qi",
+            "--dbname",
+            "qi",
+            "--tuples-only",
+            "--no-align",
+            "--command",
+            "SELECT version_num FROM alembic_version",
         ],
         cwd=ROOT,
         check=False,
         capture_output=True,
         text=True,
     )
-    try:
-        observed = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        observed = None
-    if result.returncode != 0 or observed != expected:
+    if database.returncode != 0 or database.stdout.strip() != "0013":
         raise ValueError(
-            "Compose API runtime identity does not match current worktree"
+            "Compose runtime identity does not match GDT-10 live contract"
         )
 
 
@@ -1480,7 +1522,7 @@ def preflight_full_p0_live(
     _current_live_identity(current_environment)
     if source_root is None or not source_root.strip():
         raise ValueError(f"{LIVE_SOURCE_ROOT_ENV} is required")
-    _require_api_runtime_identity()
+    _require_compose_runtime_identity()
 
     receipt_module = _receipt_module()
     receipt_module.check_contract_authority(ROOT)

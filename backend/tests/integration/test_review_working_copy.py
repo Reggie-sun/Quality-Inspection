@@ -794,3 +794,68 @@ def test_visual_coverage_exposes_only_owner_committed_discriminator() -> None:
             }
         ]
         assert projected["review_required_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    [
+        "provider_timeout",
+        "provider_transport_failure",
+        "provider_schema_invalid",
+    ],
+)
+def test_provider_failure_preserves_owner_committed_discriminator(
+    failure_stage: str,
+) -> None:
+    projected = ReviewService._review_coverage(
+        {
+            "blocking_count": 0,
+            "review_required_count": 1,
+            "coverage_checked": True,
+            "blocking_observation_ids": [],
+            "entries": [
+                {
+                    "observation_id": "visual-timeout",
+                    "disposition": "ambiguous",
+                    "source_location_id": "visual-timeout",
+                    "coordinates": [1, 2, 3, 4],
+                    "candidate_id": None,
+                    "requires_confirmation": True,
+                    "advisor_review": {
+                        "route": "visual_symbol",
+                        "schema_version": "visual-symbol-review/3",
+                        "failure_stage": failure_stage,
+                    },
+                }
+            ],
+        }
+    )
+
+    assert projected["entries"] == [
+        {
+            "observation_id": "visual-timeout",
+            "disposition": "ambiguous",
+            "source_location_id": "visual-timeout",
+            "coordinates": [1, 2, 3, 4],
+            "candidate_id": None,
+            "requires_confirmation": True,
+            "failure_stage": failure_stage,
+        }
+    ]
+    assert projected["review_required_count"] == 1
+    assert "advisor_review" not in projected["entries"][0]
+
+    normalized_again = ReviewService._review_coverage(projected)
+
+    assert normalized_again == projected
+    assert ReviewService.freeze_blockers(
+        [],
+        normalized_again,
+        {
+            "material_code": "MAT-001",
+            "material_name": "fixture",
+            "drawing_number": "GDT-10A",
+            "material": "steel",
+            "revision": "A",
+        },
+    ) == ["unresolved_confirmation"]

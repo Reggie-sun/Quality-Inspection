@@ -1756,11 +1756,98 @@ def test_full_live_activation_preflights_bytes_before_fresh_registration(
     ]
 
 
-def test_live_preflight_rejects_stale_api_gdt_runtime(
+def _expected_gdt_runtime_payload(runner: ModuleType) -> dict[str, object]:
+    return {
+        **runner.EXPECTED_RECOGNITION_IDENTITY,
+        "hashes": {
+            relative: hashlib.sha256(
+                (runner.ROOT / "backend" / relative).read_bytes()
+            ).hexdigest()
+            for relative in runner.LIVE_API_GDT_RUNTIME_PATHS
+        },
+    }
+
+
+def _runtime_identity_run(
+    runner: ModuleType,
+    *,
+    payloads: dict[str, object],
+    returncodes: dict[str, int] | None = None,
+):
+    calls: list[str] = []
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        assert argv[:4] == ["docker", "compose", "exec", "-T"]
+        service = argv[4]
+        calls.append(service)
+        payload = payloads[service]
+        stdout = payload if isinstance(payload, str) else json.dumps(payload)
+        return subprocess.CompletedProcess(
+            argv,
+            (returncodes or {}).get(service, 0),
+            stdout,
+            "",
+        )
+
+    return calls, fake_run
+
+
+@pytest.mark.parametrize("service", ["api", "worker"])
+@pytest.mark.parametrize("field", ["mode", "router", "model"])
+def test_live_preflight_rejects_recognition_identity_mismatch(
     monkeypatch: pytest.MonkeyPatch,
+    service: str,
+    field: str,
 ) -> None:
     runner = _load_module(
-        "qi_run_p0_api_runtime_identity",
+        f"qi_run_p0_runtime_identity_{service}_{field}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    valid = _expected_gdt_runtime_payload(runner)
+    mismatched = {**valid, field: "mismatch"}
+    payloads = {
+        "api": mismatched if service == "api" else valid,
+        "worker": mismatched if service == "worker" else valid,
+        "postgres": "0013\n",
+    }
+    _calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    with pytest.raises(
+        ValueError,
+        match="Compose runtime identity does not match GDT-10 live contract",
+    ):
+        runner._require_compose_runtime_identity()
+
+
+@pytest.mark.parametrize("service", ["api", "worker"])
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "app/providers/visual_symbol_review.schema.json",
+        "app/providers/qwen_vl.py",
+        "app/candidates/advisor.py",
+        "app/candidates/gdt_evidence.py",
+        "app/candidates/geometric_tolerance.py",
+        "app/candidates/symbol_review.py",
+        "app/candidates/complex_fallback.py",
+        "app/processing/automatic_result.py",
+        "app/processing/runtime_recognition.py",
+        "app/pdf/inventory.py",
+        "app/pdf/gdt_frames.py",
+        "app/pdf/gdt_raster_frames.py",
+    ],
+)
+def test_live_runtime_identity_rejects_each_stale_hash(
+    monkeypatch: pytest.MonkeyPatch,
+    service: str,
+    relative: str,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_runtime_hash_" + service + "_" + relative.replace("/", "_"),
         HARNESS / "scripts/run-p0.py",
     )
     assert set(runner.LIVE_API_GDT_RUNTIME_PATHS) == {
@@ -1777,34 +1864,170 @@ def test_live_preflight_rejects_stale_api_gdt_runtime(
         "app/pdf/gdt_frames.py",
         "app/pdf/gdt_raster_frames.py",
     }
-
-    def fake_run(
-        argv: list[str],
-        **_kwargs: object,
-    ) -> subprocess.CompletedProcess[str]:
-        assert argv[:6] == [
-            "docker",
-            "compose",
-            "exec",
-            "-T",
-            "api",
-            "python",
-        ]
-        paths = json.loads(argv[-1])
-        return subprocess.CompletedProcess(
-            argv,
-            0,
-            json.dumps({path: "0" * 64 for path in paths}),
-            "",
-        )
-
+    valid = _expected_gdt_runtime_payload(runner)
+    stale = json.loads(json.dumps(valid))
+    stale["hashes"][relative] = "0" * 64
+    payloads = {
+        "api": stale if service == "api" else valid,
+        "worker": stale if service == "worker" else valid,
+        "postgres": "0013\n",
+    }
+    _calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
 
     with pytest.raises(
         ValueError,
-        match="Compose API runtime identity does not match current worktree",
+        match="Compose runtime identity does not match GDT-10 live contract",
     ):
-        runner._require_api_runtime_identity()
+        runner._require_compose_runtime_identity()
+
+
+@pytest.mark.parametrize("service", ["api", "worker", "postgres"])
+def test_live_runtime_identity_rejects_missing_compose_service(
+    monkeypatch: pytest.MonkeyPatch,
+    service: str,
+) -> None:
+    runner = _load_module(
+        f"qi_run_p0_missing_runtime_{service}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    valid = _expected_gdt_runtime_payload(runner)
+    payloads = {"api": valid, "worker": valid, "postgres": "0013\n"}
+    _calls, fake_run = _runtime_identity_run(
+        runner,
+        payloads=payloads,
+        returncodes={service: 1},
+    )
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    with pytest.raises(
+        ValueError,
+        match="Compose runtime identity does not match GDT-10 live contract",
+    ):
+        runner._require_compose_runtime_identity()
+
+
+@pytest.mark.parametrize("service", ["api", "worker"])
+@pytest.mark.parametrize("payload", ["not-json", {}, {"unexpected": True}])
+def test_live_runtime_identity_rejects_malformed_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    service: str,
+    payload: object,
+) -> None:
+    runner = _load_module(
+        f"qi_run_p0_malformed_runtime_{service}_{type(payload).__name__}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    valid = _expected_gdt_runtime_payload(runner)
+    payloads = {
+        "api": payload if service == "api" else valid,
+        "worker": payload if service == "worker" else valid,
+        "postgres": "0013\n",
+    }
+    _calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    with pytest.raises(
+        ValueError,
+        match="Compose runtime identity does not match GDT-10 live contract",
+    ):
+        runner._require_compose_runtime_identity()
+
+
+@pytest.mark.parametrize("revision", ["0012\n", "0013\n0012\n", "not-a-revision\n"])
+def test_live_runtime_identity_rejects_database_revision_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    revision: str,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_database_revision_" + hashlib.sha256(
+            revision.encode()
+        ).hexdigest()[:8],
+        HARNESS / "scripts/run-p0.py",
+    )
+    valid = _expected_gdt_runtime_payload(runner)
+    payloads = {"api": valid, "worker": valid, "postgres": revision}
+    _calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    with pytest.raises(
+        ValueError,
+        match="Compose runtime identity does not match GDT-10 live contract",
+    ):
+        runner._require_compose_runtime_identity()
+
+
+def test_live_preflight_accepts_exact_api_worker_and_database_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_exact_runtime_identity",
+        HARNESS / "scripts/run-p0.py",
+    )
+    valid = _expected_gdt_runtime_payload(runner)
+    payloads = {"api": valid, "worker": valid, "postgres": "0013\n"}
+    calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    runner._require_compose_runtime_identity()
+
+    assert calls == ["api", "worker", "postgres"]
+
+
+def test_live_runtime_identity_fails_before_registration_or_run_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_runtime_identity_order",
+        HARNESS / "scripts/run-p0.py",
+    )
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    artifacts = {
+        runner.CURRENT_FOUR_ARTIFACT: b"current-four",
+        runner.SYMBOL_EVAL_ARTIFACT: b"symbol-eval",
+        runner.SYMBOL_VERDICT_ARTIFACT: b"symbol-verdict",
+    }
+    events: list[str] = []
+    monkeypatch.setattr(runner, "RUNS", runs)
+    monkeypatch.setattr(
+        runner,
+        "_current_live_input_artifacts",
+        lambda _source_root: artifacts,
+    )
+    monkeypatch.setattr(runner, "_require_live_environment", lambda _env: None)
+    monkeypatch.setattr(runner, "_current_live_identity", lambda _env: {})
+
+    def reject_runtime() -> None:
+        events.append("runtime-identity")
+        raise ValueError(
+            "Compose runtime identity does not match GDT-10 live contract"
+        )
+
+    monkeypatch.setattr(runner, "_require_compose_runtime_identity", reject_runtime)
+    monkeypatch.setattr(
+        runner,
+        "run_task",
+        lambda *_args, **_kwargs: events.append("registration"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "register_live_input_artifacts",
+        lambda **_kwargs: events.append("symbol-registration"),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Compose runtime identity does not match GDT-10 live contract",
+    ):
+        runner.activate_full_live_inputs(
+            source_root="/current-four",
+            environment={},
+        )
+
+    assert events == ["runtime-identity"]
+    assert list(runs.iterdir()) == []
 
 
 def test_typed_gdt_case_evidence_requires_exact_case_a_and_b() -> None:

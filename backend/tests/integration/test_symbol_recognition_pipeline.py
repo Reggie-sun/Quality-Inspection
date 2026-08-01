@@ -70,6 +70,7 @@ from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
+from app.projects.service import ProjectIntakeService
 from app.projects.state import ProjectState
 from app.providers.base import VisionResult
 from app.providers.qwen_vl import (
@@ -1171,6 +1172,91 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
         matrix.vlm_visual.observation_id,
         matrix.failed_visual.observation_id,
     }
+    if failure_family in {"timeout", "transport"}:
+        assert sum(
+            matrix.failed_visual.observation_id in observation_ids
+            for observation_ids in provider.symbol_observation_ids
+        ) == 1
+        failed_attempts = tuple(
+            db_session.scalars(
+                select(SymbolEscalationAttemptEventRecord).where(
+                    SymbolEscalationAttemptEventRecord.project_id == project.id,
+                    SymbolEscalationAttemptEventRecord.event_code
+                    == expected_failure_stage,
+                )
+            )
+        )
+        assert len(failed_attempts) == 1
+        assert failed_attempts[0].attempt_index == 0
+        assert failed_attempts[0].provider_request_id is None
+        failed_outcome = next(
+            outcome
+            for outcome in outcomes
+            if outcome.observation_outcomes == [
+                {
+                    "visual_observation_id": (
+                        matrix.failed_visual.observation_id
+                    ),
+                    "outcome_code": expected_failure_stage,
+                }
+            ]
+        )
+        assert failed_outcome.outcome_code == "unresolved"
+
+        project_storage = storage.root / "projects" / str(project.id)
+        request_dir = project_storage / "provider-requests" / "qwen-symbol"
+        request_documents = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in request_dir.glob("*.json")
+        ]
+        referenced_crop_refs = {
+            document["crop_ref"] for document in request_documents
+        }
+        crop_dir = project_storage / "provider-inputs" / "qwen-symbol"
+        unreferenced_crops = [
+            path
+            for path in crop_dir.glob("*.png")
+            if (
+                "asset://"
+                + path.relative_to(storage.root).as_posix()
+            )
+            not in referenced_crop_refs
+        ]
+        assert len(unreferenced_crops) == 1
+        failed_crop_sha256 = unreferenced_crops[0].stem
+        cache_records = tuple(
+            db_session.scalars(
+                select(VisualSymbolCacheEntryRecord).where(
+                    VisualSymbolCacheEntryRecord.project_id == project.id
+                )
+            )
+        )
+        assert all(
+            record.identity.get("canonical_crop_sha256")
+            != failed_crop_sha256
+            for record in cache_records
+        )
+        assert not (
+            project_storage / "provider-calls" / "qwen-symbol-retries"
+        ).exists()
+        assert not (
+            project_storage / "provider-requests" / "qwen-symbol-retries"
+        ).exists()
+        assert not (
+            project_storage / "provider-responses" / "qwen-symbol-retries"
+        ).exists()
+        persisted_evidence = b"".join(
+            path.read_bytes()
+            for directory in (
+                project_storage / "provider-calls",
+                project_storage / "provider-requests",
+                project_storage / "provider-responses",
+                project_storage / "provider-cache",
+            )
+            if directory.exists()
+            for path in directory.rglob("*.json")
+        )
+        assert b"do-not-leak" not in persisted_evidence
 
     raw = db_session.scalar(
         select(AutomaticResult).where(
@@ -1326,6 +1412,14 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
         "raw_text"
     ]
     assert first.technical_requirements[0]["match_outcome"] == "unresolved"
+    status = ProjectIntakeService(
+        db_session,
+        storage,
+        lambda *_args: None,
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    ).status(project.id)
+    assert status.phase == "partial_review_required"
     assert (
         db_session.scalar(
             select(func.count())

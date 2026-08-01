@@ -88,6 +88,13 @@ _COORDINATES = TypeAdapter(tuple[float, float, float, float])
 _COARSE_TYPE = TypeAdapter(CoarseType)
 _SIP_DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
 _DEFAULT_SOURCE_DISPOSITION_RULE_VERSION = "review-source-default/1"
+_LOCALIZED_PROVIDER_FAILURE_STAGES = frozenset(
+    {
+        "provider_timeout",
+        "provider_transport_failure",
+        "provider_schema_invalid",
+    }
+)
 
 
 def manual_review_count(
@@ -613,6 +620,25 @@ class ReviewService:
                     "rejection_code",
                 }
                 active_fields = {*legacy_fields, "confidence_signal"}
+                failure_fields = {
+                    "route",
+                    "schema_version",
+                    "failure_stage",
+                }
+                persisted_failure_stage = entry.get("failure_stage")
+                localized_failure_stage = (
+                    persisted_failure_stage
+                    if (
+                        advisor_review is None
+                        and isinstance(persisted_failure_stage, str)
+                        and persisted_failure_stage
+                        in _LOCALIZED_PROVIDER_FAILURE_STAGES
+                        and entry.get("disposition") == "ambiguous"
+                        and entry.get("requires_confirmation") is True
+                        and ReviewService._valid_source_only_entry(entry)
+                    )
+                    else None
+                )
                 if (
                     isinstance(advisor_review, dict)
                     and (
@@ -644,9 +670,22 @@ class ReviewService:
                         str,
                     ):
                         entry["rejection_code"] = rejection_code
+                elif (
+                    isinstance(advisor_review, dict)
+                    and set(advisor_review) == failure_fields
+                    and advisor_review.get("route") == "visual_symbol"
+                    and advisor_review.get("schema_version")
+                    == "visual-symbol-review/3"
+                    and isinstance(advisor_review.get("failure_stage"), str)
+                    and advisor_review["failure_stage"]
+                    in _LOCALIZED_PROVIDER_FAILURE_STAGES
+                ):
+                    localized_failure_stage = advisor_review["failure_stage"]
+                    entry["failure_stage"] = localized_failure_stage
                 entry.pop("advisor_review", None)
                 if (
-                    entry.get("requires_confirmation") is True
+                    localized_failure_stage is None
+                    and entry.get("requires_confirmation") is True
                     and ReviewService._valid_source_only_entry(entry)
                     and entry.get("source_location_id")
                     not in technical_requirement_source_ids
