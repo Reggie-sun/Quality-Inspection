@@ -92,7 +92,7 @@ fresh validation 必须映射为：
 
 - current approved plan 已明确命令、输入范围、Provider/model identity、cost/call/wall budget、acceptance evidence 和 failure stop；
 - zero-paid preflight 已在任何 run creation、upload 或 Provider call 前证明 target worktree/runtime、API/worker code identity、database revision、credential presence 和隔离边界；
-- 执行不改变 public/production deployment、credential、account、billing policy、runtime config 或 stable contract，也不停止、替换或删除其他 runtime/data；
+- 执行不改变 public/production deployment、credential value、account、billing policy 或 stable business contract，也不停止、替换或删除其他 runtime/data；current approved plan 可以明确授权仅重建其 isolated verification runtime 的指定 service，以加载既有 approved credential source 和 plan-bound mode/model，但必须记录 exact Compose project/files/services、使用 `--no-deps`、不改 volume/data，并在 paid work 前重新证明 runtime identity；
 - 只执行 plan 明确允许的 run/attempt；失败后不得因 standing authorization 自动增加 retry、扩大 budget 或开启 replacement run。
 
 runtime identity mismatch、credential 缺失、cost/budget scope 不明、paid attempt 已耗尽、public/production promotion、破坏性动作、权限扩张或实质 scope expansion 仍按 `AGENTS.md` Hard Boundaries fail closed。该 standing authorization 只移除重复的人为确认，不改变 Provider retry Owner、业务审批、review lock 或 formal acceptance gate。
