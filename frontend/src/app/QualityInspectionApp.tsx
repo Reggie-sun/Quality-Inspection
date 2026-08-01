@@ -14,7 +14,11 @@ import type { ProcessingStage, ProjectStatus } from "../api/types";
 import { ProjectWorkbenchApp } from "../components/workbench/ProjectWorkbenchApp";
 import { RecognitionPreviewApp } from "../components/workbench/RecognitionPreviewApp";
 import { projectErrorCopy, projectErrorGuidance, zhCN } from "../copy/zhCN";
-import { projectApi, type ProjectApi } from "../features/projects/api";
+import {
+  projectApi,
+  type ProjectApi,
+  type ProjectListItem,
+} from "../features/projects/api";
 import {
   clearCurrentProjectId,
   getCurrentProjectId,
@@ -22,12 +26,6 @@ import {
   setCurrentProjectId,
 } from "./localContext";
 import { DrawingListScreen } from "./DrawingListScreen";
-import {
-  readLocalDrawings,
-  registerLocalDrawing,
-  touchLocalDrawing,
-  type LocalDrawingEntry,
-} from "./localDrawingRegistry";
 
 
 type ProductScreen =
@@ -160,9 +158,8 @@ export function QualityInspectionApp({
   pollIntervalMs = 1_500,
 }: QualityInspectionAppProps) {
   const [screen, setScreen] = useState<ProductScreen>(initialScreen);
-  const [drawings, setDrawings] = useState<LocalDrawingEntry[]>(
-    readLocalDrawings,
-  );
+  const [drawings, setDrawings] = useState<ProjectListItem[]>([]);
+  const [drawingListLoaded, setDrawingListLoaded] = useState(false);
   const [registryWarning, setRegistryWarning] = useState<string>();
   const [selectedFile, setSelectedFile] = useState<File>();
   const [selectionError, setSelectionError] = useState<string>();
@@ -170,6 +167,7 @@ export function QualityInspectionApp({
   const [retryStatusToken, setRetryStatusToken] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const uploadAbort = useRef<AbortController | undefined>(undefined);
+  const catalogMutation = useRef<Promise<void>>(Promise.resolve());
   const fileInput = useRef<HTMLInputElement | null>(null);
   const operatorId = useMemo(() => getOrCreateLocalOperatorId(), []);
   const processingProjectId = screen.kind === "processing"
@@ -179,12 +177,25 @@ export function QualityInspectionApp({
   useEffect(() => () => uploadAbort.current?.abort(), []);
 
   useEffect(() => {
-    const currentProjectId = getCurrentProjectId();
-    if (currentProjectId === undefined) return;
-    const saved = touchLocalDrawing(currentProjectId);
-    setDrawings(readLocalDrawings());
-    if (!saved) setRegistryWarning(zhCN.drawingList.registryWarning);
-  }, []);
+    if (screen.kind !== "list") return;
+    const controller = new AbortController();
+    setDrawingListLoaded(false);
+    setRegistryWarning(undefined);
+    void catalogMutation.current
+      .then(() => api.listProjects(controller.signal))
+      .then((entries) => {
+        if (controller.signal.aborted) return;
+        setDrawings(entries);
+        setDrawingListLoaded(true);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setDrawings([]);
+        setDrawingListLoaded(false);
+        setRegistryWarning(projectErrorCopy("network_error"));
+      });
+    return () => controller.abort();
+  }, [api, screen.kind]);
 
   useEffect(() => {
     if (processingProjectId === undefined) return;
@@ -270,11 +281,6 @@ export function QualityInspectionApp({
         return;
       }
       setCurrentProjectId(result.project_id);
-      const registered = registerLocalDrawing(result.project_id, file.name);
-      setDrawings(readLocalDrawings());
-      setRegistryWarning(
-        registered ? undefined : zhCN.drawingList.registryWarning,
-      );
       setScreen(result.phase === "ready_for_review" && result.workbench_ready
         ? { kind: "ready", projectId: result.project_id }
         : {
@@ -328,17 +334,14 @@ export function QualityInspectionApp({
     setSelectedFile(undefined);
     setSelectionError(undefined);
     setStatusError(false);
-    setDrawings(readLocalDrawings());
     setScreen({ kind: "list" });
   };
-  const openDrawing = (entry: LocalDrawingEntry) => {
+  const openDrawing = (entry: ProjectListItem) => {
     uploadAbort.current?.abort();
     setCurrentProjectId(entry.projectId);
-    const saved = touchLocalDrawing(entry.projectId, entry.fileName);
-    setDrawings(readLocalDrawings());
-    setRegistryWarning(
-      saved ? undefined : zhCN.drawingList.registryWarning,
-    );
+    catalogMutation.current = api.markProjectOpened(entry.projectId)
+      .then(() => undefined)
+      .catch(() => undefined);
     setSelectedFile(undefined);
     setSelectionError(undefined);
     setStatusError(false);
@@ -371,6 +374,7 @@ export function QualityInspectionApp({
     return (
       <DrawingListScreen
         entries={drawings}
+        loaded={drawingListLoaded}
         api={api}
         warning={registryWarning}
         onUpload={() => {

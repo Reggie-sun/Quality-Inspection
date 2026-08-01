@@ -11,6 +11,7 @@ from app.main import app
 EXPECTED_OPERATIONS = {
     ("GET", "/api/v1/health"): "QI-API-SYS-001",
     ("POST", "/api/v1/projects"): "QI-API-PRJ-001",
+    ("GET", "/api/v1/projects"): "QI-API-PRJ-006",
     ("GET", "/api/v1/projects/{project_id}/status"): "QI-API-PRJ-002",
     ("GET", "/api/v1/projects/{project_id}/workbench"): "QI-API-PRJ-003",
     ("GET", "/api/v1/projects/{project_id}/source-pdf"): "QI-API-PRJ-004",
@@ -18,6 +19,10 @@ EXPECTED_OPERATIONS = {
         "GET",
         "/api/v1/projects/{project_id}/recognition-preview",
     ): "QI-API-PRJ-005",
+    (
+        "POST",
+        "/api/v1/projects/{project_id}/open",
+    ): "QI-API-PRJ-007",
     ("POST", "/api/v1/projects/{project_id}/review/lock"): "QI-API-REV-001",
     (
         "GET",

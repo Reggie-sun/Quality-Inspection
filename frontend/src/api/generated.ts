@@ -18,6 +18,8 @@ export interface paths {
     get: operations["QI-API-SYS-001"];
   };
   "/api/v1/projects": {
+    /** List Projects */
+    get: operations["QI-API-PRJ-006"];
     /** Create Project */
     post: operations["QI-API-PRJ-001"];
   };
@@ -36,6 +38,10 @@ export interface paths {
   "/api/v1/projects/{project_id}/exports": {
     /** Create Export */
     post: operations["QI-API-EXP-001"];
+  };
+  "/api/v1/projects/{project_id}/open": {
+    /** Mark Project Opened */
+    post: operations["QI-API-PRJ-007"];
   };
   "/api/v1/projects/{project_id}/recognition-preview": {
     /** Get Recognition Preview */
@@ -401,6 +407,33 @@ export interface components {
       code: string;
       /** Stage */
       stage: string;
+    };
+    /** ProjectListItemResponse */
+    ProjectListItemResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** File Name */
+      file_name: string;
+      /**
+       * Last Opened At
+       * Format: date-time
+       */
+      last_opened_at: string;
+      /**
+       * Project Id
+       * Format: uuid
+       */
+      project_id: string;
+    };
+    /** ProjectListResponse */
+    ProjectListResponse: {
+      /** Count */
+      count: number;
+      /** Items */
+      items: components["schemas"]["ProjectListItemResponse"][];
     };
     /**
      * ProjectPhase
@@ -1045,6 +1078,23 @@ export interface operations {
       };
     };
   };
+  /** List Projects */
+  "QI-API-PRJ-006": {
+    responses: {
+      /** @description Successful Response */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ProjectListResponse"];
+        };
+      };
+      /** @description Unexpected internal failure. */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+    };
+  };
   /** Create Project */
   "QI-API-PRJ-001": {
     requestBody: {
@@ -1230,6 +1280,40 @@ export interface operations {
       };
       /** @description Request conflicts with current aggregate or capability state. */
       409: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Request failed transport or business validation. */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Unexpected internal failure. */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+    };
+  };
+  /** Mark Project Opened */
+  "QI-API-PRJ-007": {
+    parameters: {
+      path: {
+        project_id: string;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        content: {
+          "application/json": components["schemas"]["ProjectListItemResponse"];
+        };
+      };
+      /** @description Requested resource was not found. */
+      404: {
         content: {
           "application/json": components["schemas"]["ErrorEnvelope"];
         };

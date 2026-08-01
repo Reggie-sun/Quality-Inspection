@@ -37,13 +37,19 @@ export const getJson: GetJson = async <Result>(
 };
 
 
-export const postJson: PostJson = async <Result>(path: string, body: unknown, headers: Record<string, string>) => {
-  const response = await fetch(path, {
+export const postJson: PostJson = async <Result>(
+  path: string,
+  body: unknown,
+  headers: Record<string, string>,
+  signal?: AbortSignal,
+) => {
+  const request: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
-  });
-  return json<Result>(response);
+  };
+  if (signal !== undefined) request.signal = signal;
+  return json<Result>(await fetch(path, request));
 };
 
 export const postForm: PostForm = async <Result>(

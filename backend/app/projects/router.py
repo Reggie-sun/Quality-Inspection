@@ -29,6 +29,8 @@ from app.pdf.title_block_metadata import suggest_sip_metadata
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
 from app.projects.schemas import (
+    ProjectListItemResponse,
+    ProjectListResponse,
     ProjectStatusResponse,
     ProjectWorkbenchResponse,
     RecognitionPreviewResponse,
@@ -39,6 +41,7 @@ from app.processing.recognition_preview import (
 )
 from app.projects.service import (
     InvalidPdf,
+    ProjectCatalogService,
     ProjectDispatchFailed,
     ProjectDispatcher,
     ProjectIntakeService,
@@ -111,6 +114,18 @@ ProjectServiceDependency = Annotated[
 ]
 
 
+def get_project_catalog_service(
+    session: SessionDependency,
+) -> ProjectCatalogService:
+    return ProjectCatalogService(session)
+
+
+ProjectCatalogServiceDependency = Annotated[
+    ProjectCatalogService,
+    Depends(get_project_catalog_service),
+]
+
+
 @router.post(
     "",
     status_code=202,
@@ -140,6 +155,7 @@ async def create_project(
         result = service.create_pdf(
             content=await file.read(),
             content_type=file.content_type or "",
+            source_filename=file.filename or "",
         )
     except InvalidPdf:
         return _error(422, "invalid_pdf", "uploaded file is not a valid PDF")
@@ -164,6 +180,59 @@ async def create_project(
             severity="fatal",
         )
     return result
+
+
+@router.get(
+    "",
+    operation_id="QI-API-PRJ-006",
+    response_model=ProjectListResponse,
+    responses=error_responses(
+        {
+            500: ("project_list_failed", "internal_server_error"),
+        }
+    ),
+)
+def list_projects(
+    service: ProjectCatalogServiceDependency,
+) -> ProjectListResponse | JSONResponse:
+    try:
+        return service.list_projects()
+    except Exception:
+        return _error(
+            500,
+            "project_list_failed",
+            "project list unavailable",
+            severity="fatal",
+        )
+
+
+@router.post(
+    "/{project_id}/open",
+    operation_id="QI-API-PRJ-007",
+    response_model=ProjectListItemResponse,
+    responses=error_responses(
+        {
+            404: ("project_not_found",),
+            422: ("request_validation_failed",),
+            500: ("project_open_failed", "internal_server_error"),
+        }
+    ),
+)
+def mark_project_opened(
+    project_id: uuid.UUID,
+    service: ProjectCatalogServiceDependency,
+) -> ProjectListItemResponse | JSONResponse:
+    try:
+        return service.mark_opened(project_id)
+    except ProjectNotFound:
+        return _error(404, "project_not_found", "project was not found")
+    except Exception:
+        return _error(
+            500,
+            "project_open_failed",
+            "project open activity unavailable",
+            severity="fatal",
+        )
 
 
 @router.get(

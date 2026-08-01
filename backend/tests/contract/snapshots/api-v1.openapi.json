@@ -860,6 +860,60 @@
         "title": "ProjectError",
         "type": "object"
       },
+      "ProjectListItemResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "last_opened_at": {
+            "format": "date-time",
+            "title": "Last Opened At",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "file_name",
+          "created_at",
+          "last_opened_at"
+        ],
+        "title": "ProjectListItemResponse",
+        "type": "object"
+      },
+      "ProjectListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectListItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "ProjectListResponse",
+        "type": "object"
+      },
       "ProjectPhase": {
         "enum": [
           "queued",
@@ -2592,6 +2646,39 @@
       }
     },
     "/api/v1/projects": {
+      "get": {
+        "operationId": "QI-API-PRJ-006",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "project_list_failed",
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "List Projects",
+        "tags": [
+          "projects"
+        ]
+      },
       "post": {
         "operationId": "QI-API-PRJ-001",
         "requestBody": {
@@ -3080,6 +3167,79 @@
         "summary": "Create Export",
         "tags": [
           "exports"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/open": {
+      "post": {
+        "operationId": "QI-API-PRJ-007",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectListItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "project_open_failed",
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Mark Project Opened",
+        "tags": [
+          "projects"
         ]
       }
     },

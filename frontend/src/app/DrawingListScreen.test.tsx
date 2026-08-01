@@ -11,18 +11,18 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { ProjectStatus } from "../api/types";
 import type { ProjectApi } from "../features/projects/api";
 import { DrawingListScreen } from "./DrawingListScreen";
-import type { LocalDrawingEntry } from "./localDrawingRegistry";
+import type { ProjectListItem } from "../features/projects/api";
 
 
 const PROJECT_A = "11111111-1111-4111-8111-111111111111";
 const PROJECT_B = "22222222-2222-4222-8222-222222222222";
-const ENTRY_A: LocalDrawingEntry = {
+const ENTRY_A: ProjectListItem = {
   projectId: PROJECT_A,
   fileName: "A.pdf",
   createdAt: "2026-07-30T01:00:00.000Z",
   lastOpenedAt: "2026-07-30T03:00:00.000Z",
 };
-const ENTRY_B: LocalDrawingEntry = {
+const ENTRY_B: ProjectListItem = {
   projectId: PROJECT_B,
   fileName: "B.pdf",
   createdAt: "2026-07-30T02:00:00.000Z",
@@ -52,6 +52,8 @@ function fakeApi(
   return {
     createProject: vi.fn(),
     getProjectStatus,
+    listProjects: vi.fn().mockResolvedValue([]),
+    markProjectOpened: vi.fn().mockResolvedValue(undefined),
   };
 }
 

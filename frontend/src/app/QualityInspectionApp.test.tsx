@@ -3,12 +3,8 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { ApiError } from "../api/client";
 import type { ProjectStatus } from "../api/types";
-import type { ProjectApi } from "../features/projects/api";
+import type { ProjectApi, ProjectListItem } from "../features/projects/api";
 import { QualityInspectionApp } from "./QualityInspectionApp";
-import {
-  readLocalDrawings,
-  registerLocalDrawing,
-} from "./localDrawingRegistry";
 
 
 vi.mock("../components/workbench/ProjectWorkbenchApp", () => ({
@@ -55,7 +51,25 @@ function fakeApi(
     status("ready_for_review"),
   ),
 ): ProjectApi {
-  return { createProject, getProjectStatus };
+  return {
+    createProject,
+    getProjectStatus,
+    listProjects: vi.fn().mockResolvedValue([]),
+    markProjectOpened: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+
+function drawing(
+  projectId: string,
+  fileName: string,
+) {
+  return {
+    projectId,
+    fileName,
+    createdAt: "2026-07-30T01:00:00.000Z",
+    lastOpenedAt: "2026-07-30T02:00:00.000Z",
+  };
 }
 
 
@@ -71,14 +85,14 @@ function choosePdf(name = "drawing.pdf"): File {
 }
 
 
-test("裸根地址默认显示图纸列表且不要求内部 ID", () => {
+test("裸根地址默认显示图纸列表且不要求内部 ID", async () => {
   window.history.replaceState({}, "", "/");
 
   render(<QualityInspectionApp api={fakeApi()} />);
 
   expect(screen.getByText("智检通")).not.toBeNull();
   expect(screen.getByRole("heading", { name: "图纸列表" })).not.toBeNull();
-  expect(screen.getByText("还没有图纸任务")).not.toBeNull();
+  expect(await screen.findByText("还没有图纸任务")).not.toBeNull();
   expect(screen.queryByLabelText("选择工程 PDF")).toBeNull();
   expect(screen.queryByText(/project_id|operator_id|resource_ref/i)).toBeNull();
   expect(window.location.pathname).toBe("/");
@@ -94,6 +108,40 @@ test("从图纸列表显式进入现有 PDF 上传入口", () => {
   expect(screen.getByLabelText("选择工程 PDF")).not.toBeNull();
   expect(screen.getByRole("button", { name: "上传并开始识别" })
     .hasAttribute("disabled")).toBe(true);
+});
+
+
+test("图纸列表忽略旧 localStorage 并只显示服务端目录", async () => {
+  window.localStorage.setItem("qi.drawing-list.v1", JSON.stringify([{
+    projectId: OTHER_PROJECT_ID,
+    fileName: "旧浏览器图纸.pdf",
+    createdAt: "2026-07-30T01:00:00.000Z",
+    lastOpenedAt: "2026-07-30T02:00:00.000Z",
+  }]));
+  const api = fakeApi();
+  api.listProjects = vi.fn().mockResolvedValue([{
+    projectId: PROJECT_ID,
+    fileName: "服务端图纸.pdf",
+    createdAt: "2026-08-01T01:00:00.000Z",
+    lastOpenedAt: "2026-08-01T02:00:00.000Z",
+  }]);
+
+  render(<QualityInspectionApp api={api} />);
+
+  expect(await screen.findByText("服务端图纸.pdf")).not.toBeNull();
+  expect(screen.queryByText("旧浏览器图纸.pdf")).toBeNull();
+});
+
+
+test("服务端目录加载失败时显示安全提示而不声称列表为空", async () => {
+  const api = fakeApi();
+  api.listProjects = vi.fn().mockRejectedValue(new Error("private failure"));
+
+  render(<QualityInspectionApp api={api} />);
+
+  expect(await screen.findByText("网络异常，请检查连接后重试。")).not.toBeNull();
+  expect(screen.queryByText("还没有图纸任务")).toBeNull();
+  expect(document.body.textContent).not.toContain("private failure");
 });
 
 
@@ -171,39 +219,71 @@ test("上传后显示处理进度并自动进入现有工作台", async () => {
 test("工作台返回图纸列表并清除当前 session 项目", async () => {
   window.sessionStorage.setItem("qi.current-project-id", PROJECT_ID);
   const getProjectStatus = vi.fn().mockResolvedValue(status("ready_for_review"));
-  render(<QualityInspectionApp api={fakeApi(undefined, getProjectStatus)} />);
+  const api = fakeApi(undefined, getProjectStatus);
+  api.listProjects = vi.fn().mockResolvedValue([
+    drawing(PROJECT_ID, "服务端图纸.pdf"),
+  ]);
+  render(<QualityInspectionApp api={api} />);
 
   expect(await screen.findByRole("heading", { name: "检验项目审核" })).not.toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
 
   expect(screen.getByRole("heading", { name: "图纸列表" })).not.toBeNull();
-  expect(screen.getByText("未命名图纸.pdf")).not.toBeNull();
+  expect(await screen.findByText("服务端图纸.pdf")).not.toBeNull();
   expect(window.sessionStorage.getItem("qi.current-project-id")).toBeNull();
 });
 
 test("打开列表图纸会更新当前项目并进入现有处理流程", async () => {
-  registerLocalDrawing(
-    PROJECT_ID,
-    "已有图纸.pdf",
-    new Date("2026-07-30T01:00:00.000Z"),
-  );
   const getProjectStatus = vi.fn().mockResolvedValue(status("ready_for_review"));
-  render(<QualityInspectionApp api={fakeApi(undefined, getProjectStatus)} />);
+  const api = fakeApi(undefined, getProjectStatus);
+  api.listProjects = vi.fn().mockResolvedValue([
+    drawing(PROJECT_ID, "已有图纸.pdf"),
+  ]);
+  render(<QualityInspectionApp api={api} />);
 
   fireEvent.click(
-    screen.getByRole("button", { name: "继续处理 已有图纸.pdf" }),
+    await screen.findByRole("button", { name: "继续处理 已有图纸.pdf" }),
   );
 
   expect(await screen.findByTestId("project-workbench")).not.toBeNull();
   expect(window.sessionStorage.getItem("qi.current-project-id")).toBe(PROJECT_ID);
+  expect(api.markProjectOpened).toHaveBeenCalledWith(PROJECT_ID);
 });
 
-test("新上传图纸加入列表且不覆盖已有图纸", async () => {
-  registerLocalDrawing(
-    OTHER_PROJECT_ID,
-    "旧图纸.pdf",
-    new Date("2026-07-30T01:00:00.000Z"),
+test("快速返回列表会等待最近打开提交后再刷新排序", async () => {
+  let finishOpen: (() => void) | undefined;
+  const api = fakeApi(
+    undefined,
+    vi.fn(() => new Promise<ProjectStatus>(() => undefined)),
   );
+  api.listProjects = vi.fn()
+    .mockResolvedValueOnce([
+      drawing(PROJECT_ID, "A.pdf"),
+      drawing(OTHER_PROJECT_ID, "B.pdf"),
+    ])
+    .mockResolvedValueOnce([
+      drawing(OTHER_PROJECT_ID, "B.pdf"),
+      drawing(PROJECT_ID, "A.pdf"),
+    ]);
+  api.markProjectOpened = vi.fn(() => new Promise<ProjectListItem>((resolve) => {
+    finishOpen = () => resolve(drawing(OTHER_PROJECT_ID, "B.pdf"));
+  }));
+  render(<QualityInspectionApp api={api} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "继续处理 B.pdf" }));
+  fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+  await Promise.resolve();
+  expect(api.listProjects).toHaveBeenCalledTimes(1);
+
+  finishOpen?.();
+  await waitFor(() => expect(api.listProjects).toHaveBeenCalledTimes(2));
+  const rows = screen.getAllByRole("row");
+  expect(rows[1].textContent).toContain("B.pdf");
+  expect(rows[2].textContent).toContain("A.pdf");
+});
+
+test("新上传图纸不再写入旧浏览器目录", async () => {
+  window.localStorage.setItem("qi.drawing-list.v1", "legacy-value");
   const createProject = vi.fn().mockResolvedValue(
     status("ready_for_review", { project_id: PROJECT_ID }),
   );
@@ -213,16 +293,7 @@ test("新上传图纸加入列表且不覆盖已有图纸", async () => {
   fireEvent.click(screen.getByRole("button", { name: "上传并开始识别" }));
 
   expect(await screen.findByTestId("project-workbench")).not.toBeNull();
-  expect(readLocalDrawings()).toEqual(expect.arrayContaining([
-    expect.objectContaining({
-      projectId: OTHER_PROJECT_ID,
-      fileName: "旧图纸.pdf",
-    }),
-    expect.objectContaining({
-      projectId: PROJECT_ID,
-      fileName: "新图纸.pdf",
-    }),
-  ]));
+  expect(window.localStorage.getItem("qi.drawing-list.v1")).toBe("legacy-value");
 });
 
 test.each([

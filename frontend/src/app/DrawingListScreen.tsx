@@ -2,16 +2,16 @@ import { useEffect, useState } from "react";
 
 import type { ProjectStatus } from "../api/types";
 import { zhCN } from "../copy/zhCN";
-import type { ProjectApi } from "../features/projects/api";
-import type { LocalDrawingEntry } from "./localDrawingRegistry";
+import type { ProjectApi, ProjectListItem } from "../features/projects/api";
 
 
 type DrawingListScreenProps = {
-  entries: LocalDrawingEntry[];
+  entries: ProjectListItem[];
   api: ProjectApi;
   warning?: string;
   onUpload: () => void;
-  onOpen: (entry: LocalDrawingEntry) => void;
+  onOpen: (entry: ProjectListItem) => void;
+  loaded?: boolean;
 };
 
 type DrawingStatus =
@@ -51,6 +51,7 @@ export function DrawingListScreen({
   warning,
   onUpload,
   onOpen,
+  loaded = true,
 }: DrawingListScreenProps) {
   const [statuses, setStatuses] = useState<Record<string, DrawingStatus>>({});
 
@@ -109,13 +110,15 @@ export function DrawingListScreen({
             <h1 id="drawing-list-title">{zhCN.drawingList.title}</h1>
             <span>{zhCN.drawingList.description}</span>
           </div>
-          <strong>{zhCN.drawingList.total(entries.length)}</strong>
+          <strong>
+            {loaded ? zhCN.drawingList.total(entries.length) : "图纸列表加载中"}
+          </strong>
         </header>
 
         {warning === undefined ? null : (
           <p className="message message--warning" role="status">{warning}</p>
         )}
-        {entries.length === 0 ? (
+        {!loaded ? null : entries.length === 0 ? (
           <div className="drawing-list-empty">
             <strong>{zhCN.drawingList.empty}</strong>
             <span>{zhCN.drawingList.emptyHint}</span>

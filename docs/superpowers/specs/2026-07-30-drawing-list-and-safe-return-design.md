@@ -1,5 +1,7 @@
 # Drawing List And Safe Return Design
 
+**Status:** Superseded on 2026-08-01 by `2026-08-01-server-backed-drawing-list-design.md`. This file is a historical record of the browser-local design and must not be used as the current drawing-list runtime contract.
+
 ## Goal
 
 把根地址 `/` 从“单次上传入口”升级为当前浏览器的图纸任务首页。用户可以保留并继续处理多个已上传项目，从工作台返回列表时不会静默丢失本地草稿。
