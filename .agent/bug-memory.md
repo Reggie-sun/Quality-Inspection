@@ -2,6 +2,22 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-full-live-target-activation
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `Makefile:verify-p0-live`、`.agent/harness/scripts/run-p0.py` full-P0 live start/resume lifecycle、symbol-recognition live report
+- Symptom: repository-owned `make verify-p0-live` 在任何 Provider preflight 之前必然退出，无法生成 current-four authenticated Provider evidence；plan 同时要求 Step 4 在 Step 5 headed QA 之前产生 final receipt，但 Harness 只有 resume 后才写 receipt
+- Previously correct behavior: 单一 repository target 应自行生成 fresh registration IDs、以 literal IDs 启动 full-live、完成 authenticated symbol gate后暂停；headed QA 通过后 resume 同一 run 才生成 final receipt
+- Reproduction: `make verify-p0-live` 的 `check-contracts.py` 通过后，`run-p0.py` 返回 exit `2`：full-P0 live start 缺少 literal current-four/symbol registration runs 和 first-PDF pause；`.agent/harness/runs/` 未新增 run，Provider call count 为 `0`
+- Root cause: `verify-p0-live` 没有激活 fresh input registration 和 pause 参数；missing-credential 测试也在参数校验前提前退出，形成假覆盖。计划把 pre-pause Step 4 与 post-headed-QA receipt 混为同一成功条件；symbol report exact policy 尚未容纳 typed Case A/B 或可重算的 Provider identity hashes
+- Fix: target 使用显式 `--activate-current-inputs --pause-after first-pdf-balloons`；runner 先做 credential/runtime/source/contract zero-paid preflight，再从 exact current sources 和 Git-HEAD 唯一 approved annotation bytes 生成 fresh Harness registration IDs，并把 literal IDs 传回原 full-live path。symbol report `/2` 新增 exact typed Case A/B、source/crop/model/prompt/schema identity hashes；Provider crop 按真实 bytes 写入本次 run 并由 policy 重哈希，Case A/B 同时绑定 evaluator label 与 manifest symbol kind。Step 4/5 plan 改为 pause 后 headed QA，再 resume 同一 literal run 生成 receipt
+- Regression check: `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness -q` 返回 `173 passed`；focused contract file `61 passed`，`ruff check` 和 `git diff --check` 通过。独立 reviewer 对 malformed counts 与真实 crop-byte tamper 复测均 fail-closed，final verdict `accept`
+- Runtime proof: fresh `make verify-p0-live` 先通过 `69` global / `111` P0 contract mapping，再准确退出 `2`：四项 server-only Provider credential 未注入；run directory count 保持 `14 -> 14`，未创建 run、未调用 Provider。activation regression 已解决，GDT-10 live evidence 仍由外部 runtime identity injection 阻塞
+- Change: `fix(harness): activate structured GDT live gate`
+
 ## BUG-20260801-source-disposition-stale-tests
 
 - Status: 已解决

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import base64
 import importlib.util
 import hashlib
 import json
@@ -835,6 +836,91 @@ def _symbol_evidence() -> dict[str, object]:
     }
 
 
+def _typed_gdt_cases() -> dict[str, object]:
+    return {
+        "case_a": {
+            "candidate_id": "case-a",
+            "annotation_label_id": "positive-gdt-parallelism",
+            "schema_version": "geometric-tolerance-candidate/1",
+            "item_type": "geometric_tolerance",
+            "tolerance_type": "parallelism",
+            "tolerance_symbol": "∥",
+            "tolerance_value": "0.1",
+            "datum_references": [{"datum": "A", "modifiers": []}],
+            "frames": [
+                {
+                    "segments": [
+                        {
+                            "tolerance_value": "0.1",
+                            "diameter_modifier": False,
+                            "modifiers": [],
+                            "datum_references": [
+                                {"datum": "A", "modifiers": []}
+                            ],
+                        }
+                    ]
+                }
+            ],
+            "source_location_ids": ["source-a"],
+        },
+        "case_b": {
+            "candidate_id": "case-b",
+            "annotation_label_id": "positive-gdt-flatness",
+            "schema_version": "geometric-tolerance-candidate/1",
+            "item_type": "geometric_tolerance",
+            "tolerance_type": "flatness",
+            "tolerance_symbol": "⏥",
+            "tolerance_value": "0.08",
+            "datum_references": [],
+            "frames": [
+                {
+                    "segments": [
+                        {
+                            "tolerance_value": "0.08",
+                            "diameter_modifier": False,
+                            "modifiers": [],
+                            "datum_references": [],
+                        }
+                    ]
+                }
+            ],
+            "source_location_ids": ["source-b"],
+        },
+    }
+
+
+def _provider_call_identities(
+    *,
+    crop_sha256: str,
+    crop_ref: str,
+) -> list[dict[str, object]]:
+    return [
+        {
+            "source_sha256": _manifest()["entries"][0]["sha256"],
+            "visual_observation_ids": ["visual-a"],
+            "crop_bbox_pdf": [1.0, 2.0, 3.0, 4.0],
+            "crop_sha256": crop_sha256,
+            "crop_ref": crop_ref,
+            "model": "qwen3-vl-plus",
+            "model_identity_sha256": (
+                "6918ac1f8497fbd57c88eab5ff17f7e68678c6c5fd1028cb168a8dcf8bc5dae0"
+            ),
+            "prompt_version": "visual-symbol-prompt/4",
+            "prompt_identity_sha256": (
+                "5897c04eadbe40c189e500f64ff84738ffc17d59bb607aae665d4d07a41af811"
+            ),
+            "schema_version": "visual-symbol-review/3",
+            "schema_sha256": hashlib.sha256(
+                (
+                    ROOT
+                    / "backend/app/providers/visual_symbol_review.schema.json"
+                ).read_bytes()
+            ).hexdigest(),
+            "request_id_sha256": "2" * 64,
+        }
+    ]
+
+
 def _live_evidence() -> dict[str, object]:
     return {
         "schema_version": "live-run-evidence/2",
@@ -925,8 +1011,11 @@ def _materialize_bound_live_evidence(
     assert isinstance(symbol_evidence, dict)
     symbol_evidence["manifest_sha256"] = symbol_manifest_sha256
     symbol_evidence["annotation_verdict_sha256"] = symbol_verdict_sha256
+    crop_sha256 = hashlib.sha256(PNG_BYTES).hexdigest()
+    crop_ref = f"artifacts/provider-crops/{crop_sha256}.png"
+    assert _write_hashed(run_dir / crop_ref, PNG_BYTES) == crop_sha256
     symbol_report = {
-        "schema_version": "symbol-recognition-live-report/1",
+        "schema_version": "symbol-recognition-live-report/2",
         "selector": symbol_evidence["selector"],
         "run_id": RUN_ID,
         "order": 1,
@@ -940,6 +1029,11 @@ def _materialize_bound_live_evidence(
             "total_vision_calls_by_page"
         ],
         "source_command_count": 0,
+        "typed_gdt_cases": _typed_gdt_cases(),
+        "provider_call_identities": _provider_call_identities(
+            crop_sha256=crop_sha256,
+            crop_ref=crop_ref,
+        ),
         "evaluation": {
             "schema_version": "symbol-eval-report/1",
             "passed": True,
@@ -961,7 +1055,20 @@ def _materialize_bound_live_evidence(
             "negative_family_counts": symbol_evidence[
                 "negative_family_counts"
             ],
-            "label_matches": [],
+            "label_matches": [
+                {
+                    "label_id": "positive-gdt-parallelism",
+                    "candidate_id": "case-a",
+                    "disposition": "candidate",
+                    "overlap_ratio": 1.0,
+                },
+                {
+                    "label_id": "positive-gdt-flatness",
+                    "candidate_id": "case-b",
+                    "disposition": "candidate",
+                    "overlap_ratio": 1.0,
+                },
+            ],
             "excluded_candidate_ids": [],
             "failures": [],
         },
@@ -1489,6 +1596,7 @@ def test_visual_qa_code_change_seals_paused_attempt_failed(tmp_path: Path) -> No
 def test_live_cli_rejects_missing_server_credentials_before_run_creation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     runner = _load_module("qi_run_p0_live_preflight", HARNESS / "scripts/run-p0.py")
     runs = tmp_path / "runs"
@@ -1508,6 +1616,7 @@ def test_live_cli_rejects_missing_server_credentials_before_run_creation(
             "full-p0",
             "--input-set",
             "current-four",
+            "--activate-current-inputs",
             "--pause-after",
             "first-pdf-balloons",
             "--print-run-id-only",
@@ -1516,6 +1625,268 @@ def test_live_cli_rejects_missing_server_credentials_before_run_creation(
 
     assert result == 2
     assert not runs.exists()
+    assert "server-only Provider configuration is incomplete" in capsys.readouterr().err
+
+
+def test_repository_live_target_requests_fresh_activation_and_pause() -> None:
+    result = subprocess.run(
+        ["make", "--no-print-directory", "-n", "verify-p0-live"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    command = next(
+        line for line in result.stdout.splitlines() if "run-p0.py live" in line
+    )
+    assert "--activate-current-inputs" in command
+    assert "--pause-after first-pdf-balloons" in command
+    assert "--current-four-run" not in command
+    assert "--symbol-eval-run" not in command
+
+
+def test_full_live_activation_passes_generated_literal_runs_to_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_live_activation",
+        HARNESS / "scripts/run-p0.py",
+    )
+    current_four_run = "20260801T010101000000Z-11111111"
+    symbol_eval_run = "20260801T020202000000Z-22222222"
+    observed: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(
+        runner,
+        "activate_full_live_inputs",
+        lambda **_kwargs: (current_four_run, symbol_eval_run),
+        raising=False,
+    )
+
+    def preflight(**kwargs: object) -> dict[str, object]:
+        observed.append(
+            (
+                str(kwargs["current_four_run"]),
+                str(kwargs["symbol_eval_run"]),
+            )
+        )
+        return {"ready": True}
+
+    monkeypatch.setattr(runner, "preflight_full_p0_live", preflight)
+    monkeypatch.setattr(runner, "start_live_run", lambda _preflight: RUN_ID)
+
+    result = runner.main(
+        [
+            "live",
+            "--scope",
+            "full-p0",
+            "--input-set",
+            "current-four",
+            "--activate-current-inputs",
+            "--pause-after",
+            "first-pdf-balloons",
+            "--print-run-id-only",
+        ]
+    )
+
+    assert result == 0
+    assert observed == [(current_four_run, symbol_eval_run)]
+
+
+def test_full_live_activation_preflights_bytes_before_fresh_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_live_input_registration",
+        HARNESS / "scripts/run-p0.py",
+    )
+    current_four_run = "20260801T030303000000Z-33333333"
+    symbol_eval_run = "20260801T040404000000Z-44444444"
+    artifacts = {
+        runner.CURRENT_FOUR_ARTIFACT: b"current-four",
+        runner.SYMBOL_EVAL_ARTIFACT: b"symbol-eval",
+        runner.SYMBOL_VERDICT_ARTIFACT: b"symbol-verdict",
+    }
+    events: list[str] = []
+    monkeypatch.setattr(
+        runner,
+        "_current_live_input_artifacts",
+        lambda _source_root: artifacts,
+        raising=False,
+    )
+    monkeypatch.setattr(runner, "_require_live_environment", lambda _env: None)
+    monkeypatch.setattr(runner, "_current_live_identity", lambda _env: {})
+
+    def preflight(**kwargs: object) -> object:
+        events.append("preflight")
+        assert kwargs["input_artifacts"] == artifacts
+        assert kwargs["current_four_run"] is None
+        assert kwargs["symbol_eval_run"] is None
+        return object()
+
+    def run_task(*_args: object, **kwargs: object) -> tuple[str, str]:
+        events.append("current-four-registration")
+        assert kwargs["input_artifacts"] == {
+            runner.CURRENT_FOUR_ARTIFACT: b"current-four"
+        }
+        return current_four_run, "passed"
+
+    def register(**kwargs: object) -> str:
+        events.append("symbol-registration")
+        assert kwargs["artifacts"] == {
+            runner.SYMBOL_EVAL_ARTIFACT: b"symbol-eval",
+            runner.SYMBOL_VERDICT_ARTIFACT: b"symbol-verdict",
+        }
+        return symbol_eval_run
+
+    monkeypatch.setattr(runner, "preflight_full_p0_live", preflight)
+    monkeypatch.setattr(runner, "run_task", run_task)
+    monkeypatch.setattr(runner, "register_live_input_artifacts", register)
+
+    assert runner.activate_full_live_inputs(
+        source_root="/current-four",
+        environment={"ignored": "by mocked preflight"},
+    ) == (current_four_run, symbol_eval_run)
+    assert events == [
+        "preflight",
+        "current-four-registration",
+        "symbol-registration",
+    ]
+
+
+def test_typed_gdt_case_evidence_requires_exact_case_a_and_b() -> None:
+    runner = _load_module(
+        "qi_run_p0_typed_gdt_evidence",
+        HARNESS / "scripts/run-p0.py",
+    )
+    cases = _typed_gdt_cases()
+    raw_candidates = [
+        {
+            "candidate_id": case["candidate_id"],
+            "payload": case,
+            "source_location_ids": case["source_location_ids"],
+        }
+        for case in cases.values()
+    ]
+
+    evaluation = {
+        "label_matches": [
+            {
+                "label_id": case["annotation_label_id"],
+                "candidate_id": case["candidate_id"],
+                "disposition": "candidate",
+                "overlap_ratio": 1.0,
+            }
+            for case in cases.values()
+        ]
+    }
+
+    assert runner._typed_gdt_case_evidence(
+        raw_candidates,
+        evaluation=evaluation,
+        manifest=_symbol_manifest(),
+    ) == cases
+
+    raw_candidates[1]["payload"] = {
+        **raw_candidates[1]["payload"],
+        "tolerance_value": "0.05",
+    }
+    with pytest.raises(RuntimeError, match="typed GDT Case A/B"):
+        runner._typed_gdt_case_evidence(
+            raw_candidates,
+            evaluation=evaluation,
+            manifest=_symbol_manifest(),
+        )
+
+
+def test_embedded_provider_call_identity_seals_source_crop_model_prompt_schema() -> None:
+    runner = _load_module(
+        "qi_run_p0_provider_call_identity",
+        HARNESS / "scripts/run-p0.py",
+    )
+    identity_builder = _embedded_function(
+        runner._SYMBOL_RESULT_PROGRAM,
+        "provider_call_identity",
+        {"hashlib": hashlib, "json": json},
+    )
+    identity = {
+        "source_sha256": "a" * 64,
+        "visual_observation_ids": ["visual-a"],
+        "crop_bbox_pdf": [1.0, 2.0, 3.0, 4.0],
+        "crop_sha256": "b" * 64,
+        "model": "qwen3-vl-plus",
+        "prompt_version": "visual-symbol-prompt/4",
+        "schema_version": "visual-symbol-review/3",
+    }
+
+    assert identity_builder(
+        identity,
+        request_id="request-a",
+        schema_sha256="c" * 64,
+    ) == {
+        **identity,
+        "model_identity_sha256": (
+            "6918ac1f8497fbd57c88eab5ff17f7e68678c6c5fd1028cb168a8dcf8bc5dae0"
+        ),
+        "prompt_identity_sha256": (
+            "5897c04eadbe40c189e500f64ff84738ffc17d59bb607aae665d4d07a41af811"
+        ),
+        "schema_sha256": "c" * 64,
+        "request_id_sha256": (
+            "80d51bb829a6e379a6f43309aa6b28d206ff39953816b748267b16bed58be497"
+        ),
+    }
+
+
+def test_provider_crop_evidence_is_run_bound_and_content_addressed(
+    tmp_path: Path,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_provider_crop_evidence",
+        HARNESS / "scripts/run-p0.py",
+    )
+    run_dir = tmp_path / RUN_ID
+    (run_dir / "artifacts").mkdir(parents=True)
+    crop_sha256 = hashlib.sha256(PNG_BYTES).hexdigest()
+    identity = {"crop_sha256": crop_sha256, "request_id_sha256": "a" * 64}
+    artifacts = [
+        {
+            "crop_sha256": crop_sha256,
+            "content_base64": base64.b64encode(PNG_BYTES).decode("ascii"),
+        }
+    ]
+
+    assert runner._seal_provider_crop_evidence(
+        run_dir,
+        [identity, {**identity, "request_id_sha256": "b" * 64}],
+        artifacts,
+    ) == [
+        {
+            **identity,
+            "crop_ref": f"artifacts/provider-crops/{crop_sha256}.png",
+        },
+        {
+            **identity,
+            "request_id_sha256": "b" * 64,
+            "crop_ref": f"artifacts/provider-crops/{crop_sha256}.png",
+        },
+    ]
+    assert (
+        run_dir / f"artifacts/provider-crops/{crop_sha256}.png"
+    ).read_bytes() == PNG_BYTES
+
+    second_run_dir = tmp_path / f"{RUN_ID}-tamper"
+    (second_run_dir / "artifacts").mkdir(parents=True)
+    with pytest.raises(RuntimeError, match="crop artifact is invalid"):
+        runner._seal_provider_crop_evidence(
+            second_run_dir,
+            [identity],
+            [{**artifacts[0], "content_base64": base64.b64encode(
+                COMPARISON_PNG_BYTES
+            ).decode("ascii")}],
+        )
 
 
 def test_full_live_symbol_eval_run_is_literal_and_binds_sealed_bytes(
@@ -2353,7 +2724,6 @@ def test_live_phase_outcomes_require_strong_per_sample_evidence(
         "phase://live/balloons?input_set=current-four",
         run_dir,
     )[1] == "blocked"
-
     live = _materialize_bound_live_evidence(run_dir, design_qa)
     review_ref = live["samples"][0]["review"]["evidence_ref"]
     (run_dir / review_ref).write_text("tampered\n", encoding="utf-8")
@@ -2379,6 +2749,47 @@ def test_live_phase_outcomes_require_strong_per_sample_evidence(
     (run_dir / "live-run-evidence.json").write_bytes(_json_bytes(weak))
     assert runner._live_phase_outcome(
         "phase://live/balloons?input_set=current-four",
+        run_dir,
+    )[1] == "blocked"
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ("case_frame", "prompt_identity", "crop_identity", "malformed_counts"),
+)
+def test_symbol_report_rejects_typed_frame_or_provider_identity_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tamper: str,
+) -> None:
+    runner = _load_module(
+        f"qi_run_p0_symbol_report_tamper_{tamper}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    run_dir = tmp_path / RUN_ID
+    design_qa = tmp_path / "design-qa.md"
+    monkeypatch.setattr(runner, "_design_qa_document_path", lambda: design_qa)
+    live = _materialize_bound_live_evidence(run_dir, design_qa)
+    report_path = run_dir / "reports/symbol-recognition.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    if tamper == "case_frame":
+        report["typed_gdt_cases"]["case_b"]["frames"][0]["segments"][0][
+            "tolerance_value"
+        ] = "9.9"
+    elif tamper == "prompt_identity":
+        report["provider_call_identities"][0]["prompt_identity_sha256"] = "0" * 64
+    elif tamper == "crop_identity":
+        report["provider_call_identities"][0]["crop_sha256"] = "0" * 64
+    else:
+        report["evaluation"]["counts"] = []
+    live["symbol_recognition"]["report_sha256"] = _write_hashed(
+        report_path,
+        _json_bytes(report),
+    )
+    (run_dir / "live-run-evidence.json").write_bytes(_json_bytes(live))
+
+    assert runner._live_phase_outcome(
+        "phase://live/candidates?input_set=current-four",
         run_dir,
     )[1] == "blocked"
 

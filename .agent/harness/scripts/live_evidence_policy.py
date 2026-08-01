@@ -1222,14 +1222,219 @@ def validate_symbol_recognition_evidence(
         "visual_calls_by_page",
         "total_vision_calls_by_page",
         "source_command_count",
+        "typed_gdt_cases",
+        "provider_call_identities",
         "evaluation",
         "failures",
         "passed",
     }
     evaluation = report.get("evaluation")
+    typed_cases = report.get("typed_gdt_cases")
+    provider_identities = report.get("provider_call_identities")
+    expected_cases = {
+        "case_a": ("parallelism", "∥", "0.1", ["A"], "gdt_parallelism"),
+        "case_b": ("flatness", "⏥", "0.08", [], "gdt_flatness"),
+    }
+    typed_cases_valid = isinstance(typed_cases, Mapping) and set(
+        typed_cases
+    ) == set(expected_cases)
+    if typed_cases_valid:
+        for case_name, expected in expected_cases.items():
+            case = typed_cases[case_name]
+            datums = case.get("datum_references") if isinstance(case, Mapping) else None
+            datum_names = (
+                [entry.get("datum") for entry in datums if isinstance(entry, Mapping)]
+                if isinstance(datums, list)
+                else None
+            )
+            frames = case.get("frames") if isinstance(case, Mapping) else None
+            first_frame = frames[0] if isinstance(frames, list) and frames else None
+            segments = (
+                first_frame.get("segments")
+                if isinstance(first_frame, Mapping)
+                else None
+            )
+            first_segment = (
+                segments[0]
+                if isinstance(segments, list) and segments
+                else None
+            )
+            segment_datums = (
+                first_segment.get("datum_references")
+                if isinstance(first_segment, Mapping)
+                else None
+            )
+            segment_datum_names = (
+                [
+                    entry.get("datum")
+                    for entry in segment_datums
+                    if isinstance(entry, Mapping)
+                ]
+                if isinstance(segment_datums, list)
+                else None
+            )
+            if (
+                not isinstance(case, Mapping)
+                or set(case)
+                != {
+                    "candidate_id",
+                    "annotation_label_id",
+                    "schema_version",
+                    "item_type",
+                    "tolerance_type",
+                    "tolerance_symbol",
+                    "tolerance_value",
+                    "datum_references",
+                    "frames",
+                    "source_location_ids",
+                }
+                or not isinstance(case.get("candidate_id"), str)
+                or not isinstance(case.get("annotation_label_id"), str)
+                or case.get("schema_version")
+                != "geometric-tolerance-candidate/1"
+                or case.get("item_type") != "geometric_tolerance"
+                or (
+                    case.get("tolerance_type"),
+                    case.get("tolerance_symbol"),
+                    case.get("tolerance_value"),
+                    datum_names,
+                )
+                != expected[:4]
+                or not isinstance(first_segment, Mapping)
+                or first_segment.get("tolerance_value") != expected[2]
+                or first_segment.get("diameter_modifier") is not False
+                or segment_datum_names != expected[3]
+                or not isinstance(case.get("source_location_ids"), list)
+                or not case["source_location_ids"]
+            ):
+                typed_cases_valid = False
+                break
+    schema_path = (
+        root / "backend/app/providers/visual_symbol_review.schema.json"
+    )
+    expected_schema_sha256 = (
+        hashlib.sha256(schema_path.read_bytes()).hexdigest()
+        if schema_path.is_file()
+        else None
+    )
+
+    def provider_identity_is_valid(identity: Any) -> bool:
+        if not isinstance(identity, Mapping):
+            return False
+        visual_ids = identity.get("visual_observation_ids")
+        crop_bbox_pdf = identity.get("crop_bbox_pdf")
+        prompt_identity = json.dumps(
+            {
+                "prompt_version": identity.get("prompt_version"),
+                "schema_version": identity.get("schema_version"),
+                "visual_observation_ids": visual_ids,
+                "crop_bbox_pdf": crop_bbox_pdf,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        try:
+            crop_artifact_valid = _verified_hashed_artifact(
+                root,
+                run,
+                identity.get("crop_ref"),
+                identity.get("crop_sha256"),
+                run_dir=run_dir,
+                expect_png=True,
+            )[0].is_file()
+        except ValueError:
+            crop_artifact_valid = False
+        return bool(
+            set(identity)
+            == {
+                "source_sha256",
+                "visual_observation_ids",
+                "crop_bbox_pdf",
+                "crop_sha256",
+                "crop_ref",
+                "model",
+                "model_identity_sha256",
+                "prompt_version",
+                "prompt_identity_sha256",
+                "schema_version",
+                "schema_sha256",
+                "request_id_sha256",
+            }
+            and identity.get("source_sha256") == report.get("source_sha256")
+            and identity.get("crop_ref")
+            == f"artifacts/provider-crops/{identity.get('crop_sha256')}.png"
+            and isinstance(visual_ids, list)
+            and bool(visual_ids)
+            and isinstance(crop_bbox_pdf, list)
+            and len(crop_bbox_pdf) == 4
+            and all(
+                isinstance(identity.get(field), str)
+                and bool(identity[field])
+                for field in ("model", "prompt_version", "schema_version")
+            )
+            and all(
+                isinstance(identity.get(field), str)
+                and re.fullmatch(r"[0-9a-f]{64}", identity[field]) is not None
+                for field in (
+                    "source_sha256",
+                    "crop_sha256",
+                    "model_identity_sha256",
+                    "prompt_identity_sha256",
+                    "schema_sha256",
+                    "request_id_sha256",
+                )
+            )
+            and identity.get("model_identity_sha256")
+            == hashlib.sha256(identity["model"].encode("utf-8")).hexdigest()
+            and identity.get("prompt_identity_sha256")
+            == hashlib.sha256(prompt_identity).hexdigest()
+            and (
+                expected_schema_sha256 is None
+                or identity.get("schema_sha256") == expected_schema_sha256
+            )
+            and crop_artifact_valid
+        )
+
+    provider_identities_valid = (
+        isinstance(provider_identities, list)
+        and bool(provider_identities)
+        and all(provider_identity_is_valid(identity) for identity in provider_identities)
+        and len(
+            {identity["request_id_sha256"] for identity in provider_identities}
+        )
+        == len(provider_identities)
+    )
+    case_bindings_valid = bool(
+        typed_cases_valid
+        and isinstance(typed_cases, Mapping)
+        and isinstance(evaluation, Mapping)
+        and isinstance(evaluation.get("label_matches"), list)
+        and all(
+            any(
+                isinstance(match, Mapping)
+                and match.get("candidate_id") == case.get("candidate_id")
+                and match.get("label_id") == case.get("annotation_label_id")
+                and match.get("disposition") == "candidate"
+                and any(
+                    label.get("label_id") == case.get("annotation_label_id")
+                    and label.get("symbol_kinds") == [expected_cases[name][4]]
+                    for page in symbol_manifest.get("pages", [])
+                    if isinstance(page, Mapping)
+                    for label in page.get("labels", [])
+                    if isinstance(label, Mapping)
+                )
+                for match in evaluation["label_matches"]
+            )
+            for name, case in typed_cases.items()
+        )
+    )
+    evaluation_counts = (
+        evaluation.get("counts") if isinstance(evaluation, Mapping) else None
+    )
     if (
         set(report) != expected_report_fields
-        or report.get("schema_version") != "symbol-recognition-live-report/1"
+        or report.get("schema_version") != "symbol-recognition-live-report/2"
         or report.get("selector") != SYMBOL_RECOGNITION_SELECTOR
         or report.get("run_id") != run.get("run_id")
         or report.get("order") != 1
@@ -1244,17 +1449,21 @@ def validate_symbol_recognition_evidence(
         or report.get("source_command_count") != 0
         or report.get("failures") != []
         or report.get("passed") is not True
+        or not typed_cases_valid
+        or not provider_identities_valid
+        or not case_bindings_valid
         or not isinstance(evaluation, Mapping)
         or evaluation.get("schema_version") != "symbol-eval-report/1"
         or evaluation.get("passed") is not True
         or evaluation.get("failures") != []
-        or evaluation.get("counts", {}).get("candidate_match_count")
+        or not isinstance(evaluation_counts, Mapping)
+        or evaluation_counts.get("candidate_match_count")
         != evidence.get("candidate_match_count")
-        or evaluation.get("counts", {}).get("reference_match_count")
+        or evaluation_counts.get("reference_match_count")
         != evidence.get("reference_match_count")
-        or evaluation.get("counts", {}).get("non_inspection_match_count")
+        or evaluation_counts.get("non_inspection_match_count")
         != evidence.get("non_inspection_match_count")
-        or evaluation.get("counts", {}).get("negative_false_positive_count")
+        or evaluation_counts.get("negative_false_positive_count")
         != 0
     ):
         raise ValueError("symbol recognition report is stale or incomplete")

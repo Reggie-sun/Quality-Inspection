@@ -41,16 +41,17 @@
 - Selected lane: `Heavy`。
 - Selected plan: 本文件由用户显式选为 current plan，并在独立 worktree 中执行。
 - Selection evidence: 用户显式调用本 plan 的 `superpowers:executing-plans`。
-- Validation action: `execute`，因为目标新增 stable candidate/API contract 与 data migration；不是现有七天 P0 plan 的 amendment。
-- Writer ownership and order: 单 writer，严格顺序，reviewer/read-only explorer 不拥有写权限。
-- First execution verification: 对激活后的 worktree 运行 `git status --short && git rev-parse HEAD && rg -n "revision =|down_revision =" backend/alembic/versions/*.py`，确认 clean base、expected HEAD 和唯一 Alembic head。
+- Validation action: `amend` for GDT-10 Step 4/5。`make verify-p0-live` 当前没有传入 full-live start 所需的 registration/pause activation，且 final receipt 只能在 headed QA 后 resume 生成；目标和 Owner 不变，但 allowed paths 与验证顺序必须修正。
+- Writer ownership and order: 父 agent 为唯一 writer；先修改 plan/bug-memory，再按 TDD 修改 `Makefile`、Harness runner/policy 和单一 contract test file，最后派发独立 read-only reviewer。
+- Unchanged contract: current P0 contract matrix、runtime config、production deployment、literal run-ID validation、current authenticated Provider/no-synthetic requirement 均不改变；旧 registration 只能作为 approved annotation input，不得冒充本次 Provider evidence。
+- Next verification: 安全注入缺失的 Provider mode/network credential、operator 和 current-four source-root identity 后，原样重跑 repository-owned `make verify-p0-live`；只有真实进入 `visual_qa_pending:first-pdf-balloons` 且 symbol gate 通过才进入 headed Step 5。
 
 ## Status
 
 - Date: `2026-08-01`
-- Status: `implementation complete through offline GDT-10 gates; live evidence pending explicit authorization`
+- Status: `GDT-10 Step 4 blocked at live runtime identity injection; repository activation amendment verified`
 - Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
-- Current blocker: `make verify-p0-live` and headed workbench/export proof were not run because this turn did not provide the plan-required explicit live authorization。
+- Current blocker: fresh `make verify-p0-live` reaches the zero-paid live preflight and exits `2` because `QI_TENCENT_SECRET_ID`、`QI_TENCENT_SECRET_KEY`、`QI_QWEN_API_KEY` and `QI_QWEN_WORKSPACE_ID` are unset；presence-only identity check also finds `QI_PROVIDER_MODE`、`QI_PROVIDER_NETWORK_ENABLED`、`QI_P0_OPERATOR_ID` and `QI_CURRENT_FOUR_SOURCE_ROOT` unset。No run was created and Step 5 was not started。
 - Worktree: `.worktrees/structured-geometric-tolerance-recognition`
 - Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`。
 
@@ -60,6 +61,7 @@
 - Rollback-first: previous application commit `6bbaf90` served the known workbench GET successfully against the isolated `0012` database；database was restored to `0013` afterward。
 - Contract/static: `check-contracts.py`、OpenAPI breaking gate (`0` changes)、frontend `api:check`、contract architecture gate and `git diff --check` passed；production coarse-writer search returned no matches。
 - Tests: offline backend full suite `1647 passed`；frontend full suite `26 files / 278 tests passed`；frontend production build passed；GDT backend/frontend offline E2E passed earlier in GDT-9。
+- Live activation amendment: focused Harness RED reproduced target/CLI、false credential coverage、typed Case A/B、run-bound crop and malformed nested policy gaps；focused contract file is `61 passed`，final Harness contract suite is `173 passed`，Ruff/diff checks pass，and independent reviewer verdict is `accept`。Fresh `make verify-p0-live` passed all `69/111` contract mapping checks, then stopped before source reads/run creation/Provider calls with the exact missing-credential blocker；run directory count remained `14 -> 14`。
 - Environment note: `make test-backend` could not create its fresh Docker network because Docker reported `all predefined address pools have been fully subnetted`；the equivalent full backend suite ran against the isolated PostgreSQL and passed。
 - Remaining completion gate: authorized current-four live Provider receipt and separately recorded headed workbench display/edit/reload/freeze/PDF/Excel proof。
 
@@ -1129,7 +1131,10 @@ git commit -m "test(gdt): close export and offline e2e"
 - Modify: `backend/app/review/service.py`
 - Modify: `backend/tests/integration/test_geometric_tolerance_migration.py`
 - Modify: `.agent/harness/scripts/run-p0.py` only after the plan is explicitly activated for the symbol-recognition current-four contract。
+- Modify: `.agent/harness/scripts/live_evidence_policy.py` with the same activation, only to validate typed Case A/B and sealed Provider identity hashes in the symbol report。
 - Modify: `backend/tests/contract/harness/test_live_run_contract.py` only with the same activation。
+- Modify: `Makefile` only to invoke repository-owned current input registration/full-live pause activation；do not add implicit `latest` selection。
+- Modify: `.agent/bug-memory.md` to record and close the confirmed live-target regression。
 - Generate under: `.agent/harness/runs/` only through the existing Harness command；never choose a run ID or hand-write run evidence。
 - Modify: this plan Status/verification section after evidence is sealed。
 
@@ -1179,11 +1184,11 @@ Run the repository-owned command:
 make verify-p0-live
 ```
 
-The generated symbol-recognition report must add typed Case A/B fields and retain all existing non-GD&T contract results。Formal success requires current authenticated Provider calls、sealed source/crop/model/prompt/schema hashes、no synthetic substitution and a passing full-P0 receipt；otherwise record the exact blocker without converting it to accepted risk。
+The command must first perform zero-paid runtime/source/contract preflight, create fresh Harness-owned current-four and symbol-input registration runs from exact current sources plus the unique Git-HEAD-approved annotation bytes, then pass those literal generated IDs into the unchanged full-live start path。Step 4 success means current authenticated Provider calls、sealed source/crop/model/prompt/schema identity hashes、typed Case A/B、all existing non-GD&T symbol results and `execution_state=visual_qa_pending:first-pdf-balloons`。A final receipt is not expected before headed QA；any failure remains an exact blocker and is not converted to accepted risk。
 
 - [ ] **Step 5: Run headed workbench QA and export proof**
 
-Using Chrome MCP or the repository `browse` skill, open the exact live project and separately record:
+Only after the Step 4 pause evidence above passes, use Chrome MCP or the repository `browse` skill on the exact paused run/project and separately record:
 
 - API payload for Case A/B；
 - list labels/value/datum；
@@ -1193,6 +1198,8 @@ Using Chrome MCP or the repository `browse` skill, open the exact live project a
 - PDF/Excel export from the same reviewed result。
 
 Do not treat API proof as headed UI proof。Do not acquire/overwrite another operator's review lock；if lock ownership conflicts, stop with the exact project/operator/expiry metadata but no credential values。
+
+After the run-bound `design-qa.md` passes, resume that same literal run ID。Only the resumed current-four/full-P0 run may generate the final `receipt.json` required for GDT-10 completion；do not start a replacement run or select `latest`。
 
 - [ ] **Step 6: Final independent review**
 

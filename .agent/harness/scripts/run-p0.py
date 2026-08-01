@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import importlib.util
 import json
@@ -1120,6 +1121,138 @@ def _load_full_live_input_artifacts(
     return _validate_input_artifacts(artifacts)
 
 
+def _git_head_bytes(relative_path: str) -> bytes:
+    if (
+        not relative_path.startswith(".agent/harness/runs/")
+        or Path(relative_path).is_absolute()
+        or ".." in Path(relative_path).parts
+    ):
+        raise ValueError("approved symbol input path is invalid")
+    result = subprocess.run(
+        ["git", "show", f"HEAD:{relative_path}"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0 or not result.stdout:
+        raise ValueError("approved symbol input bytes are unavailable from Git HEAD")
+    return result.stdout
+
+
+def _git_head_symbol_artifact_sets() -> list[dict[str, bytes]]:
+    result = subprocess.run(
+        [
+            "git",
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "HEAD",
+            "--",
+            ".agent/harness/runs",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise ValueError("approved symbol input inventory is unavailable from Git HEAD")
+    paths = set(result.stdout.splitlines())
+    manifests = sorted(
+        path for path in paths if path.endswith(f"/{SYMBOL_EVAL_ARTIFACT}")
+    )
+    candidates: list[dict[str, bytes]] = []
+    for manifest_path in manifests:
+        run_prefix = manifest_path[: -len(SYMBOL_EVAL_ARTIFACT)]
+        verdict_path = f"{run_prefix}{SYMBOL_VERDICT_ARTIFACT}"
+        if verdict_path not in paths:
+            continue
+        candidates.append(
+            {
+                SYMBOL_EVAL_ARTIFACT: _git_head_bytes(manifest_path),
+                SYMBOL_VERDICT_ARTIFACT: _git_head_bytes(verdict_path),
+            }
+        )
+    return candidates
+
+
+def _approved_symbol_input_artifacts(source_sha256: str) -> dict[str, bytes]:
+    stage = _script_module(
+        "qi_approved_symbol_input_contract",
+        "stage-symbol-eval.py",
+    )
+    unique: dict[str, dict[str, bytes]] = {}
+    for candidate in _git_head_symbol_artifact_sets():
+        try:
+            validated = stage.validate_artifacts(candidate)
+            manifest = json.loads(validated[SYMBOL_EVAL_ARTIFACT])
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+            continue
+        if manifest.get("source_sha256") != source_sha256:
+            continue
+        identity = hashlib.sha256(
+            b"\0".join(validated[name] for name in SYMBOL_EVAL_ARTIFACTS)
+        ).hexdigest()
+        unique[identity] = validated
+    if len(unique) != 1:
+        raise ValueError(
+            "Git HEAD must contain one unique approved symbol annotation input set"
+        )
+    return next(iter(unique.values()))
+
+
+def _current_live_input_artifacts(source_root: str) -> dict[str, bytes]:
+    stage = _script_module(
+        "qi_current_live_input_activation",
+        "stage-current-four.py",
+    )
+    sources = stage._resolve_sources(None, source_root)
+    stage._verify_sources(sources)
+    manifest_bytes = stage._manifest_bytes(stage.FROZEN_DOCUMENTS)
+    manifest = json.loads(manifest_bytes)
+    source_sha256 = manifest.get("first_checkpoint", {}).get("sha256")
+    if not isinstance(source_sha256, str):
+        raise ValueError("current-four first checkpoint identity is unavailable")
+    return {
+        CURRENT_FOUR_ARTIFACT: manifest_bytes,
+        **_approved_symbol_input_artifacts(source_sha256),
+    }
+
+
+def activate_full_live_inputs(
+    *,
+    source_root: str | None,
+    environment: Mapping[str, str] | None = None,
+) -> tuple[str, str]:
+    current_environment = os.environ if environment is None else environment
+    _require_live_environment(current_environment)
+    _current_live_identity(current_environment)
+    if source_root is None or not source_root.strip():
+        raise ValueError(f"{LIVE_SOURCE_ROOT_ENV} is required")
+    artifacts = _current_live_input_artifacts(source_root)
+    preflight_full_p0_live(
+        input_set="current-four",
+        source_root=source_root,
+        current_four_run=None,
+        symbol_eval_run=None,
+        input_artifacts=artifacts,
+        environment=current_environment,
+    )
+    current_four_run, verdict = run_task(
+        "live",
+        "task",
+        "D2-T1",
+        input_artifacts={CURRENT_FOUR_ARTIFACT: artifacts[CURRENT_FOUR_ARTIFACT]},
+    )
+    if verdict != "passed":
+        raise RuntimeError("fresh current-four registration did not pass")
+    symbol_eval_run = register_live_input_artifacts(
+        task_id="D7-T2",
+        artifacts={name: artifacts[name] for name in SYMBOL_EVAL_ARTIFACTS},
+    )
+    return current_four_run, symbol_eval_run
+
+
 def _attach_full_live_input_artifacts(
     run_dir: Path,
     artifacts: Mapping[str, bytes],
@@ -1749,6 +1882,7 @@ finally:
 
 
 _SYMBOL_RESULT_PROGRAM = r"""
+import base64
 import hashlib
 import json
 import os
@@ -1760,6 +1894,7 @@ from sqlalchemy import select
 from app.audit.operations import OperationRecord
 from app.candidates.models import AutomaticResult
 from app.candidates.symbol_review import (
+    SCHEMA_PATH,
     build_visual_failure_envelope,
     parse_visual_request_evidence,
 )
@@ -1795,6 +1930,66 @@ def visual_attempt_count(audit, retry_evidence):
         ):
             raise RuntimeError("visual Provider retry evidence is invalid")
     return 1 + audit["retry_count"]
+
+
+def provider_call_identity(identity, *, request_id, schema_sha256):
+    if not isinstance(identity, dict):
+        raise RuntimeError("visual Provider sealed identity is invalid")
+    source_sha256 = identity.get("source_sha256")
+    visual_ids = identity.get("visual_observation_ids")
+    crop_bbox_pdf = identity.get("crop_bbox_pdf")
+    crop_sha256 = identity.get("crop_sha256")
+    model = identity.get("model")
+    prompt_version = identity.get("prompt_version")
+    schema_version = identity.get("schema_version")
+    hashes = (source_sha256, crop_sha256, schema_sha256)
+    if (
+        any(
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+            for value in hashes
+        )
+        or not isinstance(visual_ids, list)
+        or not visual_ids
+        or any(not isinstance(value, str) or not value for value in visual_ids)
+        or not isinstance(crop_bbox_pdf, list)
+        or len(crop_bbox_pdf) != 4
+        or any(not isinstance(value, (int, float)) for value in crop_bbox_pdf)
+        or not isinstance(model, str)
+        or not model
+        or not isinstance(prompt_version, str)
+        or not prompt_version
+        or not isinstance(schema_version, str)
+        or not schema_version
+        or not isinstance(request_id, str)
+        or not request_id
+    ):
+        raise RuntimeError("visual Provider sealed identity is invalid")
+    prompt_identity = json.dumps(
+        {
+            "prompt_version": prompt_version,
+            "schema_version": schema_version,
+            "visual_observation_ids": visual_ids,
+            "crop_bbox_pdf": crop_bbox_pdf,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {
+        "source_sha256": source_sha256,
+        "visual_observation_ids": visual_ids,
+        "crop_bbox_pdf": crop_bbox_pdf,
+        "crop_sha256": crop_sha256,
+        "model": model,
+        "model_identity_sha256": hashlib.sha256(model.encode("utf-8")).hexdigest(),
+        "prompt_version": prompt_version,
+        "prompt_identity_sha256": hashlib.sha256(prompt_identity).hexdigest(),
+        "schema_version": schema_version,
+        "schema_sha256": schema_sha256,
+        "request_id_sha256": hashlib.sha256(request_id.encode("utf-8")).hexdigest(),
+    }
 
 
 def paired_cache(project_root, storage, project_id, relative):
@@ -2037,6 +2232,9 @@ try:
     project_root = storage.root / "projects" / str(project_id)
 
     visual_counts = {page_index: 0 for page_index in page_indexes}
+    provider_call_identities = []
+    provider_crop_artifacts = {}
+    schema_sha256 = hashlib.sha256(SCHEMA_PATH.read_bytes()).hexdigest()
     for cache, attempt_count in paired_cache(
         project_root,
         storage,
@@ -2058,6 +2256,23 @@ try:
         }
         if None in call_pages or len(call_pages) != 1:
             raise RuntimeError("visual Provider page identity is ambiguous")
+        sealed_identity = provider_call_identity(
+            identity,
+            request_id=cache.get("request_id"),
+            schema_sha256=schema_sha256,
+        )
+        crop_sha256 = sealed_identity["crop_sha256"]
+        crop_ref = (
+            f"asset://projects/{project_id}/provider-inputs/qwen-symbol/"
+            f"{crop_sha256}.png"
+        )
+        crop_content = storage.resolve_resource_ref(crop_ref).read_bytes()
+        if hashlib.sha256(crop_content).hexdigest() != crop_sha256:
+            raise RuntimeError("visual Provider crop identity is invalid")
+        provider_call_identities.append(sealed_identity)
+        provider_crop_artifacts[crop_sha256] = base64.b64encode(
+            crop_content
+        ).decode("ascii")
         visual_counts[next(iter(call_pages))] += attempt_count
 
     text_pages_by_crop = {}
@@ -2112,6 +2327,14 @@ try:
         "visual_observations": visuals,
         "raw_candidates": raw.candidates,
         "raw_coverage": coverage,
+        "provider_call_identities": provider_call_identities,
+        "provider_crop_artifacts": [
+            {
+                "crop_sha256": crop_sha256,
+                "content_base64": provider_crop_artifacts[crop_sha256],
+            }
+            for crop_sha256 in sorted(provider_crop_artifacts)
+        ],
         "visual_calls_by_page": [
             {"page_index": page_index, "count": visual_counts[page_index]}
             for page_index in sorted(page_indexes)
@@ -2581,6 +2804,8 @@ def _collect_symbol_result(
         "visual_observations",
         "raw_candidates",
         "raw_coverage",
+        "provider_call_identities",
+        "provider_crop_artifacts",
         "visual_calls_by_page",
         "total_vision_calls_by_page",
         "source_command_count",
@@ -2592,6 +2817,161 @@ def _collect_symbol_result(
     ):
         raise RuntimeError("post-result symbol evidence identity is incomplete")
     return document
+
+
+def _seal_provider_crop_evidence(
+    run_dir: Path,
+    identities: Any,
+    crop_artifacts: Any,
+) -> list[dict[str, Any]]:
+    if not isinstance(identities, list) or not identities:
+        raise RuntimeError("visual Provider identities are unavailable")
+    if not isinstance(crop_artifacts, list) or not crop_artifacts:
+        raise RuntimeError("visual Provider crop artifacts are unavailable")
+    decoded: dict[str, bytes] = {}
+    for artifact in crop_artifacts:
+        if (
+            not isinstance(artifact, Mapping)
+            or set(artifact) != {"crop_sha256", "content_base64"}
+            or not isinstance(artifact.get("crop_sha256"), str)
+            or not isinstance(artifact.get("content_base64"), str)
+        ):
+            raise RuntimeError("visual Provider crop artifact is invalid")
+        crop_sha256 = artifact["crop_sha256"]
+        try:
+            content = base64.b64decode(
+                artifact["content_base64"],
+                validate=True,
+            )
+        except (ValueError, TypeError):
+            raise RuntimeError("visual Provider crop artifact is invalid") from None
+        if (
+            not content.startswith(PNG_SIGNATURE)
+            or hashlib.sha256(content).hexdigest() != crop_sha256
+            or crop_sha256 in decoded
+        ):
+            raise RuntimeError("visual Provider crop artifact is invalid")
+        decoded[crop_sha256] = content
+    required = {
+        identity.get("crop_sha256")
+        for identity in identities
+        if isinstance(identity, Mapping)
+    }
+    if None in required or required != set(decoded):
+        raise RuntimeError("visual Provider crop artifact identity is incomplete")
+    crop_dir = run_dir / "artifacts/provider-crops"
+    if crop_dir.exists() or crop_dir.is_symlink():
+        raise RuntimeError("visual Provider crop artifact destination exists")
+    crop_dir.mkdir()
+    for crop_sha256, content in decoded.items():
+        (crop_dir / f"{crop_sha256}.png").write_bytes(content)
+    sealed: list[dict[str, Any]] = []
+    for identity in identities:
+        if not isinstance(identity, Mapping):
+            raise RuntimeError("visual Provider sealed identity is invalid")
+        crop_sha256 = identity.get("crop_sha256")
+        if not isinstance(crop_sha256, str):
+            raise RuntimeError("visual Provider sealed identity is invalid")
+        crop_ref = f"artifacts/provider-crops/{crop_sha256}.png"
+        sealed.append({**identity, "crop_ref": crop_ref})
+    return sealed
+
+
+def _typed_gdt_case_evidence(
+    raw_candidates: Any,
+    *,
+    evaluation: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw_candidates, list):
+        raise RuntimeError("typed GDT Case A/B candidates are unavailable")
+    expected = {
+        "case_a": ("parallelism", "∥", "0.1", ["A"], "gdt_parallelism"),
+        "case_b": ("flatness", "⏥", "0.08", [], "gdt_flatness"),
+    }
+    label_kinds = {
+        label.get("label_id"): label.get("symbol_kinds")
+        for page in manifest.get("pages", [])
+        if isinstance(page, Mapping)
+        for label in page.get("labels", [])
+        if isinstance(label, Mapping)
+    }
+    label_matches = evaluation.get("label_matches")
+    if not isinstance(label_matches, list):
+        raise RuntimeError("typed GDT Case A/B annotation matches are unavailable")
+    matches: dict[str, list[dict[str, Any]]] = {name: [] for name in expected}
+    for candidate in raw_candidates:
+        if not isinstance(candidate, Mapping):
+            continue
+        payload = candidate.get("payload")
+        if not isinstance(payload, Mapping):
+            continue
+        datums = payload.get("datum_references")
+        datum_names = (
+            [entry.get("datum") for entry in datums if isinstance(entry, Mapping)]
+            if isinstance(datums, list)
+            else None
+        )
+        for case_name, (
+            tolerance_type,
+            symbol,
+            value,
+            expected_datums,
+            expected_kind,
+        ) in expected.items():
+            if (
+                payload.get("item_type") == "geometric_tolerance"
+                and payload.get("tolerance_type") == tolerance_type
+                and payload.get("tolerance_symbol") == symbol
+                and payload.get("tolerance_value") == value
+                and datum_names == expected_datums
+            ):
+                source_ids = payload.get(
+                    "source_location_ids",
+                    candidate.get("source_location_ids"),
+                )
+                candidate_id = payload.get(
+                    "candidate_id",
+                    candidate.get("candidate_id"),
+                )
+                annotation_matches = [
+                    match
+                    for match in label_matches
+                    if isinstance(match, Mapping)
+                    and match.get("candidate_id") == candidate_id
+                    and match.get("disposition") == "candidate"
+                    and label_kinds.get(match.get("label_id")) == [expected_kind]
+                ]
+                if len(annotation_matches) != 1:
+                    continue
+                fields = {
+                    "candidate_id": candidate_id,
+                    "annotation_label_id": annotation_matches[0]["label_id"],
+                    "schema_version": payload.get("schema_version"),
+                    "item_type": payload.get("item_type"),
+                    "tolerance_type": payload.get("tolerance_type"),
+                    "tolerance_symbol": payload.get("tolerance_symbol"),
+                    "tolerance_value": payload.get("tolerance_value"),
+                    "datum_references": payload.get("datum_references"),
+                    "frames": payload.get("frames"),
+                    "source_location_ids": source_ids,
+                }
+                if (
+                    not isinstance(fields["candidate_id"], str)
+                    or fields["schema_version"]
+                    != "geometric-tolerance-candidate/1"
+                    or not isinstance(fields["frames"], list)
+                    or not fields["frames"]
+                    or not isinstance(source_ids, list)
+                    or not source_ids
+                ):
+                    raise RuntimeError("typed GDT Case A/B payload is incomplete")
+                matches[case_name].append(
+                    json.loads(json.dumps(fields, ensure_ascii=False))
+                )
+    if any(len(items) != 1 for items in matches.values()):
+        raise RuntimeError("typed GDT Case A/B evidence is missing or ambiguous")
+    return {name: items[0] for name, items in matches.items()}
 
 
 def _call_counts(
@@ -2725,8 +3105,18 @@ def _run_symbol_recognition_gate(
     if actual.get("source_command_count") != 0:
         failures.append({"reason": "pre_manual_source_command_detected"})
     passed = evaluation.get("passed") is True and not failures
+    typed_gdt_cases = _typed_gdt_case_evidence(
+        actual["raw_candidates"],
+        evaluation=evaluation,
+        manifest=manifest,
+    )
+    provider_call_identities = _seal_provider_crop_evidence(
+        run_dir,
+        actual["provider_call_identities"],
+        actual["provider_crop_artifacts"],
+    )
     report = {
-        "schema_version": "symbol-recognition-live-report/1",
+        "schema_version": "symbol-recognition-live-report/2",
         "selector": SYMBOL_RECOGNITION_SELECTOR,
         "run_id": run_dir.name,
         "order": 1,
@@ -2738,6 +3128,8 @@ def _run_symbol_recognition_gate(
         "visual_calls_by_page": visual_calls,
         "total_vision_calls_by_page": total_calls,
         "source_command_count": int(actual["source_command_count"]),
+        "typed_gdt_cases": typed_gdt_cases,
+        "provider_call_identities": provider_call_identities,
         "evaluation": evaluation,
         "failures": failures,
         "passed": passed,
@@ -4233,6 +4625,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--task")
     parser.add_argument("--current-four-run", metavar="RUN_ID")
     parser.add_argument("--symbol-eval-run", metavar="RUN_ID")
+    parser.add_argument("--activate-current-inputs", action="store_true")
     parser.add_argument("--input-set", choices=("current-four",))
     parser.add_argument("--pause-after", choices=(LIVE_PAUSE_BARRIER,))
     parser.add_argument("--print-run-id-only", action="store_true")
@@ -4250,6 +4643,7 @@ def main(argv: list[str] | None = None) -> int:
                 or args.task
                 or args.current_four_run
                 or args.symbol_eval_run
+                or args.activate_current_inputs
                 or not args.reason
             ):
                 raise ValueError(
@@ -4266,6 +4660,7 @@ def main(argv: list[str] | None = None) -> int:
                 or args.task
                 or args.current_four_run
                 or args.symbol_eval_run
+                or args.activate_current_inputs
                 or not args.design_qa
             ):
                 raise ValueError(
@@ -4282,10 +4677,22 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if verdict == "passed" else 1
 
         if args.mode == "live" and args.scope == "full-p0":
+            explicit_registrations = bool(
+                args.current_four_run and args.symbol_eval_run
+            )
             if (
                 args.task
-                or not args.current_four_run
-                or not args.symbol_eval_run
+                or (
+                    not args.activate_current_inputs
+                    and not explicit_registrations
+                )
+                or (
+                    args.activate_current_inputs
+                    and (
+                        args.current_four_run is not None
+                        or args.symbol_eval_run is not None
+                    )
+                )
                 or args.input_set != "current-four"
                 or args.pause_after != LIVE_PAUSE_BARRIER
             ):
@@ -4293,6 +4700,14 @@ def main(argv: list[str] | None = None) -> int:
                     "full-p0 live start requires literal current-four and symbol "
                     "registration runs, current-four input, the first-PDF "
                     "balloon pause, and no task"
+                )
+            if args.activate_current_inputs:
+                (
+                    args.current_four_run,
+                    args.symbol_eval_run,
+                ) = activate_full_live_inputs(
+                    source_root=os.environ.get(LIVE_SOURCE_ROOT_ENV),
+                    environment=os.environ,
                 )
             preflight = preflight_full_p0_live(
                 input_set=args.input_set,
@@ -4315,6 +4730,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.input_set,
                 args.pause_after,
                 args.symbol_eval_run,
+                args.activate_current_inputs,
                 args.design_qa,
                 args.reason,
             )

@@ -84,4 +84,4 @@ verify-p0-offline: check-contracts
 	micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py fixture --scope task --task "$(TASK)"
 
 verify-p0-live: check-contracts
-	micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py live --scope full-p0 --input-set current-four
+	micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py live --scope full-p0 --input-set current-four --activate-current-inputs --pause-after first-pdf-balloons
