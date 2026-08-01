@@ -2,9 +2,25 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-live-qwen-symbol-timeout
+
+- Status: 未解决；GDT-10 Step 4 blocked
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: authenticated `qwen3-vl-plus` visual-symbol call during repository-owned full-P0 live sample preparation
+- Symptom: current runtime identity and `/3` Provider contract are correct, but `make verify-p0-live` fails before the first sample creates an automatic result；Harness reports `sample 1 application upload/process failed` and `CandidateAdvisorFailure: Visual symbol Advisor call failed`
+- Previously correct behavior: every required symbol crop must receive a current authenticated response, persist request/response/call identity, complete typed Case A/B + existing non-GD&T evaluation, and pause at `visual_qa_pending:first-pdf-balloons`
+- Reproduction: Harness generated current-four registration `20260801T061725837507Z-f486c0b3`、symbol registration `20260801T061734054016Z-565ed5e2` and full run `20260801T061734601479Z-7a7c7f3d`。The full run completed `12` authenticated calls, wrote the 13th crop at `2026-08-01T06:21:26.367Z`, then failed at `06:22:26.982Z` without a 13th request/response/call record
+- Root cause: the 13th Qwen request exceeded the OpenAI client `timeout=60.0` in `backend/app/providers/runtime.py`；`QwenVisionProvider.review_symbols()` localizes the timeout and `CandidateAdvisor` fails closed。The measured crop-to-run-failure interval is about `60.6s`
+- Runtime identity proof: API health passed、database revision is `0013`、container schema is `visual-symbol-review/3`, and both API/worker exactly matched the current 12-file GDT hash set before paid calls。Sample 1 source SHA matches the fresh manifest；all `12` completed request-bound crop hashes match their bytes
+- Contract result: no typed Case A/B、non-GD&T symbol report、pause identity or receipt was sealed；Step 4 remains failed and Step 5 was not run
+- Action taken: preserved the exact Harness failure evidence and left runtime config/retry policy unchanged；did not rerun paid calls or convert the failure to accepted risk
+- Remaining blocker: a subsequent authorized execution must resolve or outlive the real Provider timeout while preserving current Provider/error/identity contracts, then rerun the repository-owned target from fresh current inputs
+
 ## BUG-20260801-live-api-runtime-identity-drift
 
-- Status: Harness guard 已解决；Compose deployment blocker 未解决
+- Status: 已解决；Harness guard and Compose runtime convergence verified
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
 - Recurrence: 1
@@ -14,8 +30,8 @@
 - Root cause: preflight 只绑定 host Git/config 和 Compose topology，没有比较 API container 内实际 GDT production files；container schema hash 为 `8f331090...`、worktree schema hash 为 `cb4ee4ce...`，container 缺少 `app/candidates/geometric_tolerance.py`，因此旧 Provider/advisor/runtime path 无法生成 typed GDT
 - Fix: 在 source upload、fresh registration、run creation 和 Provider call 之前，exact 比较 API container 与 worktree 的 12-file GDT runtime hash set，覆盖 Provider schema/Qwen、advisor/evidence/normalizer/symbol/fallback、automatic/runtime recognition 以及 native/raster frame inventory；nonzero、non-JSON、missing/extra/stale hash 全部 fail-closed
 - Regression check: focused runtime guard GREEN；contract file `62 passed`、完整 Harness `174 passed`、Ruff 和 diff checks 通过。独立 reviewer 对单独 stale `advisor.py`、单独 stale `runtime_recognition.py` 及 parsing/hash bypass 复测后 verdict `accept`
-- Runtime proof: 修复后用同一 gitignored root `.env` 与 provided current-four `F` source root 重跑 `make verify-p0-live`，准确退出 `2`：`Compose API runtime identity does not match current worktree`；run directory count 保持 `17 -> 17`，没有重复 paid call 或新 run
-- Remaining blocker: current task 不授权 rebuild/restart/deployment mutation；必须先使 Compose API runtime 与本 worktree identity 收敛，再重跑 Step 4。不得把失败 run、只读 diagnostic replay 或旧 evidence 转为 formal success
+- Runtime proof: authorized local Compose rebuild 后，API health passed、schema `/3`、database `0013`，API/worker 的 exact 12-file hashes 均与 worktree 一致；zero-paid runtime guard passed。Fresh full-live run then crossed this gate and made authenticated `/3` calls, proving stale runtime is no longer the active blocker
+- Remaining blocker: none for runtime identity；the later authenticated Qwen timeout is tracked separately and does not reopen or weaken this guard
 
 ## BUG-20260801-full-live-target-activation
 
