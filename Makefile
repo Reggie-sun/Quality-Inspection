@@ -1,17 +1,18 @@
-QA_DEV_COMPOSE = docker compose -p quality-inspection-qa -f compose.yaml -f compose.qa-dev.yaml
+QI_COMPOSE_PROJECT ?= $(shell _root="$$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; basename "$$_root" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^[^a-z0-9]+//')
+QI_QA_COMPOSE_PROJECT ?= $(QI_COMPOSE_PROJECT)-qa
+BASE_COMPOSE = docker compose -p $(QI_COMPOSE_PROJECT)
+QA_DEV_COMPOSE = docker compose -p $(QI_QA_COMPOSE_PROJECT) -f compose.yaml -f compose.qa-dev.yaml
 TEST_BACKEND_COMPOSE = docker compose -f compose.test.yaml
 LOCAL_API_PORT ?= 8000
 LOCAL_FRONTEND_PORT ?= 5173
 
-.PHONY: check-contracts check-api-contracts test-backend test-frontend verify-p0-offline verify-p0-live qa-dev-config qa-dev-up qa-dev-down qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
+.PHONY: check-contracts check-api-contracts test-backend test-frontend verify-p0-offline verify-p0-live qa-dev-config qa-dev-up qa-dev-down qa-dev-down-legacy qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
 
 dev-local-api:
-	@docker compose stop api >/dev/null 2>&1 || true
-	@fuser -k "$(LOCAL_API_PORT)/tcp" >/dev/null 2>&1 || true
-	docker compose -f compose.yaml -f compose.dev-local.yaml up --build api
+	@$(BASE_COMPOSE) stop api >/dev/null 2>&1 || true
+	$(BASE_COMPOSE) -f compose.yaml -f compose.dev-local.yaml up --build api
 
 dev-local-frontend:
-	@fuser -k "$(LOCAL_FRONTEND_PORT)/tcp" >/dev/null 2>&1 || true
 	QI_API_PROXY_TARGET=http://127.0.0.1:$(LOCAL_API_PORT) npm --prefix frontend run dev -- --host 127.0.0.1 --port $(LOCAL_FRONTEND_PORT) --strictPort
 
 qa-dev-config:
@@ -22,6 +23,9 @@ qa-dev-up:
 
 qa-dev-down:
 	$(QA_DEV_COMPOSE) down
+
+qa-dev-down-legacy:
+	docker compose -p quality-inspection-qa -f compose.yaml -f compose.qa-dev.yaml down --remove-orphans
 
 qa-dev-status:
 	@curl --noproxy 127.0.0.1 -fsS http://127.0.0.1:18000/api/v1/health
