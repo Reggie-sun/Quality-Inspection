@@ -21,7 +21,7 @@ afterEach(cleanup);
 
 function openAuxiliaryPanel(): void {
   fireEvent.click(screen.getByRole("button", {
-    name: "展开导出与处理信息",
+    name: "展开检验、导出与处理信息",
   }));
 }
 
@@ -756,10 +756,10 @@ describe("InspectionWorkbench", () => {
     }
     expect(screen.getByRole("region", { name: "工程图纸" })).not.toBeNull();
     expect(screen.getByRole("region", { name: "检验项审核" })).not.toBeNull();
-    expect(screen.queryByRole("complementary", { name: "导出与处理信息" }))
+    expect(screen.queryByRole("complementary", { name: "检验、导出与处理信息" }))
       .toBeNull();
     const workspaceButton = screen.getByRole("button", {
-      name: "展开导出与处理信息",
+      name: "展开检验、导出与处理信息",
     });
     expect(workspaceButton.getAttribute("aria-expanded")).toBe("false");
 
@@ -767,7 +767,7 @@ describe("InspectionWorkbench", () => {
 
     expect(workspaceButton.getAttribute("aria-expanded")).toBe("true");
     const aside = screen.getByRole("complementary", {
-      name: "导出与处理信息",
+      name: "检验、导出与处理信息",
     });
     expect(within(aside).queryByRole("region", { name: "SIP基本信息" }))
       .toBeNull();
@@ -933,7 +933,7 @@ describe("InspectionWorkbench", () => {
     expect(screen.queryByLabelText("识别原文：M8")).toBeNull();
   });
 
-  test("导出与处理信息展开后将 SIP 与当前检验项显示为独立区块", () => {
+  test("检验、导出与处理信息展开后将 SIP 与当前检验项显示为独立区块", () => {
     const items = [{
       item_id: "reviewed-item",
       item_type: "thread" as const,
@@ -984,7 +984,7 @@ describe("InspectionWorkbench", () => {
     openAuxiliaryPanel();
 
     const aside = screen.getByRole("complementary", {
-      name: "导出与处理信息",
+      name: "检验、导出与处理信息",
     });
     const exportRegion = screen.getByRole("region", {
       name: "正式文件导出",
@@ -1037,10 +1037,10 @@ describe("InspectionWorkbench", () => {
     await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(3));
 
     fireEvent.click(screen.getByRole("button", {
-      name: "收起导出与处理信息",
+      name: "收起检验、导出与处理信息",
     }));
     fireEvent.click(screen.getByRole("button", {
-      name: "展开导出与处理信息",
+      name: "展开检验、导出与处理信息",
     }));
 
     expect(screen.getAllByRole("link")).toHaveLength(3);
@@ -1070,10 +1070,10 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "生成正式文件" }));
     await waitFor(() => expect(exportPost).toHaveBeenCalledOnce());
     fireEvent.click(screen.getByRole("button", {
-      name: "收起导出与处理信息",
+      name: "收起检验、导出与处理信息",
     }));
     fireEvent.click(screen.getByRole("button", {
-      name: "展开导出与处理信息",
+      name: "展开检验、导出与处理信息",
     }));
 
     const exportButton = screen.getByRole("button", { name: "生成正式文件" });
@@ -1164,7 +1164,7 @@ describe("InspectionWorkbench", () => {
 
     const sipRegion = getSipRegion();
     const aside = screen.getByRole("complementary", {
-      name: "导出与处理信息",
+      name: "检验、导出与处理信息",
     });
     expect(screen.getAllByRole("region", { name: "SIP 信息" })).toHaveLength(1);
     expect(sipRegion.parentElement).toBe(aside);
@@ -1794,7 +1794,7 @@ describe("InspectionWorkbench", () => {
     }), { target: { value: "三针法复核" } });
     expect(saveStatus.textContent).toBe("有未保存修改");
     fireEvent.click(screen.getByRole("button", {
-      name: "收起导出与处理信息",
+      name: "收起检验、导出与处理信息",
     }));
     openAuxiliaryPanel();
     expect((screen.getByRole("textbox", {

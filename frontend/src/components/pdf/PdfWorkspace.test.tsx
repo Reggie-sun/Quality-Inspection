@@ -396,7 +396,7 @@ describe("PdfWorkspace", () => {
     expect(formal?.style.backgroundColor).toBe("rgb(220, 38, 38)");
   });
 
-  test("辅助区使用导出与处理文案并在收起后保持挂载", () => {
+  test("辅助区使用检验、导出与处理文案并在收起后保持挂载", () => {
     render(
       <PdfWorkspace
         pdfDocument={null}
@@ -407,14 +407,16 @@ describe("PdfWorkspace", () => {
       />,
     );
 
-    const open = screen.getByRole("button", { name: "展开导出与处理信息" });
+    const open = screen.getByRole("button", {
+      name: "展开检验、导出与处理信息",
+    });
     expect(open.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(open);
     expect(screen.getByRole("button", {
-      name: "收起导出与处理信息",
+      name: "收起检验、导出与处理信息",
     }).getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(screen.getByRole("button", {
-      name: "收起导出与处理信息",
+      name: "收起检验、导出与处理信息",
     }));
     expect(screen.getByTestId("auxiliary-content")).not.toBeNull();
   });

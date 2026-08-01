@@ -557,10 +557,10 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   );
   expect(reviewRequiredCount).toBeGreaterThanOrEqual(0);
   await page.getByRole("button", {
-    name: "展开导出与处理信息",
+    name: "展开检验、导出与处理信息",
   }).click();
   const auxiliary = page.getByRole("complementary", {
-    name: "导出与处理信息",
+    name: "检验、导出与处理信息",
   });
   await expect(auxiliary.getByRole("region", { name: "SIP 信息" }))
     .toBeVisible();
@@ -645,7 +645,7 @@ test("裸根地址可完成 PDF 上传、审核和双格式下载", async ({ pag
   await clickAndRefresh(page, "确认审核结果", "/review/confirm");
 
   const openButton = page.getByRole("button", {
-    name: "展开导出与处理信息",
+    name: "展开检验、导出与处理信息",
   });
   if (await openButton.count() > 0) await openButton.click();
   const exportResponse = page.waitForResponse(

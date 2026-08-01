@@ -226,7 +226,7 @@ test("真实工程 PDF 自动识别六条技术要求并持久化匹配与 SIP �
   ).first()).toBeVisible();
 
   await page.getByRole("button", {
-    name: "展开导出与处理信息",
+    name: "展开检验、导出与处理信息",
   }).click();
   await confirmSelectedSip(page);
   let afterSip = await workbench(page, identity.projectId);

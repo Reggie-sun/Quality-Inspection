@@ -158,7 +158,7 @@ test("workbench title-block suggestions only prefill local draft", async () => {
   );
 
   fireEvent.click(await screen.findByRole("button", {
-    name: "展开导出与处理信息",
+    name: "展开检验、导出与处理信息",
   }));
   const sipRegion = await screen.findByRole("region", { name: "SIP 信息" });
   fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {
@@ -246,7 +246,7 @@ test("刷新后从只读 projection 恢复 reviewed result 和三项下载", asy
   );
 
   fireEvent.click(await screen.findByRole("button", {
-    name: "展开导出与处理信息",
+    name: "展开检验、导出与处理信息",
   }));
   await waitFor(() => expect(screen.getAllByRole("link")).toHaveLength(3));
   expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([
@@ -577,7 +577,7 @@ test("保存并返回的连续命令使用每次刷新后的最新 working copy 
   );
 
   fireEvent.click(await screen.findByRole("button", {
-    name: "展开导出与处理信息",
+    name: "展开检验、导出与处理信息",
   }));
   const sipRegion = await screen.findByRole("region", { name: "SIP 信息" });
   fireEvent.click(within(sipRegion).getByText("编辑项目 SIP 信息", {

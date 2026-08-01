@@ -426,7 +426,7 @@ test("P0-UI-008 后台自动冻结并生成，首次导出时才确认", async (
   expect(paths.filter((path) => path.includes("/review/confirm"))).toHaveLength(0);
 
   fireEvent.click(screen.getByRole("button", {
-    name: "展开导出与处理信息",
+    name: "展开检验、导出与处理信息",
   }));
   fireEvent.click(screen.getByRole("button", { name: "生成正式文件" }));
   await waitFor(() => {
