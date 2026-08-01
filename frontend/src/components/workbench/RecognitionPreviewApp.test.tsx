@@ -125,6 +125,28 @@ test("recognition preview renders canonical backend state with GET-only read-onl
 });
 
 
+test("recognition preview keeps the drawing and recognition results in a product layout", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => previewResponse(1, "local_ready")));
+
+  const componentPath = "./RecognitionPreviewApp";
+  const { RecognitionPreviewApp } = await import(componentPath);
+  render(<RecognitionPreviewApp projectId="project-preview" />);
+
+  const main = await screen.findByRole("main", { name: "识别预览" });
+  expect(main.classList.contains("recognition-preview")).toBe(true);
+
+  const drawing = screen.getByRole("region", { name: "工程图纸预览" });
+  expect(drawing.classList.contains("recognition-preview__drawing")).toBe(true);
+  expect(drawing.querySelector("iframe")).not.toBeNull();
+
+  expect(drawing.parentElement?.classList.contains("recognition-preview__layout")).toBe(true);
+  const results = screen.getByRole("complementary", { name: "当前识别结果" });
+  expect(results.classList.contains("recognition-preview__results")).toBe(true);
+  expect(screen.getByRole("list", { name: "已识别检验项" })).not.toBeNull();
+  expect(screen.getByRole("list", { name: "识别来源" })).not.toBeNull();
+});
+
+
 test("recognition preview refreshes canonical state without rendering private diagnostics", async () => {
   let request = 0;
   vi.stubGlobal("fetch", vi.fn(async () => {

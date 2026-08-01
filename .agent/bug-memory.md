@@ -2,6 +2,33 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-recognition-preview-unstyled
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `RecognitionPreviewApp`、新上传图纸处于 `local_ready` / `vlm_enriching` 时的只读识别预览
+- Symptom: 新上传图纸后页面退化为浏览器默认排版：标题和识别文本贴边纵向堆叠，PDF 只显示在默认大小的小 `iframe` 中，缺少正常产品布局和可读信息层级
+- Previously correct behavior: 上传和识别过程应保持产品级页面布局，图纸预览和识别进度在当前视口内清晰可用
+- Reproduction: 用户提供 `http://127.0.0.1:5173/` 截图；页面显示“识别预览 / 版本 1 / 本地识别完成”，随后是默认大小 PDF iframe 和逐行裸文本候选值
+- Root cause: `QualityInspectionApp` 在 `local_ready` / `vlm_enriching` 阶段直接渲染 `RecognitionPreviewApp`；该组件自首次加入起只输出无 `className` 的裸 `<main>/<h1>/<p>/<iframe>`，现有样式表也没有匹配该 DOM 的选择器。全局 CSS 实际已正常加载，因此浏览器按默认约 `300×150` iframe 和普通段落排版，精确产生用户截图中的退化页面
+- Fix: 保持原 GET-only polling 与 revision 单调更新不变，为 preview 增加产品 header、进度摘要、响应式图纸主区和两个限高滚动结果栏；专用规则收敛到 `recognition-preview.css`，桌面为图纸/结果双栏，`820px` 以下转为单栏
+- Regression check: TDD RED 精确失败于旧组件缺少 product-layout contract；GREEN focused `4/4`。新增 Playwright 几何回归在 `1440×1000` 与 `768×900` 下验证双栏/单栏、iframe 最小尺寸、结果独立滚动和无横向溢出，`2/2` 通过；本任务修改完成后完整 frontend 曾为 `24 files / 293 tests`，但最终 fresh 全量复跑被并行中的无关 `TechnicalRequirementPanel` / `InspectionWorkbench` TDD 改动打红，因此最终完成证据以 focused `4/4`、Playwright `2/2`、production build 与 `git diff --check` 为准；build 仅保留既有 Vite large-chunk warning
+- Runtime proof: headed Chrome 将同一新图纸 `562633c8-…` 的 live `recognition-preview` revision 2 挂载到当前组件；API 与 source PDF 均为 HTTP `200`。`1440×1000` 下 layout/drawing 无横向溢出，iframe 为 `834×722`，21 个检验项与 105 条来源分别 `overflowY=auto`；`768×900` 下为单栏且 iframe `711×630`，console error/warning 为 `0/0`。项目已进入 terminal failed，未以新上传或伪造 status 冒充完整 route-transition replay
+- Change: 本提交
+- Selected lane: `Standard`；production 修改预计局限 frontend，但需要 API status route 与 headed Chrome smoke 证明真实 transient failure surface
+- Selected plan: 本 bug-memory entry 作为 ad hoc task contract；不切换或扩展当前 P0 implementation plan
+- Problem boundary: 只修 `local_ready` / `vlm_enriching` 识别预览的布局与可读性；不改变 recognition 数据、polling、status transition、API schema、审核工作台或正式导出
+- Single owner: `frontend/src/components/workbench/RecognitionPreviewApp.tsx`
+- Old path action: 退役裸 DOM 和浏览器默认 iframe presentation path；保留唯一 preview data/polling Owner
+- Unchanged contract: `GET /recognition-preview`、revision 单调更新、GET-only 只读行为、`source_pdf_url` 和 ready routing 均保持不变
+- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/RecognitionPreviewApp.tsx`、`frontend/src/components/workbench/RecognitionPreviewApp.test.tsx`、`frontend/src/styles/app.css`、`frontend/src/styles/recognition-preview.css`、`frontend/e2e/recognition-preview-style.spec.ts`
+- Writer ownership and order: 父 agent 为唯一 writer；只读 explorer 不得修改文件；实现后派发独立只读 reviewer
+- Validation action: `completed`；root cause、focused TDD、geometry regression、build、headed Chrome 与独立 review 均已覆盖；当前全工作树 frontend suite 的无关并行失败不计为本任务通过证据
+- Independent review: 初审 `accept with concerns` 指出 CSS 删除回归和 component/CSS class seam 尚未持久覆盖；补充 Playwright geometry regression 与 `layout/results` class contract 后，最终 verdict 为 `accept`，无 blocker 或 remaining concern
+- Next verification: 已关闭；仅在 preview 再次出现默认 iframe、横向溢出或结果列表撑长整页时重开
+
 ## BUG-20260801-sip-metadata-auto-confirm
 
 - Status: 已解决
