@@ -1691,12 +1691,49 @@ def test_requirement_retarget_marks_old_automatic_sip_row_for_regeneration(
     ]
 
 
+def test_generate_sip_table_maps_coarse_roughness_without_manual_exception(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = item["item_id"] == "complex-1"
+        if item["active"]:
+            item["page_index"] = 0
+            item["requires_confirmation"] = False
+    working_copy.items = items
+    working_copy.coverage = {
+        "blocking_count": 0,
+        "review_required_count": 0,
+        "coverage_checked": True,
+        "blocking_observation_ids": [],
+        "entries": [],
+        "relations": [],
+    }
+    db_session.commit()
+    db_session.refresh(working_copy)
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=working_copy.version,
+        operator_id="quality-1",
+        command={
+            "type": "generate_sip_table",
+            "inspection_role": "IPQC",
+        },
+    )
+
+    row = _item(saved, "complex-1")
+    assert row["inspection_item"] == "粗糙度：Ra 3.2"
+    assert row["inspection_method"] == "粗糙度仪"
+    assert row["sip_mapping_exceptions"] == []
+    assert row["sip_detail_fields_confirmed"] is True
+
+
 @pytest.mark.parametrize(
     ("item_id", "expected_exception"),
-    [
-        ("composite-1", "composite_method_required"),
-        ("complex-1", "unsupported_item_type"),
-    ],
+    [("composite-1", "composite_method_required")],
 )
 def test_generate_sip_table_keeps_unresolved_rows_as_exceptions(
     review_service: ReviewService,

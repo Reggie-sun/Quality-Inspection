@@ -85,6 +85,22 @@ def test_supported_item_types_use_versioned_methods(
     assert result.exceptions == ()
 
 
+def test_coarse_roughness_maps_to_complete_sip_row_without_item_type() -> None:
+    item = {
+        "item_id": "roughness-1",
+        "raw_text": "0.08",
+        "coarse_type": "roughness",
+        "page_index": 0,
+    }
+
+    result = map_sip_item(item, inspection_role="IPQC")
+
+    assert result.fields["inspection_item"] == "粗糙度：0.08"
+    assert result.fields["inspection_method"] == "粗糙度仪"
+    assert result.provenance["inspection_method"] == "sip-auto-map/1"
+    assert result.exceptions == ()
+
+
 def test_confirmed_requirement_values_win_over_rule_defaults() -> None:
     item = {
         "item_id": "linear-1",

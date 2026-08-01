@@ -13,6 +13,7 @@ METHOD_BY_TYPE = {
     "radius": "半径规",
     "angle": "万能角度尺",
     "general_requirement": "目视",
+    "roughness": "粗糙度仪",
 }
 
 ITEM_LABEL_BY_TYPE = {
@@ -22,6 +23,7 @@ ITEM_LABEL_BY_TYPE = {
     "radius": "半径",
     "angle": "角度",
     "general_requirement": "通用要求",
+    "roughness": "粗糙度",
 }
 
 
@@ -37,7 +39,7 @@ def map_sip_item(
     *,
     inspection_role: str,
 ) -> SipMappingResult:
-    item_type = item.get("item_type")
+    item_type = item.get("item_type") or item.get("coarse_type")
     provenance = _provenance(item)
     fields: dict[str, object] = {}
     exceptions: list[str] = []

@@ -7,7 +7,7 @@
 - Status: 已解决
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
-- Recurrence: 1
+- Recurrence: 2
 - Surface: `SipInformationPanel` 的异常行与 `SelectedSipDetailFields` 编辑器
 - Symptom: SIP 自动映射已填好大部分字段后，`未知检验项类型` 等真实异常仍展开整张 SIP 表单和“保存当前 SIP 字段”，让用户感觉需要对检验项做第二次完整校验
 - Root cause: `SipInformationPanel` 已按 exception-only contract 只在异常行挂载编辑器，但 `SelectedSipDetailFields` 不区分异常修复和主动修改，始终渲染全部字段及通用保存文案；`sip_regeneration_required` 也沿同一路径展示了不必要的手工表单
@@ -24,6 +24,16 @@
 - Runtime proof: headed Chrome 在真实 `BK20101401-09L1000 / 0.08 / 未知检验项类型` 异常上只显示“检验方法（需补充）”，其他字段默认折叠，主动作是“解决并保存 SIP 异常”，不存在“保存当前 SIP 字段”；仅进行选择/展开，未提交 review command，console error 为 0
 - Independent review: 初审 `reject` 指出 regeneration-only 表单虽 hidden 但旧 save handle 仍挂载；改为不挂载并增加 editable dirty → regeneration 的 ref/null、dirty false、no-command 回归后，follow-up verdict 为 `accept with concerns`，无 blocker；仅保留 exception mapping 参数化覆盖建议
 - Change: `fix(frontend): focus SIP exception resolution`
+- Recurrence evidence (2026-08-01): 真实 `0.08` 行在检验项列表已显示为“粗糙度”，SIP 仍报告“未知检验项类型”并要求人工补“检验方法”；用户指出技术要求/上游识别已具备该语义，预期 SIP 应自动消费而不是再次询问
+- Recurrence root cause: `surface_roughness` 按冻结的 coarse candidate contract 只写 `coarse_type="roughness"`，不扩展 `item_type`；检验项列表已回退读取 `coarse_type` 显示“粗糙度”，但 `map_sip_item()` 只读取 `item_type`，因此同一已识别行在 SIP Owner 中被误判为 `unsupported_item_type`。技术要求 suggestion 本身不拥有 `inspection_method`，不应为修复而扩展第二个方法映射 Owner
+- Recurrence selected lane: `Standard`；跨 candidate/review/SIP 数据链做只读确认，但 production 写入仅限 backend SIP mapper，不改变 coarse candidate public shape、API schema 或 frontend command
+- Recurrence problem boundary: 只让缺少结构化 `item_type` 的粗糙度 coarse item 复用已识别类型，确定性生成“粗糙度 / 粗糙度仪”；未知类型与 `composite_method_required` 仍保留人工异常，人工 SIP 值及 provenance 继续优先
+- Recurrence single owner: `backend/app/review/sip_mapping.py::map_sip_item`
+- Recurrence fix: `map_sip_item()` 在 `item_type` 缺失时回退读取 `coarse_type`，并增加 `roughness -> 粗糙度 / 粗糙度仪` 的版本化规则；不向技术要求 suggestion 增加 `inspection_method`，也不提升 coarse roughness 为结构化 candidate type
+- Recurrence regression check: TDD RED 证明旧 mapper 输出“检验项目：0.08”并缺少方法；unit suite 为 `13 passed`，隔离 PostgreSQL 的完整 backend suite 为 `1611 passed / 4 warnings`，`git diff --check` 通过
+- Recurrence runtime proof: headed Chrome 对真实 `BK20101401-09L1000` 执行现有 `generate_sip_table`，HTTP `200`；6 条原 `unsupported_item_type` 粗糙度行自动得到“粗糙度：<值> / 粗糙度仪”、exceptions 清空且 confirmed=true，2 条既有人工方法“无 / 11”保持不变；刷新后摘要从“已生成 115 / 异常 6”变为“已生成 121 / 异常 0”，不再显示“检验方法需补充”
+- Recurrence independent review: `reviewer` verdict 为 `accept`，无 blocker 或 concern；确认 structured/unknown/composite 分支、manual provenance、其他 coarse type fail-closed 行为和唯一 SIP Owner 均保持正确
+- Recurrence change: `fix(backend): map roughness SIP method`
 
 ## BUG-20260801-root-resumes-locked-project
 
