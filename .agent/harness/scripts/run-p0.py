@@ -1749,6 +1749,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import SessionLocal
+from app.candidates.symbol_routing import symbol_routing_identity
 from app.candidates.models import AutomaticResult
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
@@ -1756,6 +1757,18 @@ from app.projects.state import ProjectState
 from app.review.models import ReviewWorkingCopy
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
+
+
+def create_live_project(settings):
+    recognition_mode, recognition_router_version = symbol_routing_identity(
+        settings.symbol_recognition_mode
+    )
+    return Project(
+        id=uuid.uuid4(),
+        state=ProjectState.PROCESSING,
+        recognition_mode=recognition_mode,
+        recognition_router_version=recognition_router_version,
+    )
 
 
 def project_candidate_evidence(candidates, pages, coverage_entries):
@@ -1901,7 +1914,7 @@ settings = get_settings()
 storage = LocalFileStorage(settings.storage_root)
 seed_session = SessionLocal()
 try:
-    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    project = create_live_project(settings)
     stored = storage.write_verified(
         f"projects/{project.id}/source.pdf",
         payload,

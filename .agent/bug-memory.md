@@ -33,7 +33,7 @@
 - Status: 未解决；GDT-10 Step 4 blocked
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
-- Recurrence: 2
+- Recurrence: 3
 - Surface: authenticated `qwen3-vl-plus` visual-symbol call during repository-owned full-P0 live sample preparation
 - Symptom: current runtime identity and `/3` Provider contract are correct, but `make verify-p0-live` fails before the first sample creates an automatic result；Harness reports `sample 1 application upload/process failed` and `CandidateAdvisorFailure: Visual symbol Advisor call failed`
 - Previously correct behavior: every required symbol crop must receive a current authenticated response, persist request/response/call identity, complete typed Case A/B + existing non-GD&T evaluation, and pause at `visual_qa_pending:first-pdf-balloons`
@@ -44,6 +44,18 @@
 - Action taken: preserved both exact Harness timeout failures and left runtime config/retry policy unchanged；did not convert either failure to accepted risk。The latest evidence is committed as `1ba4c83`
 - Latest rerun: after a verified 60-second quiet handoff and a fresh `/3` convergence, Harness generated current-four registration `20260801T071155661189Z-0acc0a66`、symbol registration `20260801T071202897748Z-f7514006` and full run `20260801T071203401727Z-09cb5cc6`。The full run completed `18` authenticated request/response/cache/call records, wrote a 19th crop at `2026-08-01T07:19:11.764Z`, then failed at `07:20:12.294Z` without a 19th request/response/call record。The measured `60.236s` interval matches the unchanged OpenAI client `timeout=60.0`
 - Remaining blocker: Step 4 still needs a fresh current-four run that outlives the real Provider timeout while preserving current Provider/error/identity contracts；the shared Compose project must also have exclusive `/3` ownership for the entire future live window
+
+### Recurrence 3 — Harness-created project identity drift
+
+- Reproduction: standing-authorized isolated run `20260801T151943793270Z-846f40a1` passed exact feature project、API/worker `production_uncertainty` + router/model + `12/12` hashes、database `0013`、credential presence and zero-row preflight，then failed on sample 1 after creating project `b79a18ae-9b92-4020-aee8-482003a2a61c`。The project row is `recognition_mode=legacy_high_recall`、`recognition_router_version=legacy`，logical job is `failed/local_ready`，and the run sealed `live_start_failed:RuntimeError` without AutomaticResult、routing evidence、pause or receipt。
+- Root cause: `.agent/harness/scripts/run-p0.py::_PREPARE_PROJECT_PROGRAM` bypasses `ProjectIntakeService` and creates `Project(id=..., state=...)` without the two frozen routing fields，so database defaults silently replace the preflight-verified runtime identity。`inventory_project()` correctly trusts the frozen project row and therefore re-enters the legacy path。
+- Failure classification boundary: the first Qwen symbol call failed in less than one second after the crop write，but `CandidateAdvisor` intentionally redacts the original exception to `Visual symbol Advisor call failed` and the failed transaction left no Provider call record。Current evidence cannot safely distinguish HTTP status rejection、fast transport failure or metadata failure；do not relabel it as the earlier confirmed 60-second timeout and do not replay it.
+- Selected lane: `Heavy` bounded GDT-10 activation regression；the change is Harness-only but controls retrieval/routing ownership and paid Provider entry。
+- Old path action: replace direct default-backed Harness project construction；`ProjectIntakeService` remains the business intake Owner and the Harness must mirror its `symbol_routing_identity(settings.symbol_recognition_mode)` freeze exactly。
+- Fix: `_PREPARE_PROJECT_PROGRAM::create_live_project()` 通过 canonical `symbol_routing_identity(settings.symbol_recognition_mode)` 枡结项目 mode/router，并把二者显式传给 `Project`；legacy runtime 仍得到 `legacy_high_recall/legacy`，不改变 database default 或正式 intake Owner。
+- Regression check: RED 为 production/legacy 两项均因缺少 frozen project constructor 失败；GREEN targeted identity/runtime `9 passed`、focused live contract `117 passed`、full Harness `229 passed`、`check-contracts.py`、Ruff 和 diff-check 通过。直接 full pytest 因错误继承 Compose-only `postgres` host 得到 DNS 级联，不作为 code verdict；`make test-backend` 又被已知 Docker address-pool exhaustion 阻断。等价 host-network + tmpfs disposable PostgreSQL 17 完成 migration 和相同 backend suite，结果 `1734 passed / 14 warnings`，临时 container 已移除。
+- Smoke: `auto-feature-smoke-test` 选择 embedded project identity targeted gate；API/UI contract 未变，Chrome smoke 不适用。
+- Review/Change: independent reviewer confirmed model defaults、formal intake Owner、worker trust rule、sealed run state and both production/legacy pairs；verdict `accept`。Immutable registrations/full-run failure are preserved by `e033752`；fix commit pending at record update。The paid invocation is consumed and no replacement run is authorized by this bug record。
 
 ## BUG-20260801-live-api-runtime-identity-drift
 

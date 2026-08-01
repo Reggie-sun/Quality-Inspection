@@ -514,6 +514,70 @@ def test_live_prepare_projects_candidate_sources_from_inventory() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("configured_mode", "expected_mode", "expected_router"),
+    [
+        (
+            "production_uncertainty",
+            "production_uncertainty",
+            "symbol-uncertainty-router/1",
+        ),
+        ("legacy_high_recall", "legacy_high_recall", "legacy"),
+    ],
+)
+def test_live_prepare_freezes_the_configured_project_routing_identity(
+    configured_mode: str,
+    expected_mode: str,
+    expected_router: str,
+) -> None:
+    runner = _load_module(
+        "qi_run_p0_project_routing_" + configured_mode,
+        HARNESS / "scripts/run-p0.py",
+    )
+
+    class ProjectFactory:
+        def __new__(cls, **values: object) -> dict[str, object]:
+            return values
+
+    class ProjectStates:
+        PROCESSING = "processing"
+
+    class UUIDFactory:
+        @staticmethod
+        def uuid4() -> str:
+            return "project-id"
+
+    class Settings:
+        symbol_recognition_mode = configured_mode
+
+    def routing_identity(mode: str) -> tuple[str, str]:
+        return {
+            "production_uncertainty": (
+                "production_uncertainty",
+                "symbol-uncertainty-router/1",
+            ),
+            "legacy_high_recall": ("legacy_high_recall", "legacy"),
+        }[mode]
+
+    create_project = _embedded_function(
+        runner._PREPARE_PROJECT_PROGRAM,
+        "create_live_project",
+        {
+            "Project": ProjectFactory,
+            "ProjectState": ProjectStates,
+            "symbol_routing_identity": routing_identity,
+            "uuid": UUIDFactory,
+        },
+    )
+
+    assert create_project(Settings()) == {
+        "id": "project-id",
+        "state": "processing",
+        "recognition_mode": expected_mode,
+        "recognition_router_version": expected_router,
+    }
+
+
 def test_live_prepare_rejects_candidate_source_outside_inventory() -> None:
     runner = _load_module(
         "qi_run_p0_candidate_source_rejection",
