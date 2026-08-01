@@ -1105,6 +1105,92 @@
   cursor: not-allowed;
 }
 
+.gdt-editor {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #e4eaf1;
+  border-radius: 6px;
+}
+
+.gdt-editor legend,
+.gdt-editor h4 {
+  color: var(--qi-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.gdt-editor h4 {
+  margin: 0;
+}
+
+.gdt-editor > label,
+.gdt-editor__segment > label,
+.gdt-editor__datums > label {
+  display: grid;
+  gap: 5px;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gdt-editor__frame,
+.gdt-editor__segment {
+  display: grid;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid #edf1f5;
+  border-radius: 5px;
+}
+
+.gdt-editor__segment {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gdt-editor__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gdt-editor__checkbox input {
+  width: auto;
+  min-height: auto;
+}
+
+.gdt-editor__datums {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: end;
+}
+
+.gdt-editor__datums > label {
+  width: 72px;
+}
+
+.gdt-editor__add-datum {
+  min-height: 34px;
+}
+
+.gdt-editor__unknown,
+.gdt-editor__error {
+  margin: 0;
+  color: #8a5a00;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gdt-editor__error {
+  color: var(--qi-error);
+}
+
 .review-command-rail {
   display: grid;
   grid-auto-rows: min-content;

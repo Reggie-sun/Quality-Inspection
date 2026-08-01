@@ -8,6 +8,57 @@ import {
 
 
 describe("inspectionItemPresentation", () => {
+  test("空控制框保留原始标注并显示未确认几何公差", () => {
+    expect(inspectionItemPresentation({
+      item_id: "gdt-unknown",
+      item_type: "geometric_tolerance",
+      raw_text: "∥ ? A",
+      tolerance_type: "parallelism",
+      frames: [],
+      active: true,
+    })).toMatchObject({
+      typeLabel: "未确认几何公差",
+      valueLabel: "∥ ? A",
+      datumLabels: [],
+    });
+  });
+
+  test("typed GD&T renders subtype, value and ordered datum labels", () => {
+    expect(inspectionItemPresentation({
+      item_id: "gdt-parallelism",
+      item_type: "geometric_tolerance",
+      raw_text: "∥ 0.1 A",
+      normalized_text: "∥ | 0.1 | A",
+      tolerance_type: "parallelism",
+      tolerance_symbol: "∥",
+      tolerance_value: "0.1",
+      diameter_modifier: false,
+      modifiers: [],
+      datum_references: [{ datum: "A", modifiers: [] }],
+      frames: [{
+        segments: [{
+          tolerance_value: "0.1",
+          diameter_modifier: false,
+          modifiers: [],
+          datum_references: [{ datum: "A", modifiers: [] }],
+        }],
+      }],
+      schema_version: "geometric-tolerance-candidate/1",
+      standard_context: "unspecified",
+      coordinates: [1, 2, 3, 4],
+      source_location_ids: ["gdt-source"],
+      source_type: "automatic",
+      status: "pending",
+      requires_confirmation: true,
+      evidence_ref: "asset://gdt",
+      active: true,
+    })).toMatchObject({
+      typeLabel: "平行度",
+      valueLabel: "0.1",
+      datumLabels: ["基准 A"],
+    });
+  });
+
   test("正式气泡编号优先于候选编号", () => {
     expect(inspectionItemPresentation(
       {

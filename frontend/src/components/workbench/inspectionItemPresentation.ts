@@ -1,6 +1,7 @@
 import type {
   BalloonOverlay,
   CandidateType,
+  GeometricToleranceType,
   ProjectWorkbenchCandidateView,
   ReviewItem,
 } from "../../api/types";
@@ -22,6 +23,9 @@ export type InspectionItemPresentation = {
   numberKind: "formal" | "candidate" | "empty";
   numberLabel: string;
   typeLabel: string;
+  valueLabel?: string;
+  datumLabels?: string[];
+  modifierLabels?: string[];
   page?: number;
   pageLabel: string;
   status: ItemStatus;
@@ -49,15 +53,57 @@ const COARSE_TYPE_LABELS: Readonly<Record<string, string>> = {
   ...zhCN.review.coarseTypes,
 };
 
+const GDT_TYPE_LABELS: Readonly<Record<GeometricToleranceType, string>> = {
+  ...zhCN.inspection.gdtTypes,
+};
+
+const GDT_MODIFIER_LABELS: Readonly<Record<string, string>> = {
+  ...zhCN.inspection.gdtModifiers,
+};
+
+
+export function isGeometricToleranceItem(
+  item: ReviewItem,
+): item is ReviewItem & { item_type: "geometric_tolerance" } {
+  return item.item_type === "geometric_tolerance";
+}
+
 
 function inspectionItemTypeLabel(item: ReviewItem): string {
-  if (item.item_type !== undefined) {
+  if (isGeometricToleranceItem(item)) {
+    return item.frames?.length === 0
+      || item.tolerance_type === undefined
+      || item.tolerance_type === "unknown"
+      ? zhCN.inspection.gdtTypes.unknown
+      : GDT_TYPE_LABELS[item.tolerance_type] ?? zhCN.inspection.gdtTypes.unknown;
+  }
+  if (item.item_type !== undefined && item.item_type !== "geometric_tolerance") {
     return INSPECTION_ITEM_TYPE_LABELS[item.item_type]
       ?? zhCN.workbench.unknown;
   }
   return item.coarse_type === undefined
     ? zhCN.workbench.unknown
     : COARSE_TYPE_LABELS[item.coarse_type] ?? zhCN.workbench.unknown;
+}
+
+
+function geometricToleranceDetails(item: ReviewItem): Pick<
+  InspectionItemPresentation,
+  "valueLabel" | "datumLabels" | "modifierLabels"
+> {
+  if (!isGeometricToleranceItem(item)) return {};
+  return {
+    valueLabel: item.tolerance_value ?? item.raw_text,
+    datumLabels: (item.datum_references ?? []).map(
+      ({ datum }) => zhCN.inspection.gdtDatum(datum),
+    ),
+    modifierLabels: (item.modifiers ?? []).map(
+      ({ kind, raw_symbol }) =>
+        GDT_MODIFIER_LABELS[kind] === undefined
+          ? raw_symbol
+          : `${GDT_MODIFIER_LABELS[kind]}（${raw_symbol}）`,
+    ),
+  };
 }
 
 
@@ -146,6 +192,7 @@ export function inspectionItemPresentation(
       ? "candidate"
       : "empty";
   const autoAccepted = isAutoAcceptedItem(item);
+  const geometricTolerance = geometricToleranceDetails(item);
 
   return {
     displayNumber,
@@ -158,6 +205,7 @@ export function inspectionItemPresentation(
           : zhCN.inspection.candidateNumber(candidateNumber)
         : zhCN.inspection.noNumber,
     typeLabel: inspectionItemTypeLabel(item),
+    ...geometricTolerance,
     page,
     pageLabel: page === undefined
       ? zhCN.workbench.unknown
