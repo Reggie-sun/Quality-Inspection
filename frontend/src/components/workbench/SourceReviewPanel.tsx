@@ -243,7 +243,9 @@ export function SourceReviewPanel({
             await saveSourceDraft(selectedSource);
           }}
         >
-          {zhCN.inspection.promoteSource}
+          {selectedSourceDraft.balloonRequired
+            ? zhCN.inspection.promoteSourceWithBalloon
+            : zhCN.inspection.promoteSourceWithoutBalloon}
         </button>
       </div>
     </fieldset>

@@ -1985,7 +1985,7 @@ describe("InspectionWorkbench", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
       target: { value: "general_requirement" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加并生成气泡" }));
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith({
@@ -2262,7 +2262,7 @@ describe("InspectionWorkbench", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "检验类型" }), {
       target: { value: "general_requirement" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "添加为检验项" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加并生成气泡" }));
 
     await waitFor(() => {
       expect(within(
@@ -2286,7 +2286,7 @@ describe("InspectionWorkbench", () => {
     expect(
       (screen.getByRole("combobox", { name: "检验类型" }) as HTMLSelectElement).value,
     ).toBe("general_requirement");
-    expect(screen.getByRole("button", { name: "添加为检验项" })
+    expect(screen.getByRole("button", { name: "添加并生成气泡" })
       .hasAttribute("disabled")).toBe(false);
   });
 

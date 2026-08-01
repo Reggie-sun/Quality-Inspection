@@ -2,6 +2,33 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260801-source-balloon-action-affordance
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `frontend/src/components/workbench/SourceReviewPanel.tsx` 的待判定来源处理动作与 `frontend/src/copy/zhCN.ts` 文案
+- Symptom: 用户点击黄色待判定来源后，右侧只看到“需要气泡”复选框和“添加为检验项”按钮，没有明确的“添加后生成气泡”动作；按钮未选检验类型时为禁用态，用户无法直接判断下一步
+- Previously correct behavior: 待判定来源详情应明确区分“添加并生成气泡”和“仅添加检验项”，同时继续要求用户显式选择检验类型，不绕过 review、freeze 或正式编号流程
+- Reproduction: 用户截图中 `4 x` 来源已选中且“需要气泡”已勾选，但主按钮仍只显示“添加为检验项”并处于禁用态；当前 `SourceReviewPanel` 的主按钮文案不随 `balloonRequired` 改变
+- Root cause: `SourceReviewPanel` 将 `balloonRequired` 只呈现在“需要气泡”复选框及辅助说明中，主动作始终使用静态“添加为检验项”；因此用户无法从实际提交按钮判断勾选状态会产生哪种结果，禁用态也显得像没有气泡动作
+- Fix: 保留现有复选框、显式 `item_type` gate 和 `promote_source` command，主按钮改为随 draft 显示“添加并生成气泡”或“仅添加检验项”；不新增业务状态、endpoint 或正式气泡旁路
+- Regression check: TDD RED 精确失败于旧静态按钮文案；`npm test -- --run src/components/workbench/InspectionItemTable.test.tsx src/components/workbench/InspectionWorkbench.test.tsx` 为 `64 passed`，并验证 unchecked 分支在未选类型时禁用、选类型后提交完整 `balloon_required: false` payload；完整 frontend suite 为 `273 passed`，production build 通过
+- Runtime proof: localhost browser 选择真实 pending source 后，默认显示禁用的“添加并生成气泡”；选择 `general_requirement` 后启用，取消勾选变为“仅添加检验项”，重新勾选恢复“添加并生成气泡”；未点击提交或产生 backend mutation，console error 为 0，证据截图 `/tmp/qi-source-add-balloon-action.png`
+- Change: `fix(ui): expose source balloon action`
+- Selected lane: `Standard`，只改变一个现有 frontend form 的可见动作语义，但需要真实 browser smoke 证明用户路径
+- Selected plan: 本 bug-memory entry 作为 ad hoc task contract；不切换或扩展当前 P0 implementation plan
+- Problem boundary: 只让现有来源纳入动作明确表达气泡结果；不新增 endpoint、command、默认检验类型或直接正式气泡旁路
+- Single owner: `SourceReviewPanel` 继续拥有 source draft 和 `promote_source` producer
+- Old path action: 退役不表达 `balloonRequired` 结果的静态“添加为检验项”主按钮文案
+- Unchanged contract: `promote_source` 继续要求显式 `item_type` 并携带 `balloon_required`；正式气泡仍由现有 review/freeze/numbering 流程生成
+- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/SourceReviewPanel.tsx`、`frontend/src/components/workbench/InspectionItemTable.test.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`frontend/src/copy/zhCN.ts`
+- Amendment: 实现后 focused suite 证明 `InspectionWorkbench.test.tsx` 也是旧静态 accessible name 的直接 consumer；只更新其现有 source-promote 查询，不改变 workbench behavior 或扩大 production scope
+- Writer ownership and order: 父 agent 唯一 writer；保留用户未跟踪的 `docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md`
+- Independent review: 初始 verdict 为 `accept with concerns`；唯一 concern 是 unchecked 分支缺少行为级 payload 断言，已补充 explicit type gate 与 `balloon_required: false` regression 后重新验证
+- Next verification: 已完成；仅在主按钮再次不表达当前 `balloonRequired` 结果，或 unchecked 提交不再携带 `false` 时重开
+
 ## BUG-20260801-source-disposition-stale-tests
 
 - Status: 已解决
