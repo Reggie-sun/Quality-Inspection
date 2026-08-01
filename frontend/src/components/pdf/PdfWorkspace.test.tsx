@@ -386,7 +386,7 @@ describe("PdfWorkspace", () => {
     );
 
     const legend = screen.getByRole("list", { name: "图纸标注图例" });
-    expect(legend.textContent).toContain("自动通过（候选编号）");
+    expect(legend.textContent).toContain("自动通过");
     expect(legend.textContent).toContain("正式气泡");
     const provisional = legend.querySelector<HTMLElement>(
       "[data-color='auto-accepted']",

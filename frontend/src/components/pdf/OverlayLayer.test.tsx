@@ -410,7 +410,7 @@ describe("OverlayLayer", () => {
     expect(marker.getAttribute("data-selected")).toBe("false");
   });
 
-  test("仅精确 auto_accepted 后端投影使用红色候选编号气泡", () => {
+  test("仅精确 auto_accepted 后端投影使用红色自动通过气泡", () => {
     const candidates = [
       {
         id: "auto-candidate",
@@ -454,7 +454,7 @@ describe("OverlayLayer", () => {
     );
 
     const auto = screen.getByRole("button", {
-      name: "自动通过气泡 1（候选编号）",
+      name: "自动通过气泡 1",
     });
     const autoCircle = auto.querySelector("circle")!;
     expect(autoCircle.getAttribute("fill")).toBe("transparent");
@@ -480,7 +480,7 @@ describe("OverlayLayer", () => {
       />,
     );
     const selectedAuto = screen.getByRole("button", {
-      name: "自动通过气泡 1（候选编号）",
+      name: "自动通过气泡 1",
     });
     expect(selectedAuto.querySelector("circle")?.getAttribute("fill"))
       .toBe("transparent");

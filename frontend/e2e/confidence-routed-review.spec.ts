@@ -507,7 +507,7 @@ test("confidence policy routes only exceptions to review and preserves publicati
   await expect(provisional).toBeVisible();
   const provisionalLabel = await provisional.getAttribute("aria-label");
   const candidateNumberMatch = provisionalLabel?.match(
-    /^自动通过气泡 ([1-9]\d*)（候选编号）$/,
+    /^自动通过气泡 ([1-9]\d*)$/,
   );
   if (candidateNumberMatch === undefined || candidateNumberMatch === null) {
     throw new Error("auto-accepted marker has no deterministic candidate number");
@@ -517,7 +517,7 @@ test("confidence policy routes only exceptions to review and preserves publicati
   await expect(highRow).toHaveAttribute("data-item-id", editableHigh.item_id);
   await expect(highRow.locator(".inspection-number")).toHaveAttribute(
     "aria-label",
-    `自动通过气泡 ${candidateNumber}（候选编号）`,
+    `自动通过气泡 ${candidateNumber}`,
   );
   await expect(provisional).toHaveAttribute(
     "data-review-disposition",

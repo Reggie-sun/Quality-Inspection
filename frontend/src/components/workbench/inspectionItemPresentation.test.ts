@@ -73,7 +73,7 @@ describe("inspectionItemPresentation", () => {
     expect(isReviewRequiredItem(item)).toBe(true);
   });
 
-  test("精确 auto_accepted 显示自动通过且明确为候选编号", () => {
+  test("精确 auto_accepted 显示自动通过气泡名称", () => {
     expect(inspectionItemPresentation(
       {
         item_id: "auto-item",
@@ -96,7 +96,7 @@ describe("inspectionItemPresentation", () => {
       status: "auto_accepted",
       statusLabel: "自动通过",
       numberKind: "candidate",
-      numberLabel: "自动通过气泡 3（候选编号）",
+      numberLabel: "自动通过气泡 3",
     });
   });
 
