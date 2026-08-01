@@ -52,6 +52,19 @@
 - Focused verification command: `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_symbol_recognition_pipeline.py -k 'runtime_identity or provider_failure or owner_committed_discriminator' -q`。
 - Next verification: 先完成 GDT-10A offline tests/reviewer，并等待 `docs/superpowers/specs/2026-08-01-compose-worktree-runtime-isolation-design.md` 与 `docs/superpowers/plans/2026-08-01-compose-worktree-runtime-isolation.md` 合入本 branch、通过其 topology/runtime completion contract；随后由 GDT-10A zero-paid preflight 直接证明 API/worker current worktree `/3` hashes、database exact `0013`、`production_uncertainty`、`symbol-uncertainty-router/1` 和 exact model。未满足前不得再次运行 `make verify-p0-live`。
 
+### GDT-10A Continuation Record — 2026-08-01
+
+- Selected lane: `Heavy`。
+- Selected plan: `docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md`；不新建 roadmap。
+- Selection evidence: 用户在 feature `2b1d8c25d40086462c278b0c5f634f15f0d284e0` 显式批准继续 GDT-10A Steps 1–9，并指定先解决 main `713fb527bb2b3c64386d51c0c8ed8b5697f367f9` 在 `backend/app/review/service.py` 和 `backend/tests/integration/test_review_working_copy.py` 的 overlap。当前 main 为 `b8c6517fa375cefa3d226fdceed4c6fd376ae467`，merge-base 为 `066a42a1871e0222ece6adfcc24fda742629e2f8`，启动时 worktree clean。
+- Validation action: `continue`。不 merge/rebase 已大幅分叉且拥有不同 `0013` migration 的整个 main；先只融合 `713fb52` 与 overlap 直接相关的 backend formal-readiness owner 链，然后继续 GDT-10A。
+- Problem boundary: 保留 main 的 coverage normalization、malformed-entry fail-closed、optional material normalization 和 API projection 行为；同时保留 feature 的 typed GD&T item/command union、`automatic-result/2` legacy-GDT rejection、`EditGeometricTolerance` 处理和 `visual-symbol-review/3` projection。
+- Allowed overlap paths: `backend/app/review/schemas.py`、`backend/app/review/router.py`、`backend/app/projects/router.py`、`backend/app/review/service.py`、`backend/tests/integration/test_review_working_copy.py`。前三者是 `713fb52` formal-readiness 行为的直接 dependency；不带入其 frontend 冲突、其他 main 历史或任一 migration。
+- Old path action: `replace` overlap 中会将 malformed source-only coverage 静默解决或在 projection/freeze 前跳过 normalization 的 feature-side 旧路径；保留 ordinary `visual_no_detection -> non_inspection + system_default`，GDT-10A 随后只为 allowlisted localized Provider failure 增加例外。
+- Unchanged contract: `timeout=60.0`、SDK `max_retries=0`、page/project/call budgets、production schema-only single retry、public runtime default、legacy sequential retry、structured-GD&T semantics 和本窗口 no-paid-live 边界均不改变。
+- Writer ownership and order: 当前父 agent 是 overlap 和 GDT-10A 唯一 writer；`code_mapper` explorer 与后续 reviewer 严格只读；`backend/app/candidates/advisor.py` 只有在 Step 3 RED 证明 Owner 缺口时才允许修改。
+- Next verification: 先运行 overlap RED，证明当前 feature 缺少 formal normalization；融合后运行 `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_geometric_tolerance_pipeline.py -q`，然后进入 GDT-10A Step 1 `runtime_identity` RED。
+
 ## Status
 
 - Date: `2026-08-01`
