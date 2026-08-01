@@ -1,9 +1,6 @@
 import type { ReactElement } from "react";
 import { beforeEach, expect, test, vi } from "vitest";
 
-import { readLocalDrawings } from "./app/localDrawingRegistry";
-
-
 const { createRootMock, renderRoot } = vi.hoisted(() => {
   const render = vi.fn();
   return {
@@ -88,19 +85,15 @@ test("缺少深链参数时规范化为根地址并渲染列表应用", async ()
 });
 
 
-test("旧深链返回时登记占位图纸、清除 session 并导航到列表", async () => {
+test("旧深链返回时不改旧浏览器目录、清除 session 并导航到列表", async () => {
   window.sessionStorage.setItem("qi.current-project-id", PROJECT_ID);
+  window.localStorage.setItem("qi.drawing-list.v1", "legacy-value");
   const navigate = vi.fn();
   const { returnFromCompatibilityLink } = await import("./main");
 
   returnFromCompatibilityLink(PROJECT_ID, navigate);
 
-  expect(readLocalDrawings()).toEqual([
-    expect.objectContaining({
-      projectId: PROJECT_ID,
-      fileName: "未命名图纸.pdf",
-    }),
-  ]);
+  expect(window.localStorage.getItem("qi.drawing-list.v1")).toBe("legacy-value");
   expect(window.sessionStorage.getItem("qi.current-project-id")).toBeNull();
   expect(navigate).toHaveBeenCalledWith("/");
 });

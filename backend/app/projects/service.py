@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from datetime import UTC, datetime
 from collections.abc import Callable
 
 import pymupdf
@@ -18,6 +19,8 @@ from app.jobs.idempotency import LogicalJob
 from app.projects.models import Project
 from app.projects.schemas import (
     ProjectError,
+    ProjectListItemResponse,
+    ProjectListResponse,
     ProjectPhase,
     ProjectStatusResponse,
     ProcessingStage,
@@ -43,6 +46,56 @@ class ProjectDispatchFailed(RuntimeError):
     def __init__(self, status: ProjectStatusResponse) -> None:
         super().__init__("project processing dispatch failed")
         self.status = status
+
+
+class ProjectCatalogService:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def list_projects(self) -> ProjectListResponse:
+        projects = self.session.scalars(
+            select(Project)
+            .where(Project.source_filename.is_not(None))
+            .order_by(Project.last_opened_at.desc(), Project.id.desc())
+        ).all()
+        items = [self._catalog_item(project) for project in projects]
+        return ProjectListResponse(items=items, count=len(items))
+
+    def mark_opened(self, project_id: uuid.UUID) -> ProjectListItemResponse:
+        project = self.session.scalar(
+            select(Project)
+            .where(
+                Project.id == project_id,
+                Project.source_filename.is_not(None),
+            )
+            .with_for_update()
+        )
+        if project is None:
+            raise ProjectNotFound("project was not found")
+        project.last_opened_at = datetime.now(UTC)
+        try:
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        self.session.refresh(project)
+        return self._catalog_item(project)
+
+    @staticmethod
+    def _catalog_item(project: Project) -> ProjectListItemResponse:
+        if project.source_filename is None:
+            raise ValueError("project is not part of the drawing catalog")
+        return ProjectListItemResponse(
+            project_id=project.id,
+            file_name=project.source_filename,
+            created_at=project.created_at,
+            last_opened_at=project.last_opened_at,
+        )
+
+
+def _catalog_filename(source_filename: str) -> str:
+    filename = source_filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    return filename[:255] or "未命名图纸.pdf"
 
 
 _TRANSIENT_CAUSE_CATEGORIES = {
@@ -109,6 +162,7 @@ class ProjectIntakeService:
         *,
         content: bytes,
         content_type: str,
+        source_filename: str,
     ) -> ProjectStatusResponse:
         validate_pdf(content, content_type)
         project = Project(
@@ -116,6 +170,7 @@ class ProjectIntakeService:
             state=ProjectState.PROCESSING,
             recognition_mode=self.recognition_mode,
             recognition_router_version=self.recognition_router_version,
+            source_filename=_catalog_filename(source_filename),
         )
         stored = self.storage.write_verified(
             f"projects/{project.id}/source.pdf",

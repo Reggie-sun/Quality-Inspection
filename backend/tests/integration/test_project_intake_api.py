@@ -125,6 +125,10 @@ def test_create_project_accepts_one_pdf_and_dispatches_canonical_task(
     assert project.state == ProjectState.PROCESSING
     assert project.recognition_mode == "legacy_high_recall"
     assert project.recognition_router_version == "legacy"
+    assert project.source_filename == "credential-secret.pdf"
+    assert project.created_at.tzinfo is not None
+    assert project.last_opened_at.tzinfo is not None
+    assert project.last_opened_at >= project.created_at
     assert source is not None
     assert source.mime_type == "application/pdf"
     assert intake_context.storage.read_bytes(source.resource_ref) == one_page_vector_pdf

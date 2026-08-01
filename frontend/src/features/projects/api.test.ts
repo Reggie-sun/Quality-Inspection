@@ -1,7 +1,12 @@
 import { afterEach, expect, test, vi } from "vitest";
 
 import { ApiError, getJson, postForm } from "../../api/client";
-import { createProject, getProjectStatus } from "./api";
+import {
+  createProject,
+  getProjectStatus,
+  listProjects,
+  markProjectOpened,
+} from "./api";
 
 
 const PROJECT_ID = "550e8400-e29b-41d4-a716-446655440000";
@@ -58,6 +63,64 @@ test("getProjectStatus 编码项目标识并使用 GET", async () => {
   expect(fetchSpy).toHaveBeenCalledWith(
     "/api/v1/projects/project%2Fwith%20spaces/status",
     { headers: { Accept: "application/json" } },
+  );
+});
+
+
+test("listProjects 读取服务端目录并映射为 camelCase", async () => {
+  const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    items: [{
+      project_id: PROJECT_ID,
+      file_name: "fixture.pdf",
+      created_at: "2026-08-01T01:00:00Z",
+      last_opened_at: "2026-08-01T02:00:00Z",
+    }],
+    count: 1,
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  }));
+  vi.stubGlobal("fetch", fetchSpy);
+
+  await expect(listProjects()).resolves.toEqual([{
+    projectId: PROJECT_ID,
+    fileName: "fixture.pdf",
+    createdAt: "2026-08-01T01:00:00Z",
+    lastOpenedAt: "2026-08-01T02:00:00Z",
+  }]);
+  expect(fetchSpy).toHaveBeenCalledWith(
+    "/api/v1/projects",
+    { headers: { Accept: "application/json" } },
+  );
+});
+
+
+test("markProjectOpened 编码项目标识并使用 POST", async () => {
+  const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    project_id: PROJECT_ID,
+    file_name: "fixture.pdf",
+    created_at: "2026-08-01T01:00:00Z",
+    last_opened_at: "2026-08-01T03:00:00Z",
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  }));
+  vi.stubGlobal("fetch", fetchSpy);
+
+  await expect(markProjectOpened("project/with spaces")).resolves.toMatchObject({
+    fileName: "fixture.pdf",
+    lastOpenedAt: "2026-08-01T03:00:00Z",
+  });
+  expect(fetchSpy).toHaveBeenCalledWith(
+    "/api/v1/projects/project%2Fwith%20spaces/open",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: undefined,
+    },
   );
 });
 

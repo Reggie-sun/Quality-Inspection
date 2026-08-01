@@ -102,20 +102,26 @@ def test_processing_migration_has_exact_owned_columns() -> None:
     }
 
 
-def test_project_schema_has_frozen_symbol_routing_mode() -> None:
+def test_project_schema_has_frozen_routing_and_catalog_metadata() -> None:
     inspector = inspect(engine)
 
-    assert {column["name"] for column in inspector.get_columns("projects")} == {
+    project_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("projects")
+    }
+    assert set(project_columns) == {
         "id",
         "state",
         "version",
         "recognition_mode",
         "recognition_router_version",
+        "source_filename",
+        "created_at",
+        "last_opened_at",
     }
     mode_columns = {
-        column["name"]: column
-        for column in inspector.get_columns("projects")
-        if column["name"] in {"recognition_mode", "recognition_router_version"}
+        name: project_columns[name]
+        for name in {"recognition_mode", "recognition_router_version"}
     }
     assert mode_columns["recognition_mode"]["nullable"] is False
     assert mode_columns["recognition_router_version"]["nullable"] is False
@@ -125,6 +131,10 @@ def test_project_schema_has_frozen_symbol_routing_mode() -> None:
     assert "legacy" in str(
         mode_columns["recognition_router_version"]["default"]
     )
+    assert project_columns["source_filename"]["nullable"] is True
+    for name in ("created_at", "last_opened_at"):
+        assert project_columns[name]["nullable"] is False
+        assert "now()" in str(project_columns[name]["default"])
     checks = {
         constraint["name"]: constraint
         for constraint in inspector.get_check_constraints("projects")

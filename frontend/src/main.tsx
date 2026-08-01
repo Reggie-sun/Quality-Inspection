@@ -2,16 +2,14 @@ import { createRoot } from "react-dom/client";
 
 import { QualityInspectionApp } from "./app/QualityInspectionApp";
 import { clearCurrentProjectId, isUuid } from "./app/localContext";
-import { touchLocalDrawing } from "./app/localDrawingRegistry";
 import { ProjectWorkbenchApp } from "./components/workbench/ProjectWorkbenchApp";
 import "./styles/app.css";
 
 
 export function returnFromCompatibilityLink(
-  projectId: string,
+  _projectId: string,
   navigate: (path: string) => void = (path) => window.location.assign(path),
 ): void {
-  touchLocalDrawing(projectId, "未命名图纸.pdf");
   clearCurrentProjectId();
   navigate("/");
 }

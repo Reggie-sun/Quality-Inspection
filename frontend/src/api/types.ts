@@ -261,6 +261,12 @@ export type ProcessingStage =
 export type ProjectStatus =
   components["schemas"]["ProjectStatusResponse"];
 
+export type ProjectListTransport =
+  components["schemas"]["ProjectListResponse"];
+
+export type ProjectListItemTransport =
+  components["schemas"]["ProjectListItemResponse"];
+
 export type RecognitionPreview =
   components["schemas"]["RecognitionPreviewResponse"];
 
@@ -273,6 +279,7 @@ export type PostJson = <Result = unknown>(
   path: string,
   body: unknown,
   headers: Record<string, string>,
+  signal?: AbortSignal,
 ) => Promise<Result>;
 
 export type PostForm = <Result>(
