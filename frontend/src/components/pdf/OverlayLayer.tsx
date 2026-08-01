@@ -460,9 +460,13 @@ export function OverlayLayer({
                 fill={
                   isAutoAccepted
                     ? "transparent"
-                    : "#EFF6FF"
+                    : isSelected ? "#FFFBEB" : "#EFF6FF"
                 }
-                stroke={isAutoAccepted ? "#c23b3b" : "#2563EB"}
+                stroke={
+                  isAutoAccepted
+                    ? "#c23b3b"
+                    : isSelected ? "#f59e0b" : "#2563EB"
+                }
                 strokeWidth={1.5}
               />
               {isSelected ? (
@@ -481,7 +485,7 @@ export function OverlayLayer({
                 fill={
                   isAutoAccepted
                     ? "#c23b3b"
-                    : "#2563EB"
+                    : isSelected ? "#f59e0b" : "#2563EB"
                 }
                 style={{ pointerEvents: "none" }}
               >

@@ -137,9 +137,11 @@ describe("OverlayLayer", () => {
     const selectedCandidate = screen.getByRole("button", { name: "候选气泡 2" });
     expect(selectedCandidate.getAttribute("tabindex")).toBe("0");
     expect(selectedCandidate.querySelector("circle")?.getAttribute("fill"))
-      .toBe("#EFF6FF");
+      .toBe("#FFFBEB");
+    expect(selectedCandidate.querySelector("circle")?.getAttribute("stroke"))
+      .toBe("#f59e0b");
     expect(selectedCandidate.querySelector("text")?.getAttribute("fill"))
-      .toBe("#2563EB");
+      .toBe("#f59e0b");
     expect(selectedCandidate.querySelector(
       ".balloon-selection-halo",
     )?.getAttribute("stroke")).toBe("#fbbf24");
