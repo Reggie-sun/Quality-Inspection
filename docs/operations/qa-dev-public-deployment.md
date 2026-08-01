@@ -23,6 +23,17 @@ make dev-local-frontend
 
 The API uses `compose.dev-local.yaml` for bind mounts and Uvicorn reload. The frontend runs Vite directly from the checkout and proxies `/api` to `127.0.0.1:8000`.
 
+Each checkout owns a worktree-scoped Compose project derived from its root directory name. The
+main checkout therefore keeps the `quality_inspection` namespace and its existing
+`quality_inspection_postgres_dev` / `quality_inspection_storage_dev` data volumes. A feature
+worktree must resolve to a different project, network, PostgreSQL volume, and storage volume; it
+must never reuse the public main runtime namespace.
+
+The standard entrypoints do not kill listeners on `8000` or `5173`. If another checkout already
+owns either port, startup fails closed and leaves that listener untouched. Only the main checkout
+may own the public runtime on these ports; use an explicit alternate-port override for an
+independent feature runtime.
+
 ## Cloudflare Handoff
 
 The hostname rule, DNS route, and connector lifecycle are host/Cloudflare-owned configuration. Configure them outside this repository.
@@ -65,4 +76,13 @@ Do not save, print, commit, or attach Cloudflare credentials, API keys, password
 make qa-dev-down
 ```
 
-Do not remove any non-QA container, volume, tunnel, DNS record, or RAGFlow route. QA-only volumes are named `quality_inspection_*_qa_dev`; remove them only when their data is intentionally disposable.
+For the retired fixed `quality-inspection-qa` project only, use the non-destructive legacy cleanup
+target:
+
+```bash
+make qa-dev-down-legacy
+```
+
+Neither cleanup target passes `--volumes`. Do not remove any non-QA container, volume, tunnel, DNS
+record, or RAGFlow route. QA-only volumes follow
+`<worktree-project>-qa_*_qa_dev`; remove them only when their data is intentionally disposable.
