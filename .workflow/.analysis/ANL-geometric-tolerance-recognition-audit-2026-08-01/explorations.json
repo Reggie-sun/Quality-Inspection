@@ -1,0 +1,51 @@
+{
+  "session_id": "ANL-geometric-tolerance-recognition-audit-2026-08-01",
+  "key_findings": [
+    {
+      "id": "F1",
+      "finding": "Visual proposal is a text-anchored vector context, not a GD&T frame detector or cell splitter.",
+      "evidence": ["backend/app/pdf/visual_observations.py:548-687"],
+      "confidence": "high"
+    },
+    {
+      "id": "F2",
+      "finding": "Raw VLM schema distinguishes only parallelism, perpendicularity and flatness GD&T subtypes.",
+      "evidence": ["backend/app/providers/visual_symbol_review.schema.json:34-45"],
+      "confidence": "high"
+    },
+    {
+      "id": "F3",
+      "finding": "GD&T projection collapses subtype and parsed evidence into a four-field coarse candidate.",
+      "evidence": ["backend/app/candidates/symbol_review.py:2517-2530", "backend/app/candidates/complex_fallback.py:8-33"],
+      "confidence": "high"
+    },
+    {
+      "id": "F4",
+      "finding": "Live case A contains datum A in inventory and ROI, but A is absent from associated text IDs before Provider projection.",
+      "evidence": ["runtime project 9b9911d1-e64e-47a3-b8e5-539aa466dd40 inventory and Provider artifacts"],
+      "confidence": "high"
+    },
+    {
+      "id": "F5",
+      "finding": "Live VLM output recognized gdt_parallelism at 0.97 and gdt_flatness at 0.96; the API exposes only coarse payloads.",
+      "evidence": ["automatic result 0705ad84-7f75-4c1a-b0f2-e99a58b63cfa"],
+      "confidence": "high"
+    },
+    {
+      "id": "F6",
+      "finding": "Frontend has no structured GD&T type or subtype label mapping and does not receive datum A in the target API payload.",
+      "evidence": ["frontend/src/api/types.ts:81-122", "frontend/src/components/workbench/inspectionItemPresentation.ts:48-60", "frontend/src/components/workbench/InspectionItemTable.tsx:304-310"],
+      "confidence": "high"
+    }
+  ],
+  "perspective_insights": {
+    "detection": "Fix independent-line association and frame/cell segmentation before adding downstream fields.",
+    "contract": "Create one typed candidate owner; do not parse raw text in frontend.",
+    "verification": "Use real ROI and headed workbench proof in addition to frozen/synthetic tests."
+  },
+  "open_questions": [
+    "Which standards context owns v1 semantics?",
+    "What is the canonical glyph alias policy for flatness?",
+    "How should historical coarse GD&T items be read or migrated?"
+  ]
+}

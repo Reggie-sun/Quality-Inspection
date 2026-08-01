@@ -1,0 +1,106 @@
+{
+  "schema_version": "geometric-tolerance-live-receipt/1",
+  "sealed_at": "2026-08-01T10:40:00+08:00",
+  "verification_mode": "read-only runtime, database and immutable artifact inspection",
+  "project_id": "9b9911d1-e64e-47a3-b8e5-539aa466dd40",
+  "automatic_result": {
+    "id": "0705ad84-7f75-4c1a-b0f2-e99a58b63cfa",
+    "created_at": "2026-07-30T01:40:26.278686+00:00"
+  },
+  "source": {
+    "stored_file_id": "3155c1f5-8064-4118-8431-ca421c783043",
+    "size_bytes": 168678,
+    "sha256": "3f81700276305570d6fbe214fd0b3f15f1e9fe18149da492bac9dafb2c10df5f"
+  },
+  "artifacts": {
+    "inventory_ref": "asset://projects/9b9911d1-e64e-47a3-b8e5-539aa466dd40/inventory/2a5115ba-2b65-4fd4-83ac-7abcdb89756f.json",
+    "inventory_sha256": "4630dbf599c6244fdd9e379cdacfd6b3383cdf864a9d72262458ce074c17959c",
+    "provider_response_ref": "asset://projects/9b9911d1-e64e-47a3-b8e5-539aa466dd40/provider-responses/qwen-symbol/8c9a9dd0bb752545ad318702f630540645403b268048299b4c0aced1f9417e71.json",
+    "provider_response_sha256": "8c9a9dd0bb752545ad318702f630540645403b268048299b4c0aced1f9417e71"
+  },
+  "case_a": {
+    "expected_source_text": "∥ | 0.1 | A",
+    "candidate": {
+      "ordinal": 85,
+      "candidate_id": "abab42bb24a679dccb84d4e1",
+      "raw_text": "∥ 0.1",
+      "coarse_type": "geometric_tolerance",
+      "source_location_ids": [
+        "793ccae11565912076ae35a1",
+        "4e2b0ad3f1c3a4393ca431e9"
+      ]
+    },
+    "datum_inventory_observation": {
+      "observation_id": "517795f759a117034cd96287",
+      "raw_text": "A",
+      "bbox_pdf": [
+        712.1317138671875,
+        390.7312927246094,
+        720.7301025390625,
+        407.93438720703125
+      ]
+    },
+    "visual_observation": {
+      "observation_id": "793ccae11565912076ae35a1",
+      "bbox_pdf": [
+        659.5,
+        388.8900146484375,
+        721.2999877929688,
+        428.489990234375
+      ],
+      "associated_text_observation_ids": [
+        "110afce00e663d8a6f9876cc",
+        "4e2b0ad3f1c3a4393ca431e9"
+      ]
+    },
+    "provider_detection": {
+      "symbol_kind": "gdt_parallelism",
+      "confidence_signal": 0.97,
+      "associated_text_observation_ids": [
+        "110afce00e663d8a6f9876cc",
+        "4e2b0ad3f1c3a4393ca431e9"
+      ]
+    },
+    "first_confirmed_loss_boundary": "visual observation text association and Provider input contract"
+  },
+  "case_b": {
+    "expected_source_text": "flatness | 0.08",
+    "candidate": {
+      "ordinal": 88,
+      "candidate_id": "f11f741bd0e2d49b02856ae6",
+      "raw_text": "⏥ 0.08",
+      "coarse_type": "geometric_tolerance",
+      "source_location_ids": [
+        "5d870f08545aad29a55dee5f",
+        "689065a737959bbf28435bbd"
+      ]
+    },
+    "visual_observation": {
+      "observation_id": "5d870f08545aad29a55dee5f",
+      "bbox_pdf": [
+        667.2000122070312,
+        388.8900146484375,
+        726.2999877929688,
+        428.4900207519531
+      ],
+      "associated_text_observation_ids": [
+        "689065a737959bbf28435bbd",
+        "e9fc1d1531d9b7d37c75ddc7"
+      ]
+    },
+    "provider_detection": {
+      "symbol_kind": "gdt_flatness",
+      "confidence_signal": 0.96,
+      "associated_text_observation_ids": [
+        "689065a737959bbf28435bbd",
+        "e9fc1d1531d9b7d37c75ddc7"
+      ]
+    },
+    "first_confirmed_semantic_loss_boundary": "project_visual_observation coarse projection"
+  },
+  "redaction": {
+    "credentials": "excluded",
+    "raw_pdf_bytes": "excluded",
+    "raw_provider_payload": "referenced by immutable hash, not copied"
+  }
+}

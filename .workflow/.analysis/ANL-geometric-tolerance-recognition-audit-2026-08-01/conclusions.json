@@ -1,0 +1,136 @@
+{
+  "session_id": "ANL-geometric-tolerance-recognition-audit-2026-08-01",
+  "topic": "geometric tolerance recognition current state and target contract",
+  "completed": "2026-08-01T10:30:00+08:00",
+  "total_rounds": 4,
+  "summary": "Current implementation recognizes three raw visual GD&T subtypes but collapses them to coarse candidates. Live datum A is lost at text association before normalization; API and UI receive no structured datum.",
+  "key_conclusions": [
+    {
+      "point": "Current capability is coarse GD&T fallback, not structured GD&T recognition.",
+      "evidence": "Provider schema plus project_visual_observation plus exact-four-field tests.",
+      "confidence": "high"
+    },
+    {
+      "point": "Case A datum loss starts at VisualObservation associated text construction.",
+      "evidence": "Live inventory contains A inside ROI while associated IDs contain only 0.1 line/span.",
+      "confidence": "high"
+    },
+    {
+      "point": "Case B flatness is recognized by VLM and then structurally flattened.",
+      "evidence": "Live response gdt_flatness/0.96 becomes raw_text '⏥ 0.08'.",
+      "confidence": "high"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "Add a candidate-domain GeometricToleranceNormalizer and typed candidate in a future Heavy plan.",
+      "rationale": "One owner must preserve subtype, value, datum, modifiers and segments before persistence.",
+      "priority": "high",
+      "evidence_refs": [
+        "backend/app/candidates/symbol_review.py:2517-2530",
+        "backend/app/candidates/complex_fallback.py:8-33"
+      ],
+      "steps": [
+        {
+          "description": "Define the typed schema and failure codes.",
+          "target": "backend/app/candidates",
+          "verification": "contract tests reject missing or extra semantic fields"
+        },
+        {
+          "description": "Replace supported gdt coarse projection.",
+          "target": "project_visual_observation",
+          "verification": "Case A and B preserve exact typed payload through API reload"
+        }
+      ],
+      "review_status": "pending"
+    },
+    {
+      "action": "Expand frame text association to all validated in-frame cells before Provider review.",
+      "rationale": "The live datum A exists in inventory but is excluded by the current single-line association rule.",
+      "priority": "high",
+      "evidence_refs": ["backend/app/pdf/visual_observations.py:676-685"],
+      "steps": [
+        {
+          "description": "Build ordered frame and cell evidence.",
+          "target": "backend/app/pdf",
+          "verification": "A is associated with the parallelism frame and unrelated A negatives remain excluded"
+        }
+      ],
+      "review_status": "pending"
+    }
+  ],
+  "open_questions": [
+    "standards context",
+    "flatness glyph aliases",
+    "historical coarse data strategy",
+    "scanned frame detector gate"
+  ],
+  "follow_up_suggestions": [
+    {
+      "type": "task",
+      "summary": "Approve the design decisions, then create one Heavy implementation plan with an independent reviewer gate."
+    }
+  ],
+  "decision_trail": [
+    {
+      "round": 2,
+      "decision": "Classify datum and subtype failures separately.",
+      "context": "Live artifacts show different first-loss boundaries.",
+      "options_considered": ["single model failure", "single UI failure", "layered failure"],
+      "chosen": "layered failure",
+      "rejected_reasons": "The first two options contradict runtime evidence.",
+      "reason": "Preserves causal accuracy.",
+      "impact": "Different implementation owners and tests are required."
+    },
+    {
+      "round": 4,
+      "decision": "Adopt all independent review concerns as documentation corrections.",
+      "context": "Reviewer accepted the root-cause split but found evidence and schema convergence gaps.",
+      "options_considered": ["leave concerns open", "apply minimal corrections"],
+      "chosen": "apply minimal corrections",
+      "rejected_reasons": "Open concerns would weaken reproducibility and single-owner guarantees.",
+      "reason": "The corrections stay within documentation scope.",
+      "impact": "Added a sealed receipt and froze one canonical v1 shape."
+    }
+  ],
+  "narrative_trail": [
+    {
+      "round": 1,
+      "starting_point": "UI shows only generic GD&T.",
+      "key_progress": "Mapped ROI, Provider and coarse projection.",
+      "hypothesis_impact": "Confirmed raw subtype exists.",
+      "updated_understanding": "Subtype is lost after recognition.",
+      "remaining_questions": "Exact datum loss boundary."
+    },
+    {
+      "round": 2,
+      "starting_point": "Trace live item 85 and 88.",
+      "key_progress": "Matched inventory, Provider, JSONB and API.",
+      "hypothesis_impact": "Rejected API/UI datum-loss hypothesis.",
+      "updated_understanding": "Datum is excluded at association; subtype is flattened later.",
+      "remaining_questions": "Target contract decisions."
+    }
+  ],
+  "intent_coverage": [
+    {
+      "intent": "audit complete end-to-end implementation",
+      "status": "addressed",
+      "where_addressed": "current-state audit",
+      "notes": "static and live evidence"
+    },
+    {
+      "intent": "write complete Specs",
+      "status": "addressed",
+      "where_addressed": "structured GD&T design",
+      "notes": "does not authorize implementation"
+    }
+  ],
+  "findings_coverage": [
+    {"finding_id": "F1", "disposition": "documented"},
+    {"finding_id": "F2", "disposition": "documented"},
+    {"finding_id": "F3", "disposition": "recommendation"},
+    {"finding_id": "F4", "disposition": "recommendation"},
+    {"finding_id": "F5", "disposition": "documented"},
+    {"finding_id": "F6", "disposition": "documented"}
+  ]
+}

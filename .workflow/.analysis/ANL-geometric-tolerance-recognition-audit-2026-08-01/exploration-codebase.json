@@ -1,0 +1,40 @@
+{
+  "session_id": "ANL-geometric-tolerance-recognition-audit-2026-08-01",
+  "topic": "geometric tolerance recognition current state",
+  "repository": "/home/reggie/vscode_folder/Quality_Inspection",
+  "constraints": [
+    "no business code changes",
+    "do not switch current P0 plan",
+    "runtime truth has priority over old receipts"
+  ],
+  "relevant_owners": {
+    "inventory": "backend/app/pdf",
+    "recognition": "backend/app/candidates and backend/app/providers",
+    "persistence": "backend/app/candidates/models.py and backend/app/review",
+    "api": "backend/app/projects and backend/app/review",
+    "frontend": "frontend/src/api and frontend/src/components/workbench"
+  },
+  "key_files": [
+    "backend/app/pdf/visual_observations.py",
+    "backend/app/candidates/symbol_review.py",
+    "backend/app/providers/visual_symbol_review.schema.json",
+    "backend/app/candidates/complex_fallback.py",
+    "backend/app/candidates/models.py",
+    "backend/app/review/service.py",
+    "backend/app/projects/router.py",
+    "frontend/src/api/types.ts",
+    "frontend/src/components/workbench/inspectionItemPresentation.ts",
+    "frontend/src/components/workbench/InspectionItemTable.tsx"
+  ],
+  "runtime_evidence": {
+    "project_id": "9b9911d1-e64e-47a3-b8e5-539aa466dd40",
+    "automatic_result_id": "0705ad84-7f75-4c1a-b0f2-e99a58b63cfa",
+    "parallelism_candidate_id": "abab42bb24a679dccb84d4e1",
+    "flatness_candidate_id": "f11f741bd0e2d49b02856ae6",
+    "sealed_receipt": "docs/superpowers/audits/evidence/2026-08-01-geometric-tolerance-live-receipt.json"
+  },
+  "_metadata": {
+    "timestamp": "2026-08-01T10:20:00+08:00",
+    "exploration_scope": "end-to-end static and live read-only audit"
+  }
+}
