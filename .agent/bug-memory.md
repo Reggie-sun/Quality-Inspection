@@ -652,3 +652,29 @@
   quantity input 为 `min=1 / step=1`；页面无横向溢出，
   console error / warning 为 `0 / 0`
 - Change: `fix(frontend): restore inspection quantity field`
+
+## BUG-20260801-technical-requirement-review-entry-no-feedback
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `TechnicalRequirementPanel` 的“进入检验项审核”与 `InspectionWorkbench` 右侧审核工作区
+- Symptom: 6 条技术要求全部确认后，点击“进入检验项审核”没有可见反应
+- Reproduction: 当技术要求的 `handoffTargetId` 已是当前 `selectedItemId`，且筛选已为 `all` 时，入口只重复写入相同状态；原 focused tests 只断言回调被调用，不验证可见导航
+- Root cause: `TechnicalRequirementPanel` 点击只调用 `onSelectItem()`；`InspectionWorkbench` 只执行 `setFilter("all")` 和 `selectItem()`，没有将已选检验项滚入视野或转移焦点。目标和筛选未变时 React 不产生可见更新
+- Selected lane: `Standard`；局部 frontend 交互修复，保留现有业务合同并用 focused/full tests、browser smoke 和独立 review 收口
+- Selected plan: 本 bug-memory entry 作为 ad hoc task contract；未切换当前 P0 implementation plan
+- Selection evidence: 不改变 API、schema、审核命令、draft/save/freeze/export contract；只补齐现有前端入口的可见导航结果
+- Validation action: `close`；初审 `reject` 指出面板其他关联项跳转会共享聚焦/滚动副作用，改为只有终态入口调用专用 callback 后复审 `accept`
+- Problem boundary: 只修复技术要求终态入口的导航反馈；不改技术要求匹配、普通关联项跳转、保存、审核或正式 SIP 语义
+- Single owner: `InspectionWorkbench` 继续拥有检验项选择和工作区导航；`TechnicalRequirementPanel` 通过专用 `onEnterReview` 只发起终态 handoff
+- Old path action: 替换“只重复选中目标”的静默路径；其他来源的 `onSelectItem` / `selectItem()` 行为保持不变
+- Unchanged contract: `set_technical_requirement_match`、review draft blocker、filter semantics、working-copy versioning、freeze 和 export 均不变
+- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/InspectionWorkbench.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`frontend/src/components/workbench/TechnicalRequirementPanel.tsx`、`frontend/src/components/workbench/TechnicalRequirementPanel.test.tsx`、`frontend/src/styles/workbench.css`
+- Writer ownership: 父 agent 唯一 writer；已有 SIP metadata 未提交改动位于同文件的非重叠 hunk，未覆盖且不整文件 stage
+- Fix: 新增专用 `onEnterReview`；终态入口在原选择成功后定位已选行，将其滚入列表视野、转移焦点并显示明确轮廓；“查看系统建议关联项”和“查看关联项”继续只调用原 `onSelectItem`
+- Regression check: TDD RED 首先证明目标已选中时焦点不变，第二次 RED 证明终态入口尚未调用专用 callback；focused `55 passed`，frontend 全量 `24 files / 290 tests` 通过，production build 和 repo-wide `git diff --check` 通过
+- Runtime proof: `auto-feature-smoke-test` 在 localhost 已持久化项目 `6943d223…` 验证首次和重复点击；同一已选行获得焦点、`2px` 蓝色轮廓且 console error 为 0，未发送 `/review/commands`；smoke review lock 已精确过期清理
+- Independent review: 初审 `reject` 阻断通用 `onSelectItem` 被赋予聚焦副作用；拆分专用 callback 并增加回归后，复审 `accept`，无 blocking 或 non-blocking findings
+- Change: `fix(frontend): make inspection review handoff visible`

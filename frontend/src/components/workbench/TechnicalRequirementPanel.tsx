@@ -22,6 +22,7 @@ type TechnicalRequirementPanelProps = {
   items: ReviewItem[];
   disabled?: boolean;
   onSelectItem: (itemId: string) => boolean | void;
+  onEnterReview: (itemId: string) => boolean | void;
   onCommand: (
     command: ReviewCommand,
   ) => boolean | void | Promise<boolean | void>;
@@ -126,6 +127,7 @@ export function TechnicalRequirementPanel({
   items,
   disabled = false,
   onSelectItem,
+  onEnterReview,
   onCommand,
   onDraftChange,
   draftSaveRef,
@@ -362,7 +364,7 @@ export function TechnicalRequirementPanel({
             <button
               type="button"
               className="technical-requirements__next"
-              onClick={() => onSelectItem(handoffTargetId)}
+              onClick={() => onEnterReview(handoffTargetId)}
             >
               {zhCN.technicalRequirements.proceed}
             </button>

@@ -536,6 +536,11 @@
   box-shadow: inset 3px 0 var(--qi-blue);
 }
 
+.inspection-table__row:focus {
+  outline: 2px solid var(--qi-blue);
+  outline-offset: -2px;
+}
+
 .inspection-table__row > span {
   display: grid;
   gap: 2px;
