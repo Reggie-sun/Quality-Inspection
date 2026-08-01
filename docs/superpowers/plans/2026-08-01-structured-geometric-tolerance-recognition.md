@@ -112,13 +112,14 @@
 - Fresh zero-paid gates: clean committed `7d7da66`；targeted embedded constructor 明确输出 production mode/router pair；API/worker `12/12` hashes 和 runtime identity；published ports；health `200/200`；sanitized container key inventory；credential presence only；database `0013`；Provider-related rows仍为 `0|0|0`；feature failed project/evidence仍存在；run directory count不变。任一失败都不创建 run、不调用 Provider。
 - Writer/order/failure stop: 当前父 agent 只拥有 plan/status/evidence 更新；执行期间监控 feature API/worker/PostgreSQL/Redis/frontend 与 main container identities，任一漂移立即终止。Invocation 若达到 `visual_qa_pending:first-pdf-balloons` 才进入同一 run 的 headed QA；否则封存失败并停止，不自动开启 GDT-10D。
 - Selection review result: independent reviewer verified `e033752`/`7d7da66` ancestry、sealed evidence、policy/PROV-005 ceilings、new-cycle distinction and standing-authorization applicability；verdict `accept`。No new user decision is required；fresh zero-paid preflight remains the next gate。
+- GDT-10C zero-paid result: clean committed state；constructor/routing/runtime targeted `4 passed`；exact isolated target、API/worker `12/12` hashes、published ports、health `200/200`、sanitized key inventory、credential presence and forbidden-key absence、database `0013` 全部通过。Provider-related rows `0|0|0`，prior failed project/evidence preserved，run directory count `29 -> 29`。GDT-10C paid invocation count remains `0`，selection is `GO`。
 
 ## Status
 
 - Date: `2026-08-01`
-- Status: `GDT-10C selection accepted; paid invocation count 0; fresh zero-paid preflight pending`
+- Status: `GDT-10C zero-paid GO; execute the single authorized make verify-p0-live invocation`
 - Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
-- Current blocker: fresh zero-paid preflight has not yet passed。The prior cycle remains consumed and immutable；no new Provider work is allowed until the gate passes。
+- Current blocker: none before the single GDT-10C invocation。Any invocation failure remains terminal and does not authorize GDT-10D。
 - Worktree: `.worktrees/structured-geometric-tolerance-recognition`
 - Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`, `b548191`, `4150ce8`, `5f4cfbf`, `bd75be6`, `1ba4c83`。
 
