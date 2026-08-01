@@ -154,7 +154,11 @@ export const zhCN = {
       "正式文件将在审核和冻结完成后从左侧统一生成。",
     nextSipException: "处理下一条异常",
     pendingSipGeneration: "请先生成 SIP 表格，系统会自动填写可确定字段。",
-    editResolvedSipRow: "查看或修改当前 SIP 行",
+    resolvedSipRowComplete: "当前行已完成，无需处理",
+    resolvedSipRowOtherExceptions: (count: number) =>
+      `全局另有 ${count} 条 SIP 异常待处理。`,
+    editResolvedSipRow: "可选修改当前 SIP 行",
+    optionalResolvedSipEdit: "以下修改为可选操作，不属于异常处理。",
     sipMappingExceptions: {
       composite_method_required: "复合项需要选择检验方法",
       unsupported_item_type: "未知检验项类型",

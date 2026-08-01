@@ -734,6 +734,39 @@
   line-height: 1.4;
 }
 
+.sip-resolved-row {
+  display: grid;
+  gap: 7px;
+}
+
+.sip-resolved-row__status {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border: 1px solid #abefc6;
+  border-radius: 6px;
+  background: #f6fef9;
+}
+
+.sip-resolved-row__status strong {
+  color: #067647;
+  font-size: 11px;
+}
+
+.sip-resolved-row__status span,
+.sip-resolved-row__edit-hint {
+  color: #475467;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.sip-resolved-row__edit-hint {
+  margin: 0;
+  padding: 7px 8px;
+  border-left: 3px solid #84adff;
+  background: #f5f8ff;
+}
+
 .sip-mapping-exceptions {
   display: grid;
   gap: 4px;

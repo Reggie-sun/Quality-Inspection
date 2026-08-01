@@ -1847,7 +1847,7 @@ describe("InspectionWorkbench", () => {
     ).getByRole("status");
     getSipRegion();
     fireEvent.click(screen.getByRole("button", {
-      name: "查看或修改当前 SIP 行",
+      name: "可选修改当前 SIP 行",
     }));
     fireEvent.change(screen.getByRole("textbox", {
       name: "检验方法：M16",
@@ -1967,7 +1967,7 @@ describe("InspectionWorkbench", () => {
     expect((within(screen.getByRole("region", {
       name: "当前检验项",
     })).getByRole("button", {
-      name: "查看或修改当前 SIP 行",
+      name: "可选修改当前 SIP 行",
     }) as HTMLButtonElement).disabled).toBe(true);
   });
 

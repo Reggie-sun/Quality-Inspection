@@ -286,13 +286,31 @@ export function SipInformationPanel({
             {zhCN.workbench.pendingSipGeneration}
           </p>
         ) : selectedItemHasException ? null : (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => setManualEditorItemId(selectedItem.item_id)}
-          >
-            {zhCN.workbench.editResolvedSipRow}
-          </button>
+          <div className="sip-resolved-row">
+            <div className="sip-resolved-row__status" role="status">
+              <strong>{zhCN.workbench.resolvedSipRowComplete}</strong>
+              {exceptionItemCount > 0 ? (
+                <span>
+                  {zhCN.workbench.resolvedSipRowOtherExceptions(
+                    exceptionItemCount,
+                  )}
+                </span>
+              ) : null}
+            </div>
+            {manualEditorItemId === selectedItem.item_id ? (
+              <p className="sip-resolved-row__edit-hint">
+                {zhCN.workbench.optionalResolvedSipEdit}
+              </p>
+            ) : (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setManualEditorItemId(selectedItem.item_id)}
+              >
+                {zhCN.workbench.editResolvedSipRow}
+              </button>
+            )}
+          </div>
         )}
         {selectedItemRequiresRegeneration ? null : (
           <div hidden={

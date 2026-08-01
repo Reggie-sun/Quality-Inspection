@@ -7,7 +7,7 @@
 - Status: 已解决
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
-- Recurrence: 2
+- Recurrence: 3
 - Surface: `SipInformationPanel` 的异常行与 `SelectedSipDetailFields` 编辑器
 - Symptom: SIP 自动映射已填好大部分字段后，`未知检验项类型` 等真实异常仍展开整张 SIP 表单和“保存当前 SIP 字段”，让用户感觉需要对检验项做第二次完整校验
 - Root cause: `SipInformationPanel` 已按 exception-only contract 只在异常行挂载编辑器，但 `SelectedSipDetailFields` 不区分异常修复和主动修改，始终渲染全部字段及通用保存文案；`sip_regeneration_required` 也沿同一路径展示了不必要的手工表单
@@ -34,6 +34,19 @@
 - Recurrence runtime proof: headed Chrome 对真实 `BK20101401-09L1000` 执行现有 `generate_sip_table`，HTTP `200`；6 条原 `unsupported_item_type` 粗糙度行自动得到“粗糙度：<值> / 粗糙度仪”、exceptions 清空且 confirmed=true，2 条既有人工方法“无 / 11”保持不变；刷新后摘要从“已生成 115 / 异常 6”变为“已生成 121 / 异常 0”，不再显示“检验方法需补充”
 - Recurrence independent review: `reviewer` verdict 为 `accept`，无 blocker 或 concern；确认 structured/unknown/composite 分支、manual provenance、其他 coarse type fail-closed 行为和唯一 SIP Owner 均保持正确
 - Recurrence change: `fix(backend): map roughness SIP method`
+- Second recurrence evidence (2026-08-01): 用户在“已生成 115 / 异常 6”旁展开一个已确认的“未注形位公差”普通 SIP 行后，把全局异常统计与当前行的完整编辑表单理解为同一行仍需二次审核；live working copy 证明该行 `exceptions=[]`、`sip_detail_fields_confirmed=true`，截图中的“保存当前 SIP 字段”是可选编辑而非异常修复
+- Second recurrence root cause: `SipInformationPanel` 将全局 exception count / “处理下一条异常”和当前 resolved row 的普通编辑入口放在同一视觉区域；普通入口仍命名为“查看或修改当前 SIP 行”，展开后按钮与完整表单同时存在，且没有“当前行无异常”的状态提示，因此正确状态被呈现成重复校验
+- Second recurrence selected lane: `Standard`；只改 frontend 当前行状态与可选编辑呈现，需要 focused tests、完整 frontend 验证、headed Chrome smoke 和独立只读 review
+- Second recurrence problem boundary: 明确区分“全局仍有异常”和“当前行已完成”；普通 resolved row 的修改保持可选，`generate_sip_table`、`set_sip_detail_fields`、exception count、technical-requirement invalidation、draft/save/freeze/export contract 均不变
+- Second recurrence single owner: `frontend/src/components/workbench/SipInformationPanel.tsx`
+- Second recurrence allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/SipInformationPanel.tsx`、`frontend/src/components/workbench/SipInformationPanel.test.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`frontend/src/copy/zhCN.ts`、`frontend/src/styles/workbench.css`；focused 联动验证证明 `InspectionWorkbench.test.tsx` 是旧 accessible name 的直接 consumer，只同步入口名，不改变测试语义
+- Second recurrence writer ownership: 父 agent 唯一 writer；实现完成后派发独立只读 reviewer
+- Second recurrence focused verification: `micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/SipInformationPanel.test.tsx src/components/workbench/InspectionWorkbench.test.tsx`
+- Second recurrence fix: resolved 当前行先明确显示“当前行已完成，无需处理”，若全局仍有异常则另行显示“全局另有 N 条 SIP 异常待处理”；普通入口改为“可选修改当前 SIP 行”，展开后入口被可选操作提示替换，原有单行编辑器、异常处理和 command 路径不变
+- Second recurrence regression check: TDD RED 精确证明旧 UI 缺少完成提示且 ordinary opener 仍被理解为处理动作；修复后 focused 2 files 为 `61 passed`，完整 frontend suite 为 `282 passed`，production build 与 `git diff --check` 通过
+- Second recurrence runtime proof: headed Chrome 在真实 `BK20101401-09L1000` working copy（摘要“已生成 121 / 异常 0”）验证 resolved 当前行只显示“当前行已完成，无需处理”和“可选修改当前 SIP 行”；展开后 opener 消失并显示“以下修改为可选操作，不属于异常处理。”与既有 SIP 字段编辑器，console error 为 0；`115 / 6` 的全局异常分离由 focused component test 覆盖，未为 smoke 改写项目数据
+- Second recurrence independent review: `reviewer` verdict 为 `accept`，无 blocker 或 concern；确认 resolved/global 状态分离、optional opener 生命周期、真实异常、regeneration、reviewed/frozen 分支以及现有 contract 均保持正确
+- Second recurrence change: `fix(frontend): clarify resolved SIP rows`
 
 ## BUG-20260801-root-resumes-locked-project
 

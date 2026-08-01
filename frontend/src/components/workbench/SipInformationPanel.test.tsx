@@ -370,6 +370,42 @@ test("重新生成异常卸载已失效的单行 SIP 草稿 owner", () => {
   expect(onCommand).not.toHaveBeenCalled();
 });
 
+test("已完成当前行与全局其他 SIP 异常明确分开", () => {
+  render(
+    <SipInformationPanel
+      {...panelProps()}
+      selectedItem={reviewItem({
+        sip_detail_fields_confirmed: true,
+        sip_mapping_exceptions: [],
+      })}
+      pendingItemCount={0}
+      readyItemCount={115}
+      exceptionItemCount={6}
+      onSelectNextException={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByText("SIP 表格：已生成 115，异常 6")).not.toBeNull();
+  expect(screen.getByText("当前行已完成，无需处理")).not.toBeNull();
+  expect(screen.getByText("全局另有 6 条 SIP 异常待处理。")).not.toBeNull();
+  expect(screen.getByRole("button", {
+    name: "处理下一条异常",
+  })).not.toBeNull();
+  expect(screen.queryByRole("group", { name: "SIP 字段" })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", {
+    name: "可选修改当前 SIP 行",
+  }));
+
+  expect(screen.getByText(
+    "以下修改为可选操作，不属于异常处理。",
+  )).not.toBeNull();
+  expect(screen.getByRole("group", { name: "SIP 字段" })).not.toBeNull();
+  expect(screen.queryByRole("button", {
+    name: "可选修改当前 SIP 行",
+  })).toBeNull();
+});
+
 test("没有 SIP 异常时显示完成终态并移除重复生成动作", () => {
   render(
     <SipInformationPanel
@@ -399,9 +435,11 @@ test("没有 SIP 异常时显示完成终态并移除重复生成动作", () => 
   expect(screen.getByText(
     "正式文件将在审核和冻结完成后从左侧统一生成。",
   )).not.toBeNull();
+  expect(screen.getByText("当前行已完成，无需处理")).not.toBeNull();
+  expect(screen.queryByText(/全局另有/)).toBeNull();
   expect(screen.queryByRole("group", { name: "SIP 字段" })).toBeNull();
   fireEvent.click(screen.getByRole("button", {
-    name: "查看或修改当前 SIP 行",
+    name: "可选修改当前 SIP 行",
   }));
   expect(screen.getByRole("group", { name: "SIP 字段" })).not.toBeNull();
 });
