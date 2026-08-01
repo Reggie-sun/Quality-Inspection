@@ -69,12 +69,25 @@
 - Compose prerequisite integration: feature 已有 `63be9ad` 的 `Makefile`/Compose project、network 和 volume isolation runtime 实现，但缺少 main `e38c806` 的 `backend/tests/integration/test_runtime_topology.py`、`docs/superpowers/specs/2026-08-01-compose-worktree-runtime-isolation-design.md`、`docs/superpowers/plans/2026-08-01-compose-worktree-runtime-isolation.md` 和 operator isolation guidance。Validation action 为 `amend`：以独立 prerequisite commit 补齐这些文件，不放入 GDT-10A implementation commit，不修改当前 branch 的 `127.0.0.1:5173` public tunnel invariant，不停止、替换或删除任一现有 runtime/volume。
 - Compose prerequisite next verification: 运行 isolation plan 的 focused topology test、两个 Compose config checks 和 Makefile dry runs；然后只读验证 main/feature project/network/volume identity 不同、当前 local health/projects 和 public `qa.srj666.com` health/list 可用。如果 runtime 不是已有安全 Owner，停在 zero-paid gate，不自行 rebuild/recreate。
 
+### GDT-10 Step 4 Standing Live Authorization Record — 2026-08-01
+
+- Selected lane: `Heavy`。
+- Selected plan: `docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md`；继续 GDT-10 Step 4，不新建 roadmap。
+- Selection evidence: 用户在 `feature/structured-geometric-tolerance-recognition@c66dcac61524f380f9df82b9ab05ea0edfe974aa` 明确授权当前付费 live，并要求移除以后同类 repository-owned live verification 的逐次人工授权 gate。
+- Validation action: `continue`。GDT-10A Steps 1–9、独立 reviewer、完整 offline regression 和 Compose-isolated zero-paid runtime gate 已完成；本次先 fresh revalidate zero-paid identity，再执行计划唯一命令 `make verify-p0-live`。
+- Problem boundary: 只移除重复的 user-confirmation checkpoint；不改变 current-four、Provider/model、source、call/cost/wall budget、zero retry、literal run ID、pause/resume、headed QA、same-reviewed-result export 或 formal receipt acceptance。
+- Exact paid execution ceiling: 本 cycle 只允许一次 `make verify-p0-live` invocation，不允许 failure 后 replacement run 或第二次 invocation。`Provider-call policy Owner` 的唯一 live policy 为 `.agent/harness/policy/provider-call-policy.yaml`，整次 invocation 的 `max_total_estimated_cost_cny=50`、`max_ocr_calls_per_page=16`、`max_vision_calls_per_page=16`、`max_vision_calls_per_candidate=2`、`max_crop_expansions=1`；policy drift 由 `run-p0.py::_validate_live_policy()` 在 Provider work 前 fail closed。GDT production route 另受 `PROV-005`/`backend/app/candidates/symbol_escalation_contracts.py` 的更严格上限约束：visual primary groups `4/page, 8/project`、text+visual actual attempts `16/page`、wall `45s/page, 90s/project`；`provider_timeout|provider_transport_failure` retry 为 `0`，只有 schema-invalid 可由 `ProductionRetryCoordinator` 授权最多 `1` 次且同样消耗 actual/wall budget。
+- Durable authorization Owner: `.agent/rules/workflow-lanes.md` 的 `Repository-Owned Live Verification Standing Authorization`。本 plan 只拥有 GDT-10 的 exact command、inputs、attempt 和 acceptance evidence，不建立第二套 workflow rule。
+- Old gate action: `replace` “zero-paid GO 后仍等待逐次用户授权”的 checkpoint；以 standing authorization + fresh zero-paid preflight 代替。runtime identity mismatch、credential 缺失、budget scope 不明、paid attempt 已耗尽、public/production promotion、破坏性动作或 scope expansion 仍 fail closed。
+- Writer ownership and order: 当前父 agent 是 workflow/plan amendment 的唯一 writer；amendment focused review 完成并单独提交后，才运行 live。live 失败不自动授权 replacement run 或额外 retry。
+- Next verification: fresh 检查 feature-only Compose target、API/worker `production_uncertainty` + router/model + 12/12 hashes、database exact `0013`、credential presence 和 Provider rows quiet；通过后执行一次 `make verify-p0-live`，并只按本 plan Step 4 evidence 判定 `continue|blocked`。
+
 ## Status
 
 - Date: `2026-08-01`
-- Status: `GDT-10 Step 4 blocked pending GDT-10A timeout-boundary implementation and separate Compose runtime isolation`
+- Status: `GDT-10 Step 4 authorized and in progress; fresh zero-paid revalidation pending`
 - Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
-- Current blocker: after the external main-worktree writer formally handed off and stayed quiet for 60 seconds, API/worker were restored to the exact worktree `/3` identity；health passed、database was `0013`、all 12 host/API/worker hashes matched and all Provider controls were present without exposing values。The single repository-owned run generated current-four registration `20260801T071155661189Z-0acc0a66`、symbol registration `20260801T071202897748Z-f7514006` and full-P0 run `20260801T071203401727Z-09cb5cc6`。Sample 1 completed `18` authenticated `/3` request/response/cache/call records, then the 19th crop remained without request/response/call evidence；the crop-to-failure interval was `60.236s`, matching the unchanged `timeout=60.0`。Full run state is `failed` with `live_start_failed:RuntimeError`。No symbol report、typed Case A/B、pause identity or full-P0 receipt was sealed；Step 5 was not started。Thirty seconds after the Harness failure, main-worktree `make dev-local-api` independently recreated API as `/2`, so current topology is again main API `/2` + worktree worker `/3`
+- Current blocker: none before fresh zero-paid revalidation。GDT-10A implementation is committed at `c66dcac`，Compose isolation prerequisite at `fd41879`，independent reviewer verdict is `accept`，latest full backend regression is `1722 passed`，and the prior feature-only runtime gate proved exact API/worker identity、12/12 hashes、database `0013` and zero Provider-related rows without paid calls。Because runtime state can drift，the same preflight must pass again immediately before live；failure remains an exact blocker and does not consume or expand a paid attempt。
 - Worktree: `.worktrees/structured-geometric-tolerance-recognition`
 - Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`, `b548191`, `4150ce8`, `5f4cfbf`, `bd75be6`, `1ba4c83`。
 
@@ -1243,7 +1256,7 @@ Expected: all gates pass；final `rg` returns no production writer or compatibil
 - Consumes: API/worker code hashes、`Settings.symbol_recognition_mode`、`symbol_routing_identity()`、model identity、PostgreSQL Alembic revision and CandidateAdvisor coverage entry。
 - Produces: zero-paid exact runtime preflight；timeout/transport attempt event/outcome with no fabricated Provider identity；sibling-preserving `AutomaticResult.completeness`/project phase；working-copy `ambiguous + requires_confirmation` coverage。
 
-- [ ] **Step 1: Write RED Harness runtime-identity tests**
+- [x] **Step 1: Write RED Harness runtime-identity tests**
 
 Add contract cases around `preflight_full_p0_live()` proving:
 
@@ -1281,7 +1294,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/
 
 Expected: RED because current preflight validates only API file hashes，not worker hashes、mode/model/router or database revision。
 
-- [ ] **Step 2: Write RED working-copy failure-preservation tests**
+- [x] **Step 2: Write RED working-copy failure-preservation tests**
 
 In `test_review_working_copy.py`，call `ReviewService._review_coverage()` with the exact production failure shape:
 
@@ -1311,7 +1324,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integrati
 
 Expected: localized Provider case is RED because current generic default silently resolves it；ordinary no-detection remains GREEN。
 
-- [ ] **Step 3: Strengthen production localized-failure characterization**
+- [x] **Step 3: Strengthen production localized-failure characterization**
 
 Extend `test_one_localized_provider_failure_preserves_every_sibling_as_partial` for `failure_family in {"timeout", "transport"}` to assert:
 
@@ -1331,11 +1344,11 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integrati
 
 Expected: CandidateAdvisor/AutomaticResult behavior should remain GREEN；new exact call-count/artifact/project-phase assertions expose any real gap。If RED，change only the exact owning seam and do not add timeout/transport retry。
 
-- [ ] **Step 4: Preserve localized Provider failure through review projection**
+- [x] **Step 4: Preserve localized Provider failure through review projection**
 
 In `ReviewService._review_coverage()`，recognize only the exact allowlisted advisor-review shape with `route="visual_symbol"`、`schema_version="visual-symbol-review/3"` and one of the three localized failure stages。Copy only `failure_stage` to the projected entry before removing `advisor_review`，and exclude that entry from the generic system-default conversion。Do not preserve arbitrary Provider metadata。Do not change regular no-detection、technical-requirement or candidate coverage handling。
 
-- [ ] **Step 5: Implement zero-paid API/worker/hash/database preflight**
+- [x] **Step 5: Implement zero-paid API/worker/hash/database preflight**
 
 In `run-p0.py`，replace the API-only helper with one bounded `_require_compose_runtime_identity()` called by `preflight_full_p0_live()` before registration/run creation/source upload。For both `api` and `worker`，compare every `LIVE_API_GDT_RUNTIME_PATHS` SHA against current worktree bytes and compare this exact sanitized identity:
 
@@ -1349,7 +1362,7 @@ EXPECTED_RECOGNITION_IDENTITY = {
 
 Then query only `SELECT version_num FROM alembic_version` through the current Compose `postgres` service and require exact `0013`。The container programs may import `get_settings()` and `symbol_routing_identity()` but must output only hashes/mode/router/model；the database command may output only revision。Any missing container、nonzero exit、invalid/extra/missing field or mismatch raises `ValueError("Compose runtime identity does not match GDT-10 live contract")`。Do not output database URL、mutate container env/project rows or run migration inside preflight。
 
-- [ ] **Step 6: Run focused GREEN and retry invariants**
+- [x] **Step 6: Run focused GREEN and retry invariants**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -k 'runtime_identity' -q
@@ -1362,7 +1375,7 @@ git diff --check
 
 Expected: focused tests pass；timeout/transport use zero retry；production schema invalid remains the only `ProductionRetryCoordinator`-authorized retry；legacy sequential retry remains unchanged；all four runtime/budget constants are unchanged。
 
-- [ ] **Step 7: Run full offline regression gates**
+- [x] **Step 7: Run full offline regression gates**
 
 ```bash
 python .agent/harness/scripts/check-contracts.py
@@ -1373,11 +1386,11 @@ git diff --check
 
 No live Provider command is allowed in this step。
 
-- [ ] **Step 8: Independent timeout-boundary review**
+- [x] **Step 8: Independent timeout-boundary review**
 
 Reviewer must return `accept|accept with concerns|reject` and verify production single retry Owner、zero timeout/transport retry、no fabricated Provider identity、working-copy failure preservation、unchanged no-detection default、legacy activation retirement、API/worker/hash/database preflight ordering、privacy、budget invariants and false-success boundary。Any new production retry outside `ProductionRetryCoordinator`、mode/hash/DB check after paid work、silent failure-to-non-inspection conversion or partial-to-success conversion is blocking。
 
-- [ ] **Step 9: Commit GDT-10A implementation only**
+- [x] **Step 9: Commit GDT-10A implementation only**
 
 ```bash
 git add .agent/harness/scripts/run-p0.py backend/tests/contract/harness/test_live_run_contract.py backend/tests/integration/test_symbol_recognition_pipeline.py backend/app/review/service.py backend/tests/integration/test_review_working_copy.py
@@ -1387,7 +1400,7 @@ git commit -m "fix(gdt): bind live timeout disposition"
 
 The approved spec/plan amendment is committed separately before implementation。Do not stage Compose isolation files、generated run evidence or unrelated dirty artifacts in the implementation commit。
 
-- [ ] **Step 4: Run current-four live Provider evidence only after explicit live authorization**
+- [ ] **Step 4: Run current-four live Provider evidence under standing authorization after fresh zero-paid preflight**
 
 Run the repository-owned command:
 
@@ -1396,6 +1409,8 @@ make verify-p0-live
 ```
 
 The command must first perform zero-paid runtime/source/contract preflight，including exact API/worker current-worktree hashes、`production_uncertainty` + router/model、database `0013` and the named Compose-isolation proof；then create fresh Harness-owned current-four and symbol-input registration runs from exact current sources plus the unique Git-HEAD-approved annotation bytes，并把 literal generated IDs 传入 unchanged full-live start path。Step 4 success means current authenticated Provider calls、sealed source/crop/model/prompt/schema identity hashes、typed Case A/B、all existing non-GD&T symbol results and `execution_state=visual_qa_pending:first-pdf-balloons`。A localized timeout may yield a valid partial result but is not Step 4 success if any required acceptance evidence is absent。A final receipt is not expected before headed QA；any failure remains an exact blocker and is not converted to accepted risk。
+
+This step permits exactly one command invocation in the current cycle。The hard live ceiling is `CNY 50` total estimated cost、`16` OCR calls/page、`16` Vision calls/page、`2` Vision calls/candidate and `1` crop expansion，with the production route further limited to `4` primary groups/page、`8` primary groups/project、`16` actual text+visual attempts/page、`45s` wall/page and `90s` wall/project。Timeout/transport are never retried；schema-invalid is retried at most once only by `ProductionRetryCoordinator`。Any policy drift、budget exhaustion or failed invocation blocks Step 4 and does not authorize another invocation or replacement run。
 
 - [ ] **Step 5: Run headed workbench QA and export proof**
 

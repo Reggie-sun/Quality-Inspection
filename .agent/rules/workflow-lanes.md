@@ -86,6 +86,17 @@ fresh validation 必须映射为：
 
 任何 amendment 都要记录 delta、依据、writer ownership 和下一项验证，不得静默扩大 scope。
 
+### Repository-Owned Live Verification Standing Authorization
+
+本仓库已获得用户对 repository-owned、plan-bounded external Provider live verification 的持续授权。满足以下全部条件时，执行 agent 不得再把“等待用户逐次授权”作为 gate，应在 zero-paid preflight 通过后直接继续：
+
+- current approved plan 已明确命令、输入范围、Provider/model identity、cost/call/wall budget、acceptance evidence 和 failure stop；
+- zero-paid preflight 已在任何 run creation、upload 或 Provider call 前证明 target worktree/runtime、API/worker code identity、database revision、credential presence 和隔离边界；
+- 执行不改变 public/production deployment、credential、account、billing policy、runtime config 或 stable contract，也不停止、替换或删除其他 runtime/data；
+- 只执行 plan 明确允许的 run/attempt；失败后不得因 standing authorization 自动增加 retry、扩大 budget 或开启 replacement run。
+
+runtime identity mismatch、credential 缺失、cost/budget scope 不明、paid attempt 已耗尽、public/production promotion、破坏性动作、权限扩张或实质 scope expansion 仍按 `AGENTS.md` Hard Boundaries fail closed。该 standing authorization 只移除重复的人为确认，不改变 Provider retry Owner、业务审批、review lock 或 formal acceptance gate。
+
 每次 selection 必须记录 `Selected lane / Selected plan / Selection evidence / Validation action / Writer ownership and order / Next verification`，并按确定顺序选择恰好一个 primary surface：先写 current approved plan；没有时写 current task contract；仍没有时写 current progress update。final report 可以镜像最终状态，但绝不能作为 pre-execution selection record 的 primary surface。不得为此新建 registry 或 ledger。
 
 ## 5. Verification Truth
