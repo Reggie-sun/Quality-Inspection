@@ -592,6 +592,7 @@ def test_pure_scanned_page_stays_unsupported_without_ocr_promotion(
 
     assert pages[0].support_level == "unsupported"
     assert pages[0].processing_route == "unsupported"
-    assert pages[0].observations == ()
-    assert provider.calls == []
-    assert factory_calls == []
+    assert pages[0].review_required is True
+    assert pages[0].observations
+    assert len(provider.calls) == 4
+    assert factory_calls == ["factory"]

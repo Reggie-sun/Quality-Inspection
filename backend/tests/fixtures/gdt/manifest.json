@@ -1,0 +1,25 @@
+{
+  "schema_version": "gdt-raster-fixtures/1",
+  "fixtures": {
+    "parallelism-low-resolution.png": {
+      "size_bytes": 135,
+      "sha256": "5cc6517bf242842334e4726d2e2f2c1d1836024be0a8dea66f8f75c8882e3844"
+    },
+    "flatness-skew-2deg.png": {
+      "size_bytes": 1086,
+      "sha256": "ad64f87188b49cba849751d7792b283f72c808281045f09a44911d41fafc97c7"
+    },
+    "position-broken-border.png": {
+      "size_bytes": 215,
+      "sha256": "1d9700dcbb404fc69705769e1920783ff5b6832e3c85a6caca67fd20b6d345b8"
+    },
+    "perpendicularity-line-adhesion.png": {
+      "size_bytes": 209,
+      "sha256": "8a8e2a88d0853843f018f7033d0751b271559dd042fde01ea91b72c155e0fb19"
+    },
+    "revision-table-negative.png": {
+      "size_bytes": 199,
+      "sha256": "9887022c4f7390b8969280f86d912bb81fd49cfa62813817c11d523cec2ac3d0"
+    }
+  }
+}
