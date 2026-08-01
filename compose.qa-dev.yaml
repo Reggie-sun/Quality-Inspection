@@ -28,8 +28,8 @@ services:
 
 volumes:
   qi_postgres:
-    name: quality_inspection_postgres_qa_dev
+    name: "${COMPOSE_PROJECT_NAME}_postgres_qa_dev"
   qi_storage:
-    name: quality_inspection_storage_qa_dev
+    name: "${COMPOSE_PROJECT_NAME}_storage_qa_dev"
   qi_frontend_node_modules:
-    name: quality_inspection_frontend_node_modules_qa_dev
+    name: "${COMPOSE_PROJECT_NAME}_frontend_node_modules_qa_dev"

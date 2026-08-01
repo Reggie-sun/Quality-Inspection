@@ -25,6 +25,18 @@ make dev-local-frontend
 
 The API uses `compose.dev-local.yaml` for bind mounts and Uvicorn reload. The frontend runs Vite directly from the checkout, listens on `0.0.0.0:5173`, and proxies `/api` to `127.0.0.1:8000`. The wildcard frontend listener accepts both the loopback Tunnel origin and direct LAN requests.
 
+Compose project identity is worktree-scoped. The default identity is the normalized
+checkout root basename, and `make dev-local-api` passes that identity explicitly with
+`-p`. PostgreSQL, storage, containers, and the default network derive their names from
+the same project identity. A feature worktree must not pass the main checkout's project
+name or mount its data volumes. This prevents a worktree `docker compose up` from
+replacing the public QA `api` or `worker`.
+
+The runtime entrypoints never kill an existing `8000` or `5173` listener. Port
+ownership is fail-closed: a second checkout using the same host port must fail and
+leave the existing public QA process untouched. Start the public runtime only from
+the `main` checkout; use explicit alternate ports for parallel worktree runtimes.
+
 ## Cloudflare Handoff
 
 The hostname rule, DNS route, and connector lifecycle are host/Cloudflare-owned configuration. Configure them outside this repository.
@@ -72,12 +84,25 @@ Do not save, print, commit, or attach Cloudflare credentials, API keys, password
 1. Remove only the `qa.srj666.com` hostname rule from the host-owned tunnel configuration.
 2. Reload or restart that connector, then verify its pre-existing routes remain available to their origins.
 3. Disable the QA hostname DNS route outside the repository.
-4. Stop the local development processes with `Ctrl-C` in their terminals. If the old isolated QA stack is still running, stop it with:
+4. Stop the local development processes with `Ctrl-C` in their terminals. Stop the
+   current worktree's isolated QA stack with:
 
 ```bash
 make qa-dev-down
 ```
 
-Do not remove any non-QA container, volume, tunnel, DNS record, or RAGFlow route. QA-only volumes are named `quality_inspection_*_qa_dev`; remove them only when their data is intentionally disposable.
+If a stack created before worktree isolation still exists under the legacy
+`quality-inspection-qa` project, stop only those legacy containers and network with:
+
+```bash
+make qa-dev-down-legacy
+```
+
+This migration target does not pass `--volumes`; legacy QA data remains available for
+an explicit operator decision.
+
+Do not remove any non-QA container, volume, tunnel, DNS record, or RAGFlow route. QA-only
+volumes are named `<worktree-project>-qa_*_qa_dev`; remove them only when their data is
+intentionally disposable.
 
 To roll back only the LAN exposure, restore the `dev-local-frontend` Vite host flag in `Makefile` to `127.0.0.1`, restart the target, verify the loopback root and `/api/v1/health`, then confirm the host LAN IP no longer listens on port `5173`.
