@@ -1441,6 +1441,46 @@ def test_live_and_human_verdict_schemas_are_closed() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "committed_total_cny",
+    (
+        "0.000000",
+        "3.526656",
+        "9.999999",
+        "10.000000",
+        "49.999999",
+        "50.000000",
+    ),
+)
+def test_paid_ledger_schema_accepts_full_approved_ceiling_domain(
+    committed_total_cny: str,
+) -> None:
+    live = _live_evidence()
+    live["paid_cycle"] = {
+        "cycle_id": "gdt10d-contract-cycle",
+        "pricing_sha256": "a" * 64,
+        "issuance_sha256": "b" * 64,
+        "consumption_sha256": "c" * 64,
+        "run_authorization_sha256": "d" * 64,
+        "journal_ref": (
+            "asset://provider-usage-cycles/gdt10d-contract-cycle/"
+        ),
+        "projects": [],
+        "resume_consumed_sha256": None,
+        "ledger": {
+            "committed_total_cny": committed_total_cny,
+            "reservation_count": 0,
+            "reserved_only_count": 0,
+            "submission_started_count": 0,
+            "settled_count": 0,
+            "evidence_sha256": "e" * 64,
+        },
+        "terminal": None,
+    }
+
+    _validate(live, "live-run-evidence.schema.json")
+
+
 def test_single_live_canary_cannot_masquerade_as_latency_percentiles() -> None:
     """PRT-7: 513.44s is one raw sample, never a fabricated P50/P95."""
     single_sample = {

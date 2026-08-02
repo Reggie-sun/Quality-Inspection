@@ -145,7 +145,7 @@
       "properties": {
         "committed_total_cny": {
           "type": "string",
-          "pattern": "^(?:0|[1-4][0-9]|50)\\.[0-9]{6}$"
+          "pattern": "^(?:[0-9]|[1-4][0-9]|50)\\.[0-9]{6}$"
         },
         "reservation_count": { "type": "integer", "minimum": 0 },
         "reserved_only_count": { "type": "integer", "minimum": 0 },
