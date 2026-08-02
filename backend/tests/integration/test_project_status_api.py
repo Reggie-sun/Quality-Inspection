@@ -326,18 +326,29 @@ def test_transient_failure_is_retryable_without_leaking_error_record(
         assert forbidden not in response.text.lower()
 
 
-def test_vision_provider_failure_projects_retryable_sanitized_status(
+@pytest.mark.parametrize(
+    ("cause_category", "expected_retryable"),
+    (
+        ("invalid_configuration", False),
+        ("transient_provider_failure", True),
+        ("processing_defect", False),
+    ),
+)
+def test_provider_failure_status_privacy_and_retry_projection(
     status_context: StatusContext,
+    cause_category: str,
+    expected_retryable: bool,
 ) -> None:
+    private_marker = "private://customer/token-do-not-leak"
     project_id = _seed_project_status(
         status_context.session,
         project_state="processing_failed",
         job_status="failed",
         error={
             "code": "vision_provider_call_failed",
-            "message": "/srv/private/customer.pdf credential=do-not-leak",
+            "message": private_marker,
             "stage": "candidate_advisor",
-            "cause_category": "transient_provider_failure",
+            "cause_category": cause_category,
         },
     )
 
@@ -346,13 +357,15 @@ def test_vision_provider_failure_projects_retryable_sanitized_status(
     )
 
     assert response.status_code == 200
-    assert response.json()["retryable"] is True
+    assert response.json()["retryable"] is expected_retryable
     assert response.json()["error"] == {
         "code": "vision_provider_call_failed",
         "stage": "candidate_advisor",
     }
-    assert "do-not-leak" not in response.text
-    assert "/srv/private" not in response.text
+    assert private_marker not in response.text
+    assert "cause_category" not in response.text
+    assert "diagnostic" not in response.text
+    assert "provider_request_id" not in response.text
 
 
 @pytest.mark.parametrize(
