@@ -67,6 +67,24 @@ def test_classified_provider_failure_does_not_render_private_detail() -> None:
     assert error.fact is fact
 
 
+def test_classified_provider_failure_rejects_malformed_fact_safely() -> None:
+    private_marker = "private://customer/token-do-not-leak"
+    malformed = SimpleNamespace(
+        category="unclassified",
+        private_detail=private_marker,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="^Provider failure fact is invalid$",
+    ) as caught:
+        ClassifiedProviderFailure(malformed)  # type: ignore[arg-type]
+
+    assert private_marker not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
 @pytest.mark.parametrize(
     "unsafe_id",
     ("token-do-not-leak", "PASSWORD-value", "session.cookie"),

@@ -233,6 +233,16 @@ def test_candidate_advisor_failure_requires_classification_event_pair() -> None:
             CandidateAdvisorFailure("invalid", **values)
 
 
+def test_legacy_candidate_advisor_failure_preserves_transient_cause() -> None:
+    error = advisor_module._LegacyCandidateAdvisorFailure(
+        "Visual candidate Advisor call failed",
+        failure_category="timeout",
+    )
+
+    assert error.failure_category == "timeout"
+    assert error.pipeline_cause_category == "transient_provider_failure"
+
+
 def test_persisted_provider_failure_matches_propagated(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2642,6 +2652,89 @@ def test_production_failure_stops_before_queued_job_provider_call(
     assert {
         item["blocking_event_sha256"] for item in cancellations
     } == {"a" * 64}
+    assert {item["stop_reason"] for item in cancellations} == {
+        "project_blocking_provider_failure"
+    }
+    assert [
+        tuple(
+            observation.observation_id
+            for observation in item["visual_observations"]
+        )
+        for item in cancellations
+    ] == [(observation_id,) for observation_id in observation_ids[2:]]
+
+
+def test_routing_evidence_failure_wins_after_durable_failure_drains(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, snapshot = eight_visual_escalation_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    observation_ids = tuple(
+        visual.observation_id
+        for page in pages
+        for visual in page.visual_observations
+    )
+    first_pair = threading.Barrier(2)
+    calls: list[str] = []
+    cancellations: list[dict[str, object]] = []
+    classification = classify_provider_failure(
+        provider_fact_for_test("rate_limited")
+    )
+
+    def fail_submitted_jobs(
+        _self: CandidateAdvisor,
+        **kwargs: object,
+    ) -> object:
+        observations = kwargs["visual_observations"]
+        observation_id = observations[0].observation_id
+        calls.append(observation_id)
+        first_pair.wait(timeout=3)
+        if observation_id == observation_ids[0]:
+            raise CandidateAdvisorFailure(
+                "Visual symbol routing evidence write failed",
+                failure_origin="routing_evidence",
+            )
+        raise CandidateAdvisorFailure(
+            "Visual symbol Advisor call failed",
+            classification=classification,
+            failure_event_sha256="b" * 64,
+        )
+
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_visual_review_result",
+        fail_submitted_jobs,
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_not_started_after_project_failure",
+        lambda _self, **kwargs: cancellations.append(kwargs),
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id="mixed-failure-window",
+        provider_factory=lambda _settings: object(),
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as caught:
+        advisor.review(source, pages, snapshot)
+
+    assert caught.value.failure_origin == "routing_evidence"
+    assert caught.value.failure_category is None
+    assert caught.value.pipeline_cause_category is None
+    assert set(calls) == set(observation_ids[:2])
+    assert len(calls) == 2
+    assert len(cancellations) == 6
+    assert {
+        item["blocking_event_sha256"] for item in cancellations
+    } == {"b" * 64}
     assert {item["stop_reason"] for item in cancellations} == {
         "project_blocking_provider_failure"
     }

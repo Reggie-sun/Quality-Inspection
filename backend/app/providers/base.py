@@ -118,6 +118,8 @@ class ProviderFailureFact:
 
 class ClassifiedProviderFailure(RuntimeError):
     def __init__(self, fact: ProviderFailureFact) -> None:
+        if not isinstance(fact, ProviderFailureFact):
+            raise ValueError("Provider failure fact is invalid")
         super().__init__("visual symbol Provider request failed")
         self.fact = fact
 

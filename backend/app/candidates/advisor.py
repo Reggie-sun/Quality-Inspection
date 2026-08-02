@@ -405,6 +405,10 @@ class _LegacyCandidateAdvisorFailure(CandidateAdvisorFailure):
     def failure_category(self) -> str:
         return self._legacy_failure_category
 
+    @property
+    def pipeline_cause_category(self) -> str:
+        return "transient_provider_failure"
+
 
 def _recognition_preview_snapshot(
     snapshot: CandidateSnapshot,
@@ -3673,6 +3677,16 @@ class CandidateAdvisor:
                                 queued_job.visual_observations
                             ),
                         )
+                    routing_failure_indexes = tuple(
+                        index
+                        for index, failure in worker_failures.items()
+                        if isinstance(failure, CandidateAdvisorFailure)
+                        and failure.failure_origin == "routing_evidence"
+                    )
+                    if routing_failure_indexes:
+                        raise worker_failures[
+                            min(routing_failure_indexes)
+                        ]
                     raise first_blocking
                 if worker_failures:
                     raise worker_failures[min(worker_failures)]
