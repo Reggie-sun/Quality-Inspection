@@ -3370,6 +3370,84 @@ def _prepare_live_project(
     return document
 
 
+def _paid_cycle_ledger_summary_from_report(
+    run_dir: Path,
+    paid_cycle: Mapping[str, Any],
+) -> dict[str, Any]:
+    report = _load_json(run_dir / "reports/provider-usage-ledger.json")
+    report_payload = dict(report)
+    content_sha256 = report_payload.pop("content_sha256", None)
+    required = {
+        "schema_version",
+        "run_id",
+        "pricing_sha256",
+        "cycle_id",
+        "journal_ref",
+        "committed_total_cny",
+        "reservation_count",
+        "reserved_only_count",
+        "submission_started_count",
+        "unsettled_started_count",
+        "settled_count",
+        "entries",
+    }
+    count_fields = (
+        "reservation_count",
+        "reserved_only_count",
+        "submission_started_count",
+        "unsettled_started_count",
+        "settled_count",
+    )
+    try:
+        committed = Decimal(str(report.get("committed_total_cny")))
+    except InvalidOperation as exc:
+        raise RuntimeError("paid cycle ledger amount is invalid") from exc
+    entries = report.get("entries")
+    if (
+        set(report_payload) != required
+        or report.get("schema_version") != "provider-usage-evidence/1"
+        or report.get("run_id") != run_dir.name
+        or report.get("pricing_sha256") != paid_cycle.get("pricing_sha256")
+        or report.get("cycle_id") != paid_cycle.get("cycle_id")
+        or report.get("journal_ref") != paid_cycle.get("journal_ref")
+        or content_sha256
+        != hashlib.sha256(
+            json.dumps(
+                report_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        or not committed.is_finite()
+        or committed < 0
+        or committed > Decimal("50.000000")
+        or any(
+            not isinstance(report.get(field), int)
+            or isinstance(report.get(field), bool)
+            or report[field] < 0
+            for field in count_fields
+        )
+        or not isinstance(entries, list)
+        or len(entries) != report.get("reservation_count")
+        or report.get("reserved_only_count")
+        + report.get("submission_started_count")
+        != report.get("reservation_count")
+        or report.get("settled_count")
+        + report.get("unsettled_started_count")
+        != report.get("submission_started_count")
+    ):
+        raise RuntimeError("paid cycle ledger evidence is invalid")
+    return {
+        "committed_total_cny": report["committed_total_cny"],
+        "reservation_count": report["reservation_count"],
+        "reserved_only_count": report["reserved_only_count"],
+        "submission_started_count": report["submission_started_count"],
+        "settled_count": report["settled_count"],
+        "evidence_sha256": content_sha256,
+    }
+
+
 def _refresh_paid_cycle_ledger(run_dir: Path) -> dict[str, Any]:
     live_path = run_dir / LIVE_EVIDENCE_ARTIFACT
     live = _load_json(live_path)
@@ -3454,14 +3532,10 @@ def _refresh_paid_cycle_ledger(run_dir: Path) -> dict[str, Any]:
     document["content_sha256"] = content_sha256
     report_path = run_dir / "reports/provider-usage-ledger.json"
     _atomic_write_json(report_path, document)
-    paid_cycle["ledger"] = {
-        "committed_total_cny": snapshot["committed_total_cny"],
-        "reservation_count": snapshot["reservation_count"],
-        "reserved_only_count": snapshot["reserved_only_count"],
-        "submission_started_count": snapshot["submission_started_count"],
-        "settled_count": snapshot["settled_count"],
-        "evidence_sha256": content_sha256,
-    }
+    paid_cycle["ledger"] = _paid_cycle_ledger_summary_from_report(
+        run_dir,
+        paid_cycle,
+    )
     _receipt_module().validate_schema(
         live,
         "live-run-evidence.schema.json",
@@ -3787,6 +3861,11 @@ def finalize_paid_run(
     paid_cycle = live.get("paid_cycle")
     if not isinstance(paid_cycle, dict):
         raise RuntimeError("paid cycle evidence is unavailable")
+    if paid_cycle.get("ledger") is None:
+        paid_cycle["ledger"] = _paid_cycle_ledger_summary_from_report(
+            run_dir,
+            paid_cycle,
+        )
     paid_cycle["terminal"] = {
         "status": terminal["status"],
         "quiescence_sha256": terminal["quiescence_sha256"],

@@ -4124,6 +4124,62 @@ def test_runtime_closure_checker_requires_an_explicit_supported_source() -> None
     ).is_file()
 
 
+def test_paid_ledger_summary_recovers_from_durable_report(
+    tmp_path: Path,
+) -> None:
+    runner = _load_module(
+        "qi_paid_ledger_durable_report_recovery",
+        HARNESS / "scripts/run-p0.py",
+    )
+    run_dir = tmp_path / RUN_ID
+    (run_dir / "reports").mkdir(parents=True)
+    paid_cycle = {
+        "cycle_id": "gdt10d-contract-cycle",
+        "pricing_sha256": "a" * 64,
+        "journal_ref": (
+            "asset://provider-usage-cycles/gdt10d-contract-cycle/"
+        ),
+    }
+    report = {
+        "schema_version": "provider-usage-evidence/1",
+        "run_id": RUN_ID,
+        "pricing_sha256": paid_cycle["pricing_sha256"],
+        "cycle_id": paid_cycle["cycle_id"],
+        "journal_ref": paid_cycle["journal_ref"],
+        "committed_total_cny": "3.526656",
+        "reservation_count": 2,
+        "reserved_only_count": 0,
+        "submission_started_count": 2,
+        "unsettled_started_count": 0,
+        "settled_count": 2,
+        "entries": [{"attempt_index": 1}, {"attempt_index": 2}],
+    }
+    report["content_sha256"] = hashlib.sha256(
+        json.dumps(
+            report,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    (run_dir / "reports/provider-usage-ledger.json").write_text(
+        json.dumps(report),
+        encoding="utf-8",
+    )
+
+    assert runner._paid_cycle_ledger_summary_from_report(
+        run_dir,
+        paid_cycle,
+    ) == {
+        "committed_total_cny": "3.526656",
+        "reservation_count": 2,
+        "reserved_only_count": 0,
+        "submission_started_count": 2,
+        "settled_count": 2,
+        "evidence_sha256": report["content_sha256"],
+    }
+
+
 def test_paid_routing_aggregate_separates_plan_denied_from_admitted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
