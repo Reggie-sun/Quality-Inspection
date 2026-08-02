@@ -11,19 +11,25 @@ import stat
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
+from typing import Callable
 from urllib.parse import urlsplit
 
 import jsonschema
 import pytest
+import yaml
 
 from app.candidates.symbol_review import (
     build_visual_failure_envelope,
     build_visual_request_evidence,
+    canonical_visual_response_bytes,
     parse_visual_request_evidence,
 )
 from app.providers.call_records import ProviderCallRecord, serialize_call_record
+from app.providers.pricing import load_pricing_snapshot
+from app.providers.usage_ledger import ProviderUsageLedger
 from app.storage.local import LocalFileStorage
 
 
@@ -41,6 +47,18 @@ COMPARISON_PNG_BYTES = bytes.fromhex(
     "0000000d4944415478da63f8cfc0f01f00050001ff89993d1d0000000049454e44"
     "ae426082"
 )
+ACCOUNT_READINESS_SCRIPT = HARNESS / "scripts/provider_account_readiness.py"
+ACCOUNT_READINESS_CYCLE = "gdt10e-auth-remediated-live-20260802"
+ACCOUNT_READINESS_MODEL = "qwen3-vl-plus-2025-12-19"
+ACCOUNT_READINESS_REGION = "cn-beijing"
+ACCOUNT_READINESS_KEY = "gdt10e-secret-marker-4f7ca18b"
+ACCOUNT_READINESS_WORKSPACE = "gdt10e-workspace-marker-93b2d6"
+GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256 = (
+    "db7c74f7fd0623c34a496309c744da3d32fd9614786fbde485e569968939749a"
+)
+GDT10E_PRICING_DEADLINE = datetime(
+    2026, 8, 2, 23, 59, 59, tzinfo=timezone(timedelta(hours=8))
+)
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -51,6 +69,111 @@ def _load_module(name: str, path: Path) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _account_readiness_module() -> ModuleType:
+    assert ACCOUNT_READINESS_SCRIPT.is_file(), (
+        "missing Task 2 provider account readiness implementation"
+    )
+    return _load_module("test_provider_account_readiness", ACCOUNT_READINESS_SCRIPT)
+
+
+def _account_readiness_environment(
+    *,
+    api_key: str = ACCOUNT_READINESS_KEY,
+    workspace_id: str = ACCOUNT_READINESS_WORKSPACE,
+    model: str = ACCOUNT_READINESS_MODEL,
+) -> dict[str, str]:
+    return {
+        "QI_QWEN_API_KEY": api_key,
+        "QI_QWEN_WORKSPACE_ID": workspace_id,
+        "QI_QWEN_MODEL": model,
+        "QI_P0_OPERATOR_ID": "operator-gdt10e",
+    }
+
+
+def _configure_account_readiness_paths(
+    module: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path, Path]:
+    root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
+    intent = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-intent.json"
+    runs = tmp_path / "runs"
+    monkeypatch.setattr(module, "PRIVATE_ROOT", root)
+    monkeypatch.setattr(module, "CLEANUP_INTENT_PATH", intent)
+    monkeypatch.setattr(module, "HARNESS_RUNS_ROOT", runs)
+    return root, intent, runs
+
+
+def _issue_account_readiness(
+    module: ModuleType,
+    root: Path,
+    *,
+    expires_in_seconds: int = 1800,
+) -> dict[str, object]:
+    return module.issue_account_readiness(
+        root=root,
+        cycle_id=ACCOUNT_READINESS_CYCLE,
+        region=ACCOUNT_READINESS_REGION,
+        max_incremental_cny="46.473344",
+        expires_in_seconds=expires_in_seconds,
+        operator_checks={
+            "remediation_completed": True,
+            "workspace_account_binding_verified": True,
+            "compatible_mode_enabled": True,
+            "model_entitlement_verified": True,
+            "billing_and_quota_verified": True,
+        },
+        environment=_account_readiness_environment(),
+    )
+
+
+def _validate_account_readiness(
+    module: ModuleType,
+    root: Path,
+    *,
+    environment: dict[str, str] | None = None,
+    phase: str = "start",
+    runtime_acceptance: Path | None = None,
+    expected_content_sha256: str | None = None,
+):
+    return module.validate_account_readiness(
+        root=root,
+        cycle_id=ACCOUNT_READINESS_CYCLE,
+        model=ACCOUNT_READINESS_MODEL,
+        region=ACCOUNT_READINESS_REGION,
+        max_incremental_cny="46.473344",
+        environment=(
+            _account_readiness_environment()
+            if environment is None
+            else environment
+        ),
+        phase=phase,
+        runtime_acceptance=runtime_acceptance,
+        expected_content_sha256=expected_content_sha256,
+    )
+
+
+def _rewrite_account_readiness_document(
+    root: Path,
+    mutate: Callable[[dict[str, object]], None],
+) -> None:
+    path = root / "account-readiness.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    mutate(document)
+    content = dict(document)
+    content.pop("content_sha256", None)
+    document["content_sha256"] = hashlib.sha256(
+        json.dumps(
+            content,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    path.write_text(
+        json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _embedded_function(
@@ -1381,6 +1504,1319 @@ def test_full_p0_run_schema_adds_lifecycle_without_invalidating_task_runs() -> N
     _validate(legacy_task, "run.schema.json")
 
 
+def test_gdt10e_v3_public_evidence_requires_the_frozen_readiness_budget_shape() -> None:
+    """Mutation caught: accepting a GDT-10E run without its one-use envelope."""
+    run = _run()
+    run["schema_version"] = "run/3"
+    run["cycle_authorization"] = {
+        "pricing_sha256": "b" * 64,
+        "issuance_sha256": "c" * 64,
+        "consumption_sha256": "d" * 64,
+        "backend_image_id": "sha256:" + "e" * 64,
+        "run_authorization_sha256": "f" * 64,
+        "run_id": RUN_ID,
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "historical_committed_cny": "3.526656",
+        "max_total_cny": "46.473344",
+        "overall_envelope_cny": "50.000000",
+        "readiness_evidence": {
+            "schema_version": "provider-account-readiness-evidence/1",
+            "readiness_sha256": "a" * 64,
+            "operator_state": "operator_attested",
+            "runtime_state": "not_yet_accepted",
+            "binding_match": True,
+            "runtime_acceptance_sha256": None,
+        },
+    }
+    live = _live_evidence()
+    live["schema_version"] = "live-run-evidence/3"
+    live["paid_cycle"] = {
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "pricing_sha256": "b" * 64,
+        "issuance_sha256": "c" * 64,
+        "consumption_sha256": "d" * 64,
+        "run_authorization_sha256": "f" * 64,
+        "journal_ref": f"asset://provider-usage-cycles/{ACCOUNT_READINESS_CYCLE}/",
+        "projects": [],
+        "resume_consumed_sha256": None,
+        "ledger": None,
+        "terminal": None,
+        "historical_committed_cny": "3.526656",
+        "max_total_cny": "46.473344",
+        "overall_envelope_cny": "50.000000",
+        "readiness_evidence": run["cycle_authorization"]["readiness_evidence"],
+    }
+
+    _validate(run, "run.schema.json")
+    _validate(live, "live-run-evidence.schema.json")
+    legacy_with_v3_fields = json.loads(json.dumps(run))
+    legacy_with_v3_fields["schema_version"] = "run/1"
+    with pytest.raises(jsonschema.ValidationError):
+        _validate(legacy_with_v3_fields, "run.schema.json")
+    task_scoped_v3 = json.loads(json.dumps(run))
+    task_scoped_v3.update({"scope": "task", "task_id": "D7-T1"})
+    with pytest.raises(jsonschema.ValidationError):
+        _validate(task_scoped_v3, "run.schema.json")
+    v2_run = json.loads(json.dumps(run))
+    v2_run["schema_version"] = "run/2"
+    with pytest.raises(jsonschema.ValidationError):
+        _validate(v2_run, "run.schema.json")
+    v2_live = json.loads(json.dumps(live))
+    v2_live["schema_version"] = "live-run-evidence/2"
+    with pytest.raises(jsonschema.ValidationError):
+        _validate(v2_live, "live-run-evidence.schema.json")
+    for invalid in (run, live):
+        broken = json.loads(json.dumps(invalid))
+        broken["cycle_authorization" if invalid is run else "paid_cycle"].pop(
+            "readiness_evidence"
+        )
+        with pytest.raises(jsonschema.ValidationError):
+            _validate(
+                broken,
+                "run.schema.json" if invalid is run else "live-run-evidence.schema.json",
+            )
+        broken = json.loads(json.dumps(invalid))
+        broken["cycle_authorization" if invalid is run else "paid_cycle"][
+            "cycle_id"
+        ] = "gdt10d-contract-cycle"
+        with pytest.raises(jsonschema.ValidationError):
+            _validate(
+                broken,
+                "run.schema.json" if invalid is run else "live-run-evidence.schema.json",
+            )
+        broken = json.loads(json.dumps(invalid))
+        broken.pop("cycle_authorization" if invalid is run else "paid_cycle")
+        with pytest.raises(jsonschema.ValidationError):
+            _validate(
+                broken,
+                "run.schema.json" if invalid is run else "live-run-evidence.schema.json",
+            )
+
+
+def _gdt10e_v3_run(*, state: str = "running") -> dict[str, object]:
+    """Return a schema-valid v3 run without deriving it from production code."""
+    run = _run(state)
+    run["schema_version"] = "run/3"
+    run["cycle_authorization"] = {
+        "pricing_sha256": load_pricing_snapshot().content_sha256,
+        "issuance_sha256": "c" * 64,
+        "consumption_sha256": "d" * 64,
+        "backend_image_id": "sha256:" + "e" * 64,
+        "run_authorization_sha256": "f" * 64,
+        "run_id": RUN_ID,
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "historical_committed_cny": "3.526656",
+        "max_total_cny": "46.473344",
+        "overall_envelope_cny": "50.000000",
+        "readiness_evidence": {
+            "schema_version": "provider-account-readiness-evidence/1",
+            "readiness_sha256": "a" * 64,
+            "operator_state": "operator_attested",
+            "runtime_state": "not_yet_accepted",
+            "binding_match": True,
+            "runtime_acceptance_sha256": None,
+        },
+    }
+    return run
+
+
+def _gdt10e_v3_live(run: dict[str, object]) -> dict[str, object]:
+    readiness = run["cycle_authorization"]["readiness_evidence"]
+    return {
+        "schema_version": "live-run-evidence/3",
+        "run_id": RUN_ID,
+        "input_set": "current-four",
+        "phases": ["process", "candidates", "review", "balloons", "export", "consistency"],
+        "child_run_ids": [],
+        "paid_cycle": {
+            "cycle_id": ACCOUNT_READINESS_CYCLE,
+            "pricing_sha256": run["cycle_authorization"]["pricing_sha256"],
+            "issuance_sha256": "c" * 64,
+            "consumption_sha256": "d" * 64,
+            "run_authorization_sha256": "f" * 64,
+            "journal_ref": f"asset://provider-usage-cycles/{ACCOUNT_READINESS_CYCLE}/",
+            "projects": [], "resume_consumed_sha256": None, "ledger": None,
+            "terminal": None, "historical_committed_cny": "3.526656",
+            "max_total_cny": "46.473344", "overall_envelope_cny": "50.000000",
+            "readiness_evidence": readiness,
+        },
+        "symbol_recognition": None, "design_qa": None, "samples": [],
+    }
+
+
+def _gdt10e_runtime_acceptance_fact(run: dict[str, object]) -> dict[str, object]:
+    fact = {
+        "schema_version": "provider-account-runtime-acceptance/1",
+        "cycle_id": ACCOUNT_READINESS_CYCLE, "run_id": RUN_ID,
+        "project_id": "project-gdt10e", "readiness_sha256": "a" * 64,
+        "submission_started_sha256": "1" * 64, "settlement_sha256": "2" * 64,
+        "call_evidence_sha256": "3" * 64, "model": ACCOUNT_READINESS_MODEL,
+        "ledger_attempt_index": 1, "accepted_at": "2026-08-02T10:14:04+00:00",
+    }
+    fact["content_sha256"] = hashlib.sha256(
+        json.dumps(fact, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return fact
+
+
+def test_gdt10e_terminal_pending_accepts_v3_and_preserves_v2_boundary(
+    tmp_path: Path,
+) -> None:
+    """Mutation caught: restricting the terminal state owner to legacy run/2."""
+    runner = _load_module(
+        f"qi_gdt10e_v3_terminal_pending_{tmp_path.name}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    run_dir = tmp_path / RUN_ID
+    run_dir.mkdir()
+    run = _gdt10e_v3_run()
+    _validate(run, "run.schema.json")
+    (run_dir / "run.json").write_text(json.dumps(run), encoding="utf-8")
+
+    terminal_pending = runner._mark_paid_run_terminal_pending(
+        run_dir,
+        failure_reason="selector_failed",
+    )
+
+    assert terminal_pending["schema_version"] == "run/3"
+    assert terminal_pending["execution_state"] == "terminal_pending"
+    assert terminal_pending["failure_reason"] == "selector_failed"
+
+
+def test_gdt10e_v3_lifecycle_requires_the_exact_fact_only_when_accepted(
+    tmp_path: Path,
+) -> None:
+    """Mutation caught: accepting completed v3 without a fact, or rejecting failed no-fact runs."""
+    policy = _load_module(
+        f"qi_gdt10e_v3_lifecycle_{tmp_path.name}",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+    run_dir = tmp_path / RUN_ID
+    (run_dir / "reports").mkdir(parents=True)
+
+    failed = _gdt10e_v3_run(state="failed")
+    failed["completed_at"] = "2026-08-02T10:14:04+00:00"
+    failed["failure_reason"] = "selector_failed"
+    failed_live = _gdt10e_v3_live(failed)
+    with pytest.raises(ValueError, match="terminal evidence"):
+        policy.validate_paid_cycle_evidence(
+            failed, failed_live, require_success=False, evidence_dir=run_dir, root=ROOT
+        )
+
+    completed = _gdt10e_v3_run(state="completed")
+    completed["completed_at"] = "2026-08-02T10:14:04+00:00"
+    completed_live = _gdt10e_v3_live(completed)
+    with pytest.raises(ValueError, match="terminal evidence"):
+        policy.validate_paid_cycle_evidence(
+            completed, completed_live, evidence_dir=run_dir, root=ROOT
+        )
+
+    fact = _gdt10e_runtime_acceptance_fact(completed)
+    accepted = policy.account_readiness_projection(completed, completed_live, fact)
+    fact_path = run_dir / "reports/provider-account-runtime-acceptance.json"
+    fact_path.write_bytes(
+        (json.dumps(fact, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    )
+    fact_path.chmod(0o600)
+    with pytest.raises(ValueError, match="terminal evidence"):
+        policy.validate_paid_cycle_evidence(
+            completed, accepted, evidence_dir=run_dir, root=ROOT
+        )
+    fact["run_id"] = "20260802T000000000000Z-deadbeef"
+    with pytest.raises(ValueError, match="runtime acceptance"):
+        policy.account_readiness_projection(completed, completed_live, fact)
+
+
+def test_gdt10e_runtime_acceptance_projection_binds_only_the_fact_hash(
+    tmp_path: Path,
+) -> None:
+    """Mutation caught: projecting acceptance without the immutable fact binding."""
+    policy = _load_module(
+        "qi_gdt10e_runtime_acceptance_projection",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+    run = _run()
+    run["schema_version"] = "run/3"
+    pricing_sha256 = load_pricing_snapshot().content_sha256
+    readiness = {
+        "schema_version": "provider-account-readiness-evidence/1",
+        "readiness_sha256": "a" * 64,
+        "operator_state": "operator_attested",
+        "runtime_state": "not_yet_accepted",
+        "binding_match": True,
+        "runtime_acceptance_sha256": None,
+    }
+    run["cycle_authorization"] = {
+        "pricing_sha256": pricing_sha256,
+        "issuance_sha256": "c" * 64,
+        "consumption_sha256": "d" * 64,
+        "backend_image_id": "sha256:" + "e" * 64,
+        "run_authorization_sha256": "f" * 64,
+        "run_id": RUN_ID,
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "historical_committed_cny": "3.526656",
+        "max_total_cny": "46.473344",
+        "overall_envelope_cny": "50.000000",
+        "readiness_evidence": readiness,
+    }
+    live = _live_evidence()
+    live["schema_version"] = "live-run-evidence/3"
+    live["paid_cycle"] = {
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+            "pricing_sha256": pricing_sha256,
+        "issuance_sha256": "c" * 64,
+        "consumption_sha256": "d" * 64,
+        "run_authorization_sha256": "f" * 64,
+        "journal_ref": f"asset://provider-usage-cycles/{ACCOUNT_READINESS_CYCLE}/",
+        "projects": [],
+        "resume_consumed_sha256": None,
+        "ledger": None,
+        "terminal": None,
+        "historical_committed_cny": "3.526656",
+        "max_total_cny": "46.473344",
+        "overall_envelope_cny": "50.000000",
+        "readiness_evidence": readiness,
+    }
+    fact = {
+        "schema_version": "provider-account-runtime-acceptance/1",
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "run_id": RUN_ID,
+        "project_id": "project-gdt10e",
+        "readiness_sha256": "a" * 64,
+        "submission_started_sha256": "1" * 64,
+        "settlement_sha256": "2" * 64,
+        "call_evidence_sha256": "3" * 64,
+        "model": ACCOUNT_READINESS_MODEL,
+        "ledger_attempt_index": 1,
+        "accepted_at": "2026-08-02T10:14:04+00:00",
+    }
+    fact["content_sha256"] = hashlib.sha256(
+        json.dumps(fact, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    projected = policy.account_readiness_projection(run, live, fact)
+
+    expected = dict(readiness)
+    expected.update(
+        {"runtime_state": "runtime_accepted", "runtime_acceptance_sha256": fact["content_sha256"]}
+    )
+    assert run["cycle_authorization"]["readiness_evidence"] == readiness
+    assert projected["paid_cycle"]["readiness_evidence"] == expected
+    invalid = dict(fact)
+    invalid["readiness_sha256"] = "9" * 64
+    with pytest.raises(ValueError, match="runtime acceptance"):
+        policy.account_readiness_projection(run, live, invalid)
+
+    run_dir = tmp_path / RUN_ID
+    run_dir.mkdir()
+    (run_dir / "run.json").write_text(json.dumps(run), encoding="utf-8")
+    (run_dir / "live-run-evidence.json").write_text(
+        json.dumps(live), encoding="utf-8"
+    )
+    runner = _load_module(
+        "qi_gdt10e_runtime_acceptance_host",
+        HARNESS / "scripts/run-p0.py",
+    )
+    runner._project_runtime_account_acceptance(run_dir, fact)
+    assert json.loads((run_dir / "live-run-evidence.json").read_text(encoding="utf-8")) == projected
+    with pytest.raises(ValueError, match="project admissions"):
+        policy.validate_paid_cycle_evidence(
+            run,
+            projected,
+            evidence_dir=run_dir,
+            root=ROOT,
+        )
+
+
+def test_gdt10e_runtime_acceptance_writer_seals_lowest_valid_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation caught: no immutable fact writer or non-deterministic attempt selection."""
+    runner = _load_module(
+        f"qi_gdt10e_runtime_acceptance_writer_{tmp_path.name}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    run_dir = tmp_path / RUN_ID
+    reports = run_dir / "reports"
+    reports.mkdir(parents=True)
+    run = _run()
+    run.update(
+        {
+            "schema_version": "run/3",
+            "cycle_authorization": {
+                "cycle_id": ACCOUNT_READINESS_CYCLE,
+                "readiness_evidence": {"readiness_sha256": "a" * 64},
+            },
+        }
+    )
+    (run_dir / "run.json").write_text(json.dumps(run), encoding="utf-8")
+    evidence = {
+        "schema_version": "runtime-account-acceptance-evidence/1",
+        "run_id": RUN_ID,
+        "project_id": "project-gdt10e",
+        "readiness_sha256": "a" * 64,
+        "model": ACCOUNT_READINESS_MODEL,
+        "attempts": [
+            {
+                "attempt_index": 2,
+                "provider": "qwen-vl",
+                "operation": "review_symbols",
+                "response_state": "authenticated_schema_invalid",
+                "submission_started_sha256": "2" * 64,
+                "settlement_sha256": "3" * 64,
+                "call_evidence_sha256": "4" * 64,
+                "settlement_submission_started_sha256": "2" * 64,
+                "settlement_state": "settled_verified",
+                "settled_at": "2026-08-02T10:14:04Z",
+            },
+            {
+                "attempt_index": 1,
+                "provider": "qwen-vl",
+                "operation": "review_symbols",
+                "response_state": "authenticated_success",
+                "submission_started_sha256": "5" * 64,
+                "settlement_sha256": "6" * 64,
+                "call_evidence_sha256": "7" * 64,
+                "settlement_submission_started_sha256": "5" * 64,
+                "settlement_state": "settled_verified",
+                "settled_at": "2026-08-02T10:14:03Z",
+            },
+        ],
+    }
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda argv, **_kwargs: subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(evidence, sort_keys=True, separators=(",", ":")),
+            "",
+        ),
+    )
+
+    fact = runner._seal_runtime_account_acceptance(
+        run_dir, project_id="project-gdt10e"
+    )
+
+    assert fact["ledger_attempt_index"] == 1
+    assert fact["accepted_at"] == "2026-08-02T10:14:03Z"
+    path = reports / "provider-account-runtime-acceptance.json"
+    assert path.read_bytes() == (
+        json.dumps(fact, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert runner._seal_runtime_account_acceptance(
+        run_dir, project_id="project-gdt10e"
+    ) == fact
+    path.chmod(0o644)
+    with pytest.raises(ValueError, match="runtime acceptance fact conflicts"):
+        runner._seal_runtime_account_acceptance(run_dir, project_id="project-gdt10e")
+
+
+def test_runtime_acceptance_collector_executes_against_real_ledger_and_storage(
+    tmp_path: Path,
+) -> None:
+    """Mutation caught: accepting parsed JSON without real request/call/ledger binding."""
+    runner = _load_module(
+        f"qi_gdt10e_runtime_collector_{tmp_path.name}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    authorization = _load_module(
+        f"qi_gdt10e_runtime_collector_authorization_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    authorization._gdt10e_issuance_now = lambda: GDT10E_PRICING_DEADLINE
+    storage_root = tmp_path / "storage"
+    authorization_root = tmp_path / "authorization"
+    readiness = tmp_path / "account-readiness.json"
+    readiness_sha256 = "a" * 64
+    readiness.write_text(
+        json.dumps(
+            {
+                "content_sha256": readiness_sha256,
+                "expires_at": "2099-08-02T23:59:59+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    authorization.issue_gdt10e_authorization(
+        authorization_root,
+        readiness_sha256=readiness_sha256,
+        cycle_id=ACCOUNT_READINESS_CYCLE,
+        expires_at="2099-08-02T23:59:59+00:00",
+        head_revision="b" * 40,
+        plan_sha256="c" * 64,
+        pricing_sha256=load_pricing_snapshot().content_sha256,
+        runtime_closure_sha256="d" * 64,
+        current_four_sha256="e" * 64,
+        backend_image_id="sha256:" + "f" * 64,
+        compose_project="quality_inspection-qa",
+        expected_db_revision="0014",
+        historical_committed_cny="3.526656",
+        max_total_cny="46.473344",
+        overall_envelope_cny="50.000000",
+        plan_ref="docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md",
+        prior_cycle_evidence_sha256=GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256,
+    )
+    authorization.consume_authorization(authorization_root)
+    authorization.bind_run(authorization_root, run_id=RUN_ID)
+    project_id = "project-runtime-acceptance"
+    authorization.admit_project(
+        authorization_root,
+        run_id=RUN_ID,
+        project_id=project_id,
+        project_order=1,
+        source_sha256="1" * 64,
+    )
+    ledger = ProviderUsageLedger.open(
+        cycle_id=ACCOUNT_READINESS_CYCLE,
+        storage_root=storage_root,
+        authorization_root=authorization_root,
+        project_id=project_id,
+    )
+    permit = ledger.reserve(
+        provider="qwen-vl",
+        operation="review_symbols",
+        page_index=0,
+        subject_kind="escalation_group",
+        subject_id="runtime-collector",
+        retry_index=0,
+        crop_expansion_count=0,
+    )
+    permit.consume_for_adapter(provider="qwen-vl", operation="review_symbols")
+    request_id = "request-runtime-acceptance"
+    ledger.settle(
+        permit,
+        usage={"prompt_tokens": 32769, "completion_tokens": 1},
+        request_id=request_id,
+    )
+    storage = LocalFileStorage(storage_root)
+    crop = b"runtime-collector-crop"
+    crop_ref = storage.write_verified(
+        f"projects/{project_id}/provider-inputs/qwen-symbol/crop.png",
+        crop,
+        hashlib.sha256(crop).hexdigest(),
+    ).resource_ref
+    request = build_visual_request_evidence(
+        crop_ref=crop_ref,
+        crop_sha256=hashlib.sha256(crop).hexdigest(),
+        usage={"total_tokens": 32770},
+    )
+    response = {
+        "schema_version": "visual-symbol-review/3",
+        "gdt_frames": [],
+        "detections": [],
+    }
+    request_bytes = json.dumps(
+        request, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    response_bytes = canonical_visual_response_bytes(response)
+    request_ref = storage.write_verified(
+        f"projects/{project_id}/provider-requests/qwen-symbol/request.json",
+        request_bytes,
+        hashlib.sha256(request_bytes).hexdigest(),
+    ).resource_ref
+    response_ref = storage.write_verified(
+        f"projects/{project_id}/provider-responses/qwen-symbol/response.json",
+        response_bytes,
+        hashlib.sha256(response_bytes).hexdigest(),
+    ).resource_ref
+    call_bytes = serialize_call_record(
+        ProviderCallRecord(
+            provider="qwen-vl",
+            request_id=request_id,
+            model=ACCOUNT_READINESS_MODEL,
+            prompt_version="visual-symbol-prompt/4",
+            schema_version="visual-symbol-review/3",
+            duration_ms=1,
+            retry_count=0,
+            input_image_count=1,
+            estimated_cost=None,
+            logical_task_reused=False,
+            request_ref=request_ref,
+            response_ref=response_ref,
+        )
+    )
+    storage.write_verified(
+        f"projects/{project_id}/provider-calls/qwen-symbol/call.json",
+        call_bytes,
+        hashlib.sha256(call_bytes).hexdigest(),
+    )
+
+    collector = _embedded_function(
+        runner._RUNTIME_ACCEPTANCE_COLLECTOR_PROGRAM,
+        "collect_runtime_acceptance_candidates",
+        {
+            "hashlib": hashlib,
+            "json": json,
+            "ProviderUsageLedger": ProviderUsageLedger,
+            "LocalFileStorage": LocalFileStorage,
+            "serialize_call_record": serialize_call_record,
+            "parse_visual_request_evidence": parse_visual_request_evidence,
+            "canonical_visual_response_bytes": canonical_visual_response_bytes,
+            "build_visual_failure_envelope": build_visual_failure_envelope,
+        },
+    )
+    collected = collector(
+        SimpleNamespace(
+            provider_cycle_authorization_id=ACCOUNT_READINESS_CYCLE,
+            storage_root=storage_root,
+            provider_cycle_authorization_root=authorization_root,
+        ),
+        RUN_ID,
+        project_id,
+    )
+
+    assert collected["attempts"] == [
+        {
+            "attempt_index": 1,
+            "provider": "qwen-vl",
+            "operation": "review_symbols",
+            "response_state": "authenticated_success",
+            "submission_started_sha256": collected["attempts"][0]["submission_started_sha256"],
+            "settlement_sha256": collected["attempts"][0]["settlement_sha256"],
+            "call_evidence_sha256": hashlib.sha256(call_bytes).hexdigest(),
+            "settlement_submission_started_sha256": collected["attempts"][0]["submission_started_sha256"],
+            "settlement_state": "settled_verified",
+            "settled_at": collected["attempts"][0]["settled_at"],
+        }
+    ]
+    storage.write_verified(
+        f"projects/{project_id}/provider-responses/qwen-symbol/response.json",
+        json.dumps({"status": 401}, sort_keys=True, separators=(",", ":")).encode(),
+        hashlib.sha256(
+            json.dumps({"status": 401}, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+    )
+    assert collector(
+        SimpleNamespace(
+            provider_cycle_authorization_id=ACCOUNT_READINESS_CYCLE,
+            storage_root=storage_root,
+            provider_cycle_authorization_root=authorization_root,
+        ),
+        RUN_ID,
+        project_id,
+    )["attempts"] == []
+
+
+def _real_runtime_acceptance_collector_case(
+    tmp_path: Path,
+    *,
+    settle: bool = True,
+    submit: bool = True,
+    write_call: bool = True,
+) -> tuple[Callable[[object, str, str], dict[str, object]], object, str, Path, ProviderUsageLedger]:
+    """Build one fresh real ledger/storage baseline for a single mutation."""
+    tmp_path.mkdir()
+    runner = _load_module(f"qi_runtime_matrix_{tmp_path.name}", HARNESS / "scripts/run-p0.py")
+    authorization = _load_module(f"qi_runtime_matrix_auth_{tmp_path.name}", HARNESS / "scripts/live_cycle_authorization.py")
+    authorization._gdt10e_issuance_now = lambda: GDT10E_PRICING_DEADLINE
+    storage_root, authorization_root = tmp_path / "storage", tmp_path / "authorization"
+    readiness = tmp_path / "account-readiness.json"
+    readiness.write_text(json.dumps({"content_sha256": "a" * 64, "expires_at": "2099-08-02T23:59:59+00:00"}), encoding="utf-8")
+    authorization.issue_gdt10e_authorization(
+        authorization_root, readiness_sha256="a" * 64, cycle_id=ACCOUNT_READINESS_CYCLE,
+        expires_at="2099-08-02T23:59:59+00:00", head_revision="b" * 40,
+        plan_sha256="c" * 64, pricing_sha256=load_pricing_snapshot().content_sha256,
+        runtime_closure_sha256="d" * 64, current_four_sha256="e" * 64,
+        backend_image_id="sha256:" + "f" * 64, compose_project="quality_inspection-qa",
+        expected_db_revision="0014", historical_committed_cny="3.526656",
+        max_total_cny="46.473344", overall_envelope_cny="50.000000",
+        plan_ref="docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md",
+        prior_cycle_evidence_sha256=GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256,
+    )
+    authorization.consume_authorization(authorization_root)
+    authorization.bind_run(authorization_root, run_id=RUN_ID)
+    project_id = "project-runtime-acceptance"
+    authorization.admit_project(authorization_root, run_id=RUN_ID, project_id=project_id, project_order=1, source_sha256="1" * 64)
+    ledger = ProviderUsageLedger.open(cycle_id=ACCOUNT_READINESS_CYCLE, storage_root=storage_root, authorization_root=authorization_root, project_id=project_id)
+    permit = ledger.reserve(provider="qwen-vl", operation="review_symbols", page_index=0, subject_kind="escalation_group", subject_id="runtime-matrix", retry_index=0, crop_expansion_count=0)
+    request_id = "request-runtime-acceptance"
+    if submit:
+        permit.consume_for_adapter(provider="qwen-vl", operation="review_symbols")
+    if settle:
+        ledger.settle(permit, usage={"prompt_tokens": 32769, "completion_tokens": 1}, request_id=request_id)
+    storage = LocalFileStorage(storage_root)
+    crop = b"runtime-collector-crop"
+    crop_ref = storage.write_verified(f"projects/{project_id}/provider-inputs/qwen-symbol/crop.png", crop, hashlib.sha256(crop).hexdigest()).resource_ref
+    request = build_visual_request_evidence(crop_ref=crop_ref, crop_sha256=hashlib.sha256(crop).hexdigest(), usage={"total_tokens": 32770})
+    request_bytes = json.dumps(request, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    request_ref = storage.write_verified(f"projects/{project_id}/provider-requests/qwen-symbol/request.json", request_bytes, hashlib.sha256(request_bytes).hexdigest()).resource_ref
+    response = {"schema_version": "visual-symbol-review/3", "gdt_frames": [], "detections": []}
+    response_bytes = canonical_visual_response_bytes(response)
+    response_ref = storage.write_verified(f"projects/{project_id}/provider-responses/qwen-symbol/response.json", response_bytes, hashlib.sha256(response_bytes).hexdigest()).resource_ref
+    if write_call:
+        call_bytes = serialize_call_record(ProviderCallRecord(provider="qwen-vl", request_id=request_id, model=ACCOUNT_READINESS_MODEL, prompt_version="visual-symbol-prompt/4", schema_version="visual-symbol-review/3", duration_ms=1, retry_count=0, input_image_count=1, estimated_cost=None, logical_task_reused=False, request_ref=request_ref, response_ref=response_ref))
+        storage.write_verified(f"projects/{project_id}/provider-calls/qwen-symbol/call.json", call_bytes, hashlib.sha256(call_bytes).hexdigest())
+    collector = _embedded_function(runner._RUNTIME_ACCEPTANCE_COLLECTOR_PROGRAM, "collect_runtime_acceptance_candidates", {"hashlib": hashlib, "json": json, "ProviderUsageLedger": ProviderUsageLedger, "LocalFileStorage": LocalFileStorage, "serialize_call_record": serialize_call_record, "parse_visual_request_evidence": parse_visual_request_evidence, "canonical_visual_response_bytes": canonical_visual_response_bytes, "build_visual_failure_envelope": build_visual_failure_envelope})
+    settings = SimpleNamespace(provider_cycle_authorization_id=ACCOUNT_READINESS_CYCLE, storage_root=storage_root, provider_cycle_authorization_root=authorization_root)
+    return collector, settings, project_id, storage_root, ledger
+
+
+@pytest.mark.parametrize("case", [
+    "foreign_run", "foreign_project", "missing_started", "missing_settlement",
+    "reserved_only", "submitted_without_response", "transport_without_call",
+    "unauthenticated_401", "unauthenticated_403", "mismatched_submission_hash",
+    "foreign_model", "mismatched_request_id", "mismatched_request_ref",
+    "mismatched_response_ref",
+])
+def test_runtime_acceptance_collector_mutation_matrix_fails_closed(
+    tmp_path: Path, case: str
+) -> None:
+    """Mutation caught: admitting any incomplete, foreign, or unauthenticated real fixture."""
+    collector, settings, project_id, storage_root, ledger = _real_runtime_acceptance_collector_case(
+        tmp_path / case,
+        submit=case != "reserved_only",
+        settle=case not in {"reserved_only", "submitted_without_response"},
+        write_call=case != "transport_without_call",
+    )
+    run_id, selected_project = RUN_ID, project_id
+    if case == "foreign_run":
+        run_id = "20260802T000000000000Z-deadbeef"
+    elif case == "foreign_project":
+        selected_project = "foreign-project"
+    elif case == "missing_started":
+        next(ledger._journal_path.glob("*-submission-started.json")).unlink()
+    elif case == "missing_settlement":
+        next(ledger._journal_path.glob("*-settled.json")).unlink()
+    elif case in {"unauthenticated_401", "unauthenticated_403"}:
+        response_path = storage_root / f"projects/{project_id}/provider-responses/qwen-symbol/response.json"
+        response_path.write_bytes(json.dumps({"status": int(case.rsplit("_", 1)[1])}, sort_keys=True, separators=(",", ":")).encode())
+    elif case == "mismatched_submission_hash":
+        settlement_path = next(ledger._journal_path.glob("*-settled.json"))
+        settlement_path.write_bytes(settlement_path.read_bytes().replace(b'"submission_started_sha256":"', b'"submission_started_sha256":"0', 1))
+    elif case in {"foreign_model", "mismatched_request_id", "mismatched_request_ref", "mismatched_response_ref"}:
+        call_path = storage_root / f"projects/{project_id}/provider-calls/qwen-symbol/call.json"
+        call = json.loads(call_path.read_text(encoding="utf-8"))
+        call[{"foreign_model": "model", "mismatched_request_id": "request_id", "mismatched_request_ref": "request_ref", "mismatched_response_ref": "response_ref"}[case]] = {
+            "foreign_model": "foreign-qwen-model", "mismatched_request_id": "foreign-request-id",
+            "mismatched_request_ref": f"asset://projects/{project_id}/provider-requests/missing.json",
+            "mismatched_response_ref": f"asset://projects/{project_id}/provider-responses/missing.json",
+        }[case]
+        call_path.write_bytes(serialize_call_record(call))
+    try:
+        result = collector(settings, run_id, selected_project)
+    except ValueError:
+        return
+    assert result["attempts"] == []
+
+
+def test_runtime_acceptance_collector_allows_authenticated_schema_invalid_only_with_real_chain(
+    tmp_path: Path,
+) -> None:
+    """Mutation caught: treating a schema-invalid response as authenticated without all facts."""
+    collector, settings, project_id, storage_root, _ = _real_runtime_acceptance_collector_case(tmp_path / "schema-invalid")
+    response_path = storage_root / f"projects/{project_id}/provider-responses/qwen-symbol/response.json"
+    response_path.write_bytes(json.dumps(build_visual_failure_envelope("tool_arguments_schema_invalid"), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode())
+
+    result = collector(settings, RUN_ID, project_id)
+
+    assert len(result["attempts"]) == 1
+    assert result["attempts"][0]["response_state"] == "authenticated_schema_invalid"
+
+
+def test_gdt10e_issuance_writer_rejects_invalid_envelope_and_stale_readiness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        f"qi_gdt10e_issuance_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    monkeypatch.setattr(
+        authorization,
+        "_gdt10e_issuance_now",
+        lambda: GDT10E_PRICING_DEADLINE,
+        raising=False,
+    )
+    readiness = tmp_path / "account-readiness.json"
+    readiness.write_text(
+        json.dumps(
+            {"content_sha256": "a" * 64, "expires_at": "2099-08-02T23:59:59+00:00"}
+        ),
+        encoding="utf-8",
+    )
+    arguments = {
+        "readiness_sha256": "a" * 64,
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "expires_at": "2099-08-02T23:59:59+00:00",
+        "head_revision": "b" * 40,
+        "plan_sha256": "c" * 64,
+        "pricing_sha256": "d" * 64,
+        "runtime_closure_sha256": "e" * 64,
+        "current_four_sha256": "f" * 64,
+        "backend_image_id": "sha256:" + "1" * 64,
+        "compose_project": "quality_inspection-qa",
+        "expected_db_revision": "0014",
+        "historical_committed_cny": "3.526656",
+        "max_total_cny": "46.473344",
+        "overall_envelope_cny": "50.000000",
+        "plan_ref": "docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md",
+        "prior_cycle_evidence_sha256": GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256,
+    }
+    issued = authorization.issue_gdt10e_authorization(
+        tmp_path / "authorization", **arguments
+    )
+    assert issued["readiness_sha256"] == "a" * 64
+    assert authorization.consume_authorization(tmp_path / "authorization")[
+        "issuance_sha256"
+    ] == issued["content_sha256"]
+    for name, value in (
+        ("max_total_cny", "0.000000"),
+        ("max_total_cny", "-0.000001"),
+        ("max_total_cny", "50.000001"),
+        ("max_total_cny", "46.4733440"),
+        ("historical_committed_cny", "3.526655"),
+        ("overall_envelope_cny", "49.999999"),
+        ("plan_ref", "docs/unsafe.md"),
+        ("readiness_sha256", "not-a-sha"),
+        ("prior_cycle_evidence_sha256", "not-a-sha"),
+        ("prior_cycle_evidence_sha256", "2" * 64),
+    ):
+        candidate = dict(arguments)
+        candidate[name] = value
+        with pytest.raises(ValueError, match="cycle authorization"):
+            authorization.issue_gdt10e_authorization(
+                tmp_path / f"invalid-{name}-{value}", **candidate
+            )
+    monkeypatch.setattr(
+        authorization,
+        "_gdt10e_issuance_now",
+        lambda: GDT10E_PRICING_DEADLINE + timedelta(seconds=1),
+    )
+    with pytest.raises(ValueError, match="pricing deadline"):
+        authorization.issue_gdt10e_authorization(tmp_path / "after-deadline", **arguments)
+
+
+def test_gdt10e_consumption_rejects_canonical_foreign_predecessor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resealed foreign predecessor must fail before lifecycle consumption."""
+    authorization = _load_module(
+        f"qi_gdt10e_foreign_predecessor_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    monkeypatch.setattr(
+        authorization, "_gdt10e_issuance_now", lambda: GDT10E_PRICING_DEADLINE
+    )
+    readiness = tmp_path / "account-readiness.json"
+    readiness.write_text(
+        json.dumps(
+            {
+                "content_sha256": "a" * 64,
+                "expires_at": "2099-08-02T23:59:59+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    root = tmp_path / "authorization"
+    authorization.issue_gdt10e_authorization(
+        root,
+        readiness_sha256="a" * 64,
+        cycle_id=ACCOUNT_READINESS_CYCLE,
+        expires_at="2099-08-02T23:59:59+00:00",
+        head_revision="b" * 40,
+        plan_sha256="c" * 64,
+        pricing_sha256="d" * 64,
+        runtime_closure_sha256="e" * 64,
+        current_four_sha256="f" * 64,
+        backend_image_id="sha256:" + "1" * 64,
+        compose_project="quality_inspection-qa",
+        expected_db_revision="0014",
+        historical_committed_cny="3.526656",
+        max_total_cny="46.473344",
+        overall_envelope_cny="50.000000",
+        plan_ref=(
+            "docs/superpowers/plans/"
+            "2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md"
+        ),
+        prior_cycle_evidence_sha256=GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256,
+    )
+    issuance_path = root / "issuance.json"
+    issuance = json.loads(issuance_path.read_text(encoding="utf-8"))
+    issuance["prior_cycle_evidence_sha256"] = "0" * 64
+    issuance["content_sha256"] = _canonical_content_hash(issuance)
+    issuance_path.write_text(
+        json.dumps(issuance, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="prior_cycle_evidence_sha256"):
+        authorization.consume_authorization(root)
+
+
+def test_gdt10e_authorization_writer_binds_validated_sha_without_reopening_readiness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-validation readiness swap cannot change the digest the writer seals."""
+    authorization = _load_module(
+        f"qi_gdt10e_writer_no_readiness_reopen_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    monkeypatch.setattr(
+        authorization, "_gdt10e_issuance_now", lambda: GDT10E_PRICING_DEADLINE
+    )
+    swapped_readiness = tmp_path / "account-readiness.json"
+    swapped_readiness.write_text(
+        json.dumps({"content_sha256": "b" * 64}), encoding="utf-8"
+    )
+
+    issued = authorization.issue_gdt10e_authorization(
+        tmp_path / "authorization",
+        readiness_sha256="a" * 64,
+        cycle_id=ACCOUNT_READINESS_CYCLE,
+        expires_at="2099-08-02T23:59:59+00:00",
+        head_revision="b" * 40,
+        plan_sha256="c" * 64,
+        pricing_sha256="d" * 64,
+        runtime_closure_sha256="e" * 64,
+        current_four_sha256="f" * 64,
+        backend_image_id="sha256:" + "1" * 64,
+        compose_project="quality_inspection-qa",
+        expected_db_revision="0014",
+        historical_committed_cny="3.526656",
+        max_total_cny="46.473344",
+        overall_envelope_cny="50.000000",
+        plan_ref=(
+            "docs/superpowers/plans/"
+            "2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md"
+        ),
+        prior_cycle_evidence_sha256=GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256,
+    )
+
+    assert issued["readiness_sha256"] == "a" * 64
+
+
+def test_gdt10e_authorization_evidence_projects_the_immutable_v3_binding(
+    tmp_path: Path,
+) -> None:
+    """Mutation caught: dropping a GDT-10E v3 binding from public evidence."""
+    authorization = _load_module(
+        f"qi_gdt10e_authorization_evidence_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    authorization._gdt10e_issuance_now = lambda: GDT10E_PRICING_DEADLINE
+    readiness = tmp_path / "account-readiness.json"
+    readiness.write_text(
+        json.dumps(
+            {"content_sha256": "a" * 64, "expires_at": "2099-08-02T23:59:59+00:00"}
+        ),
+        encoding="utf-8",
+    )
+    root = tmp_path / "gdt10e-authorization"
+    authorization.issue_gdt10e_authorization(
+        root,
+        readiness_sha256="a" * 64,
+        cycle_id=ACCOUNT_READINESS_CYCLE,
+        expires_at="2099-08-02T23:59:59+00:00",
+        head_revision="b" * 40,
+        plan_sha256="c" * 64,
+        pricing_sha256="d" * 64,
+        runtime_closure_sha256="e" * 64,
+        current_four_sha256="f" * 64,
+        backend_image_id="sha256:" + "1" * 64,
+        compose_project="quality_inspection-qa",
+        expected_db_revision="0014",
+        historical_committed_cny="3.526656",
+        max_total_cny="46.473344",
+        overall_envelope_cny="50.000000",
+        plan_ref="docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md",
+        prior_cycle_evidence_sha256=GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256,
+    )
+    authorization.consume_authorization(root)
+
+    evidence = authorization.authorization_evidence(root)
+
+    assert {
+        key: evidence[key]
+        for key in (
+            "historical_committed_cny",
+            "max_total_cny",
+            "overall_envelope_cny",
+            "readiness_sha256",
+        )
+    } == {
+        "historical_committed_cny": "3.526656",
+        "max_total_cny": "46.473344",
+        "overall_envelope_cny": "50.000000",
+        "readiness_sha256": "a" * 64,
+    }
+
+    legacy_root = tmp_path / "gdt10d-authorization"
+    _issue_cycle_authorization(authorization, legacy_root)
+    authorization.consume_authorization(legacy_root)
+    legacy = authorization.authorization_evidence(legacy_root)
+    assert set(legacy) == {
+        "cycle_id", "head_revision", "plan_sha256", "pricing_sha256",
+        "runtime_closure_sha256", "current_four_sha256", "backend_image_id",
+        "compose_project", "expected_db_revision", "max_total_cny",
+        "issuance_sha256", "consumption_sha256",
+    }
+
+
+def test_gdt10e_preconsume_and_resume_cli_expose_only_the_exact_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a pre-consume command is absent or accepts a wrong surface."""
+    authorization = _load_module(
+        f"qi_gdt10e_preconsume_cli_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
+    root.mkdir(mode=0o700)
+    paths = {
+        "authorization": root / "authorization",
+        "override": root / "live.env",
+        "safe_override": root / "safe.env",
+        "readiness": root / "account-readiness.json",
+        "preparation_report": root / "preparation.json",
+        "zero_paid_report": root / "zero-paid-readiness.json",
+    }
+    monkeypatch.setattr(authorization, "_GDT10E_PRIVATE_ROOT", root, raising=False)
+    calls: list[tuple[str, tuple[object, ...]]] = []
+    for command, method in (
+        ("prepare-zero-paid", "prepare_zero_paid"),
+        ("zero-paid-preflight", "zero_paid_preflight"),
+        ("issue-gdt10e", "issue_gdt10e"),
+        ("validate-unconsumed", "validate_unconsumed"),
+        ("prepare-resume", "prepare_resume"),
+    ):
+        monkeypatch.setattr(
+            authorization,
+            method,
+            lambda *args, _command=command, **kwargs: calls.append(
+                (_command, args + tuple(kwargs.values()))
+            ),
+            raising=False,
+        )
+    common = ["--authorization", str(paths["authorization"]), "--readiness", str(paths["readiness"])]
+    assert authorization.main([
+        "prepare-zero-paid", *common, "--override", str(paths["override"]),
+        "--safe-override", str(paths["safe_override"]), "--report", str(paths["preparation_report"]),
+    ]) == 0
+    assert authorization.main([
+        "zero-paid-preflight", *common, "--override", str(paths["override"]),
+        "--safe-override", str(paths["safe_override"]), "--preparation-report",
+        str(paths["preparation_report"]), "--report", str(paths["zero_paid_report"]),
+    ]) == 0
+    assert authorization.main([
+        "issue-gdt10e", *common, "--zero-paid-report", str(paths["zero_paid_report"]),
+        "--cycle-id", ACCOUNT_READINESS_CYCLE, "--plan-ref",
+        "docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md",
+        "--prior-cycle-evidence-sha256", "a" * 64, "--historical-committed-cny", "3.526656",
+        "--max-total-cny", "46.473344", "--overall-envelope-cny", "50.000000",
+        "--expires-in-seconds", "60",
+    ]) == 0
+    assert authorization.main([
+        "validate-unconsumed", *common, "--override", str(paths["override"]),
+        "--zero-paid-report", str(paths["zero_paid_report"]),
+    ]) == 0
+    assert authorization.main([
+        "prepare-resume", *common, "--override", str(paths["override"]),
+        "--safe-override", str(paths["safe_override"]), "--runtime-acceptance",
+        str(tmp_path / "runs" / RUN_ID / "reports" / "provider-account-runtime-acceptance.json"),
+        "--run-id", RUN_ID,
+    ]) == 0
+    monkeypatch.setattr(authorization, "bound_run_id", lambda _: RUN_ID, raising=False)
+    assert authorization.main([
+        "bound-run-id", "--authorization", str(paths["authorization"])
+    ]) == 0
+    assert [call[0] for call in calls] == [
+        "prepare-zero-paid", "zero-paid-preflight", "issue-gdt10e", "validate-unconsumed",
+        "prepare-resume",
+    ]
+
+
+def test_gdt10e_preconsume_paths_reject_aliases_before_any_action(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: lexical aliases or a wrong mutable name reach a gate."""
+    authorization = _load_module(
+        f"qi_gdt10e_preconsume_paths_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(authorization, "_GDT10E_PRIVATE_ROOT", root, raising=False)
+    expected = root / "account-readiness.json"
+    assert authorization._gdt10e_private_path(expected, "readiness") == expected
+    for alias in (
+        f"{root}/./account-readiness.json",
+        root / "other.json",
+        tmp_path / "account-readiness.json",
+    ):
+        with pytest.raises(ValueError, match="GDT-10E path"):
+            authorization._gdt10e_private_path(alias, "readiness")
+
+
+def test_gdt10e_preconsume_cli_runs_real_zero_paid_chain_and_replays_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: dispatch-only commands, noncanonical reports, or shell identity issuance."""
+    authorization = _load_module(
+        f"qi_gdt10e_preconsume_real_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(authorization, "_GDT10E_PRIVATE_ROOT", root, raising=False)
+    readiness_owner = _account_readiness_module()
+    monkeypatch.setattr(readiness_owner, "PRIVATE_ROOT", root)
+    for key, value in _account_readiness_environment().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("QI_TENCENT_SECRET_ID", "id-marker")
+    monkeypatch.setenv("QI_TENCENT_SECRET_KEY", "key-marker")
+    readiness_document = _issue_account_readiness(readiness_owner, root)
+    readiness = root / "account-readiness.json"
+    monkeypatch.setattr(authorization, "_provider_account_readiness_module", lambda: readiness_owner)
+    identity = {
+        "head_revision": "b" * 40, "plan_sha256": "c" * 64,
+        "pricing_sha256": "d" * 64, "runtime_closure_sha256": "e" * 64,
+        "current_four_sha256": "f" * 64, "backend_image_id": "sha256:" + "1" * 64,
+        "compose_project": "quality_inspection-qa",
+    }
+    monkeypatch.setattr(authorization, "validate_safe_override", lambda _: None)
+    monkeypatch.setattr(authorization, "activate_runtime", lambda _: None)
+    monkeypatch.setattr(authorization, "check_head_contracts", lambda: None)
+    monkeypatch.setattr(authorization, "_run_zero_paid_preflight", lambda: None)
+    monkeypatch.setattr(authorization, "_gdt10e_committed_identity", lambda: identity)
+    paths = {
+        "authorization": root / "authorization", "override": root / "live.env",
+        "safe": root / "safe.env", "preparation": root / "preparation.json",
+        "zero": root / "zero-paid-readiness.json",
+    }
+    prepare = ["prepare-zero-paid", "--authorization", str(paths["authorization"]), "--override", str(paths["override"]), "--safe-override", str(paths["safe"]), "--readiness", str(readiness), "--report", str(paths["preparation"])]
+    assert authorization.main(prepare) == 0
+    live = yaml.safe_load(paths["override"].read_text(encoding="utf-8"))
+    assert set(live["services"]) == {"api", "worker"}
+    assert all(
+        set(live["services"][service]["environment"]) == {
+            "QI_TENCENT_SECRET_ID", "QI_TENCENT_SECRET_KEY", "QI_QWEN_API_KEY",
+            "QI_QWEN_WORKSPACE_ID", "QI_SYMBOL_RECOGNITION_MODE", "QI_QWEN_MODEL",
+            "QI_PROVIDER_CYCLE_AUTHORIZATION_ID", "QI_PROVIDER_CYCLE_AUTHORIZATION_ROOT",
+        }
+        for service in ("api", "worker")
+    )
+    assert stat.S_IMODE(paths["override"].stat().st_mode) == 0o600
+    assert stat.S_IMODE(paths["safe"].stat().st_mode) == 0o600
+    assert authorization.main(prepare) == 0
+    preflight = ["zero-paid-preflight", "--authorization", str(paths["authorization"]), "--override", str(paths["override"]), "--safe-override", str(paths["safe"]), "--readiness", str(readiness), "--preparation-report", str(paths["preparation"]), "--report", str(paths["zero"])]
+    assert authorization.main(preflight) == 0
+    assert authorization.main(preflight) == 0
+    for report in (paths["preparation"], paths["zero"]):
+        assert stat.S_IMODE(report.stat().st_mode) == 0o600
+        assert report.read_bytes().endswith(b"\n")
+        document = json.loads(report.read_text(encoding="utf-8"))
+        assert document["content_sha256"] == authorization._canonical_hash(document)
+
+    issued: dict[str, object] = {}
+    original_readiness_bytes = readiness.read_bytes()
+    def issue(root_path: Path, **kwargs: object) -> dict[str, object]:
+        issued.update(kwargs)
+        readiness.write_text(
+            json.dumps({"content_sha256": "0" * 64}), encoding="utf-8"
+        )
+        return {"ok": True}
+    monkeypatch.setattr(authorization, "issue_gdt10e_authorization", issue)
+    issue_command = ["issue-gdt10e", "--authorization", str(paths["authorization"]), "--readiness", str(readiness), "--zero-paid-report", str(paths["zero"]), "--cycle-id", ACCOUNT_READINESS_CYCLE, "--plan-ref", "docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md", "--prior-cycle-evidence-sha256", "2" * 64, "--historical-committed-cny", "3.526656", "--max-total-cny", "46.473344", "--overall-envelope-cny", "50.000000", "--expires-in-seconds", "60"]
+    assert authorization.main(issue_command) == 0
+    assert {key: issued[key] for key in identity} == identity
+    assert issued["readiness_sha256"] == readiness_document["content_sha256"]
+    readiness.write_bytes(original_readiness_bytes)
+    assert paths["authorization"].exists() is False
+    zero_bytes = paths["zero"].read_bytes()
+    paths["zero"].write_bytes(zero_bytes.replace(b'"no_delta_proved":true', b'"no_delta_proved":false'))
+    assert authorization.main(issue_command) == 2
+    paths["zero"].write_bytes(zero_bytes)
+
+    paths["authorization"].mkdir(mode=0o700)
+    monkeypatch.setattr(
+        authorization,
+        "_issuance",
+        lambda _: {"readiness_sha256": readiness_document["content_sha256"], **identity},
+    )
+    monkeypatch.setattr(authorization, "validate_live_override", lambda *_: None)
+    before = {
+        path.name: path.read_bytes() if path.is_file() else None
+        for path in root.iterdir()
+    }
+    assert authorization.main(["validate-unconsumed", "--authorization", str(paths["authorization"]), "--override", str(paths["override"]), "--readiness", str(readiness), "--zero-paid-report", str(paths["zero"])]) == 0
+    assert {
+        path.name: path.read_bytes() if path.is_file() else None
+        for path in root.iterdir()
+    } == before
+    (paths["authorization"] / "consumption.json").write_text("{}", encoding="utf-8")
+    assert authorization.main(["validate-unconsumed", "--authorization", str(paths["authorization"]), "--override", str(paths["override"]), "--readiness", str(readiness), "--zero-paid-report", str(paths["zero"])]) == 2
+
+
+def test_gdt10e_preconsume_rejects_symlinked_readiness_before_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a readable symlink escapes the fixed private root."""
+    authorization = _load_module(
+        f"qi_gdt10e_preconsume_symlink_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(authorization, "_GDT10E_PRIVATE_ROOT", root, raising=False)
+    foreign = tmp_path / "foreign-readiness.json"
+    foreign.write_text(json.dumps({"content_sha256": "a" * 64, "expires_at": "2099-08-02T23:59:59+00:00"}), encoding="utf-8")
+    foreign.chmod(0o600)
+    readiness = root / "account-readiness.json"
+    readiness.symlink_to(foreign)
+    with pytest.raises(ValueError, match="GDT-10E path"):
+        authorization.prepare_zero_paid(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=root / "safe.env", readiness=readiness,
+            report=root / "preparation.json",
+        )
+
+
+def test_gdt10e_prepare_resume_reuses_only_the_bound_readiness_and_fact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: resume renews readiness, accepts another run, or applies live controls."""
+    authorization = _load_module(
+        f"qi_gdt10e_prepare_resume_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
+    root.mkdir(mode=0o700)
+    harness_root = tmp_path / "repository"
+    monkeypatch.setattr(authorization, "_GDT10E_PRIVATE_ROOT", root, raising=False)
+    monkeypatch.setattr(authorization, "ROOT", harness_root, raising=False)
+    readiness_owner = _account_readiness_module()
+    monkeypatch.setattr(readiness_owner, "PRIVATE_ROOT", root)
+    monkeypatch.setattr(
+        readiness_owner,
+        "HARNESS_RUNS_ROOT",
+        harness_root / ".agent/harness/runs",
+    )
+    monkeypatch.setattr(
+        authorization, "_provider_account_readiness_module", lambda: readiness_owner
+    )
+    for key, value in _account_readiness_environment().items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("QI_TENCENT_SECRET_ID", "resume-id-marker")
+    monkeypatch.setenv("QI_TENCENT_SECRET_KEY", "resume-key-marker")
+    readiness = _issue_account_readiness(readiness_owner, root)
+    identity = {
+        "head_revision": "a" * 40,
+        "plan_sha256": "b" * 64,
+        "pricing_sha256": "c" * 64,
+        "runtime_closure_sha256": "d" * 64,
+        "current_four_sha256": "e" * 64,
+        "backend_image_id": "sha256:" + "f" * 64,
+        "compose_project": "quality_inspection-qa",
+    }
+    monkeypatch.setattr(authorization, "_gdt10e_committed_identity", lambda: identity)
+    monkeypatch.setattr(
+        authorization.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout=""),
+    )
+    report = authorization._gdt10e_report(
+        root / "zero-paid-readiness.json",
+        schema_version="provider-cycle-zero-paid-readiness/1",
+        fields={
+            "preparation_sha256": "1" * 64,
+            "readiness_sha256": readiness["content_sha256"],
+            "no_delta_proved": True,
+            **identity,
+        },
+    )
+    auth_root = root / "authorization"
+    authorization._gdt10e_issuance_now = lambda: GDT10E_PRICING_DEADLINE
+    authorization.issue_gdt10e_authorization(
+        auth_root,
+        readiness_sha256=str(readiness["content_sha256"]),
+        cycle_id=ACCOUNT_READINESS_CYCLE,
+        expires_at="2099-08-02T23:59:59+00:00",
+        expected_db_revision="0014",
+        historical_committed_cny="3.526656",
+        max_total_cny="46.473344",
+        overall_envelope_cny="50.000000",
+        plan_ref="docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md",
+        prior_cycle_evidence_sha256=GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256,
+        **identity,
+    )
+    assert report["readiness_sha256"] == readiness["content_sha256"]
+    authorization.consume_authorization(auth_root)
+    authorization.bind_run(auth_root, run_id=RUN_ID)
+    fact = _write_runtime_acceptance(
+        readiness_owner.HARNESS_RUNS_ROOT, str(readiness["content_sha256"]), run_id=RUN_ID
+    )
+    authorization.record_pause_handoff(
+        auth_root, run_id=RUN_ID, pause_evidence_sha256="3" * 64
+    )
+    monkeypatch.setattr(authorization, "validate_paused_run", lambda _: "3" * 64)
+    monkeypatch.setattr(
+        authorization,
+        "activate_runtime",
+        lambda _: pytest.fail("prepare-resume must leave live controls unapplied"),
+    )
+    before = {
+        path: path.read_bytes()
+        for path in (root / "account-readiness.json", auth_root / "issuance.json")
+    }
+
+    authorization.prepare_resume(
+        authorization=auth_root,
+        override=root / "live.env",
+        safe_override=root / "safe.env",
+        readiness=root / "account-readiness.json",
+        runtime_acceptance=fact,
+        run_id=RUN_ID,
+    )
+
+    assert authorization.bound_run_id(auth_root) == RUN_ID
+    assert all(path.read_bytes() == content for path, content in before.items())
+    assert (root / "live.env").is_file() and (root / "safe.env").is_file()
+    foreign = tmp_path / "foreign-runtime-acceptance.json"
+    foreign.write_bytes(fact.read_bytes())
+    foreign.chmod(0o600)
+    with pytest.raises(ValueError, match="runtime acceptance path"):
+        authorization.prepare_resume(
+            authorization=auth_root,
+            override=root / "live.env",
+            safe_override=root / "safe.env",
+            readiness=root / "account-readiness.json",
+            runtime_acceptance=foreign,
+            run_id=RUN_ID,
+        )
+    fact.rename(fact.with_name("accepted.json"))
+    fact.symlink_to(fact.with_name("accepted.json"))
+    with pytest.raises(ValueError):
+        authorization.prepare_resume(
+            authorization=auth_root,
+            override=root / "live.env",
+            safe_override=root / "safe.env",
+            readiness=root / "account-readiness.json",
+            runtime_acceptance=fact,
+            run_id=RUN_ID,
+        )
+
+
+def test_gdt10e_bound_run_id_cli_prints_only_the_durable_literal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Mutation caught: emitting a status wrapper or selecting a Harness directory."""
+    authorization = _load_module(
+        f"qi_gdt10e_bound_run_id_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    monkeypatch.setattr(authorization, "bound_run_id", lambda _: RUN_ID)
+
+    assert authorization.main(["bound-run-id", "--authorization", str(tmp_path)]) == 0
+
+    assert capsys.readouterr().out == f"{RUN_ID}\n"
+
+
 @pytest.mark.parametrize(
     ("api_base", "frontend_base", "valid"),
     [
@@ -1406,16 +2842,26 @@ def test_live_run_schema_requires_a_paired_runtime_identity(
             _validate(run, "run.schema.json")
 
 
-def test_live_and_human_verdict_schemas_are_closed() -> None:
+def test_legacy_and_gdt10e_live_evidence_schemas_are_closed() -> None:
     runner = _load_module(
         "qi_run_p0_live_evidence_version",
         HARNESS / "scripts/run-p0.py",
     )
-    live = _live_evidence()
-    assert runner.LIVE_EVIDENCE_SCHEMA_VERSION == live["schema_version"]
-    _validate(live, "live-run-evidence.schema.json")
+    legacy_live = _live_evidence()
+    assert legacy_live["schema_version"] == "live-run-evidence/2"
+    _validate(legacy_live, "live-run-evidence.schema.json")
     with pytest.raises(jsonschema.ValidationError):
-        _validate({**live, "unexpected": True}, "live-run-evidence.schema.json")
+        _validate(
+            {**legacy_live, "unexpected": True}, "live-run-evidence.schema.json"
+        )
+
+    gdt10e_live = _gdt10e_v3_live(_gdt10e_v3_run())
+    assert runner.LIVE_EVIDENCE_SCHEMA_VERSION == gdt10e_live["schema_version"]
+    _validate(gdt10e_live, "live-run-evidence.schema.json")
+    with pytest.raises(jsonschema.ValidationError):
+        _validate(
+            {**gdt10e_live, "unexpected": True}, "live-run-evidence.schema.json"
+        )
 
     verdict = {
         "schema_version": "human-verdict/1",
@@ -2783,6 +4229,30 @@ def test_resume_reopens_the_same_bound_run_before_continuation(tmp_path: Path) -
     assert json.loads((run_dir / "run.json").read_text(encoding="utf-8")) == resumed
 
 
+def test_gdt10e_resume_requires_the_v3_runtime_acceptance_triple(
+    tmp_path: Path,
+) -> None:
+    """Mutation caught: allowing a GDT10E pause to resume without its fact."""
+    runner = _load_module("qi_gdt10e_resume_triple", HARNESS / "scripts/run-p0.py")
+    run_dir = tmp_path / RUN_ID
+    run_dir.mkdir()
+    paused = _gdt10e_v3_run(state="visual_qa_pending")
+    paused["pause_identity"] = {
+        "code_identity": paused["code_identity"],
+        "config_identity": paused["config_identity"],
+        "contract_definition_hash": paused["contract_definition_hash"],
+        "input_identity": paused["input_identity"],
+        "live_identity": paused["live_identity"],
+    }
+    (run_dir / "run.json").write_bytes(_json_bytes(paused))
+    (run_dir / "live-run-evidence.json").write_bytes(
+        _json_bytes(_gdt10e_v3_live(paused))
+    )
+
+    with pytest.raises(ValueError, match="runtime acceptance fact is missing"):
+        runner._mark_live_run_resumed(run_dir)
+
+
 def test_invalid_live_evidence_seals_a_failed_resume_transition(tmp_path: Path) -> None:
     runner = _load_module("qi_run_p0_resume_failure", HARNESS / "scripts/run-p0.py")
     run_dir = tmp_path / RUN_ID
@@ -3447,7 +4917,7 @@ def test_chrome_identity_uses_the_resolved_binary_version_and_hash(
     }
 
 
-def test_all_twelve_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
+def test_all_thirteen_harness_schemas_are_checked_and_bound_to_code_identity() -> None:
     checker = _load_module(
         "qi_contract_checker_schema_inventory",
         HARNESS / "scripts/check-contracts.py",
@@ -3463,6 +4933,7 @@ def test_all_twelve_harness_schemas_are_checked_and_bound_to_code_identity() -> 
         "human-verdict.schema.json",
         "live-run-evidence.schema.json",
         "p0-contracts.schema.json",
+        "provider-account-runtime-acceptance.schema.json",
         "provider-fixture.schema.json",
         "receipt.schema.json",
         "run.schema.json",
@@ -4541,6 +6012,109 @@ def _write_content_hashed(path: Path, document: dict[str, object]) -> str:
     return digest
 
 
+def test_open_live_run_keeps_legacy_gdt10d_on_v2_schemas(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The actual writer must not upgrade a GDT-10D authorization to v3."""
+    runner = _load_module(
+        "qi_run_p0_legacy_writer", HARNESS / "scripts/run-p0.py"
+    )
+    run_id = "20260802T000000000000Z-deadbeef"
+    authorization_ref = tmp_path / "legacy-authorization.json"
+    authorization_ref.write_text("{}", encoding="utf-8")
+    manifest_bytes = b"legacy-current-four"
+    backend_image_id = "sha256:" + "9" * 64
+    validation_calls: list[tuple[str, dict[str, object]]] = []
+    attached: list[dict[str, object]] = []
+
+    class Receipt:
+        @staticmethod
+        def policy_versions(_policies: object) -> dict[str, str]:
+            return {"harness_policy": "test"}
+
+        @staticmethod
+        def validate_schema(
+            document: dict[str, object], name: str, _root: Path
+        ) -> None:
+            validation_calls.append((name, document))
+
+    class Authorization:
+        @staticmethod
+        def authorization_evidence(
+            path: Path, *, require_run: bool
+        ) -> dict[str, object]:
+            assert path == authorization_ref
+            assert require_run is True
+            return {
+                "cycle_id": "gdt10d-contract-cycle",
+                "pricing_sha256": "1" * 64,
+                "issuance_sha256": "2" * 64,
+                "consumption_sha256": "3" * 64,
+                "backend_image_id": backend_image_id,
+                "run_id": run_id,
+                "run_authorization_sha256": "4" * 64,
+                "head_revision": "a" * 40,
+                "current_four_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+                "compose_project": "legacy-gdt10d",
+                "expected_db_revision": "0014",
+                "max_total_cny": "50.000000",
+                "runtime_closure_sha256": "5" * 64,
+            }
+
+        @staticmethod
+        def _runtime_closure_sha256() -> str:
+            return "5" * 64
+
+        @staticmethod
+        def _current_api_image_id() -> str:
+            return backend_image_id
+
+    preflight = SimpleNamespace(
+        manifest_bytes=manifest_bytes,
+        mirror={
+            "contract_definition_hash": "6" * 64,
+            "status_projection_hash": "7" * 64,
+            "contracts": [],
+        },
+        policies={},
+        code_identity={"source": "test"},
+        config_identity={"source": "test"},
+        input_identity={"source": "test"},
+        input_artifacts={"artifacts/current-four-manifest.json": manifest_bytes},
+    )
+    monkeypatch.setattr(runner, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(runner, "_git_revision", lambda: "a" * 40)
+    monkeypatch.setattr(runner, "_current_live_identity", lambda: {"test": True})
+    monkeypatch.setattr(runner, "_receipt_module", lambda: Receipt)
+    monkeypatch.setattr(runner, "_cycle_authorization_module", lambda: Authorization)
+    monkeypatch.setattr(
+        runner,
+        "_attach_full_live_input_artifacts",
+        lambda _run_dir, artifacts: attached.append(artifacts),
+    )
+    monkeypatch.setenv(runner.LIVE_CYCLE_AUTHORIZATION_ENV, str(authorization_ref))
+    monkeypatch.setenv(runner.LIVE_COMPOSE_PROJECT_ENV, "legacy-gdt10d")
+
+    run_dir = runner._open_live_run(preflight, authorized_run_id=run_id)
+    run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    live = json.loads(
+        (run_dir / runner.LIVE_EVIDENCE_ARTIFACT).read_text(encoding="utf-8")
+    )
+
+    assert attached == [preflight.input_artifacts]
+    assert [name for name, _ in validation_calls] == [
+        "run.schema.json",
+        "live-run-evidence.schema.json",
+    ]
+    assert run["schema_version"] == "run/2"
+    assert live["schema_version"] == "live-run-evidence/2"
+    assert "historical_committed_cny" not in run["cycle_authorization"]
+    assert "readiness_evidence" not in run["cycle_authorization"]
+    assert "historical_committed_cny" not in live["paid_cycle"]
+    assert "readiness_evidence" not in live["paid_cycle"]
+
+
 def _paid_policy_evidence(
     tmp_path: Path,
 ) -> tuple[ModuleType, dict[str, object], dict[str, object], Path]:
@@ -4878,7 +6452,9 @@ def test_paid_cycle_start_consumes_before_activation_and_deactivates_pause(
     assert events == [
         "validate",
         "validate-issuance",
+        "validate-issuance",
         "activate",
+        "validate-issuance",
         "contracts",
         "run",
         "deactivate",
@@ -5246,7 +6822,7 @@ def test_runtime_control_cleanup_deletes_overrides_and_unsets_controls(
         *authorization._CYCLE_RUNTIME_KEYS,
         "QI_LIVE_CYCLE_AUTHORIZATION_REF",
         "QI_LIVE_CYCLE_OVERRIDE_REF",
-        "GDT10D_RUN_ID",
+        "GDT10E_RUN_ID",
     ):
         monkeypatch.setenv(key, "present")
 
@@ -5262,7 +6838,7 @@ def test_runtime_control_cleanup_deletes_overrides_and_unsets_controls(
             "QI_LIVE_CYCLE_AUTHORIZATION_REF",
             "QI_LIVE_CYCLE_OVERRIDE_REF",
             "QI_LIVE_CYCLE_SAFE_OVERRIDE_REF",
-            "GDT10D_RUN_ID",
+            "GDT10E_RUN_ID",
         )
     )
 
@@ -5671,7 +7247,9 @@ def test_paid_cycle_resume_consumes_pause_before_activation_and_closes(
     assert events == [
         "validate-override",
         "validate-issuance",
+        "validate-issuance",
         "activate",
+        "validate-issuance",
         "contracts",
         "quiesce",
         "close",
@@ -6258,10 +7836,13 @@ def test_make_routes_start_and_resume_only_through_cycle_orchestrator() -> None:
     start_recipe = makefile.split("verify-p0-live:", 1)[1].split("\n\n", 1)[0]
     assert not start_recipe.startswith(" check-contracts")
     assert "live_cycle_authorization.py execute-start" in start_recipe
-    resume_recipe = makefile.split("resume-gdt10d-live:", 1)[1].split(
+    assert "resume-gdt10d-live:" not in makefile
+    assert "GDT10D_RUN_ID" not in makefile
+    resume_recipe = makefile.split("resume-gdt10e-live:", 1)[1].split(
         "\n\n", 1
     )[0]
     assert "live_cycle_authorization.py execute-resume" in resume_recipe
+    assert "GDT10E_RUN_ID" in resume_recipe
 
 def _materialize_visual_retry_chain(
     tmp_path: Path,
@@ -6689,3 +8270,2455 @@ def test_live_symbol_retry_derived_seventeenth_call_is_blocked() -> None:
         {"reason": "visual_call_budget_exceeded"},
         {"reason": "total_vision_call_budget_exceeded"},
     ]
+
+
+def _canonical_content_hash(payload: dict[str, object]) -> str:
+    content = dict(payload)
+    content.pop("content_sha256", None)
+    return hashlib.sha256(
+        json.dumps(
+            content, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _safe_path_hashes(root: Path, intent: Path, run_id: str | None = None) -> dict[str, str]:
+    authorization = root / "authorization"
+    paths = {
+        "private_root": root,
+        "account_readiness": root / "account-readiness.json",
+        "live_override": root / "live.env",
+        "safe_override": root / "safe.env",
+        "authorization_root": authorization,
+        "authorization_issuance": authorization / "issuance.json",
+        "authorization_consumption": authorization / "consumption.json",
+        "authorization_run": authorization / "run.json",
+        "authorization_pause_handoff": authorization / "pause-handoff.json",
+        "authorization_resume_consumed": authorization / "resume-consumed.json",
+        "authorization_terminal": authorization / "terminal.json",
+        "authorization_unconsumed_cancellation": authorization / "unconsumed-cancellation.json",
+        "authorization_legacy_cleanup_blocker": authorization / "cleanup-blocker.json",
+        "preparation_report": root / "preparation.json",
+        "zero_paid_report": root / "zero-paid-readiness.json",
+        "cleanup_intent": intent,
+        "cleanup_receipt": intent.with_name(intent.name.replace("intent", "receipt")),
+        "cleanup_blocker": intent.with_name(intent.name.replace("intent", "blocker")),
+    }
+    if run_id is not None:
+        run_root = root.parent / "runs" / run_id
+        paths.update({
+            "harness_run_root": run_root,
+            "harness_run_document": run_root / "run.json",
+            "harness_live_evidence": run_root / "live-run-evidence.json",
+            "harness_runtime_acceptance": run_root / "reports/provider-account-runtime-acceptance.json",
+            "harness_quiescence": run_root / "reports/provider-cycle-quiescence.json",
+            "harness_close_bridge": run_root / "reports/provider-cycle-close-bridge.json",
+        })
+    return {name: hashlib.sha256(str(path).encode("utf-8")).hexdigest() for name, path in paths.items()}
+
+
+def _write_cleanup_intent(
+    root: Path, intent: Path, readiness: dict[str, object], branch: str = "no_issuance"
+) -> None:
+    run_id = "20260802T000000000000Z-deadbeef" if branch == "terminal" else None
+    payload: dict[str, object] = {
+        "schema_version": "provider-cycle-cleanup-intent/1",
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "branch": branch,
+        "account_readiness_sha256": readiness["content_sha256"],
+        "issuance_sha256": "1" * 64 if branch != "no_issuance" else None,
+        "cancellation_sha256": "2" * 64 if branch == "issued_unconsumed" else None,
+        "terminal_sha256": "3" * 64 if branch == "terminal" else None,
+        "run_id": run_id,
+        "safe_path_sha256s": _safe_path_hashes(root, intent, run_id),
+        "expected_steps": [
+            "safe_runtime_proved",
+            "live_override_absent",
+            "safe_override_absent",
+            "preparation_report_absent",
+            "zero_paid_report_absent",
+            "account_readiness_absent",
+            "authorization_root_absent",
+            "private_root_absent",
+        ],
+        "created_at": readiness["issued_at"],
+        "readiness_expires_at": readiness["expires_at"],
+        "review_deadline": "2026-08-09T23:59:59+08:00",
+        "owner_uid": os.getuid(),
+        "owner_gid": os.getgid(),
+        "mode": "0600",
+    }
+    payload["content_sha256"] = _canonical_content_hash(payload)
+    intent.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+    intent.chmod(0o600)
+
+
+def _write_runtime_acceptance(
+    runs: Path, readiness_sha256: str, *, run_id: str = "20260802T000000000000Z-deadbeef"
+) -> Path:
+    path = runs / run_id / "reports/provider-account-runtime-acceptance.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    for directory in (runs, path.parent.parent, path.parent):
+        directory.chmod(0o700)
+    payload: dict[str, object] = {
+        "schema_version": "provider-account-runtime-acceptance/1",
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "run_id": run_id,
+        "project_id": "project-gdt10e",
+        "readiness_sha256": readiness_sha256,
+        "model": ACCOUNT_READINESS_MODEL,
+        "ledger_attempt_index": 1,
+        "submission_started_sha256": "1" * 64,
+        "settlement_sha256": "2" * 64,
+        "call_evidence_sha256": "3" * 64,
+        "accepted_at": "2026-08-02T00:00:01Z",
+    }
+    payload["content_sha256"] = _canonical_content_hash(payload)
+    path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("owner_uid", float(os.getuid())),
+        ("owner_gid", float(os.getgid())),
+        ("owner_uid", True),
+        ("owner_gid", False),
+        ("owner_uid", -1),
+        ("owner_gid", -1),
+    ),
+)
+def test_account_readiness_disposal_requires_exact_json_integer_owner_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+) -> None:
+    """Mutation caught: accepting equal-valued floats, booleans, or negative owner IDs."""
+    module = _account_readiness_module()
+    root, intent, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    readiness = _issue_account_readiness(module, root)
+    _write_cleanup_intent(root, intent, readiness)
+    payload = json.loads(intent.read_text(encoding="utf-8"))
+    payload[field] = value
+    payload["content_sha256"] = _canonical_content_hash(payload)
+    intent.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="account readiness"):
+        module.dispose_account_readiness(intent)
+
+    assert (root / "account-readiness.json").exists()
+
+
+def test_account_readiness_runtime_acceptance_attempts_every_close_before_failing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation caught: returning from the first runtime-acceptance close failure."""
+    module = _account_readiness_module()
+    root, _, runs = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    readiness = _issue_account_readiness(module, root)
+    fact = _write_runtime_acceptance(runs, str(readiness["content_sha256"]))
+    original_open = module.os.open
+    original_close = module.os.close
+    runtime_opened: list[int] = []
+    closed: list[int] = []
+
+    def track_open(*args: object, **kwargs: object) -> int:
+        descriptor = original_open(*args, **kwargs)
+        if args[0] == module.HARNESS_RUNS_ROOT or runtime_opened:
+            runtime_opened.append(descriptor)
+        return descriptor
+
+    def fail_first_close(descriptor: int) -> None:
+        if descriptor in runtime_opened:
+            closed.append(descriptor)
+        original_close(descriptor)
+        if runtime_opened and descriptor == runtime_opened[-1]:
+            raise OSError("injected runtime fact close failure")
+
+    monkeypatch.setattr(module.os, "open", track_open)
+    monkeypatch.setattr(module.os, "close", fail_first_close)
+
+    with pytest.raises(ValueError, match="account readiness"):
+        _validate_account_readiness(
+            module,
+            root,
+            phase="resume",
+            runtime_acceptance=fact,
+            expected_content_sha256=str(readiness["content_sha256"]),
+        )
+
+    assert closed == list(reversed(runtime_opened))
+
+
+def test_account_readiness_mutations_use_independent_valid_facts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation caught: a prior invalid fact making later rejection checks falsely green."""
+    module = _account_readiness_module()
+
+    def valid_case(name: str) -> tuple[Path, Path, Path, dict[str, object]]:
+        case = tmp_path / name
+        case.mkdir()
+        root, intent, runs = _configure_account_readiness_paths(module, case, monkeypatch)
+        return root, intent, runs, _issue_account_readiness(module, root)
+
+    root, _, _, readiness = valid_case("readiness-duplicate")
+    readiness_path = root / "account-readiness.json"
+    readiness_path.write_text(
+        readiness_path.read_text(encoding="utf-8").replace(
+            '"schema_version":', '"schema_version":"forged","schema_version":', 1
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="account readiness"):
+        _validate_account_readiness(module, root)
+
+    root, intent, _, readiness = valid_case("intent-duplicate")
+    _write_cleanup_intent(root, intent, readiness)
+    intent.write_text(
+        intent.read_text(encoding="utf-8").replace(
+            '"schema_version":', '"schema_version":"forged","schema_version":', 1
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="account readiness"):
+        module.dispose_account_readiness(intent)
+    assert (root / "account-readiness.json").exists()
+
+    root, _, runs, readiness = valid_case("runtime-duplicate")
+    fact = _write_runtime_acceptance(runs, str(readiness["content_sha256"]))
+    fact.write_text(
+        fact.read_text(encoding="utf-8").replace(
+            '"schema_version":', '"schema_version":"forged","schema_version":', 1
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="account readiness"):
+        _validate_account_readiness(
+            module, root, phase="resume", runtime_acceptance=fact,
+            expected_content_sha256=str(readiness["content_sha256"]),
+        )
+
+    for name, update in (
+        ("terminal-cancellation", {"cancellation_sha256": "4" * 64}),
+        ("terminal-null-run", {"run_id": None}),
+        ("terminal-bad-run", {"run_id": "bad-run"}),
+    ):
+        root, intent, _, readiness = valid_case(name)
+        (root / "authorization").mkdir()
+        (root / "authorization").chmod(0o700)
+        _write_cleanup_intent(root, intent, readiness, "terminal")
+        payload = json.loads(intent.read_text(encoding="utf-8"))
+        payload.update(update)
+        payload["content_sha256"] = _canonical_content_hash(payload)
+        intent.write_text(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="account readiness"):
+            module.dispose_account_readiness(intent)
+        assert (root / "account-readiness.json").exists()
+
+    root, _, runs, readiness = valid_case("resume-inputs")
+    fact = _write_runtime_acceptance(runs, str(readiness["content_sha256"]))
+    expected_sha = str(readiness["content_sha256"])
+    for runtime_acceptance, expected_content_sha256 in (
+        ({}, expected_sha),
+        (fact, None),
+    ):
+        with pytest.raises(ValueError, match="account readiness"):
+            _validate_account_readiness(
+                module, root, phase="resume", runtime_acceptance=runtime_acceptance,
+                expected_content_sha256=expected_content_sha256,
+            )
+
+    foreign = tmp_path / "foreign-runtime-acceptance.json"
+    foreign.write_bytes(fact.read_bytes())
+    foreign.chmod(0o600)
+    with pytest.raises(ValueError, match="account readiness"):
+        _validate_account_readiness(
+            module, root, phase="resume", runtime_acceptance=foreign,
+            expected_content_sha256=expected_sha,
+        )
+
+    payload = json.loads(fact.read_text(encoding="utf-8"))
+    payload["run_id"] = "20260802T000000000000Z-cafebabe"
+    payload["content_sha256"] = _canonical_content_hash(payload)
+    fact.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="account readiness"):
+        _validate_account_readiness(
+            module, root, phase="resume", runtime_acceptance=fact,
+            expected_content_sha256=expected_sha,
+        )
+
+
+def test_account_readiness_disposal_accepts_all_immutable_intent_branches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: requiring Task 3 lifecycle proof parsing in Task 2."""
+    module = _account_readiness_module()
+    for branch in ("no_issuance", "issued_unconsumed", "terminal"):
+        case = tmp_path / branch
+        case.mkdir()
+        root, intent, _ = _configure_account_readiness_paths(module, case, monkeypatch)
+        readiness = _issue_account_readiness(module, root)
+        if branch != "no_issuance":
+            authorization = root / "authorization"
+            authorization.mkdir()
+            authorization.chmod(0o700)
+        _write_cleanup_intent(root, intent, readiness, branch)
+        assert module.dispose_account_readiness(intent).deleted is True
+        assert module.dispose_account_readiness(intent).deleted is False
+
+
+def test_account_readiness_disposal_rejects_child_and_canonical_intent_mutations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: accepting extra root children or whitespace/duplicate intent bytes."""
+    module = _account_readiness_module()
+    root, intent, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    readiness = _issue_account_readiness(module, root)
+    _write_cleanup_intent(root, intent, readiness)
+    (root / "unexpected").write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="account readiness"):
+        module.dispose_account_readiness(intent)
+    assert (root / "account-readiness.json").exists()
+    (root / "unexpected").unlink()
+    intent.write_text(intent.read_text(encoding="utf-8").replace("{", "{ ", 1), encoding="utf-8")
+    with pytest.raises(ValueError, match="account readiness"):
+        module.dispose_account_readiness(intent)
+    assert (root / "account-readiness.json").exists()
+
+
+def test_account_readiness_resume_requires_canonical_same_run_fact_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: accepting a caller mapping, foreign run path, or noncanonical fact."""
+    module = _account_readiness_module()
+    root, _, runs = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    readiness = _issue_account_readiness(module, root)
+    fact = _write_runtime_acceptance(runs, str(readiness["content_sha256"]))
+    assert _validate_account_readiness(module, root, phase="resume", runtime_acceptance=fact, expected_content_sha256=str(readiness["content_sha256"])).content_sha256 == readiness["content_sha256"]
+    for path in (fact,):
+        path.write_text(path.read_text(encoding="utf-8").replace("{", "{ ", 1), encoding="utf-8")
+        with pytest.raises(ValueError, match="account readiness"):
+            _validate_account_readiness(module, root, phase="resume", runtime_acceptance=path, expected_content_sha256=str(readiness["content_sha256"]))
+    with pytest.raises(ValueError, match="account readiness"):
+        _validate_account_readiness(module, root, phase="start", runtime_acceptance=fact)
+
+
+def test_account_readiness_write_and_postunlink_failure_boundaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: short-write success or generic success after unlink/fsync failure."""
+    module = _account_readiness_module()
+    root, intent, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    original_write = module.os.write
+    writes = 0
+    def partial_write(fd: int, data: bytes) -> int:
+        nonlocal writes
+        writes += 1
+        return original_write(fd, data[:7])
+    monkeypatch.setattr(module.os, "write", partial_write)
+    readiness = _issue_account_readiness(module, root)
+    assert writes > 1 and (root / "account-readiness.json").exists()
+    _write_cleanup_intent(root, intent, readiness)
+    monkeypatch.setattr(module, "_fsync_root_after_unlink", lambda *_: (_ for _ in ()).throw(OSError()))
+    with pytest.raises(module.AccountReadinessCleanupIncomplete, match="account_readiness_cleanup_incomplete"):
+        module.dispose_account_readiness(intent)
+    assert not (root / "account-readiness.json").exists()
+
+
+def test_account_readiness_cli_requires_exact_root_and_sanitizes_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Mutation caught: omitting CLI root validation or leaking fake credential markers."""
+    module = _account_readiness_module()
+    root, _, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    for name, value in _account_readiness_environment().items():
+        monkeypatch.setenv(name, value)
+    command = ["issue", "--root", str(root), "--cycle-id", ACCOUNT_READINESS_CYCLE, "--region", ACCOUNT_READINESS_REGION, "--max-incremental-cny", "46.473344", "--expires-in-seconds", "60", "--remediation-completed", "--workspace-account-binding-verified", "--compatible-mode-enabled", "--model-entitlement-verified", "--billing-and-quota-verified"]
+    assert module.main(command) == 0
+    assert module.main([item for item in command if item != str(root)]) == 2
+    output = capsys.readouterr().out
+    assert ACCOUNT_READINESS_KEY not in output and ACCOUNT_READINESS_WORKSPACE not in output
+
+
+def test_account_readiness_terminal_tuple_and_runtime_path_defects_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: accepting terminal nullability, nonliteral runs, or unsafe acceptance paths."""
+    module = _account_readiness_module()
+    for index, update in enumerate((
+        {"cancellation_sha256": "4" * 64},
+        {"run_id": None},
+        {"run_id": "bad-run"},
+    )):
+        case = tmp_path / str(index)
+        case.mkdir()
+        root, intent, runs = _configure_account_readiness_paths(module, case, monkeypatch)
+        readiness = _issue_account_readiness(module, root)
+        (root / "authorization").mkdir()
+        (root / "authorization").chmod(0o700)
+        _write_cleanup_intent(root, intent, readiness, "terminal")
+        payload = json.loads(intent.read_text(encoding="utf-8"))
+        payload.update(update)
+        payload["content_sha256"] = _canonical_content_hash(payload)
+        intent.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="account readiness"):
+            module.dispose_account_readiness(intent)
+        assert (root / "account-readiness.json").exists()
+    fact = _write_runtime_acceptance(runs, str(readiness["content_sha256"]))
+    for mutate in (
+        lambda: fact.chmod(0o644),
+        lambda: fact.write_text(fact.read_text(encoding="utf-8").replace("{", "{ ", 1), encoding="utf-8"),
+    ):
+        mutate()
+        with pytest.raises(ValueError, match="account readiness"):
+            _validate_account_readiness(module, root, phase="resume", runtime_acceptance=fact, expected_content_sha256=str(readiness["content_sha256"]))
+        fact.unlink(missing_ok=True)
+        fact = _write_runtime_acceptance(runs, str(readiness["content_sha256"]))
+
+
+def test_account_readiness_zero_write_and_replay_close_are_never_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: zero write or committed replay descriptor close reported as success."""
+    module = _account_readiness_module()
+    root, intent, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    monkeypatch.setattr(module.os, "write", lambda *_: 0)
+    with pytest.raises(ValueError, match="account readiness"):
+        _issue_account_readiness(module, root)
+    monkeypatch.undo()
+    (root / "account-readiness.json").unlink(missing_ok=True)
+    root, intent, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    readiness = _issue_account_readiness(module, root)
+    _write_cleanup_intent(root, intent, readiness)
+    assert module.dispose_account_readiness(intent).deleted
+    monkeypatch.setattr(module, "_fsync_root_after_unlink", lambda *_: (_ for _ in ()).throw(OSError()))
+    with pytest.raises(module.AccountReadinessCleanupIncomplete, match="account_readiness_cleanup_incomplete"):
+        module.dispose_account_readiness(intent)
+
+
+@pytest.mark.parametrize("entry", ("readiness", "private_root", "cleanup_intent"))
+def test_account_readiness_unlink_seam_replacements_are_never_generic_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, entry: str
+) -> None:
+    """Mutation caught: unlinking a replacement entry after validating another inode."""
+    module = _account_readiness_module()
+    root, intent, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    readiness = _issue_account_readiness(module, root)
+    _write_cleanup_intent(root, intent, readiness)
+    readiness_bytes = (root / "account-readiness.json").read_bytes()
+    intent_bytes = intent.read_bytes()
+    original_unlink = module.os.unlink
+    replaced = False
+
+    def replace_at_unlink(path: str, *, dir_fd: int | None = None) -> None:
+        nonlocal replaced
+        if path == "account-readiness.json" and not replaced:
+            replaced = True
+            if entry == "readiness":
+                (root / "account-readiness.json").rename(root / "validated-readiness.json")
+                (root / "account-readiness.json").write_bytes(readiness_bytes)
+                (root / "account-readiness.json").chmod(0o600)
+            elif entry == "private_root":
+                root.rename(tmp_path / "validated-private-root")
+                root.mkdir(mode=0o700)
+                (root / "account-readiness.json").write_bytes(readiness_bytes)
+                (root / "account-readiness.json").chmod(0o600)
+            else:
+                intent.rename(tmp_path / "validated-cleanup-intent.json")
+                intent.write_bytes(intent_bytes)
+                intent.chmod(0o600)
+        original_unlink(path, dir_fd=dir_fd)
+
+    monkeypatch.setattr(module.os, "unlink", replace_at_unlink)
+    with pytest.raises(module.AccountReadinessCleanupIncomplete):
+        module.dispose_account_readiness(intent)
+    assert replaced
+
+
+@pytest.mark.parametrize("replay", (False, True))
+def test_account_readiness_postcommit_reappearance_is_never_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replay: bool
+) -> None:
+    """Mutation caught: allowing a same-name readiness entry after committed fsync."""
+    module = _account_readiness_module()
+    root, intent, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    readiness = _issue_account_readiness(module, root)
+    _write_cleanup_intent(root, intent, readiness)
+    if replay:
+        assert module.dispose_account_readiness(intent).deleted
+
+    original_fsync = module._fsync_root_after_unlink
+    reappeared = False
+
+    def recreate_after_commit(root_descriptor: int) -> None:
+        nonlocal reappeared
+        original_fsync(root_descriptor)
+        (root / "account-readiness.json").write_text("replacement", encoding="utf-8")
+        (root / "account-readiness.json").chmod(0o600)
+        reappeared = True
+
+    monkeypatch.setattr(module, "_fsync_root_after_unlink", recreate_after_commit)
+    with pytest.raises(module.AccountReadinessCleanupIncomplete):
+        module.dispose_account_readiness(intent)
+    assert reappeared
+
+
+@pytest.mark.parametrize("replay", (False, True))
+def test_account_readiness_cli_maps_committed_close_failures_to_exit_three(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    replay: bool,
+) -> None:
+    """Mutation caught: treating a committed descriptor-close failure as invalid input."""
+    module = _account_readiness_module()
+    root, intent, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    readiness = _issue_account_readiness(module, root)
+    _write_cleanup_intent(root, intent, readiness)
+    if replay:
+        assert module.dispose_account_readiness(intent).deleted
+
+    original_fsync = module.os.fsync
+    original_close = module.os.close
+    root_descriptor: set[int] = set()
+
+    def remember_root(descriptor: int) -> None:
+        root_descriptor.add(descriptor)
+        original_fsync(descriptor)
+
+    def fail_required_close(descriptor: int) -> None:
+        if descriptor in root_descriptor:
+            raise OSError("injected close failure")
+        original_close(descriptor)
+
+    monkeypatch.setattr(module.os, "fsync", remember_root)
+    monkeypatch.setattr(module.os, "close", fail_required_close)
+    assert module.main(["dispose", "--cleanup-intent", str(intent)]) == 3
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert json.loads(captured.out) == {"error": "account_readiness_cleanup_incomplete"}
+
+
+def test_account_readiness_runtime_fact_rejects_intermediate_symlinks_metadata_and_json_mutations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: escaping the runs root or accepting unsafe/non-string immutable facts."""
+    module = _account_readiness_module()
+    root, _, runs = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    readiness = _issue_account_readiness(module, root)
+    expected_sha = str(readiness["content_sha256"])
+
+    def reject(path: Path) -> None:
+        with pytest.raises(ValueError, match="account readiness"):
+            _validate_account_readiness(
+                module,
+                root,
+                phase="resume",
+                runtime_acceptance=path,
+                expected_content_sha256=expected_sha,
+            )
+
+    fact = _write_runtime_acceptance(runs, expected_sha)
+    run_directory = fact.parent.parent
+    reports_directory = fact.parent
+    foreign = tmp_path / "foreign-run"
+    foreign.mkdir(mode=0o700)
+    (foreign / "reports").mkdir(mode=0o700)
+    (foreign / "reports/provider-account-runtime-acceptance.json").write_bytes(fact.read_bytes())
+    (foreign / "reports/provider-account-runtime-acceptance.json").chmod(0o600)
+    run_directory.rename(tmp_path / "saved-run")
+    run_directory.symlink_to(foreign, target_is_directory=True)
+    reject(fact)
+    run_directory.unlink()
+    (tmp_path / "saved-run").rename(run_directory)
+
+    reports_directory.rename(run_directory / "saved-reports")
+    reports_directory.symlink_to(run_directory / "saved-reports", target_is_directory=True)
+    reject(fact)
+    reports_directory.unlink()
+    (run_directory / "saved-reports").rename(reports_directory)
+
+    for directory in (run_directory, reports_directory):
+        directory.chmod(0o777)
+        reject(fact)
+        directory.chmod(0o700)
+
+    fact.chmod(0o644)
+    reject(fact)
+    fact.chmod(0o600)
+    payload = json.loads(fact.read_text(encoding="utf-8"))
+    payload["submission_started_sha256"] = int("1" * 64)
+    payload["content_sha256"] = _canonical_content_hash(payload)
+    fact.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+    reject(fact)
+    fact.unlink()
+    fact = _write_runtime_acceptance(runs, expected_sha)
+    fact.write_text(
+        fact.read_text(encoding="utf-8").replace(
+            '"schema_version":', '"schema_version":"forged","schema_version":', 1
+        ),
+        encoding="utf-8",
+    )
+    reject(fact)
+
+
+def test_account_readiness_cli_exception_repr_and_log_surfaces_keep_private_markers_private(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Mutation caught: leaking a private credential bundle marker through a public surface."""
+    module = _account_readiness_module()
+    root, _, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    environment = _account_readiness_environment()
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    command = [
+        "issue", "--root", str(root), "--cycle-id", ACCOUNT_READINESS_CYCLE,
+        "--region", ACCOUNT_READINESS_REGION, "--max-incremental-cny", "46.473344",
+        "--expires-in-seconds", "60", "--remediation-completed",
+        "--workspace-account-binding-verified", "--compatible-mode-enabled",
+        "--model-entitlement-verified", "--billing-and-quota-verified",
+    ]
+    assert module.main(command) == 0
+    success = capsys.readouterr()
+    evidence = _validate_account_readiness(module, root)
+    with pytest.raises(ValueError) as error:
+        _validate_account_readiness(
+            module,
+            root,
+            environment=_account_readiness_environment(api_key="different-private-marker"),
+        )
+    assert module.main(["validate", "--root", str(tmp_path / "wrong")]) == 2
+    failure = capsys.readouterr()
+    public_surfaces = "\n".join((
+        success.out,
+        success.err,
+        failure.out,
+        failure.err,
+        str(error.value),
+        repr(error.value),
+        repr(evidence),
+        caplog.text,
+    ))
+    issued = json.loads((root / "account-readiness.json").read_text(encoding="utf-8"))
+    for private_marker in (
+        ACCOUNT_READINESS_KEY,
+        ACCOUNT_READINESS_WORKSPACE,
+        issued["binding_salt"],
+        issued["credential_bundle_binding_sha256"],
+    ):
+        assert private_marker not in public_surfaces
+
+
+def _cleanup_intent_authorization_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[ModuleType, ModuleType, Path, Path, dict[str, object]]:
+    """Build an isolated Task 3 lifecycle root without touching /var/tmp."""
+    authorization = _load_module(
+        f"qi_cleanup_intent_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    readiness_module = _account_readiness_module()
+    root, _, _ = _configure_account_readiness_paths(
+        readiness_module, tmp_path, monkeypatch
+    )
+    monkeypatch.setattr(authorization, "_GDT10E_PRIVATE_ROOT", root)
+    monkeypatch.setattr(
+        authorization,
+        "_provider_account_readiness_module",
+        lambda: readiness_module,
+    )
+    for name, value in _account_readiness_environment().items():
+        monkeypatch.setenv(name, value)
+    readiness = _issue_account_readiness(readiness_module, root)
+    intent = root.with_name(root.name + "-cleanup-intent.json")
+    return authorization, readiness_module, root, intent, readiness
+
+
+def _prepare_preconsume_cleanup_intent(
+    authorization: ModuleType,
+    root: Path,
+    intent: Path,
+) -> dict[str, object]:
+    return authorization.prepare_preconsume_cleanup_intent(
+        authorization=root / "authorization",
+        override=root / "live.env",
+        safe_override=root / "safe.env",
+        readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json",
+        zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent,
+        cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+
+
+def _issue_cleanup_authorization(authorization: ModuleType, root: Path) -> dict[str, object]:
+    authorization._gdt10e_issuance_now = lambda: GDT10E_PRICING_DEADLINE
+    return authorization.issue_gdt10e_authorization(
+        root / "authorization",
+        readiness_sha256="a" * 64,
+        cycle_id=ACCOUNT_READINESS_CYCLE,
+        expires_at=(datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+        head_revision="a" * 40,
+        plan_sha256="b" * 64,
+        pricing_sha256="c" * 64,
+        runtime_closure_sha256="d" * 64,
+        current_four_sha256="e" * 64,
+        backend_image_id="sha256:" + "f" * 64,
+        compose_project="qi-cleanup-intent",
+        expected_db_revision="0014",
+        historical_committed_cny="3.526656",
+        max_total_cny="46.473344",
+        overall_envelope_cny="50.000000",
+        plan_ref="docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md",
+        prior_cycle_evidence_sha256=GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256,
+    )
+
+
+def _terminal_cleanup_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[ModuleType, ModuleType, Path, Path, str, dict[str, bytes], dict[str, object]]:
+    """Build the complete terminal-only cleanup tree without a real runtime."""
+    authorization, readiness_module, root, intent, readiness = (
+        _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    )
+    worktree = tmp_path / "terminal-worktree"
+    monkeypatch.setattr(authorization, "ROOT", worktree)
+    monkeypatch.setattr(
+        readiness_module, "HARNESS_RUNS_ROOT", worktree / ".agent/harness/runs"
+    )
+    _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    run = authorization.bind_run(root / "authorization", run_id=run_id)
+    authorization.admit_project(
+        root / "authorization", run_id=run_id, project_id="terminal-project",
+        project_order=1, source_sha256="1" * 64,
+    )
+    pause_sha256 = "2" * 64
+    authorization.record_pause_handoff(
+        root / "authorization", run_id=run_id, pause_evidence_sha256=pause_sha256,
+    )
+    authorization.consume_resume(
+        root / "authorization", run_id=run_id, pause_evidence_sha256=pause_sha256,
+    )
+    authorization._exclusive_fact(root / "authorization/terminal.json", {
+        "schema_version": "provider-cycle-terminal/1", "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "run_id": run_id, "status": "failed", "quiescence_sha256": "4" * 64,
+        "run_sha256": run["content_sha256"],
+    })
+    authorization._exclusive_fact(root / "authorization/cleanup-blocker.json", {
+        "schema_version": "provider-cycle-cleanup-blocker/1",
+        "cycle_id": ACCOUNT_READINESS_CYCLE, "run_id": run_id, "status": "failed",
+        "failure_codes": ["private_control_cleanup_failed"],
+    })
+    for name in ("live.env", "safe.env", "preparation.json", "zero-paid-readiness.json"):
+        path = root / name
+        path.write_text("{}\n", encoding="utf-8")
+        path.chmod(0o600)
+    public_paths = authorization._terminal_cleanup_paths(run_id)
+    public_paths["harness_run_root"].mkdir(parents=True, mode=0o700)
+    preserved: dict[str, bytes] = {}
+    for name in (
+        "harness_run_document", "harness_live_evidence", "harness_runtime_acceptance",
+        "harness_quiescence", "harness_close_bridge",
+    ):
+        path = public_paths[name]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = f'{{"public":"{name}"}}\n'.encode("utf-8")
+        path.write_bytes(payload)
+        preserved[name] = payload
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "check_head_contracts", lambda: None)
+    monkeypatch.setattr(authorization, "_run_zero_paid_preflight", lambda: None)
+    monkeypatch.setattr(authorization, "_validate_terminal_public_binding", lambda *_: None)
+    return authorization, readiness_module, root, intent, run_id, preserved, readiness
+
+
+def _dispose_terminal_args(root: Path, intent: Path, run_id: str) -> dict[str, object]:
+    return {
+        "authorization": root / "authorization",
+        "readiness": root / "account-readiness.json",
+        "run_id": run_id,
+        "cleanup_intent": intent,
+        "cleanup_receipt": intent.with_name(intent.name.replace("intent", "receipt")),
+        "cleanup_blocker": intent.with_name(intent.name.replace("intent", "blocker")),
+        "review_deadline": "2026-08-09T23:59:59+08:00",
+    }
+
+
+def test_gdt10e_task2_terminal_intent_rejects_mismatched_harness_root_before_unlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: accepting a terminal intent whose Task2 Harness root is not Task3's root."""
+    authorization, readiness_module, root, intent, run_id, _, _ = _terminal_cleanup_fixture(
+        tmp_path, monkeypatch
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    authorization.prepare_terminal_cleanup_intent(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent, cleanup_receipt=args["cleanup_receipt"],
+        cleanup_blocker=args["cleanup_blocker"], review_deadline=args["review_deadline"],
+    )
+    monkeypatch.setattr(readiness_module, "HARNESS_RUNS_ROOT", tmp_path / "mismatched-runs")
+
+    with pytest.raises(readiness_module.AccountReadinessError, match="account readiness is invalid"):
+        readiness_module.dispose_account_readiness(intent)
+    assert (root / "account-readiness.json").exists()
+
+
+def test_gdt10e_terminal_cleanup_uses_real_task2_dispose_and_preserves_public_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: terminal cleanup bypassing Task2 or binding it to another Harness root."""
+    authorization, readiness_module, root, intent, run_id, preserved, _ = _terminal_cleanup_fixture(
+        tmp_path, monkeypatch
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    calls: list[Path] = []
+    original_dispose = readiness_module.dispose_account_readiness
+
+    def observe_real_task2(path: Path):
+        calls.append(path)
+        return original_dispose(path)
+
+    monkeypatch.setattr(readiness_module, "dispose_account_readiness", observe_real_task2)
+    receipt = authorization.dispose_terminal(**args)
+
+    assert receipt["branch"] == "terminal"
+    assert calls == [intent]
+    assert not (root / "account-readiness.json").exists()
+    assert not root.exists() and not intent.exists()
+    for name, payload in preserved.items():
+        assert authorization._terminal_cleanup_paths(run_id)[name].read_bytes() == payload
+
+
+def test_gdt10e_preconsume_cleanup_intent_no_issuance_seals_exact_task2_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: creating a no-issuance intent without Task 2 validation."""
+    authorization, readiness_module, root, intent, readiness = (
+        _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    )
+    calls: list[dict[str, object]] = []
+    original_validate = readiness_module.validate_account_readiness
+
+    def observe_validate(**kwargs: object):
+        calls.append(kwargs)
+        return original_validate(**kwargs)
+
+    monkeypatch.setattr(readiness_module, "validate_account_readiness", observe_validate)
+    sealed = _prepare_preconsume_cleanup_intent(authorization, root, intent)
+
+    assert sealed["branch"] == "no_issuance"
+    assert all(
+        sealed[name] is None
+        for name in ("issuance_sha256", "cancellation_sha256", "terminal_sha256", "run_id")
+    )
+    assert sealed["account_readiness_sha256"] == readiness["content_sha256"]
+    assert sealed["readiness_expires_at"] == readiness["expires_at"]
+    assert sealed["created_at"] <= sealed["readiness_expires_at"]
+    assert list(sealed["safe_path_sha256s"]) == [
+        "private_root", "account_readiness", "live_override", "safe_override",
+        "authorization_root", "authorization_issuance", "authorization_consumption",
+        "authorization_run", "authorization_pause_handoff", "authorization_resume_consumed",
+        "authorization_terminal", "authorization_unconsumed_cancellation",
+        "authorization_legacy_cleanup_blocker", "preparation_report", "zero_paid_report",
+        "cleanup_intent", "cleanup_receipt", "cleanup_blocker",
+    ]
+    assert sealed["expected_steps"] == [
+        "safe_runtime_proved", "live_override_absent", "safe_override_absent",
+        "preparation_report_absent", "zero_paid_report_absent", "account_readiness_absent",
+        "authorization_root_absent", "private_root_absent",
+    ]
+    assert intent.read_bytes() == (
+        json.dumps(sealed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+    metadata = intent.stat()
+    assert stat.S_IMODE(metadata.st_mode) == 0o600
+    assert metadata.st_uid == os.getuid() and metadata.st_gid == os.getgid()
+    assert calls and calls[-1]["phase"] == "start"
+    assert (root / "account-readiness.json").exists()
+    assert _prepare_preconsume_cleanup_intent(authorization, root, intent) == sealed
+
+
+def test_gdt10e_preconsume_cleanup_intent_issued_unconsumed_binds_cancellation_to_issuance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a cancellation fact not cryptographically bound to its issuance."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    issuance = _issue_cleanup_authorization(authorization, root)
+    sealed = _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    cancellation = json.loads(
+        (root / "authorization/unconsumed-cancellation.json").read_text(encoding="utf-8")
+    )
+
+    assert sealed["branch"] == "issued_unconsumed"
+    assert sealed["issuance_sha256"] == issuance["content_sha256"]
+    assert sealed["cancellation_sha256"] == cancellation["content_sha256"]
+    assert cancellation == {
+        "schema_version": "provider-cycle-unconsumed-cancellation/1",
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "issuance_sha256": issuance["content_sha256"],
+        "cancelled_at": cancellation["cancelled_at"],
+        "content_sha256": cancellation["content_sha256"],
+    }
+    assert cancellation["content_sha256"] == _canonical_content_hash(cancellation)
+    assert all(sealed[name] is None for name in ("terminal_sha256", "run_id"))
+    assert (root / "account-readiness.json").exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("consumption", "run", "projects", "pause", "resume", "terminal", "activation"),
+)
+def test_gdt10e_preconsume_cleanup_intent_rejects_lifecycle_progress_before_any_deletion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    """Mutation caught: treating any consumed/run/resume/terminal state as abortable."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    authorization_root = root / "authorization"
+    _issue_cleanup_authorization(authorization, root)
+    names = {
+        "consumption": "consumption.json", "run": "run.json", "projects": "projects",
+        "pause": "pause-handoff.json", "resume": "resume-consumed.json",
+        "terminal": "terminal.json", "activation": "activation.json",
+    }
+    target = authorization_root / names[mutation]
+    if mutation == "projects":
+        target.mkdir()
+        target.chmod(0o700)
+    else:
+        target.write_text("{}\n", encoding="utf-8")
+        target.chmod(0o600)
+
+    with pytest.raises(ValueError, match="cleanup"):
+        _prepare_preconsume_cleanup_intent(authorization, root, intent)
+
+    assert not intent.exists()
+    assert (root / "account-readiness.json").exists()
+
+
+@pytest.mark.parametrize("mutation", ("wrong_path", "symlink", "mode", "owner", "hash", "keys", "order", "root_child", "foreign_branch"))
+def test_gdt10e_preconsume_cleanup_intent_validator_rejects_mutation_without_deletion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    """Mutation caught: accepting an unsafe or noncanonical durable intent replay."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    sealed = _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    if mutation == "wrong_path":
+        with pytest.raises(ValueError, match="cleanup"):
+            authorization.validate_preconsume_cleanup_intent(
+                intent.with_name("foreign-cleanup-intent.json")
+            )
+        return
+    if mutation == "symlink":
+        replacement = tmp_path / "replacement.json"
+        replacement.write_bytes(intent.read_bytes())
+        intent.unlink()
+        intent.symlink_to(replacement)
+    elif mutation == "mode":
+        intent.chmod(0o644)
+    elif mutation == "owner":
+        actual_uid = os.getuid()
+        monkeypatch.setattr(authorization.os, "getuid", lambda: actual_uid + 1)
+    else:
+        payload = dict(sealed)
+        if mutation == "hash":
+            payload["content_sha256"] = "0" * 64
+        elif mutation == "keys":
+            payload["unexpected"] = True
+        elif mutation == "order":
+            payload["expected_steps"] = list(reversed(payload["expected_steps"]))
+        elif mutation == "root_child":
+            (root / "unexpected").write_text("x", encoding="utf-8")
+        elif mutation == "foreign_branch":
+            payload["branch"] = "terminal"
+        if mutation not in {"root_child", "hash"}:
+            payload["content_sha256"] = _canonical_content_hash(payload)
+        if mutation != "root_child":
+            intent.write_text(
+                json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+                encoding="utf-8",
+            )
+
+    with pytest.raises(ValueError, match="cleanup"):
+        authorization.validate_preconsume_cleanup_intent(intent)
+
+    assert (root / "account-readiness.json").exists()
+
+
+def test_gdt10e_abort_preconsume_replays_intent_only_from_first_unmet_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: replay that reopens readiness or skips durable intent validation."""
+    authorization, readiness_module, root, intent, readiness = (
+        _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    )
+    _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    calls: list[Path] = []
+
+    def dispose_only_sealed_intent(path: Path):
+        calls.append(path)
+        (root / "account-readiness.json").unlink()
+        authorization._fsync_directory(root)
+        return SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"])
+
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(readiness_module, "dispose_account_readiness", dispose_only_sealed_intent)
+
+    receipt = authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json",
+        zero_paid_report=root / "zero-paid-readiness.json", cleanup_intent=intent,
+        cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+
+    assert calls == [intent]
+    assert receipt["schema_version"] == "provider-cycle-cleanup-receipt/1"
+    assert receipt["completed_steps"] == {
+        "safe_runtime_proved": True, "live_override_absent": True,
+        "safe_override_absent": True, "preparation_report_absent": True,
+        "zero_paid_report_absent": True, "account_readiness_absent": True,
+        "authorization_root_absent": True, "private_root_absent": True,
+    }
+    assert not root.exists() and not intent.exists()
+
+
+def test_gdt10e_abort_preconsume_deletes_blocker_before_writing_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: accepting blocker+receipt or retaining a completed blocker."""
+    authorization, readiness_module, root, intent, readiness = (
+        _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    )
+    _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    receipt = intent.with_name(intent.name.replace("intent", "receipt"))
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda path: ((root / "account-readiness.json").unlink(), authorization._fsync_directory(root), SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]))[-1],
+    )
+    original_exclusive = authorization._exclusive_fact
+
+    def observe_receipt(path: Path, document: dict[str, object]):
+        if path == receipt:
+            assert not blocker.exists()
+        return original_exclusive(path, document)
+
+    monkeypatch.setattr(authorization, "_exclusive_fact", observe_receipt)
+    authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=blocker,
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    assert receipt.exists() and not blocker.exists() and not intent.exists()
+
+
+def test_gdt10e_abort_preconsume_failure_after_intent_seals_root_sibling_blocker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: an interrupted cleanup losing its sole replay record."""
+    authorization, readiness_module, root, intent, _ = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    sealed = _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(
+        readiness_module, "dispose_account_readiness",
+        lambda _: (_ for _ in ()).throw(RuntimeError("interrupted")),
+    )
+
+    with pytest.raises(RuntimeError, match="interrupted"):
+        authorization.abort_preconsume(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+            preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+            cleanup_intent=intent, cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+            cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+        )
+
+    persisted = json.loads(blocker.read_text(encoding="utf-8"))
+    assert persisted["schema_version"] == "provider-cycle-cleanup-blocker/2"
+    assert persisted["cleanup_intent_sha256"] == sealed["content_sha256"]
+    assert persisted["completed_steps"]["account_readiness_absent"] is False
+    assert intent.exists() and (root / "account-readiness.json").exists()
+
+
+def test_gdt10e_abort_preconsume_receipt_only_is_terminal_replay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a terminal receipt replaying destructive runtime cleanup."""
+    authorization, readiness_module, root, intent, readiness = (
+        _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    )
+    _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    receipt = intent.with_name(intent.name.replace("intent", "receipt"))
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: (
+            (root / "account-readiness.json").unlink(missing_ok=True),
+            authorization._fsync_directory(root),
+            SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+        )[-1],
+    )
+    authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent, cleanup_receipt=receipt,
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    monkeypatch.setattr(
+        authorization, "deactivate_runtime",
+        lambda: (_ for _ in ()).throw(AssertionError("runtime must remain untouched")),
+    )
+
+    replay = authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent, cleanup_receipt=receipt,
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    assert replay["content_sha256"] == json.loads(receipt.read_text(encoding="utf-8"))["content_sha256"]
+
+
+def test_gdt10e_abort_preconsume_blocker_uses_frozen_failure_codes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: journal blockers recording an invented failure category."""
+    authorization, readiness_module, root, intent, _ = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    monkeypatch.setattr(
+        authorization, "deactivate_runtime",
+        lambda: (_ for _ in ()).throw(RuntimeError("safe runtime failed")),
+    )
+    with pytest.raises(RuntimeError):
+        authorization.abort_preconsume(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+            preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+            cleanup_intent=intent, cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+            cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+        )
+    assert json.loads(blocker.read_text(encoding="utf-8"))["failure_code"] == "safe_runtime_proof_failed"
+
+
+def test_gdt10e_abort_preconsume_accepts_durable_cancellation_before_intent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a cancellation crash window becoming permanently unreplayable."""
+    authorization, readiness_module, root, intent, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    issuance = _issue_cleanup_authorization(authorization, root)
+    authorization._create_or_validate_unconsumed_cancellation(root / "authorization", issuance)
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(
+        readiness_module, "dispose_account_readiness",
+        lambda _: ((root / "account-readiness.json").unlink(), authorization._fsync_directory(root), SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]))[-1],
+    )
+    receipt = authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent, cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    assert receipt["branch"] == "issued_unconsumed"
+
+
+def test_gdt10e_abort_preconsume_rejects_blocker_true_when_target_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: trusting a blocker snapshot over the present private file."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    sealed = _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    authorization._write_preconsume_journal(
+        blocker, schema_version="provider-cycle-cleanup-blocker/2", intent=sealed,
+        completed_steps={name: True for name in authorization._PRECONSUME_CLEANUP_STEPS},
+        failure_code="private_control_cleanup_failed",
+    )
+    with pytest.raises(ValueError, match="journal"):
+        authorization.abort_preconsume(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+            preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+            cleanup_intent=intent, cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+            cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+        )
+
+
+@pytest.mark.parametrize("failed_fsync", range(1, 10))
+def test_gdt10e_abort_preconsume_interruption_after_each_delete_fsync_replays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_fsync: int
+) -> None:
+    """Mutation caught: any durable-delete interruption losing its intent or replay path."""
+    authorization, readiness_module, root, intent, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    _issue_cleanup_authorization(authorization, root)
+    for name in ("live.env", "safe.env", "preparation.json", "zero-paid-readiness.json"):
+        target = root / name
+        target.write_text("{}\n", encoding="utf-8")
+        target.chmod(0o600)
+    _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    receipt = intent.with_name(intent.name.replace("intent", "receipt"))
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: (
+            (root / "account-readiness.json").unlink(missing_ok=True),
+            authorization._fsync_directory(root),
+            SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+        )[-1],
+    )
+    original_fsync = authorization._fsync_directory
+    calls = 0
+
+    def fail_once(path: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == failed_fsync:
+            raise OSError("interrupted directory fsync")
+        original_fsync(path)
+
+    monkeypatch.setattr(authorization, "_fsync_directory", fail_once)
+    with pytest.raises(OSError, match="interrupted directory fsync"):
+        authorization.abort_preconsume(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+            preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+            cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=blocker,
+            review_deadline="2026-08-09T23:59:59+08:00",
+        )
+    assert intent.exists() and blocker.exists()
+
+    monkeypatch.setattr(authorization, "_fsync_directory", original_fsync)
+    replay = authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=blocker,
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    assert all(replay["completed_steps"].values())
+
+
+def test_gdt10e_abort_preconsume_replays_task2_unlink_before_root_fsync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: Task 2's unlink-before-fsync crash window becoming terminal."""
+    authorization, readiness_module, root, intent, _ = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    receipt = intent.with_name(intent.name.replace("intent", "receipt"))
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    original_fsync = readiness_module._fsync_root_after_unlink
+    monkeypatch.setattr(
+        readiness_module,
+        "_fsync_root_after_unlink",
+        lambda _: (_ for _ in ()).throw(OSError("readiness root fsync interrupted")),
+    )
+    with pytest.raises(readiness_module.AccountReadinessCleanupIncomplete, match="account_readiness_cleanup_incomplete"):
+        authorization.abort_preconsume(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+            preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+            cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=blocker,
+            review_deadline="2026-08-09T23:59:59+08:00",
+        )
+    assert intent.exists() and blocker.exists() and not (root / "account-readiness.json").exists()
+    assert json.loads(blocker.read_text(encoding="utf-8"))["failure_code"] == "account_readiness_cleanup_incomplete"
+
+    monkeypatch.setattr(readiness_module, "_fsync_root_after_unlink", original_fsync)
+    replay = authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=blocker,
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    assert replay["schema_version"] == "provider-cycle-cleanup-receipt/1"
+
+
+def test_gdt10e_cleanup_intent_zero_write_closes_its_descriptor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: reporting a zero-byte durable-intent write while leaking its file descriptor."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    original_close = authorization.os.close
+    closed: list[int] = []
+
+    def remember_close(descriptor: int) -> None:
+        closed.append(descriptor)
+        original_close(descriptor)
+
+    monkeypatch.setattr(authorization.os, "write", lambda *_: 0)
+    monkeypatch.setattr(authorization.os, "close", remember_close)
+    with pytest.raises(OSError, match="incomplete"):
+        _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    assert closed
+
+
+def test_gdt10e_abort_preconsume_receipt_replay_rejects_target_reappearance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: treating a receipt as success after private target reappearance."""
+    authorization, readiness_module, root, intent, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    receipt = intent.with_name(intent.name.replace("intent", "receipt"))
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(readiness_module, "dispose_account_readiness", lambda _: ((root / "account-readiness.json").unlink(), authorization._fsync_directory(root), SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]))[-1])
+    authorization.abort_preconsume(authorization=root / "authorization", override=root / "live.env", safe_override=root / "safe.env", readiness=root / "account-readiness.json", preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json", cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")), review_deadline="2026-08-09T23:59:59+08:00")
+    root.mkdir(mode=0o700)
+    with pytest.raises(ValueError, match="reappeared"):
+        authorization.abort_preconsume(authorization=root / "authorization", override=root / "live.env", safe_override=root / "safe.env", readiness=root / "account-readiness.json", preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json", cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")), review_deadline="2026-08-09T23:59:59+08:00")
+
+
+def test_gdt10e_abort_preconsume_deletes_controls_before_task2_readiness_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: Task 2 seeing lifecycle controls or deleting anything besides readiness."""
+    authorization, readiness_module, root, intent, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    for name in ("live.env", "safe.env", "preparation.json", "zero-paid-readiness.json"):
+        path = root / name
+        path.write_text("{}\n", encoding="utf-8")
+        path.chmod(0o600)
+    _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    observed: list[set[str]] = []
+
+    def dispose_readiness_only(_: Path):
+        observed.append(set(os.listdir(root)))
+        (root / "account-readiness.json").unlink()
+        authorization._fsync_directory(root)
+        return SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"])
+
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(readiness_module, "dispose_account_readiness", dispose_readiness_only)
+    authorization.abort_preconsume(authorization=root / "authorization", override=root / "live.env", safe_override=root / "safe.env", readiness=root / "account-readiness.json", preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json", cleanup_intent=intent, cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")), cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")), review_deadline="2026-08-09T23:59:59+08:00")
+
+    assert observed == [{"account-readiness.json"}]
+
+
+def test_gdt10e_immutable_fact_retries_partial_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: truncating an O_EXCL journal fact after a short write."""
+    authorization, _, _, _, _ = _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    original_write = authorization.os.write
+
+    def half_write(fd: int, payload: bytes) -> int:
+        return original_write(fd, payload[: max(1, len(payload) // 2)])
+
+    monkeypatch.setattr(authorization.os, "write", half_write)
+    path = tmp_path / "immutable.json"
+    fact = authorization._exclusive_fact(path, {"schema_version": "test/1"})
+    assert json.loads(path.read_text(encoding="utf-8")) == fact
+
+
+def test_gdt10e_abort_preconsume_receipt_partial_write_reverts_to_intent_only_and_replays(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a failed receipt write permanently masks the sole replay intent."""
+    authorization, readiness_module, root, intent, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    sealed = _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    receipt = intent.with_name(intent.name.replace("intent", "receipt"))
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    authorization._write_preconsume_journal(
+        blocker, schema_version="provider-cycle-cleanup-blocker/2", intent=sealed,
+        completed_steps={name: False for name in authorization._PRECONSUME_CLEANUP_STEPS},
+        failure_code="safe_runtime_proof_failed",
+    )
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: ((root / "account-readiness.json").unlink(), authorization._fsync_directory(root), SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]))[-1],
+    )
+    original_exclusive = authorization._exclusive_fact
+
+    def write_then_fail(path: Path, document: dict[str, object]):
+        result = original_exclusive(path, document)
+        if path == receipt:
+            raise OSError("receipt durability interrupted")
+        return result
+
+    monkeypatch.setattr(authorization, "_exclusive_fact", write_then_fail)
+    with pytest.raises(OSError, match="receipt durability interrupted"):
+        authorization.abort_preconsume(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+            preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+            cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=blocker,
+            review_deadline="2026-08-09T23:59:59+08:00",
+        )
+
+    assert intent.exists()
+    assert not receipt.exists()
+    assert not blocker.exists()
+
+    monkeypatch.setattr(authorization, "_exclusive_fact", original_exclusive)
+    replay = authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=blocker,
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    assert replay["schema_version"] == "provider-cycle-cleanup-receipt/1"
+    assert receipt.exists() and not intent.exists() and not blocker.exists()
+
+
+@pytest.mark.parametrize(
+    ("location", "schema_version"),
+    (("root", "provider-cycle-cleanup-blocker/1"), ("authorization", "provider-cycle-cleanup-blocker/2")),
+)
+def test_gdt10e_abort_preconsume_rejects_blockers_at_the_wrong_journal_location(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, location: str, schema_version: str
+) -> None:
+    """Mutation caught: treating either blocker version as interchangeable across roots."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    if location == "root":
+        blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+        authorization._exclusive_fact(
+            blocker,
+            {"schema_version": schema_version, "cycle_id": ACCOUNT_READINESS_CYCLE},
+        )
+    else:
+        _issue_cleanup_authorization(authorization, root)
+        blocker = root / "authorization/cleanup-blocker.json"
+        authorization._exclusive_fact(
+            blocker,
+            {"schema_version": schema_version, "cycle_id": ACCOUNT_READINESS_CYCLE},
+        )
+    with pytest.raises(ValueError, match="cleanup"):
+        authorization.abort_preconsume(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+            preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+            cleanup_intent=intent, cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+            cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+            review_deadline="2026-08-09T23:59:59+08:00",
+        )
+    assert (root / "account-readiness.json").exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("expiry", "intent_hash", "readiness_hash", "paths_hash"),
+)
+def test_gdt10e_abort_preconsume_rejects_every_blocker_cross_hash_and_expiry_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    """Mutation caught: replaying a blocker that does not bind the sealed intent exactly."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    sealed = _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    document = authorization._write_preconsume_journal(
+        blocker, schema_version="provider-cycle-cleanup-blocker/2", intent=sealed,
+        completed_steps={name: False for name in authorization._PRECONSUME_CLEANUP_STEPS},
+        failure_code="safe_runtime_proof_failed",
+    )
+    field = {
+        "expiry": "readiness_expires_at",
+        "intent_hash": "cleanup_intent_sha256",
+        "readiness_hash": "account_readiness_sha256",
+        "paths_hash": "safe_path_sha256s_sha256",
+    }[mutation]
+    document[field] = "0" * 64 if field.endswith("sha256") else "2026-08-09T00:00:00Z"
+    document["content_sha256"] = _canonical_content_hash(document)
+    blocker.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="journal"):
+        authorization.abort_preconsume(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+            preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+            cleanup_intent=intent, cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+            cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+        )
+
+
+def test_gdt10e_dispose_terminal_cli_has_only_the_frozen_terminal_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: terminal cleanup accepting pre-consume controls or omitting its journal."""
+    authorization = _load_module(
+        f"qi_gdt10e_terminal_cleanup_cli_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(authorization, "_GDT10E_PRIVATE_ROOT", root)
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        authorization,
+        "dispose_terminal",
+        lambda **kwargs: calls.append(kwargs) or {"branch": "terminal"},
+    )
+    run_id = "20260802T000000000000Z-deadbeef"
+    intent = root.with_name(root.name + "-cleanup-intent.json")
+    receipt = root.with_name(root.name + "-cleanup-receipt.json")
+    blocker = root.with_name(root.name + "-cleanup-blocker.json")
+
+    assert authorization.main([
+        "dispose-terminal", "--authorization", str(root / "authorization"),
+        "--readiness", str(root / "account-readiness.json"), "--run-id", run_id,
+        "--cleanup-intent", str(intent), "--cleanup-receipt", str(receipt),
+        "--cleanup-blocker", str(blocker),
+        "--review-deadline", "2026-08-09T23:59:59+08:00",
+    ]) == 0
+    assert calls == [{
+        "authorization": str(root / "authorization"),
+        "readiness": str(root / "account-readiness.json"),
+        "run_id": run_id,
+        "cleanup_intent": str(intent),
+        "cleanup_receipt": str(receipt),
+        "cleanup_blocker": str(blocker),
+        "review_deadline": "2026-08-09T23:59:59+08:00",
+    }]
+    with pytest.raises(SystemExit):
+        authorization.main([
+            "dispose-terminal", "--authorization", str(root / "authorization"),
+            "--readiness", str(root / "account-readiness.json"), "--run-id", run_id,
+            "--cleanup-intent", str(intent), "--cleanup-receipt", str(receipt),
+            "--cleanup-blocker", str(blocker),
+        ])
+    with pytest.raises(SystemExit):
+        authorization.main([
+            "dispose-terminal", "--authorization", str(root / "authorization"),
+            "--readiness", str(root / "account-readiness.json"), "--run-id", run_id,
+            "--cleanup-intent", str(intent), "--cleanup-receipt", str(receipt),
+            "--cleanup-blocker", str(blocker), "--review-deadline", "2026-08-09T23:59:59+08:00",
+            "--override", str(root / "live.env"),
+        ])
+
+
+def test_gdt10e_terminal_cleanup_intent_binds_only_the_terminal_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: terminal cleanup sealing a cancellation or foreign-run tuple."""
+    authorization, _, root, intent, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    worktree = tmp_path / "worktree"
+    monkeypatch.setattr(authorization, "ROOT", worktree)
+    issuance = _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    run = authorization.bind_run(root / "authorization", run_id=run_id)
+    terminal = authorization._exclusive_fact(
+        root / "authorization/terminal.json",
+        {
+            "schema_version": "provider-cycle-terminal/1",
+            "cycle_id": ACCOUNT_READINESS_CYCLE,
+            "run_id": run_id,
+            "status": "failed",
+            "quiescence_sha256": "4" * 64,
+            "run_sha256": run["content_sha256"],
+        },
+    )
+
+    sealed = authorization.prepare_terminal_cleanup_intent(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent,
+        cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+
+    assert sealed["branch"] == "terminal"
+    assert sealed["issuance_sha256"] == issuance["content_sha256"]
+    assert sealed["terminal_sha256"] == terminal["content_sha256"]
+    assert sealed["cancellation_sha256"] is None and sealed["run_id"] == run_id
+    assert list(sealed["safe_path_sha256s"]) == [
+        "private_root", "account_readiness", "live_override", "safe_override",
+        "authorization_root", "authorization_issuance", "authorization_consumption",
+        "authorization_run", "authorization_pause_handoff", "authorization_resume_consumed",
+        "authorization_terminal", "authorization_unconsumed_cancellation",
+        "authorization_legacy_cleanup_blocker", "preparation_report", "zero_paid_report",
+        "cleanup_intent", "cleanup_receipt", "cleanup_blocker", "harness_run_root",
+        "harness_run_document", "harness_live_evidence", "harness_runtime_acceptance",
+        "harness_quiescence", "harness_close_bridge",
+    ]
+    assert sealed["safe_path_sha256s"]["harness_run_root"] == hashlib.sha256(
+        str(worktree / ".agent/harness/runs" / run_id).encode("utf-8")
+    ).hexdigest()
+
+
+@pytest.mark.parametrize(
+    "mutation", ("pause_without_resume", "invalid_project", "invalid_legacy_blocker")
+)
+def test_gdt10e_terminal_cleanup_rejects_unpaired_or_unvalidated_authorization_children(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    """Mutation caught: deleting a terminal authorization tree with unchecked child facts."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    run = authorization.bind_run(root / "authorization", run_id=run_id)
+    if mutation == "pause_without_resume":
+        authorization.record_pause_handoff(
+            root / "authorization", run_id=run_id, pause_evidence_sha256="1" * 64
+        )
+    elif mutation == "invalid_project":
+        projects = root / "authorization/projects"
+        projects.mkdir(mode=0o700)
+        (projects / "0001.json").write_text("{}\n", encoding="utf-8")
+        (projects / "0001.json").chmod(0o600)
+    else:
+        blocker = root / "authorization/cleanup-blocker.json"
+        blocker.write_text("{}\n", encoding="utf-8")
+        blocker.chmod(0o600)
+    authorization._exclusive_fact(
+        root / "authorization/terminal.json",
+        {
+            "schema_version": "provider-cycle-terminal/1",
+            "cycle_id": ACCOUNT_READINESS_CYCLE,
+            "run_id": run_id,
+            "status": "failed",
+            "quiescence_sha256": "4" * 64,
+            "run_sha256": run["content_sha256"],
+        },
+    )
+
+    with pytest.raises(ValueError, match="terminal cleanup lifecycle"):
+        authorization.prepare_terminal_cleanup_intent(
+            authorization=root / "authorization",
+            readiness=root / "account-readiness.json",
+            run_id=run_id,
+            cleanup_intent=intent,
+            cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+            cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+            review_deadline="2026-08-09T23:59:59+08:00",
+        )
+
+    assert not intent.exists()
+    assert (root / "account-readiness.json").exists()
+
+
+def test_gdt10e_terminal_cleanup_public_v3_binding_rejects_duplicate_run_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: JSON parsing a public run before duplicate-key rejection."""
+    authorization, readiness_module, root, intent, readiness = (
+        _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    )
+    workspace = tmp_path / "worktree"
+    runs = workspace / ".agent/harness/runs"
+    schema_directory = workspace / ".agent/harness/schemas"
+    schema_directory.parent.mkdir(parents=True)
+    schema_directory.symlink_to(HARNESS / "schemas", target_is_directory=True)
+    pricing_path = workspace / "backend/app/providers/provider_pricing_gdt10d_v1.json"
+    pricing_path.parent.mkdir(parents=True)
+    pricing_path.symlink_to(
+        ROOT / "backend/app/providers/provider_pricing_gdt10d_v1.json"
+    )
+    monkeypatch.setattr(authorization, "ROOT", workspace)
+    monkeypatch.setattr(readiness_module, "HARNESS_RUNS_ROOT", runs)
+    issuance = _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    lifecycle_run = authorization.bind_run(root / "authorization", run_id=run_id)
+    terminal = authorization._exclusive_fact(
+        root / "authorization/terminal.json",
+        {
+            "schema_version": "provider-cycle-terminal/1",
+            "cycle_id": ACCOUNT_READINESS_CYCLE,
+            "run_id": run_id,
+            "status": "failed",
+            "quiescence_sha256": "4" * 64,
+            "run_sha256": lifecycle_run["content_sha256"],
+        },
+    )
+    run_dir = runs / run_id
+    reports = run_dir / "reports"
+    reports.mkdir(parents=True, mode=0o700)
+    for directory in (runs, run_dir, reports):
+        directory.chmod(0o700)
+    public_run = _gdt10e_v3_run(state="failed")
+    public_run["run_id"] = run_id
+    public_run["completed_at"] = "2026-08-02T10:14:04+00:00"
+    public_run["failure_reason"] = "selector_failed"
+    public_run["cycle_authorization"].update({
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "issuance_sha256": issuance["content_sha256"],
+        "consumption_sha256": lifecycle_run["consumption_sha256"],
+            "run_authorization_sha256": lifecycle_run["content_sha256"],
+            "run_id": run_id,
+            "backend_image_id": issuance["backend_image_id"],
+        })
+    public_run["cycle_authorization"]["readiness_evidence"]["readiness_sha256"] = (
+        readiness["content_sha256"]
+    )
+    _validate(public_run, "run.schema.json")
+    public_live = _gdt10e_v3_live(public_run)
+    public_live["run_id"] = run_id
+    public_live["paid_cycle"].update({
+        "issuance_sha256": issuance["content_sha256"],
+        "consumption_sha256": lifecycle_run["consumption_sha256"],
+        "run_authorization_sha256": lifecycle_run["content_sha256"],
+        "terminal": {
+            "status": "failed",
+            "quiescence_sha256": terminal["quiescence_sha256"],
+            "terminal_sha256": terminal["content_sha256"],
+            "bridge_evidence_sha256": "5" * 64,
+        },
+    })
+    fact = _gdt10e_runtime_acceptance_fact(public_run)
+    fact["run_id"] = run_id
+    fact["readiness_sha256"] = readiness["content_sha256"]
+    fact["content_sha256"] = _canonical_content_hash(fact)
+    policy = _load_module(
+        f"qi_gdt10e_terminal_public_policy_{tmp_path.name}",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+    public_live = policy.account_readiness_projection(public_run, public_live, fact)
+    _validate(public_live, "live-run-evidence.schema.json")
+    (run_dir / "run.json").write_text(json.dumps(public_run), encoding="utf-8")
+    (run_dir / "live-run-evidence.json").write_text(json.dumps(public_live), encoding="utf-8")
+    _write_runtime_acceptance(runs, str(readiness["content_sha256"]), run_id=run_id).write_text(
+        json.dumps(fact, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    quiescence = {
+        "schema_version": "provider-cycle-quiescence/1", "run_id": run_id,
+        "status": "failed", "harness_returned": True, "queue_depth": 0,
+        "worker_sets": [], "worker_stopped": True,
+    }
+    quiescence = authorization._exclusive_fact(
+        reports / "provider-cycle-quiescence.json", quiescence
+    )
+    (root / "authorization/terminal.json").unlink()
+    terminal = authorization._exclusive_fact(
+        root / "authorization/terminal.json",
+        {
+            "schema_version": "provider-cycle-terminal/1",
+            "cycle_id": ACCOUNT_READINESS_CYCLE,
+            "run_id": run_id,
+            "status": "failed",
+            "quiescence_sha256": quiescence["content_sha256"],
+            "run_sha256": lifecycle_run["content_sha256"],
+        },
+    )
+    bridge = {
+        "schema_version": "provider-cycle-close-bridge/1", "run_id": run_id,
+        "image_id": "sha256:" + "f" * 64, "storage_volume": "fixture_storage_qa_dev",
+        "network": "none", "container_user": "0:0", "authorization_owner_uid": os.getuid(),
+        "authorization_owner_gid": os.getgid(),
+        "mounts": [
+            {"type": "volume", "target": "/data", "mode": "rw"},
+            {"type": "bind", "target": "/auth", "mode": "rw"},
+        ],
+        "terminal_sha256": terminal["content_sha256"],
+    }
+    bridge = authorization._exclusive_fact(reports / "provider-cycle-close-bridge.json", bridge)
+    public_live["paid_cycle"]["terminal"].update({
+        "quiescence_sha256": quiescence["content_sha256"],
+        "terminal_sha256": terminal["content_sha256"],
+    })
+    public_live["paid_cycle"]["terminal"]["bridge_evidence_sha256"] = bridge["content_sha256"]
+    (run_dir / "live-run-evidence.json").write_text(json.dumps(public_live), encoding="utf-8")
+    sealed = authorization.prepare_terminal_cleanup_intent(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent,
+        cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    authorization._validate_terminal_public_binding(
+        sealed, issuance, lifecycle_run, terminal
+    )
+    harness_directory = workspace / ".agent/harness"
+    moved_harness = tmp_path / "moved-harness"
+    harness_directory.rename(moved_harness)
+    harness_directory.symlink_to(moved_harness, target_is_directory=True)
+    with pytest.raises(ValueError, match="terminal public evidence"):
+        authorization._validate_terminal_public_binding(
+            sealed, issuance, lifecycle_run, terminal
+        )
+    harness_directory.unlink()
+    moved_harness.rename(harness_directory)
+    run_path = run_dir / "run.json"
+    run_path.write_text(
+        run_path.read_text(encoding="utf-8").replace(
+            '"schema_version"', '"schema_version":"forged","schema_version"', 1
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="terminal public evidence"):
+        authorization._validate_terminal_public_binding(
+            sealed, issuance, lifecycle_run, terminal
+        )
+
+    assert (root / "account-readiness.json").exists()
+
+
+def test_gdt10e_dispose_terminal_proves_safe_runtime_and_keeps_public_run_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: deleting terminal controls before safety proof or the public Harness tree."""
+    authorization, readiness_module, root, intent, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    issuance = _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    run = authorization.bind_run(root / "authorization", run_id=run_id)
+    authorization._exclusive_fact(
+        root / "authorization/terminal.json",
+        {
+            "schema_version": "provider-cycle-terminal/1",
+            "cycle_id": ACCOUNT_READINESS_CYCLE,
+            "run_id": run_id,
+            "status": "completed",
+            "quiescence_sha256": "4" * 64,
+            "run_sha256": run["content_sha256"],
+        },
+    )
+    events: list[str] = []
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: events.append("safe"))
+    monkeypatch.setattr(authorization, "check_head_contracts", lambda: events.append("db"))
+    monkeypatch.setattr(authorization, "_run_zero_paid_preflight", lambda: events.append("copy"))
+    monkeypatch.setattr(authorization, "_validate_terminal_public_binding", lambda *_: events.append("binding"))
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: ((root / "account-readiness.json").unlink(), authorization._fsync_directory(root), SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]))[-1],
+    )
+    public_run = tmp_path / "worktree/.agent/harness/runs" / run_id
+    public_run.mkdir(parents=True)
+
+    receipt = authorization.dispose_terminal(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent,
+        cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+
+    assert issuance["cycle_id"] == ACCOUNT_READINESS_CYCLE
+    assert events == ["safe", "db", "copy", "binding"]
+    assert receipt["branch"] == "terminal"
+    assert public_run.exists()
+    assert not root.exists() and not intent.exists()
+    assert authorization.dispose_terminal(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent,
+        cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    ) == receipt
+    assert events == ["safe", "db", "copy", "binding"]
+
+
+def test_gdt10e_dispose_terminal_removes_frozen_controls_before_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: terminal cleanup leaves private controls for Task 2 or deletes them late."""
+    authorization, readiness_module, root, intent, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    run = authorization.bind_run(root / "authorization", run_id=run_id)
+    authorization._exclusive_fact(
+        root / "authorization/terminal.json",
+        {
+            "schema_version": "provider-cycle-terminal/1",
+            "cycle_id": ACCOUNT_READINESS_CYCLE,
+            "run_id": run_id,
+            "status": "failed",
+            "quiescence_sha256": "4" * 64,
+            "run_sha256": run["content_sha256"],
+        },
+    )
+    for name in ("live.env", "safe.env", "preparation.json", "zero-paid-readiness.json"):
+        path = root / name
+        path.write_text("{}\n", encoding="utf-8")
+        path.chmod(0o600)
+    observed: list[set[str]] = []
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "check_head_contracts", lambda: None)
+    monkeypatch.setattr(authorization, "_run_zero_paid_preflight", lambda: None)
+    monkeypatch.setattr(authorization, "_validate_terminal_public_binding", lambda *_: None)
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: (
+            observed.append(set(os.listdir(root))),
+            (root / "account-readiness.json").unlink(),
+            authorization._fsync_directory(root),
+            SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+        )[-1],
+    )
+
+    authorization.dispose_terminal(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent,
+        cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")),
+        cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")),
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+
+    assert observed == [{"account-readiness.json", "authorization"}]
+
+
+def test_gdt10e_dispose_terminal_receipt_write_crash_restores_intent_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a terminal receipt crash leaving an unreplayable blocker/receipt pair."""
+    authorization, readiness_module, root, intent, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    run = authorization.bind_run(root / "authorization", run_id=run_id)
+    authorization._exclusive_fact(root / "authorization/terminal.json", {
+        "schema_version": "provider-cycle-terminal/1", "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "run_id": run_id, "status": "failed", "quiescence_sha256": "4" * 64,
+        "run_sha256": run["content_sha256"],
+    })
+    receipt = intent.with_name(intent.name.replace("intent", "receipt"))
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "check_head_contracts", lambda: None)
+    monkeypatch.setattr(authorization, "_run_zero_paid_preflight", lambda: None)
+    monkeypatch.setattr(authorization, "_validate_terminal_public_binding", lambda *_: None)
+    monkeypatch.setattr(readiness_module, "dispose_account_readiness", lambda _: ((root / "account-readiness.json").unlink(), authorization._fsync_directory(root), SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]))[-1])
+    original = authorization._exclusive_fact
+
+    def write_then_fail(path: Path, document: dict[str, object]):
+        result = original(path, document)
+        if path == receipt:
+            raise OSError("receipt interrupted")
+        return result
+
+    monkeypatch.setattr(authorization, "_exclusive_fact", write_then_fail)
+    with pytest.raises(RuntimeError, match="terminal cleanup failed"):
+        authorization.dispose_terminal(
+            authorization=root / "authorization", readiness=root / "account-readiness.json",
+            run_id=run_id, cleanup_intent=intent, cleanup_receipt=receipt,
+            cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+        )
+    assert intent.exists() and not receipt.exists() and not blocker.exists()
+    monkeypatch.setattr(authorization, "_exclusive_fact", original)
+    replay = authorization.dispose_terminal(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent, cleanup_receipt=receipt,
+        cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    assert replay["branch"] == "terminal" and receipt.exists() and not intent.exists()
+
+
+@pytest.mark.parametrize("failed_fsync", range(1, 17))
+def test_gdt10e_terminal_cleanup_replays_each_private_delete_fsync_interruption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_fsync: int
+) -> None:
+    """Mutation caught: a terminal private-delete crash losing its durable replay state."""
+    authorization, readiness_module, root, intent, run_id, preserved, readiness = (
+        _terminal_cleanup_fixture(tmp_path, monkeypatch)
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    authorization.prepare_terminal_cleanup_intent(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent,
+        cleanup_receipt=args["cleanup_receipt"], cleanup_blocker=args["cleanup_blocker"],
+        review_deadline=args["review_deadline"],
+    )
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: (
+            (root / "account-readiness.json").unlink(),
+            authorization._fsync_directory(root),
+            SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+        )[-1],
+    )
+    original_fsync = authorization._fsync_directory
+    calls = 0
+
+    def interrupt_once(path: Path) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == failed_fsync:
+            raise OSError("terminal cleanup fsync interrupted")
+        original_fsync(path)
+
+    monkeypatch.setattr(authorization, "_fsync_directory", interrupt_once)
+    with pytest.raises(RuntimeError, match="terminal cleanup failed"):
+        authorization.dispose_terminal(**args)
+
+    blocker = args["cleanup_blocker"]
+    assert intent.exists() and isinstance(blocker, Path) and blocker.exists()
+    monkeypatch.setattr(authorization, "_fsync_directory", original_fsync)
+    receipt = authorization.dispose_terminal(**args)
+    assert all(receipt["completed_steps"].values())
+    for name, payload in preserved.items():
+        assert authorization._terminal_cleanup_paths(run_id)[name].read_bytes() == payload
+
+
+@pytest.mark.parametrize(
+    ("failure_site", "expected_code"),
+    (
+        ("safe_runtime", "safe_runtime_proof_failed"),
+        ("head_contracts", "safe_runtime_proof_failed"),
+        ("zero_paid_preflight", "safe_runtime_proof_failed"),
+        ("public_binding", "safe_runtime_proof_failed"),
+        ("controls", "private_control_cleanup_failed"),
+        ("readiness", "account_readiness_cleanup_incomplete"),
+        ("authorization", "authorization_cleanup_failed"),
+        ("private_root", "private_root_cleanup_failed"),
+        ("receipt", None),
+    ),
+)
+def test_gdt10e_terminal_cleanup_failure_sites_write_only_frozen_blockers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_site: str,
+    expected_code: str | None,
+) -> None:
+    """Mutation caught: a terminal failure recording an invented or misplaced blocker."""
+    authorization, readiness_module, root, intent, run_id, _, readiness = (
+        _terminal_cleanup_fixture(tmp_path, monkeypatch)
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    failure = RuntimeError(f"{failure_site} failure")
+    if failure_site != "readiness":
+        monkeypatch.setattr(
+            readiness_module,
+            "dispose_account_readiness",
+            lambda _: (
+                (root / "account-readiness.json").unlink(),
+                authorization._fsync_directory(root),
+                SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+            )[-1],
+        )
+    if failure_site == "safe_runtime":
+        monkeypatch.setattr(authorization, "deactivate_runtime", lambda: (_ for _ in ()).throw(failure))
+    elif failure_site == "head_contracts":
+        monkeypatch.setattr(authorization, "check_head_contracts", lambda: (_ for _ in ()).throw(failure))
+    elif failure_site == "zero_paid_preflight":
+        monkeypatch.setattr(authorization, "_run_zero_paid_preflight", lambda: (_ for _ in ()).throw(failure))
+    elif failure_site == "public_binding":
+        monkeypatch.setattr(authorization, "_validate_terminal_public_binding", lambda *_: (_ for _ in ()).throw(failure))
+    elif failure_site == "controls":
+        monkeypatch.setattr(authorization, "_delete_preconsume_file", lambda *_: (_ for _ in ()).throw(failure))
+    elif failure_site == "readiness":
+        monkeypatch.setattr(
+            readiness_module, "dispose_account_readiness",
+            lambda _: (_ for _ in ()).throw(readiness_module.AccountReadinessCleanupIncomplete()),
+        )
+    elif failure_site == "authorization":
+        monkeypatch.setattr(authorization, "_delete_terminal_authorization", lambda _: (_ for _ in ()).throw(failure))
+    elif failure_site == "private_root":
+        monkeypatch.setattr(authorization, "_delete_preconsume_root", lambda: (_ for _ in ()).throw(failure))
+    else:
+        original_write = authorization._write_preconsume_journal
+        monkeypatch.setattr(
+            authorization,
+            "_write_preconsume_journal",
+            lambda path, **kwargs: (
+                (_ for _ in ()).throw(failure)
+                if path == args["cleanup_receipt"] else original_write(path, **kwargs)
+            ),
+        )
+
+    with pytest.raises(BaseException):
+        authorization.dispose_terminal(**args)
+
+    blocker = args["cleanup_blocker"]
+    if expected_code is None:
+        assert intent.exists() and isinstance(blocker, Path) and not blocker.exists()
+    else:
+        assert isinstance(blocker, Path) and blocker.exists()
+        assert json.loads(blocker.read_text(encoding="utf-8"))["failure_code"] == expected_code
+        assert intent.exists()
+
+
+def test_gdt10e_terminal_public_binding_blocker_replay_revalidates_before_deletion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a public-binding blocker replay deleting lifecycle controls."""
+    authorization, _, root, intent, run_id, _, _ = _terminal_cleanup_fixture(
+        tmp_path, monkeypatch
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    calls: list[str] = []
+
+    def reject_public_binding(*_args: object) -> None:
+        calls.append("binding")
+        raise RuntimeError("public binding remains invalid")
+
+    monkeypatch.setattr(
+        authorization, "_validate_terminal_public_binding", reject_public_binding
+    )
+    before = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+    with pytest.raises(RuntimeError, match="terminal cleanup failed"):
+        authorization.dispose_terminal(**args)
+    with pytest.raises(RuntimeError, match="terminal cleanup failed"):
+        authorization.dispose_terminal(**args)
+
+    after = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+    assert calls == ["binding", "binding"]
+    assert after == before
+    assert args["cleanup_blocker"].exists()
+
+
+def test_gdt10e_terminal_replays_task2_unlink_before_fsync_without_reopening_readiness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: terminal replay reopening Task 2 readiness after its unlink commit."""
+    authorization, readiness_module, root, intent, run_id, _, _ = _terminal_cleanup_fixture(
+        tmp_path, monkeypatch
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    task2_calls: list[Path] = []
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda path: (
+            task2_calls.append(path),
+            (root / "account-readiness.json").unlink(),
+            (_ for _ in ()).throw(readiness_module.AccountReadinessCleanupIncomplete()),
+        )[-1],
+    )
+    with pytest.raises(readiness_module.AccountReadinessCleanupIncomplete, match="account_readiness_cleanup_incomplete"):
+        authorization.dispose_terminal(**args)
+    assert task2_calls == [intent] and intent.exists() and not (root / "account-readiness.json").exists()
+    reopened: list[Path] = []
+    original_open = readiness_module.os.open
+
+    def reject_readiness_open(path: str | bytes | os.PathLike[str] | int, *args: object) -> int:
+        if os.fspath(path) == str(root / "account-readiness.json"):
+            reopened.append(Path(path))
+            raise AssertionError("deleted readiness must not reopen")
+        return original_open(path, *args)
+
+    monkeypatch.setattr(readiness_module.os, "open", reject_readiness_open)
+    receipt = authorization.dispose_terminal(**args)
+    assert receipt["branch"] == "terminal" and not reopened
+
+
+@pytest.mark.parametrize(
+    "reappeared",
+    ("private_root", "account_readiness", "live_override", "safe_override", "preparation_report", "zero_paid_report", "authorization_root"),
+)
+def test_gdt10e_terminal_journal_states_reject_every_private_reappearance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reappeared: str
+) -> None:
+    """Mutation caught: terminal receipt replay overlooking a re-created private target."""
+    authorization, readiness_module, root, intent, run_id, preserved, readiness = (
+        _terminal_cleanup_fixture(tmp_path, monkeypatch)
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: (
+            (root / "account-readiness.json").unlink(), authorization._fsync_directory(root),
+            SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+        )[-1],
+    )
+    authorization.prepare_terminal_cleanup_intent(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent, cleanup_receipt=args["cleanup_receipt"],
+        cleanup_blocker=args["cleanup_blocker"], review_deadline=args["review_deadline"],
+    )
+    intent_bytes = intent.read_bytes()
+    receipt = authorization.dispose_terminal(**args)
+    assert not intent.exists()
+    intent.write_bytes(intent_bytes)
+    intent.chmod(0o600)
+    assert authorization.dispose_terminal(**args) == receipt
+    assert not intent.exists()
+
+    target = authorization._preconsume_cleanup_paths()[reappeared]
+    if reappeared == "private_root":
+        target.mkdir(mode=0o700)
+    else:
+        root.mkdir(mode=0o700)
+        if reappeared == "authorization_root":
+            target.mkdir(mode=0o700)
+        else:
+            target.write_text("{}\n", encoding="utf-8")
+            target.chmod(0o600)
+    with pytest.raises(ValueError, match="reappeared"):
+        authorization.dispose_terminal(**args)
+    for name, payload in preserved.items():
+        assert authorization._terminal_cleanup_paths(run_id)[name].read_bytes() == payload
+
+
+def test_gdt10e_terminal_journal_rejects_blocker_receipt_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: accepting the forbidden terminal blocker-plus-receipt state."""
+    authorization, readiness_module, root, intent, run_id, _, readiness = _terminal_cleanup_fixture(
+        tmp_path, monkeypatch
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: (
+            (root / "account-readiness.json").unlink(), authorization._fsync_directory(root),
+            SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+        )[-1],
+    )
+    sealed = authorization.prepare_terminal_cleanup_intent(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent, cleanup_receipt=args["cleanup_receipt"],
+        cleanup_blocker=args["cleanup_blocker"], review_deadline=args["review_deadline"],
+    )
+    authorization.dispose_terminal(**args)
+    authorization._write_preconsume_journal(
+        args["cleanup_blocker"], schema_version="provider-cycle-cleanup-blocker/2",
+        intent=sealed, completed_steps={name: True for name in authorization._PRECONSUME_CLEANUP_STEPS},
+        failure_code="private_root_cleanup_failed",
+    )
+    with pytest.raises(ValueError, match="conflicts"):
+        authorization.dispose_terminal(**args)
+
+
+def test_gdt10e_terminal_cleanup_surfaces_never_leak_private_markers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Mutation caught: a terminal journal or error exposing readiness-private values."""
+    authorization, readiness_module, root, intent, run_id, preserved, readiness = (
+        _terminal_cleanup_fixture(tmp_path, monkeypatch)
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    markers = (
+        ACCOUNT_READINESS_KEY,
+        ACCOUNT_READINESS_WORKSPACE,
+        str(readiness["binding_salt"]),
+        str(readiness["credential_bundle_binding_sha256"]),
+    )
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: (
+            (root / "account-readiness.json").unlink(), authorization._fsync_directory(root),
+            SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+        )[-1],
+    )
+    receipt = authorization.dispose_terminal(**args)
+    assert authorization.main([
+        "dispose-terminal", "--authorization", str(args["authorization"]),
+        "--readiness", str(args["readiness"]), "--run-id", run_id,
+        "--cleanup-intent", str(args["cleanup_intent"]),
+        "--cleanup-receipt", str(args["cleanup_receipt"]),
+        "--cleanup-blocker", str(args["cleanup_blocker"]),
+        "--review-deadline", str(args["review_deadline"]),
+    ]) == 0
+    captured = capsys.readouterr()
+    public_surfaces = (
+        captured.out + captured.err + repr(receipt)
+        + args["cleanup_receipt"].read_text(encoding="utf-8") + caplog.text
+        + b"".join(preserved.values()).decode("utf-8")
+    )
+    for marker in markers:
+        assert marker not in public_surfaces
+
+    failure_tmp = tmp_path / "failure"
+    failure_tmp.mkdir()
+    authorization, _, root, intent, run_id, _, _ = _terminal_cleanup_fixture(failure_tmp, monkeypatch)
+    failure_args = _dispose_terminal_args(root, intent, run_id)
+    monkeypatch.setattr(
+        authorization, "deactivate_runtime",
+        lambda: (_ for _ in ()).throw(RuntimeError(ACCOUNT_READINESS_KEY)),
+    )
+    with pytest.raises(RuntimeError) as error:
+        authorization.dispose_terminal(**failure_args)
+    journal_bytes = intent.read_text(encoding="utf-8") + failure_args["cleanup_blocker"].read_text(encoding="utf-8")
+    assert authorization.main([
+        "dispose-terminal", "--authorization", str(failure_args["authorization"]),
+        "--readiness", str(failure_args["readiness"]), "--run-id", run_id,
+        "--cleanup-intent", str(failure_args["cleanup_intent"]),
+        "--cleanup-receipt", str(failure_args["cleanup_receipt"]),
+        "--cleanup-blocker", str(failure_args["cleanup_blocker"]),
+        "--review-deadline", str(failure_args["review_deadline"]),
+    ]) == 2
+    failure_output = capsys.readouterr()
+    for marker in markers:
+        assert marker not in (
+            repr(error.value) + journal_bytes + caplog.text
+            + failure_output.out + failure_output.err
+        )
+
+
+def test_gdt10e_terminal_cleanup_ast_has_no_provider_or_public_evidence_writer() -> None:
+    """Mutation caught: terminal cleanup taking ownership of Provider, ledger, or public evidence writes."""
+    source = (HARNESS / "scripts/live_cycle_authorization.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    function = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "dispose_terminal"
+    )
+    body = ast.get_source_segment(source, function) or ""
+    for forbidden in ("Provider", "ledger", "run-p0", "write_text", "write_bytes"):
+        assert forbidden not in body
+
+
+def test_gdt10e_terminal_receipt_only_replay_remains_available_after_readiness_expiry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: expiring durable terminal replay with deleted readiness."""
+    authorization, readiness_module, root, intent, readiness = (
+        _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    )
+    _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    run = authorization.bind_run(root / "authorization", run_id=run_id)
+    authorization._exclusive_fact(root / "authorization/terminal.json", {
+        "schema_version": "provider-cycle-terminal/1", "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "run_id": run_id, "status": "failed", "quiescence_sha256": "4" * 64,
+        "run_sha256": run["content_sha256"],
+    })
+    receipt = intent.with_name(intent.name.replace("intent", "receipt"))
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "check_head_contracts", lambda: None)
+    monkeypatch.setattr(authorization, "_run_zero_paid_preflight", lambda: None)
+    monkeypatch.setattr(authorization, "_validate_terminal_public_binding", lambda *_: None)
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: (
+            (root / "account-readiness.json").unlink(),
+            authorization._fsync_directory(root),
+            SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+        )[-1],
+    )
+    authorization.dispose_terminal(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent, cleanup_receipt=receipt,
+        cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+    )
+
+    monkeypatch.setattr(authorization, "_cleanup_timestamp", lambda: "2099-01-01T00:00:00Z")
+    assert authorization.dispose_terminal(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent, cleanup_receipt=receipt,
+        cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+    ) == json.loads(receipt.read_text(encoding="utf-8"))
+
+
+def test_gdt10e_terminal_receipt_only_replay_rejects_an_incomplete_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: accepting a receipt-only replay that never completed cleanup."""
+    authorization, readiness_module, root, intent, readiness = (
+        _cleanup_intent_authorization_module(tmp_path, monkeypatch)
+    )
+    _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    run = authorization.bind_run(root / "authorization", run_id=run_id)
+    authorization._exclusive_fact(root / "authorization/terminal.json", {
+        "schema_version": "provider-cycle-terminal/1", "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "run_id": run_id, "status": "failed", "quiescence_sha256": "4" * 64,
+        "run_sha256": run["content_sha256"],
+    })
+    receipt = intent.with_name(intent.name.replace("intent", "receipt"))
+    blocker = intent.with_name(intent.name.replace("intent", "blocker"))
+    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "check_head_contracts", lambda: None)
+    monkeypatch.setattr(authorization, "_run_zero_paid_preflight", lambda: None)
+    monkeypatch.setattr(authorization, "_validate_terminal_public_binding", lambda *_: None)
+    monkeypatch.setattr(
+        readiness_module,
+        "dispose_account_readiness",
+        lambda _: (
+            (root / "account-readiness.json").unlink(),
+            authorization._fsync_directory(root),
+            SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]),
+        )[-1],
+    )
+    authorization.dispose_terminal(
+        authorization=root / "authorization", readiness=root / "account-readiness.json",
+        run_id=run_id, cleanup_intent=intent, cleanup_receipt=receipt,
+        cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+    )
+    document = json.loads(receipt.read_text(encoding="utf-8"))
+    document["completed_steps"]["private_root_absent"] = False
+    document["content_sha256"] = _canonical_content_hash(document)
+    receipt.write_text(
+        json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="receipt"):
+        authorization.dispose_terminal(
+            authorization=root / "authorization", readiness=root / "account-readiness.json",
+            run_id=run_id, cleanup_intent=intent, cleanup_receipt=receipt,
+            cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
+        )

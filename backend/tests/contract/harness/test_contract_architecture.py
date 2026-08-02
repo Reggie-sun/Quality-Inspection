@@ -1,3 +1,4 @@
+import ast
 import copy
 import importlib.util
 import json
@@ -9,6 +10,15 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 import yaml
+
+from test_live_run_contract import (
+    ACCOUNT_READINESS_KEY,
+    ACCOUNT_READINESS_WORKSPACE,
+    _account_readiness_module,
+    _configure_account_readiness_paths,
+    _issue_account_readiness,
+    _validate_account_readiness,
+)
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -33,6 +43,54 @@ def _load_runner_module() -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _runtime_acceptance_owner_inventory(source: str) -> tuple[set[str], set[str]]:
+    """Return AST-observed fact writers and active-path projection calls."""
+    tree = ast.parse(source)
+    writers: set[str] = set()
+    projection_callers: set[str] = set()
+    for function in (node for node in tree.body if isinstance(node, ast.FunctionDef)):
+        handles_runtime_fact = any(
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.endswith("provider-account-runtime-acceptance.json")
+            for node in ast.walk(function)
+        )
+        for node in ast.walk(function):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name) and node.func.id == "_project_runtime_account_acceptance":
+                projection_callers.add(function.name)
+            if not (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "os"
+                and node.func.attr == "open"
+            ):
+                continue
+            if handles_runtime_fact and any(
+                isinstance(argument, ast.Attribute)
+                and isinstance(argument.value, ast.Name)
+                and argument.value.id == "os"
+                and argument.attr == "O_CREAT"
+                for argument in ast.walk(node)
+            ):
+                writers.add(function.name)
+    return writers, projection_callers
+
+
+def test_runtime_acceptance_ast_gate_has_one_reachable_writer_and_projection() -> None:
+    """Mutation caught: adding a dead fact writer or a second host projection call site."""
+    source = (HARNESS / "scripts/run-p0.py").read_text(encoding="utf-8")
+    writers, projection_callers = _runtime_acceptance_owner_inventory(source)
+    assert writers == {"_seal_runtime_account_acceptance"}
+    assert projection_callers == {"start_live_run"}
+
+    injected = source + "\n\ndef _dead_runtime_acceptance_writer():\n    target = 'provider-account-runtime-acceptance.json'\n    os.open(target, os.O_CREAT)\n\ndef _second_projection():\n    _project_runtime_account_acceptance(None, {})\n"
+    writers, projection_callers = _runtime_acceptance_owner_inventory(injected)
+    assert writers == {"_seal_runtime_account_acceptance", "_dead_runtime_acceptance_writer"}
+    assert projection_callers == {"start_live_run", "_second_projection"}
 
 
 def _load_stage_module() -> ModuleType:
@@ -958,3 +1016,55 @@ def test_confidence_decision_contract_has_one_canonical_definition() -> None:
         in automatic_result_source
     )
     assert "NEXT_AUTOMATIC_RESULT_SCHEMA_VERSION" not in automatic_result_source
+
+
+def test_account_readiness_architecture_exposes_only_the_public_evidence_shape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation caught: allowing a private readiness marker into a public schema or serializer."""
+    module = _account_readiness_module()
+    root, _, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    issued = _issue_account_readiness(module, root)
+    public = _validate_account_readiness(module, root).public_dict()
+
+    assert {"binding_salt", "credential_bundle_binding_sha256", "api_key", "workspace_id"}.isdisjoint(public)
+    serialized = json.dumps(public, sort_keys=True)
+    for private_marker in (
+        ACCOUNT_READINESS_KEY,
+        ACCOUNT_READINESS_WORKSPACE,
+        issued["binding_salt"],
+        issued["credential_bundle_binding_sha256"],
+    ):
+        assert private_marker not in serialized
+
+    forbidden_fields = {
+        "api_key",
+        "workspace_id",
+        "binding_salt",
+        "credential_bundle_binding_sha256",
+    }
+
+    def schema_field_names(value: object) -> set[str]:
+        if isinstance(value, dict):
+            names = set(value)
+            for child in value.values():
+                names.update(schema_field_names(child))
+            return names
+        if isinstance(value, list):
+            return set().union(*(schema_field_names(child) for child in value))
+        return set()
+
+    # These are the actual public schemas consumed by run/live/receipt writers;
+    # none may carry private readiness fields, including in nested schema branches.
+    for name in ("run.schema.json", "live-run-evidence.schema.json", "receipt.schema.json"):
+        schema = json.loads((HARNESS / "schemas" / name).read_text(encoding="utf-8"))
+        assert forbidden_fields.isdisjoint(schema_field_names(schema))
+        nested_mutation = {
+            "$defs": {
+                "private": {
+                    "oneOf": [{"allOf": [{"properties": {"binding_salt": {}}}]}]
+                }
+            }
+        }
+        assert "binding_salt" in schema_field_names(nested_mutation)

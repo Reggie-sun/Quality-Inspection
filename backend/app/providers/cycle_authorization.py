@@ -7,6 +7,7 @@ import re
 import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,21 @@ _ISSUANCE_KEYS = {
     "max_total_cny",
     "content_sha256",
 }
+_GDT10E_CYCLE_ID = "gdt10e-auth-remediated-live-20260802"
+_GDT10E_ISSUANCE_KEYS = _ISSUANCE_KEYS | {
+    "historical_committed_cny",
+    "overall_envelope_cny",
+    "readiness_sha256",
+    "plan_ref",
+    "prior_cycle_evidence_sha256",
+}
+_GDT10E_PLAN_REF = (
+    "docs/superpowers/plans/"
+    "2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md"
+)
+_GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256 = (
+    "db7c74f7fd0623c34a496309c744da3d32fd9614786fbde485e569968939749a"
+)
 _CONSUMPTION_KEYS = {
     "schema_version",
     "cycle_id",
@@ -172,6 +188,48 @@ def _exact_fact(
     return document
 
 
+def _gdt10e_amount(value: object, field: str) -> Decimal:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9]+\.[0-9]{6}", value) is None:
+        raise ValueError(f"cycle authorization {field} is invalid")
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation as exc:  # pragma: no cover - regex narrows this
+        raise ValueError(f"cycle authorization {field} is invalid") from exc
+    if not parsed.is_finite():
+        raise ValueError(f"cycle authorization {field} is invalid")
+    return parsed
+
+
+def _issuance_keys(cycle_id: str) -> set[str]:
+    return _GDT10E_ISSUANCE_KEYS if cycle_id == _GDT10E_CYCLE_ID else _ISSUANCE_KEYS
+
+
+def _validate_issuance_boundary(issuance: Mapping[str, Any], cycle_id: str) -> None:
+    if cycle_id != _GDT10E_CYCLE_ID:
+        if issuance["max_total_cny"] != "50.000000":
+            raise ValueError("cycle authorization identity is invalid")
+        return
+    maximum = _gdt10e_amount(issuance["max_total_cny"], "max_total_cny")
+    historical = _gdt10e_amount(
+        issuance["historical_committed_cny"], "historical_committed_cny"
+    )
+    overall = _gdt10e_amount(issuance["overall_envelope_cny"], "overall_envelope_cny")
+    if (
+        maximum <= Decimal("0.000000")
+        or maximum > Decimal("50.000000")
+        or historical + maximum != overall
+        or overall != Decimal("50.000000")
+        or issuance["plan_ref"] != _GDT10E_PLAN_REF
+        or not isinstance(issuance["readiness_sha256"], str)
+        or _SHA256.fullmatch(issuance["readiness_sha256"]) is None
+        or not isinstance(issuance["prior_cycle_evidence_sha256"], str)
+        or _SHA256.fullmatch(issuance["prior_cycle_evidence_sha256"]) is None
+        or issuance["prior_cycle_evidence_sha256"]
+        != _GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256
+    ):
+        raise ValueError("cycle authorization identity is invalid")
+
+
 def _append_fact_exclusive(
     path: Path,
     document: dict[str, Any],
@@ -235,7 +293,7 @@ def ensure_run_binding_from_close_bridge(
     owner = _safe_directory(root)
     issuance = _exact_fact(
         root / "issuance.json",
-        _ISSUANCE_KEYS,
+        _issuance_keys(expected_cycle_id),
         "provider-cycle-issuance/1",
         owner=owner,
     )
@@ -346,7 +404,7 @@ def _validate_cycle_authorization(
 
     issuance = _exact_fact(
         root / "issuance.json",
-        _ISSUANCE_KEYS,
+        _issuance_keys(expected_cycle_id),
         "provider-cycle-issuance/1",
         owner=owner,
     )
@@ -455,12 +513,12 @@ def _validate_cycle_authorization(
         or run["consumption_sha256"] != consumption["content_sha256"]
         or _SHA256.fullmatch(str(consumption["invocation_id"])) is None
         or issuance["pricing_sha256"] != pricing_sha256
-        or issuance["max_total_cny"] != "50.000000"
         or issuance["expected_db_revision"] != "0014"
         or _SHA256.fullmatch(str(issuance["pricing_sha256"])) is None
         or _IMAGE_ID.fullmatch(str(issuance["backend_image_id"])) is None
     ):
         raise ValueError("cycle authorization identity is invalid")
+    _validate_issuance_boundary(issuance, expected_cycle_id)
     expires_at = issuance["expires_at"]
     if not isinstance(expires_at, str):
         raise ValueError("cycle authorization expiry is invalid")
@@ -527,7 +585,7 @@ def _validate_cycle_authorization(
         project_order=project_order,
         source_sha256=source_sha256,
         pricing_sha256=pricing_sha256,
-        max_total_cny="50.000000",
+        max_total_cny=str(issuance["max_total_cny"]),
         expires_at=expires_at,
     )
 
@@ -597,7 +655,7 @@ def validate_empty_cycle_authorization_for_close(
             raise ValueError("empty cycle close has admitted project state")
     issuance = _exact_fact(
         root / "issuance.json",
-        _ISSUANCE_KEYS,
+        _issuance_keys(expected_cycle_id),
         "provider-cycle-issuance/1",
         owner=owner,
     )
@@ -613,13 +671,13 @@ def validate_empty_cycle_authorization_for_close(
         cycle_id=expected_cycle_id,
         run_id=expected_run_id,
     )
+    _validate_issuance_boundary(issuance, expected_cycle_id)
     if (
         issuance["cycle_id"] != expected_cycle_id
         or consumption["cycle_id"] != expected_cycle_id
         or consumption["issuance_sha256"] != issuance["content_sha256"]
         or _SHA256.fullmatch(str(consumption["invocation_id"])) is None
         or issuance["pricing_sha256"] != pricing_sha256
-        or issuance["max_total_cny"] != "50.000000"
         or issuance["expected_db_revision"] != "0014"
         or _SHA256.fullmatch(str(issuance["pricing_sha256"])) is None
         or _IMAGE_ID.fullmatch(str(issuance["backend_image_id"])) is None
@@ -692,7 +750,7 @@ def write_terminal_from_close_bridge(
     owner = _safe_directory(root)
     issuance = _exact_fact(
         root / "issuance.json",
-        _ISSUANCE_KEYS,
+        _issuance_keys(expected_cycle_id),
         "provider-cycle-issuance/1",
         owner=owner,
     )
@@ -707,6 +765,7 @@ def write_terminal_from_close_bridge(
         cycle_id=expected_cycle_id,
         run_id=expected_run_id,
     )
+    _validate_issuance_boundary(issuance, expected_cycle_id)
     if (
         issuance["cycle_id"] != expected_cycle_id
         or consumption["cycle_id"] != expected_cycle_id

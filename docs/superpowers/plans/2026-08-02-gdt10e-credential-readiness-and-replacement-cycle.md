@@ -206,6 +206,8 @@ Expected：all pass；architecture gate recursively forbids private salt/binding
 - Modify: `.agent/harness/scripts/run-p0.py`
 - Modify: `.agent/harness/scripts/live_evidence_policy.py`
 - Modify: `.agent/harness/scripts/generate-receipt.py`
+- Modify: `.agent/harness/scripts/check-contracts.py`
+- Modify: `.agent/harness/policy/gdt10d-runtime-closure.txt`
 - Modify: `.agent/harness/schemas/run.schema.json`
 - Modify: `.agent/harness/schemas/live-run-evidence.schema.json`
 - Create: `.agent/harness/schemas/provider-account-runtime-acceptance.schema.json`
@@ -214,6 +216,8 @@ Expected：all pass；architecture gate recursively forbids private salt/binding
 - Modify: `backend/tests/contract/harness/test_live_run_contract.py`
 - Modify: `backend/tests/contract/harness/test_receipt_policy.py`
 - Modify: `backend/tests/contract/harness/test_contract_architecture.py`
+
+**Owner/File Closure Amendment (2026-08-02):** `provider-account-runtime-acceptance.schema.json` must be registered by the existing authoritative schema inventory in `check-contracts.py`, and the Task 3 changes to `backend/app/providers/cycle_authorization.py` and `usage_ledger.py` must be represented by the existing runtime-closure manifest. These two paths close existing control-plane Owners only; they do not add a new schema Owner, runtime behavior, Provider access, or lifecycle surface.
 
 **Interfaces:**
 
@@ -361,7 +365,7 @@ git diff --check
 
 ### Task 4: Full Offline Verification And Independent Implementation Review
 
-**Files:** all implementation/test files from Tasks 2-3 only.
+**Files:** all implementation/test files from Tasks 2-3 only, including Task 3's authoritative schema inventory and runtime-closure manifest.
 
 **Interfaces:**
 

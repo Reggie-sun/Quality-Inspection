@@ -23,7 +23,7 @@
   ],
   "properties": {
     "schema_version": {
-      "enum": ["run/1", "run/2"]
+      "enum": ["run/1", "run/2", "run/3"]
     },
     "run_id": {
       "type": "string",
@@ -170,6 +170,54 @@
       }
     },
     {
+      "if": { "properties": { "schema_version": { "const": "run/1" } }, "required": ["schema_version"] },
+      "then": {
+        "properties": {
+          "cycle_authorization": {
+            "not": {
+              "anyOf": [
+                { "required": ["historical_committed_cny"] },
+                { "required": ["max_total_cny"] },
+                { "required": ["overall_envelope_cny"] },
+                { "required": ["readiness_evidence"] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "schema_version": { "const": "run/2" } }, "required": ["schema_version"] },
+      "then": {
+        "properties": {
+          "cycle_authorization": {
+            "not": {
+              "anyOf": [
+                { "required": ["historical_committed_cny"] },
+                { "required": ["max_total_cny"] },
+                { "required": ["overall_envelope_cny"] },
+                { "required": ["readiness_evidence"] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "schema_version": { "const": "run/3" } }, "required": ["schema_version"] },
+      "then": {
+        "required": ["cycle_authorization"],
+        "properties": {
+          "cycle_authorization": {
+            "required": ["historical_committed_cny", "max_total_cny", "overall_envelope_cny", "readiness_evidence"],
+            "properties": {
+              "cycle_id": { "const": "gdt10e-auth-remediated-live-20260802" }
+            }
+          }
+        }
+      }
+    },
+    {
       "if": {
         "properties": {
           "mode": {
@@ -280,6 +328,16 @@
           "task_id": { "type": "null" }
         }
       }
+    },
+    {
+      "if": { "properties": { "schema_version": { "const": "run/3" } }, "required": ["schema_version"] },
+      "then": {
+        "properties": {
+          "mode": { "const": "live" },
+          "scope": { "const": "full-p0" },
+          "task_id": { "type": "null" }
+        }
+      }
     }
   ],
   "$defs": {
@@ -366,6 +424,22 @@
           "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
         },
         "run_authorization_sha256": { "$ref": "#/$defs/sha256" }
+        ,"historical_committed_cny": { "const": "3.526656" }
+        ,"max_total_cny": { "const": "46.473344" }
+        ,"overall_envelope_cny": { "const": "50.000000" }
+        ,"readiness_evidence": { "$ref": "#/$defs/readiness_evidence" }
+      }
+    },
+    "readiness_evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "readiness_sha256", "operator_state", "runtime_state", "binding_match", "runtime_acceptance_sha256"],
+      "properties": {
+        "schema_version": { "const": "provider-account-readiness-evidence/1" },
+        "readiness_sha256": { "$ref": "#/$defs/sha256" },
+        "operator_state": { "const": "operator_attested" },
+        "runtime_state": { "enum": ["not_yet_accepted", "runtime_accepted"] },
+        "binding_match": { "const": true },
+        "runtime_acceptance_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] }
       }
     },
     "live_identity": {

@@ -6,7 +6,7 @@ TEST_BACKEND_COMPOSE = docker compose -f compose.test.yaml
 LOCAL_API_PORT ?= 8000
 LOCAL_FRONTEND_PORT ?= 5173
 
-.PHONY: check-contracts check-api-contracts test-backend test-frontend verify-p0-offline verify-p0-live resume-gdt10d-live qa-dev-config qa-dev-up qa-dev-down qa-dev-down-legacy qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
+.PHONY: check-contracts check-api-contracts test-backend test-frontend verify-p0-offline verify-p0-live resume-gdt10e-live qa-dev-config qa-dev-up qa-dev-down qa-dev-down-legacy qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
 
 dev-local-api:
 	@$(BASE_COMPOSE) stop api >/dev/null 2>&1 || true
@@ -92,8 +92,8 @@ verify-p0-live:
 		--authorization "$${QI_LIVE_CYCLE_AUTHORIZATION_REF:?}" \
 		--override "$${QI_LIVE_CYCLE_OVERRIDE_REF:?}"
 
-resume-gdt10d-live:
+resume-gdt10e-live:
 	@micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py execute-resume \
 		--authorization "$${QI_LIVE_CYCLE_AUTHORIZATION_REF:?}" \
 		--override "$${QI_LIVE_CYCLE_OVERRIDE_REF:?}" \
-		--run-id "$${GDT10D_RUN_ID:?}"
+		--run-id "$${GDT10E_RUN_ID:?}"

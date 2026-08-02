@@ -1604,6 +1604,149 @@ def _canonical_document_hash(document: Mapping[str, Any]) -> str:
     ).hexdigest()
 
 
+def account_readiness_projection(
+    run: Mapping[str, Any],
+    live: Mapping[str, Any],
+    runtime_acceptance: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the only permitted public projection of a sealed acceptance fact."""
+    fact_keys = {
+        "schema_version",
+        "cycle_id",
+        "run_id",
+        "project_id",
+        "readiness_sha256",
+        "submission_started_sha256",
+        "settlement_sha256",
+        "call_evidence_sha256",
+        "model",
+        "ledger_attempt_index",
+        "accepted_at",
+        "content_sha256",
+    }
+    if (
+        set(runtime_acceptance) != fact_keys
+        or runtime_acceptance.get("schema_version")
+        != "provider-account-runtime-acceptance/1"
+        or runtime_acceptance.get("content_sha256")
+        != _canonical_document_hash(runtime_acceptance)
+        or not isinstance(runtime_acceptance.get("project_id"), str)
+        or not runtime_acceptance["project_id"]
+        or not isinstance(runtime_acceptance.get("ledger_attempt_index"), int)
+        or runtime_acceptance["ledger_attempt_index"] < 1
+        or runtime_acceptance.get("model") != "qwen3-vl-plus-2025-12-19"
+        or not isinstance(runtime_acceptance.get("accepted_at"), str)
+        or not runtime_acceptance["accepted_at"]
+        or any(
+            not isinstance(runtime_acceptance.get(name), str)
+            or re.fullmatch(r"[0-9a-f]{64}", runtime_acceptance[name]) is None
+            for name in (
+                "readiness_sha256",
+                "submission_started_sha256",
+                "settlement_sha256",
+                "call_evidence_sha256",
+            )
+        )
+    ):
+        raise ValueError("runtime acceptance fact is invalid")
+    authorization = run.get("cycle_authorization")
+    paid = live.get("paid_cycle")
+    if (
+        run.get("schema_version") != "run/3"
+        or live.get("schema_version") != "live-run-evidence/3"
+        or not isinstance(authorization, Mapping)
+        or not isinstance(paid, Mapping)
+        or runtime_acceptance.get("run_id") != run.get("run_id")
+        or runtime_acceptance.get("cycle_id") != authorization.get("cycle_id")
+        or paid.get("cycle_id") != authorization.get("cycle_id")
+    ):
+        raise ValueError("runtime acceptance binding is invalid")
+    readiness = authorization.get("readiness_evidence")
+    live_readiness = paid.get("readiness_evidence")
+    if (
+        not isinstance(readiness, Mapping)
+        or not isinstance(live_readiness, Mapping)
+        or dict(live_readiness) != dict(readiness)
+    ):
+        raise ValueError("runtime acceptance readiness projection is invalid")
+    if (
+        readiness.get("schema_version") != "provider-account-readiness-evidence/1"
+        or readiness.get("runtime_state") != "not_yet_accepted"
+        or readiness.get("runtime_acceptance_sha256") is not None
+        or readiness.get("binding_match") is not True
+        or runtime_acceptance.get("readiness_sha256")
+        != readiness.get("readiness_sha256")
+    ):
+        raise ValueError("runtime acceptance readiness binding is invalid")
+    projected = json.loads(json.dumps(live))
+    projected["paid_cycle"]["readiness_evidence"] = {
+        **dict(readiness),
+        "runtime_state": "runtime_accepted",
+        "runtime_acceptance_sha256": runtime_acceptance["content_sha256"],
+    }
+    return projected
+
+
+def _validate_v3_runtime_acceptance(
+    run: Mapping[str, Any],
+    live: Mapping[str, Any],
+    evidence_dir: Path,
+    *,
+    require_accepted: bool,
+) -> None:
+    """Require the public v3 state to be the exact projection of one sealed fact."""
+    authorization = run.get("cycle_authorization")
+    paid = live.get("paid_cycle")
+    if not isinstance(authorization, Mapping) or not isinstance(paid, Mapping):
+        raise ValueError("runtime acceptance evidence is missing")
+    readiness = authorization.get("readiness_evidence")
+    live_readiness = paid.get("readiness_evidence")
+    if not isinstance(readiness, Mapping) or not isinstance(live_readiness, Mapping):
+        raise ValueError("runtime acceptance readiness projection is missing")
+    fact_path = evidence_dir / "reports/provider-account-runtime-acceptance.json"
+    accepted = live_readiness.get("runtime_state") == "runtime_accepted"
+    terminal = paid.get("terminal")
+    completed_terminal = (
+        isinstance(terminal, Mapping) and terminal.get("status") == "completed"
+    )
+    acceptance_required = (
+        require_accepted
+        or run.get("execution_state") in {"visual_qa_pending", "completed"}
+        or completed_terminal
+    )
+    if not accepted:
+        if live_readiness != readiness or fact_path.exists():
+            raise ValueError("runtime acceptance projection is inconsistent")
+        if acceptance_required:
+            raise ValueError("runtime acceptance fact is required")
+        return
+    if fact_path.is_symlink() or not fact_path.is_file():
+        raise ValueError("runtime acceptance fact is missing")
+    try:
+        raw = fact_path.read_bytes()
+        fact = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("runtime acceptance fact is invalid") from exc
+    if (
+        not isinstance(fact, dict)
+        or raw
+        != (
+            json.dumps(
+                fact,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+    ):
+        raise ValueError("runtime acceptance fact is non-canonical")
+    initial = json.loads(json.dumps(live))
+    initial["paid_cycle"]["readiness_evidence"] = dict(readiness)
+    if account_readiness_projection(run, initial, fact) != live:
+        raise ValueError("runtime acceptance projection is inconsistent")
+
+
 def _official_pricing_sha256(root: Path) -> str:
     pricing = _load_json(
         root / "backend/app/providers/provider_pricing_gdt10d_v1.json"
@@ -1641,6 +1784,7 @@ def _paid_ledger_entries(
         "content_sha256",
     }
     entries = report.get("entries")
+    maximum = _paid_cycle_maximum(run)
     if (
         set(report) != expected_keys
         or report.get("schema_version") != "provider-usage-evidence/1"
@@ -1754,7 +1898,7 @@ def _paid_ledger_entries(
     if (
         not committed.is_finite()
         or committed != charged_total
-        or committed > Decimal("50.000000")
+        or committed > maximum
         or report.get("reserved_only_count") != states.count("reserved_only")
         or report.get("submission_started_count")
         != len(states) - states.count("reserved_only")
@@ -1772,6 +1916,19 @@ def _paid_ledger_entries(
     ):
         raise ValueError("paid cycle ledger aggregate is invalid")
     return typed_entries
+
+
+def _paid_cycle_maximum(run: Mapping[str, Any]) -> Decimal:
+    """Use the immutable authorization ceiling for GDT-10E and v2's fixed cap."""
+    if run.get("schema_version") != "run/3":
+        return Decimal("50.000000")
+    authorization = run.get("cycle_authorization")
+    if (
+        not isinstance(authorization, Mapping)
+        or authorization.get("max_total_cny") != "46.473344"
+    ):
+        raise ValueError("paid cycle authorization ceiling is inconsistent")
+    return Decimal("46.473344")
 
 
 def _validate_paid_routing_reports(
@@ -1998,7 +2155,8 @@ def validate_paid_cycle_evidence(
     root: Path | None = None,
 ) -> None:
     """Validate immutable authorization, admission, cost, and terminal bindings."""
-    if run.get("schema_version") != "run/2":
+    is_v3 = run.get("schema_version") == "run/3"
+    if not is_v3 and run.get("schema_version") != "run/2":
         return
     authorization = run.get("cycle_authorization")
     paid = live.get("paid_cycle")
@@ -2079,6 +2237,10 @@ def validate_paid_cycle_evidence(
     if not admitted_projects:
         if require_success or ledger is not None:
             raise ValueError("paid cycle ledger evidence is inconsistent")
+        if is_v3:
+            _validate_v3_runtime_acceptance(
+                run, live, actual_evidence_dir, require_accepted=require_success
+            )
         return
     if not isinstance(ledger, Mapping):
         raise ValueError("paid cycle ledger evidence is missing")
@@ -2086,10 +2248,11 @@ def validate_paid_cycle_evidence(
         committed = Decimal(str(ledger.get("committed_total_cny")))
     except InvalidOperation as exc:
         raise ValueError("paid cycle cost aggregate is invalid") from exc
+    maximum = _paid_cycle_maximum(run)
     if (
         not committed.is_finite()
         or committed < 0
-        or committed > Decimal("50.000000")
+        or committed > maximum
         or terminal.get("status") not in {"completed", "failed", "aborted"}
     ):
         raise ValueError("paid cycle terminal aggregate is invalid")
@@ -2114,6 +2277,10 @@ def validate_paid_cycle_evidence(
     )
     if require_success and terminal.get("status") != "completed":
         raise ValueError("paid cycle terminal aggregate blocks formal success")
+    if is_v3:
+        _validate_v3_runtime_acceptance(
+            run, live, actual_evidence_dir, require_accepted=require_success
+        )
 
 
 def validate_final_p0_release(

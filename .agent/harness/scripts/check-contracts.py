@@ -35,6 +35,7 @@ EXPECTED_SCHEMA_FILES = (
     "human-verdict.schema.json",
     "live-run-evidence.schema.json",
     "p0-contracts.schema.json",
+    "provider-account-runtime-acceptance.schema.json",
     "provider-fixture.schema.json",
     "receipt.schema.json",
     "run.schema.json",

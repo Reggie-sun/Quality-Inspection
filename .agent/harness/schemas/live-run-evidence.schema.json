@@ -15,7 +15,7 @@
     "samples"
   ],
   "properties": {
-    "schema_version": { "const": "live-run-evidence/2" },
+    "schema_version": { "enum": ["live-run-evidence/2", "live-run-evidence/3"] },
     "run_id": {
       "type": "string",
       "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
@@ -55,6 +55,16 @@
       "items": { "$ref": "#/$defs/sample" }
     }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "schema_version": { "const": "live-run-evidence/3" } }, "required": ["schema_version"] },
+      "then": { "required": ["paid_cycle"], "properties": { "paid_cycle": { "required": ["historical_committed_cny", "max_total_cny", "overall_envelope_cny", "readiness_evidence"], "properties": { "cycle_id": { "const": "gdt10e-auth-remediated-live-20260802" } } } } }
+    },
+    {
+      "if": { "properties": { "schema_version": { "const": "live-run-evidence/2" } }, "required": ["schema_version"] },
+      "then": { "properties": { "paid_cycle": { "not": { "anyOf": [ { "required": ["historical_committed_cny"] }, { "required": ["max_total_cny"] }, { "required": ["overall_envelope_cny"] }, { "required": ["readiness_evidence"] } ] } } } }
+    }
+  ],
   "$defs": {
     "sha256": {
       "type": "string",
@@ -107,7 +117,23 @@
             { "$ref": "#/$defs/paid_terminal" },
             { "type": "null" }
           ]
-        }
+        },
+        "historical_committed_cny": { "const": "3.526656" },
+        "max_total_cny": { "const": "46.473344" },
+        "overall_envelope_cny": { "const": "50.000000" },
+        "readiness_evidence": { "$ref": "#/$defs/readiness_evidence" }
+      }
+    },
+    "readiness_evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "readiness_sha256", "operator_state", "runtime_state", "binding_match", "runtime_acceptance_sha256"],
+      "properties": {
+        "schema_version": { "const": "provider-account-readiness-evidence/1" },
+        "readiness_sha256": { "$ref": "#/$defs/sha256" },
+        "operator_state": { "const": "operator_attested" },
+        "runtime_state": { "enum": ["not_yet_accepted", "runtime_accepted"] },
+        "binding_match": { "const": true },
+        "runtime_acceptance_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] }
       }
     },
     "paid_project": {

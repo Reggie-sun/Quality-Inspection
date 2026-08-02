@@ -51,33 +51,49 @@ def _authorization_root(
     tmp_path: Path,
     *,
     project_ids: tuple[str, ...] = ("project-one",),
+    cycle_id: str = CYCLE_ID,
+    max_total_cny: str = "50.000000",
+    gdt10e: bool = False,
 ) -> Path:
     root = tmp_path / "authorization"
     root.mkdir(mode=0o700)
     pricing = load_pricing_snapshot()
+    issuance_document: dict[str, object] = {
+        "schema_version": "provider-cycle-issuance/1",
+        "cycle_id": cycle_id,
+        "expires_at": "2099-08-02T23:59:59+00:00",
+        "head_revision": "a" * 40,
+        "plan_sha256": "b" * 64,
+        "pricing_sha256": pricing.content_sha256,
+        "runtime_closure_sha256": "c" * 64,
+        "current_four_sha256": "d" * 64,
+        "backend_image_id": "sha256:" + "9" * 64,
+        "compose_project": "quality_inspection-qa",
+        "expected_db_revision": "0014",
+        "max_total_cny": max_total_cny,
+    }
+    if gdt10e:
+        issuance_document.update(
+            {
+                "historical_committed_cny": "3.526656",
+                "overall_envelope_cny": "50.000000",
+                "readiness_sha256": "e" * 64,
+                "plan_ref": "docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md",
+                "prior_cycle_evidence_sha256": (
+                    "db7c74f7fd0623c34a496309c744da3d32fd9614786fbde485e569968939749a"
+                ),
+            }
+        )
     _write_fact(
         root / "issuance.json",
-        {
-            "schema_version": "provider-cycle-issuance/1",
-            "cycle_id": CYCLE_ID,
-            "expires_at": "2099-08-02T23:59:59+00:00",
-            "head_revision": "a" * 40,
-            "plan_sha256": "b" * 64,
-            "pricing_sha256": pricing.content_sha256,
-            "runtime_closure_sha256": "c" * 64,
-            "current_four_sha256": "d" * 64,
-            "backend_image_id": "sha256:" + "9" * 64,
-            "compose_project": "quality_inspection-qa",
-            "expected_db_revision": "0014",
-            "max_total_cny": "50.000000",
-        },
+        issuance_document,
     )
     issuance = json.loads((root / "issuance.json").read_text(encoding="utf-8"))
     _write_fact(
         root / "consumption.json",
         {
             "schema_version": "provider-cycle-consumption/1",
-            "cycle_id": CYCLE_ID,
+            "cycle_id": cycle_id,
             "issuance_sha256": issuance["content_sha256"],
             "invocation_id": "e" * 64,
             "consumed_at": "2026-08-02T00:00:00+00:00",
@@ -90,7 +106,7 @@ def _authorization_root(
         root / "run.json",
         {
             "schema_version": "provider-cycle-run/1",
-            "cycle_id": CYCLE_ID,
+            "cycle_id": cycle_id,
             "run_id": RUN_ID,
             "consumption_sha256": consumption["content_sha256"],
         },
@@ -101,7 +117,7 @@ def _authorization_root(
             root / "projects" / f"{order:04d}.json",
             {
                 "schema_version": "provider-cycle-project/1",
-                "cycle_id": CYCLE_ID,
+                "cycle_id": cycle_id,
                 "run_id": RUN_ID,
                 "project_id": project_id,
                 "project_order": order,
@@ -819,3 +835,158 @@ def test_bound_cycle_can_close_before_first_project_admission(
         status="failed",
         quiescence_sha256="e" * 64,
     ) == terminal
+
+
+def test_gdt10e_ledger_uses_the_issued_incremental_ceiling(
+    tmp_path: Path,
+) -> None:
+    """Replacing the active issuance ceiling with 50 would admit an extra call."""
+    cycle_id = "gdt10e-auth-remediated-live-20260802"
+    authorization_root = _authorization_root(
+        tmp_path,
+        cycle_id=cycle_id,
+        max_total_cny="46.473344",
+        gdt10e=True,
+    )
+    ledger = ProviderUsageLedger.open(
+        cycle_id=cycle_id,
+        storage_root=tmp_path / "storage",
+        authorization_root=authorization_root,
+        project_id="project-one",
+    )
+
+    for index in range(26):
+        permit = _reserve_qwen(
+            ledger,
+            subject_id=f"subject-{index}",
+            page_index=index // 16,
+        )
+        permit.consume_for_adapter(provider="qwen-vl", operation="review_symbols")
+        ledger.retain_unknown(permit, request_id_state="absent")
+
+    with pytest.raises(ProviderBudgetExceeded, match="cycle budget"):
+        _reserve_qwen(ledger, subject_id="over-issued", page_index=1)
+    snapshot = ledger.snapshot()
+    assert snapshot.committed_total_cny == "45.846528"
+    assert snapshot.remaining_cny == "0.626816"
+
+
+def test_gdt10e_admitted_project_close_writes_and_replays_exact_terminal(
+    tmp_path: Path,
+) -> None:
+    """The normal close bridge must retain the legal GDT-10E issuance shape."""
+    cycle_id = "gdt10e-auth-remediated-live-20260802"
+    authorization_root = _authorization_root(
+        tmp_path,
+        cycle_id=cycle_id,
+        max_total_cny="46.473344",
+        gdt10e=True,
+    )
+    ledger = ProviderUsageLedger.open(
+        cycle_id=cycle_id,
+        storage_root=tmp_path / "storage",
+        authorization_root=authorization_root,
+        project_id="project-one",
+    )
+
+    terminal = ledger.close_cycle(
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="f" * 64,
+    )
+    terminal_path = authorization_root / "terminal.json"
+    terminal_bytes = terminal_path.read_bytes()
+
+    assert terminal_bytes == (
+        json.dumps(terminal, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+    assert ledger.close_cycle(
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="f" * 64,
+    ) == terminal
+    assert terminal_path.read_bytes() == terminal_bytes
+
+
+def test_gdt10e_empty_cycle_close_writes_and_replays_exact_terminal(
+    tmp_path: Path,
+) -> None:
+    """The pre-admission close path must retain the same legal GDT-10E shape."""
+    cycle_id = "gdt10e-auth-remediated-live-20260802"
+    authorization_root = _authorization_root(
+        tmp_path,
+        project_ids=(),
+        cycle_id=cycle_id,
+        max_total_cny="46.473344",
+        gdt10e=True,
+    )
+
+    terminal = ProviderUsageLedger.close_without_project(
+        cycle_id=cycle_id,
+        storage_root=tmp_path / "storage",
+        authorization_root=authorization_root,
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="f" * 64,
+    )
+    terminal_path = authorization_root / "terminal.json"
+    terminal_bytes = terminal_path.read_bytes()
+
+    assert terminal_bytes == (
+        json.dumps(terminal, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+    assert ProviderUsageLedger.close_without_project(
+        cycle_id=cycle_id,
+        storage_root=tmp_path / "storage",
+        authorization_root=authorization_root,
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="f" * 64,
+    ) == terminal
+    assert terminal_path.read_bytes() == terminal_bytes
+
+
+def test_gdt10e_runtime_authorization_rejects_canonical_foreign_predecessor(
+    tmp_path: Path,
+) -> None:
+    """Runtime validation must reject a resealed but foreign predecessor hash."""
+    cycle_id = "gdt10e-auth-remediated-live-20260802"
+    root = _authorization_root(
+        tmp_path,
+        cycle_id=cycle_id,
+        max_total_cny="46.473344",
+        gdt10e=True,
+    )
+    issuance_path = root / "issuance.json"
+    issuance = json.loads(issuance_path.read_text(encoding="utf-8"))
+    issuance.pop("content_sha256")
+    issuance["prior_cycle_evidence_sha256"] = "0" * 64
+    _write_fact(issuance_path, issuance)
+    issuance = json.loads(issuance_path.read_text(encoding="utf-8"))
+    consumption_path = root / "consumption.json"
+    consumption = json.loads(consumption_path.read_text(encoding="utf-8"))
+    consumption.pop("content_sha256")
+    consumption["issuance_sha256"] = issuance["content_sha256"]
+    _write_fact(consumption_path, consumption)
+    consumption = json.loads(consumption_path.read_text(encoding="utf-8"))
+    run_path = root / "run.json"
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run.pop("content_sha256")
+    run["consumption_sha256"] = consumption["content_sha256"]
+    _write_fact(run_path, run)
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    project_path = root / "projects/0001.json"
+    project = json.loads(project_path.read_text(encoding="utf-8"))
+    project.pop("content_sha256")
+    project["run_sha256"] = run["content_sha256"]
+    _write_fact(project_path, project)
+
+    with pytest.raises(ValueError, match="identity"):
+        ProviderUsageLedger.open(
+            cycle_id=cycle_id,
+            storage_root=tmp_path / "storage",
+            authorization_root=root,
+            project_id="project-one",
+        )

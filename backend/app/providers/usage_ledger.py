@@ -334,6 +334,16 @@ class ProviderUsageLedger:
         *,
         allow_terminal_authorization: bool = False,
     ) -> tuple[_ScannedAttempt, ...]:
+        authorization = (
+            validate_cycle_authorization_for_close(
+                authorization_root=self._authorization_root,
+                cycle_id=self._cycle_id,
+                project_id=self._project_id,
+                pricing_sha256=self._pricing.content_sha256,
+            )
+            if allow_terminal_authorization
+            else self._active_authorization()
+        )
         grouped: dict[int, dict[str, dict[str, Any]]] = {}
         for path in self._journal_path.iterdir():
             if path.name == "ledger.lock":
@@ -425,7 +435,7 @@ class ProviderUsageLedger:
                     ),
                 )
             )
-        if total > Decimal("50.000000"):
+        if total > _decimal(authorization.max_total_cny):
             raise ValueError("usage ledger cycle budget is invalid")
         return tuple(attempts)
 
@@ -643,7 +653,9 @@ class ProviderUsageLedger:
                     (_decimal(attempt.entry.charged_cny) for attempt in attempts),
                     Decimal("0"),
                 )
-                if committed + reservation_amount > Decimal("50.000000"):
+                if committed + reservation_amount > _decimal(
+                    authorization.max_total_cny
+                ):
                     raise ProviderBudgetExceeded("Provider cycle budget exhausted")
                 index = len(attempts) + 1
                 model = (
@@ -892,7 +904,7 @@ class ProviderUsageLedger:
     def snapshot(self) -> ProviderUsageSnapshot:
         with self._process_lock:
             with self._os_lock():
-                self._active_authorization()
+                authorization = self._active_authorization()
                 attempts = self._scan_locked()
         total = sum(
             (_decimal(attempt.entry.charged_cny) for attempt in attempts),
@@ -900,7 +912,7 @@ class ProviderUsageLedger:
         )
         return ProviderUsageSnapshot(
             committed_total_cny=_amount(total),
-            remaining_cny=_amount(Decimal("50.000000") - total),
+            remaining_cny=_amount(_decimal(authorization.max_total_cny) - total),
             reservation_count=len(attempts),
             reserved_only_count=sum(
                 attempt.started is None for attempt in attempts
