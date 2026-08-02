@@ -4,13 +4,24 @@
 
 - Parent plan：`docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md`。
 - Predecessor：GDT-10D full run `20260802T101404291929Z-884bec62` 与 evidence commit `daa3e6f`，保持 immutable。
-- 当前只授权 strictly read-only credential/account readiness audit，以及形成并 review 本 design 与 companion implementation/live-verification plan。
-- 本 design 不授权读取或输出 credential value、runtime mutation、Provider call、`make verify-p0-live`、新 cycle issuance/consume、`0015` 或 production promotion。
-- 本 design 与 companion plan 通过独立只读 review 后，仍须用户明确批准，后续窗口才可进入 implementation、zero-paid activation、one-use authorization 或 paid execution。
+- 用户已明确批准 reviewed GDT-10E implementation、zero-paid activation 和 one paid cycle boundary；本 Task 只记录该批准并单独提交 docs，不执行 credential/runtime/Provider mutation。
+- 本 design 不授权读取或输出 credential value、direct Provider diagnostic、second replacement、`0015` 或 production promotion。
+- 后续窗口只可按 companion plan 的 implementation、zero-paid activation、one-use authorization 和 one paid cycle gates 执行。
 - Initial independent review verdict was `reject` for four docs-level gaps：unowned `runtime_accepted` transition、expiry/immutable-resume conflict、pre-consume private-state cleanup gap andmissing literal CLI。First remediation added the single acceptance-fact writer、same-document resume rule、two-branch abort/disposal contract、versioned schemas、pricing freshness andexact commands。
 - Second review closed expiry/resume、sealed attribution、v2/v3 andpricing freshness，but remained`reject` for path-policy conflicts、cleanup order/blocker persistence andmissing active acceptance call-site/cross-file contract。Second remediation separated three path classes、added root-sibling intent/receipt/blocker journaling withone deletion order、bound failed/success run ID through theauthorization Owner andplaced deterministic acceptance projection beforefreeze/pause。
 - Third review verified cleanup、acceptance wiring andbound-run handling，but remained`reject` because`--root` itself was not categorized andone self-review sentence still namedmanual operator input asrun-ID source。Third remediation made the exact root a first-class allowlisted path withnegative tests andmade`bound-run-id` the sole run-ID source。
 - Final independent read-only review verdict：`accept`，with no blocking or non-blocking finding。It revalidated all three path classes、cleanup interruption/recovery、deterministic runtime acceptance、success/failure run binding、v2/v3 compatibility、expiry/resume、sealed evidence、budget/pricing、privacy anddocs-only authority。
+
+## Execution Approval Record — 2026-08-02
+
+- Selected lane: Heavy
+- Selected companion: 2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md
+- Historical cost: 3.526656 CNY
+- Incremental ceiling: 46.473344 CNY
+- Overall envelope: 50.000000 CNY
+- Provider starts: one
+- Resume: only one literal same-run resume after accepted pause
+- Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
 
 ## Problem
 

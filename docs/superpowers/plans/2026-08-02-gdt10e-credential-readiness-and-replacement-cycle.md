@@ -6,6 +6,17 @@
 
 **Architecture:** 新的 private `provider-account-readiness/1` document只保存短时 operator attestation与private salted credential-bundle binding；repository/run evidence只保存document SHA和sanitized state。现有 cycle authorization绑定该readiness SHA、GDT-10D historical cost与`46.473344 CNY` incremental ceiling；`ProviderUsageLedger`从active issuance读取更严格ceiling。Paid path仍只有literal full-run project admission -> reservation -> adapter permit -> Provider submission；`run-p0.py`在既有request/response/call validator证明首个authenticated response后唯一写immutable run-bound acceptance fact，public state才单向提升为`runtime_accepted`。
 
+## Execution Approval Record — 2026-08-02
+
+- Selected lane: Heavy
+- Selected companion: 2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md
+- Historical cost: 3.526656 CNY
+- Incremental ceiling: 46.473344 CNY
+- Overall envelope: 50.000000 CNY
+- Provider starts: one
+- Resume: only one literal same-run resume after accepted pause
+- Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
+
 **Tech Stack:** Python 3.11、pytest、Ruff、Decimal、SHA-256、`O_CREAT|O_EXCL|O_NOFOLLOW`、JSON Schema、Docker Compose、PostgreSQL 17、repository Harness、Chrome headed QA、Micromamba `qi-p0`。
 
 ## Global Constraints
@@ -51,7 +62,7 @@
 - Consumes: explicit user approval of behavior、zero-paid activation and one paid cycle boundary。
 - Produces: one selected companion plan; no credential/runtime/Provider mutation。
 
-- [ ] **Step 1: Record exact approval without broadening it**
+- [x] **Step 1: Record exact approval without broadening it**
 
 Add a dated parent-plan selection record with:
 
@@ -66,7 +77,7 @@ Resume: only one literal same-run resume after accepted pause
 Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
 ```
 
-- [ ] **Step 2: Re-run documentation self-review**
+- [x] **Step 2: Re-run documentation self-review**
 
 ```bash
 rg -n 'TODO|TBD|FIXME|50\.000000|46\.473344|3\.526656|direct Provider|replacement|0015' \
@@ -78,7 +89,7 @@ git diff --check
 
 Expected：无placeholder；三组Decimal一致；direct Provider、second replacement和`0015`只作为prohibition出现。
 
-- [ ] **Step 3: Commit approved execution boundary**
+- [x] **Step 3: Commit approved execution boundary**
 
 ```bash
 git add docs/superpowers/specs/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle-design.md \
