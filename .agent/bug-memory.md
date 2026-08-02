@@ -30,9 +30,9 @@
 
 ## BUG-20260801-live-qwen-symbol-timeout
 
-- Status: 未解决；GDT-10 Step 4 blocked after production-path Provider classification gap
+- Status: classification/evidence implementation 已离线完成；GDT-10 Step 4 仍 blocked，等待另行批准的 plan-bounded live proof
 - First reported: 2026-08-01
-- Last reported: 2026-08-01
+- Last reported: 2026-08-02
 - Recurrence: 4
 - Surface: authenticated `qwen3-vl-plus` visual-symbol call during repository-owned full-P0 live sample preparation
 - Symptom: current runtime identity and `/3` Provider contract are correct, but `make verify-p0-live` fails before the first sample creates an automatic result；Harness reports `sample 1 application upload/process failed` and `CandidateAdvisorFailure: Visual symbol Advisor call failed`
@@ -43,7 +43,7 @@
 - Contract result: no typed Case A/B、non-GD&T symbol report、pause identity or receipt was sealed；Step 4 remains failed and Step 5 was not run
 - Action taken: preserved both exact Harness timeout failures and left runtime config/retry policy unchanged；did not convert either failure to accepted risk。The latest evidence is committed as `1ba4c83`
 - Latest rerun: after a verified 60-second quiet handoff and a fresh `/3` convergence, Harness generated current-four registration `20260801T071155661189Z-0acc0a66`、symbol registration `20260801T071202897748Z-f7514006` and full run `20260801T071203401727Z-09cb5cc6`。The full run completed `18` authenticated request/response/cache/call records, wrote a 19th crop at `2026-08-01T07:19:11.764Z`, then failed at `07:20:12.294Z` without a 19th request/response/call record。The measured `60.236s` interval matches the unchanged OpenAI client `timeout=60.0`
-- Remaining blocker: Step 4 still needs a fresh current-four run that outlives the real Provider timeout while preserving current Provider/error/identity contracts；the shared Compose project must also have exclusive `/3` ownership for the entire future live window
+- Remaining blocker: offline implementation不证明真实 Provider runtime 已成功，也不授权新的 invocation。Step 4 仍需要另行批准的 plan-bounded current-four cycle，同时保持 Provider/error/identity contracts 和 future live window 的 exclusive `/3` ownership。
 
 ### Recurrence 3 — Harness-created project identity drift
 
@@ -62,8 +62,13 @@
 - Reproduction: new reviewed post-fix cycle created registrations `20260801T153339428826Z-f5165843`、`20260801T153346779223Z-fb6bee16` and full run `20260801T153347947042Z-0fea7c81`。Runtime stayed stable；project `b6db6078-9839-4cf0-8a31-4465a0057012` correctly froze `production_uncertainty/symbol-uncertainty-router/1`，proving GDT-10B is active。
 - Observed failure: production routing persisted `199` decisions、`194` attempt events and `192` outcomes。Of `198` escalated groups，`190` were denied by the plan budget and recorded `not_started_budget_exhausted` / `budget_exhausted`；`8` were admitted，but only the first two reached Provider work、wrote run-bound crops and then recorded `provider_transport_failure` with no Provider request ID in under one second。The other `6` admitted groups were not submitted after the first-batch worker failures and therefore have no attempt/outcome terminal evidence。No Provider call record、cache、AutomaticResult、pause、symbol report or receipt exists；run sealed `live_start_failed:RuntimeError` and evidence is committed at `91e02b5`。
 - Classification gap: `QwenVisionProvider.review_symbols()` only localizes timeout/connection exceptions；a status/metadata/other exception reaches `CandidateAdvisor.call_once()` as unclassified。`_visual_review_result()` persists unknown `CandidateAdvisorFailure` as `provider_transport_failure` but rethrows it with `failure_category=None`；the production collector therefore cannot place it in `localized_failure_stages` and fails the entire document。The current redacted evidence cannot distinguish HTTP 4xx/5xx、fast transport or metadata failure，so treating every unknown as transport/partial would be unsafe。
-- Stop boundary: GDT-10C is consumed。No GDT-10D、direct Provider diagnostic or additional live call is authorized。Next work requires a separate approved design/plan for safe Provider status classification and redacted durable diagnostic evidence before any implementation or new verification cycle。
+- Stop boundary: GDT-10C is consumed。No GDT-10D、direct Provider diagnostic or additional live call is authorized。Safe Provider status classification 与 redacted durable diagnostic evidence 已按 approved companion plan 离线实现，但新 verification cycle 仍需单独授权。
 - Review/cleanup: independent reviewer first rejected the record because it omitted the `6` admitted-but-never-submitted groups；the corrected `190 + 8 = 2 + 6` evidence account and safe stop boundary received final verdict `accept`。After the cycle ended，only isolated `api/worker` were recreated without the four credential keys while preserving `production_uncertainty/symbol-uncertainty-router/1` and the pinned model；other running-container identity hash stayed unchanged，health remained `200/200`，and the 12/12 runtime/database identity check passed。The live、safe-identity and retained root-`.env` temporary Compose override files were all removed。
+- Offline fix: commits `e5bdf11`、`544e04c`、`9a77193`、`699ddf5`、`09af74a`、`77bcdb2` 分别增加 safe Provider facts/status classification、v2 atomic diagnostics、persisted/propagated equality、stop/drain/cancellation terminal、review remediation 与 pipeline cause/status projection。Unknown/status/metadata failure不再自动冒充 transport；malformed typed carrier和 routing-evidence persistence failure均 fail closed。
+- Prevention: Provider只拥有事实分类，Advisor/`ProductionRetryCoordinator`继续拥有 scope/retry，routing repository只验证并原子持久化。两个 in-flight worker failure 后，六个 admitted-but-never-submitted groups使用真实 durable blocking event写 cancellation terminal；若 drain 同时发现 routing-evidence failure，则写完 queued cancellations 后传播最低 job-index routing failure。
+- Regression check: Provider contract `49 passed`、Advisor unit `72 passed`、mixed/legacy/malformed focused `3 passed`、scheduler/routing pure slice `6 passed`、Ruff、`git diff --check` 和 contract matrix `69 global / 111 P0 / 0 drift` 通过；DB-backed integration/migration tests collection通过，但 inherited `QI_DATABASE_URL` 的 `postgres` host不可解析，且本轮禁止创建/修改 runtime，因此没有宣称完整 DB acceptance gate或 production-ready。
+- Implementation review: local `reviewer` profile首轮因 legacy transient projection 与 mixed drain routing-evidence masking 两个 P1 返回 `reject`；修复后复审 `accept with concerns`，无代码 blocker。剩余 concern仅为上述 DB execution debt，以及未来可补的双 routing-failure冗余测试。
+- Evidence immutability / promotion gate: sealed GDT-10C run `20260801T153347947042Z-0fea7c81` 与 `91e02b5` 不重写；v2 schema只适用于 future attempts。`0014` 的 v1 server default只是 migration-first compatibility bridge；production promotion继续 blocked，直到另行批准的 `0015_drop_symbol_attempt_v1_default` 在 all-writers-v2 runtime proof 与 no-new-v1 observation window 后退休该 default。
 
 ## BUG-20260801-live-api-runtime-identity-drift
 
