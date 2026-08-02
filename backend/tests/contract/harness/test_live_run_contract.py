@@ -4179,6 +4179,38 @@ def test_paid_ledger_summary_recovers_from_durable_report(
         "evidence_sha256": report["content_sha256"],
     }
 
+    for field, value in (
+        ("content_sha256", "f" * 64),
+        ("run_id", "20260722T000000000000Z-11111111"),
+        ("cycle_id", "foreign-cycle"),
+        ("pricing_sha256", "f" * 64),
+        ("journal_ref", "asset://provider-usage-cycles/foreign-cycle/"),
+        ("reservation_count", 3),
+    ):
+        tampered = {**report, field: value}
+        if field != "content_sha256":
+            tampered.pop("content_sha256")
+            tampered["content_sha256"] = hashlib.sha256(
+                json.dumps(
+                    tampered,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+        (run_dir / "reports/provider-usage-ledger.json").write_text(
+            json.dumps(tampered),
+            encoding="utf-8",
+        )
+        with pytest.raises(
+            RuntimeError,
+            match="paid cycle ledger evidence is invalid",
+        ):
+            runner._paid_cycle_ledger_summary_from_report(
+                run_dir,
+                paid_cycle,
+            )
+
 
 def test_paid_routing_aggregate_separates_plan_denied_from_admitted(
     tmp_path: Path,
