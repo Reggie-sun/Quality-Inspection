@@ -46,10 +46,10 @@
 
 ## BUG-20260801-live-qwen-symbol-timeout
 
-- Status: classification/evidence implementation 已离线完成；GDT-10 Step 4 仍 blocked，等待另行批准的 plan-bounded live proof
+- Status: classification/evidence 已获真实 GDT-10D proof；sole cycle 因 Provider authentication failure 封存，GDT-10 Step 4 仍 blocked
 - First reported: 2026-08-01
 - Last reported: 2026-08-02
-- Recurrence: 4
+- Recurrence: 5
 - Surface: authenticated `qwen3-vl-plus` visual-symbol call during repository-owned full-P0 live sample preparation
 - Symptom: current runtime identity and `/3` Provider contract are correct, but `make verify-p0-live` fails before the first sample creates an automatic result；Harness reports `sample 1 application upload/process failed` and `CandidateAdvisorFailure: Visual symbol Advisor call failed`
 - Previously correct behavior: every required symbol crop must receive a current authenticated response, persist request/response/call identity, complete typed Case A/B + existing non-GD&T evaluation, and pause at `visual_qa_pending:first-pdf-balloons`
@@ -59,7 +59,7 @@
 - Contract result: no typed Case A/B、non-GD&T symbol report、pause identity or receipt was sealed；Step 4 remains failed and Step 5 was not run
 - Action taken: preserved both exact Harness timeout failures and left runtime config/retry policy unchanged；did not convert either failure to accepted risk。The latest evidence is committed as `1ba4c83`
 - Latest rerun: after a verified 60-second quiet handoff and a fresh `/3` convergence, Harness generated current-four registration `20260801T071155661189Z-0acc0a66`、symbol registration `20260801T071202897748Z-f7514006` and full run `20260801T071203401727Z-09cb5cc6`。The full run completed `18` authenticated request/response/cache/call records, wrote a 19th crop at `2026-08-01T07:19:11.764Z`, then failed at `07:20:12.294Z` without a 19th request/response/call record。The measured `60.236s` interval matches the unchanged OpenAI client `timeout=60.0`
-- Remaining blocker: offline implementation不证明真实 Provider runtime 已成功，也不授权新的 invocation。Step 4 仍需要另行批准的 plan-bounded current-four cycle，同时保持 Provider/error/identity contracts 和 future live window 的 exclusive `/3` ownership。
+- Superseded gate: this offline-only statement was the pre-GDT-10D boundary。Recurrence 5 records the separately approved live proof；that one-use cycle is now consumed and failed on classified authentication，so Step 4 remains blocked for the newer terminal reason rather than for missing live evidence。
 
 ### Recurrence 3 — Harness-created project identity drift
 
@@ -85,6 +85,16 @@
 - Regression check: Provider contract `49 passed`、Advisor unit `72 passed`、mixed/legacy/malformed focused `3 passed`、scheduler/routing pure slice `6 passed`、Ruff、`git diff --check` 和 contract matrix `69 global / 111 P0 / 0 drift` 通过；DB-backed integration/migration tests collection通过，但 inherited `QI_DATABASE_URL` 的 `postgres` host不可解析，且本轮禁止创建/修改 runtime，因此没有宣称完整 DB acceptance gate或 production-ready。
 - Implementation review: local `reviewer` profile首轮因 legacy transient projection 与 mixed drain routing-evidence masking 两个 P1 返回 `reject`；修复后复审 `accept with concerns`，无代码 blocker。剩余 concern仅为上述 DB execution debt，以及未来可补的双 routing-failure冗余测试。
 - Evidence immutability / promotion gate: sealed GDT-10C run `20260801T153347947042Z-0fea7c81` 与 `91e02b5` 不重写；v2 schema只适用于 future attempts。`0014` 的 v1 server default只是 migration-first compatibility bridge；production promotion继续 blocked，直到另行批准的 `0015_drop_symbol_attempt_v1_default` 在 all-writers-v2 runtime proof 与 no-new-v1 observation window 后退休该 default。
+
+### Recurrence 5 — classified authentication terminal and Harness ledger-binding gap
+
+- Reproduction: user-approved one-use GDT-10D cycle invoked literal `make verify-p0-live` exactly once and created full run `20260802T101404291929Z-884bec62`。Project `55dbd769-8fab-44a2-bcbd-768b8bbf4312` persisted `199` routing decisions and admitted `8` escalation groups；the first `2` reached the adapter/network seam，the other `6` never submitted。
+- Provider result: both actual Qwen attempts persisted v2 diagnostics with `failure_category=authentication`、event code `provider_authentication_failed` and `request_id_state=accepted` for sanitized Provider request IDs。The propagated failure category matches persisted evidence；the project stops fail-closed。The remaining six groups persist `not_started_after_project_failure` cancellation terminals and have zero paid artifacts，so the prior GDT-10C evidence gap is closed。
+- Usage/authorization result: one issuance was consumed once and bound to the literal run/project。Both actual submissions were pre-reserved、permit-consumed and marked submission-started；unavailable usage retained the full `1.763328 CNY` each，cycle total `3.526656 CNY <= 50.000000`，with zero reserved-only or unsettled entries。No second start、resume、direct Provider call or budget change occurred。
+- Harness root cause: `_refresh_paid_cycle_ledger()` durably wrote the content-hashed ledger report，then `live-run-evidence.schema.json` rejected the valid single-digit `3.526656` amount because its pattern accepted only `0.x` or `10.x-50.x`。The lifecycle had already closed the authorization and safely deactivated runtime，but finalization stayed `terminal_pending` and recorded redacted cleanup code `quiescence_close_or_finalize_failed`。
+- Harness fix: commit `86d5851` changes only the closed amount pattern to accept every six-decimal value from `0.000000` through `50.000000`；the regression first failed exactly for `3.526656` and `9.999999`，then all six boundary cases passed。Commit `ba5f821` adds strict recovery of the run/cycle/pricing/journal-bound content-hashed ledger report so a crash or schema failure between report and live binding can finalize without credentials or Provider reactivation；review remediation `91a0ead` proves content-hash、run、cycle、pricing、journal and count mutations all fail closed。
+- Verification/cleanup: Harness `179 passed`、contract matrix `69/111/101/10` with 94-file runtime closure and Ruff/diff checks passed。Storage/routing evidence sealed exact `190 denied + 2 started/authentication-failed + 6 cancelled = 198 terminal`；full run is read-only `failed` with no AutomaticResult、pause、symbol report or full-run/formal receipt，while the separate current-four registration receipt remains passed。API/worker returned to safe identity，health passed，Celery/Redis were empty，DB remained healthy `0014`，main/non-target IDs and GDT-10C tree remained unchanged。The exact private backup/authorization root was deleted only after these run-bound proofs；the original pre-0014 dump and raw private authorization bytes are no longer recoverable，and only the healthy post-migration live DB plus sanitized run-bound Harness evidence remain。
+- Stop boundary: this is a fully evidenced terminal closeout，not Step 4 success。The one-use cycle is consumed；credential/account remediation and any replacement live verification require new explicit authority。`0015` and production promotion remain blocked。
 
 ## BUG-20260801-live-api-runtime-identity-drift
 

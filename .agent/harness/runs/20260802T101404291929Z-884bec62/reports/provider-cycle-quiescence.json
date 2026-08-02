@@ -1,0 +1,1 @@
+{"content_sha256":"6d1c725e46b81b600241643373d9e06b2e9ffd450024ba7b8d99e9a50da21571","harness_returned":true,"queue_depth":0,"run_id":"20260802T101404291929Z-884bec62","schema_version":"provider-cycle-quiescence/1","status":"failed","worker_sets":{"active":["celery@fbc27d4808fa"],"reserved":["celery@fbc27d4808fa"],"scheduled":["celery@fbc27d4808fa"]},"worker_stopped":false}

@@ -451,51 +451,53 @@ Implementation commit：`7e49e3413f90f882c6ef7c7fc70cb2492d6d5403`。HEAD runtim
 
 ### Task 7: Quiesce, Backup, Migrate And Prove Zero-Paid GO
 
-- [ ] **Step 1: Capture baseline and prove no writers**
+- [x] **Step 1: Capture baseline and prove no writers**
 
 Record target/non-target container IDs、volumes、ports、health、DB `0013`、GDT-10C hashes、DB row/event counts、storage ledger inventory and Harness run inventory. Require Celery active/reserved/scheduled all empty and feature Redis processing queue `0`。
 
-- [ ] **Step 2: Stop only feature api/worker**
+- [x] **Step 2: Stop only feature api/worker**
 
 Verify those two are stopped；feature PostgreSQL/Redis/frontend and all main IDs remain exact。
 
-- [ ] **Step 3: Create private state and backup**
+- [x] **Step 3: Create private state and backup**
 
 Create exact mode `0700` state root with `umask 077`; require target nonexistence. Use the design's `set -o noclobber; exec 3>"$backup_path"` exclusive FD before streaming `pg_dump` default stdout，close FD，reopen non-symlink path to `fsync` file and parent，then `pg_restore --list`；require file owner current uid、mode `0600`，record size/SHA only。Blocked retention Owner is `GDT-10D execution owner`，review deadline `2026-08-09T23:59:59+08:00` and delete/restore triggers are fixed by Task 10。
 
-- [ ] **Step 4: Verify committed migration identity and upgrade**
+- [x] **Step 4: Verify committed migration identity and upgrade**
 
 Compare host file SHA against `git show HEAD:backend/alembic/versions/0014_...py` bytes immediately before one-off migration. Mount committed `backend/alembic` and `alembic.ini` read-only; execute only `alembic -c alembic.ini upgrade 0014` on feature network。
 
-- [ ] **Step 5: Verify migration invariants**
+- [x] **Step 5: Verify migration invariants**
 
 Require exact `0014`、three columns/check、old counts unchanged、inherited attempts v1 with SQL NULL diagnostic/hash、no v2 row yet、GDT-10C project/evidence unchanged、no run/result/provider artifact mutation。
 
-- [ ] **Step 6: Build and activate credential-free target services**
+- [x] **Step 6: Build and activate credential-free target services**
 
 Ban worktree `.env` file/symlink. Build current `api/worker` and recreate only feature `api/worker` with safe mode/model override；four credentials、cycle ID and authorization mount must beabsent。Separately create but do not apply a mode-`0600` private live override containing exact four credentials + mode/model/cycle ID/auth root and one read-only authorization mount；validate onlysanitized resolved key/mount sets。Non-target IDs/volumes remain unchanged。
 
-- [ ] **Step 7: Issue but do not consume authorization**
+- [x] **Step 7: Issue but do not consume authorization**
 
 Issuance binds clean HEAD、plan/pricing/runtime-closure/current-four hashes、Compose project、exact zero-paid-proved backend image ID、DB `0014`、ceiling and expiry。Run/project IDs do not exist yet and must be bound later by exclusive `bind-run`/`admit-project` state transitions。Require no pre-existing issuance/consumption/run/project/pause-handoff/resume-consumed/terminal for the ID。
 
-- [ ] **Step 8: Run fresh zero-paid preflight**
+- [x] **Step 8: Run fresh zero-paid preflight**
 
 Require API/worker full committed runtime closure `N/N` hashes、exact rates/policy-v2/runtime constants、health/ports、safe runtime credential/cycle/auth-mount absence、private live override exact sanitizedkey/mount set、host four credential booleans、GDT-10C identity、DB/storage/run counts unchanged。Call `preflight_full_p0_live(..., input_artifacts=current artifacts)` directly；assert authorization remainsissued/unconsumed，live override remainsunapplied，and zero newledger/run/upload/Provider fact。
 
-- [ ] **Step 9: Independent zero-paid GO/NO-GO**
+- [x] **Step 9: Independent zero-paid GO/NO-GO**
 
 Reviewer receives sanitized IDs/hashes/counts/key/mount sets only. `NO-GO` deletes theunapplied private live override、unsets host credentials and stops；only `GO` permits Task 8 consume/activation。
+
+Execution record：baseline DB `0013`、zero queue/writers、GDT-10C tree and target/non-target identities were frozen before mutation。The first `pg_dump --file=-` attempt created zero bytes and stopped before migration；commit `1dcdf04` corrected the reviewed default-stdout contract，then verified private backup SHA `40243df2a2f76e8c09b9dd339b9a0fa31f621d709313f20d963404207a20677e` and `pg_restore --list`。Migration SHA `622ddf1c...9b45d` upgraded only feature DB to `0014` with inherited counts unchanged and zero v2 rows。Safe API/worker images were `sha256:064c51b...` / `sha256:d8b2a170...`，full runtime closure `94/94`。Two unused zero-paid issuances (`86c4a81c...`、`d7f8a1c1...`) were deleted only after exact no-consume/no-bind/no-activation assertions；the final issuance raw SHA `d30bcd25...` bound commit `4b3e182` and passed direct preflight。Compose v5 bare image-ID remediation commits `1128f05` / `4b3e182` passed `172` Harness tests；independent reviewer final gate `GO / accept`。
 
 ---
 
 ### Task 8: Consume And Execute The Sole Paid Cycle
 
-- [ ] **Step 1: Freeze the live window**
+- [x] **Step 1: Freeze the live window**
 
 Recheck no concurrent writer/live process、Celery/Redis empty before launch and target/non-target IDs. Start read-only identity monitor。
 
-- [ ] **Step 2: Invoke exactly once**
+- [x] **Step 2: Invoke exactly once**
 
 With exact host environment and literal authorization ref:
 
@@ -505,21 +507,25 @@ make verify-p0-live
 
 Do not call the start target again for any exit/status。The recipe consumes first，then activates onlyfeature `api/worker` with the privatecredential/cycle/read-only-auth override，then runs contracts/final preflight/start。Failure at any point consumes thecycle and enters Task 10；runtime reservation still requiresliteral run/project admission, so activation alone cannot authorize Provider work。
 
-- [ ] **Step 3: Seal terminal evidence**
+- [x] **Step 3: Seal terminal evidence**
 
 Record registration/full run IDs if created、proof that each project admission was durable before that project's processing began、command exit、monitor、authorization hashes、pricing hash、cycle-wide ledger aggregate、routing reconciliation、DB/storage/run deltas。The lifecycle orchestrator must have already closed authorization through the sole bridge and deactivated runtime on failure/abort；accepted pause keeps authorization nonterminal but must already have deactivated credentials/cycle/auth mount before returning。This step audits those facts and repairs only a reported cleanup blocker；it is not the primary cleanup mechanism。
 
-- [ ] **Step 4: Decide next state without reinterpretation**
+- [x] **Step 4: Decide next state without reinterpretation**
 
 - Pause + all Step4 acceptance evidence: continue Task 9。
 - Any failure/incomplete/identity drift/budget terminal: Step4 remains blocked；do not rerun；continue Task 10 cleanup/closeout。
 - Project-blocking failure: require exact admitted reconciliation；if two started fail from first batch, the other six must be terminal cancelled with zero paid artifacts。
+
+Execution record：literal `make verify-p0-live` was invoked exactly once。It created full run `20260802T101404291929Z-884bec62` plus current-four `20260802T101410283666Z-12d482b3` and symbol `20260802T101417588825Z-07a91d32` registrations。The run-bound project `55dbd769-8fab-44a2-bcbd-768b8bbf4312` was admitted before processing。Two Qwen submissions were reserved、adapter-consumed and durably submission-started，then classified `provider_authentication_failed` with `request_id_state=accepted` for sanitized Provider request IDs；ledger retained conservative unknown-usage `reserved_unknown` charges totalling `3.526656 CNY` with `2/2` settled、zero reserved-only/unsettled。Routing reconciliation is exact：`199` decisions；`198 = 190` plan-denied `+ 8` admitted；admitted `8 = 2` started/failed `+ 6` `not_started_after_project_failure` cancelled；storage contains exactly the two started crops。The current-four registration receipt passed，but the full run has no AutomaticResult、pause、symbol report or full-run/formal receipt，so Task 9 did not become applicable and Step 4 remains blocked without reinterpretation or rerun。
 
 ---
 
 ### Task 9: Complete Exact Same-Run Headed QA And Receipt
 
 Conditional on Task 8 exact accepted pause only.
+
+Not applicable：Task 8 terminated before an accepted pause。No headed QA、export、resume consumption or second Provider activation was attempted。
 
 - [ ] **Step 1: Capture API proof**
 
@@ -547,19 +553,23 @@ The `execute-resume` orchestrator first exclusive-creates/fsyncs the one-use `re
 
 ### Task 10: Cleanup, Final Review And Closeout
 
-- [ ] **Step 1: Verify finalizer cleanup and repair only if blocked**
+- [x] **Step 1: Verify finalizer cleanup and repair only if blocked**
 
 `execute-start`/`execute-resume` is the primary cleanup Owner and must return only after safe deactivation；Task 10 first verifies its terminal/deactivation evidence。For any non-paused closeout，require Harness command returned and Celery active/reserved/scheduled + queue empty；if the orchestrator reported cleanup failure or quiescence is not provable，stop only feature worker and use the same sole close bridge replay contract，then apply safe-identity runtime。The active validator continues to reject `cleanup-blocker.json`；both admitted-project and no-project close-only validators must exactly validate issuance/consumption/run/root plus blocker schema/cycle/run/status/allowlisted codes/content hash before repair/replay。An existing terminal counts as idempotent success only after exact schema/cycle/run/status/quiescence/content-hash verification；any mismatch blocks。Require four credentials、cycle ID and authorization mount absent，mode/model/full runtime closure/health/DB exact；delete private live/safe overrides；unset host credential/Harness variables；prove worktree `.env` absent。A failed repair remains a durable blocker and may not be reported as safe cleanup。
 
-- [ ] **Step 2: Dispose or retain private state**
+- [x] **Step 2: Dispose or retain private state**
 
 Accepted closeout: after run-bound copies and healthy DB evidence, delete exact private backup/auth files and report non-recoverability except live DB/Harness copies。Blocked: retain mode/path/hash/authorization expiry；write owner `GDT-10D execution owner`、review deadline `2026-08-09T23:59:59+08:00` and blocker into parent plan。Before deadline delete only after (a) blocker resolved with healthy `0014` DB + verified run copies or (b) user-authorized restore completed and a replacement backup exists。At deadline do not auto-delete；request user decision to renew orsecurely delete。
 
-- [ ] **Step 3: Final independent review**
+Cleanup record：the network-none close bridge wrote terminal content SHA `4400d41a...` and safe deactivation succeeded，but ledger live-binding failed because the schema regex rejected valid one-digit totals。RED reproduced `3.526656` / `9.999999` rejection；commit `86d5851` fixed the exact `[0, 50]` micro-CNY domain (`178 passed`)。Commit `ba5f821` added crash-safe recovery from the already content-hashed ledger report；review remediation `91a0ead` proves content-hash、run、cycle、pricing、journal and count tampering all fail closed (`179 passed`)。Storage SHA `34f85ac8...`、routing SHA `2f918deb...` then validated all terminals and finalized the run from `terminal_pending` to sealed `failed` at `2026-08-02T10:22:01.308582Z`。Post-finalize proof：API/worker safe identity，health `200`，Celery active/reserved/scheduled `0/0/0`，Redis queue `0`，DB `0014`，`0` AutomaticResults，feature/main non-target IDs unchanged，worktree `.env` absent，GDT-10C tree unchanged。After recording backup/auth hashes and confirming run-bound copies plus healthy DB，the exact private root was deleted；the original pre-0014 dump and raw private authorization bytes are no longer recoverable，and only the healthy post-migration live DB plus sanitized run-bound Harness evidence remain。
+
+- [x] **Step 3: Final independent review**
 
 Reviewer checks commits、migration/backup、single consume/start and literal same-run resume only if applicable、cycle-wide ledger ceiling、run/project authorization、routing terminals、headed evidence if applicable、credential/auth-mount cleanup、GDT-10C immutability、retention record、old-step supersession and `0015`/promotion block。Required verdict `accept` before completion claim。
 
-- [ ] **Step 4: Update actual truth and commit evidence**
+Final review record：local `reviewer` profile (`gpt-5.6-sol`，high) independently rechecked exact authorization/run/project bindings、DB diagnostic categories、ledger/routing/storage/terminal evidence、network-none bridge、safe deactivation、GDT-10C tree、private-state deletion semantics and current docs。It found and closed two wording defects (`request_id_state=accepted` and registration receipt vs full-run receipt) plus the deleted-byte recoverability statement。Its non-blocking recovery-test concern was remediated by `91a0ead`。Fresh read-only gates were Harness `179 passed`、contract matrix `69/111/101/10`、runtime closure `94`、Ruff、diff、sealed schema/policy and safe DB/runtime checks；final verdict `accept` with no blocker or material risk。
+
+- [x] **Step 4: Update actual truth and commit evidence**
 
 Update parent plan、this plan、`.agent/bug-memory.md` and exact generated GDT-10D artifacts only. Preserve GDT-10C bytes。
 

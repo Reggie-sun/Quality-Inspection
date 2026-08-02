@@ -1,0 +1,48 @@
+{
+  "child_run_ids": [],
+  "design_qa": null,
+  "input_set": "current-four",
+  "paid_cycle": {
+    "consumption_sha256": "3de9ac1d0518b36ee22a693ef0a9b72ca7d3ca700e358c23ffba95e9eab5ba8e",
+    "cycle_id": "gdt10d-classified-live-20260802",
+    "issuance_sha256": "7ee6cdaf45a43e22170b02dc4aa41e0952b630cea7ddd730a04ff9003ed7799c",
+    "journal_ref": "asset://provider-usage-cycles/gdt10d-classified-live-20260802/",
+    "ledger": {
+      "committed_total_cny": "3.526656",
+      "evidence_sha256": "3f2a2465f97d6038a0296eeb0340df6a44fd8e743e77133e286c2a22695e5d6f",
+      "reservation_count": 2,
+      "reserved_only_count": 0,
+      "settled_count": 2,
+      "submission_started_count": 2
+    },
+    "pricing_sha256": "c6b37f8a811d38444ccd89a5862d676343e414db21dbc02d9ca9979496364a2b",
+    "projects": [
+      {
+        "admission_sha256": "320439867ddf741f5631d39a745f4bfdf65cac039f9365f7fc6e590dfacabd63",
+        "project_id": "55dbd769-8fab-44a2-bcbd-768b8bbf4312",
+        "project_order": 1,
+        "source_sha256": "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"
+      }
+    ],
+    "resume_consumed_sha256": null,
+    "run_authorization_sha256": "f465b4168225e87e2b049337429b6264aabb9da797ff42e9c01fc1d2083e6a45",
+    "terminal": {
+      "bridge_evidence_sha256": "2b76a4404a18d9da793aed5fa082014247d8c8bf4ca5577ae6912f5057a5f51a",
+      "quiescence_sha256": "6d1c725e46b81b600241643373d9e06b2e9ffd450024ba7b8d99e9a50da21571",
+      "status": "failed",
+      "terminal_sha256": "4400d41aff56b15de8135c671b560ff2a3c63b5bb4964e6e18790259dd341b12"
+    }
+  },
+  "phases": [
+    "process",
+    "candidates",
+    "review",
+    "balloons",
+    "export",
+    "consistency"
+  ],
+  "run_id": "20260802T101404291929Z-884bec62",
+  "samples": [],
+  "schema_version": "live-run-evidence/2",
+  "symbol_recognition": null
+}
