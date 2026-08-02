@@ -117,6 +117,12 @@ class PassingPreflight:
         return None
 
 
+class NoSchemaRetryCoordinator:
+    @staticmethod
+    def authorize_schema_retry(*_args: object) -> bool:
+        return False
+
+
 @dataclass(frozen=True)
 class SupportedPageStub:
     support_level: str = "supported"
@@ -962,6 +968,7 @@ def _seed_matrix_cache(
                 )
             ),
         ),
+        production_retry_coordinator=NoSchemaRetryCoordinator(),
     )
     assert outcome.cache_hit is False
     assert cache_provider.symbol_observation_ids == [
@@ -2082,6 +2089,7 @@ def test_invalid_project_cache_is_quarantined_before_fresh_recomputation(
                 )
             ),
         ),
+        production_retry_coordinator=NoSchemaRetryCoordinator(),
     )
 
     assert outcome.cache_hit is False

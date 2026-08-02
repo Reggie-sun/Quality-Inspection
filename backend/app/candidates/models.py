@@ -242,7 +242,7 @@ class SymbolEscalationAttemptEventRecord(Base):
         server_default="symbol-escalation-attempt/1",
     )
     diagnostic: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB,
+        JSONB(none_as_null=True),
         nullable=True,
     )
     diagnostic_sha256: Mapped[str | None] = mapped_column(

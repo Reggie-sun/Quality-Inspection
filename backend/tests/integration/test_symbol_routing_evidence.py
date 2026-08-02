@@ -71,7 +71,11 @@ from app.processing import tasks as processing_tasks
 from app.processing.automatic_result import CandidateSnapshot
 from app.projects.models import Project
 from app.projects.state import ProjectState
-from app.providers.base import VisionResult
+from app.providers.base import (
+    ClassifiedProviderFailure,
+    ProviderFailureFact,
+    VisionResult,
+)
 from app.providers.qwen_vl import (
     VisualSymbolProviderError,
     canonicalize_visual_png,
@@ -862,27 +866,42 @@ def test_production_cache_identity_binds_members_and_exact_prompt_text() -> None
 
 
 @pytest.mark.parametrize(
-    ("failure_mode", "expected_error", "expected_code"),
+    (
+        "failure_mode",
+        "expected_error",
+        "expected_code",
+        "expected_category",
+    ),
     (
         (
             "construction_unavailable",
             CapabilityUnavailable,
             "provider_unavailable",
+            None,
         ),
         (
             "call_unavailable",
             CapabilityUnavailable,
             "provider_unavailable",
+            None,
         ),
         (
             "call_transport",
             CandidateAdvisorFailure,
             "provider_transport_failure",
+            "transport",
+        ),
+        (
+            "call_contract_failure",
+            CandidateAdvisorFailure,
+            "provider_contract_failure",
+            None,
         ),
         (
             "schema_invalid",
             CandidateAdvisorFailure,
             "provider_schema_invalid",
+            "schema",
         ),
     ),
 )
@@ -890,12 +909,14 @@ def test_terminal_provider_failure_persists_one_complete_outcome(
     failure_mode: str,
     expected_error: type[Exception],
     expected_code: str,
+    expected_category: str | None,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     crop_png = _png()
     attempts: list[dict[str, object]] = []
     terminals: list[dict[str, object]] = []
+    classified_terminals: list[dict[str, object]] = []
     advisor = CandidateAdvisor(
         Settings(storage_root=tmp_path),
         LocalFileStorage(tmp_path),
@@ -921,6 +942,11 @@ def test_terminal_provider_failure_persists_one_complete_outcome(
         "_record_terminal_outcome",
         lambda **kwargs: terminals.append(kwargs),
     )
+    monkeypatch.setattr(
+        advisor,
+        "_record_classified_failure_terminal",
+        lambda **kwargs: classified_terminals.append(kwargs) or SHA_A,
+    )
 
     def review_symbols(_image: bytes, _prompt: str) -> VisionResult:
         if failure_mode == "call_unavailable":
@@ -929,7 +955,17 @@ def test_terminal_provider_failure_persists_one_complete_outcome(
                 "unavailable",
             )
         if failure_mode == "call_transport":
-            raise RuntimeError("transport")
+            raise ClassifiedProviderFailure(
+                ProviderFailureFact(
+                    category="transport",
+                    origin="sdk_connection",
+                    http_status=None,
+                    provider_request_id=None,
+                    request_id_state="absent",
+                )
+            )
+        if failure_mode == "call_contract_failure":
+            raise RuntimeError("private Provider contract detail")
         if failure_mode == "schema_invalid":
             raise VisualSymbolProviderError(
                 request_id="provider-request-invalid",
@@ -938,7 +974,7 @@ def test_terminal_provider_failure_persists_one_complete_outcome(
             )
         raise AssertionError("Provider should be constructed")
 
-    with pytest.raises(expected_error):
+    with pytest.raises(expected_error) as raised:
         advisor._visual_review_result(
             provider=(
                 None
@@ -960,24 +996,54 @@ def test_terminal_provider_failure_persists_one_complete_outcome(
                 escalation_group_id="group-1",
                 routing_decision_sha256=SHA_C,
             ),
+            production_retry_coordinator=NoSchemaRetryCoordinator(),
         )
 
-    assert [attempt["event_code"] for attempt in attempts] == [
-        expected_code
-    ]
-    assert len(terminals) == 1
-    assert terminals[0]["outcome_code"] == "unresolved"
-    assert terminals[0]["attempt_event_sha256s"] == (SHA_A,)
-    assert terminals[0]["observation_outcomes"] == (
-        ObservationOutcome(
-            visual_observation_id="visual-1",
-            outcome_code=expected_code,
-        ),
-        ObservationOutcome(
-            visual_observation_id="visual-2",
-            outcome_code=expected_code,
-        ),
-    )
+    if expected_code == "provider_unavailable":
+        assert [attempt["event_code"] for attempt in attempts] == [
+            expected_code
+        ]
+        assert len(terminals) == 1
+        assert terminals[0]["outcome_code"] == "unresolved"
+        assert terminals[0]["attempt_event_sha256s"] == (SHA_A,)
+        assert terminals[0]["observation_outcomes"] == (
+            ObservationOutcome(
+                visual_observation_id="visual-1",
+                outcome_code=expected_code,
+            ),
+            ObservationOutcome(
+                visual_observation_id="visual-2",
+                outcome_code=expected_code,
+            ),
+        )
+        assert classified_terminals == []
+    else:
+        assert attempts == []
+        assert terminals == []
+        assert len(classified_terminals) == 1
+        classification = classified_terminals[0]["classification"]
+        assert raised.value.classification is classification
+        assert raised.value.failure_stage == classification.failure_stage
+        assert classification.failure_stage == expected_code
+        assert raised.value.failure_category == getattr(
+            classification,
+            "category",
+            None,
+        )
+        assert raised.value.failure_category == expected_category
+        assert raised.value.failure_scope == classification.scope
+        assert raised.value.pipeline_cause_category == (
+            classification.pipeline_cause_category
+        )
+        assert raised.value.provider_request_id == getattr(
+            classification,
+            "provider_request_id",
+            None,
+        )
+        assert raised.value.failure_event_sha256 == SHA_A
+        assert "private Provider contract detail" not in str(raised.value)
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None
 
 
 def test_invalid_cache_winner_does_not_discard_fresh_provider_result(
@@ -1057,6 +1123,7 @@ def test_invalid_cache_winner_does_not_discard_fresh_provider_result(
             escalation_group_id="group-1",
             routing_decision_sha256=SHA_C,
         ),
+        production_retry_coordinator=NoSchemaRetryCoordinator(),
     )
 
     assert outcome.result.request_id == "provider-request-fresh"
@@ -1135,6 +1202,7 @@ def test_terminal_replay_reuses_valid_cache_without_new_attempt_or_provider(
             escalation_group_id="group-1",
             routing_decision_sha256=SHA_C,
         ),
+        production_retry_coordinator=NoSchemaRetryCoordinator(),
     )
 
     assert outcome.terminal_replay is True
@@ -1421,6 +1489,12 @@ def _execution_identity(crop_png: bytes) -> VisualExecutionIdentity:
     )
 
 
+class NoSchemaRetryCoordinator:
+    @staticmethod
+    def authorize_schema_retry(*_args: object) -> bool:
+        return False
+
+
 def test_prt4_adds_exactly_the_four_owned_tables() -> None:
     tables = set(inspect(engine).get_table_names())
 
@@ -1434,6 +1508,38 @@ def test_prt4_adds_exactly_the_four_owned_tables() -> None:
         SymbolEscalationOutcomeRecord.__tablename__,
         VisualSymbolCacheEntryRecord.__tablename__,
     } == SYMBOL_TABLES
+
+
+def test_v1_attempt_persists_sql_null_diagnostic(
+    db_session: Session,
+    project_id: uuid.UUID,
+) -> None:
+    evidence = RoutingEvidenceRepository(db_session)
+    decision = evidence.record_decision(
+        project_id=project_id,
+        escalation_group_id="group-v1-sql-null",
+        escalation_group_member_index=0,
+        decision=_decision(),
+    )
+    record = evidence.append_attempt(
+        project_id=project_id,
+        event=EscalationAttemptEvent(
+            schema_version=ESCALATION_ATTEMPT_SCHEMA_VERSION,
+            escalation_group_id="group-v1-sql-null",
+            routing_decision_sha256=_group_sha256(decision),
+            attempt_index=0,
+            event_code="cache_miss",
+            cache_entry_id=None,
+            provider_request_id=None,
+        ),
+    )
+    db_session.flush()
+
+    assert db_session.scalar(
+        select(
+            SymbolEscalationAttemptEventRecord.diagnostic.is_(None)
+        ).where(SymbolEscalationAttemptEventRecord.id == record.id)
+    ) is True
 
 
 def test_inventory_task_injects_required_independent_symbol_sessions(

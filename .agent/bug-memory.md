@@ -2,6 +2,22 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260802-symbol-attempt-v1-json-null
+
+- Status: 已解决；isolated PostgreSQL regression 与 full backend gate 已通过
+- First reported: 2026-08-02
+- Last reported: 2026-08-02
+- Recurrence: 1
+- Surface: `backend/app/candidates/models.py`、`RoutingEvidenceRepository.append_attempt()` 与 migration `0014` 的 v1 compatibility bridge
+- Symptom: fresh isolated PostgreSQL 17 上，legacy v1 routing/cache attempt insert 被 `ck_symbol_attempt_diagnostic_version` 拒绝；同一 DB gate 另有 5 个 direct `_visual_review_result()` integration source call sites 因缺少 production retry coordinator context 产生 6 个 failing cases。
+- Previously correct behavior: v1 attempt writer必须在 `0014` migration-first window继续写 SQL `NULL` diagnostic/hash；production evidence context必须与唯一 retry coordinator成对出现。
+- Reproduction: `make test-backend` 先因 Docker address-pool exhaustion在创建 DB 前失败；等价 host-network、loopback-only、tmpfs PostgreSQL 17完成 `alembic upgrade head` 后，focused routing/schema/migration suite稳定为 `13 failed / 41 passed`。7 个 failure是 v1 `diagnostic=None` insert违反 check constraint，6 个 failure是 coordinator/context invariant。
+- Root cause: `SymbolEscalationAttemptEventRecord.diagnostic` 使用默认 `JSONB(none_as_null=False)`；SQLAlchemy/psycopg 因而把 Python `None` 绑定为 JSONB literal `null`，而 `0014` 的 strict compatibility constraint 正确要求 v1 row 使用 SQL `NULL`。另外 6 个失败来自 direct `_visual_review_result()` integration fixtures 未随 production context invariant 传入 `ProductionRetryCoordinator`；production scheduler 已正确传入，不是第二个 production defect。
+- Fix: 仅把 attempt model 的 `diagnostic` column type 改为 `JSONB(none_as_null=True)`，不放宽或修改 migration constraint；新增真实 PostgreSQL v1 SQL-NULL regression，并为 5 个 direct test call sites 注入 deny-all schema retry coordinator stub，保持 production retry Owner 与 fail-closed invariant 不变。
+- Regression check: 新 SQL-NULL test 先以 `ck_symbol_attempt_diagnostic_version` RED，修复后 `1 passed`；routing/schema/migration `56 passed`，Advisor/pipeline/status `139 passed`，Provider contract `49 passed`，full backend `1801 passed / 14 warnings`，Ruff、offline contract checker与 `git diff --check` 均通过。
+- Runtime proof: 仅使用显式命名、loopback `55433`、tmpfs 的 isolated PostgreSQL 17 test runtime；未调用 Provider/live Harness，临时 container 已清理。`make test-backend` 在 DB 创建前仍被 Docker global address-pool exhaustion 阻断，等价 fallback 完成相同 Alembic + full `backend/tests` gate。
+- Change: companion plan DB-gate follow-up；commit ID 由 parent plan closeout 记录。
+
 ## BUG-20260801-gdt-rejection-coverage-blocking
 
 - Status: 已解决；fix 已合入 source feature branch 并在 shared worker 激活
