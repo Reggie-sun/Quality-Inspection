@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Selected lane: `Heavy`，因为本计划改变稳定 candidate/OpenAPI schema、JSONB data shape、Provider response contract，并跨 PDF、candidate、review、API、frontend、export data-integrity boundary。
-- Plan status: `selected as the current plan for this execution`。本文件不覆盖 `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`，也不改变 current P0 contract matrix、public runtime config 或 production deployment；GDT-10 isolated verification runtime 的 frozen recognition identity 由本计划的 timeout amendment 明确约束。
+- Plan status: `selected as the current plan for this execution`。本文件不覆盖 `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`，不改变 public runtime config 或 production deployment；唯一 contract-matrix amendment 是用户在 GDT-10D option `A` 批准的 `PROV-005` one-use pricing/usage evidence，具体边界由 GDT-10D companion design/plan拥有。
 - Design source: `docs/superpowers/specs/2026-08-01-structured-geometric-tolerance-recognition-design.md`。
 - GDT-10 timeout design source: `docs/superpowers/specs/2026-08-01-provider-timeout-retry-and-partial-failure-design.md`。
 - Current-state source: `docs/superpowers/audits/2026-08-01-geometric-tolerance-recognition-current-state.md`。
@@ -115,7 +115,7 @@
 - GDT-10C zero-paid result: clean committed state；constructor/routing/runtime targeted `4 passed`；exact isolated target、API/worker `12/12` hashes、published ports、health `200/200`、sanitized key inventory、credential presence and forbidden-key absence、database `0013` 全部通过。Provider-related rows `0|0|0`，prior failed project/evidence preserved，run directory count `29 -> 29`。GDT-10C paid invocation count remains `0`，selection is `GO`。
 - GDT-10C live result: sole invocation created registrations `20260801T153339428826Z-f5165843`、`20260801T153346779223Z-fb6bee16` and full run `20260801T153347947042Z-0fea7c81`；runtime identity monitor remained stable。Project `b6db6078-9839-4cf0-8a31-4465a0057012` correctly froze `production_uncertainty/symbol-uncertainty-router/1`，so GDT-10B is runtime-proven。Production route persisted `199` decisions、`194` attempts and `192` outcomes。Of `198` escalated groups，`190` were plan-denied and recorded budget-exhausted；`8` were admitted，the first two wrote crops then failed in under one second with no request ID/call record/cache，and the other `6` were not submitted after those first-batch worker failures、leaving no terminal attempt/outcome evidence。The full run sealed failed with no AutomaticResult、pause、symbol report or receipt；evidence committed at `91e02b5`。
 - GDT-10C blocker decision: current sanitized artifacts cannot safely distinguish HTTP status rejection、fast transport or metadata failure。The fallback persistence says `provider_transport_failure`，but the propagated `CandidateAdvisorFailure.failure_category` is `None`，so production localized partial handling correctly refuses to assume a safe category and the document fails closed。No GDT-10D or extra diagnostic/live call is authorized；next work requires a separate design/plan for safe Provider status classification plus redacted durable diagnostic evidence。
-- GDT-10C evidence review: independent reviewer initially rejected the outcome record because it omitted the `6` admitted-but-never-submitted groups。After correcting the account to exact `190 plan-denied + 8 admitted = 2 failed + 6 never submitted`，the reviewer rechecked read-only DB aggregates、sealed run state and failure control flow；final verdict `accept`。
+- GDT-10C evidence review: independent reviewer initially rejected the outcome record because it omitted the `6` admitted-but-never-submitted groups。After separating exact invariants `199 total routing decisions` and `198 escalated groups = 190 plan-denied + 8 admitted = 2 failed + 6 never submitted`，the reviewer rechecked read-only DB aggregates、sealed run state and failure control flow；final verdict `accept`。
 - GDT-10C runtime cleanup: after the terminal stop，only isolated `api/worker` were recreated with the pinned production identity and without the four live credential keys；the non-target running-container identity hash remained unchanged。API/frontend health returned `200/200`，the exact mode/router/model、12/12 runtime hashes、published ports and database `0013` identity check passed。`/tmp/qi-gdt10a-live-credentials.yaml`、the temporary safe-identity override and retained `/tmp/qi-symbol-recognition-compose.override.yaml` root-`.env` injection path were then removed。
 
 ### Provider Failure Classification Design Selection Record — 2026-08-02
@@ -142,14 +142,34 @@
 - Evidence/promotion boundary: sealed GDT-10C evidence `20260801T153347947042Z-0fea7c81` / `91e02b5` 保持 immutable，新 v2 schema只适用于 future attempts。`0014` v1 server default是 temporary compatibility bridge；production promotion additionally blocked pending separately approved `0015_drop_symbol_attempt_v1_default` after all-writers-v2 runtime proof and a no-new-v1 observation window。
 - Current gate: GDT-10 Step 4 remains blocked pending explicit authorization for a new plan-bounded live cycle. Offline classification/evidence implementation does not prove Provider runtime success and does not authorize GDT-10D or Step 5。
 
+### Provider Failure DB Gate Closeout — 2026-08-02
+
+- User authorization: option `C` explicitly authorized completing the GDT plan, including isolated DB/runtime changes and a reviewed new paid Provider cycle；production promotion、budget expansion与 unreviewed live仍不授权。
+- Root cause/fix: fresh PostgreSQL 17 proved Python `None` was bound as JSONB literal `null` and violated the correct v1 SQL-NULL constraint。`eb0e32e` changed only the ORM bind type to `JSONB(none_as_null=True)`，kept migration `0014` strict，added a real SQL-NULL regression and aligned five direct integration call sites with the production retry-coordinator invariant。
+- Verification: new regression RED hit `ck_symbol_attempt_diagnostic_version` with `Jsonb(None)`；GREEN `1 passed`。routing/schema/migration `56 passed`、Advisor/pipeline/status `139 passed`、Provider contract `49 passed`、full backend `1801 passed / 14 warnings` on explicitly named loopback/tmpfs PostgreSQL 17；Ruff、contract checker and diff-check passed。`make test-backend` itself remained blocked before DB creation by Docker global address-pool exhaustion；the equivalent Alembic + full `backend/tests` fallback completed and the temporary container was removed。
+- Independent review: local `reviewer` profile first returned `accept with concerns` for one evidence assertion gap and one 5-vs-6 wording defect；both were remediated，targeted matrix `5 passed`、DB suite `56 passed`，final verdict `accept`。
+- Result: classification/evidence DB-backed acceptance debt is closed。This does not itself prove Provider runtime success or authorize promotion；feature QA runtime remains on DB `0013` until the reviewed GDT-10D activation plan executes。
+
+### GDT-10D Classified Provider Live Cycle Selection — 2026-08-02
+
+- Selected lane / authorization: `Heavy`；user option `C` authorizes completion of the bounded DB/runtime/live sequence。After independent review exposed that the existing `CNY 50` value was not mechanically auditable，user option `A` additionally authorizes a versioned public list-price snapshot、durable usage ledger、conservative pre-submission reservation and one-use cycle token。
+- Design/plan: `docs/superpowers/specs/2026-08-02-gdt10d-classified-provider-live-verification-design.md` and `docs/superpowers/plans/2026-08-02-gdt10d-classified-provider-live-verification.md`。
+- Validation action: `amend` the stale activation contract from `0013 + 12 runtime files` to exact `0014 + committed full backend/app runtime closure` plus committed migration identity，then preserve the existing feature QA project/volumes while quiescing target writers、backing up/migrating its DB additively and recreating only feature `api/worker`。
+- Problem boundary / old path: replace the Harness gate that would reject correct `0014` or miss stale Provider/evidence/budget owners；replace static cost text with the `PROV-005` one-use authorization + pre-submission reservation Owner。Do not create a new Compose project/volume、direct diagnostic、model fallback、second retry Owner or production promotion。
+- Exact paid ceiling: at most one `make verify-p0-live` invocation；`<= CNY 50`、OCR `<=16/page`、Vision `<=16/page` and `<=2/candidate`、crop expansion `<=1`；production primary `<=4/page, <=8/project`、actual attempts `<=16/page`、wall `<=45s/page, <=90s/project`、in-flight `2`、timeout `60s`、SDK retry `0`。Only coordinator-owned schema-invalid may retry once within the same budget。
+- Stop boundary: any review/preflight/migration/runtime/policy failure stops before Provider；any paid failure consumes the cycle and forbids replacement。Step 5 is conditional on exact `visual_qa_pending:first-pdf-balloons` plus all Step 4 acceptance evidence and must resume the literal same run。
+- Promotion boundary: `0015_drop_symbol_attempt_v1_default` and production promotion remain outside GDT-10D and blocked；GDT-10D success does not auto-authorize either。
+- Supersession: the stale GDT-10 Steps 4-7 below no longer authorize execution；their replacement is Tasks 1-10 of the GDT-10D companion plan。
+- Next gate: independent read-only design/plan review已最终 `accept`；先单独commit contract/design/plan/parent amendments，再按companion plan Tasks 2-6以TDD实现并完成offline implementation review。No runtime mutation or Provider invocation before those gates；Task 7仍需fresh zero-paid reviewer `GO`。
+
 ## Status
 
 - Date: `2026-08-02`
-- Status: `Provider failure classification/evidence implemented and independently reviewed offline; GDT-10C remains consumed; GDT-10 Step 4 remains blocked pending separately authorized live proof`
+- Status: `Provider failure classification/evidence and DB gates accepted; GDT-10D selected but not yet activated; GDT-10 Step 4 remains incomplete`
 - Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
-- Current blocker: sealed GDT-10C only proves the old failure shape；the new classification/evidence path has no Provider runtime proof，and DB-backed focused verification remains deferred by the no-runtime-mutation boundary。No further live invocation、GDT-10D or Step 5 is authorized。A future plan-bounded live cycle requires explicit authorization。
+- Current blocker: feature QA runtime仍是 stale `0013 + 12-file identity`，且现有static `CNY 50`没有durable usage proof。GDT-10D must first pass independent plan review、pricing/cycle-ledger/per-submission authorization Harness TDD/review、`0014 + full runtime closure` credential-free activation and fresh zero-paid GO。Only then may the token be consumed and credential runtime activated for the single cycle start；Step 5 remains conditional on exact pause success and literal same-run resume。
 - Worktree: `.worktrees/structured-geometric-tolerance-recognition`
-- Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`, `b548191`, `4150ce8`, `5f4cfbf`, `bd75be6`, `1ba4c83`, `c66dcac`, `fd41879`, `d972a82`, `1e22e4b`, `53ef149`, `8866881`, `e033752`, `7d7da66`, `d49464c`, `462f7eb`, `91e02b5`, `9b182f4`, `e5bdf11`, `544e04c`, `9a77193`, `699ddf5`, `09af74a`, `77bcdb2`。
+- Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`, `b548191`, `4150ce8`, `5f4cfbf`, `bd75be6`, `1ba4c83`, `c66dcac`, `fd41879`, `d972a82`, `1e22e4b`, `53ef149`, `8866881`, `e033752`, `7d7da66`, `d49464c`, `462f7eb`, `91e02b5`, `9b182f4`, `e5bdf11`, `544e04c`, `9a77193`, `699ddf5`, `09af74a`, `77bcdb2`, `e4b0d9e`, `eb0e32e`。
 
 ## Execution Verification
 
@@ -157,7 +177,7 @@
 - Rollback-first: previous application commit `6bbaf90` served the known workbench GET successfully against the isolated `0012` database；database was restored to `0013` afterward。
 - Contract/static: `check-contracts.py`、OpenAPI breaking gate (`0` changes)、frontend `api:check`、contract architecture gate and `git diff --check` passed；production coarse-writer search returned no matches。
 - Tests: offline backend full suite `1647 passed`；frontend full suite `26 files / 278 tests passed`；frontend production build passed；GDT backend/frontend offline E2E passed earlier in GDT-9。
-- Provider failure evidence offline implementation: Provider contract `49 passed`、Advisor unit `72 passed`、focused remediation `3 passed`、pure scheduler/routing `6 passed`、integration collection `43`、Ruff、diff-check与 contract matrix `69/111/101/10` zero drift通过。DB-backed execution未运行，原因与边界见 implementation closeout；independent review最终 `accept with concerns`，无代码 blocker。
+- Provider failure classification/evidence implementation: initial offline gates were Provider contract `49 passed`、Advisor unit `72 passed`、focused remediation `3 passed`、pure scheduler/routing `6 passed`、integration collection `43`、Ruff、diff-check与 contract matrix `69/111/101/10` zero drift。After option `C` authorized isolated DB work，real PostgreSQL regression RED reproduced JSONB `null` vs SQL `NULL`，`eb0e32e` closed it；DB routing/schema/migration `56 passed`、Advisor/pipeline/status `139 passed` and full backend `1801 passed / 14 warnings`。Final independent DB remediation review verdict is `accept`。
 - Live activation amendment: focused Harness RED reproduced target/CLI、false credential coverage、typed Case A/B、run-bound crop、malformed nested policy and stale API runtime identity gaps；focused contract file is `62 passed`，final Harness contract suite is `174 passed`，Ruff/diff checks pass，and final independent reviewer verdict is `accept`。Fresh registration runs `20260801T054718154038Z-b4e4b0de` and `20260801T054725654107Z-01c1bb35` were generated only by Harness。Full-P0 run `20260801T054726079099Z-83f03a78` made `28` authenticated Qwen calls with well-formed source/crop/model/prompt/schema hashes and matching crop bytes, but the stale `/2` API runtime produced `0` structured GDT candidates against `7` approved GDT labels；the evaluator matched only one perpendicularity label, Case A/B were absent, and no formal symbol report/receipt was sealed。After adding the exact 12-file runtime guard, `make verify-p0-live` exits `2` before run creation with `Compose API runtime identity does not match current worktree` and run directory count remains `17 -> 17`。
 - Live runtime convergence: temporary worktree `.env` symlink was removed after the authorized Compose rebuild；API health passed and API/worker each matched all 12 current GDT runtime hashes。Fresh `make verify-p0-live` passed `69` global / `111` P0 contract mapping and generated exactly three Harness runs (`17 -> 20`)。Sample 1 source bytes match manifest SHA `58b9cf08...`；`12` authenticated `/3` call records have nonempty Provider request IDs and exact model/prompt/schema identity, all `12` request-bound crop hashes match bytes, and one 13th run-bound crop remains without request/response/call evidence after a 60-second timeout。Full run `20260801T061734601479Z-7a7c7f3d` is `failed` with `live_start_failed:RuntimeError` and `sample 1 application upload/process failed`；this is not accepted risk or Step 4 success。
 - Post-run runtime recurrence: final read-only check found API container `dbaae635f952` recreated from `/home/reggie/vscode_folder/Quality_Inspection/compose.yaml` after the failed run；it reports `visual-symbol-review/2` and fails the exact API identity guard。Worker `f3adcef47eea` remains the worktree `/3` deployment。No second deployment or live run was attempted against this mixed topology。
@@ -166,7 +186,7 @@
 - Post-timeout runtime recurrence: the timeout failure was sealed at `15:20:12+08:00` before main-worktree `make dev-local-api` started at `15:20:42+08:00`。That later command recreated API from `/home/reggie/vscode_folder/Quality_Inspection` as `/2` at `15:23:11+08:00` while worker remained this worktree `/3`。It did not cause the timeout, but it reconfirms that the shared Compose project lacks an exclusive owner for any future live window。
 - Timeout root-cause decision: the failing stack entered the `legacy_high_recall` sequential visual branch even though the symbol canary contract requires `production_uncertainty`。The existing production path already persists localized `provider_timeout` and preserves siblings as `partial_review_required`。Automatic timeout retry is rejected: `timeout=60.0` already exceeds the `45.0s` page wall budget, and a no-response attempt has no Provider request ID proving it is safe to resubmit。The approved design is `docs/superpowers/specs/2026-08-01-provider-timeout-retry-and-partial-failure-design.md`。
 - Environment note: `make test-backend` could not create its fresh Docker network because Docker reported `all predefined address pools have been fully subnetted`；the equivalent full backend suite ran against the isolated PostgreSQL and passed。
-- Remaining completion gate: GDT-10A与 safe Provider classification/evidence path均已实现并完成离线独立 review；localized partial、new durable diagnostics、failure cancellation terminals和 `0014` migration仍缺当前 runtime/DB proof。Compose worktree-isolation prerequisite与 GDT-10B recognition identity已 runtime-proven，GDT-10C已失败并 consumed。No Step 5、GDT-10D or fresh current-four run is authorized；next gate只能是用户明确批准的新 plan-bounded live cycle，并且在 promotion前还必须完成 separately approved `0015_drop_symbol_attempt_v1_default` retirement gate。Step 4 remains incomplete until typed Case A/B、all non-GD&T results and `visual_qa_pending:first-pdf-balloons` are present。
+- Remaining completion gate: GDT-10A、safe Provider classification/evidence与 isolated DB regression均已 accepted；GDT-10D must now implement/review `PROV-005` one-use cycle-wide cost evidence，activate `0014 + full runtime closure` without credentials，pass zero-paid review，consume exactly one fresh current-four live cycle，and only on exact pause complete literal same-run headed QA/export/receipt。`0015` retirement and production promotion remain separately blocked after GDT closure。
 
 ## Rollback Contract
 
@@ -1461,45 +1481,17 @@ git commit -m "fix(gdt): bind live timeout disposition"
 
 The approved spec/plan amendment is committed separately before implementation。Do not stage Compose isolation files、generated run evidence or unrelated dirty artifacts in the implementation commit。
 
-- [ ] **Step 4: Run current-four live Provider evidence under standing authorization after fresh zero-paid preflight**
+- [ ] **Steps 4-7: Superseded by the reviewed GDT-10D companion plan**
 
-Run the repository-owned command:
+The former direct `make verify-p0-live`、headed QA、final review and closeout instructions were written for stale `0013 + 12-file` activation and a non-auditable static cost ceiling。They do not authorize any current command。
 
-```bash
-make verify-p0-live
+Execute only Tasks 1-10 in:
+
+```text
+docs/superpowers/plans/2026-08-02-gdt10d-classified-provider-live-verification.md
 ```
 
-The command must first perform zero-paid runtime/source/contract preflight，including exact API/worker current-worktree hashes、`production_uncertainty` + router/model、database `0013` and the named Compose-isolation proof；then create fresh Harness-owned current-four and symbol-input registration runs from exact current sources plus the unique Git-HEAD-approved annotation bytes，并把 literal generated IDs 传入 unchanged full-live start path。Step 4 success means current authenticated Provider calls、sealed source/crop/model/prompt/schema identity hashes、typed Case A/B、all existing non-GD&T symbol results and `execution_state=visual_qa_pending:first-pdf-balloons`。A localized timeout may yield a valid partial result but is not Step 4 success if any required acceptance evidence is absent。A final receipt is not expected before headed QA；any failure remains an exact blocker and is not converted to accepted risk。
-
-This step permits exactly one command invocation in the current cycle。The hard live ceiling is `CNY 50` total estimated cost、`16` OCR calls/page、`16` Vision calls/page、`2` Vision calls/candidate and `1` crop expansion，with the production route further limited to `4` primary groups/page、`8` primary groups/project、`16` actual text+visual attempts/page、`45s` wall/page and `90s` wall/project。Timeout/transport are never retried；schema-invalid is retried at most once only by `ProductionRetryCoordinator`。Any policy drift、budget exhaustion or failed invocation blocks Step 4 and does not authorize another invocation or replacement run。
-
-- [ ] **Step 5: Run headed workbench QA and export proof**
-
-Only after the Step 4 pause evidence above passes, use Chrome MCP or the repository `browse` skill on the exact paused run/project and separately record:
-
-- API payload for Case A/B；
-- list labels/value/datum；
-- structured edit A -> B；
-- save + reload persistence；
-- freeze gate behavior；
-- PDF/Excel export from the same reviewed result。
-
-Do not treat API proof as headed UI proof。Do not acquire/overwrite another operator's review lock；if lock ownership conflicts, stop with the exact project/operator/expiry metadata but no credential values。
-
-After the run-bound `design-qa.md` passes, resume that same literal run ID。Only the resumed current-four/full-P0 run may generate the final `receipt.json` required for GDT-10 completion；do not start a replacement run or select `latest`。
-
-- [ ] **Step 6: Final independent review**
-
-Reviewer output must include verdict、blocking/non-blocking issues、active Owner inventory、old path removal evidence、migration/downgrade evidence、Case A/B live proof、frontend no-parser proof、export same-reviewed-result proof and test commands。Any remaining second Owner、coarse writer、unsealed live evidence or failed current-four contract blocks completion。
-
-- [ ] **Step 7: Update plan closeout and commit GDT-10**
-
-Update Status from `proposed` to the actual execution state only after every required gate。Record commits、exact test counts、run ID、receipt paths、review verdict、remaining risk and rollback evidence。
-
-```bash
-git add backend/app/processing/automatic_result.py backend/app/review/service.py backend/tests/integration/test_geometric_tolerance_migration.py .agent/harness/scripts/run-p0.py backend/tests/contract/harness/test_live_run_contract.py docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md
-git commit -m "feat(gdt): close structured recognition rollout"
-```
+That replacement requires `PROV-005` pricing/cycle-wide usage implementation and review、per-submission one-use authorization、writer quiescence、private backup、`0014 + full backend/app runtime closure` identity and independent credential-free zero-paid `GO` before the sole cycle start。Step 5 remains conditional on the exact same run reaching an accepted `visual_qa_pending:first-pdf-balloons` terminal and is the only allowed literal resume；final review/closeout remain mandatory。
 
 ## Spec Coverage Matrix
 
