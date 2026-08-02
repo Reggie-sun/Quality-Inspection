@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
+
+if TYPE_CHECKING:
+    from app.providers.usage_ledger import ReservationPermit
 
 
 LOCALIZED_PROVIDER_FAILURE_CATEGORIES = frozenset(
@@ -154,10 +157,27 @@ class VisionResult:
 
 
 class OcrProvider(Protocol):
-    def recognize_png(self, image: bytes) -> OcrResult: ...
+    def recognize_png(
+        self,
+        image: bytes,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> OcrResult: ...
 
 
 class VisionLlmProvider(Protocol):
-    def review_candidate(self, image: bytes, prompt: str) -> VisionResult: ...
+    def review_candidate(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult: ...
 
-    def review_symbols(self, image: bytes, prompt: str) -> VisionResult: ...
+    def review_symbols(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult: ...

@@ -39,6 +39,7 @@ from app.providers.base import (
 )
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
+from tests.support.provider_cycle import CYCLE_ID, create_cycle_authorization
 
 
 class PassingPreflight:
@@ -307,6 +308,70 @@ def test_worker_uses_frozen_project_mode_after_settings_change(
         ("advisor", "production_uncertainty"),
         ("recognition", "production_uncertainty"),
     ]
+    assert external_calls == []
+
+
+def test_cycle_task_injects_one_shared_usage_ledger_without_provider_work(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "cycle-task-storage")
+    setup = task_session_factory()
+    project, source = _project_source_with_routing_identity(
+        setup,
+        storage,
+        tmp_path,
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
+    setup.close()
+    authorization_root = create_cycle_authorization(
+        tmp_path / "cycle-task-authorization",
+        project_ids=(str(project.id),),
+    )
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+    monkeypatch.setattr(
+        tasks,
+        "get_settings",
+        lambda: Settings(
+            storage_root=storage.root,
+            qwen_model="qwen3-vl-plus-2025-12-19",
+            symbol_recognition_mode="production_uncertainty",
+            provider_cycle_authorization_id=CYCLE_ID,
+            provider_cycle_authorization_root=authorization_root,
+        ),
+    )
+    original_advisor = tasks.CandidateAdvisor
+    original_recognition = tasks.RuntimeRecognition
+    injected: list[object] = []
+
+    def recording_advisor(settings: Settings, *args, **kwargs):
+        injected.append(kwargs["usage_ledger"])
+        return original_advisor(settings, *args, **kwargs)
+
+    def recording_recognition(settings: Settings, *args, **kwargs):
+        injected.append(kwargs["usage_ledger"])
+        return original_recognition(settings, *args, **kwargs)
+
+    monkeypatch.setattr(tasks, "CandidateAdvisor", recording_advisor)
+    monkeypatch.setattr(tasks, "RuntimeRecognition", recording_recognition)
+
+    inventory_project.run(
+        str(project.id),
+        source.resource_ref,
+        f"product-process:{project.id}",
+    )
+
+    assert len(injected) == 2
+    assert injected[0] is injected[1]
+    assert injected[0].snapshot().reservation_count == 0
     assert external_calls == []
 
 

@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import zlib
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,6 +38,7 @@ from app.providers.base import (
     LocalizedProviderFailure,
     ProviderFailureFact,
 )
+from tests.support.provider_cycle import open_cycle_ledger
 
 
 _VISUAL_TOOL_NAME = "submit_visual_symbol_review"
@@ -218,6 +220,105 @@ def _failing_visual_provider(error: Exception) -> QwenVisionProvider:
             chat=SimpleNamespace(completions=FailingCompletions())
         )
     )
+
+
+def test_exact_cycle_qwen_adapter_requires_permit_before_sdk_submission(
+    tmp_path: Path,
+) -> None:
+    class CountingCompletions:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def create(self, **_kwargs):
+            self.calls += 1
+            raise ConnectionError("controlled transport failure")
+
+    completions = CountingCompletions()
+    provider = QwenVisionProvider(
+        SimpleNamespace(chat=SimpleNamespace(completions=completions)),
+        require_cycle_permit=True,
+    )
+    image = _png(text=None)
+
+    with pytest.raises(ValueError, match="permit"):
+        provider.review_symbols(image, "safe prompt")
+    assert completions.calls == 0
+
+    ledger = open_cycle_ledger(tmp_path, project_id="project-qwen-adapter")
+    permit = ledger.reserve(
+        provider="qwen-vl",
+        operation="review_symbols",
+        page_index=0,
+        subject_kind="escalation_group",
+        subject_id="fixture-group",
+        retry_index=0,
+        crop_expansion_count=0,
+    )
+    with pytest.raises(ClassifiedProviderFailure):
+        provider.review_symbols(
+            image,
+            "safe prompt",
+            reservation_permit=permit,
+        )
+
+    assert completions.calls == 1
+    assert ledger.snapshot().submission_started_count == 1
+    with pytest.raises(ValueError, match="permit"):
+        provider.review_symbols(
+            image,
+            "safe prompt",
+            reservation_permit=permit,
+        )
+    assert completions.calls == 1
+
+
+def test_exact_cycle_qwen_same_permit_concurrency_allows_one_sdk_call(
+    tmp_path: Path,
+) -> None:
+    class CountingCompletions:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def create(self, **_kwargs):
+            self.calls += 1
+            raise ConnectionError("controlled transport failure")
+
+    completions = CountingCompletions()
+    provider = QwenVisionProvider(
+        SimpleNamespace(chat=SimpleNamespace(completions=completions)),
+        require_cycle_permit=True,
+    )
+    ledger = open_cycle_ledger(
+        tmp_path,
+        project_id="project-qwen-concurrent-permit",
+    )
+    permit = ledger.reserve(
+        provider="qwen-vl",
+        operation="review_symbols",
+        page_index=0,
+        subject_kind="escalation_group",
+        subject_id="fixture-concurrent-group",
+        retry_index=0,
+        crop_expansion_count=0,
+    )
+
+    def invoke() -> type[BaseException]:
+        try:
+            provider.review_symbols(
+                _png(text=None),
+                "safe prompt",
+                reservation_permit=permit,
+            )
+        except BaseException as exc:  # asserted below
+            return type(exc)
+        raise AssertionError("controlled Provider call unexpectedly succeeded")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        failures = tuple(executor.map(lambda _index: invoke(), range(2)))
+
+    assert set(failures) == {ClassifiedProviderFailure, ValueError}
+    assert completions.calls == 1
+    assert ledger.snapshot().submission_started_count == 1
 
 
 @pytest.mark.parametrize(

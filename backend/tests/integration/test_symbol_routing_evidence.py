@@ -35,6 +35,7 @@ from app.candidates.routing_evidence import (
     ESCALATION_ATTEMPT_SCHEMA_VERSION,
     ESCALATION_OUTCOME_SCHEMA_VERSION,
     AdvisorBoundaryFailureDiagnostic,
+    BudgetControlDiagnostic,
     EscalationAttemptEvent,
     EscalationOutcome,
     ObservationOutcome,
@@ -44,6 +45,7 @@ from app.candidates.routing_evidence import (
     RoutingEvidenceRepository,
     SchedulerStopDiagnostic,
     routing_decision_group_sha256,
+    validate_budget_control_diagnostic,
     validate_provider_failure_diagnostic,
 )
 from app.candidates.symbol_cache import (
@@ -341,6 +343,94 @@ def test_scheduler_stop_and_control_diagnostics_are_exact() -> None:
             blocking_event_sha256=SHA_B,
             provider_work_started=True,
         ).as_dict()
+
+
+@pytest.mark.parametrize(
+    "budget_origin",
+    ("routing_plan", "provider_cycle_reservation"),
+)
+def test_budget_control_diagnostic_is_exact_and_event_bound(
+    budget_origin: str,
+) -> None:
+    diagnostic = BudgetControlDiagnostic(
+        schema_version="visual-symbol-budget-control/1",
+        budget_origin=budget_origin,
+    )
+    document = diagnostic.as_dict()
+
+    event = EscalationAttemptEvent(
+        schema_version=ESCALATION_ATTEMPT_SCHEMA_VERSION_V2,
+        escalation_group_id="group-budget",
+        routing_decision_sha256=SHA_A,
+        attempt_index=0,
+        event_code="not_started_budget_exhausted",
+        cache_entry_id=None,
+        provider_request_id=None,
+        diagnostic=document,
+    )
+
+    assert document == {
+        "schema_version": "visual-symbol-budget-control/1",
+        "budget_origin": budget_origin,
+    }
+    assert event.diagnostic == document
+    assert event.diagnostic_sha256 is not None
+
+
+@pytest.mark.parametrize(
+    "invalid_change",
+    (
+        {"budget_origin": "unknown"},
+        {"budget_origin": None},
+        {"private_detail": "private://customer/token-do-not-leak"},
+    ),
+)
+def test_budget_control_diagnostic_rejects_unknown_or_extra_fields(
+    invalid_change: dict[str, object],
+) -> None:
+    document: dict[str, object] = {
+        "schema_version": "visual-symbol-budget-control/1",
+        "budget_origin": "routing_plan",
+    }
+    document.update(invalid_change)
+
+    with pytest.raises(
+        ValueError,
+        match="^Budget control diagnostic is invalid$",
+    ):
+        validate_budget_control_diagnostic(document)
+
+
+@pytest.mark.parametrize(
+    ("event_code", "attempt_index", "provider_request_id"),
+    (
+        ("cache_miss", 0, None),
+        ("not_started_budget_exhausted", 1, None),
+        ("not_started_budget_exhausted", 0, "unexpected-request"),
+    ),
+)
+def test_budget_control_diagnostic_rejects_wrong_attempt_shape(
+    event_code: str,
+    attempt_index: int,
+    provider_request_id: str | None,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="^symbol escalation attempt event invalid$",
+    ):
+        EscalationAttemptEvent(
+            schema_version=ESCALATION_ATTEMPT_SCHEMA_VERSION_V2,
+            escalation_group_id="group-budget",
+            routing_decision_sha256=SHA_A,
+            attempt_index=attempt_index,
+            event_code=event_code,
+            cache_entry_id=None,
+            provider_request_id=provider_request_id,
+            diagnostic={
+                "schema_version": "visual-symbol-budget-control/1",
+                "budget_origin": "routing_plan",
+            },
+        )
 
 
 def _authorized_schema_retry_failure(
@@ -1322,6 +1412,10 @@ def test_denied_group_persists_budget_terminal_evidence(
             ),
             "attempt_index": 0,
             "event_code": "not_started_budget_exhausted",
+            "diagnostic": {
+                "schema_version": "visual-symbol-budget-control/1",
+                "budget_origin": "routing_plan",
+            },
         }
     ]
     assert terminals == [

@@ -1,9 +1,10 @@
-schema_version: provider-call-policy/1
+schema_version: provider-call-policy/2
 fixture:
   external_calls_allowed: false
 live:
   explicit_flag_required: true
-  max_retries_per_call: 2
+  max_coordinator_retries_per_logical_call: 1
+  max_submissions_per_logical_call: 2
   max_crop_expansions: 1
   max_ocr_calls_per_page: 16
   max_vision_calls_per_page: 16

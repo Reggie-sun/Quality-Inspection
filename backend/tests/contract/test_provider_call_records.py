@@ -11,6 +11,7 @@ import pytest
 
 from app.providers.call_records import (
     ProviderCallRecord,
+    bind_authorized_cycle_cost,
     persist_call_record,
     serialize_call_record,
 )
@@ -173,6 +174,37 @@ def test_unknown_pricing_is_serialized_as_null() -> None:
     )
 
     assert payload["estimated_cost"] is None
+
+
+def test_authorized_cycle_cost_binds_exact_ledger_decimal() -> None:
+    record = bind_authorized_cycle_cost(
+        replace(_record(), estimated_cost=None),
+        charged_cny="0.049169",
+    )
+
+    assert record.estimated_cost == 0.049169
+    assert str(record.estimated_cost) == "0.049169"
+
+
+@pytest.mark.parametrize(
+    ("existing", "charged"),
+    (
+        (0.5, "0.049169"),
+        (None, "NaN"),
+        (None, "-0.000001"),
+        (None, "0.0000001"),
+        (None, 0.5),
+    ),
+)
+def test_authorized_cycle_cost_rejects_mismatch_or_invalid_amount(
+    existing,
+    charged,
+) -> None:
+    with pytest.raises(ValueError, match="authorized cycle cost"):
+        bind_authorized_cycle_cost(
+            replace(_record(), estimated_cost=existing),
+            charged_cny=charged,
+        )
 
 
 @pytest.mark.parametrize(

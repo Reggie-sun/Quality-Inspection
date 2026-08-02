@@ -9,6 +9,7 @@ import math
 import re
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -1504,6 +1505,13 @@ def validate_live_evidence(
     ):
         raise ValueError("current-four live evidence identity is inconsistent")
 
+    validate_paid_cycle_evidence(
+        run,
+        live,
+        evidence_dir=evidence_dir,
+        root=root,
+    )
+
     entries = manifest.get("entries")
     samples = live.get("samples")
     verdict_samples = human.get("samples")
@@ -1581,6 +1589,531 @@ def validate_live_evidence(
             sample_by_order[order],
             run_dir=evidence_dir,
         )
+
+
+def _canonical_document_hash(document: Mapping[str, Any]) -> str:
+    payload = dict(document)
+    payload.pop("content_sha256", None)
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _official_pricing_sha256(root: Path) -> str:
+    pricing = _load_json(
+        root / "backend/app/providers/provider_pricing_gdt10d_v1.json"
+    )
+    digest = pricing.get("content_sha256")
+    if (
+        not isinstance(digest, str)
+        or digest != _canonical_document_hash(pricing)
+    ):
+        raise ValueError("paid cycle pricing snapshot is invalid")
+    return digest
+
+
+def _paid_ledger_entries(
+    *,
+    run: Mapping[str, Any],
+    paid: Mapping[str, Any],
+    ledger: Mapping[str, Any],
+    evidence_dir: Path,
+) -> tuple[dict[str, Any], ...]:
+    report = _load_json(evidence_dir / "reports/provider-usage-ledger.json")
+    expected_keys = {
+        "schema_version",
+        "run_id",
+        "pricing_sha256",
+        "cycle_id",
+        "journal_ref",
+        "committed_total_cny",
+        "reservation_count",
+        "reserved_only_count",
+        "submission_started_count",
+        "unsettled_started_count",
+        "settled_count",
+        "entries",
+        "content_sha256",
+    }
+    entries = report.get("entries")
+    if (
+        set(report) != expected_keys
+        or report.get("schema_version") != "provider-usage-evidence/1"
+        or report.get("run_id") != run.get("run_id")
+        or report.get("pricing_sha256") != paid.get("pricing_sha256")
+        or report.get("cycle_id") != paid.get("cycle_id")
+        or report.get("journal_ref") != paid.get("journal_ref")
+        or report.get("content_sha256") != _canonical_document_hash(report)
+        or report.get("content_sha256") != ledger.get("evidence_sha256")
+        or not isinstance(entries, list)
+        or any(not isinstance(entry, Mapping) for entry in entries)
+    ):
+        raise ValueError("paid cycle ledger evidence is inconsistent")
+    typed_entries = tuple(dict(entry) for entry in entries)
+    entry_keys = {
+        "attempt_index",
+        "provider",
+        "operation",
+        "project_id",
+        "page_index",
+        "subject_kind",
+        "subject_id",
+        "retry_index",
+        "crop_expansion_count",
+        "state",
+        "reservation_cny",
+        "charged_cny",
+    }
+    attempt_indices = [entry.get("attempt_index") for entry in typed_entries]
+    if (
+        len(typed_entries) != report.get("reservation_count")
+        or attempt_indices != list(range(1, len(typed_entries) + 1))
+        or any(set(entry) != entry_keys for entry in typed_entries)
+    ):
+        raise ValueError("paid cycle ledger attempt sequence is invalid")
+    admitted_project_ids = {
+        project.get("project_id")
+        for project in paid.get("projects", [])
+        if isinstance(project, Mapping)
+    }
+    page_counts: dict[tuple[str, str, int], int] = {}
+    subject_retries: dict[tuple[str, str, str], list[int]] = {}
+    charged_total = Decimal("0")
+    states = []
+    for entry in typed_entries:
+        try:
+            reservation = Decimal(str(entry.get("reservation_cny")))
+            charged = Decimal(str(entry.get("charged_cny")))
+        except InvalidOperation as exc:
+            raise ValueError("paid cycle ledger amount is invalid") from exc
+        provider = entry.get("provider")
+        operation = entry.get("operation")
+        project_id = entry.get("project_id")
+        page_index = entry.get("page_index")
+        retry_index = entry.get("retry_index")
+        crop_expansion = entry.get("crop_expansion_count")
+        state = entry.get("state")
+        if (
+            not reservation.is_finite()
+            or not charged.is_finite()
+            or reservation < 0
+            or charged < 0
+            or charged > reservation
+            or reservation.as_tuple().exponent < -6
+            or charged.as_tuple().exponent < -6
+            or project_id not in admitted_project_ids
+            or provider not in {"qwen-vl", "tencent-ocr"}
+            or not isinstance(page_index, int)
+            or isinstance(page_index, bool)
+            or page_index < 0
+            or retry_index not in {0, 1}
+            or crop_expansion not in {0, 1}
+            or state
+            not in {
+                "reserved_only",
+                "submission_started_unknown",
+                "settled_verified",
+                "reserved_unknown",
+            }
+        ):
+            raise ValueError("paid cycle ledger entry is invalid")
+        if (
+            (provider == "qwen-vl" and operation not in {"review_symbols", "review_candidate"})
+            or (
+                provider == "tencent-ocr"
+                and (operation != "GeneralAccurateOCR" or retry_index != 0)
+            )
+        ):
+            raise ValueError("paid cycle ledger provider operation is invalid")
+        page_key = (str(project_id), str(provider), page_index)
+        page_counts[page_key] = page_counts.get(page_key, 0) + 1
+        if page_counts[page_key] > 16:
+            raise ValueError("paid cycle ledger page budget is invalid")
+        if provider == "qwen-vl":
+            subject_key = (
+                str(project_id),
+                str(entry.get("subject_kind")),
+                str(entry.get("subject_id")),
+            )
+            subject_retries.setdefault(subject_key, []).append(retry_index)
+            if subject_retries[subject_key] != list(
+                range(len(subject_retries[subject_key]))
+            ) or len(subject_retries[subject_key]) > 2:
+                raise ValueError("paid cycle ledger subject budget is invalid")
+        charged_total += charged
+        states.append(state)
+    try:
+        committed = Decimal(str(report.get("committed_total_cny")))
+    except InvalidOperation as exc:
+        raise ValueError("paid cycle ledger total is invalid") from exc
+    if (
+        not committed.is_finite()
+        or committed != charged_total
+        or committed > Decimal("50.000000")
+        or report.get("reserved_only_count") != states.count("reserved_only")
+        or report.get("submission_started_count")
+        != len(states) - states.count("reserved_only")
+        or report.get("unsettled_started_count")
+        != states.count("submission_started_unknown")
+        or report.get("settled_count")
+        != states.count("settled_verified") + states.count("reserved_unknown")
+        or any(report.get(key) != ledger.get(key) for key in (
+            "committed_total_cny",
+            "reservation_count",
+            "reserved_only_count",
+            "submission_started_count",
+            "settled_count",
+        ))
+    ):
+        raise ValueError("paid cycle ledger aggregate is invalid")
+    return typed_entries
+
+
+def _validate_paid_routing_reports(
+    *,
+    run: Mapping[str, Any],
+    paid: Mapping[str, Any],
+    entries: tuple[dict[str, Any], ...],
+    evidence_dir: Path,
+    require_success: bool,
+) -> None:
+    for project in paid.get("projects", []):
+        if not isinstance(project, Mapping):
+            raise ValueError("paid cycle project admission is invalid")
+        if project.get("admission_sha256") is None:
+            continue
+        order = project.get("project_order")
+        project_id = project.get("project_id")
+        routing = _load_json(
+            evidence_dir / f"reports/provider-routing-{order}.json"
+        )
+        expected_keys = {
+            "schema_version",
+            "run_id",
+            "order",
+            "project_id",
+            "total_decisions",
+            "escalated_group_ids",
+            "denied_group_ids",
+            "admitted_group_ids",
+            "provider_cycle_reservation_denied_group_ids",
+            "cancelled_group_ids",
+            "terminal_group_ids",
+            "paid_artifact_group_ids",
+            "attempt_event_codes",
+            "submission_started_group_ids",
+            "never_submission_started_group_ids",
+            "reserved_only_group_ids",
+            "content_sha256",
+        }
+        group_fields = (
+            "escalated_group_ids",
+            "denied_group_ids",
+            "admitted_group_ids",
+            "provider_cycle_reservation_denied_group_ids",
+            "cancelled_group_ids",
+            "terminal_group_ids",
+            "paid_artifact_group_ids",
+            "submission_started_group_ids",
+            "never_submission_started_group_ids",
+            "reserved_only_group_ids",
+        )
+        if (
+            set(routing) != expected_keys
+            or routing.get("schema_version") != "provider-routing-aggregate/1"
+            or routing.get("run_id") != run.get("run_id")
+            or routing.get("order") != order
+            or routing.get("project_id") != project_id
+            or routing.get("content_sha256") != _canonical_document_hash(routing)
+            or any(
+                not isinstance(routing.get(field), list)
+                or len(routing[field]) != len(set(routing[field]))
+                for field in group_fields
+            )
+        ):
+            raise ValueError("paid cycle routing evidence is invalid")
+        escalated = set(routing["escalated_group_ids"])
+        denied = set(routing["denied_group_ids"])
+        admitted = set(routing["admitted_group_ids"])
+        provider_reservation_denied = set(
+            routing["provider_cycle_reservation_denied_group_ids"]
+        )
+        cancelled = set(routing["cancelled_group_ids"])
+        terminal = set(routing["terminal_group_ids"])
+        started = set(routing["submission_started_group_ids"])
+        never_started = set(routing["never_submission_started_group_ids"])
+        reserved_only = set(routing["reserved_only_group_ids"])
+        paid_artifacts = set(routing["paid_artifact_group_ids"])
+        ledger_started = {
+            entry["subject_id"]
+            for entry in entries
+            if entry["project_id"] == project_id
+            and entry["subject_kind"] == "escalation_group"
+            and entry["state"] != "reserved_only"
+        }
+        ledger_reserved_only = {
+            entry["subject_id"]
+            for entry in entries
+            if entry["project_id"] == project_id
+            and entry["subject_kind"] == "escalation_group"
+            and entry["state"] == "reserved_only"
+        }
+        storage = _load_json(
+            evidence_dir / f"reports/provider-storage-{order}.json"
+        )
+        storage_artifacts = storage.get("artifacts")
+        if (
+            not isinstance(storage, Mapping)
+            or set(storage)
+            != {
+                "schema_version",
+                "run_id",
+                "order",
+                "project_id",
+                "artifacts",
+                "content_sha256",
+            }
+            or storage.get("schema_version")
+            != "provider-storage-inventory/1"
+            or storage.get("run_id") != run.get("run_id")
+            or storage.get("order") != order
+            or storage.get("project_id") != project_id
+            or storage.get("content_sha256")
+            != _canonical_document_hash(storage)
+            or not isinstance(storage_artifacts, list)
+            or any(
+                not isinstance(artifact, Mapping)
+                or set(artifact) != {"ref", "sha256", "size"}
+                or not isinstance(artifact.get("ref"), str)
+                or not artifact["ref"].startswith(
+                    f"asset://projects/{project_id}/provider-"
+                )
+                or re.fullmatch(
+                    r"[0-9a-f]{64}", str(artifact.get("sha256"))
+                )
+                is None
+                or not isinstance(artifact.get("size"), int)
+                or isinstance(artifact.get("size"), bool)
+                or artifact["size"] < 0
+                for artifact in storage_artifacts
+            )
+        ):
+            raise ValueError("paid cycle storage inventory is invalid")
+        symbol_crop_count = sum(
+            "/provider-inputs/qwen-symbol/" in artifact["ref"]
+            and artifact["ref"].endswith(".png")
+            for artifact in storage_artifacts
+        )
+        if (
+            escalated != denied | admitted
+            or denied & admitted
+            or not provider_reservation_denied <= admitted
+            or admitted != started | never_started
+            or started & never_started
+            or not cancelled <= never_started
+            or terminal != escalated
+            or started != ledger_started
+            or reserved_only != ledger_reserved_only
+            or (require_success and reserved_only)
+            or never_started
+            & (paid_artifacts | ledger_started | ledger_reserved_only)
+            or symbol_crop_count != len(started)
+        ):
+            raise ValueError("paid cycle routing terminal reconciliation failed")
+        if require_success and provider_reservation_denied:
+            raise ValueError(
+                "paid cycle provider reservation rejection blocks formal success"
+            )
+        if order == 1 and (
+            routing.get("total_decisions") != 199
+            or len(escalated) != 198
+            or len(denied) != 190
+            or len(admitted) != 8
+        ):
+            raise ValueError("paid cycle sample-1 routing identity changed")
+
+
+def _validate_paid_close_bridge(
+    *,
+    run: Mapping[str, Any],
+    terminal: Mapping[str, Any],
+    evidence_dir: Path,
+) -> None:
+    bridge = _load_json(
+        evidence_dir / "reports/provider-cycle-close-bridge.json"
+    )
+    authorization = run.get("cycle_authorization")
+    expected_keys = {
+        "schema_version",
+        "run_id",
+        "image_id",
+        "storage_volume",
+        "network",
+        "container_user",
+        "authorization_owner_uid",
+        "authorization_owner_gid",
+        "mounts",
+        "terminal_sha256",
+        "content_sha256",
+    }
+    if (
+        set(bridge) != expected_keys
+        or bridge.get("schema_version") != "provider-cycle-close-bridge/1"
+        or bridge.get("run_id") != run.get("run_id")
+        or not isinstance(bridge.get("image_id"), str)
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", bridge["image_id"])
+        is None
+        or not isinstance(authorization, Mapping)
+        or bridge.get("image_id") != authorization.get("backend_image_id")
+        or not isinstance(bridge.get("storage_volume"), str)
+        or not bridge["storage_volume"].endswith("_storage_qa_dev")
+        or bridge.get("network") != "none"
+        or bridge.get("container_user") != "0:0"
+        or not isinstance(bridge.get("authorization_owner_uid"), int)
+        or not isinstance(bridge.get("authorization_owner_gid"), int)
+        or bridge.get("mounts")
+        != [
+            {"type": "volume", "target": "/data", "mode": "rw"},
+            {"type": "bind", "target": "/auth", "mode": "rw"},
+        ]
+        or bridge.get("terminal_sha256") != terminal.get("terminal_sha256")
+        or bridge.get("content_sha256")
+        != terminal.get("bridge_evidence_sha256")
+        or bridge.get("content_sha256") != _canonical_document_hash(bridge)
+    ):
+        raise ValueError("paid cycle close bridge evidence is inconsistent")
+
+
+def validate_paid_cycle_evidence(
+    run: Mapping[str, Any],
+    live: Mapping[str, Any],
+    *,
+    require_success: bool = True,
+    evidence_dir: Path | None = None,
+    root: Path | None = None,
+) -> None:
+    """Validate immutable authorization, admission, cost, and terminal bindings."""
+    if run.get("schema_version") != "run/2":
+        return
+    authorization = run.get("cycle_authorization")
+    paid = live.get("paid_cycle")
+    if not isinstance(authorization, Mapping) or not isinstance(paid, Mapping):
+        raise ValueError("paid cycle evidence is missing")
+    actual_root = root or Path(__file__).resolve().parents[3]
+    actual_evidence_dir = evidence_dir or (
+        actual_root / ".agent/harness/runs" / str(run.get("run_id"))
+    )
+    if paid.get("pricing_sha256") != _official_pricing_sha256(actual_root):
+        raise ValueError("paid cycle pricing snapshot identity is inconsistent")
+    for key in (
+        "cycle_id",
+        "pricing_sha256",
+        "issuance_sha256",
+        "consumption_sha256",
+        "run_authorization_sha256",
+    ):
+        if paid.get(key) != authorization.get(key):
+            raise ValueError("paid cycle authorization binding is inconsistent")
+    if authorization.get("run_id") != run.get("run_id"):
+        raise ValueError("paid cycle literal run binding is inconsistent")
+    expected_journal = (
+        f"asset://provider-usage-cycles/{authorization.get('cycle_id')}/"
+    )
+    if paid.get("journal_ref") != expected_journal:
+        raise ValueError("paid cycle ledger identity is inconsistent")
+    projects = paid.get("projects")
+    if not isinstance(projects, list):
+        raise ValueError("paid cycle project admissions are missing")
+    orders = [project.get("project_order") for project in projects if isinstance(project, Mapping)]
+    project_ids = [project.get("project_id") for project in projects if isinstance(project, Mapping)]
+    admitted_projects = [
+        project
+        for project in projects
+        if isinstance(project, Mapping)
+        and isinstance(project.get("admission_sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", project["admission_sha256"])
+        is not None
+    ]
+    pending_projects = [
+        project
+        for project in projects
+        if isinstance(project, Mapping)
+        and project.get("admission_sha256") is None
+    ]
+    if (
+        len(orders) != len(projects)
+        or len(set(orders)) != len(orders)
+        or len(set(project_ids)) != len(project_ids)
+        or len(admitted_projects) + len(pending_projects) != len(projects)
+        or (require_success and pending_projects)
+    ):
+        raise ValueError("paid cycle project admissions are duplicated")
+    samples = live.get("samples")
+    if isinstance(samples, list) and len(samples) == 4:
+        admitted = {
+            (project.get("project_order"), project.get("project_id"))
+            for project in admitted_projects
+            if isinstance(project, Mapping)
+        }
+        observed = {
+            (sample.get("order"), sample.get("project_id"))
+            for sample in samples
+            if isinstance(sample, Mapping)
+        }
+        if admitted != observed:
+            raise ValueError("paid cycle project admissions do not match samples")
+    ledger = paid.get("ledger")
+    terminal = paid.get("terminal")
+    if not isinstance(terminal, Mapping):
+        raise ValueError("paid cycle terminal evidence is missing")
+    _validate_paid_close_bridge(
+        run=run,
+        terminal=terminal,
+        evidence_dir=actual_evidence_dir,
+    )
+    if not admitted_projects:
+        if require_success or ledger is not None:
+            raise ValueError("paid cycle ledger evidence is inconsistent")
+        return
+    if not isinstance(ledger, Mapping):
+        raise ValueError("paid cycle ledger evidence is missing")
+    try:
+        committed = Decimal(str(ledger.get("committed_total_cny")))
+    except InvalidOperation as exc:
+        raise ValueError("paid cycle cost aggregate is invalid") from exc
+    if (
+        not committed.is_finite()
+        or committed < 0
+        or committed > Decimal("50.000000")
+        or terminal.get("status") not in {"completed", "failed", "aborted"}
+    ):
+        raise ValueError("paid cycle terminal aggregate is invalid")
+    if require_success and (
+        ledger.get("reserved_only_count") != 0
+        or paid.get("resume_consumed_sha256") is None
+        or terminal.get("status") != "completed"
+    ):
+        raise ValueError("paid cycle terminal aggregate blocks formal success")
+    entries = _paid_ledger_entries(
+        run=run,
+        paid=paid,
+        ledger=ledger,
+        evidence_dir=actual_evidence_dir,
+    )
+    _validate_paid_routing_reports(
+        run=run,
+        paid=paid,
+        entries=entries,
+        evidence_dir=actual_evidence_dir,
+        require_success=require_success,
+    )
+    if require_success and terminal.get("status") != "completed":
+        raise ValueError("paid cycle terminal aggregate blocks formal success")
 
 
 def validate_final_p0_release(

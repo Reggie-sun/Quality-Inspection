@@ -6,7 +6,7 @@ import re
 import time
 import uuid
 from collections import defaultdict
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -55,6 +55,7 @@ from app.candidates.routing_evidence import (
     ESCALATION_ATTEMPT_SCHEMA_VERSION_V2,
     ESCALATION_OUTCOME_SCHEMA_VERSION,
     AdvisorBoundaryFailureDiagnostic,
+    BudgetControlDiagnostic,
     EscalationAttemptEvent,
     EscalationOutcome,
     ObservationOutcome,
@@ -127,6 +128,7 @@ from app.providers.base import (
 )
 from app.providers.call_records import (
     ProviderCallRecord,
+    bind_authorized_cycle_cost,
     persist_call_record,
     serialize_call_record,
 )
@@ -137,6 +139,12 @@ from app.providers.qwen_vl import (
     validate_visual_request_metadata,
 )
 from app.providers.runtime import VisionProviderFactory
+from app.providers.usage_ledger import (
+    LedgerEntry,
+    ProviderBudgetExceeded,
+    ProviderUsageLedger,
+    ReservationPermit,
+)
 from app.storage.local import LocalFileStorage
 
 
@@ -267,7 +275,6 @@ class AdvisorBoundaryFailureClassification:
     ] = "processing_defect"
 
     def __post_init__(self) -> None:
-        expected_started = self.failure_stage != "provider_factory_failed"
         if (
             self.failure_stage
             not in {
@@ -275,7 +282,15 @@ class AdvisorBoundaryFailureClassification:
                 "provider_contract_failure",
                 "advisor_result_missing",
             }
-            or self.provider_work_started is not expected_started
+            or not isinstance(self.provider_work_started, bool)
+            or (
+                self.failure_stage == "provider_factory_failed"
+                and self.provider_work_started
+            )
+            or (
+                self.failure_stage == "advisor_result_missing"
+                and not self.provider_work_started
+            )
             or self.scope != "project_blocking"
             or self.pipeline_cause_category != "processing_defect"
         ):
@@ -1114,6 +1129,7 @@ class CandidateAdvisor:
         preview_sink: Any | None = None,
         symbol_session_factory: Callable[[], Session] | None = None,
         require_symbol_persistence: bool = False,
+        usage_ledger: ProviderUsageLedger | None = None,
     ) -> None:
         if _SAFE_PROJECT_ID.fullmatch(project_id) is None:
             raise ValueError("project_id must be one safe path segment")
@@ -1124,6 +1140,7 @@ class CandidateAdvisor:
         self._symbol_session_factory = symbol_session_factory
         self._require_symbol_persistence = require_symbol_persistence
         self._preview_sink = preview_sink
+        self._usage_ledger = usage_ledger
 
     def _project_uuid(self) -> uuid.UUID:
         try:
@@ -1316,6 +1333,7 @@ class CandidateAdvisor:
         event_code: str,
         cache_entry_id: uuid.UUID | None = None,
         provider_request_id: str | None = None,
+        diagnostic: Mapping[str, object] | None = None,
     ) -> str:
         if self._symbol_session_factory is None:
             return ""
@@ -1324,7 +1342,11 @@ class CandidateAdvisor:
             record = RoutingEvidenceRepository(session).append_attempt(
                 project_id=self._project_uuid(),
                 event=EscalationAttemptEvent(
-                    schema_version=ESCALATION_ATTEMPT_SCHEMA_VERSION,
+                    schema_version=(
+                        ESCALATION_ATTEMPT_SCHEMA_VERSION_V2
+                        if diagnostic is not None
+                        else ESCALATION_ATTEMPT_SCHEMA_VERSION
+                    ),
                     escalation_group_id=context.escalation_group_id,
                     routing_decision_sha256=(
                         context.routing_decision_sha256
@@ -1333,6 +1355,7 @@ class CandidateAdvisor:
                     event_code=event_code,
                     cache_entry_id=cache_entry_id,
                     provider_request_id=provider_request_id,
+                    diagnostic=diagnostic,
                 ),
             )
             session.commit()
@@ -1631,6 +1654,50 @@ class CandidateAdvisor:
             )
         return event_sha256
 
+    def _record_project_budget_terminal(
+        self,
+        *,
+        context: VisualEvidenceContext,
+        visual_observations: Sequence[VisualObservation],
+        cancelled: bool,
+    ) -> str:
+        event_code = (
+            "cancelled_after_project_budget"
+            if cancelled
+            else "not_started_budget_exhausted"
+        )
+        observation_code = (
+            "cancelled_after_project_budget"
+            if cancelled
+            else "routing_budget_exhausted"
+        )
+        event_sha256 = self._append_attempt_event(
+            context=context,
+            attempt_index=0,
+            event_code=event_code,
+            diagnostic=(
+                None
+                if cancelled
+                else BudgetControlDiagnostic(
+                    schema_version="visual-symbol-budget-control/1",
+                    budget_origin="provider_cycle_reservation",
+                ).as_dict()
+            ),
+        )
+        self._record_terminal_outcome(
+            context=context,
+            outcome_code="cancelled" if cancelled else "budget_exhausted",
+            observation_outcomes=tuple(
+                ObservationOutcome(
+                    visual_observation_id=observation.observation_id,
+                    outcome_code=observation_code,
+                )
+                for observation in visual_observations
+            ),
+            attempt_event_sha256s=(event_sha256,),
+        )
+        return event_sha256
+
     def _cache_result(
         self,
         relative_path: str,
@@ -1769,7 +1836,17 @@ class CandidateAdvisor:
                 "prompt_version": VISUAL_PROMPT_VERSION,
                 "schema_version": VISUAL_SCHEMA_VERSION,
                 "input_image_count": 1,
-                "estimated_cost": None,
+                "estimated_cost": (
+                    None
+                    if self._usage_ledger is None
+                    else float(
+                        Decimal(
+                            self._usage_ledger.charged_cny_for_request(
+                                request_id
+                            )
+                        )
+                    )
+                ),
                 "logical_task_reused": False,
                 "request_ref": f"asset://{request_relative_path}",
                 "response_ref": f"asset://{response_relative_path}",
@@ -1830,7 +1907,17 @@ class CandidateAdvisor:
                     "schema_version": VISUAL_SCHEMA_VERSION,
                     "retry_count": 0,
                     "input_image_count": 1,
-                    "estimated_cost": None,
+                    "estimated_cost": (
+                        None
+                        if self._usage_ledger is None
+                        else float(
+                            Decimal(
+                                self._usage_ledger.charged_cny_for_request(
+                                    str(retry_audit["request_id"])
+                                )
+                            )
+                        )
+                    ),
                     "logical_task_reused": False,
                     "request_ref": f"asset://{retry_paths[1]}",
                     "response_ref": f"asset://{retry_paths[2]}",
@@ -2183,14 +2270,52 @@ class CandidateAdvisor:
             crop_bbox_pdf=crop_bbox_pdf,
             gdt_frames=gdt_frame_observations,
         )
+        ledger_entries: dict[int, LedgerEntry] = {}
 
-        def call_once() -> tuple[
+        def cost_bound_record(
+            record: ProviderCallRecord,
+            *,
+            retry_index: int,
+        ) -> ProviderCallRecord:
+            entry = ledger_entries.get(retry_index)
+            if entry is None:
+                return record
+            return bind_authorized_cycle_cost(
+                record,
+                charged_cny=entry.charged_cny,
+            )
+
+        def call_once(retry_index: int) -> tuple[
             VisionResult | None,
             VisualSymbolProviderError | None,
             AdvisorFailureClassification | None,
             AdvisorBoundaryFailureClassification | None,
             int,
         ]:
+            permit: ReservationPermit | None = None
+            if self._usage_ledger is not None:
+                page_index = (
+                    execution_identity.page_index
+                    if execution_identity is not None
+                    else visual_observations[0].page_index
+                )
+                permit = self._usage_ledger.reserve(
+                    provider="qwen-vl",
+                    operation="review_symbols",
+                    page_index=page_index,
+                    subject_kind=(
+                        "escalation_group"
+                        if evidence_context is not None
+                        else "visual_cache"
+                    ),
+                    subject_id=(
+                        evidence_context.escalation_group_id
+                        if evidence_context is not None
+                        else cache_key
+                    ),
+                    retry_index=retry_index,
+                    crop_expansion_count=0,
+                )
             started = time.perf_counter_ns()
             result: VisionResult | None = None
             schema_failure: VisualSymbolProviderError | None = None
@@ -2199,10 +2324,17 @@ class CandidateAdvisor:
                 AdvisorBoundaryFailureClassification | None
             ) = None
             try:
-                raw_result = provider.review_symbols(
-                    canonical_crop_png,
-                    prompt,
-                )
+                if permit is None:
+                    raw_result = provider.review_symbols(
+                        canonical_crop_png,
+                        prompt,
+                    )
+                else:
+                    raw_result = provider.review_symbols(
+                        canonical_crop_png,
+                        prompt,
+                        reservation_permit=permit,
+                    )
                 response = parse_visual_symbol_json(raw_result.payload)
                 request_id, usage = validate_visual_request_metadata(
                     raw_result.request_id,
@@ -2215,16 +2347,57 @@ class CandidateAdvisor:
                 )
             except VisualSymbolProviderError as exc:
                 schema_failure = exc
+                if permit is not None:
+                    ledger_entries[retry_index] = (
+                        self._usage_ledger.settle_available_usage(
+                            permit,
+                            usage=exc.usage,
+                            request_id=exc.request_id,
+                        )
+                    )
             except ClassifiedProviderFailure as exc:
                 provider_failure = classify_provider_failure(
                     exc.fact
                 )
+                if permit is not None:
+                    entry = self._usage_ledger.retain_unknown_if_started(
+                        permit,
+                        request_id_state=exc.fact.request_id_state,
+                        request_id=exc.fact.provider_request_id,
+                    )
+                    if entry is not None:
+                        ledger_entries[retry_index] = entry
             except CapabilityUnavailable:
+                if permit is not None:
+                    entry = self._usage_ledger.retain_unknown_if_started(
+                        permit,
+                        request_id_state="absent",
+                    )
+                    if entry is not None:
+                        ledger_entries[retry_index] = entry
                 raise
             except Exception:
+                entry = None
+                if permit is not None:
+                    entry = self._usage_ledger.retain_unknown_if_started(
+                        permit,
+                        request_id_state="absent",
+                    )
+                    if entry is not None:
+                        ledger_entries[retry_index] = entry
                 boundary_failure = AdvisorBoundaryFailureClassification(
                     failure_stage="provider_contract_failure",
-                    provider_work_started=True,
+                    provider_work_started=(
+                        True if permit is None else entry is not None
+                    ),
+                )
+            if result is not None and permit is not None:
+                ledger_entries[retry_index] = (
+                    self._usage_ledger.settle_available_usage(
+                        permit,
+                        usage=result.usage,
+                        request_id=result.request_id,
+                    )
                 )
             duration_ms = max(
                 0,
@@ -2270,7 +2443,7 @@ class CandidateAdvisor:
             persist_call_record(
                 self._storage,
                 audit_path,
-                ProviderCallRecord(
+                cost_bound_record(ProviderCallRecord(
                     provider="qwen-vl",
                     request_id=failure.request_id,
                     model=model,
@@ -2283,7 +2456,7 @@ class CandidateAdvisor:
                     logical_task_reused=False,
                     request_ref=request_write.resource_ref,
                     response_ref=failure_write.resource_ref,
-                ),
+                ), retry_index=retry_count),
             )
 
         def propagate_classified_failure(
@@ -2316,7 +2489,7 @@ class CandidateAdvisor:
                 provider_classification,
                 boundary_classification,
                 duration_ms,
-            ) = call_once()
+            ) = call_once(0)
         except CapabilityUnavailable:
             append_attempt(
                 attempt_index=0,
@@ -2400,7 +2573,7 @@ class CandidateAdvisor:
                     provider_classification,
                     boundary_classification,
                     duration_ms,
-                ) = call_once()
+                ) = call_once(1)
             except CapabilityUnavailable:
                 append_attempt(
                     attempt_index=1,
@@ -2501,7 +2674,7 @@ class CandidateAdvisor:
         persist_call_record(
             self._storage,
             audit_relative,
-            ProviderCallRecord(
+            cost_bound_record(ProviderCallRecord(
                 provider="qwen-vl",
                 request_id=result.request_id,
                 model=model,
@@ -2514,7 +2687,7 @@ class CandidateAdvisor:
                 logical_task_reused=False,
                 request_ref=request_write.resource_ref,
                 response_ref=response_write.resource_ref,
-            ),
+            ), retry_index=retry_count),
         )
         if (
             production_cache_identity is not None
@@ -2620,7 +2793,6 @@ class CandidateAdvisor:
         padding_pdf: float,
         model: str,
     ) -> tuple[VisionResult, object | None, bool]:
-        del padding_pdf
         crop_sha256 = hashlib.sha256(crop_png).hexdigest()
         cache_key = _cache_key(
             model=model,
@@ -2645,15 +2817,43 @@ class CandidateAdvisor:
 
         if provider is None:
             provider = self._provider_factory(self._settings)
+        permit: ReservationPermit | None = None
+        if self._usage_ledger is not None:
+            permit = self._usage_ledger.reserve(
+                provider="qwen-vl",
+                operation="review_candidate",
+                page_index=route.page_index,
+                subject_kind="text_route",
+                subject_id=cache_key,
+                retry_index=0,
+                crop_expansion_count=1 if padding_pdf > 0 else 0,
+            )
         started = time.perf_counter_ns()
         try:
-            raw_result = provider.review_candidate(
-                crop_png,
-                _review_prompt(route),
-            )
+            if permit is None:
+                raw_result = provider.review_candidate(
+                    crop_png,
+                    _review_prompt(route),
+                )
+            else:
+                raw_result = provider.review_candidate(
+                    crop_png,
+                    _review_prompt(route),
+                    reservation_permit=permit,
+                )
         except CapabilityUnavailable:
+            if permit is not None:
+                self._usage_ledger.retain_unknown_if_started(
+                    permit,
+                    request_id_state="absent",
+                )
             raise
         except Exception as exc:
+            if permit is not None:
+                self._usage_ledger.retain_unknown_if_started(
+                    permit,
+                    request_id_state="absent",
+                )
             raise _LegacyCandidateAdvisorFailure(
                 "Vision candidate Advisor call failed",
                 failure_category=(
@@ -2673,11 +2873,28 @@ class CandidateAdvisor:
                 usage=dict(raw_result.usage),
             )
         except CapabilityUnavailable:
+            if permit is not None:
+                self._usage_ledger.retain_unknown_if_started(
+                    permit,
+                    request_id_state="absent",
+                )
             raise
         except Exception:
+            if permit is not None:
+                self._usage_ledger.retain_unknown_if_started(
+                    permit,
+                    request_id_state="absent",
+                )
             raise CandidateAdvisorFailure(
                 "Vision candidate Advisor response is invalid"
             ) from None
+        ledger_entry = None
+        if permit is not None:
+            ledger_entry = self._usage_ledger.settle_available_usage(
+                permit,
+                usage=result.usage,
+                request_id=result.request_id,
+            )
         duration_ms = max(0, (time.perf_counter_ns() - started) // 1_000_000)
 
         crop_relative = (
@@ -2706,23 +2923,29 @@ class CandidateAdvisor:
             cache_content,
             hashlib.sha256(cache_content).hexdigest(),
         )
+        call_record = ProviderCallRecord(
+            provider="qwen-vl",
+            request_id=result.request_id,
+            model=model,
+            prompt_version=PROMPT_VERSION,
+            schema_version=SCHEMA_VERSION,
+            duration_ms=duration_ms,
+            retry_count=0,
+            input_image_count=1,
+            estimated_cost=None,
+            logical_task_reused=False,
+            request_ref=crop_write.resource_ref,
+            response_ref=cache_write.resource_ref,
+        )
+        if ledger_entry is not None:
+            call_record = bind_authorized_cycle_cost(
+                call_record,
+                charged_cny=ledger_entry.charged_cny,
+            )
         persist_call_record(
             self._storage,
             audit_relative,
-            ProviderCallRecord(
-                provider="qwen-vl",
-                request_id=result.request_id,
-                model=model,
-                prompt_version=PROMPT_VERSION,
-                schema_version=SCHEMA_VERSION,
-                duration_ms=duration_ms,
-                retry_count=0,
-                input_image_count=1,
-                estimated_cost=None,
-                logical_task_reused=False,
-                request_ref=crop_write.resource_ref,
-                response_ref=cache_write.resource_ref,
-            ),
+            call_record,
         )
         return result, provider, False
 
@@ -3011,8 +3234,14 @@ class CandidateAdvisor:
                             context=denied_context,
                             attempt_index=0,
                             event_code=(
-                                "not_started_budget_exhausted"
+                                    "not_started_budget_exhausted"
                             ),
+                            diagnostic=BudgetControlDiagnostic(
+                                schema_version=(
+                                    "visual-symbol-budget-control/1"
+                                ),
+                                budget_origin="routing_plan",
+                            ).as_dict(),
                         )
                         self._record_terminal_outcome(
                             context=denied_context,
@@ -3441,6 +3670,7 @@ class CandidateAdvisor:
                 project_blocking_failures: dict[
                     int, CandidateAdvisorFailure
                 ] = {}
+                budget_failures: dict[int, ProviderBudgetExceeded] = {}
                 with ThreadPoolExecutor(
                     max_workers=MAX_VISUAL_IN_FLIGHT
                 ) as executor:
@@ -3466,6 +3696,12 @@ class CandidateAdvisor:
                                 event_code=(
                                     "not_started_budget_exhausted"
                                 ),
+                                diagnostic=BudgetControlDiagnostic(
+                                    schema_version=(
+                                        "visual-symbol-budget-control/1"
+                                    ),
+                                    budget_origin="routing_plan",
+                                ).as_dict(),
                             )
                             self._record_terminal_outcome(
                                 context=context,
@@ -3544,7 +3780,24 @@ class CandidateAdvisor:
                             try:
                                 outcome = future.result()
                             except Exception as exc:
-                                if (
+                                if isinstance(exc, ProviderBudgetExceeded):
+                                    job = production_jobs[completed_index]
+                                    self._record_project_budget_terminal(
+                                        context=VisualEvidenceContext(
+                                            escalation_group_id=(
+                                                job.escalation_group_id
+                                            ),
+                                            routing_decision_sha256=(
+                                                job.routing_decision_sha256
+                                            ),
+                                        ),
+                                        visual_observations=(
+                                            job.visual_observations
+                                        ),
+                                        cancelled=False,
+                                    )
+                                    budget_failures[completed_index] = exc
+                                elif (
                                     self._require_symbol_persistence
                                     and isinstance(
                                         exc,
@@ -3599,6 +3852,7 @@ class CandidateAdvisor:
                         while (
                             not worker_failures
                             and not project_blocking_failures
+                            and not budget_failures
                             and next_job_index < len(production_jobs)
                             and len(outstanding)
                             < MAX_VISUAL_IN_FLIGHT
@@ -3688,6 +3942,23 @@ class CandidateAdvisor:
                             min(routing_failure_indexes)
                         ]
                     raise first_blocking
+                if budget_failures:
+                    for queued_job in production_jobs[next_job_index:]:
+                        self._record_project_budget_terminal(
+                            context=VisualEvidenceContext(
+                                escalation_group_id=(
+                                    queued_job.escalation_group_id
+                                ),
+                                routing_decision_sha256=(
+                                    queued_job.routing_decision_sha256
+                                ),
+                            ),
+                            visual_observations=(
+                                queued_job.visual_observations
+                            ),
+                            cancelled=True,
+                        )
+                    raise budget_failures[min(budget_failures)]
                 if worker_failures:
                     raise worker_failures[min(worker_failures)]
                 localized_job_indexes = {

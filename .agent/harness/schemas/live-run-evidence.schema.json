@@ -35,6 +35,7 @@
       "maxItems": 6
     },
     "child_run_ids": { "type": "array", "maxItems": 0 },
+    "paid_cycle": { "$ref": "#/$defs/paid_cycle" },
     "symbol_recognition": {
       "oneOf": [
         { "$ref": "#/$defs/symbol_recognition_evidence" },
@@ -58,6 +59,116 @@
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "paid_cycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cycle_id",
+        "pricing_sha256",
+        "issuance_sha256",
+        "consumption_sha256",
+        "run_authorization_sha256",
+        "journal_ref",
+        "projects",
+        "resume_consumed_sha256",
+        "ledger",
+        "terminal"
+      ],
+      "properties": {
+        "cycle_id": { "type": "string", "minLength": 1 },
+        "pricing_sha256": { "$ref": "#/$defs/sha256" },
+        "issuance_sha256": { "$ref": "#/$defs/sha256" },
+        "consumption_sha256": { "$ref": "#/$defs/sha256" },
+        "run_authorization_sha256": { "$ref": "#/$defs/sha256" },
+        "journal_ref": {
+          "type": "string",
+          "pattern": "^asset://provider-usage-cycles/[A-Za-z0-9._:-]+/$"
+        },
+        "projects": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/paid_project" }
+        },
+        "resume_consumed_sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "ledger": {
+          "oneOf": [
+            { "$ref": "#/$defs/paid_ledger" },
+            { "type": "null" }
+          ]
+        },
+        "terminal": {
+          "oneOf": [
+            { "$ref": "#/$defs/paid_terminal" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "paid_project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_order",
+        "project_id",
+        "source_sha256",
+        "admission_sha256"
+      ],
+      "properties": {
+        "project_order": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "project_id": { "type": "string", "minLength": 1 },
+        "source_sha256": { "$ref": "#/$defs/sha256" },
+        "admission_sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "paid_ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "committed_total_cny",
+        "reservation_count",
+        "reserved_only_count",
+        "submission_started_count",
+        "settled_count",
+        "evidence_sha256"
+      ],
+      "properties": {
+        "committed_total_cny": {
+          "type": "string",
+          "pattern": "^(?:0|[1-4][0-9]|50)\\.[0-9]{6}$"
+        },
+        "reservation_count": { "type": "integer", "minimum": 0 },
+        "reserved_only_count": { "type": "integer", "minimum": 0 },
+        "submission_started_count": { "type": "integer", "minimum": 0 },
+        "settled_count": { "type": "integer", "minimum": 0 },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "paid_terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "quiescence_sha256",
+        "terminal_sha256",
+        "bridge_evidence_sha256"
+      ],
+      "properties": {
+        "status": { "enum": ["completed", "failed", "aborted"] },
+        "quiescence_sha256": { "$ref": "#/$defs/sha256" },
+        "terminal_sha256": { "$ref": "#/$defs/sha256" },
+        "bridge_evidence_sha256": { "$ref": "#/$defs/sha256" }
+      }
     },
     "string_id_array": {
       "type": "array",

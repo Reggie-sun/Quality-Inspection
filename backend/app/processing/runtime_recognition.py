@@ -25,6 +25,7 @@ from app.processing.automatic_result import (
 )
 from app.providers.base import OcrProvider
 from app.providers.runtime import OcrProviderFactory, build_ocr_provider
+from app.providers.usage_ledger import ProviderUsageLedger
 
 
 _MAX_OCR_CALLS_PER_PAGE = 16
@@ -41,6 +42,7 @@ class RuntimeRecognition:
         *,
         provider_factory: OcrProviderFactory = build_ocr_provider,
         advisor: CandidateAdvisor | None = None,
+        usage_ledger: ProviderUsageLedger | None = None,
         render_scale: float = 2.0,
     ) -> None:
         self._settings = settings
@@ -48,6 +50,7 @@ class RuntimeRecognition:
         self._render_scale = render_scale
         self._provider_call_ids: tuple[str, ...] = ()
         self._advisor = advisor
+        self._usage_ledger = usage_ledger
         self._source_path: Path | None = None
 
     def build_inventory(self, pdf_path: Path) -> tuple[PageInventory, ...]:
@@ -87,7 +90,46 @@ class RuntimeRecognition:
                         region,
                         transform,
                     )
-                    result = provider.recognize_png(png)
+                    permit = None
+                    if self._usage_ledger is not None:
+                        region_identity = hashlib.sha256(
+                            (
+                                f"{page_index}:"
+                                f"{float(region.x0):.6f}:"
+                                f"{float(region.y0):.6f}:"
+                                f"{float(region.x1):.6f}:"
+                                f"{float(region.y1):.6f}"
+                            ).encode("ascii")
+                        ).hexdigest()
+                        permit = self._usage_ledger.reserve(
+                            provider="tencent-ocr",
+                            operation="GeneralAccurateOCR",
+                            page_index=page_index,
+                            subject_kind="ocr_region",
+                            subject_id=region_identity,
+                            retry_index=0,
+                            crop_expansion_count=0,
+                        )
+                    try:
+                        if permit is None:
+                            result = provider.recognize_png(png)
+                        else:
+                            result = provider.recognize_png(
+                                png,
+                                reservation_permit=permit,
+                            )
+                            self._usage_ledger.settle(
+                                permit,
+                                usage=None,
+                                request_id=result.request_id,
+                            )
+                    except Exception:
+                        if permit is not None:
+                            self._usage_ledger.retain_unknown_if_started(
+                                permit,
+                                request_id_state="absent",
+                            )
+                        raise
                     provider_call_ids.append(result.request_id)
                     region_observations: list[TextObservation] = []
                     for observation_index, observation in enumerate(

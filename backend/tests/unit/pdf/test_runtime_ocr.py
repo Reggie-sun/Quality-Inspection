@@ -20,6 +20,8 @@ from app.processing import runtime_recognition as runtime_recognition_module
 from app.processing.automatic_result import CandidateSnapshot
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.providers.base import OcrObservation, OcrResult
+from app.providers.usage_ledger import ProviderUsageLedger, ReservationPermit
+from tests.support.provider_cycle import open_cycle_ledger
 
 
 def _png(width: int, height: int) -> bytes:
@@ -84,6 +86,31 @@ class RecordingOcrProvider:
                 ),
             ),
         )
+
+
+class LedgerAwareOcrProvider(RecordingOcrProvider):
+    def __init__(self, ledger: ProviderUsageLedger, *, fail_after_start: bool = False):
+        super().__init__()
+        self._ledger = ledger
+        self._fail_after_start = fail_after_start
+
+    def recognize_png(
+        self,
+        image: bytes,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> OcrResult:
+        before = self._ledger.snapshot()
+        assert before.reserved_only_count == 1
+        assert before.submission_started_count == 0
+        assert reservation_permit is not None
+        reservation_permit.consume_for_adapter(
+            provider="tencent-ocr",
+            operation="GeneralAccurateOCR",
+        )
+        if self._fail_after_start:
+            raise OSError("controlled provider failure")
+        return super().recognize_png(image)
 
 
 class SourceBoundPreviewSink:
@@ -262,6 +289,64 @@ def test_hybrid_image_region_appends_separate_coordinate_safe_ocr_observation(
     assert ocr_candidate["source_truth_preserved"] is True
     assert provider.calls == [(120, 80)]
     assert factory_calls == ["factory"]
+
+
+def test_usage_ledger_ocr_reserves_starts_and_settles_exact_cost(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-runtime-ocr"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareOcrProvider(ledger)
+    pdf_path = tmp_path / "ledger-ocr.pdf"
+    _write_pdf(
+        pdf_path,
+        native_text="M6",
+        image_rect=pymupdf.Rect(100.0, 100.0, 160.0, 140.0),
+    )
+    recognition = RuntimeRecognition(
+        Settings(storage_root=tmp_path / "storage"),
+        provider_factory=lambda _settings: provider,
+        usage_ledger=ledger,
+    )
+
+    recognition.build_inventory(pdf_path)
+
+    snapshot = ledger.snapshot()
+    assert len(provider.calls) == 1
+    assert snapshot.reservation_count == 1
+    assert snapshot.submission_started_count == 1
+    assert snapshot.settled_count == 1
+    assert snapshot.committed_total_cny == "0.500000"
+    assert snapshot.entries[0].state == "settled_verified"
+    assert snapshot.entries[0].subject_kind == "ocr_region"
+
+
+def test_usage_ledger_ocr_started_failure_retains_full_charge(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-runtime-ocr-failure"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareOcrProvider(ledger, fail_after_start=True)
+    pdf_path = tmp_path / "ledger-ocr-failure.pdf"
+    _write_pdf(
+        pdf_path,
+        native_text="M6",
+        image_rect=pymupdf.Rect(100.0, 100.0, 160.0, 140.0),
+    )
+    recognition = RuntimeRecognition(
+        Settings(storage_root=tmp_path / "storage"),
+        provider_factory=lambda _settings: provider,
+        usage_ledger=ledger,
+    )
+
+    with pytest.raises(OSError, match="controlled provider failure"):
+        recognition.build_inventory(pdf_path)
+
+    snapshot = ledger.snapshot()
+    assert snapshot.submission_started_count == 1
+    assert snapshot.settled_count == 1
+    assert snapshot.committed_total_cny == "0.500000"
+    assert snapshot.entries[0].state == "reserved_unknown"
 
 
 def test_runtime_ocr_preserves_native_layout_assignments(

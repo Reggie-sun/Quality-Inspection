@@ -6,9 +6,11 @@ import importlib.util
 import hashlib
 import json
 import os
+import signal
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import ModuleType
 from urllib.parse import urlsplit
@@ -1364,6 +1366,8 @@ def test_full_p0_run_schema_adds_lifecycle_without_invalidating_task_runs() -> N
         "live_identity": paused["live_identity"],
     }
     _validate(paused, "run.schema.json")
+    pending = _run("terminal_pending")
+    _validate(pending, "run.schema.json")
 
     legacy_task = _run()
     legacy_task.update({"scope": "task", "task_id": "D7-T1"})
@@ -1709,6 +1713,8 @@ def test_live_cli_rejects_missing_server_credentials_before_run_creation(
             "--pause-after",
             "first-pdf-balloons",
             "--print-run-id-only",
+            "--authorized-run-id",
+            RUN_ID,
         ]
     )
 
@@ -1728,12 +1734,14 @@ def test_repository_live_target_requests_fresh_activation_and_pause() -> None:
 
     assert result.returncode == 0
     command = next(
-        line for line in result.stdout.splitlines() if "run-p0.py live" in line
+        line
+        for line in result.stdout.splitlines()
+        if "live_cycle_authorization.py execute-start" in line
     )
-    assert "--activate-current-inputs" in command
-    assert "--pause-after first-pdf-balloons" in command
-    assert "--current-four-run" not in command
-    assert "--symbol-eval-run" not in command
+    assert "QI_LIVE_CYCLE_AUTHORIZATION_REF" in result.stdout
+    assert "QI_LIVE_CYCLE_OVERRIDE_REF" in result.stdout
+    assert "check-contracts" not in command
+    assert "run-p0.py live" not in result.stdout
 
 
 def test_full_live_activation_passes_generated_literal_runs_to_start(
@@ -1764,7 +1772,15 @@ def test_full_live_activation_passes_generated_literal_runs_to_start(
         return {"ready": True}
 
     monkeypatch.setattr(runner, "preflight_full_p0_live", preflight)
-    monkeypatch.setattr(runner, "start_live_run", lambda _preflight: RUN_ID)
+    monkeypatch.setattr(
+        runner,
+        "start_live_run",
+        lambda _preflight, *, authorized_run_id: (
+            RUN_ID
+            if authorized_run_id == RUN_ID
+            else pytest.fail("wrong authorized run identity")
+        ),
+    )
 
     result = runner.main(
         [
@@ -1777,11 +1793,61 @@ def test_full_live_activation_passes_generated_literal_runs_to_start(
             "--pause-after",
             "first-pdf-balloons",
             "--print-run-id-only",
+            "--authorized-run-id",
+            RUN_ID,
         ]
     )
 
     assert result == 0
     assert observed == [(current_four_run, symbol_eval_run)]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    (
+        [
+            "live",
+            "--scope",
+            "full-p0",
+            "--resume-run",
+            RUN_ID,
+            "--design-qa",
+            "design-qa.md",
+        ],
+        [
+            "live",
+            "--scope",
+            "full-p0",
+            "--abort-run",
+            RUN_ID,
+            "--reason",
+            "blocked",
+        ],
+        [
+            "live",
+            "--scope",
+            "full-p0",
+            "--finalize-run",
+            RUN_ID,
+            "--terminal-status",
+            "failed",
+        ],
+        ["fixture", "--scope", "task", "--task", "D1-T1"],
+    ),
+)
+def test_authorized_run_id_is_rejected_outside_live_start(
+    argv: list[str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runner = _load_module(
+        f"qi_run_p0_authorized_start_only_{argv[0]}_{len(argv)}",
+        HARNESS / "scripts/run-p0.py",
+    )
+
+    result = runner.main([*argv, "--authorized-run-id", RUN_ID])
+
+    assert result == 2
+    assert "--authorized-run-id is limited" in capsys.readouterr().err
 
 
 def test_full_live_activation_preflights_bytes_before_fresh_registration(
@@ -1910,7 +1976,7 @@ def test_live_runtime_identity_rejects_unbound_published_port(
         HARNESS / "scripts/run-p0.py",
     )
     valid = _expected_gdt_runtime_payload(runner)
-    payloads = {"api": valid, "worker": valid, "postgres": "0013\n"}
+    payloads = {"api": valid, "worker": valid, "postgres": "0014\n"}
     _calls, fake_run = _runtime_identity_run(
         runner,
         payloads=payloads,
@@ -1941,7 +2007,7 @@ def test_live_preflight_rejects_recognition_identity_mismatch(
     payloads = {
         "api": mismatched if service == "api" else valid,
         "worker": mismatched if service == "worker" else valid,
-        "postgres": "0013\n",
+        "postgres": "0014\n",
     }
     _calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
@@ -1980,27 +2046,22 @@ def test_live_runtime_identity_rejects_each_stale_hash(
         "qi_run_p0_runtime_hash_" + service + "_" + relative.replace("/", "_"),
         HARNESS / "scripts/run-p0.py",
     )
-    assert set(runner.LIVE_API_GDT_RUNTIME_PATHS) == {
-        "app/providers/visual_symbol_review.schema.json",
-        "app/providers/qwen_vl.py",
-        "app/candidates/advisor.py",
-        "app/candidates/gdt_evidence.py",
-        "app/candidates/geometric_tolerance.py",
-        "app/candidates/symbol_review.py",
-        "app/candidates/complex_fallback.py",
-        "app/processing/automatic_result.py",
-        "app/processing/runtime_recognition.py",
-        "app/pdf/inventory.py",
-        "app/pdf/gdt_frames.py",
-        "app/pdf/gdt_raster_frames.py",
+    expected_paths = {
+        str(path.relative_to(ROOT / "backend"))
+        for path in (ROOT / "backend/app").rglob("*")
+        if path.is_file()
+        and not path.is_symlink()
+        and "__pycache__" not in path.parts
+        and path.suffix in {".py", ".json"}
     }
+    assert set(runner.LIVE_API_GDT_RUNTIME_PATHS) == expected_paths
     valid = _expected_gdt_runtime_payload(runner)
     stale = json.loads(json.dumps(valid))
     stale["hashes"][relative] = "0" * 64
     payloads = {
         "api": stale if service == "api" else valid,
         "worker": stale if service == "worker" else valid,
-        "postgres": "0013\n",
+        "postgres": "0014\n",
     }
     _calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
@@ -2022,7 +2083,7 @@ def test_live_runtime_identity_rejects_missing_compose_service(
         HARNESS / "scripts/run-p0.py",
     )
     valid = _expected_gdt_runtime_payload(runner)
-    payloads = {"api": valid, "worker": valid, "postgres": "0013\n"}
+    payloads = {"api": valid, "worker": valid, "postgres": "0014\n"}
     _calls, fake_run = _runtime_identity_run(
         runner,
         payloads=payloads,
@@ -2052,7 +2113,7 @@ def test_live_runtime_identity_rejects_malformed_payload(
     payloads = {
         "api": payload if service == "api" else valid,
         "worker": payload if service == "worker" else valid,
-        "postgres": "0013\n",
+        "postgres": "0014\n",
     }
     _calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
@@ -2064,7 +2125,10 @@ def test_live_runtime_identity_rejects_malformed_payload(
         runner._require_compose_runtime_identity()
 
 
-@pytest.mark.parametrize("revision", ["0012\n", "0013\n0012\n", "not-a-revision\n"])
+@pytest.mark.parametrize(
+    "revision",
+    ["0013\n", "0014\n0013\n", "not-a-revision\n"],
+)
 def test_live_runtime_identity_rejects_database_revision_mismatch(
     monkeypatch: pytest.MonkeyPatch,
     revision: str,
@@ -2095,7 +2159,7 @@ def test_live_preflight_accepts_exact_api_worker_and_database_identity(
         HARNESS / "scripts/run-p0.py",
     )
     valid = _expected_gdt_runtime_payload(runner)
-    payloads = {"api": valid, "worker": valid, "postgres": "0013\n"}
+    payloads = {"api": valid, "worker": valid, "postgres": "0014\n"}
     calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
 
@@ -2349,7 +2413,12 @@ def test_full_live_symbol_eval_run_is_literal_and_binds_sealed_bytes(
             )
         }
 
-    def start(preflight_result: dict[str, dict[str, bytes]]) -> str:
+    def start(
+        preflight_result: dict[str, dict[str, bytes]],
+        *,
+        authorized_run_id: str,
+    ) -> str:
+        assert authorized_run_id == full_run_id
         artifacts = preflight_result["input_artifacts"]
         starts.append(artifacts)
         run_dir = tmp_path / full_run_id
@@ -2377,6 +2446,8 @@ def test_full_live_symbol_eval_run_is_literal_and_binds_sealed_bytes(
                 "--pause-after",
                 "first-pdf-balloons",
                 "--print-run-id-only",
+                "--authorized-run-id",
+                full_run_id,
             ]
         )
         assert result == 2
@@ -2397,6 +2468,8 @@ def test_full_live_symbol_eval_run_is_literal_and_binds_sealed_bytes(
                 "--pause-after",
                 "first-pdf-balloons",
                 "--print-run-id-only",
+                "--authorized-run-id",
+                full_run_id,
             ]
         )
         == 0
@@ -3369,7 +3442,8 @@ def test_live_policy_requires_visual_symbol_page_budget() -> None:
     )
     provider_policy = {
         "explicit_flag_required": True,
-        "max_retries_per_call": 2,
+        "max_coordinator_retries_per_logical_call": 1,
+        "max_submissions_per_logical_call": 2,
         "max_crop_expansions": 1,
         "max_ocr_calls_per_page": 16,
         "max_vision_calls_per_candidate": 2,
@@ -3402,6 +3476,2639 @@ def test_live_policy_requires_visual_symbol_page_budget() -> None:
             {"provider_call_policy": {"live": provider_policy}}
         )
 
+
+def _issue_cycle_authorization(module: ModuleType, root: Path) -> dict[str, str]:
+    identity = {
+        "cycle_id": "gdt10d-contract-cycle",
+        "expires_at": "2099-08-02T23:59:59+00:00",
+        "head_revision": "a" * 40,
+        "plan_sha256": "b" * 64,
+        "pricing_sha256": "c" * 64,
+        "runtime_closure_sha256": "d" * 64,
+        "current_four_sha256": "e" * 64,
+        "backend_image_id": "sha256:" + "9" * 64,
+        "compose_project": "quality_inspection-qa",
+        "expected_db_revision": "0014",
+        "max_total_cny": "50.000000",
+    }
+    module.issue_authorization(root, **identity)
+    return identity
+
+
+def test_cycle_authorization_consume_run_project_and_terminal_are_exclusive(
+    tmp_path: Path,
+) -> None:
+    authorization_path = HARNESS / "scripts/live_cycle_authorization.py"
+    authorization = _load_module(
+        "qi_live_cycle_authorization_exclusive",
+        authorization_path,
+    )
+    root = tmp_path / "authorization"
+    identity = _issue_cycle_authorization(authorization, root)
+
+    commands = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                str(authorization_path),
+                "consume",
+                "--authorization",
+                str(root),
+            ],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(2)
+    ]
+    results = [command.communicate(timeout=10) for command in commands]
+    assert sorted(command.returncode for command in commands) == [0, 2]
+    assert all(identity["cycle_id"] not in output for pair in results for output in pair)
+
+    authorization.bind_run(root, run_id=RUN_ID)
+    with pytest.raises(ValueError, match="already bound"):
+        authorization.bind_run(root, run_id=RUN_ID)
+    authorization.admit_project(
+        root,
+        run_id=RUN_ID,
+        project_id="project-1",
+        project_order=1,
+        source_sha256="f" * 64,
+    )
+    with pytest.raises(ValueError, match="already admitted"):
+        authorization.admit_project(
+            root,
+            run_id=RUN_ID,
+            project_id="project-1",
+            project_order=1,
+            source_sha256="f" * 64,
+        )
+    authorization.record_pause_handoff(
+        root,
+        run_id=RUN_ID,
+        pause_evidence_sha256="9" * 64,
+    )
+    resume_commands = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                str(authorization_path),
+                "resume-consume",
+                "--authorization",
+                str(root),
+                "--run-id",
+                RUN_ID,
+                "--pause-evidence-sha256",
+                "9" * 64,
+            ],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(2)
+    ]
+    resume_results = [
+        command.communicate(timeout=10) for command in resume_commands
+    ]
+    assert sorted(command.returncode for command in resume_commands) == [0, 2]
+    assert all(
+        identity["cycle_id"] not in output
+        for pair in resume_results
+        for output in pair
+    )
+    from app.providers.cycle_authorization import (
+        write_terminal_from_close_bridge,
+    )
+
+    terminal = write_terminal_from_close_bridge(
+        authorization_root=root,
+        cycle_id=identity["cycle_id"],
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="1" * 64,
+    )
+    assert terminal["status"] == "failed"
+    assert write_terminal_from_close_bridge(
+        authorization_root=root,
+        cycle_id=identity["cycle_id"],
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="1" * 64,
+    ) == terminal
+    with pytest.raises(ValueError, match="terminal"):
+        authorization.admit_project(
+            root,
+            run_id=RUN_ID,
+            project_id="project-2",
+            project_order=2,
+            source_sha256="2" * 64,
+        )
+
+    assert stat.S_IMODE(root.stat().st_mode) == 0o700
+    for path in (root / "issuance.json", root / "consumption.json", root / "run.json"):
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_cycle_authorization_protocol_matches_runtime_read_only_validator(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_runtime_contract",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    from app.providers.cycle_authorization import (
+        validate_active_cycle_authorization,
+        write_terminal_from_close_bridge,
+    )
+
+    root = tmp_path / "authorization"
+    identity = _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    authorization.bind_run(root, run_id=RUN_ID)
+    authorization.admit_project(
+        root,
+        run_id=RUN_ID,
+        project_id="project-1",
+        project_order=1,
+        source_sha256="f" * 64,
+    )
+
+    active = validate_active_cycle_authorization(
+        authorization_root=root,
+        cycle_id=identity["cycle_id"],
+        project_id="project-1",
+        pricing_sha256=identity["pricing_sha256"],
+    )
+    assert active.run_id == RUN_ID
+    assert active.project_order == 1
+
+    write_terminal_from_close_bridge(
+        authorization_root=root,
+        cycle_id=identity["cycle_id"],
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="1" * 64,
+    )
+    with pytest.raises(ValueError, match="terminal"):
+        validate_active_cycle_authorization(
+            authorization_root=root,
+            cycle_id=identity["cycle_id"],
+            project_id="project-1",
+            pricing_sha256=identity["pricing_sha256"],
+        )
+
+
+def test_provider_policy_v2_has_unambiguous_retry_and_submission_limits() -> None:
+    import yaml
+
+    policy = yaml.safe_load(
+        (HARNESS / "policy/provider-call-policy.yaml").read_text(encoding="utf-8")
+    )
+    assert policy["schema_version"] == "provider-call-policy/2"
+    assert "max_retries_per_call" not in policy["live"]
+    assert policy["live"]["max_coordinator_retries_per_logical_call"] == 1
+    assert policy["live"]["max_submissions_per_logical_call"] == 2
+
+
+def test_live_override_binds_exact_private_authorization_source(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_override_authorization_binding",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    identity = _issue_cycle_authorization(authorization, root)
+    environment = {
+        "QI_TENCENT_SECRET_ID": "present-one",
+        "QI_TENCENT_SECRET_KEY": "present-two",
+        "QI_QWEN_API_KEY": "present-three",
+        "QI_QWEN_WORKSPACE_ID": "present-four",
+        "QI_SYMBOL_RECOGNITION_MODE": "production_uncertainty",
+        "QI_QWEN_MODEL": "qwen3-vl-plus-2025-12-19",
+        "QI_PROVIDER_CYCLE_AUTHORIZATION_ID": identity["cycle_id"],
+        "QI_PROVIDER_CYCLE_AUTHORIZATION_ROOT": (
+            "/run/qi-live-authorization"
+        ),
+    }
+    override = tmp_path / "live.override.yaml"
+
+    def write_override(source: str) -> None:
+        override.write_text(
+            json.dumps(
+                {
+                    "services": {
+                        service: {
+                            "environment": environment,
+                            "volumes": [
+                                {
+                                    "type": "bind",
+                                    "source": source,
+                                    "target": "/run/qi-live-authorization",
+                                    "read_only": True,
+                                }
+                            ],
+                        }
+                        for service in ("api", "worker")
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        override.chmod(0o600)
+
+    write_override(str(root.resolve()))
+    authorization.validate_live_override(override, root)
+
+    write_override(str((tmp_path / "other-authorization").resolve()))
+    with pytest.raises(ValueError, match="mount"):
+        authorization.validate_live_override(override, root)
+
+
+def test_safe_override_allows_only_mode_and_model_identity(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_safe_override_contract",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    safe_override = tmp_path / "safe.override.yaml"
+
+    def write_override(service_extra: str = "") -> None:
+        safe_override.write_text(
+            "services:\n"
+            "  api:\n"
+            "    environment:\n"
+            "      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty\n"
+            "      QI_QWEN_MODEL: qwen3-vl-plus-2025-12-19\n"
+            f"{service_extra}"
+            "  worker:\n"
+            "    environment:\n"
+            "      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty\n"
+            "      QI_QWEN_MODEL: qwen3-vl-plus-2025-12-19\n",
+            encoding="utf-8",
+        )
+        safe_override.chmod(0o600)
+
+    write_override()
+    authorization.validate_safe_override(safe_override)
+
+    write_override("      QI_QWEN_API_KEY: forbidden\n")
+    with pytest.raises(ValueError, match="safe override"):
+        authorization.validate_safe_override(safe_override)
+
+    write_override("    volumes: [/run/qi-live-authorization]\n")
+    with pytest.raises(ValueError, match="safe override"):
+        authorization.validate_safe_override(safe_override)
+
+
+def test_deactivate_runtime_proves_paid_controls_absent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_safe_runtime_proof",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    safe_override = tmp_path / "safe.override.yaml"
+    safe_override.write_text(
+        "services:\n"
+        "  api:\n"
+        "    environment:\n"
+        "      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty\n"
+        "      QI_QWEN_MODEL: qwen3-vl-plus-2025-12-19\n"
+        "  worker:\n"
+        "    environment:\n"
+        "      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty\n"
+        "      QI_QWEN_MODEL: qwen3-vl-plus-2025-12-19\n",
+        encoding="utf-8",
+    )
+    safe_override.chmod(0o600)
+    monkeypatch.setenv(
+        "QI_LIVE_CYCLE_SAFE_OVERRIDE_REF",
+        str(safe_override),
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if "exec" not in argv:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {
+                    "credential_keys_present": [],
+                    "cycle_keys_present": [],
+                    "authorization_mount_present": False,
+                    "mode": "production_uncertainty",
+                    "model": "qwen3-vl-plus-2025-12-19",
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_run)
+
+    authorization.deactivate_runtime()
+
+    assert len(calls) == 3
+    assert calls[0][-2:] == ["api", "worker"]
+    assert [call[call.index("exec") + 2] for call in calls[1:]] == [
+        "api",
+        "worker",
+    ]
+
+
+def test_deactivate_runtime_rejects_residual_paid_control(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_safe_runtime_residual",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    safe_override = tmp_path / "safe.override.yaml"
+    safe_override.write_text(
+        "services:\n"
+        "  api:\n"
+        "    environment:\n"
+        "      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty\n"
+        "      QI_QWEN_MODEL: qwen3-vl-plus-2025-12-19\n"
+        "  worker:\n"
+        "    environment:\n"
+        "      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty\n"
+        "      QI_QWEN_MODEL: qwen3-vl-plus-2025-12-19\n",
+        encoding="utf-8",
+    )
+    safe_override.chmod(0o600)
+    monkeypatch.setenv(
+        "QI_LIVE_CYCLE_SAFE_OVERRIDE_REF",
+        str(safe_override),
+    )
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        if "exec" not in argv:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {
+                    "credential_keys_present": ["QI_QWEN_API_KEY"],
+                    "cycle_keys_present": [],
+                    "authorization_mount_present": False,
+                    "mode": "production_uncertainty",
+                    "model": "qwen3-vl-plus-2025-12-19",
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="safe runtime identity"):
+        authorization.deactivate_runtime()
+
+
+def test_activate_runtime_validates_and_proves_live_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_activation_identity",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    identity = _issue_cycle_authorization(authorization, root)
+    safe_override = tmp_path / "safe.override.yaml"
+    safe_override.write_text(
+        "services:\n"
+        "  api:\n"
+        "    environment:\n"
+        "      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty\n"
+        "      QI_QWEN_MODEL: qwen3-vl-plus-2025-12-19\n"
+        "  worker:\n"
+        "    environment:\n"
+        "      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty\n"
+        "      QI_QWEN_MODEL: qwen3-vl-plus-2025-12-19\n",
+        encoding="utf-8",
+    )
+    safe_override.chmod(0o600)
+    live_override = tmp_path / "live.override.yaml"
+    live_environment = {
+        "QI_TENCENT_SECRET_ID": "present-one",
+        "QI_TENCENT_SECRET_KEY": "present-two",
+        "QI_QWEN_API_KEY": "present-three",
+        "QI_QWEN_WORKSPACE_ID": "present-four",
+        "QI_SYMBOL_RECOGNITION_MODE": "production_uncertainty",
+        "QI_QWEN_MODEL": "qwen3-vl-plus-2025-12-19",
+        "QI_PROVIDER_CYCLE_AUTHORIZATION_ID": identity["cycle_id"],
+        "QI_PROVIDER_CYCLE_AUTHORIZATION_ROOT": (
+            "/run/qi-live-authorization"
+        ),
+    }
+    live_override.write_text(
+        json.dumps(
+            {
+                "services": {
+                    service: {
+                        "environment": live_environment,
+                        "volumes": [
+                            {
+                                "type": "bind",
+                                "source": str(root.resolve()),
+                                "target": "/run/qi-live-authorization",
+                                "read_only": True,
+                            }
+                        ],
+                    }
+                    for service in ("api", "worker")
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    live_override.chmod(0o600)
+    monkeypatch.setenv(
+        "QI_LIVE_CYCLE_SAFE_OVERRIDE_REF",
+        str(safe_override),
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if "exec" not in argv:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {
+                    "credential_keys_present": sorted(
+                        key
+                        for key in live_environment
+                        if key
+                        in {
+                            "QI_TENCENT_SECRET_ID",
+                            "QI_TENCENT_SECRET_KEY",
+                            "QI_QWEN_API_KEY",
+                            "QI_QWEN_WORKSPACE_ID",
+                        }
+                    ),
+                    "cycle_keys_present": [
+                        "QI_PROVIDER_CYCLE_AUTHORIZATION_ID",
+                        "QI_PROVIDER_CYCLE_AUTHORIZATION_ROOT",
+                    ],
+                    "authorization_mount_present": True,
+                    "authorization_mount_read_only": True,
+                    "cycle_id_matches": True,
+                    "authorization_root_matches": True,
+                    "mode": "production_uncertainty",
+                    "model": "qwen3-vl-plus-2025-12-19",
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_run)
+
+    authorization.activate_runtime(live_override)
+
+    assert len(calls) == 3
+    assert calls[0][-2:] == ["api", "worker"]
+
+
+def test_atomic_live_evidence_write_fsyncs_file_and_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_module(
+        "qi_paid_project_durable_evidence",
+        HARNESS / "scripts/run-p0.py",
+    )
+    syncs: list[int] = []
+    monkeypatch.setattr(runner.os, "fsync", lambda fd: syncs.append(fd))
+
+    target = tmp_path / "live-run-evidence.json"
+    runner._atomic_write_json(target, {"state": "pending"})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {
+        "state": "pending"
+    }
+    assert len(syncs) == 2
+
+
+def test_cycle_authorization_current_four_hash_matches_canonical_staging() -> None:
+    authorization = _load_module(
+        "qi_live_authorization_current_four_identity",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    staging = _load_module(
+        "qi_live_authorization_current_four_staging",
+        HARNESS / "scripts/stage-current-four.py",
+    )
+
+    assert authorization._current_four_manifest_sha256() == hashlib.sha256(
+        staging._manifest_bytes(staging.FROZEN_DOCUMENTS)
+    ).hexdigest()
+
+
+def test_runtime_closure_checker_requires_an_explicit_supported_source() -> None:
+    checker_path = HARNESS / "scripts/check-contracts.py"
+
+    working = subprocess.run(
+        [
+            sys.executable,
+            str(checker_path),
+            "--runtime-closure-source",
+            "working",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    invalid = subprocess.run(
+        [
+            sys.executable,
+            str(checker_path),
+            "--runtime-closure-source",
+            "unknown",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert working.returncode == 0
+    assert "runtime_closure_files=" in working.stdout
+    assert invalid.returncode != 0
+    assert (
+        HARNESS / "policy/gdt10d-runtime-closure.txt"
+    ).is_file()
+
+
+def test_paid_routing_aggregate_separates_plan_denied_from_admitted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_module(
+        "qi_paid_routing_aggregate_contract",
+        HARNESS / "scripts/run-p0.py",
+    )
+    run_dir = tmp_path / RUN_ID
+    (run_dir / "reports").mkdir(parents=True)
+    escalated = [f"group-{index:03d}" for index in range(198)]
+    denied = escalated[:190]
+    admitted = escalated[190:]
+    started = admitted[:2]
+    cancelled = admitted[2:]
+    (run_dir / "reports/provider-usage-ledger.json").write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "project_id": "project-1",
+                        "subject_kind": "escalation_group",
+                        "subject_id": group_id,
+                        "state": "reserved_unknown",
+                    }
+                    for group_id in started
+                ]
+                + [
+                    {
+                        "project_id": "project-2",
+                        "subject_kind": "escalation_group",
+                        "subject_id": "foreign-project-group",
+                        "state": "reserved_unknown",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "reports/provider-storage-1.json").write_text(
+        json.dumps(
+            {
+                "project_id": "project-1",
+                "artifacts": [
+                    {
+                        "ref": (
+                            "asset://projects/project-1/provider-inputs/"
+                            f"qwen-symbol/crop-{index}.png"
+                        )
+                    }
+                    for index in range(2)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    routing = {
+        "project_id": "project-1",
+        "total_decisions": 199,
+        "escalated_group_ids": escalated,
+        "budget_terminal_facts": [
+            {
+                "escalation_group_id": group_id,
+                "diagnostic": {
+                    "schema_version": "visual-symbol-budget-control/1",
+                    "budget_origin": "routing_plan",
+                },
+            }
+            for group_id in denied
+        ],
+        "cancelled_group_ids": cancelled,
+        "terminal_group_ids": escalated,
+        "paid_artifact_group_ids": started,
+        "attempt_event_codes": [
+            *(["not_started_budget_exhausted"] * 190),
+            *(["provider_rate_limited"] * 2),
+            *(["not_started_after_project_failure"] * 6),
+        ],
+    }
+    monkeypatch.setattr(
+        runner.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(routing),
+            stderr="",
+        ),
+    )
+
+    aggregate = runner._capture_paid_routing_aggregate(
+        run_dir,
+        project_id="project-1",
+        order=1,
+    )
+
+    assert aggregate["admitted_group_ids"] == admitted
+    assert aggregate["submission_started_group_ids"] == started
+    assert aggregate["never_submission_started_group_ids"] == cancelled
+    assert aggregate["cancelled_group_ids"] == cancelled
+
+    routing["budget_terminal_facts"][0]["diagnostic"][
+        "budget_origin"
+    ] = "provider_cycle_reservation"
+    with pytest.raises(RuntimeError, match="terminal reconciliation"):
+        runner._capture_paid_routing_aggregate(
+            run_dir,
+            project_id="project-1",
+            order=1,
+        )
+
+
+def test_paid_routing_budget_origin_keeps_provider_reservation_admitted() -> None:
+    runner = _load_module(
+        "qi_paid_routing_budget_origin_contract",
+        HARNESS / "scripts/run-p0.py",
+    )
+    escalated = ["routing-denied", "provider-reservation-denied"]
+    facts = [
+        {
+            "escalation_group_id": "routing-denied",
+            "diagnostic": {
+                "schema_version": "visual-symbol-budget-control/1",
+                "budget_origin": "routing_plan",
+            },
+        },
+        {
+            "escalation_group_id": "provider-reservation-denied",
+            "diagnostic": {
+                "schema_version": "visual-symbol-budget-control/1",
+                "budget_origin": "provider_cycle_reservation",
+            },
+        },
+    ]
+
+    denied, admitted, provider_reservation_denied = (
+        runner._partition_paid_budget_terminals(
+        escalated,
+        facts,
+        )
+    )
+
+    assert denied == ["routing-denied"]
+    assert admitted == ["provider-reservation-denied"]
+    assert provider_reservation_denied == [
+        "provider-reservation-denied"
+    ]
+
+    for invalid in (
+        [{"escalation_group_id": "routing-denied", "diagnostic": None}],
+        [
+            {
+                "escalation_group_id": "routing-denied",
+                "diagnostic": {
+                    "schema_version": "visual-symbol-budget-control/1",
+                    "budget_origin": "unknown",
+                },
+            }
+        ],
+    ):
+        with pytest.raises(RuntimeError, match="budget origin"):
+            runner._partition_paid_budget_terminals(escalated, invalid)
+
+
+def test_paid_project_identity_is_persisted_before_admission_and_processing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_module(
+        "qi_paid_project_admission_contract",
+        HARNESS / "scripts/run-p0.py",
+    )
+    run_dir = tmp_path / RUN_ID
+    (run_dir / "logs").mkdir(parents=True)
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"sealed-source")
+    source_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+    (run_dir / "live-run-evidence.json").write_text(
+        json.dumps(
+            {
+                "paid_cycle": {
+                    "projects": [],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        runner.LIVE_CYCLE_AUTHORIZATION_ENV,
+        str(tmp_path / "authorization"),
+    )
+    events: list[str] = []
+
+    class Authorization:
+        @staticmethod
+        def admit_project(*_args: object, **_kwargs: object) -> dict[str, str]:
+            persisted = json.loads(
+                (run_dir / "live-run-evidence.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            assert persisted["paid_cycle"]["projects"] == [
+                {
+                    "project_order": 1,
+                    "project_id": "project-1",
+                    "source_sha256": source_sha256,
+                    "admission_sha256": None,
+                }
+            ]
+            events.append("admit")
+            return {"content_sha256": "a" * 64}
+
+    class Receipt:
+        @staticmethod
+        def validate_schema(*_args: object, **_kwargs: object) -> None:
+            return None
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        phase = next(
+            value.split("=", 1)[1]
+            for value in argv
+            if isinstance(value, str)
+            and value.startswith("QI_P0_PREPARE_PHASE=")
+        )
+        events.append(phase)
+        if phase == "create":
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                json.dumps(
+                    {
+                        "project_id": "project-1",
+                        "source_ref": "asset://source.pdf",
+                        "source_sha256": source_sha256,
+                    }
+                ).encode(),
+                b"",
+            )
+        persisted = json.loads(
+            (run_dir / "live-run-evidence.json").read_text(encoding="utf-8")
+        )
+        assert persisted["paid_cycle"]["projects"] == [
+            {
+                "project_order": 1,
+                "project_id": "project-1",
+                "source_sha256": source_sha256,
+                "admission_sha256": "a" * 64,
+            }
+        ]
+        assert events == ["create", "admit", "process"]
+        return subprocess.CompletedProcess(argv, 1, b"", b"blocked")
+
+    monkeypatch.setattr(runner, "_cycle_authorization_module", lambda: Authorization)
+    monkeypatch.setattr(runner, "_receipt_module", lambda: Receipt)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        runner,
+        "_refresh_paid_cycle_ledger",
+        lambda _run_dir: events.append("ledger") or {},
+    )
+    monkeypatch.setattr(
+        runner,
+        "_capture_paid_routing_aggregate",
+        lambda _run_dir, **_kwargs: events.append("routing") or {},
+    )
+    monkeypatch.setattr(
+        runner,
+        "_capture_paid_storage_inventory",
+        lambda _run_dir, **_kwargs: events.append("storage") or {},
+    )
+
+    with pytest.raises(RuntimeError, match="application process failed"):
+        runner._prepare_live_project(
+            run_dir,
+            source_path=source,
+            order=1,
+            expected_sha256=source_sha256,
+        )
+
+    assert events == [
+        "create",
+        "admit",
+        "process",
+        "ledger",
+        "storage",
+        "routing",
+    ]
+    assert not (run_dir / "receipt.json").exists()
+    assert not (run_dir / "reports/symbol-recognition.json").exists()
+
+
+def test_failed_paid_cycle_allows_evidenced_unadmitted_project_without_ledger(
+    tmp_path: Path,
+) -> None:
+    policy, run, live, run_dir = _paid_policy_evidence(tmp_path)
+    run["execution_state"] = "failed"
+    live["paid_cycle"]["terminal"]["status"] = "failed"
+    live["paid_cycle"]["projects"] = [
+        {
+            "project_order": 1,
+            "project_id": "created-before-admission-failure",
+            "source_sha256": "1" * 64,
+            "admission_sha256": None,
+        }
+    ]
+    live["paid_cycle"]["ledger"] = None
+
+    policy.validate_paid_cycle_evidence(
+        run,
+        live,
+        require_success=False,
+        evidence_dir=run_dir,
+        root=ROOT,
+    )
+
+
+def _write_content_hashed(path: Path, document: dict[str, object]) -> str:
+    payload = dict(document)
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    payload["content_sha256"] = digest
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return digest
+
+
+def _paid_policy_evidence(
+    tmp_path: Path,
+) -> tuple[ModuleType, dict[str, object], dict[str, object], Path]:
+    policy = _load_module(
+        f"qi_paid_policy_{tmp_path.name}",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+    run_dir = tmp_path / RUN_ID
+    (run_dir / "reports").mkdir(parents=True)
+    pricing = json.loads(
+        (
+            ROOT
+            / "backend/app/providers/provider_pricing_gdt10d_v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    pricing_sha256 = pricing["content_sha256"]
+    projects = [
+        {
+            "project_order": order,
+            "project_id": f"project-{order}",
+            "source_sha256": str(order) * 64,
+            "admission_sha256": str(order + 4) * 64,
+        }
+        for order in range(1, 5)
+    ]
+    run = _run("completed")
+    run.update(
+        {
+            "schema_version": "run/2",
+            "completed_at": "2026-08-02T00:10:00Z",
+            "cycle_authorization": {
+                "cycle_id": "gdt10d-contract-cycle",
+                "pricing_sha256": pricing_sha256,
+                "issuance_sha256": "a" * 64,
+                "consumption_sha256": "b" * 64,
+                "backend_image_id": "sha256:" + "9" * 64,
+                "run_id": RUN_ID,
+                "run_authorization_sha256": "c" * 64,
+            },
+        }
+    )
+    entries = [
+        {
+            "attempt_index": index,
+            "provider": "qwen-vl",
+            "operation": "review_symbols",
+            "project_id": "project-1",
+            "page_index": 0,
+            "subject_kind": "escalation_group",
+            "subject_id": f"group-{190 + index - 1:03d}",
+            "retry_index": 0,
+            "crop_expansion_count": 0,
+            "state": "reserved_unknown",
+            "reservation_cny": "0.983040",
+            "charged_cny": "0.983040",
+        }
+        for index in (1, 2)
+    ]
+    ledger_report: dict[str, object] = {
+        "schema_version": "provider-usage-evidence/1",
+        "run_id": RUN_ID,
+        "pricing_sha256": pricing_sha256,
+        "cycle_id": "gdt10d-contract-cycle",
+        "journal_ref": (
+            "asset://provider-usage-cycles/gdt10d-contract-cycle/"
+        ),
+        "committed_total_cny": "1.966080",
+        "reservation_count": 2,
+        "reserved_only_count": 0,
+        "submission_started_count": 2,
+        "unsettled_started_count": 0,
+        "settled_count": 2,
+        "entries": entries,
+    }
+    ledger_sha256 = _write_content_hashed(
+        run_dir / "reports/provider-usage-ledger.json",
+        ledger_report,
+    )
+    escalated = [f"group-{index:03d}" for index in range(198)]
+    for order in range(1, 5):
+        denied = escalated[:190] if order == 1 else []
+        admitted = escalated[190:] if order == 1 else []
+        started = admitted[:2] if order == 1 else []
+        cancelled = admitted[2:] if order == 1 else []
+        routing: dict[str, object] = {
+            "schema_version": "provider-routing-aggregate/1",
+            "run_id": RUN_ID,
+            "order": order,
+            "project_id": f"project-{order}",
+            "total_decisions": 199 if order == 1 else 0,
+            "escalated_group_ids": escalated if order == 1 else [],
+            "denied_group_ids": denied,
+            "admitted_group_ids": admitted,
+            "cancelled_group_ids": cancelled,
+            "terminal_group_ids": escalated if order == 1 else [],
+            "paid_artifact_group_ids": started,
+            "attempt_event_codes": [],
+            "submission_started_group_ids": started,
+            "never_submission_started_group_ids": cancelled,
+            "reserved_only_group_ids": [],
+            "provider_cycle_reservation_denied_group_ids": [],
+        }
+        _write_content_hashed(
+            run_dir / f"reports/provider-routing-{order}.json",
+            routing,
+        )
+        _write_content_hashed(
+            run_dir / f"reports/provider-storage-{order}.json",
+            {
+                "schema_version": "provider-storage-inventory/1",
+                "run_id": RUN_ID,
+                "order": order,
+                "project_id": f"project-{order}",
+                "artifacts": (
+                    [
+                        {
+                            "ref": (
+                                "asset://projects/project-1/"
+                                "provider-inputs/qwen-symbol/"
+                                f"crop-{index}.png"
+                            ),
+                            "sha256": str(index + 1) * 64,
+                            "size": 100 + index,
+                        }
+                        for index in range(2)
+                    ]
+                    if order == 1
+                    else []
+                ),
+            },
+        )
+    bridge_sha256 = _write_content_hashed(
+        run_dir / "reports/provider-cycle-close-bridge.json",
+        {
+            "schema_version": "provider-cycle-close-bridge/1",
+            "run_id": RUN_ID,
+            "image_id": "sha256:" + "9" * 64,
+            "storage_volume": "quality_inspection-qa_storage_qa_dev",
+            "network": "none",
+            "container_user": "0:0",
+            "authorization_owner_uid": os.getuid(),
+            "authorization_owner_gid": os.getgid(),
+            "mounts": [
+                {"type": "volume", "target": "/data", "mode": "rw"},
+                {"type": "bind", "target": "/auth", "mode": "rw"},
+            ],
+            "terminal_sha256": "f" * 64,
+        },
+    )
+    live = {
+        "paid_cycle": {
+            "cycle_id": "gdt10d-contract-cycle",
+            "pricing_sha256": pricing_sha256,
+            "issuance_sha256": "a" * 64,
+            "consumption_sha256": "b" * 64,
+            "run_authorization_sha256": "c" * 64,
+            "journal_ref": (
+                "asset://provider-usage-cycles/gdt10d-contract-cycle/"
+            ),
+            "projects": projects,
+            "resume_consumed_sha256": "d" * 64,
+            "ledger": {
+                "committed_total_cny": "1.966080",
+                "reservation_count": 2,
+                "reserved_only_count": 0,
+                "submission_started_count": 2,
+                "settled_count": 2,
+                "evidence_sha256": ledger_sha256,
+            },
+            "terminal": {
+                "status": "completed",
+                "quiescence_sha256": "e" * 64,
+                "terminal_sha256": "f" * 64,
+                "bridge_evidence_sha256": bridge_sha256,
+            },
+        }
+    }
+    return policy, run, live, run_dir
+
+
+def test_paid_cycle_policy_revalidates_ledger_routing_and_pricing(
+    tmp_path: Path,
+) -> None:
+    policy, run, live, run_dir = _paid_policy_evidence(tmp_path)
+    policy.validate_paid_cycle_evidence(
+        run,
+        live,
+        evidence_dir=run_dir,
+        root=ROOT,
+    )
+
+    live["paid_cycle"]["pricing_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="pricing snapshot"):
+        policy.validate_paid_cycle_evidence(
+            run,
+            live,
+            evidence_dir=run_dir,
+            root=ROOT,
+        )
+
+
+def test_paid_cycle_policy_rejects_provider_cycle_reservation_denial(
+    tmp_path: Path,
+) -> None:
+    policy, run, live, run_dir = _paid_policy_evidence(tmp_path)
+    routing_path = run_dir / "reports/provider-routing-1.json"
+    routing = json.loads(routing_path.read_text(encoding="utf-8"))
+    routing.pop("content_sha256")
+    routing["provider_cycle_reservation_denied_group_ids"] = [
+        "group-192"
+    ]
+    _write_content_hashed(routing_path, routing)
+
+    with pytest.raises(ValueError, match="reservation rejection"):
+        policy.validate_paid_cycle_evidence(
+            run,
+            live,
+            evidence_dir=run_dir,
+            root=ROOT,
+        )
+
+    run["execution_state"] = "failed"
+    live["paid_cycle"]["terminal"]["status"] = "failed"
+    policy.validate_paid_cycle_evidence(
+        run,
+        live,
+        require_success=False,
+        evidence_dir=run_dir,
+        root=ROOT,
+    )
+
+
+def test_paid_cycle_policy_rejects_duplicate_attempt_and_cancelled_ledger(
+    tmp_path: Path,
+) -> None:
+    policy, run, live, run_dir = _paid_policy_evidence(tmp_path)
+    ledger_path = run_dir / "reports/provider-usage-ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger.pop("content_sha256")
+    ledger["entries"][1]["attempt_index"] = 1
+    live["paid_cycle"]["ledger"]["evidence_sha256"] = _write_content_hashed(
+        ledger_path,
+        ledger,
+    )
+    with pytest.raises(ValueError, match="attempt sequence"):
+        policy.validate_paid_cycle_evidence(
+            run,
+            live,
+            evidence_dir=run_dir,
+            root=ROOT,
+        )
+
+    policy, run, live, run_dir = _paid_policy_evidence(tmp_path / "cancelled")
+    ledger_path = run_dir / "reports/provider-usage-ledger.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ledger.pop("content_sha256")
+    ledger["entries"][0]["subject_id"] = "group-192"
+    live["paid_cycle"]["ledger"]["evidence_sha256"] = _write_content_hashed(
+        ledger_path,
+        ledger,
+    )
+    with pytest.raises(ValueError, match="terminal reconciliation"):
+        policy.validate_paid_cycle_evidence(
+            run,
+            live,
+            evidence_dir=run_dir,
+            root=ROOT,
+        )
+
+
+def test_failed_paid_cycle_with_admitted_projects_requires_durable_ledger(
+    tmp_path: Path,
+) -> None:
+    policy, run, live, run_dir = _paid_policy_evidence(tmp_path)
+    run["execution_state"] = "failed"
+    live["paid_cycle"]["terminal"]["status"] = "failed"
+    live["paid_cycle"]["ledger"] = None
+
+    with pytest.raises(ValueError, match="ledger"):
+        policy.validate_paid_cycle_evidence(
+            run,
+            live,
+            require_success=False,
+            evidence_dir=run_dir,
+            root=ROOT,
+        )
+
+
+def test_paid_cycle_start_consumes_before_activation_and_deactivates_pause(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_start_lifecycle",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events: list[str] = []
+
+    def activate(_override: Path) -> None:
+        assert (root / "consumption.json").is_file()
+        events.append("activate")
+
+    def run_harness(run_id: str) -> dict[str, object]:
+        events.append("run")
+        assert run_id == RUN_ID
+        assert json.loads((root / "run.json").read_text(encoding="utf-8"))[
+            "run_id"
+        ] == RUN_ID
+        return {
+            "returncode": 0,
+            "run_id": RUN_ID,
+            "execution_state": "visual_qa_pending",
+        }
+
+    result = authorization.execute_start(
+        root,
+        override=override,
+        validate_override=lambda _path, _root: events.append("validate"),
+        validate_issuance=lambda _path: events.append("validate-issuance"),
+        new_run_id=lambda: RUN_ID,
+        activate_runtime=activate,
+        check_contracts=lambda: events.append("contracts"),
+        run_harness=run_harness,
+        deactivate_runtime=lambda: events.append("deactivate"),
+        cleanup_controls=lambda _path: None,
+        validate_pause=lambda _run_id: "2" * 64,
+        close_cycle=lambda *_args, **_kwargs: events.append("close"),
+    )
+
+    assert result == 0
+    assert events == [
+        "validate",
+        "validate-issuance",
+        "activate",
+        "contracts",
+        "run",
+        "deactivate",
+    ]
+    assert not (root / "terminal.json").exists()
+
+
+def test_paid_cycle_start_failure_closes_and_deactivates(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_failed_lifecycle",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events: list[str] = []
+
+    def run_harness(run_id: str) -> dict[str, object]:
+        assert run_id == RUN_ID
+        return {
+            "returncode": 1,
+            "run_id": RUN_ID,
+            "execution_state": "failed",
+        }
+
+    def close_cycle(path: Path, **kwargs: object) -> None:
+        events.append("close")
+        from app.providers.cycle_authorization import (
+            write_terminal_from_close_bridge,
+        )
+
+        write_terminal_from_close_bridge(
+            authorization_root=path,
+            cycle_id="gdt10d-contract-cycle",
+            **kwargs,
+        )
+
+    result = authorization.execute_start(
+        root,
+        override=override,
+        validate_override=lambda _path, _root: None,
+        validate_issuance=lambda _path: None,
+        new_run_id=lambda: RUN_ID,
+        activate_runtime=lambda _path: events.append("activate"),
+        check_contracts=lambda: events.append("contracts"),
+        run_harness=run_harness,
+        prove_quiescence=lambda _run_id, _status: events.append("quiesce")
+        or "1" * 64,
+        finalize_harness=lambda _run_id, _status: pytest.fail(
+            "a missing durable Harness run must not be finalized"
+        ),
+        deactivate_runtime=lambda: events.append("deactivate"),
+        cleanup_controls=lambda _path: None,
+        close_cycle=close_cycle,
+    )
+
+    assert result == 1
+    assert events == [
+        "activate",
+        "contracts",
+        "quiesce",
+        "close",
+        "deactivate",
+    ]
+    assert json.loads((root / "terminal.json").read_text(encoding="utf-8"))[
+        "status"
+    ] == "failed"
+
+
+def test_paid_cycle_start_binds_run_before_activation_failure_close(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_pre_activation_failure",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    close_calls: list[dict[str, object]] = []
+    harness_called = False
+
+    def activate(_override: Path) -> None:
+        raise RuntimeError("activation failed")
+
+    def run_harness(_run_id: str) -> dict[str, object]:
+        nonlocal harness_called
+        harness_called = True
+        return {}
+
+    result = authorization.execute_start(
+        root,
+        override=override,
+        validate_override=lambda _path, _root: None,
+        validate_issuance=lambda _path: None,
+        new_run_id=lambda: RUN_ID,
+        activate_runtime=activate,
+        check_contracts=lambda: None,
+        run_harness=run_harness,
+        prove_quiescence=lambda _run_id, _status: "1" * 64,
+        finalize_harness=lambda _run_id, _status: {},
+        deactivate_runtime=lambda: None,
+        cleanup_controls=lambda _path: None,
+        close_cycle=lambda _path, **kwargs: close_calls.append(kwargs),
+    )
+
+    assert result == 1
+    assert not harness_called
+    assert json.loads((root / "run.json").read_text(encoding="utf-8"))["run_id"] == RUN_ID
+    assert close_calls == [
+        {
+            "run_id": RUN_ID,
+            "status": "failed",
+            "quiescence_sha256": "1" * 64,
+        }
+    ]
+
+
+def test_paid_cycle_start_bind_failure_still_closes_consumed_cycle(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_bind_failure",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events: list[str] = []
+
+    result = authorization.execute_start(
+        root,
+        override=override,
+        validate_override=lambda _path, _root: None,
+        validate_issuance=lambda _path: None,
+        new_run_id=lambda: RUN_ID,
+        bind_run_state=lambda _path, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("bind failed")
+        ),
+        activate_runtime=lambda _path: events.append("activate"),
+        check_contracts=lambda: events.append("contracts"),
+        run_harness=lambda _run_id: {},
+        prove_quiescence=lambda _run_id, _status: "1" * 64,
+        finalize_harness=lambda _run_id, _status: {},
+        deactivate_runtime=lambda: events.append("deactivate"),
+        cleanup_controls=lambda _path: None,
+        close_cycle=lambda _path, **kwargs: events.append(
+            f"close:{kwargs['run_id']}"
+        ),
+    )
+
+    assert result == 1
+    assert (root / "consumption.json").is_file()
+    assert not (root / "run.json").exists()
+    assert events == [f"close:{RUN_ID}", "deactivate"]
+
+
+def test_repeat_start_does_not_close_or_deactivate_foreign_consumption(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_repeat_start_owner",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    authorization.bind_run(root, run_id=RUN_ID)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events: list[str] = []
+
+    with pytest.raises(ValueError, match="already bound"):
+        authorization.execute_start(
+            root,
+            override=override,
+            validate_override=lambda _path, _root: None,
+            validate_issuance=lambda _path: None,
+            new_run_id=lambda: "20260722T000000000000Z-11111111",
+            activate_runtime=lambda _path: events.append("activate"),
+            check_contracts=lambda: events.append("contracts"),
+            run_harness=lambda _run_id: {},
+            prove_quiescence=lambda _run_id, _status: events.append(
+                "quiesce"
+            )
+            or "1" * 64,
+            finalize_harness=lambda _run_id, _status: {},
+            deactivate_runtime=lambda: events.append("deactivate"),
+            cleanup_controls=lambda _path: events.append("cleanup"),
+            close_cycle=lambda *_args, **_kwargs: events.append("close"),
+        )
+
+    assert events == ["cleanup"]
+    assert not (root / "terminal.json").exists()
+
+
+def test_start_owns_fact_when_interrupted_after_durable_consumption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_start_consumption_boundary",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events: list[str] = []
+    real_consume = authorization.consume_authorization
+
+    def consume_then_interrupt(*args: object, **kwargs: object) -> None:
+        real_consume(*args, **kwargs)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        authorization,
+        "consume_authorization",
+        consume_then_interrupt,
+    )
+
+    result = authorization.execute_start(
+        root,
+        override=override,
+        validate_override=lambda _path, _root: None,
+        validate_issuance=lambda _path: None,
+        new_run_id=lambda: RUN_ID,
+        activate_runtime=lambda _path: events.append("activate"),
+        check_contracts=lambda: events.append("contracts"),
+        run_harness=lambda _run_id: {},
+        prove_quiescence=lambda _run_id, _status: events.append("quiesce")
+        or "1" * 64,
+        finalize_harness=lambda _run_id, _status: {},
+        deactivate_runtime=lambda: events.append("deactivate"),
+        cleanup_controls=lambda _path: events.append("cleanup"),
+        close_cycle=lambda *_args, **_kwargs: events.append("close"),
+    )
+
+    assert result == 1
+    assert events == ["quiesce", "close", "deactivate", "cleanup"]
+
+
+def test_paid_cycle_cleanup_failure_writes_durable_sanitized_blocker(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_cleanup_blocker",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+
+    result = authorization.execute_start(
+        root,
+        override=override,
+        validate_override=lambda _path, _root: None,
+        validate_issuance=lambda _path: None,
+        new_run_id=lambda: RUN_ID,
+        activate_runtime=lambda _path: (_ for _ in ()).throw(
+            RuntimeError("private activation detail")
+        ),
+        check_contracts=lambda: None,
+        run_harness=lambda _run_id: {},
+        prove_quiescence=lambda _run_id, _status: (_ for _ in ()).throw(
+            RuntimeError("private quiescence detail")
+        ),
+        deactivate_runtime=lambda: (_ for _ in ()).throw(
+            RuntimeError("private deactivation detail")
+        ),
+        cleanup_controls=lambda _path: None,
+        close_cycle=lambda *_args, **_kwargs: None,
+    )
+
+    blocker = json.loads(
+        (root / "cleanup-blocker.json").read_text(encoding="utf-8")
+    )
+    assert result == 2
+    assert blocker["schema_version"] == "provider-cycle-cleanup-blocker/1"
+    assert blocker["run_id"] == RUN_ID
+    assert blocker["status"] == "failed"
+    assert blocker["failure_codes"] == [
+        "quiescence_close_or_finalize_failed",
+        "safe_deactivation_failed",
+    ]
+    assert "private" not in json.dumps(blocker)
+
+
+def test_paid_cycle_unclean_pause_cannot_consume_resume(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_unclean_pause",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+
+    result = authorization.execute_start(
+        root,
+        override=override,
+        validate_override=lambda _path, _root: None,
+        validate_issuance=lambda _path: None,
+        new_run_id=lambda: RUN_ID,
+        activate_runtime=lambda _path: None,
+        check_contracts=lambda: None,
+        run_harness=lambda _run_id: {
+            "returncode": 0,
+            "run_id": RUN_ID,
+            "execution_state": "visual_qa_pending",
+        },
+        deactivate_runtime=lambda: (_ for _ in ()).throw(
+            RuntimeError("private deactivation detail")
+        ),
+        cleanup_controls=lambda _path: None,
+        validate_pause=lambda _run_id: "2" * 64,
+        close_cycle=lambda *_args, **_kwargs: None,
+    )
+
+    assert result == 2
+    assert (root / "cleanup-blocker.json").is_file()
+    with pytest.raises(ValueError, match="cleanup|handoff"):
+        authorization.consume_resume(
+            root,
+            run_id=RUN_ID,
+            pause_evidence_sha256="2" * 64,
+        )
+    assert not (root / "resume-consumed.json").exists()
+
+
+def test_runtime_control_cleanup_deletes_overrides_and_unsets_controls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_private_cleanup",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    live_override = tmp_path / "live.override.yaml"
+    safe_override = tmp_path / "safe.override.yaml"
+    for path in (live_override, safe_override):
+        path.write_text("services: {}\n", encoding="utf-8")
+        path.chmod(0o600)
+    monkeypatch.setenv(
+        "QI_LIVE_CYCLE_SAFE_OVERRIDE_REF",
+        str(safe_override),
+    )
+    for key in (
+        *authorization._LIVE_CREDENTIAL_KEYS,
+        *authorization._CYCLE_RUNTIME_KEYS,
+        "QI_LIVE_CYCLE_AUTHORIZATION_REF",
+        "QI_LIVE_CYCLE_OVERRIDE_REF",
+        "GDT10D_RUN_ID",
+    ):
+        monkeypatch.setenv(key, "present")
+
+    authorization.cleanup_runtime_controls(live_override)
+
+    assert not live_override.exists()
+    assert not safe_override.exists()
+    assert all(
+        key not in authorization.os.environ
+        for key in (
+            *authorization._LIVE_CREDENTIAL_KEYS,
+            *authorization._CYCLE_RUNTIME_KEYS,
+            "QI_LIVE_CYCLE_AUTHORIZATION_REF",
+            "QI_LIVE_CYCLE_OVERRIDE_REF",
+            "QI_LIVE_CYCLE_SAFE_OVERRIDE_REF",
+            "GDT10D_RUN_ID",
+        )
+    )
+
+
+def test_paid_cycle_clean_pause_deletes_controls_and_writes_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_clean_pause_handoff",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    live_override = tmp_path / "live.override.yaml"
+    safe_override = tmp_path / "safe.override.yaml"
+    for path in (live_override, safe_override):
+        path.write_text("services: {}\n", encoding="utf-8")
+        path.chmod(0o600)
+    monkeypatch.setenv(
+        "QI_LIVE_CYCLE_SAFE_OVERRIDE_REF",
+        str(safe_override),
+    )
+
+    result = authorization.execute_start(
+        root,
+        override=live_override,
+        validate_override=lambda _path, _root: None,
+        validate_issuance=lambda _path: None,
+        new_run_id=lambda: RUN_ID,
+        activate_runtime=lambda _path: None,
+        check_contracts=lambda: None,
+        run_harness=lambda _run_id: {
+            "returncode": 0,
+            "run_id": RUN_ID,
+            "execution_state": "visual_qa_pending",
+        },
+        deactivate_runtime=lambda: None,
+        validate_pause=lambda _run_id: "2" * 64,
+        close_cycle=lambda *_args, **_kwargs: None,
+    )
+
+    assert result == 0
+    assert not live_override.exists()
+    assert not safe_override.exists()
+    assert (root / "pause-handoff.json").is_file()
+    assert not (root / "cleanup-blocker.json").exists()
+
+
+def test_cleanup_blocker_write_failure_never_creates_resumable_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_blocker_write_failure",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    monkeypatch.setattr(
+        authorization,
+        "_record_cleanup_blocker",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError("private persistence detail")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="blocker persistence"):
+        authorization.execute_start(
+            root,
+            override=override,
+            validate_override=lambda _path, _root: None,
+            validate_issuance=lambda _path: None,
+            new_run_id=lambda: RUN_ID,
+            activate_runtime=lambda _path: None,
+            check_contracts=lambda: None,
+            run_harness=lambda _run_id: {
+                "returncode": 0,
+                "run_id": RUN_ID,
+                "execution_state": "visual_qa_pending",
+            },
+            deactivate_runtime=lambda: (_ for _ in ()).throw(
+                RuntimeError("private deactivation detail")
+            ),
+            cleanup_controls=lambda _path: None,
+            validate_pause=lambda _run_id: "2" * 64,
+            close_cycle=lambda *_args, **_kwargs: None,
+        )
+
+    assert not (root / "pause-handoff.json").exists()
+    with pytest.raises(ValueError, match="handoff"):
+        authorization.consume_resume(
+            root,
+            run_id=RUN_ID,
+            pause_evidence_sha256="2" * 64,
+        )
+
+
+@pytest.mark.parametrize("signal_name", ["SIGINT", "SIGTERM"])
+@pytest.mark.parametrize("stage", ["activation", "run", "quiescence"])
+def test_paid_cycle_start_real_signals_close_and_clean(
+    tmp_path: Path,
+    signal_name: str,
+    stage: str,
+) -> None:
+    authorization = _load_module(
+        f"qi_live_cycle_signal_setup_{signal_name}_{stage}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events = tmp_path / "events.log"
+    child_program = r'''
+import importlib.util
+import os
+import signal
+import sys
+from pathlib import Path
+
+module_path, root_arg, override_arg, events_arg, stage = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("qi_signal_child", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+events = Path(events_arg)
+
+def record(value):
+    with events.open("a", encoding="utf-8") as stream:
+        stream.write(value + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+def wait_at(name):
+    record("ready:" + name)
+    while True:
+        signal.pause()
+
+def activate(_override):
+    record("activate")
+    if stage == "activation":
+        wait_at(stage)
+
+def run(_run_id):
+    record("run")
+    if stage == "run":
+        wait_at(stage)
+    return {"returncode": 1, "run_id": "20260722T000000000000Z-00000000", "execution_state": "failed"}
+
+def quiesce(_run_id, _status):
+    record("quiesce")
+    if stage == "quiescence":
+        wait_at(stage)
+    return "1" * 64
+
+module.install_lifecycle_signal_handlers()
+result = module.execute_start(
+    Path(root_arg),
+    override=Path(override_arg),
+    validate_override=lambda _path, _root: None,
+    validate_issuance=lambda _path: None,
+    new_run_id=lambda: "20260722T000000000000Z-00000000",
+    activate_runtime=activate,
+    check_contracts=lambda: record("contracts"),
+    run_harness=run,
+    prove_quiescence=quiesce,
+    finalize_harness=lambda _run_id, _status: {"execution_state": "failed"},
+    deactivate_runtime=lambda: record("deactivate"),
+    cleanup_controls=lambda _path: record("cleanup"),
+    close_cycle=lambda *_args, **_kwargs: record("close"),
+)
+record("result:" + str(result))
+raise SystemExit(result)
+'''
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            child_program,
+            str(HARNESS / "scripts/live_cycle_authorization.py"),
+            str(root),
+            str(override),
+            str(events),
+            stage,
+        ],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if events.is_file() and f"ready:{stage}" in events.read_text(
+            encoding="utf-8"
+        ):
+            break
+        if process.poll() is not None:
+            break
+        time.sleep(0.02)
+    assert process.poll() is None
+    process.send_signal(getattr(signal, signal_name))
+    stdout, stderr = process.communicate(timeout=10)
+
+    assert process.returncode in {1, 2}, (stdout, stderr)
+    recorded = events.read_text(encoding="utf-8").splitlines()
+    assert "deactivate" in recorded
+    assert "cleanup" in recorded
+    if stage == "quiescence":
+        blocker = json.loads(
+            (root / "cleanup-blocker.json").read_text(encoding="utf-8")
+        )
+        assert blocker["failure_codes"] == [
+            "quiescence_close_or_finalize_failed"
+        ]
+    else:
+        assert "close" in recorded
+
+
+def test_paid_cycle_resume_real_signal_closes_and_cleans(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_resume_signal_setup",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    authorization.bind_run(root, run_id=RUN_ID)
+    authorization.record_pause_handoff(
+        root,
+        run_id=RUN_ID,
+        pause_evidence_sha256="2" * 64,
+    )
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events = tmp_path / "resume-events.log"
+    child_program = r'''
+import importlib.util
+import os
+import signal
+import sys
+from pathlib import Path
+
+module_path, root_arg, override_arg, events_arg = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("qi_resume_signal_child", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+events = Path(events_arg)
+
+def record(value):
+    with events.open("a", encoding="utf-8") as stream:
+        stream.write(value + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+def run(_run_id):
+    record("ready:run")
+    while True:
+        signal.pause()
+
+module.install_lifecycle_signal_handlers()
+result = module.execute_resume(
+    Path(root_arg),
+    override=Path(override_arg),
+    run_id="20260722T000000000000Z-00000000",
+    validate_override=lambda _path, _root: None,
+    validate_issuance=lambda _path: None,
+    validate_pause=lambda _run_id: "2" * 64,
+    activate_runtime=lambda _path: record("activate"),
+    check_contracts=lambda: record("contracts"),
+    run_harness=run,
+    prove_quiescence=lambda _run_id, _status: "1" * 64,
+    finalize_harness=lambda _run_id, _status: {"execution_state": "failed"},
+    deactivate_runtime=lambda: record("deactivate"),
+    cleanup_controls=lambda _path: record("cleanup"),
+    close_cycle=lambda *_args, **_kwargs: record("close"),
+)
+record("result:" + str(result))
+raise SystemExit(result)
+'''
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            child_program,
+            str(HARNESS / "scripts/live_cycle_authorization.py"),
+            str(root),
+            str(override),
+            str(events),
+        ],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if events.is_file() and "ready:run" in events.read_text(encoding="utf-8"):
+            break
+        if process.poll() is not None:
+            break
+        time.sleep(0.02)
+    assert process.poll() is None
+    process.send_signal(signal.SIGTERM)
+    stdout, stderr = process.communicate(timeout=10)
+
+    assert process.returncode == 1, (stdout, stderr)
+    recorded = events.read_text(encoding="utf-8").splitlines()
+    assert "close" in recorded
+    assert "deactivate" in recorded
+    assert "cleanup" in recorded
+    assert (root / "resume-consumed.json").is_file()
+
+
+def test_paid_cycle_close_has_no_host_terminal_fallback(tmp_path: Path) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_no_host_terminal",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+
+    with pytest.raises(ValueError, match="run identity"):
+        authorization.close_paid_cycle(
+            root,
+            run_id=None,
+            status="failed",
+            quiescence_sha256="1" * 64,
+        )
+
+    assert not (root / "terminal.json").exists()
+
+
+def test_paid_cycle_resume_consumes_pause_before_activation_and_closes(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_resume_lifecycle",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    authorization.bind_run(root, run_id=RUN_ID)
+    authorization.record_pause_handoff(
+        root,
+        run_id=RUN_ID,
+        pause_evidence_sha256="2" * 64,
+    )
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events: list[str] = []
+
+    def activate(_override: Path) -> None:
+        assert (root / "resume-consumed.json").is_file()
+        events.append("activate")
+
+    def close_cycle(path: Path, **kwargs: object) -> None:
+        events.append("close")
+        from app.providers.cycle_authorization import (
+            write_terminal_from_close_bridge,
+        )
+
+        write_terminal_from_close_bridge(
+            authorization_root=path,
+            cycle_id="gdt10d-contract-cycle",
+            **kwargs,
+        )
+
+    result = authorization.execute_resume(
+        root,
+        override=override,
+        run_id=RUN_ID,
+        validate_override=lambda _path, _root: events.append(
+            "validate-override"
+        ),
+        validate_issuance=lambda _path: events.append("validate-issuance"),
+        validate_pause=lambda _run_id: "2" * 64,
+        activate_runtime=activate,
+        check_contracts=lambda: events.append("contracts"),
+        run_harness=lambda _run_id: {
+            "returncode": 0,
+            "run_id": RUN_ID,
+            "execution_state": "terminal_pending",
+        },
+        prove_quiescence=lambda _run_id, _status: events.append("quiesce")
+        or "1" * 64,
+        finalize_harness=lambda _run_id, _status: events.append("finalize")
+        or {"execution_state": "completed"},
+        deactivate_runtime=lambda: events.append("deactivate"),
+        cleanup_controls=lambda _path: None,
+        close_cycle=close_cycle,
+    )
+
+    assert result == 0
+    assert events == [
+        "validate-override",
+        "validate-issuance",
+        "activate",
+        "contracts",
+        "quiesce",
+        "close",
+        "finalize",
+        "deactivate",
+    ]
+    assert json.loads((root / "terminal.json").read_text(encoding="utf-8"))[
+        "status"
+    ] == "completed"
+
+
+def test_repeat_resume_does_not_close_or_deactivate_foreign_invocation(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_repeat_resume_owner",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    authorization.bind_run(root, run_id=RUN_ID)
+    authorization.record_pause_handoff(
+        root,
+        run_id=RUN_ID,
+        pause_evidence_sha256="2" * 64,
+    )
+    authorization.consume_resume(
+        root,
+        run_id=RUN_ID,
+        pause_evidence_sha256="2" * 64,
+    )
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events: list[str] = []
+
+    result = authorization.execute_resume(
+        root,
+        override=override,
+        run_id=RUN_ID,
+        validate_override=lambda _path, _root: None,
+        validate_issuance=lambda _path: None,
+        validate_pause=lambda _run_id: "2" * 64,
+        activate_runtime=lambda _path: events.append("activate"),
+        check_contracts=lambda: events.append("contracts"),
+        run_harness=lambda _run_id: {},
+        prove_quiescence=lambda _run_id, _status: events.append("quiesce")
+        or "1" * 64,
+        finalize_harness=lambda _run_id, _status: {},
+        deactivate_runtime=lambda: events.append("deactivate"),
+        cleanup_controls=lambda _path: events.append("cleanup"),
+        close_cycle=lambda *_args, **_kwargs: events.append("close"),
+    )
+
+    assert result == 1
+    assert events == ["cleanup"]
+    assert not (root / "terminal.json").exists()
+
+
+def test_execute_resume_real_process_contenders_have_one_lifecycle_owner(
+    tmp_path: Path,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_resume_process_contenders_setup",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    authorization_path = HARNESS / "scripts/live_cycle_authorization.py"
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    authorization.bind_run(root, run_id=RUN_ID)
+    authorization.record_pause_handoff(
+        root,
+        run_id=RUN_ID,
+        pause_evidence_sha256="2" * 64,
+    )
+    release = tmp_path / "release-winner"
+    event_paths = [tmp_path / f"resume-contender-{index}.log" for index in range(2)]
+    overrides = [tmp_path / f"resume-contender-{index}.yaml" for index in range(2)]
+    for override in overrides:
+        override.write_text("services: {}\n", encoding="utf-8")
+        override.chmod(0o600)
+    child_program = r'''
+import importlib.util
+import os
+import sys
+import time
+from pathlib import Path
+
+module_path, root_arg, override_arg, events_arg, release_arg = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("qi_resume_contender", module_path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+events = Path(events_arg)
+release = Path(release_arg)
+
+def record(value):
+    with events.open("a", encoding="utf-8") as stream:
+        stream.write(value + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+def run(_run_id):
+    record("run")
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not release.is_file():
+        time.sleep(0.01)
+    if not release.is_file():
+        raise RuntimeError("winner release timed out")
+    return {
+        "returncode": 1,
+        "run_id": "20260722T000000000000Z-00000000",
+        "execution_state": "failed",
+    }
+
+result = module.execute_resume(
+    Path(root_arg),
+    override=Path(override_arg),
+    run_id="20260722T000000000000Z-00000000",
+    validate_override=lambda _path, _root: None,
+    validate_issuance=lambda _path: None,
+    validate_pause=lambda _run_id: "2" * 64,
+    activate_runtime=lambda _path: record("activate"),
+    check_contracts=lambda: record("contracts"),
+    run_harness=run,
+    prove_quiescence=lambda _run_id, _status: record("quiesce") or "1" * 64,
+    finalize_harness=lambda _run_id, _status: record("finalize") or {
+        "execution_state": "failed"
+    },
+    deactivate_runtime=lambda: record("deactivate"),
+    cleanup_controls=lambda _path: record("cleanup"),
+    close_cycle=lambda *_args, **_kwargs: record("close"),
+)
+record("result:" + str(result))
+raise SystemExit(result)
+'''
+    processes = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                child_program,
+                str(authorization_path),
+                str(root),
+                str(override),
+                str(events),
+                str(release),
+            ],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for override, events in zip(overrides, event_paths, strict=True)
+    ]
+    outputs: list[tuple[str, str]] = []
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            event_lines = [
+                path.read_text(encoding="utf-8").splitlines()
+                if path.is_file()
+                else []
+                for path in event_paths
+            ]
+            if sum("run" in lines for lines in event_lines) == 1 and any(
+                process.poll() is not None for process in processes
+            ):
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail("resume contenders did not elect one lifecycle owner")
+        release.touch()
+        outputs = [process.communicate(timeout=10) for process in processes]
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+                process.communicate(timeout=10)
+
+    assert [process.returncode for process in processes] == [1, 1], outputs
+    recorded = [path.read_text(encoding="utf-8").splitlines() for path in event_paths]
+    owner = next(lines for lines in recorded if "run" in lines)
+    loser = next(lines for lines in recorded if "run" not in lines)
+    assert owner == [
+        "activate",
+        "contracts",
+        "run",
+        "quiesce",
+        "close",
+        "finalize",
+        "deactivate",
+        "cleanup",
+        "result:1",
+    ]
+    assert loser == ["cleanup", "result:1"]
+    assert not (root / "terminal.json").exists()
+
+
+def test_resume_owns_fact_when_interrupted_after_durable_consumption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_resume_consumption_boundary",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    authorization.bind_run(root, run_id=RUN_ID)
+    authorization.record_pause_handoff(
+        root,
+        run_id=RUN_ID,
+        pause_evidence_sha256="2" * 64,
+    )
+    override = tmp_path / "live.override.yaml"
+    override.write_text("services: {}\n", encoding="utf-8")
+    override.chmod(0o600)
+    events: list[str] = []
+    issuance_checks: list[bool] = []
+    real_issuance = authorization._issuance
+    real_consume = authorization.consume_resume
+
+    def track_issuance(
+        path: Path,
+        *,
+        require_active: bool = True,
+    ) -> dict[str, object]:
+        issuance_checks.append(require_active)
+        return real_issuance(path, require_active=require_active)
+
+    def consume_then_interrupt(*args: object, **kwargs: object) -> None:
+        real_consume(*args, **kwargs)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        authorization,
+        "consume_resume",
+        consume_then_interrupt,
+    )
+    monkeypatch.setattr(authorization, "_issuance", track_issuance)
+
+    result = authorization.execute_resume(
+        root,
+        override=override,
+        run_id=RUN_ID,
+        validate_override=lambda _path, _root: None,
+        validate_issuance=lambda _path: None,
+        validate_pause=lambda _run_id: "2" * 64,
+        activate_runtime=lambda _path: events.append("activate"),
+        check_contracts=lambda: events.append("contracts"),
+        run_harness=lambda _run_id: {},
+        prove_quiescence=lambda _run_id, _status: events.append("quiesce")
+        or "1" * 64,
+        finalize_harness=lambda _run_id, _status: {
+            "execution_state": "failed"
+        },
+        deactivate_runtime=lambda: events.append("deactivate"),
+        cleanup_controls=lambda _path: events.append("cleanup"),
+        close_cycle=lambda *_args, **_kwargs: events.append("close"),
+    )
+
+    assert result == 1
+    assert events == ["quiesce", "close", "deactivate", "cleanup"]
+    assert issuance_checks[-1] is False
+
+
+def test_cycle_close_bridge_is_network_none_credential_free_and_exactly_mounted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_close_bridge",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    identity = _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    authorization.bind_run(root, run_id=RUN_ID)
+    authorization.admit_project(
+        root,
+        run_id=RUN_ID,
+        project_id="project-1",
+        project_order=1,
+        source_sha256="f" * 64,
+    )
+    run = json.loads((root / "run.json").read_text(encoding="utf-8"))
+    terminal = {
+        "schema_version": "provider-cycle-terminal/1",
+        "cycle_id": identity["cycle_id"],
+        "run_id": RUN_ID,
+        "status": "failed",
+        "quiescence_sha256": "1" * 64,
+        "run_sha256": run["content_sha256"],
+    }
+    terminal["content_sha256"] = authorization._canonical_hash(terminal)
+    calls: list[list[str]] = []
+    bridge_evidence: list[dict[str, object]] = []
+
+    def fake_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if "images" in argv:
+            return subprocess.CompletedProcess(
+                argv, 0, identity["backend_image_id"] + "\n", ""
+            )
+        return subprocess.CompletedProcess(argv, 0, json.dumps(terminal), "")
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        authorization,
+        "_write_close_bridge_evidence",
+        lambda **kwargs: bridge_evidence.append(kwargs) or {},
+    )
+
+    assert authorization.close_via_bridge(
+        root,
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="1" * 64,
+    ) == terminal
+    command = calls[-1]
+    assert command[:4] == ["docker", "run", "--rm", "--network"]
+    assert command[4] == "none"
+    assert command.count("--mount") == 2
+    assert any("type=volume" in value and "dst=/data" in value for value in command)
+    assert any("type=bind" in value and "dst=/auth" in value for value in command)
+    assert not any("KEY=" in value or "SECRET=" in value for value in command)
+    assert bridge_evidence[0]["image_id"] == identity["backend_image_id"]
+    assert bridge_evidence[0]["storage_volume"].endswith("_storage_qa_dev")
+    assert bridge_evidence[0]["terminal"] == terminal
+
+
+def test_cycle_close_bridge_recovers_consumed_pre_harness_run_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_recover_run_bridge",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    identity = _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    (tmp_path / ".agent/harness/runs" / RUN_ID / "reports").mkdir(
+        parents=True
+    )
+    monkeypatch.setattr(authorization, "ROOT", tmp_path)
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        if "images" in argv:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                identity["backend_image_id"] + "\n",
+                "",
+            )
+        from app.providers.cycle_authorization import (
+            write_empty_cycle_terminal_from_close_bridge,
+        )
+
+        terminal = write_empty_cycle_terminal_from_close_bridge(
+            authorization_root=root,
+            cycle_id=identity["cycle_id"],
+            run_id=RUN_ID,
+            status="failed",
+            quiescence_sha256="1" * 64,
+        )
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(terminal),
+            "",
+        )
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_run)
+
+    terminal = authorization.close_via_bridge(
+        root,
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="1" * 64,
+    )
+
+    assert terminal["status"] == "failed"
+    assert json.loads((root / "run.json").read_text(encoding="utf-8"))[
+        "run_id"
+    ] == RUN_ID
+    assert (
+        tmp_path
+        / ".agent/harness/runs"
+        / RUN_ID
+        / "reports/provider-cycle-close-bridge.json"
+    ).is_file()
+
+
+def test_cycle_close_bridge_rejects_image_not_bound_by_issuance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_close_image_binding",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "authorization"
+    _issue_cycle_authorization(authorization, root)
+    authorization.consume_authorization(root)
+    authorization.bind_run(root, run_id=RUN_ID)
+    monkeypatch.setattr(
+        authorization.subprocess,
+        "run",
+        lambda argv, **_kwargs: subprocess.CompletedProcess(
+            argv,
+            0,
+            "sha256:" + "8" * 64 + "\n",
+            "",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="image identity"):
+        authorization.close_via_bridge(
+            root,
+            run_id=RUN_ID,
+            status="failed",
+            quiescence_sha256="1" * 64,
+        )
+
+
+def test_quiescence_evidence_is_written_only_after_harness_return(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_quiescence",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    run_dir = tmp_path / ".agent/harness/runs" / RUN_ID
+    (run_dir / "reports").mkdir(parents=True)
+    monkeypatch.setattr(authorization, "ROOT", tmp_path)
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        stdout = (
+            "0\n"
+            if "redis-cli" in argv
+            else json.dumps(
+                {
+                    "active": {"worker@fixture": []},
+                    "reserved": {"worker@fixture": []},
+                    "scheduled": {"worker@fixture": []},
+                }
+            )
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_run)
+
+    digest = authorization.prove_run_quiescence(RUN_ID, "completed")
+    report = json.loads(
+        (run_dir / "reports/provider-cycle-quiescence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert report["harness_returned"] is True
+    assert report["status"] == "completed"
+    assert report["queue_depth"] == 0
+    assert report["content_sha256"] == digest
+
+
+def test_quiescence_creates_bounded_evidence_shell_before_harness_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_pre_harness_quiescence",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    (tmp_path / ".agent/harness/runs").mkdir(parents=True)
+    monkeypatch.setattr(authorization, "ROOT", tmp_path)
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        stdout = (
+            "0\n"
+            if "redis-cli" in argv
+            else json.dumps(
+                {
+                    "active": {"worker@fixture": []},
+                    "reserved": {"worker@fixture": []},
+                    "scheduled": {"worker@fixture": []},
+                }
+            )
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_run)
+
+    digest = authorization.prove_run_quiescence(RUN_ID, "failed")
+
+    report_path = (
+        tmp_path
+        / ".agent/harness/runs"
+        / RUN_ID
+        / "reports/provider-cycle-quiescence.json"
+    )
+    assert report_path.is_file()
+    assert json.loads(report_path.read_text(encoding="utf-8"))[
+        "content_sha256"
+    ] == digest
+
+
+@pytest.mark.parametrize("inspection_mode", ("active", "api-unavailable"))
+def test_quiescence_stops_feature_worker_before_close_when_needed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    inspection_mode: str,
+) -> None:
+    authorization = _load_module(
+        f"qi_live_cycle_authorization_stop_worker_{inspection_mode}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    run_dir = tmp_path / ".agent/harness/runs" / RUN_ID
+    (run_dir / "reports").mkdir(parents=True)
+    monkeypatch.setattr(authorization, "ROOT", tmp_path)
+    calls: list[list[str]] = []
+
+    def fake_run(
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if "redis-cli" in argv:
+            return subprocess.CompletedProcess(argv, 0, "0\n", "")
+        if "stop" in argv:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if "ps" in argv:
+            return subprocess.CompletedProcess(argv, 0, "api\nredis\n", "")
+        if inspection_mode == "api-unavailable":
+            return subprocess.CompletedProcess(argv, 1, "", "unavailable")
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {
+                    "active": {"worker@fixture": [{"id": "task-1"}]},
+                    "reserved": {"worker@fixture": []},
+                    "scheduled": {"worker@fixture": []},
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_run)
+
+    digest = authorization.prove_run_quiescence(RUN_ID, "failed")
+
+    report = json.loads(
+        (run_dir / "reports/provider-cycle-quiescence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["content_sha256"] == digest
+    assert report["worker_stopped"] is True
+    assert report["queue_depth"] == 0
+    assert any("stop" in call and call[-1] == "worker" for call in calls)
+    assert any("ps" in call for call in calls)
+
+
+def test_make_routes_start_and_resume_only_through_cycle_orchestrator() -> None:
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    start_recipe = makefile.split("verify-p0-live:", 1)[1].split("\n\n", 1)[0]
+    assert not start_recipe.startswith(" check-contracts")
+    assert "live_cycle_authorization.py execute-start" in start_recipe
+    resume_recipe = makefile.split("resume-gdt10d-live:", 1)[1].split(
+        "\n\n", 1
+    )[0]
+    assert "live_cycle_authorization.py execute-resume" in resume_recipe
 
 def _materialize_visual_retry_chain(
     tmp_path: Path,

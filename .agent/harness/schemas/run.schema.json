@@ -23,7 +23,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "run/1"
+      "enum": ["run/1", "run/2"]
     },
     "run_id": {
       "type": "string",
@@ -92,10 +92,14 @@
     "live_identity": {
       "$ref": "#/$defs/live_identity"
     },
+    "cycle_authorization": {
+      "$ref": "#/$defs/cycle_authorization"
+    },
     "execution_state": {
       "enum": [
         "running",
         "visual_qa_pending",
+        "terminal_pending",
         "completed",
         "failed"
       ]
@@ -194,7 +198,8 @@
                 "execution_state": {
                   "enum": [
                     "running",
-                    "visual_qa_pending"
+                    "visual_qa_pending",
+                    "terminal_pending"
                   ]
                 }
               },
@@ -259,6 +264,22 @@
           }
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "schema_version": { "const": "run/2" }
+        },
+        "required": ["schema_version"]
+      },
+      "then": {
+        "required": ["cycle_authorization"],
+        "properties": {
+          "mode": { "const": "live" },
+          "scope": { "const": "full-p0" },
+          "task_id": { "type": "null" }
+        }
+      }
     }
   ],
   "$defs": {
@@ -317,6 +338,34 @@
         "live_identity": {
           "$ref": "#/$defs/live_identity"
         }
+      }
+    },
+    "cycle_authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cycle_id",
+        "pricing_sha256",
+        "issuance_sha256",
+        "consumption_sha256",
+        "backend_image_id",
+        "run_id",
+        "run_authorization_sha256"
+      ],
+      "properties": {
+        "cycle_id": { "type": "string", "minLength": 1 },
+        "pricing_sha256": { "$ref": "#/$defs/sha256" },
+        "issuance_sha256": { "$ref": "#/$defs/sha256" },
+        "consumption_sha256": { "$ref": "#/$defs/sha256" },
+        "backend_image_id": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
+        },
+        "run_authorization_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "live_identity": {

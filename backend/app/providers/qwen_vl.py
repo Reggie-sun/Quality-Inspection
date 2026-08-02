@@ -30,6 +30,7 @@ from app.providers.base import (
     classify_provider_failure_request_id,
     provider_failure_category_for_http_status,
 )
+from app.providers.usage_ledger import ReservationPermit
 
 
 SCHEMA_PATH = Path(__file__).with_name("candidate_review.schema.json")
@@ -408,14 +409,50 @@ def _status_failure_fact(exc: APIStatusError) -> ProviderFailureFact:
 
 
 class QwenVisionProvider:
-    def __init__(self, client: Any, model: str = "qwen3-vl-plus") -> None:
+    def __init__(
+        self,
+        client: Any,
+        model: str = "qwen3-vl-plus",
+        *,
+        require_cycle_permit: bool = False,
+    ) -> None:
         self._client = client
         self._model = model
+        self._require_cycle_permit = require_cycle_permit
 
-    def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
+    def _consume_cycle_permit(
+        self,
+        reservation_permit: ReservationPermit | None,
+        *,
+        operation: str,
+    ) -> None:
+        if reservation_permit is None:
+            if self._require_cycle_permit:
+                raise ValueError(
+                    "exact-cycle Provider call requires one permit"
+                )
+            return
+        if not isinstance(reservation_permit, ReservationPermit):
+            raise ValueError("reservation permit is invalid")
+        reservation_permit.consume_for_adapter(
+            provider="qwen-vl",
+            operation=operation,
+        )
+
+    def review_candidate(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
         data_url = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
         localized_failure_category: str | None = None
         try:
+            self._consume_cycle_permit(
+                reservation_permit,
+                operation="review_candidate",
+            )
             completion = self._client.chat.completions.create(
                 model=self._model,
                 messages=[
@@ -471,7 +508,13 @@ class QwenVisionProvider:
             raise LocalizedProviderFailure("schema")
         raise AssertionError("candidate schema failure was not raised")
 
-    def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
+    def review_symbols(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
         canonical_image = canonicalize_visual_png(image)
         if canonicalize_visual_png(canonical_image) != canonical_image:
             raise VisualSymbolInputError(
@@ -481,6 +524,10 @@ class QwenVisionProvider:
             canonical_image
         ).decode("ascii")
         failure_fact: ProviderFailureFact | None = None
+        self._consume_cycle_permit(
+            reservation_permit,
+            operation="review_symbols",
+        )
         try:
             completion = self._client.chat.completions.create(
                 model=self._model,

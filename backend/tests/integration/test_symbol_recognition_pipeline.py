@@ -81,6 +81,8 @@ from app.providers.qwen_vl import (
     VisualSymbolProviderError,
     canonicalize_visual_png,
 )
+from app.providers.usage_ledger import ProviderUsageLedger, ReservationPermit
+from tests.support.provider_cycle import CYCLE_ID, create_cycle_authorization
 from app.review.locks import acquire_lock
 from app.review.models import ReviewWorkingCopy
 from app.review.service import ReviewNotFound, ReviewService
@@ -1629,6 +1631,16 @@ def test_project_failure_terminalizes_all_admitted_groups_without_result(
         recognition_mode="production_uncertainty",
         recognition_router_version="symbol-uncertainty-router/1",
     )
+    authorization_root = create_cycle_authorization(
+        tmp_path / "project-failure-authorization",
+        project_ids=(str(project.id),),
+    )
+    ledger = ProviderUsageLedger.open(
+        cycle_id=CYCLE_ID,
+        storage_root=storage.root,
+        authorization_root=authorization_root,
+        project_id=str(project.id),
+    )
 
     class ProjectBlockingProvider:
         def __init__(self) -> None:
@@ -1638,10 +1650,17 @@ def test_project_failure_terminalizes_all_admitted_groups_without_result(
             self,
             _image: bytes,
             prompt: str,
+            *,
+            reservation_permit: ReservationPermit | None = None,
         ) -> VisionResult:
             observation_id = json.loads(prompt)[
                 "visual_observation_ids"
             ][0]
+            assert reservation_permit is not None
+            reservation_permit.consume_for_adapter(
+                provider="qwen-vl",
+                operation="review_symbols",
+            )
             self.calls.append(observation_id)
             raise ClassifiedProviderFailure(
                 ProviderFailureFact(
@@ -1673,6 +1692,7 @@ def test_project_failure_terminalizes_all_admitted_groups_without_result(
         provider_factory=lambda _settings: provider,
         symbol_session_factory=SessionLocal,
         require_symbol_persistence=True,
+        usage_ledger=ledger,
     )
 
     with pytest.raises(CandidateAdvisorFailure) as caught:
@@ -1747,6 +1767,29 @@ def test_project_failure_terminalizes_all_admitted_groups_without_result(
     cancelled_group_ids = {
         attempt.escalation_group_id for attempt in cancelled_attempts
     }
+    admitted_group_ids = {
+        decision.escalation_group_id for decision in decisions
+    }
+    submission_started_group_ids = {
+        entry.subject_id for entry in ledger.snapshot().entries
+    }
+    terminal_group_ids = {
+        outcome.escalation_group_id for outcome in outcomes
+    }
+    assert admitted_group_ids == (
+        submission_started_group_ids | cancelled_group_ids
+    )
+    assert submission_started_group_ids.isdisjoint(cancelled_group_ids)
+    assert terminal_group_ids == admitted_group_ids
+    assert len(submission_started_group_ids) == 2
+    ledger_snapshot = ledger.snapshot()
+    assert ledger_snapshot.reserved_only_count == 0
+    assert ledger_snapshot.submission_started_count == 2
+    assert ledger_snapshot.unsettled_started_count == 0
+    assert ledger_snapshot.committed_total_cny == "3.526656"
+    assert {
+        entry.state for entry in ledger_snapshot.entries
+    } == {"reserved_unknown"}
     assert all(
         outcome.outcome_code == "cancelled"
         and {
@@ -1846,6 +1889,11 @@ def test_hard_budget_denial_preserves_admitted_siblings_as_partial(
         )
     )
     assert len(attempts) == 1
+    assert attempts[0].schema_version == "symbol-escalation-attempt/2"
+    assert attempts[0].diagnostic == {
+        "schema_version": "visual-symbol-budget-control/1",
+        "budget_origin": "routing_plan",
+    }
     assert len(outcomes) == 1
     assert outcomes[0].observation_outcomes == [
         {

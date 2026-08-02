@@ -4,7 +4,7 @@
 
 **Goal:** 在不改写 GDT-10C、不扩大 Provider ceiling、不触碰 main runtime的前提下，为一个 one-use GDT-10D cycle补齐保守计价与durable usage/terminal evidence，激活feature `0014` runtime，并在唯一cycle start成功pause时完成literal same-run headed QA/export/receipt。
 
-**Architecture:** cycle-scoped `ProviderUsageLedger`在每个真实OCR/Qwen submission前以固定公开原价预留最坏成本，在安全usage可用时向下结算；open/unknown reservation仍按最坏值累计，所以跨四个project、失败或worker中断都不会低估。独立的Harness authorization owner在Make recipe第一步原子consume一次性cycle，之后才激活credential runtime；run和每个project先由host durable admission，再允许runtime reservation。Exact-cycle Provider adapter必须在literal SDK seam原子consume matching opaque reservation permit并创建submission-started fact，重复或并发复用在network前失败。Runtime activation先quiesce target writers、private backup、additive `0014` migration并完成credential-free zero-paid review；paid start后只recreate feature `api/worker`。
+**Architecture:** cycle-scoped `ProviderUsageLedger`在每个真实OCR/Qwen submission前以固定公开原价预留最坏成本，在安全usage可用时向下结算；open/unknown reservation仍按最坏值累计，所以跨四个project、失败或worker中断都不会低估。独立的Harness authorization owner先生成literal run ID，原子consume一次性cycle并durably bind该run，之后才激活credential runtime；Harness只能adopt显式 `--authorized-run-id`。每个project先把pending identity写入run evidence，再由host durable admission，最后才允许processing/runtime reservation。Exact-cycle Provider adapter必须在literal SDK seam原子consume matching opaque reservation permit并创建submission-started fact，重复或并发复用在network前失败。Runtime activation先quiesce target writers、private backup、additive `0014` migration并完成credential-free zero-paid review；paid start后只recreate feature `api/worker`。
 
 **Tech Stack:** Python 3.11、pytest、Ruff、Decimal、`fcntl.flock`、`threading.Lock`、`O_CREAT|O_EXCL` append journal、JSON Schema、Alembic、PostgreSQL 17、Docker Compose、repository Harness、Chrome headed QA、Micromamba `qi-p0`。
 
@@ -55,8 +55,7 @@
 ### Harness authorization and evidence
 
 - Create `.agent/harness/scripts/live_cycle_authorization.py`
-- Create `.agent/harness/schemas/live-cycle-authorization.schema.json`
-- Create `.agent/harness/schemas/provider-usage-ledger.schema.json`
+- Private issuance/journal/handoff facts use exact closed validators in `live_cycle_authorization.py` and `backend/app/providers/cycle_authorization.py`; private control bytes are not copied into public schema artifacts。
 - Create `.agent/harness/policy/gdt10d-runtime-closure.txt` — exact full tracked `backend/app/**/*.py|*.json` manifest
 - Modify `.agent/harness/policy/provider-call-policy.yaml`
 - Modify `.agent/harness/scripts/run-p0.py`
@@ -120,7 +119,7 @@ Read-only reviewer必须检查：single Owner、fixed rates/math、cycle-wide/op
 
 Review record：多轮只读复审依次关闭PROV cache语义、runtime closure commit ordering、lifecycle finalizer、sole close bridge、reservation/submission-started区分、resume O_EXCL、terminal fsync/replay、adapter-side process-local capability与全局锁序；最终 verdict `accept`。Contract checker `69/111/101/10`、all drift `0`，Decimal literals `0.049169` / `1.763328` 独立复算通过。
 
-- [ ] **Step 5: Commit planning boundary**
+- [x] **Step 5: Commit planning boundary**
 
 ```bash
 git add docs/contracts/MAIN_CONTRACT_MATRIX.md \
@@ -147,7 +146,7 @@ Expected: clean committed docs；Provider/runtime/DB unchanged。
   - `qwen_usage_cost_cny(snapshot, usage) -> Decimal | None`
   - `ocr_submission_cost_cny(snapshot) -> Decimal("0.500000")`
 
-- [ ] **Step 1: Write RED snapshot/math tests**
+- [x] **Step 1: Write RED snapshot/math tests**
 
 Tests use literal expected values independent of production helpers:
 
@@ -169,7 +168,7 @@ def test_qwen_incomplete_or_out_of_range_usage_cannot_reduce_reservation() -> No
 
 The second literal is hand-derived with `ROUND_CEILING`: `32769*1.5/1e6 + 1*15/1e6 = 0.0491685 -> 0.049169`; do not reuse production calculation in the assertion. Add literal boundary cases for input `32768/32769/131072/131073/260096/260097` and completion `0/32768/32769` so everytier edge and output maximum is independently pinned。
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
@@ -178,11 +177,11 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 
 Expected: import/file failures only。
 
-- [ ] **Step 3: Implement strict snapshot loader and Decimal math**
+- [x] **Step 3: Implement strict snapshot loader and Decimal math**
 
 Use immutable dataclasses and exact-key validation. Reject float、extra/missing fields、wrong source/model/region/version、non-monotonic tiers or hash mismatch. Do not fetch network at runtime。
 
-- [ ] **Step 4: Run GREEN and mutation negatives**
+- [x] **Step 4: Run GREEN and mutation negatives**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
@@ -210,7 +209,7 @@ micromamba run -n qi-p0 ruff check \
 
 Production architecture checks must forbid `consume_for_adapter` call sites outside `qwen_vl.py`、`tencent_ocr.py` and the focused ledger/provider tests；forbid permit fields/types in JSON schemas、call records、logs and Harness evidence。Even if a caller invokes it early，the real adapter's second atomic consume fails before network；there is no public started permit that can bypass the adapter transition。
 
-- [ ] **Step 1: Write RED ledger tests**
+- [x] **Step 1: Write RED ledger tests**
 
 Cover: cycle journal exists before network seam、two projects share one ceiling、OCR fixed charge、Qwen downward settlement、missing usage retains max、two independent OS processes atomically contend at ceiling、two independently opened same-process ledger handles race reserve-vs-consume without deadlock under a bounded timeout、repeat adapter consumption/settlement rejected、cache/factory paths create no entry、immutable reservation/submission-started/settlement bytes and hashes、new-instance reopen after reserved-only crash keeps full charge but zero submission count and cannot recover a permit、reopen after submission-started crash reports acceptance unknown/full charge、constructor/copy/deepcopy/pickle/JSON reconstruction rejected、a forged/reconstructed object before first legitimate consume produces zero submission-started/network、partial/duplicate/gap/sequence rollback/unexpected file/final-component symlink journal fails closed、parent-directory fsync is exercised、lock open never truncates holder diagnostics、contenders share one stable inode after release、sensitive fields and unsafe IDs rejected。The same-process multi-handle test is mandatory in addition to the OS-process case。
 
@@ -233,7 +232,7 @@ def test_unknown_qwen_attempt_keeps_full_reservation() -> None:
     assert ledger.snapshot().submission_started_count == 1
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
@@ -241,15 +240,15 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   backend/tests/contract/test_provider_call_records.py -q
 ```
 
-- [ ] **Step 3: Implement minimal cross-process durable ledger**
+- [x] **Step 3: Implement minimal cross-process durable ledger**
 
 Use a cycle-global `asset://provider-usage-cycles/<cycle-id>/` journal and `fcntl.flock(LOCK_EX)` on a dedicated lock file。All same-process handles for one canonical journal obtain the same module-registry `threading.RLock`；the registry-map mutex is released before that lock is acquired。Every runtime path needing both layers uses only `cycle process lock -> OS flock` and reverse release；no path may hold OS flock while acquiring either process lock，while the one-off close bridge uses OS flock only。Create private directories as `0700` and open the stable lock inode with `O_RDWR|O_CREAT|O_NOFOLLOW`、never `O_TRUNC` before flock；verify regular-file/owner/mode with `fstat`，and never unlink、replace or recreate the lock file。Reserve holds the cycle process lock across OS-locked durable fact creation/fsync and subsequent process-local permit registration，so it never reacquires process lock under flock。The module-private factory registers the exact non-copyable/non-serializable permit object in that issuing ledger instance。Only the matching Provider adapter may call `consume_for_adapter` at its SDK seam；under the cycle process lock it validates exact ledger/object/registry/provider/operation、retires the capability for any attempted consume，then under the OS lock revalidates authorization and exclusive-creates/fsyncs submission-started。Only that success may proceed to network；repeat/concurrent/forged/reconstructed use fails before network，and reopen never recreates capability。Settlement requires the durable started fact。All facts use `O_CREAT|O_EXCL|O_NOFOLLOW` plus file/directory `fsync`；do not use `LocalFileStorage.write_verified()` replacement path。Every open/reopen separately rebuilds reserved-only、submission-started unknown、settled and committed cost。Never expose delete/discount/sequence-reset methods。
 
-- [ ] **Step 4: Bind call records without breaking history**
+- [x] **Step 4: Bind call records without breaking history**
 
 Authorized-cycle records require a non-null cost matching ledger entry; legacy/noncycle fixtures remain valid with `estimated_cost=None`. Do not add raw usage or rate details to `ProviderCallRecord` if ledger owns them。
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
@@ -270,15 +269,15 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 - Every SDK-seam Provider attempt has exactly one durable reservation plus one submission-started fact；exact-cycle Provider adapters accept only the exact process-local `ReservationPermit` object still registered by its issuing ledger and atomically consume it themselves at their network seam。The same object used serially/concurrently、a forged/reconstructed permit before first consume、a reopened-ledger permit attempt or any identity mismatch yields zero additional network calls and no forged started fact。A reserved-only fact is charged conservatively but is not counted as a submission。
 - `ProviderBudgetExceeded` produces no network call and a project-blocking budget terminal.
 
-- [ ] **Step 1: Write RED OCR tests**
+- [x] **Step 1: Write RED OCR tests**
 
 Assert each eligible region reserves before fake provider invocation, adapter-side consumption creates submission-started immediately before network, success settles `0.500000`, 16/page remains exact, provider failure retains charge, and budget rejection leaves provider call count unchanged。Before the legitimate first consume，constructor/copy/deepcopy/pickle/JSON/reopened-ledger reconstruction attempts must fail with zero submission-started and zero network；afterward the same permit object reused serially/concurrently and adapter/operation mismatch must fail with zero additional network calls。The fake provider is only the external boundary; assertions target real ledger bytes and RuntimeRecognition result/failure。
 
-- [ ] **Step 2: Write RED Vision tests**
+- [x] **Step 2: Write RED Vision tests**
 
 Cover success、schema retry (two submissions/two entries)、transport/status/metadata failure with no usage (full reservation)、provider factory failure (zero entry)、cache hit (zero entry)、text crop expansion `1`、visual batch expansion `0`、per-page/per-subject limits、budget rejection before `review_symbols()`、direct exact-cycle adapter call without permit、same-permit serial/concurrent reuse、forged/reconstructed-before-first-consume、reopened-ledger or identity-mismatched permit。Pre-first-consume forgery produces zero submission-started/network；all later rejected cases produce zero additional network calls。
 
-- [ ] **Step 3: Write RED project-blocking integration reconciliation**
+- [x] **Step 3: Write RED project-blocking integration reconciliation**
 
 Extend the existing 8-admitted/2-started/6-cancelled test to assert:
 
@@ -293,7 +292,7 @@ assert all(no_paid_artifacts(group) for group in cancelled_groups)
 
 Also assert exact two submission-started/acceptance-unknown reservations, six `not_started_after_project_failure` terminals with no reservation fact, no AutomaticResult/working copy, and committed total below `50.000000`。Add a separate reserve-before-SDK crash case where `reserved_only_groups` has one member、submission-started count stayszero、full charge remains and Step4 success isblocked。
 
-- [ ] **Step 4: Verify RED**
+- [x] **Step 4: Verify RED**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
@@ -303,11 +302,11 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   -k 'usage_ledger or cost_budget or project_blocking' -q
 ```
 
-- [ ] **Step 5: Implement OCR/Advisor wiring**
+- [x] **Step 5: Implement OCR/Advisor wiring**
 
 Reserve immediately before the actual Provider method call and pass the opaque reservation permit into the adapter。The adapter itself calls `consume_for_adapter()` at the literal SDK seam before any network operation；no started permit is exposed for caller reuse。In `call_once()` settle every branch：schema failure may use safe usage；classified/boundary failure retains max；unexpected failure before adapter consumption must remain reserved-only and must not claim provider work。Schema retry must reserve and adapter-consume separately。When cycle budget is exhausted，the rejected group uses existing attempt `not_started_budget_exhausted`、observation `routing_budget_exhausted`、group `budget_exhausted`；queued admitted siblings use attempt/observation `cancelled_after_project_budget` and group `cancelled`。Raise internal typed `ProviderBudgetExceeded` to stop the project scheduler，but do not add `provider_cost_budget_exhausted` or another routing vocabulary。Cancelled/budget-denied never-started groups have zero reservation/crop/request/response/call/cache evidence；reserved-only crash is a distinct blocked state, not cancellation。
 
-- [ ] **Step 6: Run focused GREEN**
+- [x] **Step 6: Run focused GREEN**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
@@ -324,26 +323,26 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
 
 **Interfaces:**
 
-- `live_cycle_authorization.py issue` creates one immutable issuance.
-- `live_cycle_authorization.py consume` creates one exclusive consumption; repeat/concurrent consume exits nonzero.
+- `live_cycle_authorization.py issue` creates one immutable issuance，including the zero-paid-proved exact backend image ID.
+- `live_cycle_authorization.py consume` creates one exclusive consumption bound to a random non-secret invocation identity；repeat/concurrent consume exits nonzero，且foreign loser不得close/deactivate winner。
 - `live_cycle_authorization.py bind-run/admit-project` exclusively appends the only run and each project admission；host `close` can write terminal only by launching the one-off、network-none、credential-free cycle-close bridge with feature storage `/data:rw` and private authorization `/auth:rw`；normal runtime mount remains read-only.
 - `live_cycle_authorization.py execute-start` installs signal/finally cleanup before consuming，then activates、checks HEAD contracts and starts Harness；everyexit deactivates credentials。
-- `live_cycle_authorization.py execute-resume --run-id <literal>` is the only same-cycle resume orchestrator；before activation it exclusive-creates/fsyncs one `resume-consumed` fact bound to the literal accepted-pause run/evidence。Pre-consume rejection has zero mutation/activation；after consumption every exit closes/deactivates.
-- `run.json.cycle_authorization` and `live-run-evidence.paid_cycle` bind exact hashes、literal run、each admitted project、conditional resume-consumed fact、cycle-wide ledger and terminal aggregate.
+- `live_cycle_authorization.py execute-resume --run-id <literal>` is the only same-cycle resume orchestrator；before activation it requires a durable clean-pause handoff with no cleanup blocker，then exclusive-creates/fsyncs one `resume-consumed` fact bound to the literal accepted-pause run/evidence and random invocation identity。Pre-consume rejection has zero mutation/activation；foreign loser only removes its fresh private controls with zero activation/network/close/deactivate；after own consumption every exit closes/deactivates and removes fresh private overrides.
+- `run.json.cycle_authorization` and `live-run-evidence.paid_cycle` bind exact hashes、pre-bound literal run、each pending/admitted project、conditional resume-consumed fact、cycle-wide ledger and terminal aggregate。Pending project暂以 `admission_sha256: null` durable写入；formal success禁止任何pending project。
 
-- [ ] **Step 1: Write RED authorization tests**
+- [x] **Step 1: Write RED authorization tests**
 
-Use private `tmp_path` with real OS processes. Assert owner/mode/symlink/expiry/head/plan/pricing/current-four mismatches fail；zero-paid preflight does not consume/deploy credentials；two concurrent cycle consumers yield exactly one success；run bind is single；each project admission requires that run and unique order/project/source identity before that project's processing；terminal blocks new admissions/reservations；runtime read-only verifier rejects missing/mismatched consumption/run/project/expiry/terminal。Run `execute-start` as a child process with controlled fake activation/contracts/run seams；partial activation、activation error、contracts error、preflight/run error、SIGINT、SIGTERM all leave consumption evidence but zero credentials/cycle/auth mount。Accepted pause also deactivates while leaving authorization nonterminal。Then run two independent OS-process `execute-resume` contenders for the same literal pause；exactly one exclusive `resume-consumed` fact succeeds，the loser performs zero activation/network work。Wrong run/evidence、repeat resume and any post-consume resume failure all prohibit another resume；resume success/failure/signal always closes/deactivates。
+Use private `tmp_path` with real OS processes. Assert owner/mode/symlink/expiry/head/plan/pricing/current-four mismatches fail；zero-paid preflight does not consume/deploy credentials；two concurrent cycle consumers yield exactly one success；run bind is single；each project admission requires that run and unique order/project/source identity before that project's processing；terminal blocks new admissions/reservations；runtime read-only verifier rejects missing/mismatched consumption/run/project/expiry/terminal。Run `execute-start` as a child process with controlled fake activation/contracts/run seams；partial activation、activation error、contracts error、preflight/run error、SIGINT、SIGTERM all leave consumption evidence but zero credentials/cycle/auth mount。Accepted pause also deactivates while leaving authorization nonterminal。Then run two independent OS-process full `execute-resume` contenders for the same literal pause；exactly one exclusive `resume-consumed` fact succeeds and owns activation/run/close/deactivation，the loser performs zero activation/network/close/deactivate and only cleans its fresh controls。Wrong run/evidence、repeat resume and any post-consume resume failure all prohibit another resume；resume success/failure/signal always closes/deactivates。Inject interruption immediately after each exclusive fact fsync to prove only the matching invocation owner performs lifecycle cleanup。
 
-- [ ] **Step 2: Write RED schema/evidence tests**
+- [x] **Step 2: Write RED schema/evidence tests**
 
 Historical fixture/task runs remain valid without cycle fields. New full-live start requires them。Accepted pause remains valid without resume-consumed；any resumed/terminal receipt must bind the exact resume-consumed hash，while direct failure before pause must prove it absent。Reject ledger totals over `50`、unknown snapshot hash、duplicate attempt index、OCR/Vision/project-page/project-subject/crop limit breaches、ledger entry for cancelled group、missing terminal；for exact current-four sample order `1` only，reject `total_decisions != 199` or `escalated_groups != 198 = 190 denied + 8 admitted` as Step4 success，without applying those counts to samples 2-4。Provider policy v2 must assert `max_coordinator_retries_per_logical_call: 1` and `max_submissions_per_logical_call: 2`；the old ambiguous `max_retries_per_call` key is forbidden。
 
-- [ ] **Step 3: Write RED failure-project capture test**
+- [x] **Step 3: Write RED failure-project capture test**
 
 Replace the controlled `_PREPARE_PROJECT_PROGRAM` with separate create/upload and process protocols. Assert run binding exists first；create/upload returns project ID without queueing/processing；Harness writes project ID to `paid_cycle.projects` and exclusive host admission with directory `fsync`；only then may process start。On processing failure, Harness must still collect the sanitizedcycle ledger and routing aggregate and seal/close a failed run without AutomaticResult/pause/report/receipt。
 
-- [ ] **Step 4: Verify RED**
+- [x] **Step 4: Verify RED**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
@@ -353,7 +352,7 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest \
   -k 'authorization or pricing or usage_ledger or terminal_reconciliation or runtime_identity' -q
 ```
 
-- [ ] **Step 5: Implement authorization and Make ordering**
+- [x] **Step 5: Implement authorization and Make ordering**
 
 Use exclusive mode-safe files plus fsync。The Make recipe must not express `check-contracts` as a prerequisite and must delegate the whole lifecycle to one orchestrator whose first state mutation isconsume and whose `finally` runs for normal/exception/signal exits：
 
@@ -370,17 +369,19 @@ resume-gdt10d-live:
 		--run-id "$${GDT10D_RUN_ID:?}"
 ```
 
-No shell/Python line may print credentials or authorization document content。`execute-start` installs `SIGINT/SIGTERM` handlers before cycle consume and uses `try/finally`；`execute-resume` installs them before exclusive `resume-consumed` creation，whose fsynced fact is its first state mutation and precedes activation。Both set deactivation-required before activation starts so partial recreation is covered。`activate-runtime` validates private override owner/mode、exact eight environment keys、one read-only authorization mount and only recreates feature `api/worker`。On abnormal exit the orchestrator stops/quiesces worker，uses the sole close bridge，then idempotently applies safe runtime；on accepted pause it applies safe runtime without close。Cleanup error forces nonzero exit and durable blocker evidence；neither start nor resume target may be reinvoked after its consumption fact exists。
+No shell/Python line may print credentials or authorization document content。`execute-start` installs `SIGINT/SIGTERM` handlers，generates one literal run ID and random invocation identity，then atomically consumes and binds that exact run before activation；Harness start must receive `--authorized-run-id <literal>` and may not mint another identity。`execute-resume` installs handlers before exclusive `resume-consumed` creation，whose fsynced fact binds the random invocation identity、is its first state mutation and precedes activation。Only the exact fact owner may close/deactivate，including interruption after durable create but before function return；foreign repeat/concurrent losers perform zero activation/network/close/deactivate and only clean fresh controls。Both owners set deactivation-required before activation starts so partial recreation is covered。`activate-runtime` validates private override owner/mode、exact eight environment keys、one read-only authorization mount，only recreates feature `api/worker`，并从两个container读取sanitized key-presence/actual mount `ro`/mode/model facts证明live identity；`deactivate-runtime`同样证明four credentials、cycle keys和auth mount都absent且safe mode/model exact。On abnormal exit the orchestrator checks Harness/Celery/Redis；API proof unavailable或worker不空时stop only feature worker，再recheck worker absent与queue zero，之后使用sole close bridge并apply safe runtime。Every exit then fsync-deletes exact private live/safe overrides and unsets inherited child-process controls。Accepted pause只apply safe runtime而不close，且必须再写durable clean-pause handoff；cleanup blocker或缺少handoff禁止resume。Cleanup error forces nonzero exit and exact redacted `provider-cycle-cleanup-blocker/1` evidence；blocker persistence error不可吞掉。Active authorization must reject any blocker，while both admitted-project and pre-first-project close-only paths precisely validate issuance/consumption/run/root and an allowlisted/content-hashed blocker so Task 10 can repair or exactly replay terminal close。Real child-process tests在activation/run/quiescence phases发送both `SIGINT`/`SIGTERM`，并覆盖resume signal and full contender ownership。Neither start nor resume target may be reinvoked after its consumption fact exists。
 
-- [ ] **Step 6: Implement ledger/routing collection and policy validation**
+- [x] **Step 6: Implement ledger/routing collection and policy validation**
 
-Collect only sanitized JSON from the single-cycle journal plus exact project DB evidence. Validate sample-1 exact baseline continuity plus generic reconciliation separately per project and for the cycle aggregate。Embed/harden hashes before pause/failure；receipt revalidates the same documents rather than recomputing from mutable runtime。At every success/failure/abort completion，first prove Harness/process/Celery/queue quiescence，then invoke the sole cycle-close bridge：one-off exact committed backend image、`--network none --rm`、zero credentials、feature storage `/data:rw`、private authorization `/auth:rw`。Bridge alone acquires the cycle ledger lock、rebuilds journal、validates quiescence identity，then writes terminal、applies `fchown`/`fchmod(0600)` before final `fsync(fd)` and parent-directory `fsync`。Existing terminal is successful replay only when full schema、cycle/run/status/quiescence/content hashes are exact；conflict fails closed。Tests cover first/exact/conflicting/concurrent close and lock exact image/volume/mount/network/credential/uid behavior。Accepted pause remains nonterminal solely for literal same-run resume。
+Pending project evidence write must fsync the exclusive temporary file，replace，then fsync the parent before host admission。
 
-- [ ] **Step 7: Upgrade runtime identity**
+Collect only sanitized JSON from the single-cycle journal plus exact project DB evidence. Validate sample-1 exact baseline continuity plus generic reconciliation separately per project and for the cycle aggregate。`not_started_budget_exhausted`的v2 event只允许exact diagnostic `visual-symbol-budget-control/1`，其中 `budget_origin=routing_plan|provider_cycle_reservation`；前者进入plan-denied，后者保持admitted并另列 `provider_cycle_reservation_denied_group_ids`。任何nonempty Provider reservation rejection都可在failed evidence中持久化，但必须阻断formal success。Embed/harden hashes before pause/failure；receipt revalidates the same documents rather than recomputing from mutable runtime。At every success/failure/abort completion，first prove Harness/process/Celery/queue quiescence，then invoke the sole cycle-close bridge：one-off exact committed backend image、`--network none --rm`、zero credentials、feature storage `/data:rw`、private authorization `/auth:rw`。Bridge alone acquires the cycle ledger lock、rebuilds journal、validates quiescence identity，then writes terminal、applies `fchown`/`fchmod(0600)` before final `fsync(fd)` and parent-directory `fsync`。Existing terminal is successful replay only when full schema、cycle/run/status/quiescence/content hashes are exact；conflict fails closed。Tests cover first/exact/conflicting/concurrent close and lock exact image/volume/mount/network/credential/uid behavior。Accepted pause remains nonterminal solely for literal same-run resume。
+
+- [x] **Step 7: Upgrade runtime identity**
 
 Set exact DB revision `0014` and full `backend/app` runtime closure in API/worker identity. Add working/index/HEAD source checks；runtime accepts only clean committed HEAD mode。Add mismatch matrix for each service、missing/extra/duplicate manifest path、at least one storage/routing/planner/cache/provider file hash mutation、`0013`、multiple revision rows、invalid output and stale cycle/auth mount identity。All fail before registration/run/upload/Provider work。
 
-- [ ] **Step 8: Run full offline gates**
+- [x] **Step 8: Run full offline gates**
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness -q
@@ -400,19 +401,25 @@ git diff --check
 
 ### Task 6: Full Offline Verification, Independent Review And Implementation Commit
 
-- [ ] **Step 1: Run full backend verification**
+- [x] **Step 1: Run full backend verification**
 
 ```bash
 make test-backend
 ```
 
-- [ ] **Step 2: Run focused smoke test**
+`make test-backend` reached the environment bootstrap gate but could not allocate another Docker subnet。The same test configuration was then executed against an ephemeral host-network PostgreSQL 17 after `alembic upgrade head`：`1930 passed, 14 warnings`；the container was removed and its port was proved free。No Provider、feature runtime or credential state was touched。
+
+- [x] **Step 2: Run focused smoke test**
 
 Per `auto-feature-smoke-test`, run the smallest affected backend behavior tests; UI smoke is not applicable because Tasks 2-5 do not change UI。
 
-- [ ] **Step 3: Independent implementation review**
+Focused Provider/Advisor exact-cycle smoke：`46 passed, 147 deselected`。Full Harness after the final lifecycle/image/durability/invocation-ownership changes：`283 passed`；Provider unit suite `47 passed`；Ruff、working runtime closure (`94` files)、contract mapping and `git diff --check` all passed。
+
+- [x] **Step 3: Independent implementation review**
 
 Reviewer checks actual diff, TDD evidence, pricing literals/math, cycle-wide OS-process ledger concurrency/reopen/crash durability, retry accounting, exact existing budget terminal semantics, schema backward compatibility, per-submission authorization, post-consume activation/Make ordering, privacy and full runtime closure. Required verdict `accept`。
+
+Final reviewer verdict：`accept`。复审覆盖invocation ownership、durable-create interruption、真实双进程resume contenders、admitted/no-project cleanup-blocker repair/replay、active fail-closed、runtime closure与privacy/scope；无剩余 blocker。
 
 - [ ] **Step 4: Stage and verify the prospective commit**
 
@@ -466,7 +473,7 @@ Ban worktree `.env` file/symlink. Build current `api/worker` and recreate only f
 
 - [ ] **Step 7: Issue but do not consume authorization**
 
-Issuance binds clean HEAD、plan/pricing/runtime-closure/current-four hashes、Compose project、DB `0014`、ceiling and expiry。Run/project IDs do not exist yet and must be bound later by exclusive `bind-run`/`admit-project` state transitions。Require no pre-existing issuance/consumption/run/project/resume-consumed/terminal for the ID。
+Issuance binds clean HEAD、plan/pricing/runtime-closure/current-four hashes、Compose project、exact zero-paid-proved backend image ID、DB `0014`、ceiling and expiry。Run/project IDs do not exist yet and must be bound later by exclusive `bind-run`/`admit-project` state transitions。Require no pre-existing issuance/consumption/run/project/pause-handoff/resume-consumed/terminal for the ID。
 
 - [ ] **Step 8: Run fresh zero-paid preflight**
 
@@ -524,7 +531,7 @@ Generate ballooned PDF and SIP Excel; verify manifest IDs/hashes and basic conte
 
 - [ ] **Step 4: Resume literal run**
 
-After run-bound `design-qa.md` passes, invoke exactly once with the literal paused run ID：
+After run-bound `design-qa.md` passes, recreate fresh mode-`0600` live/safe overrides from the same approved root credential source，validate their exact sanitized shape without applying them，then invoke exactly once with the literal paused run ID：
 
 ```bash
 make resume-gdt10d-live GDT10D_RUN_ID=<literal-paused-run-id>
@@ -538,7 +545,7 @@ The `execute-resume` orchestrator first exclusive-creates/fsyncs the one-use `re
 
 - [ ] **Step 1: Verify finalizer cleanup and repair only if blocked**
 
-`execute-start`/`execute-resume` is the primary cleanup Owner and must return only after safe deactivation；Task 10 first verifies its terminal/deactivation evidence。For any non-paused closeout，require Harness command returned and Celery active/reserved/scheduled + queue empty；if the orchestrator reported cleanup failure or quiescence is not provable，stop only feature worker and use the same sole close bridge replay contract，then apply safe-identity runtime。An existing terminal counts as idempotent success only after exact schema/cycle/run/status/quiescence/content-hash verification；any mismatch blocks。Require four credentials、cycle ID and authorization mount absent，mode/model/full runtime closure/health/DB exact；delete private live/safe overrides；unset host credential/Harness variables；prove worktree `.env` absent。A failed repair remains a durable blocker and may not be reported as safe cleanup。
+`execute-start`/`execute-resume` is the primary cleanup Owner and must return only after safe deactivation；Task 10 first verifies its terminal/deactivation evidence。For any non-paused closeout，require Harness command returned and Celery active/reserved/scheduled + queue empty；if the orchestrator reported cleanup failure or quiescence is not provable，stop only feature worker and use the same sole close bridge replay contract，then apply safe-identity runtime。The active validator continues to reject `cleanup-blocker.json`；both admitted-project and no-project close-only validators must exactly validate issuance/consumption/run/root plus blocker schema/cycle/run/status/allowlisted codes/content hash before repair/replay。An existing terminal counts as idempotent success only after exact schema/cycle/run/status/quiescence/content-hash verification；any mismatch blocks。Require four credentials、cycle ID and authorization mount absent，mode/model/full runtime closure/health/DB exact；delete private live/safe overrides；unset host credential/Harness variables；prove worktree `.env` absent。A failed repair remains a durable blocker and may not be reported as safe cleanup。
 
 - [ ] **Step 2: Dispose or retain private state**
 

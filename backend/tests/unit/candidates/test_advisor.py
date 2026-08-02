@@ -18,6 +18,7 @@ from app.candidates.advisor import (
     CandidateAdvisor,
     CandidateAdvisorFailure,
     ProductionRetryCoordinator,
+    RoutedObject,
     VisualEvidenceContext,
     VisualExecutionIdentity,
     classify_provider_failure,
@@ -52,7 +53,10 @@ from app.providers.base import (
     VisionResult,
 )
 from app.providers.qwen_vl import VisualSymbolProviderError
+from app.providers.usage_ledger import ProviderUsageLedger, ReservationPermit
+from app.providers.usage_ledger import ProviderBudgetExceeded
 from app.storage.local import LocalFileStorage
+from tests.support.provider_cycle import open_cycle_ledger
 
 
 def provider_fact_for_test(category: str) -> ProviderFailureFact:
@@ -571,6 +575,96 @@ class RetryRecordingProvider(UnifiedRecordingProvider):
             },
             usage={"total_tokens": 12},
         )
+
+
+class LedgerAwareVisionProvider:
+    def __init__(
+        self,
+        ledger: ProviderUsageLedger,
+        *,
+        schema_retry: bool = False,
+        classified_failure: bool = False,
+    ) -> None:
+        self._ledger = ledger
+        self._schema_retry = schema_retry
+        self._classified_failure = classified_failure
+        self.calls = 0
+
+    def review_symbols(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
+        assert image.startswith(b"\x89PNG")
+        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/3"
+        assert reservation_permit is not None
+        reservation_permit.consume_for_adapter(
+            provider="qwen-vl",
+            operation="review_symbols",
+        )
+        self.calls += 1
+        if self._classified_failure:
+            raise ClassifiedProviderFailure(
+                provider_fact_for_test("transport")
+            )
+        if self._schema_retry and self.calls == 1:
+            raise VisualSymbolProviderError(
+                request_id="fixture-ledger-schema-retry",
+                usage={"prompt_tokens": 100, "completion_tokens": 10},
+                failure_stage="tool_arguments_schema_invalid",
+            )
+        return VisionResult(
+            request_id=f"fixture-ledger-success-{self.calls}",
+            payload={
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
+                "detections": [],
+            },
+            usage={"prompt_tokens": 100, "completion_tokens": 10},
+        )
+
+
+class LedgerAwareCandidateProvider:
+    def __init__(self, ledger: ProviderUsageLedger) -> None:
+        self._ledger = ledger
+        self.calls = 0
+
+    def review_candidate(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
+        assert image.startswith(b"\x89PNG")
+        assert json.loads(prompt)["raw_text"] == "M6"
+        assert reservation_permit is not None
+        reservation_permit.consume_for_adapter(
+            provider="qwen-vl",
+            operation="review_candidate",
+        )
+        self.calls += 1
+        return VisionResult(
+            request_id="fixture-ledger-candidate-success",
+            payload=advisor_payload("M6", "thread", "M6", True),
+            usage={"prompt_tokens": 100, "completion_tokens": 10},
+        )
+
+
+class ReservedOnlyCrashProvider:
+    network_calls = 0
+
+    def review_symbols(
+        self,
+        _image: bytes,
+        _prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
+        assert reservation_permit is not None
+        raise RuntimeError("controlled pre-SDK crash")
 
 
 class VisualDiameterProvider(EchoVisionProvider):
@@ -1097,6 +1191,8 @@ def candidate_advisor(
     provider: object,
     *,
     symbol_recognition_mode: str | None = "legacy_high_recall",
+    project_id: str = "project-test",
+    usage_ledger: ProviderUsageLedger | None = None,
 ) -> CandidateAdvisor:
     settings = {"qwen_model": "qwen3-vl-plus"}
     if symbol_recognition_mode is not None:
@@ -1104,8 +1200,9 @@ def candidate_advisor(
     return CandidateAdvisor(
         Settings(**settings),
         LocalFileStorage(tmp_path / "storage"),
-        project_id="project-test",
+        project_id=project_id,
         provider_factory=lambda _settings: provider,
+        usage_ledger=usage_ledger,
     )
 
 
@@ -2019,6 +2116,359 @@ def test_visual_retry_outcome_sums_both_attempts_after_authorization(
     assert outcome.attempt_duration_ms == (5, 7)
     assert outcome.measured_duration_ms == 12
     assert outcome.cache_hit is False
+
+
+def test_usage_ledger_visual_success_settles_and_cache_hit_is_zero_cost(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-visual-ledger"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareVisionProvider(ledger)
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        crop_bbox_pdf = (0.0, 0.0, 80.0, 80.0)
+        arguments = {
+            "provider": provider,
+            "crop_png": advisor_module._render_visual_crop(
+                document[0], crop_bbox_pdf
+            ),
+            "crop_bbox_pdf": crop_bbox_pdf,
+            "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+            "visual_observations": (visual,),
+            "text_observations": {
+                observation.observation_id: observation
+                for observation in pages[0].observations
+            },
+            "model": "qwen3-vl-plus",
+        }
+        first = advisor._visual_review_result(**arguments)
+        second = advisor._visual_review_result(**arguments)
+    finally:
+        document.close()
+
+    snapshot = ledger.snapshot()
+    assert first.cache_hit is False
+    assert second.cache_hit is True
+    assert provider.calls == 1
+    assert snapshot.reservation_count == 1
+    assert snapshot.submission_started_count == 1
+    assert snapshot.settled_count == 1
+    assert snapshot.entries[0].charged_cny == "0.000200"
+    audit_path = next(
+        (tmp_path / "storage").glob(
+            f"projects/{project_id}/provider-calls/qwen-symbol/*.json"
+        )
+    )
+    assert json.loads(audit_path.read_text(encoding="utf-8"))[
+        "estimated_cost"
+    ] == 0.0002
+
+
+def test_usage_ledger_visual_schema_retry_has_two_distinct_submissions(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-visual-ledger-retry"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareVisionProvider(ledger, schema_retry=True)
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        outcome = advisor._visual_review_result(
+            provider=provider,
+            crop_png=advisor_module._render_visual_crop(
+                document[0], (0.0, 0.0, 80.0, 80.0)
+            ),
+            crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+            source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            visual_observations=(visual,),
+            text_observations={
+                observation.observation_id: observation
+                for observation in pages[0].observations
+            },
+            model="qwen3-vl-plus",
+            allow_schema_retry=True,
+            retry_authorizer=lambda _identity, _duration: True,
+        )
+    finally:
+        document.close()
+
+    snapshot = ledger.snapshot()
+    assert outcome.retry_count == 1
+    assert provider.calls == 2
+    assert snapshot.reservation_count == 2
+    assert snapshot.submission_started_count == 2
+    assert snapshot.settled_count == 2
+    assert [entry.retry_index for entry in snapshot.entries] == [0, 1]
+    assert [entry.charged_cny for entry in snapshot.entries] == [
+        "0.000200",
+        "0.000200",
+    ]
+
+
+def test_usage_ledger_visual_classified_failure_retains_maximum(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-visual-ledger-failure"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareVisionProvider(ledger, classified_failure=True)
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        with pytest.raises(CandidateAdvisorFailure):
+            advisor._visual_review_result(
+                provider=provider,
+                crop_png=advisor_module._render_visual_crop(
+                    document[0], (0.0, 0.0, 80.0, 80.0)
+                ),
+                crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+                source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                visual_observations=(visual,),
+                text_observations={
+                    observation.observation_id: observation
+                    for observation in pages[0].observations
+                },
+                model="qwen3-vl-plus",
+            )
+    finally:
+        document.close()
+
+    snapshot = ledger.snapshot()
+    assert provider.calls == 1
+    assert snapshot.submission_started_count == 1
+    assert snapshot.settled_count == 1
+    assert snapshot.committed_total_cny == "1.763328"
+    assert snapshot.entries[0].state == "reserved_unknown"
+
+
+def test_usage_ledger_text_crop_records_one_expansion_and_settled_cost(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-text-ledger"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareCandidateProvider(ledger)
+    source, pages, _snapshot = drawing_fixture(tmp_path, raw_text="M6")
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        crop = pymupdf.Rect(0.0, 0.0, 80.0, 80.0)
+        result, _, cache_hit = advisor._review_result(
+            provider=provider,
+            route=RoutedObject(
+                page_index=0,
+                source_ids=(pages[0].observations[0].observation_id,),
+                raw_text="M6",
+                expected_type="thread",
+                review_reason="fixture",
+                bbox_pdf=(10.0, 10.0, 30.0, 30.0),
+                candidate_index=0,
+                candidate_id="fixture-candidate",
+                coverage_index=0,
+                requires_confirmation=True,
+            ),
+            crop_png=advisor_module._render_crop(document[0], crop),
+            crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+            padding_pdf=2.0,
+            model="qwen3-vl-plus",
+        )
+    finally:
+        document.close()
+
+    assert result.request_id == "fixture-ledger-candidate-success"
+    assert cache_hit is False
+    snapshot = ledger.snapshot()
+    assert provider.calls == 1
+    assert snapshot.reservation_count == 1
+    assert snapshot.entries[0].subject_kind == "text_route"
+    assert snapshot.entries[0].charged_cny == "0.000200"
+    reservation = json.loads(
+        next(
+            (tmp_path / "storage" / "provider-usage-cycles").rglob(
+                "*-reserved.json"
+            )
+        ).read_text(encoding="utf-8")
+    )
+    assert reservation["crop_expansion_count"] == 1
+
+
+def test_usage_ledger_pre_sdk_crash_remains_reserved_only(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-reserved-only-crash"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = ReservedOnlyCrashProvider()
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        with pytest.raises(CandidateAdvisorFailure):
+            advisor._visual_review_result(
+                provider=provider,
+                crop_png=advisor_module._render_visual_crop(
+                    document[0], (0.0, 0.0, 80.0, 80.0)
+                ),
+                crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+                source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                visual_observations=(visual,),
+                text_observations={
+                    observation.observation_id: observation
+                    for observation in pages[0].observations
+                },
+                model="qwen3-vl-plus",
+            )
+    finally:
+        document.close()
+
+    snapshot = ledger.snapshot()
+    assert provider.network_calls == 0
+    assert snapshot.reservation_count == 1
+    assert snapshot.reserved_only_count == 1
+    assert snapshot.submission_started_count == 0
+    assert snapshot.settled_count == 0
+    assert snapshot.committed_total_cny == "1.763328"
+
+
+def test_usage_ledger_cycle_budget_rejects_before_visual_provider_method(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-cycle-budget-rejection"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    for index in range(28):
+        ledger.reserve(
+            provider="qwen-vl",
+            operation="review_symbols",
+            page_index=10 + index // 16,
+            subject_kind="escalation_group",
+            subject_id=f"prefill-{index:02d}",
+            retry_index=0,
+            crop_expansion_count=0,
+        )
+    provider = LedgerAwareVisionProvider(ledger)
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        with pytest.raises(ProviderBudgetExceeded, match="cycle"):
+            advisor._visual_review_result(
+                provider=provider,
+                crop_png=advisor_module._render_visual_crop(
+                    document[0], (0.0, 0.0, 80.0, 80.0)
+                ),
+                crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+                source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                visual_observations=(visual,),
+                text_observations={
+                    observation.observation_id: observation
+                    for observation in pages[0].observations
+                },
+                model="qwen3-vl-plus",
+            )
+    finally:
+        document.close()
+
+    assert provider.calls == 0
+    assert ledger.snapshot().reservation_count == 28
+
+
+def test_provider_cycle_budget_terminal_persists_reservation_origin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    session = SimpleNamespace(
+        commit=lambda: None,
+        rollback=lambda: None,
+        close=lambda: None,
+    )
+
+    class RecordingEvidence:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        def append_attempt(self, **kwargs: object) -> object:
+            event = kwargs["event"]
+            captured["event"] = event
+            return SimpleNamespace(event_sha256=event.event_sha256)
+
+        def canonical_attempt_sha256s(self, **_kwargs: object) -> tuple[str, ...]:
+            return (captured["event"].event_sha256,)
+
+        def record_terminal_outcome(self, **kwargs: object) -> None:
+            captured["outcome"] = kwargs["outcome"]
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        RecordingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: object(),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+
+    advisor._record_project_budget_terminal(
+        context=VisualEvidenceContext(
+            escalation_group_id="provider-cycle-denied",
+            routing_decision_sha256="a" * 64,
+        ),
+        visual_observations=(
+            SimpleNamespace(observation_id="visual-budget"),
+        ),
+        cancelled=False,
+    )
+
+    event = captured["event"]
+    assert event.event_code == "not_started_budget_exhausted"
+    assert event.diagnostic == {
+        "schema_version": "visual-symbol-budget-control/1",
+        "budget_origin": "provider_cycle_reservation",
+    }
+    assert captured["outcome"].outcome_code == "budget_exhausted"
 
 
 def test_visual_retry_authorizer_denial_prevents_second_call(

@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Mapping, NamedTuple
@@ -121,22 +122,38 @@ LIVE_API_BASE_ENV = "QI_P0_API_BASE"
 LIVE_FRONTEND_BASE_ENV = "QI_P0_FRONTEND_BASE"
 LIVE_SOURCE_ROOT_ENV = "QI_CURRENT_FOUR_SOURCE_ROOT"
 LIVE_COMPOSE_PROJECT_ENV = "COMPOSE_PROJECT_NAME"
+LIVE_CYCLE_AUTHORIZATION_ENV = "QI_LIVE_CYCLE_AUTHORIZATION_REF"
 EXPECTED_LIVE_API_BASE = "http://127.0.0.1:18000"
 EXPECTED_LIVE_FRONTEND_BASE = "http://127.0.0.1:14173"
 EXPECTED_LIVE_COMPOSE_PROJECT = f"{ROOT.name.lower()}-qa"
-LIVE_API_GDT_RUNTIME_PATHS = (
-    "app/providers/visual_symbol_review.schema.json",
-    "app/providers/qwen_vl.py",
-    "app/candidates/advisor.py",
-    "app/candidates/gdt_evidence.py",
-    "app/candidates/geometric_tolerance.py",
-    "app/candidates/symbol_review.py",
-    "app/candidates/complex_fallback.py",
-    "app/processing/automatic_result.py",
-    "app/processing/runtime_recognition.py",
-    "app/pdf/inventory.py",
-    "app/pdf/gdt_frames.py",
-    "app/pdf/gdt_raster_frames.py",
+def _live_runtime_manifest() -> dict[str, str]:
+    path = ROOT / ".agent/harness/policy/gdt10d-runtime-closure.txt"
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise RuntimeError("GDT-10D runtime closure manifest is invalid") from exc
+    entries: dict[str, str] = {}
+    for line in content.splitlines():
+        match = re.fullmatch(
+            r"([0-9a-f]{64})  "
+            r"(backend/app/[A-Za-z0-9._/-]+\.(?:py|json))",
+            line,
+        )
+        if match is None or match.group(2) in entries:
+            raise RuntimeError("GDT-10D runtime closure manifest is invalid")
+        entries[match.group(2)] = match.group(1)
+    if (
+        not entries
+        or list(entries) != sorted(entries)
+        or not content.endswith("\n")
+    ):
+        raise RuntimeError("GDT-10D runtime closure manifest is invalid")
+    return entries
+
+
+LIVE_API_GDT_RUNTIME_HASHES = _live_runtime_manifest()
+LIVE_API_GDT_RUNTIME_PATHS = tuple(
+    path.removeprefix("backend/") for path in LIVE_API_GDT_RUNTIME_HASHES
 )
 EXPECTED_RECOGNITION_IDENTITY = {
     "mode": "production_uncertainty",
@@ -266,6 +283,13 @@ def _script_module(name: str, filename: str) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _cycle_authorization_module() -> ModuleType:
+    return _script_module(
+        "qi_live_cycle_authorization",
+        "live_cycle_authorization.py",
+    )
 
 
 def _live_evidence_policy_module() -> ModuleType:
@@ -1358,7 +1382,8 @@ def _validate_live_policy(policies: Mapping[str, Mapping[str, Any]]) -> None:
         raise ValueError("live Provider call policy is unavailable")
     exact_limits = {
         "explicit_flag_required": True,
-        "max_retries_per_call": 2,
+        "max_coordinator_retries_per_logical_call": 1,
+        "max_submissions_per_logical_call": 2,
         "max_crop_expansions": 1,
         "max_ocr_calls_per_page": 16,
         "max_vision_calls_per_page": 16,
@@ -1366,7 +1391,9 @@ def _validate_live_policy(policies: Mapping[str, Mapping[str, Any]]) -> None:
         "max_total_estimated_cost_cny": 50,
         "budget_exceeded_result": "blocked",
     }
-    if any(live.get(key) != value for key, value in exact_limits.items()):
+    if set(live) != set(exact_limits) or any(
+        live.get(key) != value for key, value in exact_limits.items()
+    ):
         raise ValueError("live Provider budget/retry policy changed")
 
 
@@ -1430,9 +1457,15 @@ def _require_compose_runtime_identity() -> None:
     expected_hashes: dict[str, str] = {}
     for relative in LIVE_API_GDT_RUNTIME_PATHS:
         path = ROOT / "backend" / relative
-        if path.is_symlink() or not path.is_file():
+        manifest_sha256 = LIVE_API_GDT_RUNTIME_HASHES[f"backend/{relative}"]
+        if (
+            path.is_symlink()
+            or not path.is_file()
+            or hashlib.sha256(path.read_bytes()).hexdigest()
+            != manifest_sha256
+        ):
             raise ValueError("current worktree GDT runtime identity is incomplete")
-        expected_hashes[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        expected_hashes[relative] = manifest_sha256
     expected = {
         **EXPECTED_RECOGNITION_IDENTITY,
         "hashes": expected_hashes,
@@ -1515,7 +1548,7 @@ def _require_compose_runtime_identity() -> None:
         capture_output=True,
         text=True,
     )
-    if database.returncode != 0 or database.stdout.strip() != "0013":
+    if database.returncode != 0 or database.stdout.strip() != "0014":
         raise ValueError(
             "Compose runtime identity does not match GDT-10 live contract"
         )
@@ -1638,22 +1671,98 @@ def preflight_full_p0_live(
 
 def _atomic_write_json(path: Path, document: Mapping[str, Any]) -> None:
     temporary = path.with_name(f".{path.name}.{secrets.token_hex(6)}.tmp")
-    temporary.write_text(
-        json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
+    payload = (
+        json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2)
+        + "\n"
+    ).encode("utf-8")
+    fd = os.open(
+        temporary,
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_NOFOLLOW", 0),
+        0o666,
     )
-    os.replace(temporary, path)
+    try:
+        with os.fdopen(fd, "wb", closefd=False) as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(fd)
+        os.replace(temporary, path)
+        directory_fd = os.open(
+            path.parent,
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        os.close(fd)
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
-def _open_live_run(preflight: LivePreflight) -> Path:
+def _open_live_run(
+    preflight: LivePreflight,
+    *,
+    authorized_run_id: str,
+) -> Path:
     receipt_module = _receipt_module()
-    run_id = _new_run_id()
+    if (
+        not isinstance(authorized_run_id, str)
+        or RUN_ID_RE.fullmatch(authorized_run_id) is None
+    ):
+        raise ValueError("paid cycle authorized run identity is invalid")
+    run_id = authorized_run_id
     run_dir = RUNS / run_id
+    authorization_ref = os.environ.get(LIVE_CYCLE_AUTHORIZATION_ENV, "").strip()
+    if not authorization_ref:
+        raise ValueError(f"{LIVE_CYCLE_AUTHORIZATION_ENV} is required")
+    run_dir.mkdir(parents=True, exist_ok=False)
+    for name in ("logs", "reports", "artifacts"):
+        (run_dir / name).mkdir()
+    authorization = _cycle_authorization_module()
+    cycle_evidence = authorization.authorization_evidence(
+        Path(authorization_ref),
+        require_run=True,
+    )
+    if (
+        cycle_evidence.get("run_id") != run_id
+        or cycle_evidence.get("head_revision") != _git_revision()
+        or cycle_evidence.get("current_four_sha256")
+        != hashlib.sha256(preflight.manifest_bytes).hexdigest()
+        or cycle_evidence.get("compose_project")
+        != os.environ.get(LIVE_COMPOSE_PROJECT_ENV, "").strip()
+        or cycle_evidence.get("expected_db_revision") != "0014"
+        or cycle_evidence.get("max_total_cny") != "50.000000"
+        or cycle_evidence.get("runtime_closure_sha256")
+        != authorization._runtime_closure_sha256()
+        or cycle_evidence.get("backend_image_id")
+        != authorization._current_api_image_id()
+    ):
+        raise ValueError("paid cycle run authorization is inconsistent")
+    run_cycle_evidence = {
+        key: cycle_evidence[key]
+        for key in (
+            "cycle_id",
+            "pricing_sha256",
+            "issuance_sha256",
+            "consumption_sha256",
+            "backend_image_id",
+            "run_id",
+            "run_authorization_sha256",
+        )
+    }
     selected_ids = sorted(
         row["p0_contract_id"] for row in preflight.mirror["contracts"]
     )
     run = {
-        "schema_version": "run/1",
+        "schema_version": "run/2",
         "run_id": run_id,
         "mode": "live",
         "scope": "full-p0",
@@ -1669,6 +1778,7 @@ def _open_live_run(preflight: LivePreflight) -> Path:
         "policy_versions": receipt_module.policy_versions(preflight.policies),
         "selected_contract_ids": selected_ids,
         "live_identity": _current_live_identity(),
+        "cycle_authorization": run_cycle_evidence,
         "execution_state": "running",
         "pause_identity": None,
         "failure_reason": None,
@@ -1676,9 +1786,6 @@ def _open_live_run(preflight: LivePreflight) -> Path:
         "completed_at": None,
     }
     receipt_module.validate_schema(run, "run.schema.json", ROOT)
-    run_dir.mkdir(parents=True, exist_ok=False)
-    for name in ("logs", "reports", "artifacts"):
-        (run_dir / name).mkdir()
     _write_json(run_dir / "run.json", run)
     _attach_full_live_input_artifacts(run_dir, preflight.input_artifacts)
     live = {
@@ -1687,6 +1794,23 @@ def _open_live_run(preflight: LivePreflight) -> Path:
         "input_set": "current-four",
         "phases": list(LIVE_PHASES),
         "child_run_ids": [],
+        "paid_cycle": {
+            "cycle_id": cycle_evidence["cycle_id"],
+            "pricing_sha256": cycle_evidence["pricing_sha256"],
+            "issuance_sha256": cycle_evidence["issuance_sha256"],
+            "consumption_sha256": cycle_evidence["consumption_sha256"],
+            "run_authorization_sha256": cycle_evidence[
+                "run_authorization_sha256"
+            ],
+            "journal_ref": (
+                "asset://provider-usage-cycles/"
+                f"{cycle_evidence['cycle_id']}/"
+            ),
+            "projects": [],
+            "resume_consumed_sha256": None,
+            "ledger": None,
+            "terminal": None,
+        },
         "symbol_recognition": None,
         "design_qa": None,
         "samples": [],
@@ -1906,33 +2030,43 @@ def project_candidate_evidence(candidates, pages, coverage_entries):
     }
 
 
-payload = sys.stdin.buffer.read()
-expected = os.environ["QI_P0_SOURCE_SHA256"]
-if hashlib.sha256(payload).hexdigest() != expected:
-    raise RuntimeError("source identity changed before application upload")
 settings = get_settings()
 storage = LocalFileStorage(settings.storage_root)
-seed_session = SessionLocal()
-try:
-    project = create_live_project(settings)
-    stored = storage.write_verified(
-        f"projects/{project.id}/source.pdf",
-        payload,
-        expected,
-    )
-    source = StoredFile(
-        resource_ref=stored.resource_ref,
-        sha256=stored.sha256,
-        size_bytes=stored.size_bytes,
-        mime_type="application/pdf",
-    )
-    seed_session.add_all([project, source])
-    seed_session.commit()
-    project_id = project.id
-    source_ref = source.resource_ref
-    source_sha256 = source.sha256
-finally:
-    seed_session.close()
+phase = os.environ["QI_P0_PREPARE_PHASE"]
+if phase == "create":
+    payload = sys.stdin.buffer.read()
+    expected = os.environ["QI_P0_SOURCE_SHA256"]
+    if hashlib.sha256(payload).hexdigest() != expected:
+        raise RuntimeError("source identity changed before application upload")
+    seed_session = SessionLocal()
+    try:
+        project = create_live_project(settings)
+        stored = storage.write_verified(
+            f"projects/{project.id}/source.pdf",
+            payload,
+            expected,
+        )
+        source = StoredFile(
+            resource_ref=stored.resource_ref,
+            sha256=stored.sha256,
+            size_bytes=stored.size_bytes,
+            mime_type="application/pdf",
+        )
+        seed_session.add_all([project, source])
+        seed_session.commit()
+        print(json.dumps({
+            "project_id": str(project.id),
+            "source_ref": source.resource_ref,
+            "source_sha256": source.sha256,
+        }, sort_keys=True))
+    finally:
+        seed_session.close()
+    raise SystemExit(0)
+if phase != "process":
+    raise RuntimeError("unsupported live project phase")
+project_id = uuid.UUID(os.environ["QI_P0_PROJECT_ID"])
+source_ref = os.environ["QI_P0_SOURCE_REF"]
+source_sha256 = os.environ["QI_P0_SOURCE_SHA256"]
 
 result_ref = inventory_project.run(
     str(project_id),
@@ -2485,6 +2619,201 @@ finally:
 """
 
 
+_PAID_LEDGER_SNAPSHOT_PROGRAM = r"""
+import dataclasses
+import json
+import os
+
+from app.config import get_settings
+from app.providers.usage_ledger import ProviderUsageLedger
+
+settings = get_settings()
+if (
+    settings.provider_cycle_authorization_id is None
+    or settings.provider_cycle_authorization_root is None
+):
+    raise RuntimeError("paid cycle runtime identity is unavailable")
+ledger = ProviderUsageLedger.open(
+    cycle_id=settings.provider_cycle_authorization_id,
+    storage_root=settings.storage_root,
+    authorization_root=settings.provider_cycle_authorization_root,
+    project_id=os.environ["QI_P0_PROJECT_ID"],
+)
+snapshot = ledger.snapshot()
+print(json.dumps({
+    "cycle_id": settings.provider_cycle_authorization_id,
+    "journal_ref": ledger.journal_ref,
+    "committed_total_cny": snapshot.committed_total_cny,
+    "reservation_count": snapshot.reservation_count,
+    "reserved_only_count": snapshot.reserved_only_count,
+    "submission_started_count": snapshot.submission_started_count,
+    "unsettled_started_count": snapshot.unsettled_started_count,
+    "settled_count": snapshot.settled_count,
+    "entries": [dataclasses.asdict(entry) for entry in snapshot.entries],
+}, sort_keys=True))
+"""
+
+
+_PAID_ROUTING_AGGREGATE_PROGRAM = r"""
+import json
+import os
+import uuid
+
+from sqlalchemy import select
+
+from app.candidates.models import (
+    SymbolEscalationAttemptEventRecord,
+    SymbolEscalationOutcomeRecord,
+    SymbolRoutingDecisionRecord,
+)
+from app.db import SessionLocal
+
+project_id = uuid.UUID(os.environ["QI_P0_PROJECT_ID"])
+session = SessionLocal()
+try:
+    decisions = tuple(session.scalars(
+        select(SymbolRoutingDecisionRecord).where(
+            SymbolRoutingDecisionRecord.project_id == project_id
+        )
+    ))
+    attempts = tuple(session.scalars(
+        select(SymbolEscalationAttemptEventRecord).where(
+            SymbolEscalationAttemptEventRecord.project_id == project_id
+        )
+    ))
+    outcomes = tuple(session.scalars(
+        select(SymbolEscalationOutcomeRecord).where(
+            SymbolEscalationOutcomeRecord.project_id == project_id
+        )
+    ))
+    escalated = sorted({
+        row.escalation_group_id
+        for row in decisions
+        if row.escalation_group_id is not None
+    })
+    budget_terminal_facts = [
+        {
+            "escalation_group_id": row.escalation_group_id,
+            "diagnostic": row.diagnostic,
+        }
+        for row in attempts
+        if row.event_code == "not_started_budget_exhausted"
+    ]
+    cancelled = sorted({
+        row.escalation_group_id
+        for row in attempts
+        if row.event_code in {
+            "not_started_after_project_failure",
+            "cancelled_after_project_budget",
+        }
+    })
+    terminal = sorted({
+        row.escalation_group_id for row in outcomes if row.terminal is True
+    })
+    paid_artifact_groups = sorted({
+        row.escalation_group_id
+        for row in attempts
+        if row.provider_request_id is not None
+    })
+    print(json.dumps({
+        "project_id": str(project_id),
+        "total_decisions": len(decisions),
+        "escalated_group_ids": escalated,
+        "budget_terminal_facts": budget_terminal_facts,
+        "cancelled_group_ids": cancelled,
+        "terminal_group_ids": terminal,
+        "paid_artifact_group_ids": paid_artifact_groups,
+        "attempt_event_codes": sorted(row.event_code for row in attempts),
+    }, sort_keys=True))
+finally:
+    session.close()
+"""
+
+
+def _partition_paid_budget_terminals(
+    escalated_group_ids: object,
+    budget_terminal_facts: object,
+) -> tuple[list[str], list[str], list[str]]:
+    if (
+        not isinstance(escalated_group_ids, list)
+        or any(
+            not isinstance(group_id, str) or not group_id
+            for group_id in escalated_group_ids
+        )
+        or len(escalated_group_ids) != len(set(escalated_group_ids))
+        or not isinstance(budget_terminal_facts, list)
+    ):
+        raise RuntimeError("paid routing budget origin evidence is invalid")
+    escalated = set(escalated_group_ids)
+    seen: set[str] = set()
+    plan_denied: set[str] = set()
+    provider_reservation_denied: set[str] = set()
+    for fact in budget_terminal_facts:
+        if not isinstance(fact, Mapping) or set(fact) != {
+            "escalation_group_id",
+            "diagnostic",
+        }:
+            raise RuntimeError("paid routing budget origin evidence is invalid")
+        group_id = fact.get("escalation_group_id")
+        diagnostic = fact.get("diagnostic")
+        if (
+            not isinstance(group_id, str)
+            or group_id not in escalated
+            or group_id in seen
+            or not isinstance(diagnostic, Mapping)
+            or set(diagnostic) != {"schema_version", "budget_origin"}
+            or diagnostic.get("schema_version")
+            != "visual-symbol-budget-control/1"
+            or diagnostic.get("budget_origin")
+            not in {"routing_plan", "provider_cycle_reservation"}
+        ):
+            raise RuntimeError("paid routing budget origin evidence is invalid")
+        seen.add(group_id)
+        if diagnostic["budget_origin"] == "routing_plan":
+            plan_denied.add(group_id)
+        else:
+            provider_reservation_denied.add(group_id)
+    return (
+        sorted(plan_denied),
+        sorted(escalated - plan_denied),
+        sorted(provider_reservation_denied),
+    )
+
+
+_PAID_STORAGE_INVENTORY_PROGRAM = r"""
+import hashlib
+import json
+import os
+from pathlib import Path
+
+from app.config import get_settings
+
+project_id = os.environ["QI_P0_PROJECT_ID"]
+root = Path(get_settings().storage_root)
+project_root = root / "projects" / project_id
+artifacts = []
+if project_root.exists():
+    for path in sorted(project_root.rglob("*")):
+        if path.is_symlink():
+            raise RuntimeError("provider storage inventory contains symlink")
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix()
+        if "/provider-" not in relative:
+            continue
+        content = path.read_bytes()
+        artifacts.append({
+            "ref": "asset://" + relative,
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "size": len(content),
+        })
+print(json.dumps({
+    "project_id": project_id,
+    "artifacts": artifacts,
+}, sort_keys=True))
+"""
+
+
 _REVIEW_EVIDENCE_PROGRAM = r"""
 import json
 import os
@@ -2843,7 +3172,7 @@ def _prepare_live_project(
     content = source_path.read_bytes()
     if hashlib.sha256(content).hexdigest() != expected_sha256:
         raise RuntimeError("current-four source changed after live preflight")
-    command = [
+    base_command = [
         "docker",
         "compose",
         "exec",
@@ -2854,15 +3183,133 @@ def _prepare_live_project(
         f"QI_P0_ORDER={order}",
         "-e",
         f"QI_P0_SOURCE_SHA256={expected_sha256}",
+    ]
+    create_command = [
+        *base_command,
+        "-e",
+        "QI_P0_PREPARE_PHASE=create",
+        "api",
+        "python",
+        "-c",
+        _PREPARE_PROJECT_PROGRAM,
+    ]
+    created = subprocess.run(
+        create_command,
+        cwd=ROOT,
+        input=content,
+        check=False,
+        capture_output=True,
+    )
+    create_log_ref = f"logs/sample-{order}-create.log"
+    create_output = b"\n".join(
+        (
+            f"exit_code={created.returncode}".encode(),
+            b"stdout:",
+            created.stdout,
+            b"stderr:",
+            created.stderr,
+        )
+    )
+    (run_dir / create_log_ref).write_bytes(create_output)
+    if created.returncode != 0:
+        raise RuntimeError(
+            f"sample {order} application upload failed; see {create_log_ref}"
+        )
+    try:
+        created_document = json.loads(created.stdout)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"sample {order} project identity is invalid") from exc
+    if not isinstance(created_document, dict) or set(created_document) != {
+        "project_id",
+        "source_ref",
+        "source_sha256",
+    }:
+        raise RuntimeError(f"sample {order} project identity is incomplete")
+    project_id = str(created_document["project_id"])
+    source_ref = str(created_document["source_ref"])
+    if created_document["source_sha256"] != expected_sha256:
+        raise RuntimeError(f"sample {order} stored source identity changed")
+
+    live_path = run_dir / LIVE_EVIDENCE_ARTIFACT
+    live = _load_json(live_path)
+    paid_cycle = live.get("paid_cycle")
+    paid_projects = (
+        paid_cycle.get("projects") if isinstance(paid_cycle, dict) else None
+    )
+    if not isinstance(paid_projects, list) or any(
+        not isinstance(project, dict) for project in paid_projects
+    ):
+        raise RuntimeError("paid cycle project evidence is invalid")
+    projects = list(paid_projects)
+    if any(
+        project.get("project_order") == order
+        or project.get("project_id") == project_id
+        for project in projects
+    ):
+        raise RuntimeError("paid cycle project evidence is duplicated")
+    projects.append(
+        {
+            "project_order": order,
+            "project_id": project_id,
+            "source_sha256": expected_sha256,
+            "admission_sha256": None,
+        }
+    )
+    paid_cycle["projects"] = sorted(
+        projects,
+        key=lambda project: int(project["project_order"]),
+    )
+    receipt_module = _receipt_module()
+    receipt_module.validate_schema(live, "live-run-evidence.schema.json", ROOT)
+    _atomic_write_json(live_path, live)
+
+    authorization_ref = os.environ.get(LIVE_CYCLE_AUTHORIZATION_ENV, "").strip()
+    if not authorization_ref:
+        raise ValueError(f"{LIVE_CYCLE_AUTHORIZATION_ENV} is required")
+    admission = _cycle_authorization_module().admit_project(
+        Path(authorization_ref),
+        run_id=run_dir.name,
+        project_id=project_id,
+        project_order=order,
+        source_sha256=expected_sha256,
+    )
+    admission_sha256 = admission.get("content_sha256")
+    if (
+        not isinstance(admission_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", admission_sha256) is None
+    ):
+        raise RuntimeError("paid cycle project admission is invalid")
+    admitted_project = next(
+        (
+            project
+            for project in paid_cycle["projects"]
+            if project.get("project_order") == order
+            and project.get("project_id") == project_id
+        ),
+        None,
+    )
+    if not isinstance(admitted_project, dict):
+        raise RuntimeError("paid cycle pending project evidence is unavailable")
+    admitted_project["admission_sha256"] = admission_sha256
+    receipt_module.validate_schema(live, "live-run-evidence.schema.json", ROOT)
+    _atomic_write_json(live_path, live)
+
+    process_command = [
+        *base_command,
+        "-e",
+        "QI_P0_PREPARE_PHASE=process",
+        "-e",
+        f"QI_P0_PROJECT_ID={project_id}",
+        "-e",
+        f"QI_P0_SOURCE_REF={source_ref}",
         "api",
         "python",
         "-c",
         _PREPARE_PROJECT_PROGRAM,
     ]
     result = subprocess.run(
-        command,
+        process_command,
         cwd=ROOT,
-        input=content,
         check=False,
         capture_output=True,
     )
@@ -2878,8 +3325,19 @@ def _prepare_live_project(
     )
     (run_dir / log_ref).write_bytes(output)
     if result.returncode != 0:
+        _refresh_paid_cycle_ledger(run_dir)
+        _capture_paid_storage_inventory(
+            run_dir,
+            project_id=project_id,
+            order=order,
+        )
+        _capture_paid_routing_aggregate(
+            run_dir,
+            project_id=project_id,
+            order=order,
+        )
         raise RuntimeError(
-            f"sample {order} application upload/process failed; see {log_ref}"
+            f"sample {order} application process failed; see {log_ref}"
         )
     try:
         document = json.loads(result.stdout)
@@ -2898,7 +3356,496 @@ def _prepare_live_project(
     if not isinstance(process, dict):
         raise RuntimeError(f"sample {order} process evidence is incomplete")
     process["prepare_log_sha256"] = hashlib.sha256(output).hexdigest()
+    _refresh_paid_cycle_ledger(run_dir)
+    _capture_paid_storage_inventory(
+        run_dir,
+        project_id=project_id,
+        order=order,
+    )
+    _capture_paid_routing_aggregate(
+        run_dir,
+        project_id=project_id,
+        order=order,
+    )
     return document
+
+
+def _refresh_paid_cycle_ledger(run_dir: Path) -> dict[str, Any]:
+    live_path = run_dir / LIVE_EVIDENCE_ARTIFACT
+    live = _load_json(live_path)
+    paid_cycle = live.get("paid_cycle")
+    if not isinstance(paid_cycle, dict):
+        raise RuntimeError("paid cycle evidence is unavailable")
+    projects = paid_cycle.get("projects")
+    if (
+        not isinstance(projects, list)
+        or not projects
+        or not isinstance(projects[0], Mapping)
+        or not isinstance(projects[0].get("project_id"), str)
+    ):
+        raise RuntimeError("paid cycle project admission is unavailable")
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "-e",
+            f"QI_P0_PROJECT_ID={projects[0]['project_id']}",
+            "api",
+            "python",
+            "-c",
+            _PAID_LEDGER_SNAPSHOT_PROGRAM,
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("paid cycle ledger collection failed")
+    try:
+        snapshot = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("paid cycle ledger evidence is invalid") from exc
+    required = {
+        "cycle_id",
+        "journal_ref",
+        "committed_total_cny",
+        "reservation_count",
+        "reserved_only_count",
+        "submission_started_count",
+        "unsettled_started_count",
+        "settled_count",
+        "entries",
+    }
+    if not isinstance(snapshot, dict) or set(snapshot) != required:
+        raise RuntimeError("paid cycle ledger evidence is incomplete")
+    try:
+        committed = Decimal(str(snapshot["committed_total_cny"]))
+    except InvalidOperation as exc:
+        raise RuntimeError("paid cycle ledger amount is invalid") from exc
+    entries = snapshot.get("entries")
+    if (
+        snapshot["cycle_id"] != paid_cycle.get("cycle_id")
+        or snapshot["journal_ref"] != paid_cycle.get("journal_ref")
+        or not committed.is_finite()
+        or committed < 0
+        or committed > Decimal("50.000000")
+        or not isinstance(entries, list)
+        or len(entries) != snapshot["reservation_count"]
+        or any(not isinstance(entry, Mapping) for entry in entries)
+    ):
+        raise RuntimeError("paid cycle ledger aggregate is invalid")
+    document = {
+        "schema_version": "provider-usage-evidence/1",
+        "run_id": run_dir.name,
+        "pricing_sha256": paid_cycle["pricing_sha256"],
+        **snapshot,
+    }
+    content_sha256 = hashlib.sha256(
+        json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    document["content_sha256"] = content_sha256
+    report_path = run_dir / "reports/provider-usage-ledger.json"
+    _atomic_write_json(report_path, document)
+    paid_cycle["ledger"] = {
+        "committed_total_cny": snapshot["committed_total_cny"],
+        "reservation_count": snapshot["reservation_count"],
+        "reserved_only_count": snapshot["reserved_only_count"],
+        "submission_started_count": snapshot["submission_started_count"],
+        "settled_count": snapshot["settled_count"],
+        "evidence_sha256": content_sha256,
+    }
+    _receipt_module().validate_schema(
+        live,
+        "live-run-evidence.schema.json",
+        ROOT,
+    )
+    _atomic_write_json(live_path, live)
+    return dict(paid_cycle["ledger"])
+
+
+def _capture_paid_routing_aggregate(
+    run_dir: Path,
+    *,
+    project_id: str,
+    order: int,
+) -> dict[str, Any]:
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "-e",
+            f"QI_P0_PROJECT_ID={project_id}",
+            "api",
+            "python",
+            "-c",
+            _PAID_ROUTING_AGGREGATE_PROGRAM,
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        routing = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("paid routing aggregate is invalid") from exc
+    expected = {
+        "project_id",
+        "total_decisions",
+        "escalated_group_ids",
+        "budget_terminal_facts",
+        "cancelled_group_ids",
+        "terminal_group_ids",
+        "paid_artifact_group_ids",
+        "attempt_event_codes",
+    }
+    if (
+        result.returncode != 0
+        or not isinstance(routing, dict)
+        or set(routing) != expected
+        or routing["project_id"] != project_id
+        or any(
+            not isinstance(routing[field], list)
+            or len(routing[field]) != len(set(routing[field]))
+            for field in (
+                "escalated_group_ids",
+                "cancelled_group_ids",
+                "terminal_group_ids",
+                "paid_artifact_group_ids",
+            )
+        )
+    ):
+        raise RuntimeError("paid routing aggregate is incomplete")
+    (
+        denied_group_ids,
+        admitted_group_ids,
+        provider_reservation_denied_group_ids,
+    ) = _partition_paid_budget_terminals(
+        routing["escalated_group_ids"],
+        routing.pop("budget_terminal_facts"),
+    )
+    routing["denied_group_ids"] = denied_group_ids
+    routing["admitted_group_ids"] = admitted_group_ids
+    routing["provider_cycle_reservation_denied_group_ids"] = (
+        provider_reservation_denied_group_ids
+    )
+    ledger = _load_json(run_dir / "reports/provider-usage-ledger.json")
+    entries = ledger.get("entries")
+    if not isinstance(entries, list):
+        raise RuntimeError("paid routing ledger entries are unavailable")
+    started = {
+        entry.get("subject_id")
+        for entry in entries
+        if isinstance(entry, Mapping)
+        and entry.get("project_id") == project_id
+        and entry.get("subject_kind") == "escalation_group"
+        and entry.get("state") != "reserved_only"
+    }
+    reserved_only = {
+        entry.get("subject_id")
+        for entry in entries
+        if isinstance(entry, Mapping)
+        and entry.get("project_id") == project_id
+        and entry.get("subject_kind") == "escalation_group"
+        and entry.get("state") == "reserved_only"
+    }
+    admitted = set(routing["admitted_group_ids"])
+    cancelled = set(routing["cancelled_group_ids"])
+    never_started = admitted - started
+    terminal = set(routing["terminal_group_ids"])
+    paid_artifacts = set(routing["paid_artifact_group_ids"])
+    storage = _load_json(run_dir / f"reports/provider-storage-{order}.json")
+    storage_artifacts = storage.get("artifacts")
+    if (
+        storage.get("project_id") != project_id
+        or not isinstance(storage_artifacts, list)
+    ):
+        raise RuntimeError("paid storage inventory is unavailable")
+    symbol_crop_count = sum(
+        isinstance(artifact, Mapping)
+        and isinstance(artifact.get("ref"), str)
+        and "/provider-inputs/qwen-symbol/" in artifact["ref"]
+        and artifact["ref"].endswith(".png")
+        for artifact in storage_artifacts
+    )
+    document = {
+        "schema_version": "provider-routing-aggregate/1",
+        "run_id": run_dir.name,
+        "order": order,
+        **routing,
+        "submission_started_group_ids": sorted(started),
+        "never_submission_started_group_ids": sorted(never_started),
+        "reserved_only_group_ids": sorted(reserved_only),
+    }
+    content_sha256 = hashlib.sha256(
+        json.dumps(document, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    document["content_sha256"] = content_sha256
+    _atomic_write_json(
+        run_dir / f"reports/provider-routing-{order}.json",
+        document,
+    )
+    baseline_matches = (
+        order != 1
+        or (
+            routing["total_decisions"] == 199
+            and len(routing["escalated_group_ids"]) == 198
+            and len(routing["denied_group_ids"]) == 190
+            and len(admitted) == 8
+        )
+    )
+    if (
+        not baseline_matches
+        or admitted != started | never_started
+        or started & never_started
+        or not cancelled <= never_started
+        or terminal != set(routing["escalated_group_ids"])
+        or provider_reservation_denied_group_ids
+        or reserved_only
+        or never_started & paid_artifacts
+        or symbol_crop_count != len(started)
+    ):
+        raise RuntimeError("paid routing terminal reconciliation failed")
+    return document
+
+
+def _capture_paid_storage_inventory(
+    run_dir: Path,
+    *,
+    project_id: str,
+    order: int,
+) -> dict[str, Any]:
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "-e",
+            f"QI_P0_PROJECT_ID={project_id}",
+            "api",
+            "python",
+            "-c",
+            _PAID_STORAGE_INVENTORY_PROGRAM,
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        inventory = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("paid storage inventory is invalid") from exc
+    artifacts = inventory.get("artifacts") if isinstance(inventory, dict) else None
+    if (
+        result.returncode != 0
+        or not isinstance(inventory, dict)
+        or set(inventory) != {"project_id", "artifacts"}
+        or inventory.get("project_id") != project_id
+        or not isinstance(artifacts, list)
+        or any(
+            not isinstance(artifact, Mapping)
+            or set(artifact) != {"ref", "sha256", "size"}
+            or not isinstance(artifact.get("ref"), str)
+            or not artifact["ref"].startswith(
+                f"asset://projects/{project_id}/provider-"
+            )
+            or re.fullmatch(r"[0-9a-f]{64}", str(artifact.get("sha256")))
+            is None
+            or not isinstance(artifact.get("size"), int)
+            or isinstance(artifact.get("size"), bool)
+            or artifact["size"] < 0
+            for artifact in artifacts
+        )
+    ):
+        raise RuntimeError("paid storage inventory is incomplete")
+    document = {
+        "schema_version": "provider-storage-inventory/1",
+        "run_id": run_dir.name,
+        "order": order,
+        **inventory,
+    }
+    document["content_sha256"] = hashlib.sha256(
+        json.dumps(document, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    _atomic_write_json(
+        run_dir / f"reports/provider-storage-{order}.json",
+        document,
+    )
+    return document
+
+
+def _mark_paid_run_terminal_pending(
+    run_dir: Path,
+    *,
+    failure_reason: str | None,
+) -> dict[str, Any]:
+    run_path = run_dir / "run.json"
+    run = _load_json(run_path)
+    if (
+        run.get("schema_version") != "run/2"
+        or run.get("run_id") != run_dir.name
+        or run.get("execution_state") not in {"running", "visual_qa_pending"}
+        or run.get("completed_at") is not None
+    ):
+        raise ValueError("paid run cannot enter terminal-pending state")
+    run["execution_state"] = "terminal_pending"
+    run["failure_reason"] = failure_reason
+    _receipt_module().validate_schema(run, "run.schema.json", ROOT)
+    _atomic_write_json(run_path, run)
+    return run
+
+
+def finalize_paid_run(
+    run_dir: Path,
+    *,
+    status: str,
+) -> tuple[str, str]:
+    if status not in {"completed", "failed", "aborted"}:
+        raise ValueError("paid run terminal status is invalid")
+    run_path = run_dir / "run.json"
+    run = _load_json(run_path)
+    allowed_states = (
+        {"terminal_pending"}
+        if status == "completed"
+        else {"running", "visual_qa_pending", "terminal_pending"}
+    )
+    if (
+        run.get("schema_version") != "run/2"
+        or run.get("run_id") != run_dir.name
+        or run.get("execution_state") not in allowed_states
+        or run.get("completed_at") is not None
+    ):
+        raise ValueError("paid run is not terminal-pending")
+    authorization_ref = os.environ.get(LIVE_CYCLE_AUTHORIZATION_ENV, "").strip()
+    if not authorization_ref:
+        raise ValueError(f"{LIVE_CYCLE_AUTHORIZATION_ENV} is required")
+    terminal = _cycle_authorization_module().terminal_evidence(
+        Path(authorization_ref)
+    )
+    if (
+        not isinstance(terminal, Mapping)
+        or terminal.get("run_id") != run_dir.name
+        or terminal.get("status") != status
+    ):
+        raise ValueError("paid run terminal evidence is inconsistent")
+    quiescence_path = run_dir / "reports/provider-cycle-quiescence.json"
+    quiescence = _load_json(quiescence_path)
+    quiescence_payload = dict(quiescence)
+    quiescence_sha256 = quiescence_payload.pop("content_sha256", None)
+    if (
+        quiescence.get("schema_version")
+        != "provider-cycle-quiescence/1"
+        or quiescence.get("run_id") != run_dir.name
+        or quiescence.get("status") != status
+        or quiescence.get("harness_returned") is not True
+        or quiescence_sha256
+        != hashlib.sha256(
+            json.dumps(
+                quiescence_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        or terminal.get("quiescence_sha256") != quiescence_sha256
+    ):
+        raise ValueError("paid run quiescence evidence is inconsistent")
+    bridge = _load_json(run_dir / "reports/provider-cycle-close-bridge.json")
+    bridge_payload = dict(bridge)
+    bridge_sha256 = bridge_payload.pop("content_sha256", None)
+    if (
+        bridge.get("schema_version") != "provider-cycle-close-bridge/1"
+        or bridge.get("run_id") != run_dir.name
+        or bridge.get("terminal_sha256") != terminal.get("content_sha256")
+        or bridge_sha256
+        != hashlib.sha256(
+            json.dumps(
+                bridge_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+    ):
+        raise ValueError("paid run close bridge evidence is inconsistent")
+    live_path = run_dir / LIVE_EVIDENCE_ARTIFACT
+    live = _load_json(live_path)
+    paid_cycle = live.get("paid_cycle")
+    if not isinstance(paid_cycle, dict):
+        raise RuntimeError("paid cycle evidence is unavailable")
+    paid_cycle["terminal"] = {
+        "status": terminal["status"],
+        "quiescence_sha256": terminal["quiescence_sha256"],
+        "terminal_sha256": terminal["content_sha256"],
+        "bridge_evidence_sha256": bridge_sha256,
+    }
+    _live_evidence_policy_module().validate_paid_cycle_evidence(
+        run,
+        live,
+        require_success=status == "completed",
+        evidence_dir=run_dir,
+        root=ROOT,
+    )
+    _receipt_module().validate_schema(
+        live,
+        "live-run-evidence.schema.json",
+        ROOT,
+    )
+    _atomic_write_json(live_path, live)
+    run["execution_state"] = "completed" if status == "completed" else "failed"
+    if status != "completed" and not run.get("failure_reason"):
+        run["failure_reason"] = f"paid_cycle_{status}"
+    run["completed_at"] = _iso_now()
+    receipt_module = _receipt_module()
+    receipt_module.validate_schema(run, "run.schema.json", ROOT)
+    _atomic_write_json(run_path, run)
+    if status != "completed":
+        if (run_dir / "receipt.json").exists():
+            raise ValueError("failed paid run must not contain a receipt")
+        _seal_run(run_dir)
+        return run_dir.name, "failed"
+    results_document = _load_json(run_dir / "contract-results.json")
+    results = results_document.get("results")
+    if (
+        not isinstance(results, list)
+        or not results
+        or any(
+            not isinstance(result, Mapping)
+            or result.get("result_state") != "passed"
+            or result.get("exit_code") != 0
+            for result in results
+        )
+    ):
+        raise ValueError("completed paid run contract results are incomplete")
+    mirror = _load_json(MIRROR_PATH)
+    bindings = _load_json(BINDINGS_PATH)
+    policies = receipt_module.load_policies(ROOT)
+    receipt = _build_receipt(
+        receipt_module,
+        run,
+        results,
+        mirror,
+        bindings,
+        policies,
+        run_dir,
+    )
+    _write_json(run_dir / "receipt.json", receipt)
+    _seal_run(run_dir)
+    return run_dir.name, str(receipt["overall_verdict"])
 
 
 def _collect_symbol_result(
@@ -3916,8 +4863,27 @@ def _bind_design_qa_and_resume(
 ) -> dict[str, Any]:
     live_path = run_dir / LIVE_EVIDENCE_ARTIFACT
     try:
+        existing_run = _load_json(run_dir / "run.json")
+        if existing_run.get("schema_version") == "run/2":
+            _refresh_paid_cycle_ledger(run_dir)
         live = _load_json(live_path)
         live["design_qa"] = dict(design_evidence)
+        if existing_run.get("schema_version") == "run/2":
+            authorization_ref = os.environ.get(
+                LIVE_CYCLE_AUTHORIZATION_ENV, ""
+            ).strip()
+            if not authorization_ref:
+                raise ValueError(f"{LIVE_CYCLE_AUTHORIZATION_ENV} is required")
+            resume = _cycle_authorization_module().resume_evidence(
+                Path(authorization_ref),
+                run_id=run_dir.name,
+            )
+            paid_cycle = live.get("paid_cycle")
+            if not isinstance(paid_cycle, dict):
+                raise ValueError("paid cycle evidence is unavailable")
+            paid_cycle["resume_consumed_sha256"] = resume[
+                "resume_consumed_sha256"
+            ]
         receipt_module = _receipt_module()
         receipt_module.validate_schema(
             live,
@@ -3929,19 +4895,33 @@ def _bind_design_qa_and_resume(
         return run
     except Exception:
         try:
-            abort_live_run(
-                run_dir,
-                reason="visual_qa_or_resume_transition_failed",
-            )
+            current = _load_json(run_dir / "run.json")
+            if current.get("schema_version") == "run/2":
+                _mark_paid_run_terminal_pending(
+                    run_dir,
+                    failure_reason="visual_qa_or_resume_transition_failed",
+                )
+            else:
+                abort_live_run(
+                    run_dir,
+                    reason="visual_qa_or_resume_transition_failed",
+                )
         except Exception:
             pass
         raise
 
 
-def start_live_run(preflight: LivePreflight) -> str:
+def start_live_run(
+    preflight: LivePreflight,
+    *,
+    authorized_run_id: str,
+) -> str:
     operator_id = str(_current_live_identity()["operator_id"])
     timeout = _wait_seconds()
-    run_dir = _open_live_run(preflight)
+    run_dir = _open_live_run(
+        preflight,
+        authorized_run_id=authorized_run_id,
+    )
     try:
         print(f"run_id={run_dir.name}", file=sys.stderr, flush=True)
         manifest = json.loads(preflight.manifest_bytes)
@@ -3983,14 +4963,28 @@ def start_live_run(preflight: LivePreflight) -> str:
             operator_id=operator_id,
             timeout=timeout,
         )
+        _refresh_paid_cycle_ledger(run_dir)
         pause_live_run(run_dir)
         return run_dir.name
     except Exception as exc:
         try:
-            abort_live_run(
-                run_dir,
-                reason=f"live_start_failed:{type(exc).__name__}",
-            )
+            live = _load_json(run_dir / LIVE_EVIDENCE_ARTIFACT)
+            if live.get("paid_cycle", {}).get("projects"):
+                _refresh_paid_cycle_ledger(run_dir)
+        except Exception:
+            pass
+        try:
+            run = _load_json(run_dir / "run.json")
+            if run.get("schema_version") == "run/2":
+                _mark_paid_run_terminal_pending(
+                    run_dir,
+                    failure_reason=f"live_start_failed:{type(exc).__name__}",
+                )
+            else:
+                abort_live_run(
+                    run_dir,
+                    reason=f"live_start_failed:{type(exc).__name__}",
+                )
         except Exception:
             pass
         raise
@@ -4441,7 +5435,14 @@ def resume_live_run(
         design_evidence = _design_qa_evidence(design_qa, run_dir)
     except Exception:
         if can_resume_live_run(run_dir):
-            abort_live_run(run_dir, reason="visual_qa_or_identity_changed")
+            run = _load_json(run_dir / "run.json")
+            if run.get("schema_version") == "run/2":
+                _mark_paid_run_terminal_pending(
+                    run_dir,
+                    failure_reason="visual_qa_or_identity_changed",
+                )
+            else:
+                abort_live_run(run_dir, reason="visual_qa_or_identity_changed")
         raise
 
     run_path = run_dir / "run.json"
@@ -4522,6 +5523,8 @@ def resume_live_run(
             )
             samples.append(sample)
 
+        if run.get("schema_version") == "run/2":
+            _refresh_paid_cycle_ledger(run_dir)
         live = _load_json(live_path)
         live_samples = live.get("samples")
         if not isinstance(live_samples, list) or len(live_samples) != 4:
@@ -4542,6 +5545,25 @@ def resume_live_run(
                 "results": results,
             },
         )
+        terminal_status = (
+            "completed"
+            if all(
+                result.get("result_state") == "passed"
+                and result.get("exit_code") == 0
+                for result in results
+            )
+            else "failed"
+        )
+        if run.get("schema_version") == "run/2":
+            _mark_paid_run_terminal_pending(
+                run_dir,
+                failure_reason=(
+                    None
+                    if terminal_status == "completed"
+                    else "full_p0_contracts_failed"
+                ),
+            )
+            return run_dir.name, terminal_status
         run["execution_state"] = "completed"
         run["completed_at"] = _iso_now()
         receipt_module.validate_schema(run, "run.schema.json", ROOT)
@@ -4559,11 +5581,24 @@ def resume_live_run(
         _seal_run(run_dir)
         return run_dir.name, receipt["overall_verdict"]
     except Exception as exc:
+        if run.get("schema_version") == "run/2":
+            try:
+                _refresh_paid_cycle_ledger(run_dir)
+            except Exception:
+                pass
         try:
-            abort_live_run(
-                run_dir,
-                reason=f"live_resume_failed:{type(exc).__name__}",
-            )
+            current = _load_json(run_dir / "run.json")
+            if current.get("schema_version") == "run/2":
+                if current.get("execution_state") != "terminal_pending":
+                    _mark_paid_run_terminal_pending(
+                        run_dir,
+                        failure_reason=f"live_resume_failed:{type(exc).__name__}",
+                    )
+            else:
+                abort_live_run(
+                    run_dir,
+                    reason=f"live_resume_failed:{type(exc).__name__}",
+                )
         except Exception:
             pass
         raise
@@ -4760,12 +5795,62 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input-set", choices=("current-four",))
     parser.add_argument("--pause-after", choices=(LIVE_PAUSE_BARRIER,))
     parser.add_argument("--print-run-id-only", action="store_true")
+    parser.add_argument("--authorized-run-id", metavar="RUN_ID")
     parser.add_argument("--resume-run", metavar="RUN_ID")
     parser.add_argument("--design-qa", metavar="PATH")
     parser.add_argument("--abort-run", metavar="RUN_ID")
     parser.add_argument("--reason")
+    parser.add_argument("--finalize-run", metavar="RUN_ID")
+    parser.add_argument(
+        "--terminal-status",
+        choices=("completed", "failed", "aborted"),
+    )
     args = parser.parse_args(argv)
     try:
+        if args.authorized_run_id and (
+            args.mode != "live"
+            or args.scope != "full-p0"
+            or args.task
+            or args.resume_run
+            or args.abort_run
+            or args.finalize_run
+        ):
+            raise ValueError(
+                "--authorized-run-id is limited to full-p0 live start"
+            )
+        if args.finalize_run:
+            if (
+                args.mode != "live"
+                or args.scope != "full-p0"
+                or args.resume_run
+                or args.abort_run
+                or args.task
+                or args.current_four_run
+                or args.symbol_eval_run
+                or args.activate_current_inputs
+                or args.design_qa
+                or args.reason
+                or args.authorized_run_id
+                or not args.terminal_status
+            ):
+                raise ValueError(
+                    "--finalize-run requires live --scope full-p0 and "
+                    "--terminal-status only"
+                )
+            run_id, verdict = finalize_paid_run(
+                RUNS / args.finalize_run,
+                status=args.terminal_status,
+            )
+            print(
+                f"run_id={run_id} scope=full-p0 task=None "
+                f"execution_state={args.terminal_status} "
+                f"overall_verdict={verdict}"
+            )
+            return 0 if verdict == "passed" else 1
+
+        if args.terminal_status:
+            raise ValueError("--terminal-status requires --finalize-run")
+
         if args.abort_run:
             if (
                 args.mode != "live"
@@ -4803,9 +5888,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(
                 f"run_id={run_id} scope=full-p0 task=None "
-                f"overall_verdict={verdict}"
+                "execution_state=terminal_pending "
+                f"terminal_status={verdict}"
             )
-            return 0 if verdict == "passed" else 1
+            return 0 if verdict == "completed" else 1
 
         if args.mode == "live" and args.scope == "full-p0":
             explicit_registrations = bool(
@@ -4826,6 +5912,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 or args.input_set != "current-four"
                 or args.pause_after != LIVE_PAUSE_BARRIER
+                or not args.authorized_run_id
             ):
                 raise ValueError(
                     "full-p0 live start requires literal current-four and symbol "
@@ -4846,7 +5933,10 @@ def main(argv: list[str] | None = None) -> int:
                 current_four_run=args.current_four_run,
                 symbol_eval_run=args.symbol_eval_run,
             )
-            run_id = start_live_run(preflight)
+            run_id = start_live_run(
+                preflight,
+                authorized_run_id=args.authorized_run_id,
+            )
             print(run_id if args.print_run_id_only else (
                 f"run_id={run_id} scope=full-p0 task=None "
                 "execution_state=visual_qa_pending"

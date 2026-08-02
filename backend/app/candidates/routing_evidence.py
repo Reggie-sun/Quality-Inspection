@@ -206,6 +206,12 @@ _SCHEDULER_STOP_DIAGNOSTIC_KEYS = frozenset(
         "provider_work_started",
     }
 )
+_BUDGET_CONTROL_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "schema_version",
+        "budget_origin",
+    }
+)
 
 
 class RoutingEvidenceConflict(RuntimeError):
@@ -342,6 +348,19 @@ def validate_scheduler_stop_diagnostic(
         raise ValueError("Scheduler stop diagnostic is invalid")
 
 
+def validate_budget_control_diagnostic(
+    document: Mapping[str, object],
+) -> None:
+    if (
+        set(document) != _BUDGET_CONTROL_DIAGNOSTIC_KEYS
+        or document.get("schema_version")
+        != "visual-symbol-budget-control/1"
+        or document.get("budget_origin")
+        not in {"routing_plan", "provider_cycle_reservation"}
+    ):
+        raise ValueError("Budget control diagnostic is invalid")
+
+
 @dataclass(frozen=True)
 class ProviderFailureDiagnostic:
     schema_version: str
@@ -400,6 +419,17 @@ class SchedulerStopDiagnostic:
         return document
 
 
+@dataclass(frozen=True)
+class BudgetControlDiagnostic:
+    schema_version: str
+    budget_origin: str
+
+    def as_dict(self) -> dict[str, object]:
+        document = asdict(self)
+        validate_budget_control_diagnostic(document)
+        return document
+
+
 def _validate_attempt_diagnostic(
     event: EscalationAttemptEvent,
 ) -> None:
@@ -452,6 +482,15 @@ def _validate_attempt_diagnostic(
             if (
                 event.event_code != PROJECT_FAILURE_CANCELLATION_EVENT_CODE
                 or event.attempt_index != 0
+                or event.provider_request_id is not None
+            ):
+                raise ValueError
+        elif schema_version == "visual-symbol-budget-control/1":
+            validate_budget_control_diagnostic(document)
+            if (
+                event.event_code != "not_started_budget_exhausted"
+                or event.attempt_index != 0
+                or event.cache_entry_id is not None
                 or event.provider_request_id is not None
             ):
                 raise ValueError
