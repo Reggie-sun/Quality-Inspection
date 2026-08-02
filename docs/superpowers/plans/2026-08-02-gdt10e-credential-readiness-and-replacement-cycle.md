@@ -18,6 +18,15 @@
 - Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
 - Cleanup-proof amendment: user selected option `A` on 2026-08-02. Task 2 is paused because review found no canonical lifecycle-proof schema; it may resume only after an independent read-only amendment review returns `accept`. This amendment does not complete Task 2, GDT-10 Step 4, Step 5, or the parent objective.
 
+## Pricing Verification Amendment — 2026-08-03
+
+- User approval：用户于 `2026-08-03` 明确批准 pricing amendment 和后续既定计划执行；该批准不扩大原 `50.000000 CNY` 总包络。
+- Independent review：本地 `reviewer` profile 对两个官方公开页面、committed snapshot、运行门禁和最小 amendment 做只读复核，verdict 为 `accept`，无 blocking 或 non-blocking finding。
+- Public verification：腾讯云 `GeneralAccurateOCR` 国内后付费首档仍为 `0.50 CNY/submission`；阿里云 `qwen3-vl-plus-2025-12-19` 华北2（北京）三档输入/输出仍为 `1/10`、`1.5/15`、`3/30 CNY per million tokens`，最大输入/输出仍为 `260096/32768`。
+- Official sources：`https://cloud.tencent.com/document/product/866/17619`、`https://help.aliyun.com/zh/model-studio/qwen3-vl-plus`。
+- Immutable snapshot：继续复用 `provider-pricing-gdt10d/1`；文件 bytes SHA-256 仍为 `40893337440fde3bb7e9c572b5ba341fc4fe9782850a1c9c38e971a3fa317e19`，canonical content SHA-256 仍为 `c6b37f8a811d38444ccd89a5862d676343e414db21dbc02d9ca9979496364a2b`。不得修改 snapshot bytes 或 historical GDT-10D evidence。
+- Renewed issuance boundary：GDT-10E 只允许在 `2026-08-03T23:59:59+08:00` 前 issue；超过该时点继续 fail closed，并重新要求 read-only public pricing verification、reviewed plan amendment和用户明确批准。
+
 **Tech Stack:** Python 3.11、pytest、Ruff、Decimal、SHA-256、`O_CREAT|O_EXCL|O_NOFOLLOW`、JSON Schema、Docker Compose、PostgreSQL 17、repository Harness、Chrome headed QA、Micromamba `qi-p0`。
 
 ## Global Constraints
@@ -28,10 +37,10 @@
 - Sealed predecessor：GDT-10D run `20260802T101404291929Z-884bec62`、evidence commit `daa3e6f`、committed cost `3.526656 CNY`，全部immutable。
 - Exact cycle ID：`gdt10e-auth-remediated-live-20260802`。
 - Overall envelope：`50.000000 CNY`；GDT-10E incremental ceiling：`46.473344 CNY`。不得round、rollover或重新分配完整`50.000000`。
-- Pricing：复用 committed `provider-pricing-gdt10d/1` snapshot和exact SHA；不刷新公开费率、不读取account invoice/free tier/discount。
+- Pricing：复用 committed `provider-pricing-gdt10d/1` snapshot和exact SHA；`2026-08-03` 只读复核确认公开费率未变，不读取account invoice/free tier/discount。
 - Qwen identity：`qwen3-vl-plus-2025-12-19`、`cn-beijing`、`production_uncertainty/symbol-uncertainty-router/1`。
 - Retry：timeout/transport/authentication/request-rejected/rate-limited/service/metadata均`0`；only `ProductionRetryCoordinator`可为schema-invalid授权一次second submission，且单独reserve。
-- Pricing freshness：committed snapshot `retrieved_date=2026-08-02`只允许在`2026-08-02T23:59:59+08:00`前issue；超过时点先停并取得新的read-only pricing review、plan amendment和user approval，不得自动刷新/沿用。
+- Pricing freshness：committed snapshot `retrieved_date=2026-08-02` 经 `2026-08-03` 独立只读公开价格复核、reviewed plan amendment和user approval后，只允许在`2026-08-03T23:59:59+08:00`前issue；超过时点再次fail closed，不得自动刷新/沿用。
 - No Provider work before Task 5 final independent `GO` and one-use issuance/consume。Task 6只允许一次`make verify-p0-live` start；Task 7仅允许accepted paused literal run的一次same-run resume。
 - Tasks 1-8 implementation/live boundary已获用户明确批准；所有既有 plan gates 仍为强制前置条件，不得从本 plan 存在推断超出已批准边界的 execution authority。
 - direct Provider diagnostic、second replacement、budget expansion、`0015` 与 production promotion仍被阻断；main runtime/DB mutation与model fallback不授权。
@@ -730,7 +739,7 @@ Even onparent success，`0015` andproduction promotion remainseparately blocked�
 - Privacy：private salt/binding/credential/account fields不进入run/live/receipt/log/review；public evidence只有SHA、sanitized state/booleans和non-secret arithmetic。
 - Truth transition：`run-p0.py::_seal_runtime_account_acceptance()`是唯一immutable fact writer；evidence policy只投影`not_yet_accepted -> runtime_accepted`。Original readiness SHA/binding跨pause保留，resume不renew、不改写issuance。
 - Failure/cleanup boundary：zero-paid GO不宣称account valid；首个validated authenticated response才是runtime acceptance；authentication terminal不retry、不resume、不replacement。NO-GO、issued-unconsumed和sealed-terminal disposal都有literal CLI、exact target、cleanup receipt与blocker deadline。
-- Pricing boundary：snapshot晚于`2026-08-02T23:59:59+08:00`自动失效；只能通过新的reviewed pricing amendment和user approval恢复，total envelope不自动改变。
+- Pricing boundary：`2026-08-03` reviewed amendment恢复的issuance window晚于`2026-08-03T23:59:59+08:00`自动失效；只能通过新的read-only public pricing verification、reviewed plan amendment和user approval恢复，total envelope不自动改变。
 - Independent docs review：前三轮`reject`逐项关闭runtime-acceptance Owner/call site、immutable resume、preconsume cleanup、literal CLI、v2/v3、pricing、path policy、cleanup journal和run-ID source；final verdict `accept`，无blocking或non-blocking finding。The later cleanup-proof amendment selected as option `A` pauses Task 2 until a separate independent read-only amendment review accepts the sole Task 3 intent Owner, exact schema and three-branch correlations.
 - Execution boundary：用户已明确批准 Tasks 1-8 implementation/live boundary；所有既有 plan gates 仍为强制前置条件，且 direct Provider diagnostic、second replacement、budget expansion、`0015` 与 production promotion仍被阻断。
 

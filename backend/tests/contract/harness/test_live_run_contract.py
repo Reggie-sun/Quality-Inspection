@@ -57,7 +57,7 @@ GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256 = (
     "db7c74f7fd0623c34a496309c744da3d32fd9614786fbde485e569968939749a"
 )
 GDT10E_PRICING_DEADLINE = datetime(
-    2026, 8, 2, 23, 59, 59, tzinfo=timezone(timedelta(hours=8))
+    2026, 8, 3, 23, 59, 59, tzinfo=timezone(timedelta(hours=8))
 )
 
 
