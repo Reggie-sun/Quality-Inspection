@@ -14,10 +14,13 @@ import pytest
 
 import app.candidates.advisor as advisor_module
 from app.candidates.advisor import (
+    AdvisorFailureClassification,
     CandidateAdvisor,
     CandidateAdvisorFailure,
+    ProductionRetryCoordinator,
     VisualEvidenceContext,
     VisualExecutionIdentity,
+    classify_provider_failure,
 )
 from app.candidates.coverage import CoverageEntry
 from app.candidates.confidence import CandidateSourceSignal
@@ -43,9 +46,318 @@ from app.processing.automatic_result import (
     CandidateSnapshot,
     candidate_snapshot_from_inventory,
 )
-from app.providers.base import VisionResult
+from app.providers.base import ProviderFailureFact, VisionResult
 from app.providers.qwen_vl import VisualSymbolProviderError
 from app.storage.local import LocalFileStorage
+
+
+def provider_fact_for_test(category: str) -> ProviderFailureFact:
+    origin_by_category = {
+        "timeout": "sdk_timeout",
+        "transport": "sdk_connection",
+        "schema": "response_schema",
+        "authentication": "sdk_http_status",
+        "request_rejected": "sdk_http_status",
+        "rate_limited": "sdk_http_status",
+        "service_failure": "sdk_http_status",
+        "metadata_invalid": "response_metadata",
+        "unclassified": "provider_boundary",
+    }
+    status_by_category = {
+        "authentication": 401,
+        "request_rejected": 422,
+        "rate_limited": 429,
+        "service_failure": 503,
+    }
+    return ProviderFailureFact(
+        category=category,
+        origin=origin_by_category[category],
+        http_status=status_by_category.get(category),
+        provider_request_id=None,
+        request_id_state="absent",
+    )
+
+
+@pytest.mark.parametrize(
+    ("category", "stage", "scope", "cause"),
+    (
+        ("timeout", "provider_timeout", "roi_localized", None),
+        ("transport", "provider_transport_failure", "roi_localized", None),
+        ("schema", "provider_schema_invalid", "roi_localized", None),
+        (
+            "authentication",
+            "provider_authentication_failed",
+            "project_blocking",
+            "invalid_configuration",
+        ),
+        (
+            "request_rejected",
+            "provider_request_rejected",
+            "project_blocking",
+            "processing_defect",
+        ),
+        (
+            "rate_limited",
+            "provider_rate_limited",
+            "project_blocking",
+            "transient_provider_failure",
+        ),
+        (
+            "service_failure",
+            "provider_service_failure",
+            "project_blocking",
+            "transient_provider_failure",
+        ),
+        (
+            "metadata_invalid",
+            "provider_metadata_invalid",
+            "project_blocking",
+            "processing_defect",
+        ),
+        (
+            "unclassified",
+            "provider_unclassified_failure",
+            "project_blocking",
+            "processing_defect",
+        ),
+    ),
+)
+def test_provider_failure_disposition_is_frozen(
+    category: str,
+    stage: str,
+    scope: str,
+    cause: str | None,
+) -> None:
+    classification = classify_provider_failure(
+        provider_fact_for_test(category)
+    )
+
+    assert (
+        classification.failure_stage,
+        classification.scope,
+        classification.pipeline_cause_category,
+    ) == (stage, scope, cause)
+
+
+def test_advisor_failure_classification_rejects_mapping_mismatch() -> None:
+    with pytest.raises(
+        ValueError,
+        match="^Advisor Provider failure classification is invalid$",
+    ):
+        AdvisorFailureClassification(
+            fact=provider_fact_for_test("rate_limited"),
+            failure_stage="provider_transport_failure",
+            scope="roi_localized",
+            pipeline_cause_category=None,
+        )
+
+
+def test_production_retry_coordinator_alone_owns_schema_eligibility() -> None:
+    coordinator = object.__new__(ProductionRetryCoordinator)
+    calls: list[tuple[object, int]] = []
+
+    def authorize_budget(
+        *,
+        identity: object,
+        primary_duration_ms: int,
+    ) -> bool:
+        calls.append((identity, primary_duration_ms))
+        return True
+
+    coordinator._authorize_retry_budget = authorize_budget
+    identity = SimpleNamespace(content_sha256="a" * 64)
+    shape_failure = VisualSymbolProviderError(
+        request_id="safe-message-shape",
+        usage={"total_tokens": 4},
+        failure_stage="message_shape_invalid",
+    )
+    schema_failure = VisualSymbolProviderError(
+        request_id="safe-schema-invalid",
+        usage={"total_tokens": 4},
+        failure_stage="tool_arguments_schema_invalid",
+    )
+
+    assert coordinator.authorize_schema_retry(
+        shape_failure,
+        identity,
+        12,
+    ) is False
+    assert calls == []
+    assert coordinator.authorize_schema_retry(
+        schema_failure,
+        identity,
+        34,
+    ) is True
+    assert calls == [(identity, 34)]
+
+
+def test_candidate_advisor_failure_requires_classification_event_pair() -> None:
+    classification = classify_provider_failure(
+        provider_fact_for_test("rate_limited")
+    )
+    event_sha = "a" * 64
+    error = CandidateAdvisorFailure(
+        "Visual symbol Advisor call failed",
+        classification=classification,
+        failure_event_sha256=event_sha,
+    )
+
+    assert error.classification is classification
+    assert error.failure_category == "rate_limited"
+    assert error.failure_stage == "provider_rate_limited"
+    assert error.failure_scope == "project_blocking"
+    assert error.pipeline_cause_category == "transient_provider_failure"
+    assert error.failure_event_sha256 == event_sha
+    assert error.provider_request_id is None
+    for values in (
+        {"classification": classification},
+        {"failure_event_sha256": event_sha},
+        {
+            "classification": classification,
+            "failure_event_sha256": "not-a-sha",
+        },
+        {
+            "classification": classification,
+            "failure_event_sha256": event_sha,
+            "failure_origin": "routing_evidence",
+        },
+    ):
+        with pytest.raises(
+            ValueError,
+            match="^CandidateAdvisor failure evidence is invalid$",
+        ):
+            CandidateAdvisorFailure("invalid", **values)
+
+
+def test_persisted_provider_failure_matches_propagated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    session = SimpleNamespace(
+        commit=lambda: captured.update(committed=True),
+        rollback=lambda: captured.update(rolled_back=True),
+        close=lambda: captured.update(closed=True),
+    )
+
+    class RecordingEvidence:
+        def __init__(self, seen_session: object) -> None:
+            assert seen_session is session
+
+        def record_failure_terminal(self, **kwargs: object) -> str:
+            captured.update(kwargs)
+            return kwargs["event"].event_sha256  # type: ignore[union-attr]
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        RecordingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: object(),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+    classification = classify_provider_failure(
+        ProviderFailureFact(
+            category="rate_limited",
+            origin="sdk_http_status",
+            http_status=429,
+            provider_request_id="safe-rate-request",
+            request_id_state="accepted",
+        )
+    )
+
+    event_sha = advisor._record_classified_failure_terminal(
+        context=VisualEvidenceContext(
+            escalation_group_id="group-1",
+            routing_decision_sha256="a" * 64,
+        ),
+        attempt_index=1,
+        classification=classification,
+        visual_observations=(SimpleNamespace(observation_id="visual-1"),),
+    )
+    propagated = CandidateAdvisorFailure(
+        "Visual symbol Advisor call failed",
+        classification=classification,
+        failure_event_sha256=event_sha,
+    )
+    event = captured["event"]
+
+    assert event.diagnostic["failure_category"] == (
+        propagated.failure_category
+    )
+    assert event.diagnostic["failure_stage"] == event.event_code
+    assert event.event_code == propagated.failure_stage
+    assert event.diagnostic["scope"] == propagated.failure_scope
+    assert event.event_sha256 == propagated.failure_event_sha256
+    assert event.provider_request_id == propagated.provider_request_id
+    assert captured["committed"] is True
+    assert captured["closed"] is True
+    assert "private://customer/token-do-not-leak" not in json.dumps(
+        event.diagnostic
+    )
+
+
+def test_routing_failure_does_not_localize(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "private://customer/token-do-not-leak"
+    state: dict[str, bool] = {}
+    session = SimpleNamespace(
+        commit=lambda: state.update(committed=True),
+        rollback=lambda: state.update(rolled_back=True),
+        close=lambda: state.update(closed=True),
+    )
+
+    class FailingEvidence:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        def record_failure_terminal(self, **_kwargs: object) -> str:
+            raise RuntimeError(marker)
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        FailingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: object(),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as caught:
+        advisor._record_classified_failure_terminal(
+            context=VisualEvidenceContext(
+                escalation_group_id="group-1",
+                routing_decision_sha256="a" * 64,
+            ),
+            attempt_index=0,
+            classification=classify_provider_failure(
+                provider_fact_for_test("transport")
+            ),
+            visual_observations=(
+                SimpleNamespace(observation_id="visual-1"),
+            ),
+        )
+
+    assert caught.value.failure_origin == "routing_evidence"
+    assert caught.value.classification is None
+    assert caught.value.failure_event_sha256 is None
+    assert caught.value.failure_category is None
+    assert marker not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert state == {"rolled_back": True, "closed": True}
 
 
 def advisor_payload(
@@ -733,9 +1045,13 @@ def test_preview_enrichment_retains_localized_provider_failure_count(
     )
 
     def localized_transport_failure(_self: CandidateAdvisor, **_kwargs: object) -> object:
+        classification = classify_provider_failure(
+            provider_fact_for_test("transport")
+        )
         raise CandidateAdvisorFailure(
             "fixture provider transport failure",
-            failure_category="transport",
+            classification=classification,
+            failure_event_sha256="e" * 64,
         )
 
     monkeypatch.setattr(
@@ -1713,6 +2029,9 @@ def test_production_cache_evidence_failure_is_not_labeled_as_provider(
                 escalation_group_id="a" * 64,
                 routing_decision_sha256="b" * 64,
             ),
+            production_retry_coordinator=object.__new__(
+                ProductionRetryCoordinator
+            ),
         )
 
     assert getattr(raised.value, "failure_origin", None) == "routing_evidence"
@@ -1953,6 +2272,11 @@ def test_production_failure_stops_before_queued_job_provider_call(
         tmp_path,
         monkeypatch,
     )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_classified_failure_terminal",
+        lambda _self, **_kwargs: "e" * 64,
+    )
     observation_ids = tuple(
         visual.observation_id for visual in pages[0].visual_observations
     )
@@ -2128,6 +2452,11 @@ def test_actual_primary_wall_blocks_retry_before_second_call(
         "perf_counter_ns",
         lambda: next(clock),
     )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_classified_failure_terminal",
+        lambda _self, **_kwargs: "e" * 64,
+    )
     calls = 0
 
     class SlowSchemaFailureProvider:
@@ -2281,6 +2610,16 @@ def test_concurrent_schema_failures_reserve_exactly_one_project_retry(
     source, pages, snapshot = three_visual_escalation_fixture(
         tmp_path,
         monkeypatch,
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_classified_failure_terminal",
+        lambda _self, **_kwargs: "e" * 64,
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_schema_retry",
+        lambda _self, **_kwargs: ("a" * 64, "b" * 64),
     )
     competing_ids = {
         visual.observation_id

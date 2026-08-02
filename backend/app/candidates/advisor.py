@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import pymupdf
 from sqlalchemy.orm import Session
@@ -52,10 +52,13 @@ from app.candidates.symbol_escalation_planner import (
 )
 from app.candidates.routing_evidence import (
     ESCALATION_ATTEMPT_SCHEMA_VERSION,
+    ESCALATION_ATTEMPT_SCHEMA_VERSION_V2,
     ESCALATION_OUTCOME_SCHEMA_VERSION,
+    AdvisorBoundaryFailureDiagnostic,
     EscalationAttemptEvent,
     EscalationOutcome,
     ObservationOutcome,
+    ProviderFailureDiagnostic,
     RoutingEvidenceRepository,
     routing_decision_sha256,
     routing_decision_group_sha256,
@@ -115,7 +118,10 @@ from app.pdf.visual_observations import (
 )
 from app.processing.automatic_result import CandidateSnapshot, selected_observations
 from app.providers.base import (
+    ClassifiedProviderFailure,
     LOCALIZED_PROVIDER_FAILURE_CATEGORIES,
+    ProviderFailureCategory,
+    ProviderFailureFact,
     VisionResult,
 )
 from app.providers.call_records import (
@@ -171,6 +177,125 @@ _CACHE_FIELDS = {
     "suggestion",
     "usage",
 }
+_PROVIDER_FAILURE_DISPOSITIONS = {
+    "timeout": ("provider_timeout", "roi_localized", None),
+    "transport": ("provider_transport_failure", "roi_localized", None),
+    "schema": ("provider_schema_invalid", "roi_localized", None),
+    "authentication": (
+        "provider_authentication_failed",
+        "project_blocking",
+        "invalid_configuration",
+    ),
+    "request_rejected": (
+        "provider_request_rejected",
+        "project_blocking",
+        "processing_defect",
+    ),
+    "rate_limited": (
+        "provider_rate_limited",
+        "project_blocking",
+        "transient_provider_failure",
+    ),
+    "service_failure": (
+        "provider_service_failure",
+        "project_blocking",
+        "transient_provider_failure",
+    ),
+    "metadata_invalid": (
+        "provider_metadata_invalid",
+        "project_blocking",
+        "processing_defect",
+    ),
+    "unclassified": (
+        "provider_unclassified_failure",
+        "project_blocking",
+        "processing_defect",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class AdvisorFailureClassification:
+    fact: ProviderFailureFact
+    failure_stage: str
+    scope: Literal["roi_localized", "project_blocking"]
+    pipeline_cause_category: str | None
+
+    def __post_init__(self) -> None:
+        if (
+            self.failure_stage,
+            self.scope,
+            self.pipeline_cause_category,
+        ) != _PROVIDER_FAILURE_DISPOSITIONS[self.fact.category]:
+            raise ValueError(
+                "Advisor Provider failure classification is invalid"
+            )
+
+    @property
+    def category(self) -> ProviderFailureCategory:
+        return self.fact.category
+
+    @property
+    def origin(self) -> str:
+        return self.fact.origin
+
+    @property
+    def http_status(self) -> int | None:
+        return self.fact.http_status
+
+    @property
+    def provider_request_id(self) -> str | None:
+        return self.fact.provider_request_id
+
+    @property
+    def request_id_state(self) -> str:
+        return self.fact.request_id_state
+
+
+@dataclass(frozen=True)
+class AdvisorBoundaryFailureClassification:
+    failure_stage: Literal[
+        "provider_factory_failed",
+        "provider_contract_failure",
+        "advisor_result_missing",
+    ]
+    provider_work_started: bool
+    scope: Literal["project_blocking"] = "project_blocking"
+    pipeline_cause_category: Literal[
+        "processing_defect"
+    ] = "processing_defect"
+
+    def __post_init__(self) -> None:
+        expected_started = self.failure_stage != "provider_factory_failed"
+        if (
+            self.failure_stage
+            not in {
+                "provider_factory_failed",
+                "provider_contract_failure",
+                "advisor_result_missing",
+            }
+            or self.provider_work_started is not expected_started
+            or self.scope != "project_blocking"
+            or self.pipeline_cause_category != "processing_defect"
+        ):
+            raise ValueError("Advisor boundary failure is invalid")
+
+
+def classify_provider_failure(
+    fact: ProviderFailureFact,
+) -> AdvisorFailureClassification:
+    stage, scope, cause = _PROVIDER_FAILURE_DISPOSITIONS[fact.category]
+    return AdvisorFailureClassification(
+        fact=fact,
+        failure_stage=stage,
+        scope=scope,
+        pipeline_cause_category=cause,
+    )
+
+
+AdvisorClassification = (
+    AdvisorFailureClassification | AdvisorBoundaryFailureClassification
+)
 
 
 class CandidateAdvisorFailure(RuntimeError):
@@ -178,19 +303,106 @@ class CandidateAdvisorFailure(RuntimeError):
         self,
         message: str,
         *,
-        failure_category: str | None = None,
+        classification: AdvisorClassification | None = None,
+        failure_event_sha256: str | None = None,
         failure_origin: str | None = None,
     ) -> None:
         super().__init__(message)
         if (
-            failure_category is not None
-            and failure_category not in LOCALIZED_PROVIDER_FAILURE_CATEGORIES
+            (classification is None) != (failure_event_sha256 is None)
+            or (
+                classification is not None
+                and not isinstance(
+                    classification,
+                    (
+                        AdvisorFailureClassification,
+                        AdvisorBoundaryFailureClassification,
+                    ),
+                )
+            )
+            or (
+                failure_event_sha256 is not None
+                and re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    failure_event_sha256,
+                )
+                is None
+            )
+            or failure_origin not in {None, "routing_evidence"}
+            or (
+                failure_origin == "routing_evidence"
+                and (
+                    classification is not None
+                    or failure_event_sha256 is not None
+                )
+            )
         ):
-            raise ValueError("CandidateAdvisor failure category is invalid")
-        if failure_origin not in {None, "routing_evidence"}:
-            raise ValueError("CandidateAdvisor failure origin is invalid")
-        self.failure_category = failure_category
+            raise ValueError(
+                "CandidateAdvisor failure evidence is invalid"
+            )
+        self.classification = classification
+        self.failure_event_sha256 = failure_event_sha256
         self.failure_origin = failure_origin
+
+    @property
+    def failure_category(self) -> str | None:
+        return (
+            self.classification.category
+            if isinstance(
+                self.classification,
+                AdvisorFailureClassification,
+            )
+            else None
+        )
+
+    @property
+    def failure_stage(self) -> str | None:
+        return (
+            None
+            if self.classification is None
+            else self.classification.failure_stage
+        )
+
+    @property
+    def failure_scope(self) -> str | None:
+        return (
+            None
+            if self.classification is None
+            else self.classification.scope
+        )
+
+    @property
+    def provider_request_id(self) -> str | None:
+        return (
+            self.classification.provider_request_id
+            if isinstance(
+                self.classification,
+                AdvisorFailureClassification,
+            )
+            else None
+        )
+
+    @property
+    def pipeline_cause_category(self) -> str | None:
+        return (
+            None
+            if self.classification is None
+            else self.classification.pipeline_cause_category
+        )
+
+
+class _LegacyCandidateAdvisorFailure(CandidateAdvisorFailure):
+    def __init__(self, message: str, *, failure_category: str) -> None:
+        if failure_category not in LOCALIZED_PROVIDER_FAILURE_CATEGORIES:
+            raise ValueError(
+                "legacy CandidateAdvisor failure category is invalid"
+            )
+        super().__init__(message)
+        self._legacy_failure_category = failure_category
+
+    @property
+    def failure_category(self) -> str:
+        return self._legacy_failure_category
 
 
 def _recognition_preview_snapshot(
@@ -488,7 +700,25 @@ class ProductionRetryCoordinator:
         self._actual_project_seconds += measured_seconds
         self._primary_accounted.add(key)
 
-    def authorize(
+    def authorize_schema_retry(
+        self,
+        failure: VisualSymbolProviderError,
+        identity: VisualExecutionIdentity | None,
+        primary_duration_ms: int,
+    ) -> bool:
+        if (
+            failure.fact.category != "schema"
+            or failure.fact.origin != "response_schema"
+            or failure.failure_stage
+            != "tool_arguments_schema_invalid"
+        ):
+            return False
+        return self._authorize_retry_budget(
+            identity=identity,
+            primary_duration_ms=primary_duration_ms,
+        )
+
+    def _authorize_retry_budget(
         self,
         identity: VisualExecutionIdentity | None,
         primary_duration_ms: int,
@@ -1161,6 +1391,166 @@ class CandidateAdvisor:
         finally:
             session.close()
 
+    def _record_classified_failure_terminal(
+        self,
+        *,
+        context: VisualEvidenceContext,
+        attempt_index: int,
+        classification: AdvisorClassification,
+        visual_observations: Sequence[VisualObservation],
+    ) -> str:
+        if self._symbol_session_factory is None:
+            raise CandidateAdvisorFailure(
+                "Visual symbol routing evidence write failed",
+                failure_origin="routing_evidence",
+            )
+        if isinstance(classification, AdvisorFailureClassification):
+            diagnostic = ProviderFailureDiagnostic(
+                schema_version="visual-symbol-provider-failure/1",
+                failure_category=classification.category,
+                failure_stage=classification.failure_stage,
+                scope=classification.scope,
+                origin=classification.origin,
+                http_status=classification.http_status,
+                request_id_state=classification.request_id_state,
+                pipeline_cause_category=(
+                    classification.pipeline_cause_category
+                ),
+                retry_decision="not_authorized",
+            ).as_dict()
+            provider_request_id = classification.provider_request_id
+        else:
+            diagnostic = AdvisorBoundaryFailureDiagnostic(
+                schema_version=(
+                    "visual-symbol-advisor-boundary-failure/1"
+                ),
+                failure_stage=classification.failure_stage,
+                scope=classification.scope,
+                pipeline_cause_category=(
+                    classification.pipeline_cause_category
+                ),
+                provider_work_started=(
+                    classification.provider_work_started
+                ),
+            ).as_dict()
+            provider_request_id = None
+        session = self._symbol_session_factory()
+        failed = False
+        event_sha256 = ""
+        try:
+            event_sha256 = RoutingEvidenceRepository(
+                session
+            ).record_failure_terminal(
+                project_id=self._project_uuid(),
+                event=EscalationAttemptEvent(
+                    schema_version=(
+                        ESCALATION_ATTEMPT_SCHEMA_VERSION_V2
+                    ),
+                    escalation_group_id=context.escalation_group_id,
+                    routing_decision_sha256=(
+                        context.routing_decision_sha256
+                    ),
+                    attempt_index=attempt_index,
+                    event_code=classification.failure_stage,
+                    cache_entry_id=None,
+                    provider_request_id=provider_request_id,
+                    diagnostic=diagnostic,
+                ),
+                outcome_code="unresolved",
+                observation_outcomes=tuple(
+                    ObservationOutcome(
+                        visual_observation_id=observation.observation_id,
+                        outcome_code=classification.failure_stage,
+                    )
+                    for observation in visual_observations
+                ),
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            failed = True
+        finally:
+            session.close()
+        if failed or not event_sha256:
+            raise CandidateAdvisorFailure(
+                "Visual symbol routing evidence write failed",
+                failure_origin="routing_evidence",
+            )
+        return event_sha256
+
+    def _record_schema_retry(
+        self,
+        *,
+        context: VisualEvidenceContext,
+        attempt_index: int,
+        failure: VisualSymbolProviderError,
+    ) -> tuple[str, ...]:
+        if self._symbol_session_factory is None:
+            raise CandidateAdvisorFailure(
+                "Visual symbol routing evidence write failed",
+                failure_origin="routing_evidence",
+            )
+        classification = classify_provider_failure(failure.fact)
+        session = self._symbol_session_factory()
+        failed = False
+        attempt_sha256s: tuple[str, ...] = ()
+        try:
+            evidence = RoutingEvidenceRepository(session)
+            evidence.record_schema_retry(
+                project_id=self._project_uuid(),
+                failure_event=EscalationAttemptEvent(
+                    schema_version=(
+                        ESCALATION_ATTEMPT_SCHEMA_VERSION_V2
+                    ),
+                    escalation_group_id=context.escalation_group_id,
+                    routing_decision_sha256=(
+                        context.routing_decision_sha256
+                    ),
+                    attempt_index=attempt_index,
+                    event_code=classification.failure_stage,
+                    cache_entry_id=None,
+                    provider_request_id=(
+                        classification.provider_request_id
+                    ),
+                    diagnostic=ProviderFailureDiagnostic(
+                        schema_version=(
+                            "visual-symbol-provider-failure/1"
+                        ),
+                        failure_category=classification.category,
+                        failure_stage=classification.failure_stage,
+                        scope=classification.scope,
+                        origin=classification.origin,
+                        http_status=classification.http_status,
+                        request_id_state=(
+                            classification.request_id_state
+                        ),
+                        pipeline_cause_category=(
+                            classification.pipeline_cause_category
+                        ),
+                        retry_decision="authorized_schema_retry",
+                    ).as_dict(),
+                ),
+            )
+            attempt_sha256s = evidence.canonical_attempt_sha256s(
+                project_id=self._project_uuid(),
+                escalation_group_id=context.escalation_group_id,
+                routing_decision_sha256=(
+                    context.routing_decision_sha256
+                ),
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            failed = True
+        finally:
+            session.close()
+        if failed or len(attempt_sha256s) < 2:
+            raise CandidateAdvisorFailure(
+                "Visual symbol routing evidence write failed",
+                failure_origin="routing_evidence",
+            )
+        return attempt_sha256s
+
     def _cache_result(
         self,
         relative_path: str,
@@ -1417,6 +1807,7 @@ class CandidateAdvisor:
         retry_authorizer: (
             Callable[[VisualExecutionIdentity | None, int], bool] | None
         ) = None,
+        production_retry_coordinator: ProductionRetryCoordinator | None = None,
         legacy_cache_enabled: bool = True,
         evidence_context: VisualEvidenceContext | None = None,
     ) -> VisualReviewOutcome:
@@ -1424,6 +1815,12 @@ class CandidateAdvisor:
             raise ValueError("visual schema retry flag must be boolean")
         if retry_authorizer is not None and not callable(retry_authorizer):
             raise ValueError("visual retry authorizer must be callable")
+        if (evidence_context is None) != (
+            production_retry_coordinator is None
+        ):
+            raise ValueError(
+                "production retry coordinator context is invalid"
+            )
         if not isinstance(legacy_cache_enabled, bool):
             raise ValueError("legacy visual cache flag must be boolean")
         if (evidence_context is None) != (execution_identity is None):
@@ -1661,6 +2058,7 @@ class CandidateAdvisor:
                 ),
             )
 
+        factory_failure: AdvisorBoundaryFailureClassification | None = None
         if provider is None:
             try:
                 provider = self._provider_factory(self._settings)
@@ -1672,16 +2070,28 @@ class CandidateAdvisor:
                 persist_terminal_failure("provider_unavailable")
                 raise
             except Exception:
-                append_attempt(
-                    attempt_index=0,
-                    event_code="provider_transport_failure",
+                factory_failure = AdvisorBoundaryFailureClassification(
+                    failure_stage="provider_factory_failed",
+                    provider_work_started=False,
                 )
-                persist_terminal_failure(
-                    "provider_transport_failure"
-                )
+        if factory_failure is not None:
+            if evidence_context is None:
                 raise CandidateAdvisorFailure(
                     "Visual symbol Advisor call failed"
-                ) from None
+                )
+            failure_event_sha256 = (
+                self._record_classified_failure_terminal(
+                    context=evidence_context,
+                    attempt_index=0,
+                    classification=factory_failure,
+                    visual_observations=visual_observations,
+                )
+            )
+            raise CandidateAdvisorFailure(
+                "Visual symbol Advisor call failed",
+                classification=factory_failure,
+                failure_event_sha256=failure_event_sha256,
+            )
         crop_write = self._storage.write_verified(
             crop_relative,
             canonical_crop_png,
@@ -1696,13 +2106,18 @@ class CandidateAdvisor:
 
         def call_once() -> tuple[
             VisionResult | None,
-            tuple[str, dict[str, int], str] | None,
+            VisualSymbolProviderError | None,
+            AdvisorFailureClassification | None,
+            AdvisorBoundaryFailureClassification | None,
             int,
         ]:
             started = time.perf_counter_ns()
             result: VisionResult | None = None
-            failure: tuple[str, dict[str, int], str] | None = None
-            unexpected_failure = False
+            schema_failure: VisualSymbolProviderError | None = None
+            provider_failure: AdvisorFailureClassification | None = None
+            boundary_failure: (
+                AdvisorBoundaryFailureClassification | None
+            ) = None
             try:
                 raw_result = provider.review_symbols(
                     canonical_crop_png,
@@ -1719,33 +2134,32 @@ class CandidateAdvisor:
                     usage=usage,
                 )
             except VisualSymbolProviderError as exc:
-                failure = (
-                    exc.request_id,
-                    dict(exc.usage),
-                    exc.failure_stage,
+                schema_failure = exc
+            except ClassifiedProviderFailure as exc:
+                provider_failure = classify_provider_failure(
+                    exc.fact
                 )
             except CapabilityUnavailable:
                 raise
-            except Exception as exc:
-                category = _localized_provider_failure_category(exc)
-                if category is not None:
-                    raise CandidateAdvisorFailure(
-                        "Visual symbol Advisor call failed",
-                        failure_category=category,
-                    ) from None
-                unexpected_failure = True
+            except Exception:
+                boundary_failure = AdvisorBoundaryFailureClassification(
+                    failure_stage="provider_contract_failure",
+                    provider_work_started=True,
+                )
             duration_ms = max(
                 0,
                 (time.perf_counter_ns() - started) // 1_000_000,
             )
-            if unexpected_failure:
-                raise CandidateAdvisorFailure(
-                    "Visual symbol Advisor call failed"
-                ) from None
-            return result, failure, duration_ms
+            return (
+                result,
+                schema_failure,
+                provider_failure,
+                boundary_failure,
+                duration_ms,
+            )
 
         def persist_failure(
-            failure: tuple[str, dict[str, int], str],
+            failure: VisualSymbolProviderError,
             *,
             duration_ms: int,
             retry_count: int,
@@ -1753,12 +2167,11 @@ class CandidateAdvisor:
             request_path: str,
             response_path: str,
         ) -> None:
-            request_id, usage, failure_stage = failure
             request_content = _json_bytes(
                 build_visual_request_evidence(
                     crop_ref=crop_write.resource_ref,
                     crop_sha256=crop_write.sha256,
-                    usage=usage,
+                    usage=failure.usage,
                 )
             )
             request_write = self._storage.write_verified(
@@ -1767,7 +2180,7 @@ class CandidateAdvisor:
                 hashlib.sha256(request_content).hexdigest(),
             )
             failure_content = _json_bytes(
-                build_visual_failure_envelope(failure_stage)
+                build_visual_failure_envelope(failure.failure_stage)
             )
             failure_write = self._storage.write_verified(
                 response_path,
@@ -1779,7 +2192,7 @@ class CandidateAdvisor:
                 audit_path,
                 ProviderCallRecord(
                     provider="qwen-vl",
-                    request_id=request_id,
+                    request_id=failure.request_id,
                     model=model,
                     prompt_version=VISUAL_PROMPT_VERSION,
                     schema_version=VISUAL_SCHEMA_VERSION,
@@ -1793,8 +2206,37 @@ class CandidateAdvisor:
                 ),
             )
 
+        def propagate_classified_failure(
+            classification: AdvisorClassification,
+            *,
+            attempt_index: int,
+        ) -> None:
+            if evidence_context is None:
+                raise CandidateAdvisorFailure(
+                    "Visual symbol Advisor call failed"
+                )
+            failure_event_sha256 = (
+                self._record_classified_failure_terminal(
+                    context=evidence_context,
+                    attempt_index=attempt_index,
+                    classification=classification,
+                    visual_observations=visual_observations,
+                )
+            )
+            raise CandidateAdvisorFailure(
+                "Visual symbol Advisor call failed",
+                classification=classification,
+                failure_event_sha256=failure_event_sha256,
+            )
+
         try:
-            result, provider_failure, duration_ms = call_once()
+            (
+                result,
+                schema_failure,
+                provider_classification,
+                boundary_classification,
+                duration_ms,
+            ) = call_once()
         except CapabilityUnavailable:
             append_attempt(
                 attempt_index=0,
@@ -1802,59 +2244,83 @@ class CandidateAdvisor:
             )
             persist_terminal_failure("provider_unavailable")
             raise
-        except CandidateAdvisorFailure as exc:
-            failure_stage = (
-                _provider_failure_stage(exc.failure_category)
-                if exc.failure_category is not None
-                else "provider_transport_failure"
-            )
-            append_attempt(
+        if provider_classification is not None:
+            propagate_classified_failure(
+                provider_classification,
                 attempt_index=0,
-                event_code=failure_stage,
             )
-            persist_terminal_failure(failure_stage)
-            raise
+        if boundary_classification is not None:
+            propagate_classified_failure(
+                boundary_classification,
+                attempt_index=0,
+            )
+        if result is None and schema_failure is None:
+            propagate_classified_failure(
+                AdvisorBoundaryFailureClassification(
+                    failure_stage="advisor_result_missing",
+                    provider_work_started=True,
+                ),
+                attempt_index=0,
+            )
         request_ids: list[str] = []
         attempt_durations = [duration_ms]
         retry_count = 0
-        if (
-            provider_failure is not None
-            and allow_schema_retry
-            and provider_failure[2] == "tool_arguments_schema_invalid"
-            and (
-                retry_authorizer is None
-                or retry_authorizer(
-                    execution_identity,
-                    duration_ms,
+        schema_retry_authorized = False
+        if schema_failure is not None:
+            if evidence_context is not None:
+                if production_retry_coordinator is None:
+                    raise CandidateAdvisorFailure(
+                        "Production retry coordinator is missing"
+                    )
+                schema_retry_authorized = (
+                    production_retry_coordinator.authorize_schema_retry(
+                        schema_failure,
+                        execution_identity,
+                        duration_ms,
+                    )
                 )
-                is True
-            )
-        ):
+            else:
+                schema_retry_authorized = (
+                    allow_schema_retry
+                    and schema_failure.failure_stage
+                    == "tool_arguments_schema_invalid"
+                    and (
+                        retry_authorizer is None
+                        or retry_authorizer(
+                            execution_identity,
+                            duration_ms,
+                        )
+                        is True
+                    )
+                )
+        if schema_failure is not None and schema_retry_authorized:
             retry_paths = _visual_retry_evidence_paths(
                 self._project_id,
                 cache_key,
             )
             persist_failure(
-                provider_failure,
+                schema_failure,
                 duration_ms=duration_ms,
                 retry_count=0,
                 audit_path=retry_paths[0],
                 request_path=retry_paths[1],
                 response_path=retry_paths[2],
             )
-            append_attempt(
-                attempt_index=0,
-                event_code="provider_schema_invalid",
-                provider_request_id=provider_failure[0],
-            )
-            append_attempt(
-                attempt_index=0,
-                event_code="retry_scheduled",
-                provider_request_id=provider_failure[0],
-            )
-            request_ids.append(provider_failure[0])
+            if evidence_context is not None:
+                attempt_event_sha256s[:] = self._record_schema_retry(
+                    context=evidence_context,
+                    attempt_index=0,
+                    failure=schema_failure,
+                )
+            request_ids.append(schema_failure.request_id)
             try:
-                result, provider_failure, duration_ms = call_once()
+                (
+                    result,
+                    schema_failure,
+                    provider_classification,
+                    boundary_classification,
+                    duration_ms,
+                ) = call_once()
             except CapabilityUnavailable:
                 append_attempt(
                     attempt_index=1,
@@ -1862,24 +2328,30 @@ class CandidateAdvisor:
                 )
                 persist_terminal_failure("provider_unavailable")
                 raise
-            except CandidateAdvisorFailure as exc:
-                failure_stage = (
-                    _provider_failure_stage(exc.failure_category)
-                    if exc.failure_category is not None
-                    else "provider_transport_failure"
-                )
-                append_attempt(
+            if provider_classification is not None:
+                propagate_classified_failure(
+                    provider_classification,
                     attempt_index=1,
-                    event_code=failure_stage,
                 )
-                persist_terminal_failure(failure_stage)
-                raise
+            if boundary_classification is not None:
+                propagate_classified_failure(
+                    boundary_classification,
+                    attempt_index=1,
+                )
+            if result is None and schema_failure is None:
+                propagate_classified_failure(
+                    AdvisorBoundaryFailureClassification(
+                        failure_stage="advisor_result_missing",
+                        provider_work_started=True,
+                    ),
+                    attempt_index=1,
+                )
             attempt_durations.append(duration_ms)
             retry_count = 1
 
-        if provider_failure is not None:
+        if schema_failure is not None:
             persist_failure(
-                provider_failure,
+                schema_failure,
                 duration_ms=duration_ms,
                 retry_count=retry_count,
                 audit_path=audit_relative,
@@ -1889,25 +2361,26 @@ class CandidateAdvisor:
                     f"qwen-symbol/{cache_key}.json"
                 ),
             )
-            append_attempt(
-                attempt_index=retry_count,
-                event_code="provider_schema_invalid",
-                provider_request_id=provider_failure[0],
+            classification = classify_provider_failure(
+                schema_failure.fact
             )
-            persist_terminal_failure("provider_schema_invalid")
+            if evidence_context is None:
+                raise CandidateAdvisorFailure(
+                    "Visual symbol Advisor response is invalid"
+                )
+            failure_event_sha256 = (
+                self._record_classified_failure_terminal(
+                    context=evidence_context,
+                    attempt_index=retry_count,
+                    classification=classification,
+                    visual_observations=visual_observations,
+                )
+            )
             raise CandidateAdvisorFailure(
                 "Visual symbol Advisor response is invalid",
-                failure_category="schema",
-            ) from None
-        if result is None:
-            append_attempt(
-                attempt_index=retry_count,
-                event_code="provider_transport_failure",
+                classification=classification,
+                failure_event_sha256=failure_event_sha256,
             )
-            persist_terminal_failure("provider_transport_failure")
-            raise CandidateAdvisorFailure(
-                "Visual symbol Advisor call failed"
-            ) from None
         request_ids.append(result.request_id)
         request_content = _json_bytes(
             build_visual_request_evidence(
@@ -2101,7 +2574,7 @@ class CandidateAdvisor:
         except CapabilityUnavailable:
             raise
         except Exception as exc:
-            raise CandidateAdvisorFailure(
+            raise _LegacyCandidateAdvisorFailure(
                 "Vision candidate Advisor call failed",
                 failure_category=(
                     _localized_provider_failure_category(exc) or "transport"
@@ -2948,7 +3421,6 @@ class CandidateAdvisor:
                                 job.gdt_frame_observations
                             ),
                             model=model,
-                            allow_schema_retry=True,
                             execution_identity=(
                                 job.execution_identity
                             ),
@@ -2960,7 +3432,9 @@ class CandidateAdvisor:
                                     job.routing_decision_sha256
                                 ),
                             ),
-                            retry_authorizer=retry_coordinator.authorize,
+                            production_retry_coordinator=(
+                                retry_coordinator
+                            ),
                             legacy_cache_enabled=False,
                         )
                         return True

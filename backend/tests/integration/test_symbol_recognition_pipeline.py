@@ -72,7 +72,11 @@ from app.processing.tasks import inventory_project
 from app.projects.models import Project
 from app.projects.service import ProjectIntakeService
 from app.projects.state import ProjectState
-from app.providers.base import VisionResult
+from app.providers.base import (
+    ClassifiedProviderFailure,
+    ProviderFailureFact,
+    VisionResult,
+)
 from app.providers.qwen_vl import (
     VisualSymbolProviderError,
     canonicalize_visual_png,
@@ -1060,12 +1064,24 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
             assert matrix.local_visual.observation_id not in observation_ids
             if matrix.failed_visual.observation_id in observation_ids:
                 if failure_family == "timeout":
-                    raise TimeoutError(
-                        "/srv/private/customer.pdf token=do-not-leak"
+                    raise ClassifiedProviderFailure(
+                        ProviderFailureFact(
+                            category="timeout",
+                            origin="sdk_timeout",
+                            http_status=None,
+                            provider_request_id=None,
+                            request_id_state="absent",
+                        )
                     )
                 if failure_family == "transport":
-                    raise ConnectionError(
-                        "/srv/private/customer.pdf token=do-not-leak"
+                    raise ClassifiedProviderFailure(
+                        ProviderFailureFact(
+                            category="transport",
+                            origin="sdk_connection",
+                            http_status=None,
+                            provider_request_id=None,
+                            request_id_state="absent",
+                        )
                     )
                 raise VisualSymbolProviderError(
                     request_id="fixture-localized-schema",
@@ -1189,6 +1205,26 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
         assert len(failed_attempts) == 1
         assert failed_attempts[0].attempt_index == 0
         assert failed_attempts[0].provider_request_id is None
+        assert failed_attempts[0].schema_version == (
+            "symbol-escalation-attempt/2"
+        )
+        assert failed_attempts[0].diagnostic == {
+            "schema_version": "visual-symbol-provider-failure/1",
+            "failure_category": failure_family,
+            "failure_stage": expected_failure_stage,
+            "scope": "roi_localized",
+            "origin": (
+                "sdk_timeout"
+                if failure_family == "timeout"
+                else "sdk_connection"
+            ),
+            "http_status": None,
+            "request_id_state": "absent",
+            "pipeline_cause_category": None,
+            "retry_decision": "not_authorized",
+        }
+        assert failed_attempts[0].diagnostic_sha256 is not None
+        assert len(failed_attempts[0].diagnostic_sha256) == 64
         failed_outcome = next(
             outcome
             for outcome in outcomes
