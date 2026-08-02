@@ -770,19 +770,13 @@ def close_via_bridge(
                 },
                 schema_version="provider-cycle-project/1",
             )
-    image = subprocess.run(
-        [*_compose_command(), "images", "-q", "api"],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    image_id = image.stdout.strip()
-    if (
-        image.returncode != 0
-        or re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None
-        or image_id != issuance["backend_image_id"]
-    ):
+    try:
+        image_id = _current_api_image_id()
+    except ValueError as exc:
+        raise RuntimeError(
+            "cycle close bridge image identity is invalid"
+        ) from exc
+    if image_id != issuance["backend_image_id"]:
         raise RuntimeError("cycle close bridge image identity is invalid")
     storage_volume = f"{issuance['compose_project']}_storage_qa_dev"
     command = [

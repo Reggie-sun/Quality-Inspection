@@ -5850,7 +5850,10 @@ def test_cycle_close_bridge_is_network_none_credential_free_and_exactly_mounted(
         calls.append(argv)
         if "images" in argv:
             return subprocess.CompletedProcess(
-                argv, 0, identity["backend_image_id"] + "\n", ""
+                argv,
+                0,
+                identity["backend_image_id"].removeprefix("sha256:") + "\n",
+                "",
             )
         return subprocess.CompletedProcess(argv, 0, json.dumps(terminal), "")
 
