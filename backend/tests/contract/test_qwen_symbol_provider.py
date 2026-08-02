@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 import httpx
-from openai import APIConnectionError, APITimeoutError
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 from openai.types.completion_usage import CompletionUsage
 from PIL import Image
 
@@ -28,15 +28,60 @@ from app.pdf.visual_observations import PROPOSAL_RULE_VERSION
 from app.providers.qwen_vl import (
     QwenVisionProvider,
     VisualSymbolInputError,
-    VisualSymbolMetadataError,
     VisualSymbolProviderError,
     canonicalize_visual_png,
     validate_visual_request_metadata,
 )
-from app.providers.base import LocalizedProviderFailure
+from app.providers.base import (
+    ClassifiedProviderFailure,
+    LocalizedProviderFailure,
+    ProviderFailureFact,
+)
 
 
 _VISUAL_TOOL_NAME = "submit_visual_symbol_review"
+
+
+def test_provider_failure_fact_rejects_inconsistent_http_metadata() -> None:
+    with pytest.raises(ValueError, match="^Provider failure fact is invalid$"):
+        ProviderFailureFact(
+            category="rate_limited",
+            origin="sdk_http_status",
+            http_status=None,
+            provider_request_id=None,
+            request_id_state="absent",
+        )
+
+
+def test_classified_provider_failure_does_not_render_private_detail() -> None:
+    fact = ProviderFailureFact(
+        category="unclassified",
+        origin="provider_boundary",
+        http_status=None,
+        provider_request_id=None,
+        request_id_state="absent",
+    )
+    error = ClassifiedProviderFailure(fact)
+
+    assert str(error) == "visual symbol Provider request failed"
+    assert error.fact is fact
+
+
+@pytest.mark.parametrize(
+    "unsafe_id",
+    ("token-do-not-leak", "PASSWORD-value", "session.cookie"),
+)
+def test_provider_failure_fact_rejects_unsafe_accepted_request_id(
+    unsafe_id: str,
+) -> None:
+    with pytest.raises(ValueError, match="^Provider failure fact is invalid$"):
+        ProviderFailureFact(
+            category="service_failure",
+            origin="sdk_http_status",
+            http_status=503,
+            provider_request_id=unsafe_id,
+            request_id_state="accepted",
+        )
 
 
 @pytest.mark.parametrize(
@@ -141,6 +186,190 @@ def _png(
         chunks
         + _png_chunk(b"IDAT", zlib.compress(scanlines))
         + _png_chunk(b"IEND", b"")
+    )
+
+
+def _failing_visual_provider(error: Exception) -> QwenVisionProvider:
+    class FailingCompletions:
+        @staticmethod
+        def create(**_kwargs: object) -> object:
+            raise error
+
+    return QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=FailingCompletions())
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "category"),
+    (
+        (401, "authentication"),
+        (403, "authentication"),
+        (408, "timeout"),
+        (429, "rate_limited"),
+        (500, "service_failure"),
+        (503, "service_failure"),
+        (400, "request_rejected"),
+        (422, "request_rejected"),
+    ),
+)
+def test_review_symbols_classifies_http_status_without_private_detail(
+    status: int,
+    category: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    marker = "private://customer/token-do-not-leak"
+    response = httpx.Response(
+        status,
+        request=httpx.Request("POST", "https://private.invalid/v1"),
+        headers={"x-request-id": "safe-status-request"},
+    )
+    provider_error = APIStatusError(
+        marker,
+        response=response,
+        body={"detail": marker},
+    )
+
+    with pytest.raises(ClassifiedProviderFailure) as caught:
+        _failing_visual_provider(provider_error).review_symbols(
+            _png(text=None),
+            "safe prompt",
+        )
+
+    assert caught.value.fact.category == category
+    assert caught.value.fact.origin == "sdk_http_status"
+    assert caught.value.fact.http_status == status
+    assert caught.value.fact.provider_request_id == "safe-status-request"
+    assert caught.value.fact.request_id_state == "accepted"
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value.fact)
+    assert marker not in caplog.text
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "category", "origin"),
+    (
+        (
+            APITimeoutError(
+                request=httpx.Request("POST", "https://private.invalid/v1")
+            ),
+            "timeout",
+            "sdk_timeout",
+        ),
+        (
+            APIConnectionError(
+                request=httpx.Request("POST", "https://private.invalid/v1")
+            ),
+            "transport",
+            "sdk_connection",
+        ),
+    ),
+)
+def test_review_symbols_classifies_timeout_and_connection_without_raw_chain(
+    provider_error: Exception,
+    category: str,
+    origin: str,
+) -> None:
+    with pytest.raises(ClassifiedProviderFailure) as caught:
+        _failing_visual_provider(provider_error).review_symbols(
+            _png(text=None),
+            "safe prompt",
+        )
+
+    assert caught.value.fact.category == category
+    assert caught.value.fact.origin == origin
+    assert caught.value.fact.http_status is None
+    assert caught.value.fact.provider_request_id is None
+    assert caught.value.fact.request_id_state == "absent"
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    ("request_id", "usage", "request_id_state", "provider_request_id"),
+    (
+        (None, {"total_tokens": 4}, "absent", None),
+        ("token-do-not-leak", {"total_tokens": 4}, "rejected", None),
+        ("safe-metadata-request", {"total_tokens": -1}, "accepted", "safe-metadata-request"),
+    ),
+)
+def test_review_symbols_classifies_metadata_failure_without_private_detail(
+    request_id: object,
+    usage: object,
+    request_id_state: str,
+    provider_request_id: str | None,
+) -> None:
+    marker = "private metadata detail"
+
+    class InvalidMetadataCompletions:
+        @staticmethod
+        def create(**_kwargs: object) -> object:
+            return SimpleNamespace(
+                id=request_id,
+                choices=marker,
+                usage=usage,
+            )
+
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=InvalidMetadataCompletions()
+            )
+        )
+    )
+    with pytest.raises(ClassifiedProviderFailure) as caught:
+        provider.review_symbols(_png(text=None), "safe prompt")
+
+    assert caught.value.fact.category == "metadata_invalid"
+    assert caught.value.fact.origin == "response_metadata"
+    assert caught.value.fact.http_status is None
+    assert caught.value.fact.request_id_state == request_id_state
+    assert caught.value.fact.provider_request_id == provider_request_id
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value.fact)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+def test_review_symbols_classifies_unknown_failure_without_private_detail() -> None:
+    marker = "private://customer/PASSWORD-value"
+
+    with pytest.raises(ClassifiedProviderFailure) as caught:
+        _failing_visual_provider(RuntimeError(marker)).review_symbols(
+            _png(text=None),
+            "safe prompt",
+        )
+
+    assert caught.value.fact == ProviderFailureFact(
+        category="unclassified",
+        origin="provider_boundary",
+        http_status=None,
+        provider_request_id=None,
+        request_id_state="absent",
+    )
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value.fact)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+def test_visual_symbol_schema_error_preserves_safe_provider_fact() -> None:
+    error = VisualSymbolProviderError(
+        request_id="safe-schema-request",
+        usage={"total_tokens": 4},
+        failure_stage="tool_arguments_schema_invalid",
+    )
+
+    assert error.fact == ProviderFailureFact(
+        category="schema",
+        origin="response_schema",
+        http_status=None,
+        provider_request_id="safe-schema-request",
+        request_id_state="accepted",
     )
 
 
@@ -539,11 +768,7 @@ def test_qwen_localized_failures_expose_sanitized_stable_categories(
         failure = exc
 
     assert failure is not None
-    category = getattr(
-        failure,
-        "failure_category",
-        getattr(failure, "category", None),
-    )
+    category = failure.fact.category
     assert category == expected_category
     assert private_marker not in str(failure)
     assert private_marker not in repr(vars(failure))
@@ -1420,13 +1645,20 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         "secret-request-id",
     ):
         with pytest.raises(
-            VisualSymbolMetadataError,
-            match="^visual symbol response metadata is invalid$",
+            ClassifiedProviderFailure,
+            match="^visual symbol Provider request failed$",
         ) as metadata_error:
             metadata_provider(
                 unsafe_request_id,
                 {"total_tokens": 4},
             ).review_symbols(image, prompt)
+        assert metadata_error.value.fact == ProviderFailureFact(
+            category="metadata_invalid",
+            origin="response_metadata",
+            http_status=None,
+            provider_request_id=None,
+            request_id_state="rejected",
+        )
         assert unsafe_request_id not in str(metadata_error.value)
 
     for unsafe_usage in (
@@ -1436,13 +1668,20 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         {"total_tokens": "1"},
     ):
         with pytest.raises(
-            VisualSymbolMetadataError,
-            match="^visual symbol response metadata is invalid$",
+            ClassifiedProviderFailure,
+            match="^visual symbol Provider request failed$",
         ) as metadata_error:
             metadata_provider(
                 "fixture-safe-request-id",
                 unsafe_usage,
             ).review_symbols(image, prompt)
+        assert metadata_error.value.fact == ProviderFailureFact(
+            category="metadata_invalid",
+            origin="response_metadata",
+            http_status=None,
+            provider_request_id="fixture-safe-request-id",
+            request_id_state="accepted",
+        )
         assert not any(
             key in str(metadata_error.value)
             for key in unsafe_usage
