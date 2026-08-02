@@ -209,6 +209,9 @@ def test_symbol_routing_evidence_schema_is_exact_and_immutable() -> None:
             "event_code",
             "cache_entry_id",
             "provider_request_id",
+            "schema_version",
+            "diagnostic",
+            "diagnostic_sha256",
             "event_sha256",
             "created_at",
         },
@@ -287,6 +290,27 @@ def test_symbol_routing_evidence_schema_is_exact_and_immutable() -> None:
                 )
             )
             assert triggers == {f"prevent_{table}_update_delete"}
+
+
+def test_symbol_escalation_attempt_provider_failure_diagnostic_columns() -> None:
+    columns = {
+        column["name"]: column
+        for column in inspect(engine).get_columns(
+            "symbol_escalation_attempt_events"
+        )
+    }
+
+    assert {
+        "schema_version",
+        "diagnostic",
+        "diagnostic_sha256",
+    }.issubset(columns)
+    assert columns["schema_version"]["nullable"] is False
+    assert "symbol-escalation-attempt/1" in str(
+        columns["schema_version"]["default"]
+    )
+    assert columns["diagnostic"]["nullable"] is True
+    assert columns["diagnostic_sha256"]["nullable"] is True
 
 
 def test_review_schema_has_exact_current_persistence_shape() -> None:

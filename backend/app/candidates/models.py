@@ -192,6 +192,14 @@ class VisualSymbolCacheEntryRecord(Base):
 class SymbolEscalationAttemptEventRecord(Base):
     __tablename__ = "symbol_escalation_attempt_events"
     __table_args__ = (
+        CheckConstraint(
+            "(schema_version = 'symbol-escalation-attempt/1' "
+            "AND diagnostic IS NULL AND diagnostic_sha256 IS NULL) OR "
+            "(schema_version = 'symbol-escalation-attempt/2' "
+            "AND diagnostic IS NOT NULL "
+            "AND diagnostic_sha256 ~ '^[0-9a-f]{64}$')",
+            name="ck_symbol_attempt_diagnostic_version",
+        ),
         UniqueConstraint(
             "project_id",
             "escalation_group_id",
@@ -227,6 +235,19 @@ class SymbolEscalationAttemptEventRecord(Base):
     )
     provider_request_id: Mapped[str | None] = mapped_column(
         String(256), nullable=True
+    )
+    schema_version: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        server_default="symbol-escalation-attempt/1",
+    )
+    diagnostic: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+    diagnostic_sha256: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
     )
     event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
