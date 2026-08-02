@@ -16,6 +16,7 @@
 - Provider starts: one
 - Resume: only one literal same-run resume after accepted pause
 - Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
+- Cleanup-proof amendment: user selected option `A` on 2026-08-02. Task 2 is paused because review found no canonical lifecycle-proof schema; it may resume only after an independent read-only amendment review returns `accept`. This amendment does not complete Task 2, GDT-10 Step 4, Step 5, or the parent objective.
 
 **Tech Stack:** Python 3.11、pytest、Ruff、Decimal、SHA-256、`O_CREAT|O_EXCL|O_NOFOLLOW`、JSON Schema、Docker Compose、PostgreSQL 17、repository Harness、Chrome headed QA、Micromamba `qi-p0`。
 
@@ -34,12 +35,13 @@
 - No Provider work before Task 5 final independent `GO` and one-use issuance/consume。Task 6只允许一次`make verify-p0-live` start；Task 7仅允许accepted paused literal run的一次same-run resume。
 - Tasks 1-8 implementation/live boundary已获用户明确批准；所有既有 plan gates 仍为强制前置条件，不得从本 plan 存在推断超出已批准边界的 execution authority。
 - direct Provider diagnostic、second replacement、budget expansion、`0015` 与 production promotion仍被阻断；main runtime/DB mutation与model fallback不授权。
+- This docs-only amendment preserves blocks on credential/runtime mutation, Provider calls and paid execution; it changes only the cleanup-proof ownership/contract before Task 2 implementation resumes.
 - Reviewer/explorer严格read-only；一个write-capable executor按Task 1 -> Task 8顺序执行。
 
 ## Problem Boundary Record
 
-- Single account-readiness Owner：`.agent/harness/scripts/provider_account_readiness.py`，只拥有private attestation schema/expiry/binding。
-- Cycle lifecycle Owner：`.agent/harness/scripts/live_cycle_authorization.py`与`backend/app/providers/cycle_authorization.py`，继续拥有issuance/consume/run/project/resume/terminal。
+- Single account-readiness Owner：`.agent/harness/scripts/provider_account_readiness.py`，只拥有private attestation schema/expiry/binding and exact readiness disposal after validating Task 3's intent; it never creates, repairs, rewrites or infers lifecycle proof.
+- Cycle lifecycle Owner：`.agent/harness/scripts/live_cycle_authorization.py`与`backend/app/providers/cycle_authorization.py`，继续拥有issuance/consume/run/project/resume/terminal。Task 3 `live_cycle_authorization.py` is the sole writer and semantic Owner of `provider-cycle-cleanup-intent/1`, including intent/receipt/blocker replay, repair and lifecycle blocking.
 - Cost Owner：`backend/app/providers/usage_ledger.py`，从validated active issuance读取`max_total_cny`。
 - Provider fact Owner：`QwenVisionProvider`，保持HTTP status safe classification；不验证console/account readiness。
 - Runtime acceptance fact Owner：`.agent/harness/scripts/run-p0.py::_seal_runtime_account_acceptance()`；`.agent/harness/scripts/live_evidence_policy.py`只验证/投影，不成为第二truth Owner。
@@ -113,9 +115,9 @@ Expected：clean docs-only commit；no runtime、credential、DB、authorization
 
 **Interfaces:**
 
-- Produces: `issue_account_readiness(...) -> dict[str, object]`、`validate_account_readiness(...) -> AccountReadinessEvidence`、`dispose_account_readiness(...) -> CleanupEvidence`。
+- Produces: `issue_account_readiness(...) -> dict[str, object]`、`validate_account_readiness(...) -> AccountReadinessEvidence`、`dispose_account_readiness(...) -> CleanupEvidence`。The last surface consumes only Task 3's exact immutable `provider-cycle-cleanup-intent/1` and removes only exact `account-readiness.json`。
 - `AccountReadinessEvidence`只暴露`schema_version`、`content_sha256`、`issued_at`、`expires_at`、`operator_state=operator_attested`、`all_operator_checks_passed`、`credential_binding_matches`；不暴露private salt/binding/credential/account fields。Runtime acceptance不是此helper的Owner。
-- CLI exact surface：`issue`、`validate --phase start|resume`、`dispose`。Credential/workspace/model/operator只从`QI_QWEN_API_KEY`、`QI_QWEN_WORKSPACE_ID`、`QI_QWEN_MODEL`、`QI_P0_OPERATOR_ID`读取；CLI禁止secret/workspace argv，stdout只有single-line sanitized JSON。
+- CLI exact surface：`issue`、`validate --phase start|resume`、`dispose`。Credential/workspace/model/operator只从`QI_QWEN_API_KEY`、`QI_QWEN_WORKSPACE_ID`、`QI_QWEN_MODEL`、`QI_P0_OPERATOR_ID`读取；CLI禁止secret/workspace argv，stdout只有single-line sanitized JSON。`validate --phase resume` retains `--runtime-acceptance` for the run-bound acceptance fact; `dispose` instead requires `--cleanup-intent` and must not overload `--runtime-acceptance` as lifecycle proof。
 
 - [ ] **Step 1: Write RED private-file and expiry tests**
 
@@ -173,9 +175,9 @@ def _bundle_binding(*, salt: bytes, cycle_id: str, model: str,
     return digest.hexdigest()
 ```
 
-The private document may contain salt/binding；`public_dict()` may not。Implement argparse subcommands with exact safe args：`--root`、`--cycle-id`、`--region`、`--max-incremental-cny`、`--expires-in-seconds`、operator boolean flags、`--expected-content-sha256`、`--phase`、`--runtime-acceptance`。Reject `--api-key`、`--workspace-id` and unknown args。
+The private document may contain salt/binding；`public_dict()` may not。Implement argparse subcommands with exact safe args：`--root`、`--cycle-id`、`--region`、`--max-incremental-cny`、`--expires-in-seconds`、operator boolean flags、`--expected-content-sha256`、`--phase`、`--runtime-acceptance` for resume only and `--cleanup-intent` for dispose only。Reject `--api-key`、`--workspace-id` and unknown args。
 
-`validate --phase start` requires unexpired age `<=1800s` and exact live bundle binding。`validate --phase resume` requires original document SHA/binding plus an exact same-run `provider-account-runtime-acceptance/1` fact but does not renew expiry or issue a new document。`dispose` validates an allowlisted exact root, expected SHA, lifecycle absence/terminal proof and no unexpected child before fsync deletion；failure returns a fixed code without partial unsafe deletion。
+`validate --phase start` requires unexpired age `<=1800s` and exact live bundle binding。`validate --phase resume` requires original document SHA/binding plus an exact same-run `provider-account-runtime-acceptance/1` fact but does not renew expiry or issue a new document。`dispose` accepts only `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-intent.json`, exact schema/content hash/current owner/mode/non-symlink, exact cycle/readiness SHA, one exact branch correlation, exact allowlisted safe-path hashes and fixed expected steps. Bare mappings, caller-selected roots/paths, foreign intent, aliases, symlinks, wrong owner/mode/hash or branch proof fail closed without deleting readiness. It uses stable parent/root descriptors, `openat`/`fstat`-equivalent identity checks, inode/device consistency, relative unlink and parent-directory `fsync`; before a valid durable intent every failure leaves readiness untouched, and after its destructive commit point any failure returns only `account_readiness_cleanup_incomplete`。
 
 - [ ] **Step 4: Run focused GREEN and privacy architecture gate**
 
@@ -221,6 +223,7 @@ Expected：all pass；architecture gate forbids private salt/binding fields in r
 - Run/live public evidence adds exact `provider-account-readiness-evidence/1` with `operator_state=operator_attested`、`runtime_state=not_yet_accepted|runtime_accepted`、readiness SHA、binding boolean、nullable runtime-acceptance SHA and exact three Decimal fields。
 - `.agent/harness/scripts/run-p0.py::_seal_runtime_account_acceptance()` is the sole writer of `reports/provider-account-runtime-acceptance.json`; it creates one immutable `provider-account-runtime-acceptance/1` fact after existing Qwen response evidence validation。`live_evidence_policy.py` only validates/projects that fact。
 - `live_cycle_authorization.py abort-preconsume` is the sole orchestration entry for zero-paid NO-GO and issued-but-unconsumed cancellation/cleanup。
+- `live_cycle_authorization.py` Task 3 is the sole writer and semantic Owner of `provider-cycle-cleanup-intent/1`; Task 2 only validates the exact intent and deletes exact readiness.
 
 - [ ] **Step 1: Write RED issuance/budget tests**
 
@@ -320,9 +323,15 @@ resume-gdt10e-live:
 
 Add `live_cycle_authorization.py abort-preconsume --authorization --override --safe-override --readiness --preparation-report --zero-paid-report --cleanup-intent --cleanup-receipt --cleanup-blocker --review-deadline`。No-issuance mode requires authorization root absent。Issued-but-unconsumed mode requires issuance exact and consumption/run/project/resume/terminal/activation all absent，then O_EXCL/fsyncs `provider-cycle-unconsumed-cancellation/1` before cleanup。
 
-Before any deletion，the orchestrator validates every expected hash/owner/mode/path and O_EXCL/fsyncs the exact root-sibling `cleanup-intent.json` withsafe path hashes、expected steps、cycle/issuance/cancellation SHA anddeadline。Then the one allowed order is：prove safe runtime/no activation -> fsync-delete live/safe overrides -> fsync-delete preparation/zero-paid reports -> call readiness Owner to fsync-delete exact readiness -> delete authorization files/root -> remove empty private root -> O_EXCL/fsync cleanup receipt -> fsync-delete cleanup intent。No later step may depend on deleted readiness bytes；all expected hashes are frozen in the intent first。
+Before any deletion, Task 3 validates every expected path/owner/mode/symlink/hash and branch lifecycle fact, then creates the exact root-sibling `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-intent.json` with `O_CREAT|O_EXCL|O_NOFOLLOW`, mode `0600`, exact current uid/gid, canonical content hash, file `fsync` and parent-directory `fsync`. Its immutable `provider-cycle-cleanup-intent/1` schema has exactly `schema_version`, `cycle_id=gdt10e-auth-remediated-live-20260802`, `branch=no_issuance|issued_unconsumed|terminal`, `account_readiness_sha256`, nullable `issuance_sha256`, nullable `cancellation_sha256`, nullable `terminal_sha256`, nullable `run_id`, exact-key `safe_path_sha256s`, fixed ordered `expected_steps`, `created_at`, `review_deadline=2026-08-09T23:59:59+08:00`, `owner_uid`, `owner_gid`, `mode=0600` and `content_sha256`; reject unexpected fields. Safe-path values hash only already allowlisted canonical absolute path strings; the intent contains no raw paths, credential values, workspace/account IDs, salt, private binding, request/response content or authorization bytes.
 
-Any proof/deletion/interruption failure leaves the durable intent and O_EXCL/fsyncs the exact root-sibling `provider-cycle-cleanup-blocker/1` path withcycle、completed-step booleans、safe path SHA、owner uid/gid、mode、expiry andreview deadline `2026-08-09T23:59:59+08:00`；it excludes raw path/secret and blocks issue/consume/start。Receipt and blocker are mutually exclusive；existing intent/receipt/blocker is accepted only after exact schema/content-hash validation。A crash after partial deletion is therefore represented by the already-fsynced intent even if blocker creation itself is interrupted。A later independently reviewed repair validates intent+blocker，resumes only missing idempotent steps，fsync-deletes blocker only after all deletion proofs pass，then O_EXCL/fsyncs receipt and finally deletes intent；a crash between those operations still leaves intent as the blocker。Implement `dispose-terminal` with the same journal/order and stronger run-bound terminal/safe-runtime/healthy-DB/copy-hash preconditions。Tests interrupt after every intent/deletion/blocker-removal/receipt fsync and cover both preconsume branches、terminal disposal、symlink/owner/mode/hash mismatch、exact replay、receipt/blocker mutual exclusion、no second issuance andno runtime/Provider delta。
+The correlations are exact: `no_issuance` proves authorization root absent before intent creation and has null issuance/cancellation/terminal/run values with consumption/run/project/resume/terminal/activation absent; `issued_unconsumed` validates exact `provider-cycle-issuance/1` plus exact `provider-cycle-unconsumed-cancellation/1`, has non-null issuance/cancellation hashes, null terminal/run values and the same absence proof; `terminal` validates exact issuance, run binding and `provider-cycle-terminal/1`, has non-null issuance/terminal hashes and literal run ID, null cancellation hash, and keeps lifecycle-owned cycle/run/run-SHA/status/quiescence validation. Every other nullability or cross-document combination fails before deletion.
+
+Then the one allowed order is: prove safe runtime/no activation -> fsync-delete live/safe overrides -> fsync-delete preparation/zero-paid reports -> call Task 2 `dispose --cleanup-intent` to fsync-delete exact readiness -> delete authorization files/root -> remove empty private root -> O_EXCL/fsync cleanup receipt -> fsync-delete cleanup intent. Task 2 never deletes authorization files/root, private root, intent, receipt, blocker, override or reports. No later step may depend on deleted readiness bytes; all expected hashes are frozen in the intent first.
+
+Any proof/deletion/interruption failure leaves the durable intent and Task 3 O_EXCL/fsyncs the exact root-sibling `provider-cycle-cleanup-blocker/1` path with cycle, completed-step booleans, safe path SHA, owner uid/gid, mode, expiry and review deadline `2026-08-09T23:59:59+08:00`; it excludes raw path/secret and blocks issue/consume/start. Receipt and blocker are mutually exclusive; existing intent/receipt/blocker is accepted only after exact schema/content-hash validation. A crash after partial deletion is therefore represented by the already-fsynced intent even if blocker creation itself is interrupted. The durable intent is the recovery Owner; replay is idempotent and resumes only missing steps. A later independently reviewed repair validates intent+blocker, fsync-deletes blocker only after all deletion proofs pass, then O_EXCL/fsyncs receipt and finally deletes intent. Implement `dispose-terminal` with the same journal/order and stronger run-bound terminal/safe-runtime/healthy-DB/copy-hash preconditions.
+
+Focused tests must prove Task 2's exact five operator claims; exact cycle/model/region/amount; `issued_at <= now <= expires_at`; exact intent path/schema/hash/owner/mode/no-symlink; all three branch correlations; rejection of forged bare mapping/caller-selected root, wrong safe-path hash/steps, and foreign branch proof; stable-fd race safety; privacy across real run/live/receipt/log public surfaces; Task 2 never writes intent or removes authorization/private root; and partial deletion returns fixed incomplete code. Task 3 tests must prove durable intent before every deletion in all three branches, cancellation/terminal correlation, interruption after intent and every deletion/fsync, blocker/receipt mutual exclusion and replay, and no issuance/runtime/Provider delta.
 
 - [ ] **Step 8: Run focused GREEN**
 
@@ -714,7 +723,7 @@ Even onparent success，`0015` andproduction promotion remainseparately blocked�
 - Truth transition：`run-p0.py::_seal_runtime_account_acceptance()`是唯一immutable fact writer；evidence policy只投影`not_yet_accepted -> runtime_accepted`。Original readiness SHA/binding跨pause保留，resume不renew、不改写issuance。
 - Failure/cleanup boundary：zero-paid GO不宣称account valid；首个validated authenticated response才是runtime acceptance；authentication terminal不retry、不resume、不replacement。NO-GO、issued-unconsumed和sealed-terminal disposal都有literal CLI、exact target、cleanup receipt与blocker deadline。
 - Pricing boundary：snapshot晚于`2026-08-02T23:59:59+08:00`自动失效；只能通过新的reviewed pricing amendment和user approval恢复，total envelope不自动改变。
-- Independent docs review：前三轮`reject`逐项关闭runtime-acceptance Owner/call site、immutable resume、preconsume cleanup、literal CLI、v2/v3、pricing、path policy、cleanup journal和run-ID source；final verdict `accept`，无blocking或non-blocking finding。
+- Independent docs review：前三轮`reject`逐项关闭runtime-acceptance Owner/call site、immutable resume、preconsume cleanup、literal CLI、v2/v3、pricing、path policy、cleanup journal和run-ID source；final verdict `accept`，无blocking或non-blocking finding。The later cleanup-proof amendment selected as option `A` pauses Task 2 until a separate independent read-only amendment review accepts the sole Task 3 intent Owner, exact schema and three-branch correlations.
 - Execution boundary：用户已明确批准 Tasks 1-8 implementation/live boundary；所有既有 plan gates 仍为强制前置条件，且 direct Provider diagnostic、second replacement、budget expansion、`0015` 与 production promotion仍被阻断。
 
 ## Completion Contract

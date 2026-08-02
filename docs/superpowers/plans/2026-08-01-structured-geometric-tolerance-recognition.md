@@ -188,10 +188,17 @@
 - Resume: only one literal same-run resume after accepted pause
 - Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
 
+### GDT-10E Cleanup Proof Amendment Record — 2026-08-02
+
+- User selected amendment option `A` on 2026-08-02. Review exposed a missing canonical lifecycle-proof schema for Task 2 readiness disposal; this docs-only amendment makes Task 3 `.agent/harness/scripts/live_cycle_authorization.py` the sole writer and semantic Owner of immutable `provider-cycle-cleanup-intent/1`.
+- Task 2 `.agent/harness/scripts/provider_account_readiness.py` is paused. Its `dispose` surface may validate only the exact Task 3 intent and delete only exact `account-readiness.json`; it must never create, repair, rewrite or infer lifecycle proof, delete authorization/private-root/journal state, or overload `--runtime-acceptance` (reserved for `validate --phase resume`) instead of `--cleanup-intent`.
+- Implementation may resume only after an independent read-only amendment review returns `accept`. This amendment does not mark Task 2, GDT-10 Step 4, Step 5, or the parent objective complete.
+- Credential/runtime mutation, Provider calls, paid execution, second replacement, budget expansion, `0015`, and production promotion remain blocked.
+
 ## Status
 
 - Date: `2026-08-02`
-- Status: `GDT-10D is terminal; GDT-10E execution boundary is explicitly approved; Task 1 records the approved docs boundary; GDT-10 Step 4 remains incomplete and Step 5 was not run`
+- Status: `GDT-10D is terminal; GDT-10E execution boundary is explicitly approved; Task 2 is paused pending independent read-only cleanup-proof amendment review; GDT-10 Step 4 remains incomplete and Step 5 was not run`
 - Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
 - Current blocker: the sole approved GDT-10D cycle is terminal and consumed。The sealed run tree directly proves two submission-started `provider_authentication_failed` terminals、six post-project-failure cancellations and no AutomaticResult/accepted pause；the committed GDT-10D closeout record separately reports sanitized `request_id_state=accepted`。The GDT-10E boundary is explicitly approved, but Step 4 cannot be reinterpreted as success and Step 5 cannot run；direct Provider diagnostic、second replacement、`0015` and production promotion remain blocked.
 - Worktree: `.worktrees/structured-geometric-tolerance-recognition`
