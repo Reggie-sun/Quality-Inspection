@@ -461,7 +461,7 @@ Verify those two are stopped；feature PostgreSQL/Redis/frontend and all main ID
 
 - [ ] **Step 3: Create private state and backup**
 
-Create exact mode `0700` state root with `umask 077`; require target nonexistence. Use the design's `set -o noclobber; exec 3>"$backup_path"` exclusive FD before streaming `pg_dump --file=-`，close FD，reopen non-symlink path to `fsync` file and parent，then `pg_restore --list`；require file owner current uid、mode `0600`，record size/SHA only。Blocked retention Owner is `GDT-10D execution owner`，review deadline `2026-08-09T23:59:59+08:00` and delete/restore triggers are fixed by Task 10。
+Create exact mode `0700` state root with `umask 077`; require target nonexistence. Use the design's `set -o noclobber; exec 3>"$backup_path"` exclusive FD before streaming `pg_dump` default stdout，close FD，reopen non-symlink path to `fsync` file and parent，then `pg_restore --list`；require file owner current uid、mode `0600`，record size/SHA only。Blocked retention Owner is `GDT-10D execution owner`，review deadline `2026-08-09T23:59:59+08:00` and delete/restore triggers are fixed by Task 10。
 
 - [ ] **Step 4: Verify committed migration identity and upgrade**
 

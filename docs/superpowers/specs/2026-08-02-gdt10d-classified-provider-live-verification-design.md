@@ -193,7 +193,7 @@ set -o noclobber
 exec 3>"$backup_path"
 docker compose -p structured-geometric-tolerance-recognition-qa \
   -f compose.yaml -f compose.qa-dev.yaml exec -T postgres \
-  pg_dump --username=qi --dbname=qi --format=custom --file=- >&3
+  pg_dump --username=qi --dbname=qi --format=custom >&3
 exec 3>&-
 docker compose -p structured-geometric-tolerance-recognition-qa \
   -f compose.yaml -f compose.qa-dev.yaml exec -T postgres \
