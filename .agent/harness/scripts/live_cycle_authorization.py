@@ -1002,6 +1002,8 @@ def _current_api_image_id() -> str:
         text=True,
     )
     image_id = result.stdout.strip()
+    if re.fullmatch(r"[0-9a-f]{64}", image_id) is not None:
+        image_id = f"sha256:{image_id}"
     if (
         result.returncode != 0
         or re.fullmatch(r"sha256:[0-9a-f]{64}", image_id) is None

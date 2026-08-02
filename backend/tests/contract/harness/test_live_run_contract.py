@@ -3660,6 +3660,28 @@ def test_cycle_authorization_protocol_matches_runtime_read_only_validator(
         )
 
 
+def test_current_api_image_id_normalizes_compose_v5_bare_digest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authorization = _load_module(
+        "qi_live_cycle_authorization_compose_image",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    digest = "8" * 64
+    monkeypatch.setattr(
+        authorization.subprocess,
+        "run",
+        lambda argv, **_kwargs: subprocess.CompletedProcess(
+            argv,
+            0,
+            digest + "\n",
+            "",
+        ),
+    )
+
+    assert authorization._current_api_image_id() == f"sha256:{digest}"
+
+
 def test_provider_policy_v2_has_unambiguous_retry_and_submission_limits() -> None:
     import yaml
 
