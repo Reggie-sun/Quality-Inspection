@@ -451,6 +451,7 @@ def _validate_attempt_diagnostic(
             validate_scheduler_stop_diagnostic(document)
             if (
                 event.event_code != PROJECT_FAILURE_CANCELLATION_EVENT_CODE
+                or event.attempt_index != 0
                 or event.provider_request_id is not None
             ):
                 raise ValueError
@@ -1081,6 +1082,83 @@ class RoutingEvidenceRepository:
             )
         return record
 
+    def _validate_project_failure_cancellation_reference(
+        self,
+        *,
+        project_id: uuid.UUID,
+        event: EscalationAttemptEvent,
+    ) -> None:
+        diagnostic = event.diagnostic
+        if (
+            event.event_code
+            != PROJECT_FAILURE_CANCELLATION_EVENT_CODE
+            or not isinstance(diagnostic, Mapping)
+        ):
+            raise RoutingEvidenceConflict(
+                "scheduler stop evidence conflicts"
+            )
+        blocking_event_sha256 = diagnostic.get(
+            "blocking_event_sha256"
+        )
+        blocking = self._session.scalar(
+            select(SymbolEscalationAttemptEventRecord).where(
+                SymbolEscalationAttemptEventRecord.project_id
+                == project_id,
+                SymbolEscalationAttemptEventRecord.event_sha256
+                == blocking_event_sha256,
+            )
+        )
+        stop_reason = diagnostic.get("stop_reason")
+        expected_schema = {
+            "project_blocking_provider_failure": (
+                "visual-symbol-provider-failure/1"
+            ),
+            "project_blocking_advisor_boundary_failure": (
+                "visual-symbol-advisor-boundary-failure/1"
+            ),
+        }.get(stop_reason)
+        expected_codes = (
+            PROVIDER_FAILURE_EVENT_CODES
+            if stop_reason == "project_blocking_provider_failure"
+            else ADVISOR_BOUNDARY_FAILURE_EVENT_CODES
+        )
+        blocking_diagnostic = (
+            blocking.diagnostic if blocking is not None else None
+        )
+        if (
+            blocking is None
+            or blocking.schema_version
+            != ESCALATION_ATTEMPT_SCHEMA_VERSION_V2
+            or blocking.escalation_group_id
+            == event.escalation_group_id
+            or blocking.event_code not in expected_codes
+            or not isinstance(blocking_diagnostic, Mapping)
+            or blocking_diagnostic.get("schema_version")
+            != expected_schema
+            or blocking_diagnostic.get("failure_stage")
+            != blocking.event_code
+            or blocking_diagnostic.get("scope") != "project_blocking"
+        ):
+            raise RoutingEvidenceConflict(
+                "scheduler stop evidence conflicts"
+            )
+        terminal = self._session.scalar(
+            select(SymbolEscalationOutcomeRecord).where(
+                SymbolEscalationOutcomeRecord.project_id == project_id,
+                SymbolEscalationOutcomeRecord.escalation_group_id
+                == blocking.escalation_group_id,
+            )
+        )
+        if (
+            terminal is None
+            or terminal.terminal is not True
+            or blocking_event_sha256
+            not in terminal.attempt_event_sha256s
+        ):
+            raise RoutingEvidenceConflict(
+                "scheduler stop evidence conflicts"
+            )
+
     def record_failure_terminal(
         self,
         *,
@@ -1105,6 +1183,11 @@ class RoutingEvidenceRepository:
         ):
             raise RoutingEvidenceConflict(
                 "failure terminal evidence conflicts"
+            )
+        if event.event_code == PROJECT_FAILURE_CANCELLATION_EVENT_CODE:
+            self._validate_project_failure_cancellation_reference(
+                project_id=project_id,
+                event=event,
             )
         attempt = self.append_attempt(
             project_id=project_id,

@@ -573,6 +573,130 @@ def _bounded_symbol_input(
     return source, pages, candidate_snapshot_from_inventory(pages)
 
 
+def _eight_admitted_symbol_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, tuple[PageInventory, ...], CandidateSnapshot]:
+    source = tmp_path / "eight-admitted-fixture.pdf"
+    document = pymupdf.open()
+    for _page_index in range(2):
+        page = document.new_page(width=240, height=180)
+        page.insert_text((48, 24), "10")
+        page.draw_line((34, 14), (42, 14), color=(0, 0, 0), width=1)
+    document.save(source)
+    document.close()
+    original_pages = tuple(build_inventory(source))
+    original_snapshot = candidate_snapshot_from_inventory(original_pages)
+    original_contexts = reconstruct_visual_geometry_contexts(
+        source,
+        original_pages,
+    )
+    assert len(original_contexts) == 2
+    visuals = tuple(
+        replace(
+            original_pages[index // 4].visual_observations[0],
+            observation_id=f"fixture-visual-{index}",
+            bbox_pdf=(
+                8.0 + (index % 4) * 56.0,
+                8.0,
+                28.0 + (index % 4) * 56.0,
+                28.0,
+            ),
+            bbox_normalized=(
+                (8.0 + (index % 4) * 56.0) / 240.0,
+                8.0 / 180.0,
+                (28.0 + (index % 4) * 56.0) / 240.0,
+                28.0 / 180.0,
+            ),
+            geometry_sha256=sha256(
+                f"fixture-visual-{index}".encode()
+            ).hexdigest(),
+        )
+        for index in range(8)
+    )
+    pages = tuple(
+        replace(
+            original_pages[page_index],
+            visual_observations=visuals[
+                page_index * 4:(page_index + 1) * 4
+            ],
+        )
+        for page_index in range(2)
+    )
+    original_visual_ids = {
+        page.visual_observations[0].observation_id
+        for page in original_pages
+    }
+    original_visual_coverage = {
+        entry.observation_id: entry
+        for entry in original_snapshot.coverage_entries
+        if entry.observation_id in original_visual_ids
+    }
+    snapshot = replace(
+        original_snapshot,
+        coverage_entries=(
+            *(
+                entry
+                for entry in original_snapshot.coverage_entries
+                if entry.observation_id not in original_visual_ids
+            ),
+            *(
+                replace(
+                    original_visual_coverage[
+                        original_pages[visual.page_index]
+                        .visual_observations[0]
+                        .observation_id
+                    ],
+                    observation_id=visual.observation_id,
+                    source_location_id=visual.observation_id,
+                    coordinates=visual.bbox_pdf,
+                )
+                for visual in visuals
+            ),
+        ),
+        expected_observation_ids=(
+            *(
+                identity
+                for identity in original_snapshot.expected_observation_ids
+                if identity not in original_visual_ids
+            ),
+            *(visual.observation_id for visual in visuals),
+        ),
+        required_visual_observation_ids=tuple(
+            visual.observation_id for visual in visuals
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "reconstruct_visual_geometry_contexts",
+        lambda _path, _pages: tuple(
+            replace(
+                original_contexts[visual.page_index],
+                observation_id=visual.observation_id,
+                geometry_sha256=visual.geometry_sha256,
+            )
+            for visual in visuals
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "prepare_local_family_hypotheses",
+        lambda **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "resolve_visual_observation",
+        lambda **kwargs: LocalResolution(
+            visual_observation_id=kwargs["observation"].observation_id,
+            family_hypotheses=(),
+            resolved_family=None,
+            reason_codes=("unknown_symbol_pattern",),
+            projection=None,
+        ),
+    )
+    return source, pages, snapshot
+
+
 @dataclass(frozen=True)
 class PartialMatrixInput:
     source: Path
@@ -1471,6 +1595,182 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
             .where(ReviewWorkingCopy.project_id == project.id)
         )
         == 1
+    )
+
+
+def test_project_failure_terminalizes_all_admitted_groups_without_result(
+    monkeypatch: pytest.MonkeyPatch,
+    committed_db_session: Session,
+    tmp_path: Path,
+) -> None:
+    source, pages, snapshot = _eight_admitted_symbol_input(
+        tmp_path,
+        monkeypatch,
+    )
+    observation_ids = tuple(
+        visual.observation_id
+        for page in pages
+        for visual in page.visual_observations
+    )
+    assert len(observation_ids) == 8
+    storage = LocalFileStorage(tmp_path / "project-failure-storage")
+    db_session = committed_db_session
+    project, _source_file = _store_project_source(
+        db_session,
+        storage,
+        source.read_bytes(),
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
+
+    class ProjectBlockingProvider:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def review_symbols(
+            self,
+            _image: bytes,
+            prompt: str,
+        ) -> VisionResult:
+            observation_id = json.loads(prompt)[
+                "visual_observation_ids"
+            ][0]
+            self.calls.append(observation_id)
+            raise ClassifiedProviderFailure(
+                ProviderFailureFact(
+                    category="rate_limited",
+                    origin="sdk_http_status",
+                    http_status=429,
+                    provider_request_id=(
+                        f"safe-rate-{len(self.calls)}"
+                    ),
+                    request_id_state="accepted",
+                )
+            )
+
+        def review_candidate(
+            self,
+            _image: bytes,
+            _prompt: str,
+        ) -> VisionResult:
+            raise AssertionError("legacy review must not run")
+
+    provider = ProjectBlockingProvider()
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        storage,
+        project_id=str(project.id),
+        provider_factory=lambda _settings: provider,
+        symbol_session_factory=SessionLocal,
+        require_symbol_persistence=True,
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as caught:
+        advisor.review(source, pages, snapshot)
+
+    db_session.expire_all()
+    decisions = tuple(
+        db_session.scalars(
+            select(SymbolRoutingDecisionRecord).where(
+                SymbolRoutingDecisionRecord.project_id == project.id,
+                SymbolRoutingDecisionRecord.disposition == "escalate",
+            )
+        )
+    )
+    attempts = tuple(
+        db_session.scalars(
+            select(SymbolEscalationAttemptEventRecord).where(
+                SymbolEscalationAttemptEventRecord.project_id
+                == project.id
+            )
+        )
+    )
+    outcomes = tuple(
+        db_session.scalars(
+            select(SymbolEscalationOutcomeRecord).where(
+                SymbolEscalationOutcomeRecord.project_id == project.id
+            )
+        )
+    )
+    blocking_attempts = tuple(
+        attempt
+        for attempt in attempts
+        if attempt.event_code == "provider_rate_limited"
+    )
+    cancelled_attempts = tuple(
+        attempt
+        for attempt in attempts
+        if attempt.event_code
+        == "not_started_after_project_failure"
+    )
+
+    assert len(decisions) == 8
+    assert len(provider.calls) == 2
+    assert set(provider.calls) == set(observation_ids[:2])
+    assert len(outcomes) == 8
+    assert len(blocking_attempts) == 2
+    assert len(cancelled_attempts) == 6
+    first_group = next(
+        outcome.escalation_group_id
+        for outcome in outcomes
+        if outcome.observation_outcomes[0]["visual_observation_id"]
+        == observation_ids[0]
+    )
+    first_blocking = next(
+        attempt
+        for attempt in blocking_attempts
+        if attempt.escalation_group_id == first_group
+    )
+    assert caught.value.failure_event_sha256 == (
+        first_blocking.event_sha256
+    )
+    assert caught.value.failure_category == "rate_limited"
+    assert caught.value.failure_scope == "project_blocking"
+    assert {
+        attempt.diagnostic["blocking_event_sha256"]
+        for attempt in cancelled_attempts
+    } == {first_blocking.event_sha256}
+    assert {
+        attempt.diagnostic["stop_reason"]
+        for attempt in cancelled_attempts
+    } == {"project_blocking_provider_failure"}
+    cancelled_group_ids = {
+        attempt.escalation_group_id for attempt in cancelled_attempts
+    }
+    assert all(
+        outcome.outcome_code == "cancelled"
+        and {
+            item["outcome_code"]
+            for item in outcome.observation_outcomes
+        } == {"cancelled_after_project_failure"}
+        for outcome in outcomes
+        if outcome.escalation_group_id in cancelled_group_ids
+    )
+    assert db_session.scalar(
+        select(func.count()).select_from(AutomaticResult).where(
+            AutomaticResult.project_id == project.id
+        )
+    ) == 0
+    assert db_session.scalar(
+        select(func.count()).select_from(ReviewWorkingCopy).where(
+            ReviewWorkingCopy.project_id == project.id
+        )
+    ) == 0
+    project_storage = storage.root / "projects" / str(project.id)
+    crop_dir = project_storage / "provider-inputs" / "qwen-symbol"
+    assert len(tuple(crop_dir.glob("*.png"))) == 2
+    written_paths = {
+        str(path.relative_to(storage.root))
+        for path in storage.root.rglob("*")
+        if path.is_file()
+    }
+    assert not any(
+        marker in path
+        for path in written_paths
+        for marker in ("pause", "symbol-report", "receipt")
     )
 
 

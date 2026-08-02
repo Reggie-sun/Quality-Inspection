@@ -60,6 +60,7 @@ from app.candidates.routing_evidence import (
     ObservationOutcome,
     ProviderFailureDiagnostic,
     RoutingEvidenceRepository,
+    SchedulerStopDiagnostic,
     routing_decision_sha256,
     routing_decision_group_sha256,
 )
@@ -485,15 +486,6 @@ def _localized_provider_failure_category(exc: Exception) -> str | None:
     if isinstance(exc, (ConnectionError, OSError)):
         return "transport"
     return None
-
-
-def _provider_failure_stage(category: str) -> str:
-    return {
-        "timeout": "provider_timeout",
-        "transport": "provider_transport_failure",
-        "schema": "provider_schema_invalid",
-        "unavailable": "provider_unavailable",
-    }[category]
 
 
 @dataclass(frozen=True)
@@ -1550,6 +1542,90 @@ class CandidateAdvisor:
                 failure_origin="routing_evidence",
             )
         return attempt_sha256s
+
+    def _record_not_started_after_project_failure(
+        self,
+        *,
+        context: VisualEvidenceContext,
+        blocking_event_sha256: str,
+        blocking_classification: AdvisorClassification,
+        stop_reason: str,
+        visual_observations: Sequence[VisualObservation],
+    ) -> str:
+        expected_stop_reason = (
+            "project_blocking_provider_failure"
+            if isinstance(
+                blocking_classification,
+                AdvisorFailureClassification,
+            )
+            else "project_blocking_advisor_boundary_failure"
+        )
+        if (
+            blocking_classification.scope != "project_blocking"
+            or stop_reason != expected_stop_reason
+            or re.fullmatch(r"[0-9a-f]{64}", blocking_event_sha256)
+            is None
+            or self._symbol_session_factory is None
+        ):
+            raise CandidateAdvisorFailure(
+                "Visual symbol routing evidence write failed",
+                failure_origin="routing_evidence",
+            )
+        diagnostic = SchedulerStopDiagnostic(
+            schema_version="visual-symbol-scheduler-stop/1",
+            stop_reason=stop_reason,
+            blocking_event_sha256=blocking_event_sha256,
+            provider_work_started=False,
+        ).as_dict()
+        session = self._symbol_session_factory()
+        failed = False
+        event_sha256 = ""
+        try:
+            event_sha256 = RoutingEvidenceRepository(
+                session
+            ).record_failure_terminal(
+                project_id=self._project_uuid(),
+                event=EscalationAttemptEvent(
+                    schema_version=(
+                        ESCALATION_ATTEMPT_SCHEMA_VERSION_V2
+                    ),
+                    escalation_group_id=context.escalation_group_id,
+                    routing_decision_sha256=(
+                        context.routing_decision_sha256
+                    ),
+                    attempt_index=0,
+                    event_code=(
+                        "not_started_after_project_failure"
+                    ),
+                    cache_entry_id=None,
+                    provider_request_id=None,
+                    diagnostic=diagnostic,
+                ),
+                outcome_code="cancelled",
+                observation_outcomes=tuple(
+                    ObservationOutcome(
+                        visual_observation_id=(
+                            observation.observation_id
+                        ),
+                        outcome_code=(
+                            "cancelled_after_project_failure"
+                        ),
+                    )
+                    for observation in visual_observations
+                ),
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            failed = True
+        finally:
+            session.close()
+        if failed or not event_sha256:
+            raise CandidateAdvisorFailure(
+                "Visual symbol routing evidence write failed",
+                failure_origin="routing_evidence",
+            )
+        return event_sha256
 
     def _cache_result(
         self,
@@ -3358,6 +3434,9 @@ class CandidateAdvisor:
                     None for _ in production_jobs
                 ]
                 worker_failures: dict[int, Exception] = {}
+                project_blocking_failures: dict[
+                    int, CandidateAdvisorFailure
+                ] = {}
                 with ThreadPoolExecutor(
                     max_workers=MAX_VISUAL_IN_FLIGHT
                 ) as executor:
@@ -3461,25 +3540,26 @@ class CandidateAdvisor:
                             try:
                                 outcome = future.result()
                             except Exception as exc:
-                                category = (
-                                    exc.failure_category
-                                    if isinstance(exc, CandidateAdvisorFailure)
-                                    else None
-                                )
                                 if (
                                     self._require_symbol_persistence
-                                    and category in {
-                                    "timeout",
-                                    "transport",
-                                    "schema",
-                                    }
-                                ):
-                                    failure_stage = _provider_failure_stage(
-                                        category
+                                    and isinstance(
+                                        exc,
+                                        CandidateAdvisorFailure,
                                     )
+                                    and isinstance(
+                                        exc.classification,
+                                        AdvisorFailureClassification,
+                                    )
+                                    and exc.failure_scope
+                                    == "roi_localized"
+                                    and exc.failure_event_sha256
+                                    is not None
+                                ):
                                     localized_failure_stages.update(
                                         {
-                                            observation_id: failure_stage
+                                            observation_id: (
+                                                exc.failure_stage
+                                            )
                                             for observation_id in (
                                                 production_jobs[
                                                     completed_index
@@ -3487,6 +3567,26 @@ class CandidateAdvisor:
                                             )
                                         }
                                     )
+                                elif (
+                                    isinstance(
+                                        exc,
+                                        CandidateAdvisorFailure,
+                                    )
+                                    and exc.failure_scope
+                                    == "project_blocking"
+                                    and exc.failure_event_sha256
+                                    is not None
+                                    and isinstance(
+                                        exc.classification,
+                                        (
+                                            AdvisorFailureClassification,
+                                            AdvisorBoundaryFailureClassification,
+                                        ),
+                                    )
+                                ):
+                                    project_blocking_failures[
+                                        completed_index
+                                    ] = exc
                                 else:
                                     worker_failures[completed_index] = exc
                             else:
@@ -3494,6 +3594,7 @@ class CandidateAdvisor:
                                 outcomes[completed_index] = outcome
                         while (
                             not worker_failures
+                            and not project_blocking_failures
                             and next_job_index < len(production_jobs)
                             and len(outstanding)
                             < MAX_VISUAL_IN_FLIGHT
@@ -3527,6 +3628,52 @@ class CandidateAdvisor:
                             ),
                         ),
                     )
+                if project_blocking_failures:
+                    first_blocking_index = min(
+                        project_blocking_failures
+                    )
+                    first_blocking = project_blocking_failures[
+                        first_blocking_index
+                    ]
+                    classification = first_blocking.classification
+                    if isinstance(
+                        classification,
+                        AdvisorFailureClassification,
+                    ):
+                        stop_reason = (
+                            "project_blocking_provider_failure"
+                        )
+                    elif isinstance(
+                        classification,
+                        AdvisorBoundaryFailureClassification,
+                    ):
+                        stop_reason = (
+                            "project_blocking_advisor_boundary_failure"
+                        )
+                    else:
+                        raise first_blocking
+                    if first_blocking.failure_event_sha256 is None:
+                        raise first_blocking
+                    for queued_job in production_jobs[next_job_index:]:
+                        self._record_not_started_after_project_failure(
+                            context=VisualEvidenceContext(
+                                escalation_group_id=(
+                                    queued_job.escalation_group_id
+                                ),
+                                routing_decision_sha256=(
+                                    queued_job.routing_decision_sha256
+                                ),
+                            ),
+                            blocking_event_sha256=(
+                                first_blocking.failure_event_sha256
+                            ),
+                            blocking_classification=classification,
+                            stop_reason=stop_reason,
+                            visual_observations=(
+                                queued_job.visual_observations
+                            ),
+                        )
+                    raise first_blocking
                 if worker_failures:
                     raise worker_failures[min(worker_failures)]
                 localized_job_indexes = {

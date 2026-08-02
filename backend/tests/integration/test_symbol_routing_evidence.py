@@ -691,6 +691,123 @@ def test_budget_and_cancellation_outcomes_use_distinct_contract_codes(
     assert outcome.outcome_code == group_code
 
 
+def test_project_failure_cancellation_contract_is_exact_and_not_budget(
+) -> None:
+    event = EscalationAttemptEvent(
+        schema_version=ESCALATION_ATTEMPT_SCHEMA_VERSION_V2,
+        escalation_group_id="queued-group",
+        routing_decision_sha256=SHA_A,
+        attempt_index=0,
+        event_code="not_started_after_project_failure",
+        cache_entry_id=None,
+        provider_request_id=None,
+        diagnostic=SchedulerStopDiagnostic(
+            schema_version="visual-symbol-scheduler-stop/1",
+            stop_reason="project_blocking_provider_failure",
+            blocking_event_sha256=SHA_B,
+            provider_work_started=False,
+        ).as_dict(),
+    )
+    outcome = EscalationOutcome(
+        schema_version=ESCALATION_OUTCOME_SCHEMA_VERSION,
+        escalation_group_id="queued-group",
+        routing_decision_sha256=SHA_A,
+        outcome_code="cancelled",
+        observation_outcomes=(
+            ObservationOutcome(
+                visual_observation_id="queued-visual",
+                outcome_code="cancelled_after_project_failure",
+            ),
+        ),
+        attempt_event_sha256s=(event.event_sha256,),
+        terminal=True,
+    )
+
+    assert outcome.outcome_code == "cancelled"
+    with pytest.raises(
+        ValueError,
+        match="^symbol escalation attempt event invalid$",
+    ):
+        replace(event, attempt_index=1)
+    with pytest.raises(
+        ValueError,
+        match="^symbol escalation outcome invalid$",
+    ):
+        replace(
+            outcome,
+            observation_outcomes=(
+                *outcome.observation_outcomes,
+                ObservationOutcome(
+                    visual_observation_id="budget-cancelled-visual",
+                    outcome_code="cancelled_after_project_budget",
+                ),
+            ),
+        )
+
+
+def test_scheduler_stop_reference_requires_matching_durable_failure_type(
+) -> None:
+    blocking = SimpleNamespace(
+        schema_version=ESCALATION_ATTEMPT_SCHEMA_VERSION_V2,
+        escalation_group_id="blocking-group",
+        event_code="provider_rate_limited",
+        event_sha256=SHA_B,
+        diagnostic={
+            "schema_version": "visual-symbol-provider-failure/1",
+            "failure_stage": "provider_rate_limited",
+            "scope": "project_blocking",
+        },
+    )
+    terminal = SimpleNamespace(
+        terminal=True,
+        attempt_event_sha256s=[SHA_B],
+    )
+    values = iter((blocking, terminal))
+    repository = RoutingEvidenceRepository(
+        SimpleNamespace(scalar=lambda _query: next(values))
+    )
+    provider_stop = EscalationAttemptEvent(
+        schema_version=ESCALATION_ATTEMPT_SCHEMA_VERSION_V2,
+        escalation_group_id="queued-group",
+        routing_decision_sha256=SHA_A,
+        attempt_index=0,
+        event_code="not_started_after_project_failure",
+        cache_entry_id=None,
+        provider_request_id=None,
+        diagnostic=SchedulerStopDiagnostic(
+            schema_version="visual-symbol-scheduler-stop/1",
+            stop_reason="project_blocking_provider_failure",
+            blocking_event_sha256=SHA_B,
+            provider_work_started=False,
+        ).as_dict(),
+    )
+
+    repository._validate_project_failure_cancellation_reference(
+        project_id=PROJECT_A,
+        event=provider_stop,
+    )
+    mismatched = replace(
+        provider_stop,
+        diagnostic=SchedulerStopDiagnostic(
+            schema_version="visual-symbol-scheduler-stop/1",
+            stop_reason="project_blocking_advisor_boundary_failure",
+            blocking_event_sha256=SHA_B,
+            provider_work_started=False,
+        ).as_dict(),
+    )
+    mismatch_repository = RoutingEvidenceRepository(
+        SimpleNamespace(scalar=lambda _query: blocking)
+    )
+    with pytest.raises(
+        RoutingEvidenceConflict,
+        match="^scheduler stop evidence conflicts$",
+    ):
+        mismatch_repository._validate_project_failure_cancellation_reference(
+            project_id=PROJECT_A,
+            event=mismatched,
+        )
+
+
 def test_production_cache_identity_binds_members_and_exact_prompt_text() -> None:
     crop_png = _png()
     execution_identity = _execution_identity(crop_png)

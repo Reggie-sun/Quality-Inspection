@@ -46,7 +46,11 @@ from app.processing.automatic_result import (
     CandidateSnapshot,
     candidate_snapshot_from_inventory,
 )
-from app.providers.base import ProviderFailureFact, VisionResult
+from app.providers.base import (
+    ClassifiedProviderFailure,
+    ProviderFailureFact,
+    VisionResult,
+)
 from app.providers.qwen_vl import VisualSymbolProviderError
 from app.storage.local import LocalFileStorage
 
@@ -358,6 +362,91 @@ def test_routing_failure_does_not_localize(
     assert caught.value.__cause__ is None
     assert caught.value.__context__ is None
     assert state == {"rolled_back": True, "closed": True}
+
+
+def test_never_submitted_project_failure_terminal_is_exact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    session = SimpleNamespace(
+        commit=lambda: captured.update(committed=True),
+        rollback=lambda: captured.update(rolled_back=True),
+        close=lambda: captured.update(closed=True),
+    )
+
+    class RecordingEvidence:
+        def __init__(self, seen_session: object) -> None:
+            assert seen_session is session
+
+        def record_failure_terminal(self, **kwargs: object) -> str:
+            captured.update(kwargs)
+            return kwargs["event"].event_sha256  # type: ignore[union-attr]
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        RecordingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: object(),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+    classification = classify_provider_failure(
+        provider_fact_for_test("rate_limited")
+    )
+
+    event_sha = advisor._record_not_started_after_project_failure(
+        context=VisualEvidenceContext(
+            escalation_group_id="queued-group",
+            routing_decision_sha256="a" * 64,
+        ),
+        blocking_event_sha256="b" * 64,
+        blocking_classification=classification,
+        stop_reason="project_blocking_provider_failure",
+        visual_observations=(
+            SimpleNamespace(observation_id="queued-visual"),
+        ),
+    )
+    event = captured["event"]
+
+    assert event.event_sha256 == event_sha
+    assert event.attempt_index == 0
+    assert event.event_code == "not_started_after_project_failure"
+    assert event.provider_request_id is None
+    assert event.cache_entry_id is None
+    assert event.diagnostic == {
+        "schema_version": "visual-symbol-scheduler-stop/1",
+        "stop_reason": "project_blocking_provider_failure",
+        "blocking_event_sha256": "b" * 64,
+        "provider_work_started": False,
+    }
+    assert captured["outcome_code"] == "cancelled"
+    assert tuple(
+        (item.visual_observation_id, item.outcome_code)
+        for item in captured["observation_outcomes"]
+    ) == (("queued-visual", "cancelled_after_project_failure"),)
+    assert captured["committed"] is True
+    assert captured["closed"] is True
+
+    with pytest.raises(CandidateAdvisorFailure) as mismatch:
+        advisor._record_not_started_after_project_failure(
+            context=VisualEvidenceContext(
+                escalation_group_id="queued-group-2",
+                routing_decision_sha256="c" * 64,
+            ),
+            blocking_event_sha256="d" * 64,
+            blocking_classification=classification,
+            stop_reason="project_blocking_advisor_boundary_failure",
+            visual_observations=(
+                SimpleNamespace(observation_id="queued-visual-2"),
+            ),
+        )
+    assert mismatch.value.failure_origin == "routing_evidence"
 
 
 def advisor_payload(
@@ -754,9 +843,12 @@ def visual_diameter_fixture(
     return source, pages, candidate_snapshot_from_inventory(pages)
 
 
-def three_visual_escalation_fixture(
+def _visual_escalation_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    labels: tuple[str, ...],
+    boxes: tuple[tuple[float, float, float, float], ...],
 ) -> tuple[Path, tuple[object, ...], CandidateSnapshot]:
     source, original_pages, original_snapshot = visual_diameter_fixture(
         tmp_path
@@ -766,11 +858,6 @@ def three_visual_escalation_fixture(
         source,
         original_pages,
     )[0]
-    boxes = (
-        (8.0, 8.0, 28.0, 28.0),
-        (88.0, 8.0, 108.0, 28.0),
-        (168.0, 8.0, 188.0, 28.0),
-    )
     visuals = tuple(
         replace(
             original_visual,
@@ -784,7 +871,7 @@ def three_visual_escalation_fixture(
             ),
             geometry_sha256=label * 64,
         )
-        for label, bbox in zip(("a", "b", "c"), boxes, strict=True)
+        for label, bbox in zip(labels, boxes, strict=True)
     )
     pages = (
         replace(original_pages[0], visual_observations=visuals),
@@ -833,6 +920,144 @@ def three_visual_escalation_fixture(
                 original_context,
                 observation_id=visual.observation_id,
                 page_index=visual.page_index,
+                geometry_sha256=visual.geometry_sha256,
+            )
+            for visual in visuals
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "prepare_local_family_hypotheses",
+        lambda **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "resolve_visual_observation",
+        lambda **kwargs: LocalResolution(
+            visual_observation_id=kwargs["observation"].observation_id,
+            family_hypotheses=(),
+            resolved_family=None,
+            reason_codes=("unknown_symbol_pattern",),
+            projection=None,
+        ),
+    )
+    return source, pages, snapshot
+
+
+def three_visual_escalation_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, tuple[object, ...], CandidateSnapshot]:
+    return _visual_escalation_fixture(
+        tmp_path,
+        monkeypatch,
+        labels=("a", "b", "c"),
+        boxes=(
+            (8.0, 8.0, 28.0, 28.0),
+            (88.0, 8.0, 108.0, 28.0),
+            (168.0, 8.0, 188.0, 28.0),
+        ),
+    )
+
+
+def eight_visual_escalation_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, tuple[object, ...], CandidateSnapshot]:
+    source = tmp_path / "eight-visual-escalation.pdf"
+    document = pymupdf.open()
+    for _page_index in range(2):
+        page = document.new_page(width=240, height=180)
+        page.insert_text((48, 24), "10")
+        page.draw_line((34, 14), (42, 14), color=(0, 0, 0), width=1)
+    document.save(source)
+    document.close()
+    original_pages = tuple(build_inventory(source))
+    original_snapshot = candidate_snapshot_from_inventory(original_pages)
+    original_contexts = reconstruct_visual_geometry_contexts(
+        source,
+        original_pages,
+    )
+    assert len(original_contexts) == 2
+    visuals = tuple(
+        replace(
+            original_pages[index // 4].visual_observations[0],
+            observation_id=f"fixture-visual-{index}",
+            bbox_pdf=(
+                8.0 + (index % 4) * 56.0,
+                8.0,
+                28.0 + (index % 4) * 56.0,
+                28.0,
+            ),
+            bbox_normalized=(
+                (8.0 + (index % 4) * 56.0) / 240.0,
+                8.0 / 180.0,
+                (28.0 + (index % 4) * 56.0) / 240.0,
+                28.0 / 180.0,
+            ),
+            geometry_sha256=str(index) * 64,
+        )
+        for index in range(8)
+    )
+    pages = tuple(
+        replace(
+            original_pages[page_index],
+            visual_observations=visuals[
+                page_index * 4:(page_index + 1) * 4
+            ],
+        )
+        for page_index in range(2)
+    )
+    original_visual_ids = {
+        page.visual_observations[0].observation_id
+        for page in original_pages
+    }
+    original_visual_coverage = {
+        entry.observation_id: entry
+        for entry in original_snapshot.coverage_entries
+        if entry.observation_id in original_visual_ids
+    }
+    snapshot = replace(
+        original_snapshot,
+        coverage_entries=(
+            *(
+                entry
+                for entry in original_snapshot.coverage_entries
+                if entry.observation_id not in original_visual_ids
+            ),
+            *(
+                replace(
+                    original_visual_coverage[
+                        original_pages[visual.page_index]
+                        .visual_observations[0]
+                        .observation_id
+                    ],
+                    observation_id=visual.observation_id,
+                    source_location_id=visual.observation_id,
+                    coordinates=visual.bbox_pdf,
+                )
+                for visual in visuals
+            ),
+        ),
+        expected_observation_ids=(
+            *(
+                identity
+                for identity in original_snapshot.expected_observation_ids
+                if identity not in original_visual_ids
+            ),
+            *(visual.observation_id for visual in visuals),
+        ),
+        required_visual_observation_ids=tuple(
+            visual.observation_id for visual in visuals
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "reconstruct_visual_geometry_contexts",
+        lambda _pdf_path, _pages: tuple(
+            replace(
+                original_contexts[visual.page_index],
+                observation_id=visual.observation_id,
                 geometry_sha256=visual.geometry_sha256,
             )
             for visual in visuals
@@ -2268,20 +2493,49 @@ def test_production_failure_stops_before_queued_job_provider_call(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source, pages, snapshot = three_visual_escalation_fixture(
+    source, pages, snapshot = eight_visual_escalation_fixture(
         tmp_path,
         monkeypatch,
     )
+
+    def record_blocking_failure(
+        _self: CandidateAdvisor,
+        **kwargs: object,
+    ) -> str:
+        observations = kwargs["visual_observations"]
+        observation_id = observations[0].observation_id
+        return (
+            "a" * 64
+            if observation_id == "fixture-visual-0"
+            else "b" * 64
+        )
+
     monkeypatch.setattr(
         CandidateAdvisor,
         "_record_classified_failure_terminal",
-        lambda _self, **_kwargs: "e" * 64,
+        record_blocking_failure,
+    )
+    cancellations: list[dict[str, object]] = []
+
+    def record_cancellation(
+        _self: CandidateAdvisor,
+        **kwargs: object,
+    ) -> None:
+        cancellations.append(kwargs)
+
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_not_started_after_project_failure",
+        record_cancellation,
+        raising=False,
     )
     observation_ids = tuple(
-        visual.observation_id for visual in pages[0].visual_observations
+        visual.observation_id
+        for page in pages
+        for visual in page.visual_observations
     )
     first_pair = threading.Barrier(2)
-    release_second = threading.Event()
+    release_first = threading.Event()
     failure_returned = threading.Event()
     third_started = threading.Event()
     calls: list[str] = []
@@ -2317,14 +2571,27 @@ def test_production_failure_stops_before_queued_job_provider_call(
                 calls.append(identity)
             if identity == observation_ids[0]:
                 first_pair.wait(timeout=3)
-                raise VisualSymbolProviderError(
-                    request_id="fixture-window-failure",
-                    usage={},
-                    failure_stage="message_shape_invalid",
+                assert release_first.wait(timeout=3)
+                raise ClassifiedProviderFailure(
+                    ProviderFailureFact(
+                        category="rate_limited",
+                        origin="sdk_http_status",
+                        http_status=429,
+                        provider_request_id="safe-window-rate-limit",
+                        request_id_state="accepted",
+                    )
                 )
             if identity == observation_ids[1]:
                 first_pair.wait(timeout=3)
-                assert release_second.wait(timeout=3)
+                raise ClassifiedProviderFailure(
+                    ProviderFailureFact(
+                        category="rate_limited",
+                        origin="sdk_http_status",
+                        http_status=429,
+                        provider_request_id="safe-window-rate-limit-peer",
+                        request_id_state="accepted",
+                    )
+                )
             if identity == observation_ids[2]:
                 third_started.set()
             return VisionResult(
@@ -2359,16 +2626,104 @@ def test_production_failure_stops_before_queued_job_provider_call(
     review_thread.start()
     assert failure_returned.wait(timeout=3)
     assert not third_started.is_set()
-    release_second.set()
+    release_first.set()
     review_thread.join(timeout=3)
 
     assert not review_thread.is_alive()
     assert len(failures) == 1
     assert isinstance(failures[0], CandidateAdvisorFailure)
-    assert str(failures[0]) == "Visual symbol Advisor response is invalid"
+    assert failures[0].failure_scope == "project_blocking"
+    assert failures[0].failure_category == "rate_limited"
+    assert failures[0].failure_event_sha256 == "a" * 64
     assert set(calls) == set(observation_ids[:2])
     assert len(calls) == 2
-    assert observation_ids[2] not in calls
+    assert not set(observation_ids[2:]).intersection(calls)
+    assert len(cancellations) == 6
+    assert {
+        item["blocking_event_sha256"] for item in cancellations
+    } == {"a" * 64}
+    assert {item["stop_reason"] for item in cancellations} == {
+        "project_blocking_provider_failure"
+    }
+    assert [
+        tuple(
+            observation.observation_id
+            for observation in item["visual_observations"]
+        )
+        for item in cancellations
+    ] == [(observation_id,) for observation_id in observation_ids[2:]]
+
+
+def test_advisor_boundary_failure_cancels_queued_jobs_with_exact_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, snapshot = eight_visual_escalation_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    observation_ids = tuple(
+        visual.observation_id
+        for page in pages
+        for visual in page.visual_observations
+    )
+    factory_calls = 0
+    cancellations: list[dict[str, object]] = []
+
+    def fail_factory(_settings: Settings) -> object:
+        nonlocal factory_calls
+        factory_calls += 1
+        raise RuntimeError("private factory detail")
+
+    def record_blocking_failure(
+        _self: CandidateAdvisor,
+        **kwargs: object,
+    ) -> str:
+        observations = kwargs["visual_observations"]
+        return (
+            "c" * 64
+            if observations[0].observation_id == observation_ids[0]
+            else "d" * 64
+        )
+
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_classified_failure_terminal",
+        record_blocking_failure,
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_not_started_after_project_failure",
+        lambda _self, **kwargs: cancellations.append(kwargs),
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id="boundary-failure-window",
+        provider_factory=fail_factory,
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as caught:
+        advisor.review(source, pages, snapshot)
+
+    assert caught.value.failure_stage == "provider_factory_failed"
+    assert caught.value.failure_scope == "project_blocking"
+    assert caught.value.failure_category is None
+    assert caught.value.failure_event_sha256 == "c" * 64
+    assert factory_calls == 2
+    assert len(cancellations) == 6
+    assert {item["stop_reason"] for item in cancellations} == {
+        "project_blocking_advisor_boundary_failure"
+    }
+    assert {
+        item["blocking_event_sha256"] for item in cancellations
+    } == {"c" * 64}
+    assert "private factory detail" not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
 
 
 def test_actual_wall_budget_stops_queued_job_with_fake_clock(
