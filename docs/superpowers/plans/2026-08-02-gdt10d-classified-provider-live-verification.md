@@ -421,7 +421,7 @@ Reviewer checks actual diff, TDD evidence, pricing literals/math, cycle-wide OS-
 
 Final reviewer verdict：`accept`。复审覆盖invocation ownership、durable-create interruption、真实双进程resume contenders、admitted/no-project cleanup-blocker repair/replay、active fail-closed、runtime closure与privacy/scope；无剩余 blocker。
 
-- [ ] **Step 4: Stage and verify the prospective commit**
+- [x] **Step 4: Stage and verify the prospective commit**
 
 Stage exact files from Tasks 2-5 and tests；never `git add .`。Before commit validate the staged prospective tree, so new runtime modules are included even though current HEAD does not yet contain them：
 
@@ -433,7 +433,9 @@ git diff --cached --check
 git commit -m "feat(provider): enforce auditable live cost budget"
 ```
 
-- [ ] **Step 5: Verify the real committed HEAD immediately**
+Exact 44-file index passed runtime closure (`94` files)、contract drift `0`、cached diff check and no-unstaged-state check before commit。
+
+- [x] **Step 5: Verify the real committed HEAD immediately**
 
 ```bash
 micromamba run -n qi-p0 python .agent/harness/scripts/check-contracts.py \
@@ -442,6 +444,8 @@ git status --short
 ```
 
 Expected: clean committed implementation whose manifest exactly matches HEAD；no private state、runtime、credential、DB or Harness run mutation yet。A post-commit HEAD mismatch is a blocker and requires a new reviewed fix commit；it cannot be waived。
+
+Implementation commit：`7e49e3413f90f882c6ef7c7fc70cb2492d6d5403`。HEAD runtime closure (`94` files) passed and the worktree was clean；no private state、runtime、credential、DB or Harness run mutation had occurred。
 
 ---
 
