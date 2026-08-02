@@ -32,8 +32,8 @@
 - Retry：timeout/transport/authentication/request-rejected/rate-limited/service/metadata均`0`；only `ProductionRetryCoordinator`可为schema-invalid授权一次second submission，且单独reserve。
 - Pricing freshness：committed snapshot `retrieved_date=2026-08-02`只允许在`2026-08-02T23:59:59+08:00`前issue；超过时点先停并取得新的read-only pricing review、plan amendment和user approval，不得自动刷新/沿用。
 - No Provider work before Task 5 final independent `GO` and one-use issuance/consume。Task 6只允许一次`make verify-p0-live` start；Task 7仅允许accepted paused literal run的一次same-run resume。
-- Current window authorization ends after reviewed docs commit。Task 1及以后必须等待用户明确批准，不得从本plan存在推断execution authority。
-- `0015`、production promotion、main runtime/DB mutation、direct Provider call、model fallback与second replacement cycle均不授权。
+- Tasks 1-8 implementation/live boundary已获用户明确批准；所有既有 plan gates 仍为强制前置条件，不得从本 plan 存在推断超出已批准边界的 execution authority。
+- direct Provider diagnostic、second replacement、budget expansion、`0015` 与 production promotion仍被阻断；main runtime/DB mutation与model fallback不授权。
 - Reviewer/explorer严格read-only；一个write-capable executor按Task 1 -> Task 8顺序执行。
 
 ## Problem Boundary Record
@@ -715,7 +715,7 @@ Even onparent success，`0015` andproduction promotion remainseparately blocked�
 - Failure/cleanup boundary：zero-paid GO不宣称account valid；首个validated authenticated response才是runtime acceptance；authentication terminal不retry、不resume、不replacement。NO-GO、issued-unconsumed和sealed-terminal disposal都有literal CLI、exact target、cleanup receipt与blocker deadline。
 - Pricing boundary：snapshot晚于`2026-08-02T23:59:59+08:00`自动失效；只能通过新的reviewed pricing amendment和user approval恢复，total envelope不自动改变。
 - Independent docs review：前三轮`reject`逐项关闭runtime-acceptance Owner/call site、immutable resume、preconsume cleanup、literal CLI、v2/v3、pricing、path policy、cleanup journal和run-ID source；final verdict `accept`，无blocking或non-blocking finding。
-- Execution boundary：本文件通过review/commit仍不授权Task 1；必须等待用户明确批准。
+- Execution boundary：用户已明确批准 Tasks 1-8 implementation/live boundary；所有既有 plan gates 仍为强制前置条件，且 direct Provider diagnostic、second replacement、budget expansion、`0015` 与 production promotion仍被阻断。
 
 ## Completion Contract
 
