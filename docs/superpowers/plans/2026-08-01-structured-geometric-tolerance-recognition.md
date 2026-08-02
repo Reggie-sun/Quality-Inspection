@@ -194,7 +194,7 @@
 - Task 2 `.agent/harness/scripts/provider_account_readiness.py` is paused. Its `dispose` surface may validate only the exact Task 3 intent and delete only exact `account-readiness.json`; it must never create, repair, rewrite or infer lifecycle proof, delete authorization/private-root/journal state, or overload `--runtime-acceptance` (reserved for `validate --phase resume`) instead of `--cleanup-intent`.
 - Implementation may resume only after an independent read-only amendment review returns `accept`. This amendment does not mark Task 2, GDT-10 Step 4, Step 5, or the parent objective complete.
 - Credential/runtime mutation, Provider calls, paid execution, second replacement, budget expansion, `0015`, and production promotion remain blocked.
-- Fix Round 1 freezes exact cleanup-intent path-map/types/hash/step order and versioned root-sibling blocker/receipt/replay semantics while retaining legacy authorization-child blocker `/1` unchanged. It is pending scoped independent read-only re-review; no authorization boundary changes.
+- Fix Round 2 freezes `readiness_expires_at` into the canonical cleanup intent and requires root-sibling blocker `/2` to copy/cross-check it only from that intent, so replay never needs deleted readiness bytes. It is pending scoped independent read-only re-review; no authorization boundary changes.
 
 ## Status
 
