@@ -30,7 +30,7 @@
 
 ## BUG-20260801-drawing-list-get-405
 
-- Status: 调查中
+- Status: 已解决
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
 - Recurrence: 2
@@ -198,10 +198,10 @@
 
 ## BUG-20260801-technical-requirement-balloon-sip-handoff
 
-- Status: 已解决
+- Status: 调查中
 - First reported: 2026-08-01
-- Last reported: 2026-08-01
-- Recurrence: 1
+- Last reported: 2026-08-03
+- Recurrence: 2
 - Surface: 技术要求确认后的检验项列表、`ReviewPanel` 气泡选择动作与 SIP handoff
 - Symptom: 用户从技术要求进入检验项后，同一条通用要求再次显示为“待人工审核”；点击“设为需要气泡”后没有可感知反馈，也没有进入 SIP，流程语义看起来互相矛盾
 - Previously correct behavior: 技术要求确认完成后应明确进入哪个后续审核步骤；气泡选择动作应反馈已保存状态，并在满足 SIP 前置条件后提供清晰的 SIP 下一步，而不是让用户误以为该按钮本身等于“进入 SIP”
@@ -220,6 +220,25 @@
 - Focused verification: `cd frontend && npm test -- --run src/components/review/ReviewPanel.test.tsx src/components/workbench/inspectionItemPresentation.test.ts`
 - Main advancement gate: 实现期间 `main` 从 `7891a94` 前进到 `a698951`；`git diff --name-only 7891a94..a698951` 未触碰本修复的六个 Owner/test 文件，且已在新 HEAD 上重跑完整 frontend suite/build
 - Independent review: 初审 `accept with concerns` 指出 kept global 仍可重复确认；修复按钮退休与 rerender/no-second-command 回归后 follow-up verdict 为 `accept`
+
+### Recurrence 2
+
+- Symptom: 技术要求仍待确认时，同一原文已经作为 `global_requirement` 出现在下方检验项列表和详情中；用户同时看到两处“锐边去毛刺”，认为技术要求和检验项目重合
+- Reproduction: 2026-08-03 用户截图中技术要求共 6 条、待确认 6 条；技术要求列表显示“锐边去毛刺”，下方检验项 53 同时显示同一原文和“待确认进入 SIP”
+- Root cause: `ReviewService.create_from_raw()` 会同时投影 `technical_requirements` 与稳定 ID 的 global review item；`InspectionWorkbench` 未按技术要求阶段 gate 后者，因此第一阶段尚未完成时，第二阶段列表、详情和 `keep` 动作已经可见、可操作
+- Selected lane: `Standard`；只调整现有 frontend workbench 的阶段装配，但需要 focused regression、full frontend suite/build、headed browser smoke 和 independent review
+- Selected plan: 本 recurrence 作为当前 ad hoc task contract；不切换或扩展当前 P0 implementation plan
+- Problem boundary: 技术要求仍有 `review_required=true` 时，不在检验项列表、详情、SIP 摘要或选择入口暴露任何技术要求生成的 global item；全部技术要求确认后恢复现有检验项/SIP 审核阶段
+- Single owner: `InspectionWorkbench` 继续拥有 `TechnicalRequirementPanel`、`InspectionItemTable`、`ReviewPanel` 和 SIP 辅助面板的装配与选择 gate
+- Old path action: 替换“两个审核阶段同时可见、可操作”的装配路径；不删除 global item，也不建立新的后端或前端 Owner
+- Unchanged contract: `set_technical_requirement_match`、global item 稳定 ID、SIP mapping/export、review command、freeze、`balloon_required=false` 和无正式编号语义全部不变
+- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/InspectionWorkbench.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- Writer ownership and order: 父 agent 为唯一 writer；只读 explorer 已完成调用链调查且未修改文件；当前无其他 writer 拥有 allowed paths
+- Validation action: 先用 `micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/InspectionWorkbench.test.tsx` 取得 RED/GREEN，再运行完整 frontend suite、production build、headed browser smoke 和 independent review
+- Fix: `InspectionWorkbench` 在任一技术要求仍待确认时，以 `generated_candidate_id` 精确 gate 对应的生成全局项；检验项表格、详情、PDF 选择、SIP/项目摘要和异常导航统一使用阶段可见 items。`manual_review_count` 只扣除被 gate 且 active/requires-confirmation 的生成项，保留普通 global/local item 和 source-only coverage；全部技术要求确认后自动恢复既有 SIP 审核项，若阶段回退则清空已隐藏项选择
+- Regression check: TDD RED 精确失败于生成全局项仍暴露，summary follow-up RED 精确失败于待人工审核仍计入隐藏项；focused `InspectionWorkbench` suite 为 `50 passed`，完整 frontend suite 为 `316 passed`，production build 与 `git diff --check` 通过。独立 reviewer 初审因摘要口径 defect 判定 `reject`，补齐 mixed global/local、summary 和 confirmed -> pending selection reset 覆盖后 follow-up verdict 为 `accept`，无 blocker 或 concern
+- Runtime proof: localhost headed Chrome 在真实 working copy（raw 139 active items、6 条技术要求待确认、2 条 generated global items）显示项目检验项与 SIP 待生成为 137、待人工审核 32；展开技术要求可见“锐边去毛刺”，逐页检查三页检验项均不显示该 generated row，详情无“确认进入 SIP：锐边去毛刺”，普通检验项与 3 条 source-only coverage 保持可见，console error/warn 为 0。只读浏览并返回目录释放 review lock，未提交任何 review command
+- Change: `fix(frontend): stage technical requirement review`
 
 ## BUG-20260801-source-balloon-action-affordance
 

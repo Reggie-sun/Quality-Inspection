@@ -236,11 +236,44 @@ export function InspectionWorkbench({
   actionState,
   onReset,
 }: InspectionWorkbenchProps) {
+  const { reviewItems, gatedManualReviewCount } = useMemo(() => {
+    const technicalRequirements = workingCopy?.technical_requirements ?? [];
+    const technicalRequirementReviewPending = technicalRequirements.some(
+      (requirement) => (
+        requirement.review_required
+        && requirement.review_status !== "excluded"
+      ),
+    );
+    if (!technicalRequirementReviewPending) {
+      return { reviewItems: items, gatedManualReviewCount: 0 };
+    }
+    const generatedGlobalItemIds = new Set(
+      technicalRequirements
+        .map((requirement) => requirement.generated_candidate_id)
+        .filter((itemId): itemId is string => itemId !== null && itemId !== undefined),
+    );
+    return {
+      reviewItems: items.filter(
+        (item) => !generatedGlobalItemIds.has(item.item_id),
+      ),
+      gatedManualReviewCount: items.filter(
+        (item) => (
+          generatedGlobalItemIds.has(item.item_id)
+          && item.active
+          && item.requires_confirmation === true
+        ),
+      ).length,
+    };
+  }, [items, workingCopy?.technical_requirements]);
+  const visibleManualReviewCount = Math.max(
+    0,
+    (workingCopy?.manual_review_count ?? 0) - gatedManualReviewCount,
+  );
   const [saveState, setSaveState] = useState<string>(zhCN.workbench.saved);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [selectedItemId, setSelectedItemId] = useState<string | undefined>(
-    () => items.find(isReviewRequiredItem)?.item_id,
+    () => reviewItems.find(isReviewRequiredItem)?.item_id,
   );
   const [selectedBalloonId, setSelectedBalloonId] = useState<string>();
   const [selectedSourceId, setSelectedSourceId] = useState<string>();
@@ -284,6 +317,17 @@ export function InspectionWorkbench({
   useEffect(() => {
     if (returnDialogOpen) saveAndReturnRef.current?.focus();
   }, [returnDialogOpen]);
+  useEffect(() => {
+    if (
+      selectedItemId !== undefined
+      && !reviewItems.some(
+        (item) => item.active && item.item_id === selectedItemId,
+      )
+    ) {
+      setSelectedItemId(undefined);
+      setSelectedBalloonId(undefined);
+    }
+  }, [reviewItems, selectedItemId]);
   const candidateNumbers = useMemo(() => {
     const lookup = new Map<string, number>();
     for (const candidate of candidates) {
@@ -527,21 +571,21 @@ export function InspectionWorkbench({
       setReturnSaving(false);
     }
   };
-  const reviewedCount = items.filter(
+  const reviewedCount = reviewItems.filter(
     (item) => item.active && item.status === "kept",
   ).length;
-  const activeItemCount = items.filter((item) => item.active).length;
-  const readyItemCount = items.filter(
+  const activeItemCount = reviewItems.filter((item) => item.active).length;
+  const readyItemCount = reviewItems.filter(
     (item) =>
       item.active
       && item.sip_detail_fields_confirmed === true
       && (item.sip_mapping_exceptions?.length ?? 0) === 0,
   ).length;
-  const sipExceptionCount = items.filter(
+  const sipExceptionCount = reviewItems.filter(
     (item) =>
       item.active && (item.sip_mapping_exceptions?.length ?? 0) > 0,
   ).length;
-  const sipRegenerationRequired = items.some(
+  const sipRegenerationRequired = reviewItems.some(
     (item) =>
       item.active
       && item.sip_mapping_exceptions?.includes("sip_regeneration_required"),
@@ -549,7 +593,7 @@ export function InspectionWorkbench({
   const pendingSipItemCount = activeItemCount
     - readyItemCount
     - sipExceptionCount;
-  const selectedReviewItem = items.find(
+  const selectedReviewItem = reviewItems.find(
     (item) => item.active && item.item_id === selectedItemId,
   );
   const selectedReviewBalloon = balloons.find(
@@ -564,6 +608,10 @@ export function InspectionWorkbench({
         candidateNumbers.get(selectedReviewItem.item_id),
       );
   const selectItem = (itemId: string): boolean => {
+    const item = reviewItems.find(
+      (candidate) => candidate.active && candidate.item_id === itemId,
+    );
+    if (item === undefined) return false;
     if (reviewDraftDirty && itemId !== selectedItemId) {
       setSelectionBlocked(true);
       return false;
@@ -571,7 +619,6 @@ export function InspectionWorkbench({
     setSelectionBlocked(false);
     setSelectedItemId(itemId);
     setSelectedSourceId(undefined);
-    const item = items.find((candidate) => candidate.item_id === itemId);
     const balloon = balloons.find(
       (candidate) =>
         candidate.status !== "deleted" && candidate.itemId === itemId,
@@ -611,7 +658,7 @@ export function InspectionWorkbench({
   const selectNextException = (
     justResolvedItemId?: string,
   ): boolean => {
-    const exceptionItems = items.filter(
+    const exceptionItems = reviewItems.filter(
       (item) =>
         item.active
         && (
@@ -622,11 +669,11 @@ export function InspectionWorkbench({
     if (exceptionItems.length === 0) return false;
     const justResolvedIndex = justResolvedItemId === undefined
       ? -1
-      : items.findIndex((item) => item.item_id === justResolvedItemId);
+      : reviewItems.findIndex((item) => item.item_id === justResolvedItemId);
     const next = justResolvedIndex < 0
       ? exceptionItems[0]
       : exceptionItems.find(
-        (item) => items.indexOf(item) > justResolvedIndex,
+        (item) => reviewItems.indexOf(item) > justResolvedIndex,
       ) ?? exceptionItems[0];
     setFilter("all");
     return selectItem(next.item_id);
@@ -738,7 +785,7 @@ export function InspectionWorkbench({
               </div>
               <div>
                 <dt>{zhCN.workbench.totalItems}</dt>
-                <dd>{items.length}</dd>
+                <dd>{reviewItems.length}</dd>
               </div>
               <div>
                 <dt>{zhCN.workbench.reviewedItems}</dt>
@@ -819,16 +866,16 @@ export function InspectionWorkbench({
           role="region"
         >
           <RecognitionSummary
-            items={items}
+            items={reviewItems}
             balloons={balloons}
             pendingSourceCount={pendingSources.length}
-            manualReviewCount={workingCopy?.manual_review_count ?? 0}
+            manualReviewCount={visibleManualReviewCount}
             filter={filter}
             onFilterChange={setFilter}
           />
           <TechnicalRequirementPanel
             requirements={workingCopy?.technical_requirements ?? []}
-            items={items}
+            items={reviewItems}
             disabled={reviewCommandsDisabled}
             onSelectItem={(itemId) => {
               setFilter("all");
@@ -849,7 +896,7 @@ export function InspectionWorkbench({
             <div className="inspection-review-workspace__list">
               <InspectionItemTable
                 compact
-                items={items}
+                items={reviewItems}
                 balloons={balloons}
                 pendingSources={pendingSources}
                 candidateNumbers={candidateNumbers}
@@ -871,7 +918,7 @@ export function InspectionWorkbench({
               />
               {selectedSourceId === undefined ? (
                 <ReviewPanel
-                  items={items}
+                  items={reviewItems}
                   disabled={reviewCommandsDisabled}
                   selectedItemId={selectedItemId}
                   selectedItemPresentation={selectedItemPresentation}

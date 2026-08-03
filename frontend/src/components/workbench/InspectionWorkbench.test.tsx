@@ -2908,6 +2908,162 @@ describe("InspectionWorkbench", () => {
     }));
   });
 
+  test("技术要求全部确认前只隐藏其生成的全局检验项并同步摘要", async () => {
+    const globalItem = {
+      item_id: "global-deburr",
+      item_type: "general_requirement" as const,
+      raw_text: "锐边去毛刺",
+      normalized_text: "锐边去毛刺",
+      scope: "global_requirement" as const,
+      balloon_required: false,
+      requires_confirmation: true,
+      status: "pending",
+      active: true,
+    };
+    const manualGlobalItem = {
+      ...globalItem,
+      item_id: "manual-global-note",
+      raw_text: "其余表面不得有划伤",
+      normalized_text: "其余表面不得有划伤",
+    };
+    const localItem = {
+      ...globalItem,
+      item_id: "local-dimension-25",
+      item_type: "linear_dimension" as const,
+      raw_text: "25",
+      normalized_text: "25",
+      scope: "local_feature" as const,
+      balloon_required: true,
+    };
+    const items = [globalItem, manualGlobalItem, localItem];
+    const technicalRequirement = {
+      requirement_id: "requirement-deburr",
+      ordinal: 1,
+      raw_text: "锐边去毛刺",
+      normalized_text: "锐边去毛刺",
+      source_location_ids: ["source-deburr"],
+      page_index: 0,
+      category: "standalone_check" as const,
+      subtype: "deburr",
+      parsed_parameters: {},
+      match_outcome: "global_scope" as const,
+      matched_candidate_ids: [],
+      generated_candidate_id: "global-deburr",
+      rule_version: "technical-requirement/1" as const,
+      review_required: true,
+      review_status: "suggested" as const,
+    };
+    const pendingWorkingCopy: ReviewWorkingCopyView = {
+      id: "technical-stage-gate",
+      project_id: "project",
+      raw_result_id: "raw",
+      version: 1,
+      items,
+      coverage: { blocking_count: 0, review_required_count: 3 },
+      technical_requirements: [technicalRequirement],
+      manual_review_count: 3,
+      numbering_stale: false,
+      items_frozen_at: null,
+      items_frozen_by: null,
+      items_frozen_version: null,
+    };
+    const view = render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[{
+          id: "candidate-global-deburr",
+          itemId: "global-deburr",
+          pageIndex: 0,
+          bbox: [10, 20, 80, 40],
+          rawText: "锐边去毛刺",
+        }]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={pendingWorkingCopy}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
+    expect(within(screen.getByRole("region", {
+      name: "技术要求匹配",
+    })).getByText("锐边去毛刺")).not.toBeNull();
+    expect(screen.queryByRole("row", { name: /锐边去毛刺/ })).toBeNull();
+    expect(screen.getByRole("row", { name: /其余表面不得有划伤/ })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /25/ })).not.toBeNull();
+    expect(screen.getByTestId("summary-review-count").textContent).toBe("2");
+    const projectSummary = within(screen.getByRole("region", { name: "项目摘要" }));
+    expect(projectSummary.getByText("检验项").nextElementSibling?.textContent).toBe("2");
+    expect(screen.queryByRole("button", {
+      name: "确认进入 SIP：锐边去毛刺",
+    })).toBeNull();
+
+    const candidate = screen.getByTestId("candidate-candidate-global-deburr");
+    fireEvent.click(candidate);
+    expect(candidate.getAttribute("data-selected")).toBe("false");
+    expect(screen.queryByRole("button", {
+      name: "确认进入 SIP：锐边去毛刺",
+    })).toBeNull();
+
+    view.rerender(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[{
+          id: "candidate-global-deburr",
+          itemId: "global-deburr",
+          pageIndex: 0,
+          bbox: [10, 20, 80, 40],
+          rawText: "锐边去毛刺",
+        }]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{
+          ...pendingWorkingCopy,
+          version: 2,
+          technical_requirements: [{
+            ...technicalRequirement,
+            review_required: false,
+            review_status: "confirmed",
+          }],
+        }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("row", { name: /锐边去毛刺/ }));
+    expect(screen.getByRole("button", {
+      name: "确认进入 SIP：锐边去毛刺",
+    })).not.toBeNull();
+    expect(candidate.getAttribute("data-selected")).toBe("true");
+
+    view.rerender(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[{
+          id: "candidate-global-deburr",
+          itemId: "global-deburr",
+          pageIndex: 0,
+          bbox: [10, 20, 80, 40],
+          rawText: "锐边去毛刺",
+        }]}
+        sources={[]}
+        balloons={[]}
+        items={items}
+        workingCopy={{ ...pendingWorkingCopy, version: 3 }}
+        onSave={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    await waitFor(() => expect(candidate.getAttribute("data-selected")).toBe("false"));
+    expect(screen.queryByRole("button", {
+      name: "确认进入 SIP：锐边去毛刺",
+    })).toBeNull();
+    expect(screen.getByRole("row", { name: /其余表面不得有划伤/ })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /25/ })).not.toBeNull();
+  });
+
   test("技术要求匹配项跳转会从其他筛选恢复全部并选中目标", () => {
     const items = [{
       item_id: "auto-dimension-100",
