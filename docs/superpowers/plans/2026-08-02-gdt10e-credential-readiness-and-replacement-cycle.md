@@ -445,6 +445,8 @@ Expected：clean committed HEAD；no private state、runtime、credential、DB�
 
 - [ ] **Step 0: Retire the immutable no-issuance receipt exactly once**
 
+**Deferred integration boundary — 2026-08-03:** 用户要求本轮不再新增 receipt archive/retry 功能，只合并已完成、已复审、已提交的功能。Step 0、Task 5 retry 与 Tasks 6-8 均保持未完成且本轮不得执行；未提交的 archive implementation/tests 不进入 `main`。恢复时仍须从本 Step 0 的 code/test/review gate 开始，并继续遵守一次 retry、exclusive-writer、pricing freshness 与全部 Provider/paid boundaries。
+
 Run only after the code/test/review gates for this amendment are closed and the parent has established an operator-controlled exclusive-writer window. From the first fixed parent/source/archive validation through final parent `fsync` and terminal source/private/archive rechecks, no concurrent same-UID/root process、agent、operator or lifecycle command may create、rename、replace、unlink or rewrite either receipt or any private target. This is a required threat-model precondition, not an advisory-lock guarantee; do not run if exclusive ownership is uncertain.
 
 ```bash

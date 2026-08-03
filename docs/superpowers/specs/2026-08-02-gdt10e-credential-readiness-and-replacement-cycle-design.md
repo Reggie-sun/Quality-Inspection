@@ -2,6 +2,7 @@
 
 ## Status
 
+- **Completed-function integration deferral — 2026-08-03:** 用户要求停止新增 receipt-archive/zero-paid retry 功能，先把已经完成、已复审、已提交的结构化几何公差能力合入 `main`。因此 `retire-no-issuance-receipt` implementation、真实 archive、Task 5 retry 与 Tasks 6-8 全部 deferred；当前未提交 archive code/tests 不属于 merge boundary。该决定不把 GDT-10 Step 4/5 或 parent objective 标记为完成，也不授权 Provider、paid execution、第二 replacement、budget expansion、`0015` 或 production promotion。后续恢复必须从本 design/companion 的未完成 gate 继续，不得把本次 partial integration 当作 live closure evidence。
 - Parent plan：`docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md`。
 - Predecessor：GDT-10D full run `20260802T101404291929Z-884bec62` 与 evidence commit `daa3e6f`，保持 immutable。
 - 用户已明确批准 reviewed GDT-10E implementation、zero-paid activation 和 one paid cycle boundary；本 Task 只记录该批准并单独提交 docs，不执行 credential/runtime/Provider mutation。
