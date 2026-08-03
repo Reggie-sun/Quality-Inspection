@@ -64,6 +64,7 @@ workflow spine、lane 和 planning 条件只由 `.agent/rules/workflow-lanes.md`
 
 - 所有 Quality_Inspection linked worktree 共用唯一 canonical environment source：`/home/reggie/vscode_folder/Quality_Inspection/.env`。进入任一 worktree session 时必须先验证该文件是当前 uid/gid 拥有的 mode `0600` regular file；不得从 worktree 内的 `.env`、副本、symlink 或其他 fallback 读取同一组环境值。
 - shell/tool command 之间不得假设 environment 会持久化。每个需要 repository runtime、Provider credential 或 Harness private binding 的命令，必须在同一 shell process 内先执行 `set -a; . /home/reggie/vscode_folder/Quality_Inspection/.env; set +a`，再执行目标命令；不需要这些值的 read/test/lint/git 命令不得无意义加载 credential。
+- Canonical `.env` 只拥有跨 worktree 共享的 private/process values，不拥有 linked-worktree runtime routing。source 后必须在同一 shell 内从当前 approved runtime identity Owner 显式设置并验证该 worktree 的 public target tuple（包括 `COMPOSE_PROJECT_NAME`、`QI_P0_API_BASE`、`QI_P0_FRONTEND_BASE` 及 plan要求的source root）；不得继承 root `.env` 中的 routing value来选择 linked worktree target。tuple 与当前 plan/runtime evidence不一致时必须在任何 compose、Provider或Harness mutation前fail closed。
 - 不得复制、移动、生成、stage 或 commit canonical `.env`，不得输出、读取到 agent context、记录或 hash 其中的值。只允许按 exact environment key name 报告 `present/absent`；文件不安全、source 失败或 required key 缺失时必须在 runtime/Provider mutation 前 fail closed。
 - Environment injection 只提供 private process values，不等同于 operator attestation、account readiness、cycle authorization、paid execution approval 或 Provider success evidence；这些 gate 仍必须由当前 approved plan 的独立事实关闭。
 
