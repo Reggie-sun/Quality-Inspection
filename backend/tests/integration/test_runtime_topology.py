@@ -136,6 +136,29 @@ def test_compose_has_exact_p0_services() -> None:
     assert _data_volume_source(services["worker"]) == "qi_storage"
 
 
+def test_api_and_worker_bind_mount_the_current_backend_source() -> None:
+    """Development runtime must execute the selected worktree's backend source."""
+    services = _rendered_compose_config()["services"]
+
+    for service_name in ("api", "worker"):
+        assert services[service_name]["environment"][
+            "PYTHONDONTWRITEBYTECODE"
+        ] == "1"
+        source_mounts = [
+            mount
+            for mount in services[service_name].get("volumes", [])
+            if mount.get("type") == "bind" and mount.get("target") == "/app"
+        ]
+        assert source_mounts == [
+            {
+                "type": "bind",
+                "source": str(ROOT / "backend"),
+                "target": "/app",
+                "bind": {},
+            }
+        ]
+
+
 def test_compose_project_and_data_volumes_are_worktree_scoped() -> None:
     """Default Compose resources must not share one fixed cross-worktree owner."""
     source = yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))

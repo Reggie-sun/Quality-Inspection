@@ -29,10 +29,12 @@ services:
       - path: .env
         required: false
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       QI_STORAGE_ROOT: /data
     ports:
       - "8000:8000"
     volumes:
+      - ./backend:/app
       - qi_storage:/data
     depends_on:
       postgres:
@@ -47,8 +49,10 @@ services:
       - path: .env
         required: false
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       QI_STORAGE_ROOT: /data
     volumes:
+      - ./backend:/app
       - qi_storage:/data
     depends_on:
       postgres:
