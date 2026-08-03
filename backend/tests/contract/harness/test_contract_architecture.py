@@ -1197,6 +1197,82 @@ def test_gdt10e_retry_receipt_archive_owner_is_fixed_no_overwrite_and_durable() 
     )
 
 
+def test_gdt10e_final_retry_archive_and_live_recipes_have_no_generic_or_bytecode_surface() -> None:
+    """Mutation caught: final retry becomes caller-configurable or dirty-head prone."""
+    source = (HARNESS / "scripts/live_cycle_authorization.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(source)
+    constants = {
+        node.targets[0].id: node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    }
+    owner = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "retire_no_issuance_receipt"
+    )
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    companion = (
+        ROOT
+        / "docs/superpowers/plans/"
+        "2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md"
+    ).read_text(encoding="utf-8")
+
+    final_archive = next(
+        node.value.args[0].value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "_GDT10E_FINAL_RETRY_ARCHIVE_PATH"
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "Path"
+        and len(node.value.args) == 1
+        and isinstance(node.value.args[0], ast.Constant)
+    )
+    assert final_archive == (
+        "/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-"
+        "cleanup-receipt-zero-paid-retry-2.json"
+    )
+    assert constants["_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256"] == (
+        "a70b73faefcffcdf6977bd70f602d6798de2328abd4c4fb948f8cceebab04d9b"
+    )
+    assert constants["_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256"] == (
+        "215f2973036e4b4620cc7daa8b4331ebb11fced1c9406fb1fa1add47473d26bd"
+    )
+    assert {argument.arg for argument in owner.args.kwonlyargs} == {
+        "receipt",
+        "archive"
+    }
+    assert "_gdt10e_retry_archive_identity" not in source
+    assert "sys.dont_write_bytecode" not in source
+    for recipe in ("verify-p0-live", "resume-gdt10e-live"):
+        start = makefile.index(f"{recipe}:")
+        command = makefile[start:].splitlines()[1]
+        assert "PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python" in command
+    task_five_and_six = companion[
+        companion.index("### Task 5:") : companion.index("### Task 7:")
+    ]
+    direct_commands = [
+        command
+        for command in task_five_and_six.splitlines()
+        if "micromamba run -n qi-p0 python" in command
+    ]
+    assert len(direct_commands) == 9
+    assert all(
+        "PYTHONDONTWRITEBYTECODE=1" in command
+        for command in direct_commands
+    )
+
+
 def test_cycle_revision_policy_has_one_fixed_writer_without_an_override_surface() -> None:
     """Mutation caught: a consumer or CLI restores caller-selected revisions."""
     authorization_source = (

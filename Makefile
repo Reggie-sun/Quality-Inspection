@@ -132,12 +132,12 @@ verify-p0-offline: check-contracts
 	micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py fixture --scope task --task "$(TASK)"
 
 verify-p0-live:
-	@micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py execute-start \
+	@PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py execute-start \
 		--authorization "$${QI_LIVE_CYCLE_AUTHORIZATION_REF:?}" \
 		--override "$${QI_LIVE_CYCLE_OVERRIDE_REF:?}"
 
 resume-gdt10e-live:
-	@micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py execute-resume \
+	@PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py execute-resume \
 		--authorization "$${QI_LIVE_CYCLE_AUTHORIZATION_REF:?}" \
 		--override "$${QI_LIVE_CYCLE_OVERRIDE_REF:?}" \
 		--run-id "$${GDT10E_RUN_ID:?}"

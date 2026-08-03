@@ -11876,12 +11876,20 @@ def _retry_receipt_authorization_module(
     )
     root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
     receipt = tmp_path / f"{root.name}-cleanup-receipt.json"
-    archive = tmp_path / f"{root.name}-cleanup-receipt-zero-paid-retry.json"
+    first_archive = tmp_path / f"{root.name}-cleanup-receipt-zero-paid-retry.json"
+    archive = tmp_path / f"{root.name}-cleanup-receipt-zero-paid-retry-2.json"
     document: dict[str, object] = {
         "schema_version": "provider-cycle-cleanup-receipt/1",
         "cycle_id": ACCOUNT_READINESS_CYCLE,
         "branch": "no_issuance",
     }
+    document["content_sha256"] = _canonical_content_hash(document)
+    payload = (
+        json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    first_archive.write_bytes(payload)
+    first_archive.chmod(0o600)
+    document["final_retry"] = True
     document["content_sha256"] = _canonical_content_hash(document)
     payload = (
         json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
@@ -11893,17 +11901,32 @@ def _retry_receipt_authorization_module(
         authorization, "_GDT10E_RETRY_RECEIPT_PATH", receipt, raising=False
     )
     monkeypatch.setattr(
-        authorization, "_GDT10E_RETRY_ARCHIVE_PATH", archive, raising=False
+        authorization, "_GDT10E_RETRY_ARCHIVE_PATH", first_archive, raising=False
+    )
+    monkeypatch.setattr(
+        authorization, "_GDT10E_FINAL_RETRY_ARCHIVE_PATH", archive, raising=False
     )
     monkeypatch.setattr(
         authorization,
         "_GDT10E_RETRY_RECEIPT_BYTES_SHA256",
-        hashlib.sha256(payload).hexdigest(),
+        hashlib.sha256(first_archive.read_bytes()).hexdigest(),
         raising=False,
     )
     monkeypatch.setattr(
         authorization,
         "_GDT10E_RETRY_RECEIPT_CONTENT_SHA256",
+        json.loads(first_archive.read_text(encoding="utf-8"))["content_sha256"],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        authorization,
+        "_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        authorization,
+        "_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256",
         document["content_sha256"],
         raising=False,
     )
@@ -11923,15 +11946,136 @@ def _rewrite_retry_receipt(
     ).encode("utf-8")
     path.write_bytes(payload)
     path.chmod(0o600)
-    authorization._GDT10E_RETRY_RECEIPT_BYTES_SHA256 = hashlib.sha256(
+    authorization._GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256 = hashlib.sha256(
         payload
     ).hexdigest()
-    authorization._GDT10E_RETRY_RECEIPT_CONTENT_SHA256 = (
+    authorization._GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256 = (
         str(document["content_sha256"])
         if expected_content_sha256 is None
         else expected_content_sha256
     )
     return payload
+
+
+def test_gdt10e_retire_no_issuance_receipt_publishes_only_the_fixed_final_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: final retry overwrites predecessor or accepts an unbound archive."""
+    (
+        authorization,
+        receipt,
+        final_archive,
+        final_payload,
+    ) = _retry_receipt_authorization_module(tmp_path, monkeypatch)
+    first_archive = authorization._GDT10E_RETRY_ARCHIVE_PATH
+    first_payload = first_archive.read_bytes()
+
+    authorization.retire_no_issuance_receipt(
+        receipt=receipt, archive=final_archive
+    )
+
+    assert first_archive.read_bytes() == first_payload
+    assert final_archive.read_bytes() == final_payload
+    assert not receipt.exists()
+
+
+def test_gdt10e_retire_no_issuance_receipt_final_replay_requires_predecessor_and_same_inode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: final replay accepts missing predecessor or a copied archive."""
+    (
+        authorization,
+        receipt,
+        final_archive,
+        final_payload,
+    ) = _retry_receipt_authorization_module(tmp_path, monkeypatch)
+    first_archive = authorization._GDT10E_RETRY_ARCHIVE_PATH
+    os.link(receipt, final_archive)
+
+    authorization.retire_no_issuance_receipt(
+        receipt=receipt, archive=final_archive
+    )
+    authorization.retire_no_issuance_receipt(
+        receipt=receipt, archive=final_archive
+    )
+    assert final_archive.read_bytes() == final_payload
+
+    first_archive.unlink()
+    with pytest.raises(ValueError):
+        authorization.retire_no_issuance_receipt(
+            receipt=receipt, archive=final_archive
+        )
+
+
+def test_gdt10e_retire_no_issuance_receipt_rejects_retired_first_archive_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: historical archive-1 remains an active lifecycle command."""
+    (
+        authorization,
+        receipt,
+        final_archive,
+        final_payload,
+    ) = _retry_receipt_authorization_module(tmp_path, monkeypatch)
+    first_archive = authorization._GDT10E_RETRY_ARCHIVE_PATH
+    first_payload = first_archive.read_bytes()
+
+    assert authorization.main([
+        "retire-no-issuance-receipt",
+        "--receipt",
+        str(receipt),
+        "--archive",
+        str(first_archive),
+    ]) == 2
+    assert receipt.read_bytes() == final_payload
+    assert first_archive.read_bytes() == first_payload
+    assert not final_archive.exists()
+
+    authorization.retire_no_issuance_receipt(
+        receipt=receipt, archive=final_archive
+    )
+    assert authorization.main([
+        "retire-no-issuance-receipt",
+        "--receipt",
+        str(receipt),
+        "--archive",
+        str(first_archive),
+    ]) == 2
+    assert first_archive.read_bytes() == first_payload
+    assert final_archive.read_bytes() == final_payload
+
+
+def test_gdt10e_final_retry_fixture_rewrite_keeps_predecessor_identity_exact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a source-2 fixture rewrite retargets archive-1 validation."""
+    authorization, receipt, archive, payload = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    document = json.loads(receipt.read_text(encoding="utf-8"))
+    _rewrite_retry_receipt(authorization, receipt, document)
+
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    assert archive.read_bytes() == payload
+    assert not receipt.exists()
+
+
+def test_gdt10e_final_retry_rejects_tampered_predecessor_without_retiring_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: an invalid archive-1 is ignored before source-2 retirement."""
+    authorization, receipt, archive, payload = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    first_archive = authorization._GDT10E_RETRY_ARCHIVE_PATH
+    first_archive.chmod(0o644)
+
+    with pytest.raises(ValueError, match="receipt"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    assert receipt.read_bytes() == payload
+    assert not archive.exists()
 
 
 def test_gdt10e_retire_no_issuance_receipt_archives_exact_source_once(

@@ -104,11 +104,20 @@ _GDT10E_RETRY_RECEIPT_PATH = Path(
 _GDT10E_RETRY_ARCHIVE_PATH = Path(
     "/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json"
 )
+_GDT10E_FINAL_RETRY_ARCHIVE_PATH = Path(
+    "/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry-2.json"
+)
 _GDT10E_RETRY_RECEIPT_BYTES_SHA256 = (
     "67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb"
 )
 _GDT10E_RETRY_RECEIPT_CONTENT_SHA256 = (
     "15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532"
+)
+_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256 = (
+    "a70b73faefcffcdf6977bd70f602d6798de2328abd4c4fb948f8cceebab04d9b"
+)
+_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256 = (
+    "215f2973036e4b4620cc7daa8b4331ebb11fced1c9406fb1fa1add47473d26bd"
 )
 _GDT10E_RETRY_RECEIPT_SCHEMA = "provider-cycle-cleanup-receipt/1"
 _GDT10E_RETRY_RECEIPT_BRANCH = "no_issuance"
@@ -2125,6 +2134,9 @@ def _open_gdt10e_retry_parent(path: Path) -> int:
 def _read_gdt10e_retry_receipt(
     parent_fd: int,
     name: str,
+    *,
+    bytes_sha256: str,
+    content_sha256: str,
 ) -> tuple[os.stat_result, bytes]:
     """Read one immutable receipt through the validated parent descriptor."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
@@ -2161,11 +2173,11 @@ def _read_gdt10e_retry_receipt(
     if (
         not isinstance(document, Mapping)
         or hashlib.sha256(content).hexdigest()
-        != _GDT10E_RETRY_RECEIPT_BYTES_SHA256
+        != bytes_sha256
         or document.get("schema_version") != _GDT10E_RETRY_RECEIPT_SCHEMA
         or document.get("cycle_id") != _GDT10E_CYCLE_ID
         or document.get("branch") != _GDT10E_RETRY_RECEIPT_BRANCH
-        or document.get("content_sha256") != _GDT10E_RETRY_RECEIPT_CONTENT_SHA256
+        or document.get("content_sha256") != content_sha256
         or document.get("content_sha256") != _canonical_hash(document)
     ):
         raise ValueError("GDT-10E retry receipt is invalid")
@@ -2175,6 +2187,9 @@ def _read_gdt10e_retry_receipt(
 def _gdt10e_retry_receipt_entry(
     parent_fd: int,
     name: str,
+    *,
+    bytes_sha256: str,
+    content_sha256: str,
 ) -> tuple[os.stat_result, bytes] | None:
     try:
         os.lstat(name, dir_fd=parent_fd)
@@ -2182,7 +2197,12 @@ def _gdt10e_retry_receipt_entry(
         return None
     except OSError as exc:
         raise ValueError("GDT-10E retry receipt is unavailable") from exc
-    return _read_gdt10e_retry_receipt(parent_fd, name)
+    return _read_gdt10e_retry_receipt(
+        parent_fd,
+        name,
+        bytes_sha256=bytes_sha256,
+        content_sha256=content_sha256,
+    )
 
 
 def retire_no_issuance_receipt(
@@ -2192,22 +2212,48 @@ def retire_no_issuance_receipt(
 ) -> None:
     """Hard-link the one fixed no-issuance receipt and retire only that entry."""
     receipt_path = _gdt10e_retry_path(receipt, _GDT10E_RETRY_RECEIPT_PATH)
-    archive_path = _gdt10e_retry_path(archive, _GDT10E_RETRY_ARCHIVE_PATH)
+    archive_path = _gdt10e_retry_path(archive, _GDT10E_FINAL_RETRY_ARCHIVE_PATH)
     if receipt_path.parent != archive_path.parent:
         raise ValueError("GDT-10E retry receipt parent is invalid")
     parent_fd = _open_gdt10e_retry_parent(receipt_path.parent)
     try:
         _gdt10e_retry_private_targets_are_absent()
-        source = _gdt10e_retry_receipt_entry(parent_fd, receipt_path.name)
-        archived = _gdt10e_retry_receipt_entry(parent_fd, archive_path.name)
+        _read_gdt10e_retry_receipt(
+            parent_fd,
+            _GDT10E_RETRY_ARCHIVE_PATH.name,
+            bytes_sha256=_GDT10E_RETRY_RECEIPT_BYTES_SHA256,
+            content_sha256=_GDT10E_RETRY_RECEIPT_CONTENT_SHA256,
+        )
+        source = _gdt10e_retry_receipt_entry(
+            parent_fd,
+            receipt_path.name,
+            bytes_sha256=_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256,
+            content_sha256=_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256,
+        )
+        archived = _gdt10e_retry_receipt_entry(
+            parent_fd,
+            archive_path.name,
+            bytes_sha256=_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256,
+            content_sha256=_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256,
+        )
         if source is None:
             if archived is None:
                 raise ValueError("GDT-10E retry receipt is absent")
             os.fsync(parent_fd)
-            if _gdt10e_retry_receipt_entry(parent_fd, receipt_path.name) is not None:
+            if _gdt10e_retry_receipt_entry(
+                parent_fd,
+                receipt_path.name,
+                bytes_sha256=_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256,
+                content_sha256=_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256,
+            ) is not None:
                 raise ValueError("GDT-10E retry receipt reappeared")
             _gdt10e_retry_private_targets_are_absent()
-            _read_gdt10e_retry_receipt(parent_fd, archive_path.name)
+            _read_gdt10e_retry_receipt(
+                parent_fd,
+                archive_path.name,
+                bytes_sha256=_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256,
+                content_sha256=_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256,
+            )
             return
         if archived is None:
             try:
@@ -2222,8 +2268,18 @@ def retire_no_issuance_receipt(
                 raise ValueError("GDT-10E retry receipt archive publication failed") from exc
             os.fsync(parent_fd)
             _gdt10e_retry_private_targets_are_absent()
-            source = _read_gdt10e_retry_receipt(parent_fd, receipt_path.name)
-            archived = _read_gdt10e_retry_receipt(parent_fd, archive_path.name)
+            source = _read_gdt10e_retry_receipt(
+                parent_fd,
+                receipt_path.name,
+                bytes_sha256=_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256,
+                content_sha256=_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256,
+            )
+            archived = _read_gdt10e_retry_receipt(
+                parent_fd,
+                archive_path.name,
+                bytes_sha256=_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256,
+                content_sha256=_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256,
+            )
         else:
             os.fsync(parent_fd)
         if source is None or archived is None:
@@ -2241,10 +2297,20 @@ def retire_no_issuance_receipt(
         except OSError as exc:
             raise ValueError("GDT-10E retry receipt retirement failed") from exc
         os.fsync(parent_fd)
-        if _gdt10e_retry_receipt_entry(parent_fd, receipt_path.name) is not None:
+        if _gdt10e_retry_receipt_entry(
+            parent_fd,
+            receipt_path.name,
+            bytes_sha256=_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256,
+            content_sha256=_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256,
+        ) is not None:
             raise ValueError("GDT-10E retry receipt reappeared")
         _gdt10e_retry_private_targets_are_absent()
-        _read_gdt10e_retry_receipt(parent_fd, archive_path.name)
+        _read_gdt10e_retry_receipt(
+            parent_fd,
+            archive_path.name,
+            bytes_sha256=_GDT10E_FINAL_RETRY_RECEIPT_BYTES_SHA256,
+            content_sha256=_GDT10E_FINAL_RETRY_RECEIPT_CONTENT_SHA256,
+        )
     finally:
         os.close(parent_fd)
 
