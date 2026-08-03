@@ -60,6 +60,13 @@ workflow spine、lane 和 planning 条件只由 `.agent/rules/workflow-lanes.md`
 - `Owner/File Closure Preflight` 必须同时核对相关 schema inventory、generator/checker、manifest/runtime identity、index/HEAD gate 和 old-path retirement；确认 approved allowed paths 覆盖全部真实 Owner，且 working tree、index、HEAD 所需证据在当前 stage/commit 约束下可执行。
 - preflight 发现必需 Owner 漏列、no-stage/no-commit 与 verification gate 冲突，或新 schema/runtime file 无法进入 authoritative inventory 时，必须在写入前 amend/replan 或请求用户决定；不得先生成 partial implementation，再把本应在 preflight 发现的文件漏列报告为 blocker。
 
+### 2.2 Worktree Environment Injection
+
+- 所有 Quality_Inspection linked worktree 共用唯一 canonical environment source：`/home/reggie/vscode_folder/Quality_Inspection/.env`。进入任一 worktree session 时必须先验证该文件是当前 uid/gid 拥有的 mode `0600` regular file；不得从 worktree 内的 `.env`、副本、symlink 或其他 fallback 读取同一组环境值。
+- shell/tool command 之间不得假设 environment 会持久化。每个需要 repository runtime、Provider credential 或 Harness private binding 的命令，必须在同一 shell process 内先执行 `set -a; . /home/reggie/vscode_folder/Quality_Inspection/.env; set +a`，再执行目标命令；不需要这些值的 read/test/lint/git 命令不得无意义加载 credential。
+- 不得复制、移动、生成、stage 或 commit canonical `.env`，不得输出、读取到 agent context、记录或 hash 其中的值。只允许按 exact environment key name 报告 `present/absent`；文件不安全、source 失败或 required key 缺失时必须在 runtime/Provider mutation 前 fail closed。
+- Environment injection 只提供 private process values，不等同于 operator attestation、account readiness、cycle authorization、paid execution approval 或 Provider success evidence；这些 gate 仍必须由当前 approved plan 的独立事实关闭。
+
 ## 3. Bootstrap State
 
 仓库可能尚未初始化 Git、语言栈、测试框架、构建命令或 runtime。缺少这些能力时：
