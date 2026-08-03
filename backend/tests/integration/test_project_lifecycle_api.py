@@ -23,6 +23,7 @@ from app.exports.router import (
     get_session as get_export_session,
     get_storage as get_export_storage,
 )
+from app.config import Settings, get_settings
 from app.processing.recognition_preview import RecognitionPreviewService
 from app.projects.models import Project, ProjectLifecycleStatus
 from app.projects.router import get_dispatcher, get_session, get_storage
@@ -147,6 +148,35 @@ def test_reprocess_returns_new_processing_project(
             f"product-process:{successor_id}",
         )
     ]
+
+
+def test_reprocess_freezes_production_identity_for_legacy_predecessor(
+    lifecycle_api_context: LifecycleApiContext,
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None,
+        symbol_recognition_mode="production_uncertainty",
+    )
+
+    response = lifecycle_api_context.client.post(
+        f"/api/v1/projects/{lifecycle_api_context.project.id}/reprocess"
+    )
+
+    assert response.status_code == 202
+    successor = lifecycle_api_context.session.get(
+        Project,
+        uuid.UUID(response.json()["project_id"]),
+    )
+    assert successor is not None
+    assert successor.recognition_mode == "production_uncertainty"
+    assert successor.recognition_router_version == "symbol-uncertainty-router/1"
+    predecessor = lifecycle_api_context.session.get(
+        Project,
+        lifecycle_api_context.project.id,
+    )
+    assert predecessor is not None
+    assert predecessor.recognition_mode == "legacy_high_recall"
+    assert predecessor.recognition_router_version == "legacy"
 
 
 def test_reprocess_rejects_duplicate_successor(

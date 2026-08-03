@@ -31,6 +31,7 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       QI_STORAGE_ROOT: /data
+      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty
     ports:
       - "8000:8000"
     volumes:
@@ -51,6 +52,7 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       QI_STORAGE_ROOT: /data
+      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty
     volumes:
       - ./backend:/app
       - qi_storage:/data
