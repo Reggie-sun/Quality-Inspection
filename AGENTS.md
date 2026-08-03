@@ -68,6 +68,13 @@ workflow spine、lane 和 planning 条件只由 `.agent/rules/workflow-lanes.md`
 - 不得复制、移动、生成、stage 或 commit canonical `.env`，不得输出、读取到 agent context、记录或 hash 其中的值。只允许按 exact environment key name 报告 `present/absent`；文件不安全、source 失败或 required key 缺失时必须在 runtime/Provider mutation 前 fail closed。
 - Environment injection 只提供 private process values，不等同于 operator attestation、account readiness、cycle authorization、paid execution approval 或 Provider success evidence；这些 gate 仍必须由当前 approved plan 的独立事实关闭。
 
+### 2.3 Linked Worktree Auto-Merge
+
+- 任务在 linked worktree 中执行时，完成全部 approved scope、required verification、required independent review（如适用）并将 scoped changes commit 后，父 agent 必须在同一任务中自动把该 worktree branch 合并到本地 `main`；不得再次请求用户确认，也不得停在只报告 worktree commit 的状态。
+- merge 前必须用 shell Git 核对 source branch/commit、local `main`、merge-base、两侧 worktree/index 状态、live-agent writer ownership 和 dirty-file overlap。默认使用 `git merge --ff-only`；若 `main` 已前进但不存在冲突或 ownership 风险，则先在 clean task worktree 合入 current `main`，重跑受影响的 required verification，再 fast-forward `main`。任何 merge conflict、重叠 dirty changes、active writer overlap、缺失 scoped commit 或 required verification/review 未通过都必须 fail closed，并报告 exact blocker。
+- merge 后必须证明 task commit 是 local `main` 的 ancestor，记录最终 `main` HEAD，并按 integration delta 运行最小必要的 post-merge check；这些检查未完成时不得报告 merge complete。
+- 自动 merge 只授权 local branch integration；不授权 push、remote PR merge、deployment、删除 branch/worktree、清理未提交文件或其他 destructive action。
+
 ## 3. Bootstrap State
 
 仓库可能尚未初始化 Git、语言栈、测试框架、构建命令或 runtime。缺少这些能力时：
