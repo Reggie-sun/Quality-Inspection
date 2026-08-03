@@ -2,6 +2,32 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260803-save-and-return-no-feedback
+
+- Status: 已解决
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: `InspectionWorkbench` 未保存修改返回对话框、草稿批量保存与失败反馈
+- Symptom: 用户点击“保存并返回”后对话框保持不变，看起来按钮没有反应；页面摘要仅在遮罩后显示“保存失败”
+- Reproduction: live 项目 `f62ad156-b7dd-43ea-a8ee-fbeda4f78770` 点击后 working copy 仍为 version `1`，API 日志没有该项目的 `/review/commands` 请求，证明保存被前端草稿校验在请求前拒绝；当前对话框没有失败原因或处理建议
+- Root cause: `saveAndReturnToDrawingList()` 将草稿句柄的本地校验失败与 API 保存失败都折叠为 `saveState="保存失败"`，但 `saveState` 只显示在对话框后方的项目摘要；对话框继续显示原始未保存说明，没有错误提示或下一步，造成“点击没反应”的用户感知
+- Selected lane: `Standard`；局部 frontend 行为与文案修复，但需要 focused test、full frontend suite/build、真实 Chrome smoke 和独立 review
+- Selected plan: 本 bug-memory entry 作为当前 ad hoc task contract；不切换或扩展 P0 implementation plan
+- Problem boundary: 只让“保存并返回”的失败在当前对话框内可见且可操作；不放宽草稿校验，不自动丢弃内容，不改变保存顺序、Review API、锁、working-copy version 或返回导航语义
+- Single owner: `InspectionWorkbench` 继续拥有 return dialog 和多草稿保存编排
+- Old path action: 替换“失败后对话框内容完全不变”的静默路径；保留失败时停留工作台和保留草稿的既有安全行为
+- Unchanged contract: 只有全部草稿保存成功才调用 `onReset`；本地无效草稿不发 API；API 失败不丢草稿；“不保存返回”和“取消”语义不变
+- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/InspectionWorkbench.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`frontend/src/copy/zhCN.ts`
+- Writer ownership and order: 父 agent 在隔离 worktree `fix/save-and-return-feedback` 中为唯一 writer；主工作树同文件的另一任务改动不覆盖，完成后先整合最新 `main` 并重跑验证
+- Focused verification: `micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/InspectionWorkbench.test.tsx`
+- Validation action: 先新增“本地无效草稿不发请求但对话框显示可操作失败提示”的 RED，再做最小 GREEN；随后 full frontend、build、Chrome smoke 与 independent review
+- Fix: `InspectionWorkbench` 在打开、取消、放弃、重试和成功路径上显式管理 return-save failure；任一草稿或 metadata 保存失败时保留对话框与草稿，并在对话框内显示 `role="alert"` 的原因中立提示，允许检查后重试、继续编辑或明确不保存返回
+- Regression check: 先新增本地无效新增草稿 RED，精确失败于对话框缺少 `role="alert"`；review 后将 API 与本地失败统一文案改为原因中立，并再次取得两项 RED/GREEN。整合最新 `main@f28590a` 后 focused `InspectionWorkbench.test.tsx` 为 `51 passed`，full frontend 为 `25 files / 317 tests passed`，production build 和 `git diff --check` 通过；build 仅保留既有 Vite large-chunk warning
+- Runtime proof: Chrome 在 worktree frontend `15175` 对项目 `d5417ca0-2fe3-4dca-ba9f-10b9ba30032c` 填入不完整新增草稿 `M10` 后点击“保存并返回”，对话框保持打开并显示原因中立提示，`M10` 仍保留；浏览器 network 和 API access log 均无该项目 `/review/commands`，随后“不保存返回”回到列表且 `/review/lock/release` 返回 `200`；console 无 error/warning
+- Independent review: 初审 `accept with concerns`，指出统一文案会误导 API/锁失败且 `main` 已前进；文案改为原因中立并 fast-forward 整合 `main@f28590a` 后复审 `accept`，确认两项 concern 均关闭、无 blocking 或 non-blocking concern、阶段 gate 与本任务状态机均完整保留
+- Change: `.agent/bug-memory.md`、`InspectionWorkbench.tsx`、`InspectionWorkbench.test.tsx`、`zhCN.ts`
+
 ## BUG-20260803-auto-accepted-items-remain-pending
 
 - Status: 修复待验证

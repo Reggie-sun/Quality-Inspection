@@ -141,6 +141,8 @@ export const zhCN = {
     returnToDrawingList: "回到图纸列表",
     returnDialogTitle: "返回图纸列表？",
     returnDialogDescription: "当前图纸有未保存修改，请选择如何处理。",
+    returnSaveFailed:
+      "未能保存全部修改。请检查内容后重试；也可取消返回继续编辑，或选择“不保存返回”。",
     saveAndReturn: "保存并返回",
     discardAndReturn: "不保存返回",
     cancelReturn: "取消",

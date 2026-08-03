@@ -3309,10 +3309,43 @@ describe("InspectionWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存并返回" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
-    expect(screen.getByRole("dialog", { name: "返回图纸列表？" }))
-      .not.toBeNull();
+    const dialog = screen.getByRole("dialog", { name: "返回图纸列表？" });
+    expect(dialog).not.toBeNull();
+    expect(within(dialog).getByRole("alert").textContent)
+      .toBe("未能保存全部修改。请检查内容后重试；也可取消返回继续编辑，或选择“不保存返回”。");
     expect(productName.value).toBe("失败后保留");
     expect(onReset).not.toHaveBeenCalled();
+  });
+
+  test("未填写完整的新增草稿阻止返回时在对话框内说明处理方式", async () => {
+    const onReset = vi.fn();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InspectionWorkbench
+        pdfDocument={null}
+        candidates={[]}
+        sources={[]}
+        balloons={[]}
+        items={[]}
+        onSave={onSave}
+        onReset={onReset}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("新增检验项原始标注"), {
+      target: { value: "M10" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "回到图纸列表" }));
+    const dialog = screen.getByRole("dialog", { name: "返回图纸列表？" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存并返回" }));
+
+    await waitFor(() => expect(within(dialog).getByRole("alert").textContent)
+      .toBe("未能保存全部修改。请检查内容后重试；也可取消返回继续编辑，或选择“不保存返回”。"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onReset).not.toHaveBeenCalled();
+    expect((screen.getByLabelText(
+      "新增检验项原始标注",
+    ) as HTMLInputElement).value).toBe("M10");
   });
 
   test("全部草稿保存成功后才返回列表", async () => {

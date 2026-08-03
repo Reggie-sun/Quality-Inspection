@@ -294,6 +294,7 @@ export function InspectionWorkbench({
   const [selectionBlocked, setSelectionBlocked] = useState(false);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [returnSaving, setReturnSaving] = useState(false);
+  const [returnSaveFailed, setReturnSaveFailed] = useState(false);
   const reviewDraftSaveRef = useRef<DraftSaveHandle>(null);
   const sourceDraftSaveRef = useRef<DraftSaveHandle>(null);
   const selectedSipDraftSaveRef = useRef<DraftSaveHandle>(null);
@@ -534,10 +535,12 @@ export function InspectionWorkbench({
       onReset();
       return;
     }
+    setReturnSaveFailed(false);
     setReturnDialogOpen(true);
   };
   const cancelReturnToDrawingList = (): void => {
     if (returnSaving) return;
+    setReturnSaveFailed(false);
     setReturnDialogOpen(false);
     window.setTimeout(() => returnActionRef.current?.focus(), 0);
   };
@@ -548,6 +551,7 @@ export function InspectionWorkbench({
       sourceDraftSaveRef.current,
       selectedSipDraftSaveRef.current,
     ];
+    setReturnSaveFailed(false);
     setReturnSaving(true);
     try {
       const technicalRequirementSaved = await saveDraftHandlesInOrder([
@@ -555,16 +559,22 @@ export function InspectionWorkbench({
       ]);
       if (!technicalRequirementSaved) {
         setSaveState(zhCN.workbench.saveFailed);
+        setReturnSaveFailed(true);
         return;
       }
-      if (metadataDraftDirty && !(await confirmMetadata())) return;
+      if (metadataDraftDirty && !(await confirmMetadata())) {
+        setReturnSaveFailed(true);
+        return;
+      }
       const saved = await saveDraftHandlesInOrder(
         remainingDraftSaveHandles,
       );
       if (!saved) {
         setSaveState(zhCN.workbench.saveFailed);
+        setReturnSaveFailed(true);
         return;
       }
+      setReturnSaveFailed(false);
       setReturnDialogOpen(false);
       onReset();
     } finally {
@@ -986,6 +996,9 @@ export function InspectionWorkbench({
             <p id="workbench-return-dialog-description">
               {zhCN.workbench.returnDialogDescription}
             </p>
+            {returnSaveFailed ? (
+              <p role="alert">{zhCN.workbench.returnSaveFailed}</p>
+            ) : null}
             <div className="workbench-return-dialog__actions">
               <button
                 ref={saveAndReturnRef}
@@ -1002,6 +1015,7 @@ export function InspectionWorkbench({
                 type="button"
                 disabled={returnSaving}
                 onClick={() => {
+                  setReturnSaveFailed(false);
                   setReturnDialogOpen(false);
                   onReset?.();
                 }}
