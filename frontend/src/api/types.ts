@@ -270,6 +270,9 @@ export type ProjectListTransport =
 export type ProjectListItemTransport =
   components["schemas"]["ProjectListItemResponse"];
 
+export type ProjectReprocessTransport =
+  components["schemas"]["ProjectReprocessResponse"];
+
 export type RecognitionPreview =
   components["schemas"]["RecognitionPreviewResponse"];
 
@@ -290,3 +293,8 @@ export type PostForm = <Result>(
   body: FormData,
   signal?: AbortSignal,
 ) => Promise<Result>;
+
+export type DeleteEmpty = (
+  path: string,
+  signal?: AbortSignal,
+) => Promise<void>;

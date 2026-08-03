@@ -1,4 +1,4 @@
-import type { GetJson, PostForm, PostJson } from "./types";
+import type { DeleteEmpty, GetJson, PostForm, PostJson } from "./types";
 
 
 export class ApiError extends Error {
@@ -60,6 +60,20 @@ export const postForm: PostForm = async <Result>(
   const request: RequestInit = { method: "POST", body };
   if (signal !== undefined) request.signal = signal;
   return json<Result>(await fetch(path, request));
+};
+
+
+export const deleteEmpty: DeleteEmpty = async (
+  path: string,
+  signal?: AbortSignal,
+) => {
+  const request: RequestInit = {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  };
+  if (signal !== undefined) request.signal = signal;
+  const response = await fetch(path, request);
+  if (!response.ok) await json<never>(response);
 };
 
 

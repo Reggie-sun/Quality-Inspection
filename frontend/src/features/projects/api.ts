@@ -1,7 +1,8 @@
-import { getJson, postForm, postJson } from "../../api/client";
+import { deleteEmpty, getJson, postForm, postJson } from "../../api/client";
 import type {
   ProjectListItemTransport,
   ProjectListTransport,
+  ProjectReprocessTransport,
   ProjectStatus,
 } from "../../api/types";
 
@@ -11,6 +12,12 @@ export type ProjectListItem = {
   fileName: string;
   createdAt: string;
   lastOpenedAt: string;
+};
+
+
+export type ProjectReprocessResult = {
+  projectId: string;
+  predecessorProjectId: string;
 };
 
 
@@ -25,6 +32,14 @@ export type ProjectApi = {
     projectId: string,
     signal?: AbortSignal,
   ) => Promise<ProjectListItem>;
+  reprocessProject: (
+    projectId: string,
+    signal?: AbortSignal,
+  ) => Promise<ProjectReprocessResult>;
+  deleteProject: (
+    projectId: string,
+    signal?: AbortSignal,
+  ) => Promise<void>;
 };
 
 
@@ -83,9 +98,38 @@ export async function markProjectOpened(
 }
 
 
+export async function reprocessProject(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<ProjectReprocessResult> {
+  const path = `/api/v1/projects/${encodeURIComponent(projectId)}/reprocess`;
+  const response = await postJson<ProjectReprocessTransport>(
+    path,
+    undefined,
+    { Accept: "application/json" },
+    signal,
+  );
+  return {
+    projectId: response.project_id,
+    predecessorProjectId: response.predecessor_project_id,
+  };
+}
+
+
+export function deleteProject(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const path = `/api/v1/projects/${encodeURIComponent(projectId)}`;
+  return deleteEmpty(path, signal);
+}
+
+
 export const projectApi: ProjectApi = {
   createProject,
   getProjectStatus,
   listProjects,
   markProjectOpened,
+  reprocessProject,
+  deleteProject,
 };

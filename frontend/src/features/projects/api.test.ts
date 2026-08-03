@@ -4,12 +4,15 @@ import { ApiError, getJson, postForm } from "../../api/client";
 import {
   createProject,
   getProjectStatus,
+  deleteProject,
   listProjects,
   markProjectOpened,
+  reprocessProject,
 } from "./api";
 
 
 const PROJECT_ID = "550e8400-e29b-41d4-a716-446655440000";
+const SUCCESSOR_ID = "11111111-1111-4111-8111-111111111111";
 
 
 afterEach(() => {
@@ -121,6 +124,50 @@ test("markProjectOpened 编码项目标识并使用 POST", async () => {
       },
       body: undefined,
     },
+  );
+});
+
+
+test("reprocessProject 使用 POST 并映射 successor", async () => {
+  const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    project_id: SUCCESSOR_ID,
+    predecessor_project_id: PROJECT_ID,
+    phase: "processing",
+    lifecycle_status: "reprocessing",
+  }), {
+    status: 202,
+    headers: { "Content-Type": "application/json" },
+  }));
+  vi.stubGlobal("fetch", fetchSpy);
+
+  await expect(reprocessProject("project/with spaces")).resolves.toEqual({
+    projectId: SUCCESSOR_ID,
+    predecessorProjectId: PROJECT_ID,
+  });
+  expect(fetchSpy).toHaveBeenCalledWith(
+    "/api/v1/projects/project%2Fwith%20spaces/reprocess",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: undefined,
+    },
+  );
+});
+
+
+test("deleteProject 接受 empty 204 response", async () => {
+  const fetchSpy = vi.fn().mockResolvedValue(
+    new Response(null, { status: 204 }),
+  );
+  vi.stubGlobal("fetch", fetchSpy);
+
+  await expect(deleteProject("project/with spaces")).resolves.toBeUndefined();
+  expect(fetchSpy).toHaveBeenCalledWith(
+    "/api/v1/projects/project%2Fwith%20spaces",
+    { method: "DELETE", headers: { Accept: "application/json" } },
   );
 });
 
