@@ -445,7 +445,7 @@ Expected：clean committed HEAD；no private state、runtime、credential、DB�
 
 - [ ] **Step 0: Retire the immutable no-issuance receipt exactly once**
 
-Run only after the code/test/review gates for this amendment are closed:
+Run only after the code/test/review gates for this amendment are closed and the parent has established an operator-controlled exclusive-writer window. From the first fixed parent/source/archive validation through final parent `fsync` and terminal source/private/archive rechecks, no concurrent same-UID/root process、agent、operator or lifecycle command may create、rename、replace、unlink or rewrite either receipt or any private target. This is a required threat-model precondition, not an advisory-lock guarantee; do not run if exclusive ownership is uncertain.
 
 ```bash
 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py retire-no-issuance-receipt \
@@ -453,7 +453,7 @@ micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.p
   --archive /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json
 ```
 
-Expected：only the fixed source/archive three-state replay succeeds; archive bytes are exactly the immutable source bytes, source is absent, and all private targets remain absent. No Provider/paid/DB/Harness delta is permitted. Any failure is a hard stop; never delete, copy, rename or hand-write either receipt.
+Expected：only the fixed source/archive three-state replay succeeds; archive bytes are exactly the immutable source bytes, source is absent, and all private targets remain absent. Observable entry/device/inode replacement before destructive commit, terminal source/private reappearance, or archive mismatch fails closed. Tests do not simulate a concurrent replacement inside the final stat-to-unlink syscall gap because that violates the approved exclusive-writer precondition and `unlinkat` has no expected-inode condition. Archive-only replay with any different future source remains a conflict and never unlinks it. No Provider/paid/DB/Harness delta is permitted. Any failure is a hard stop; never delete, copy, rename or hand-write either receipt.
 
 **Interfaces:**
 
