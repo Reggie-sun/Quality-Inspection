@@ -64,6 +64,15 @@ class ProjectListResponse(BaseModel):
     count: int
 
 
+class ProjectReprocessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: uuid.UUID
+    predecessor_project_id: uuid.UUID
+    phase: Literal["processing"]
+    lifecycle_status: Literal["reprocessing"]
+
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

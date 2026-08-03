@@ -23,6 +23,11 @@ EXPECTED_OPERATIONS = {
         "POST",
         "/api/v1/projects/{project_id}/open",
     ): "QI-API-PRJ-007",
+    (
+        "POST",
+        "/api/v1/projects/{project_id}/reprocess",
+    ): "QI-API-PRJ-008",
+    ("DELETE", "/api/v1/projects/{project_id}"): "QI-API-PRJ-009",
     ("POST", "/api/v1/projects/{project_id}/review/lock"): "QI-API-REV-001",
     (
         "POST",
@@ -72,6 +77,10 @@ BINARY_OPERATIONS = {
     },
 }
 
+EMPTY_OPERATIONS = {
+    ("DELETE", "/api/v1/projects/{project_id}"),
+}
+
 SNAPSHOT = (
     Path(__file__).parent
     / "snapshots"
@@ -107,7 +116,7 @@ def test_formal_routes_have_stable_ids_and_explicit_response_models() -> None:
     for key, operation_id in EXPECTED_OPERATIONS.items():
         route = routes[key]
         assert route.operation_id == operation_id
-        if key in BINARY_OPERATIONS:
+        if key in BINARY_OPERATIONS or key in EMPTY_OPERATIONS:
             assert route.response_model is None
         else:
             assert route.response_model is not None
@@ -123,6 +132,9 @@ def test_openapi_projects_json_and_binary_success_contracts() -> None:
         success = operation["responses"][next(
             code for code in operation["responses"] if code.startswith("2")
         )]
+        if (method, path) in EMPTY_OPERATIONS:
+            assert "content" not in success
+            continue
         content = success["content"]
         if (method, path) in BINARY_OPERATIONS:
             assert set(content) == BINARY_OPERATIONS[(method, path)]
@@ -149,6 +161,19 @@ def test_openapi_documents_the_unified_error_contract() -> None:
             assert schema == {
                 "$ref": "#/components/schemas/ErrorEnvelope",
             }
+
+
+def test_project_scoped_operations_document_lifecycle_not_found() -> None:
+    document = app.openapi()
+
+    for method, path in EXPECTED_OPERATIONS:
+        if "{project_id}" not in path:
+            continue
+        not_found = document["paths"][path][method.lower()]["responses"]["404"]
+        assert "project_not_found" in not_found["x-stable-error-codes"], (
+            method,
+            path,
+        )
 
 
 def test_recognition_preview_documents_its_read_only_error_contract() -> None:

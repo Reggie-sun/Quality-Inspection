@@ -31,9 +31,18 @@ from app.projects.models import Project
 from app.projects.schemas import (
     ProjectListItemResponse,
     ProjectListResponse,
+    ProjectReprocessResponse,
     ProjectStatusResponse,
     ProjectWorkbenchResponse,
     RecognitionPreviewResponse,
+)
+from app.projects.lifecycle import (
+    ProjectAccess,
+    ProjectLifecycleDispatchFailed,
+    ProjectLifecycleLocked,
+    ProjectLifecycleNotFound,
+    ProjectLifecycleService,
+    ProjectReprocessInProgress,
 )
 from app.processing.recognition_preview import (
     RecognitionPreviewHead,
@@ -129,6 +138,19 @@ def get_project_catalog_service(
 ProjectCatalogServiceDependency = Annotated[
     ProjectCatalogService,
     Depends(get_project_catalog_service),
+]
+
+
+def get_project_lifecycle_service(
+    session: SessionDependency,
+    dispatch: DispatcherDependency,
+) -> ProjectLifecycleService:
+    return ProjectLifecycleService(session, dispatch=dispatch)
+
+
+ProjectLifecycleServiceDependency = Annotated[
+    ProjectLifecycleService,
+    Depends(get_project_lifecycle_service),
 ]
 
 
@@ -241,6 +263,106 @@ def mark_project_opened(
         )
 
 
+@router.post(
+    "/{project_id}/reprocess",
+    status_code=202,
+    operation_id="QI-API-PRJ-008",
+    response_model=ProjectReprocessResponse,
+    responses=error_responses(
+        {
+            404: ("project_not_found",),
+            409: (
+                "project_reprocess_in_progress",
+                "project_source_pdf_unavailable",
+            ),
+            422: ("request_validation_failed",),
+            503: ("project_dispatch_failed",),
+        }
+    ),
+)
+def reprocess_project(
+    project_id: uuid.UUID,
+    service: ProjectLifecycleServiceDependency,
+    settings: SettingsDependency,
+) -> ProjectReprocessResponse | JSONResponse:
+    recognition_mode, router_version = symbol_routing_identity(
+        settings.symbol_recognition_mode
+    )
+    try:
+        successor = service.start_reprocess(
+            project_id,
+            recognition_mode=recognition_mode,
+            recognition_router_version=router_version,
+        )
+    except ProjectLifecycleNotFound:
+        return _error(404, "project_not_found", "project was not found")
+    except ProjectReprocessInProgress:
+        return _error(
+            409,
+            "project_reprocess_in_progress",
+            "project reprocessing is already in progress",
+        )
+    except ProjectSourceUnavailable:
+        return _error(
+            409,
+            "project_source_pdf_unavailable",
+            "project source PDF is unavailable",
+        )
+    except ProjectLifecycleDispatchFailed:
+        return _error(
+            503,
+            "project_dispatch_failed",
+            "project dispatch failed",
+            severity="blocking",
+        )
+    return ProjectReprocessResponse(
+        project_id=successor.id,
+        predecessor_project_id=project_id,
+        phase="processing",
+        lifecycle_status="reprocessing",
+    )
+
+
+@router.delete(
+    "/{project_id}",
+    status_code=204,
+    operation_id="QI-API-PRJ-009",
+    response_model=None,
+    responses=error_responses(
+        {
+            404: ("project_not_found",),
+            409: ("project_reprocess_in_progress", "project_locked"),
+            422: ("request_validation_failed",),
+            500: ("project_delete_failed", "internal_server_error"),
+        }
+    ),
+)
+def delete_project(
+    project_id: uuid.UUID,
+    service: ProjectLifecycleServiceDependency,
+) -> Response:
+    try:
+        service.delete_project(project_id)
+    except ProjectLifecycleNotFound:
+        return _error(404, "project_not_found", "project was not found")
+    except ProjectReprocessInProgress:
+        return _error(
+            409,
+            "project_reprocess_in_progress",
+            "project reprocessing is already in progress",
+        )
+    except ProjectLifecycleLocked:
+        return _error(409, "project_locked", "project has an active editor")
+    except Exception:
+        return _error(
+            500,
+            "project_delete_failed",
+            "project deletion failed",
+            severity="fatal",
+        )
+    return Response(status_code=204)
+
+
 @router.get(
     "/{project_id}/status",
     operation_id="QI-API-PRJ-002",
@@ -257,10 +379,15 @@ def mark_project_opened(
 def get_project_status(
     project_id: uuid.UUID,
     service: ProjectServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
     try:
         result = service.status(project_id)
-    except ProjectNotFound:
+        ProjectLifecycleService(session).require_access(
+            project_id,
+            ProjectAccess.STATUS_READ,
+        )
+    except (ProjectNotFound, ProjectLifecycleNotFound):
         return _error(404, "project_not_found", "project was not found")
     except Exception:
         return _error(
@@ -291,7 +418,13 @@ def get_workbench(
     storage: StorageDependency,
 ) -> JSONResponse:
     try:
+        ProjectLifecycleService(session).require_access(
+            project_id,
+            ProjectAccess.ACTIVE,
+        )
         payload = _workbench_payload(session, storage, project_id)
+    except ProjectLifecycleNotFound as error:
+        return _error(404, "project_not_found", str(error))
     except ProjectWorkbenchNotFound as error:
         return _error(404, "project_not_found", str(error))
     except ProjectWorkbenchUnavailable as error:
@@ -329,11 +462,15 @@ def get_source_pdf(
     storage: StorageDependency,
 ) -> Response:
     try:
+        ProjectLifecycleService(session).require_access(
+            project_id,
+            ProjectAccess.PROCESSING_READ,
+        )
         source = _source_pdf_file(session, project_id)
         if source is None or source.mime_type != "application/pdf":
             raise ProjectWorkbenchUnavailable("project source PDF is unavailable")
         content = storage.read_bytes(source.resource_ref)
-    except ProjectWorkbenchNotFound as error:
+    except (ProjectWorkbenchNotFound, ProjectLifecycleNotFound) as error:
         return _error(404, "project_not_found", str(error))
     except (ProjectWorkbenchUnavailable, ValueError, OSError):
         return _error(
@@ -366,7 +503,12 @@ def get_recognition_preview(
     project_id: uuid.UUID,
     session: SessionDependency,
 ) -> RecognitionPreviewResponse | JSONResponse:
-    if session.get(Project, project_id) is None:
+    try:
+        ProjectLifecycleService(session).require_access(
+            project_id,
+            ProjectAccess.PROCESSING_READ,
+        )
+    except ProjectLifecycleNotFound:
         return _error(404, "project_not_found", "project was not found")
     head = session.get(RecognitionPreviewHead, project_id)
     if head is None or head.terminal_result_id is not None:

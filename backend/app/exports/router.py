@@ -16,6 +16,11 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.errors.api import api_error, error_responses
 from app.errors.schemas import ErrorSeverity
+from app.projects.lifecycle import (
+    ProjectAccess,
+    ProjectLifecycleNotFound,
+    ProjectLifecycleService,
+)
 from app.exports.models import ExportArtifact, ExportJob
 from app.exports.schemas import CreateExportRequest, ExportResponse
 from app.exports.service import (
@@ -63,7 +68,7 @@ ExportServiceDependency = Annotated[ExportService, Depends(get_export_service)]
     response_model=ExportResponse,
     responses=error_responses(
         {
-            404: ("reviewed_result_not_found",),
+            404: ("project_not_found", "reviewed_result_not_found"),
             409: (
                 "export_in_progress",
                 "export_preflight_failed",
@@ -88,7 +93,11 @@ def create_export(
     project_id: uuid.UUID,
     body: CreateExportRequest,
     service: ExportServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     try:
         export = service.create(body.reviewed_result_id, project_id=project_id)
     except ExportNotFound as error:
@@ -108,7 +117,7 @@ def create_export(
     response_model=ExportResponse,
     responses=error_responses(
         {
-            404: ("export_not_found",),
+            404: ("project_not_found", "export_not_found"),
             422: ("request_validation_failed",),
             500: ("internal_server_error",),
         }
@@ -117,11 +126,15 @@ def create_export(
 def get_export(
     export_id: uuid.UUID,
     service: ExportServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
     try:
         export = service.get(export_id)
     except ExportNotFound as error:
         return _error(404, "export_not_found", str(error))
+    guard = _active_project_error(session, export.project_id)
+    if guard is not None:
+        return guard
     return _export_payload(service, export)
 
 
@@ -147,7 +160,7 @@ def get_export(
         },
         **error_responses(
             {
-                404: ("export_artifact_not_found",),
+                404: ("project_not_found", "export_artifact_not_found"),
                 409: ("export_artifact_unavailable",),
                 422: ("request_validation_failed",),
                 500: ("internal_server_error",),
@@ -160,6 +173,7 @@ def download_export(
     kind: str,
     service: ExportServiceDependency,
     storage: StorageDependency,
+    session: SessionDependency,
 ) -> Response:
     media_types = {
         "ballooned_pdf": "application/pdf",
@@ -169,6 +183,13 @@ def download_export(
         "manifest": "application/json",
     }
     media_type = media_types.get(kind)
+    try:
+        export = service.get(export_id)
+    except ExportNotFound as error:
+        return _error(404, "export_artifact_not_found", str(error))
+    guard = _active_project_error(session, export.project_id)
+    if guard is not None:
+        return guard
     resource_ref = service.download_ref(export_id, kind)
     if media_type is None or resource_ref is None:
         return _error(
@@ -190,6 +211,20 @@ def download_export(
         media_type=media_type,
         headers={"Content-Disposition": _content_disposition(filename)},
     )
+
+
+def _active_project_error(
+    session: Session,
+    project_id: uuid.UUID,
+) -> JSONResponse | None:
+    try:
+        ProjectLifecycleService(session).require_access(
+            project_id,
+            ProjectAccess.ACTIVE,
+        )
+    except ProjectLifecycleNotFound:
+        return _error(404, "project_not_found", "project was not found")
+    return None
 
 
 def _content_disposition(filename: str) -> str:

@@ -925,6 +925,39 @@
         "title": "ProjectPhase",
         "type": "string"
       },
+      "ProjectReprocessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "lifecycle_status": {
+            "const": "reprocessing",
+            "title": "Lifecycle Status",
+            "type": "string"
+          },
+          "phase": {
+            "const": "processing",
+            "title": "Phase",
+            "type": "string"
+          },
+          "predecessor_project_id": {
+            "format": "uuid",
+            "title": "Predecessor Project Id",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "predecessor_project_id",
+          "phase",
+          "lifecycle_status"
+        ],
+        "title": "ProjectReprocessResponse",
+        "type": "object"
+      },
       "ProjectState": {
         "enum": [
           "processing",
@@ -2505,6 +2538,7 @@
             },
             "description": "Requested resource was not found.",
             "x-stable-error-codes": [
+              "project_not_found",
               "export_not_found"
             ]
           },
@@ -2599,6 +2633,7 @@
             },
             "description": "Requested resource was not found.",
             "x-stable-error-codes": [
+              "project_not_found",
               "export_artifact_not_found"
             ]
           },
@@ -2784,6 +2819,86 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}": {
+      "delete": {
+        "operationId": "QI-API-PRJ-009",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "project_reprocess_in_progress",
+              "project_locked"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unexpected internal failure.",
+            "x-stable-error-codes": [
+              "project_delete_failed",
+              "internal_server_error"
+            ]
+          }
+        },
+        "summary": "Delete Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/balloons": {
       "get": {
         "operationId": "QI-API-BAL-001",
@@ -2809,6 +2924,19 @@
               }
             },
             "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
           },
           "422": {
             "content": {
@@ -2933,6 +3061,7 @@
             },
             "description": "Requested resource was not found.",
             "x-stable-error-codes": [
+              "project_not_found",
               "balloon_not_found"
             ]
           },
@@ -3042,6 +3171,7 @@
             },
             "description": "Requested resource was not found.",
             "x-stable-error-codes": [
+              "project_not_found",
               "review_working_copy_not_found"
             ]
           },
@@ -3143,6 +3273,7 @@
             },
             "description": "Requested resource was not found.",
             "x-stable-error-codes": [
+              "project_not_found",
               "reviewed_result_not_found"
             ]
           },
@@ -3362,6 +3493,92 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/reprocess": {
+      "post": {
+        "operationId": "QI-API-PRJ-008",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectReprocessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Requested resource was not found.",
+            "x-stable-error-codes": [
+              "project_not_found"
+            ]
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request conflicts with current aggregate or capability state.",
+            "x-stable-error-codes": [
+              "project_reprocess_in_progress",
+              "project_source_pdf_unavailable"
+            ]
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request failed transport or business validation.",
+            "x-stable-error-codes": [
+              "request_validation_failed"
+            ]
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Required dispatch or service is unavailable.",
+            "x-stable-error-codes": [
+              "project_dispatch_failed"
+            ]
+          }
+        },
+        "summary": "Reprocess Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/review/commands": {
       "post": {
         "operationId": "QI-API-REV-003",
@@ -3417,6 +3634,7 @@
             },
             "description": "Requested resource was not found.",
             "x-stable-error-codes": [
+              "project_not_found",
               "review_working_copy_not_found"
             ]
           },
@@ -3524,6 +3742,7 @@
             },
             "description": "Requested resource was not found.",
             "x-stable-error-codes": [
+              "project_not_found",
               "review_working_copy_not_found"
             ]
           },
@@ -3647,6 +3866,7 @@
             },
             "description": "Requested resource was not found.",
             "x-stable-error-codes": [
+              "project_not_found",
               "review_working_copy_not_found"
             ]
           },
@@ -3934,6 +4154,7 @@
             },
             "description": "Requested resource was not found.",
             "x-stable-error-codes": [
+              "project_not_found",
               "review_working_copy_not_found"
             ]
           },

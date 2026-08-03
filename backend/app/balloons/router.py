@@ -33,6 +33,11 @@ from app.db import SessionLocal
 from app.errors.api import api_error, error_responses
 from app.errors.schemas import ErrorSeverity
 from app.review.locks import LockConflict, LockRequired
+from app.projects.lifecycle import (
+    ProjectAccess,
+    ProjectLifecycleNotFound,
+    ProjectLifecycleService,
+)
 
 
 router = APIRouter(prefix="/api/v1/projects", tags=["balloons"])
@@ -63,6 +68,7 @@ BalloonServiceDependency = Annotated[BalloonService, Depends(get_balloon_service
     response_model=BalloonCollectionResponse,
     responses=error_responses(
         {
+            404: ("project_not_found",),
             422: ("request_validation_failed",),
             500: ("internal_server_error",),
         }
@@ -71,7 +77,11 @@ BalloonServiceDependency = Annotated[BalloonService, Depends(get_balloon_service
 def list_balloons(
     project_id: uuid.UUID,
     service: BalloonServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     return {
         "balloons": [
             _balloon(balloon)
@@ -86,7 +96,7 @@ def list_balloons(
     response_model=BalloonCollectionResponse,
     responses=error_responses(
         {
-            404: ("review_working_copy_not_found",),
+            404: ("project_not_found", "review_working_copy_not_found"),
             409: (
                 "review_item_set_not_frozen",
                 "balloon_version_conflict",
@@ -105,7 +115,11 @@ def generate_balloons(
     body: GenerateBalloonsRequest,
     operator_id: OperatorHeader,
     service: BalloonServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     try:
         balloons = service.generate_formal(
             project_id,
@@ -137,7 +151,7 @@ def generate_balloons(
     response_model=BalloonCommandResponse,
     responses=error_responses(
         {
-            404: ("balloon_not_found",),
+            404: ("project_not_found", "balloon_not_found"),
             409: (
                 "balloon_version_conflict",
                 "review_lock_conflict",
@@ -155,7 +169,11 @@ def apply_balloon_command(
     body: BalloonCommandRequest,
     operator_id: OperatorHeader,
     service: BalloonServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     try:
         if isinstance(body, RenumberBalloons):
             balloons = service.renumber(
@@ -212,6 +230,20 @@ def apply_balloon_command(
     except ValueError as error:
         return _error(422, "balloon_command_invalid", str(error))
     return _balloon(saved)
+
+
+def _active_project_error(
+    session: Session,
+    project_id: uuid.UUID,
+) -> JSONResponse | None:
+    try:
+        ProjectLifecycleService(session).require_access(
+            project_id,
+            ProjectAccess.ACTIVE,
+        )
+    except ProjectLifecycleNotFound:
+        return _error(404, "project_not_found", "project was not found")
+    return None
 
 
 def _balloon(balloon: Balloon) -> dict[str, object]:

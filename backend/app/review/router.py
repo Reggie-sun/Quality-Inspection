@@ -11,6 +11,11 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.errors.api import api_error, error_responses
 from app.errors.schemas import ErrorSeverity
+from app.projects.lifecycle import (
+    ProjectAccess,
+    ProjectLifecycleNotFound,
+    ProjectLifecycleService,
+)
 from app.review.locks import LockConflict, LockRequired, acquire_lock, release_lock
 from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.schemas import (
@@ -77,6 +82,9 @@ def lock_review(
     operator_id: OperatorHeader,
     session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     try:
         lock = acquire_lock(
             session,
@@ -113,6 +121,9 @@ def release_review_lock(
     operator_id: OperatorHeader,
     session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     try:
         released = release_lock(
             session,
@@ -136,7 +147,7 @@ def release_review_lock(
     response_model=ReviewWorkingCopyResponse,
     responses=error_responses(
         {
-            404: ("review_working_copy_not_found",),
+            404: ("project_not_found", "review_working_copy_not_found"),
             422: ("request_validation_failed",),
             500: ("internal_server_error",),
         }
@@ -145,7 +156,11 @@ def release_review_lock(
 def get_working_copy(
     project_id: uuid.UUID,
     service: ReviewServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     try:
         working = service.get_for_project(project_id)
     except ReviewNotFound as error:
@@ -159,7 +174,7 @@ def get_working_copy(
     response_model=ReviewWorkingCopyResponse,
     responses=error_responses(
         {
-            404: ("review_working_copy_not_found",),
+            404: ("project_not_found", "review_working_copy_not_found"),
             409: (
                 "review_version_conflict",
                 "review_items_frozen",
@@ -175,7 +190,11 @@ def apply_command(
     body: ReviewCommandRequest,
     operator_id: OperatorHeader,
     service: ReviewServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     try:
         working = service.get_for_project(project_id)
         saved = service.apply(
@@ -203,7 +222,7 @@ def apply_command(
     response_model=ReviewWorkingCopyResponse,
     responses=error_responses(
         {
-            404: ("review_working_copy_not_found",),
+            404: ("project_not_found", "review_working_copy_not_found"),
             409: (
                 "review_version_conflict",
                 "coverage_blocking",
@@ -222,7 +241,11 @@ def freeze_items(
     body: FreezeItemsRequest,
     operator_id: OperatorHeader,
     service: ReviewServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     try:
         working = service.get_for_project(project_id)
         frozen = service.freeze_items(
@@ -256,7 +279,7 @@ def freeze_items(
     response_model=ReviewedResultResponse,
     responses=error_responses(
         {
-            404: ("review_working_copy_not_found",),
+            404: ("project_not_found", "review_working_copy_not_found"),
             409: (
                 "review_version_conflict",
                 "item_set_not_frozen",
@@ -288,7 +311,11 @@ def confirm_review(
     body: ConfirmReviewRequest,
     operator_id: OperatorHeader,
     service: ReviewServiceDependency,
+    session: SessionDependency,
 ) -> JSONResponse:
+    guard = _active_project_error(session, project_id)
+    if guard is not None:
+        return guard
     try:
         working = service.get_for_project(project_id)
         reviewed = service.confirm(
@@ -312,6 +339,20 @@ def confirm_review(
     except ValueError as error:
         return _error(422, "review_confirmation_invalid", str(error))
     return _reviewed_result(reviewed)
+
+
+def _active_project_error(
+    session: Session,
+    project_id: uuid.UUID,
+) -> JSONResponse | None:
+    try:
+        ProjectLifecycleService(session).require_access(
+            project_id,
+            ProjectAccess.ACTIVE,
+        )
+    except ProjectLifecycleNotFound:
+        return _error(404, "project_not_found", "project was not found")
+    return None
 
 
 def _working_copy(working: ReviewWorkingCopy) -> dict[str, object]:
