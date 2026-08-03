@@ -204,6 +204,14 @@ def _issuance_keys(cycle_id: str) -> set[str]:
     return _GDT10E_ISSUANCE_KEYS if cycle_id == _GDT10E_CYCLE_ID else _ISSUANCE_KEYS
 
 
+def _validate_expected_db_revision(
+    issuance: Mapping[str, Any], cycle_id: str
+) -> None:
+    expected = "0016" if cycle_id == _GDT10E_CYCLE_ID else "0014"
+    if issuance["expected_db_revision"] != expected:
+        raise ValueError("cycle authorization identity is invalid")
+
+
 def _validate_issuance_boundary(issuance: Mapping[str, Any], cycle_id: str) -> None:
     if cycle_id != _GDT10E_CYCLE_ID:
         if issuance["max_total_cny"] != "50.000000":
@@ -513,12 +521,12 @@ def _validate_cycle_authorization(
         or run["consumption_sha256"] != consumption["content_sha256"]
         or _SHA256.fullmatch(str(consumption["invocation_id"])) is None
         or issuance["pricing_sha256"] != pricing_sha256
-        or issuance["expected_db_revision"] != "0014"
         or _SHA256.fullmatch(str(issuance["pricing_sha256"])) is None
         or _IMAGE_ID.fullmatch(str(issuance["backend_image_id"])) is None
     ):
         raise ValueError("cycle authorization identity is invalid")
     _validate_issuance_boundary(issuance, expected_cycle_id)
+    _validate_expected_db_revision(issuance, expected_cycle_id)
     expires_at = issuance["expires_at"]
     if not isinstance(expires_at, str):
         raise ValueError("cycle authorization expiry is invalid")
@@ -672,13 +680,13 @@ def validate_empty_cycle_authorization_for_close(
         run_id=expected_run_id,
     )
     _validate_issuance_boundary(issuance, expected_cycle_id)
+    _validate_expected_db_revision(issuance, expected_cycle_id)
     if (
         issuance["cycle_id"] != expected_cycle_id
         or consumption["cycle_id"] != expected_cycle_id
         or consumption["issuance_sha256"] != issuance["content_sha256"]
         or _SHA256.fullmatch(str(consumption["invocation_id"])) is None
         or issuance["pricing_sha256"] != pricing_sha256
-        or issuance["expected_db_revision"] != "0014"
         or _SHA256.fullmatch(str(issuance["pricing_sha256"])) is None
         or _IMAGE_ID.fullmatch(str(issuance["backend_image_id"])) is None
     ):
@@ -766,6 +774,7 @@ def write_terminal_from_close_bridge(
         run_id=expected_run_id,
     )
     _validate_issuance_boundary(issuance, expected_cycle_id)
+    _validate_expected_db_revision(issuance, expected_cycle_id)
     if (
         issuance["cycle_id"] != expected_cycle_id
         or consumption["cycle_id"] != expected_cycle_id

@@ -69,7 +69,7 @@ def _authorization_root(
         "current_four_sha256": "d" * 64,
         "backend_image_id": "sha256:" + "9" * 64,
         "compose_project": "quality_inspection-qa",
-        "expected_db_revision": "0014",
+        "expected_db_revision": "0016" if gdt10e else "0014",
         "max_total_cny": max_total_cny,
     }
     if gdt10e:
@@ -126,6 +126,37 @@ def _authorization_root(
             },
         )
     return root
+
+
+def _reseal_authorization_revision(root: Path, revision: str) -> None:
+    """Rewrite the fact chain exactly as an attacker could after changing revision."""
+    issuance_path = root / "issuance.json"
+    issuance = json.loads(issuance_path.read_text(encoding="utf-8"))
+    issuance.pop("content_sha256")
+    issuance["expected_db_revision"] = revision
+    _write_fact(issuance_path, issuance)
+
+    consumption_path = root / "consumption.json"
+    consumption = json.loads(consumption_path.read_text(encoding="utf-8"))
+    consumption.pop("content_sha256")
+    consumption["issuance_sha256"] = json.loads(
+        issuance_path.read_text(encoding="utf-8")
+    )["content_sha256"]
+    _write_fact(consumption_path, consumption)
+
+    run_path = root / "run.json"
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    run.pop("content_sha256")
+    run["consumption_sha256"] = json.loads(
+        consumption_path.read_text(encoding="utf-8")
+    )["content_sha256"]
+    _write_fact(run_path, run)
+
+    for project_path in (root / "projects").glob("*.json"):
+        project = json.loads(project_path.read_text(encoding="utf-8"))
+        project.pop("content_sha256")
+        project["run_sha256"] = json.loads(run_path.read_text(encoding="utf-8"))["content_sha256"]
+        _write_fact(project_path, project)
 
 
 def _open(
@@ -946,6 +977,139 @@ def test_gdt10e_empty_cycle_close_writes_and_replays_exact_terminal(
         quiescence_sha256="f" * 64,
     ) == terminal
     assert terminal_path.read_bytes() == terminal_bytes
+
+
+@pytest.mark.parametrize(
+    ("cycle_id", "gdt10e", "maximum", "wrong_revision"),
+    [
+        ("gdt10e-auth-remediated-live-20260802", True, "46.473344", "0014"),
+        ("gdt10e-auth-remediated-live-20260802", True, "46.473344", "9999"),
+        (CYCLE_ID, False, "50.000000", "0016"),
+        (CYCLE_ID, False, "50.000000", "9999"),
+    ],
+)
+def test_resealed_cycle_revision_is_rejected_for_active_authorization(
+    tmp_path: Path,
+    cycle_id: str,
+    gdt10e: bool,
+    maximum: str,
+    wrong_revision: str,
+) -> None:
+    """Mutation caught: accepting a resealed legacy or arbitrary revision."""
+    root = _authorization_root(
+        tmp_path,
+        cycle_id=cycle_id,
+        max_total_cny=maximum,
+        gdt10e=gdt10e,
+    )
+    ProviderUsageLedger.open(
+        cycle_id=cycle_id,
+        storage_root=tmp_path / "good-storage",
+        authorization_root=root,
+        project_id="project-one",
+    )
+    _reseal_authorization_revision(root, wrong_revision)
+
+    with pytest.raises(ValueError, match="identity"):
+        ProviderUsageLedger.open(
+            cycle_id=cycle_id,
+            storage_root=tmp_path / "bad-storage",
+            authorization_root=root,
+            project_id="project-one",
+        )
+
+
+@pytest.mark.parametrize(
+    ("cycle_id", "gdt10e", "maximum", "wrong_revision"),
+    [
+        ("gdt10e-auth-remediated-live-20260802", True, "46.473344", "0014"),
+        ("gdt10e-auth-remediated-live-20260802", True, "46.473344", "9999"),
+        (CYCLE_ID, False, "50.000000", "0016"),
+        (CYCLE_ID, False, "50.000000", "9999"),
+    ],
+)
+def test_resealed_cycle_revision_is_rejected_for_terminal_replay(
+    tmp_path: Path,
+    cycle_id: str,
+    gdt10e: bool,
+    maximum: str,
+    wrong_revision: str,
+) -> None:
+    """Mutation caught: terminal replay bypassing the revision contract."""
+    root = _authorization_root(
+        tmp_path,
+        cycle_id=cycle_id,
+        max_total_cny=maximum,
+        gdt10e=gdt10e,
+    )
+    ledger = ProviderUsageLedger.open(
+        cycle_id=cycle_id,
+        storage_root=tmp_path / "storage",
+        authorization_root=root,
+        project_id="project-one",
+    )
+    _reseal_authorization_revision(root, wrong_revision)
+
+    with pytest.raises(ValueError, match="identity"):
+        ledger.close_cycle(
+            run_id=RUN_ID,
+            status="failed",
+            quiescence_sha256="f" * 64,
+        )
+
+
+@pytest.mark.parametrize(
+    ("cycle_id", "gdt10e", "maximum", "wrong_revision"),
+    [
+        ("gdt10e-auth-remediated-live-20260802", True, "46.473344", "0014"),
+        ("gdt10e-auth-remediated-live-20260802", True, "46.473344", "9999"),
+        (CYCLE_ID, False, "50.000000", "0016"),
+        (CYCLE_ID, False, "50.000000", "9999"),
+    ],
+)
+def test_resealed_cycle_revision_is_rejected_for_empty_close(
+    tmp_path: Path,
+    cycle_id: str,
+    gdt10e: bool,
+    maximum: str,
+    wrong_revision: str,
+) -> None:
+    """Mutation caught: pre-admission close accepting a wrong revision."""
+    (tmp_path / "good").mkdir()
+    good_root = _authorization_root(
+        tmp_path / "good",
+        project_ids=(),
+        cycle_id=cycle_id,
+        max_total_cny=maximum,
+        gdt10e=gdt10e,
+    )
+    assert ProviderUsageLedger.close_without_project(
+        cycle_id=cycle_id,
+        storage_root=tmp_path / "good-storage",
+        authorization_root=good_root,
+        run_id=RUN_ID,
+        status="failed",
+        quiescence_sha256="f" * 64,
+    )["status"] == "failed"
+
+    (tmp_path / "bad").mkdir()
+    root = _authorization_root(
+        tmp_path / "bad",
+        project_ids=(),
+        cycle_id=cycle_id,
+        max_total_cny=maximum,
+        gdt10e=gdt10e,
+    )
+    _reseal_authorization_revision(root, wrong_revision)
+    with pytest.raises(ValueError, match="identity"):
+        ProviderUsageLedger.close_without_project(
+            cycle_id=cycle_id,
+            storage_root=tmp_path / "bad-storage",
+            authorization_root=root,
+            run_id=RUN_ID,
+            status="failed",
+            quiescence_sha256="f" * 64,
+        )
 
 
 def test_gdt10e_runtime_authorization_rejects_canonical_foreign_predecessor(

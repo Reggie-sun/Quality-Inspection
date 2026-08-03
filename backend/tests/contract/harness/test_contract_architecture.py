@@ -1111,3 +1111,42 @@ def test_gdt10e_retry_receipt_archive_owner_is_fixed_no_overwrite_and_durable() 
     assert constants["_GDT10E_RETRY_RECEIPT_CONTENT_SHA256"] == (
         "15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532"
     )
+
+
+def test_cycle_revision_policy_has_one_fixed_writer_without_an_override_surface() -> None:
+    """Mutation caught: a consumer or CLI restores caller-selected revisions."""
+    authorization_source = (
+        HARNESS / "scripts/live_cycle_authorization.py"
+    ).read_text(encoding="utf-8")
+    authorization_tree = ast.parse(authorization_source)
+    functions = {
+        node.name: node
+        for node in authorization_tree.body
+        if isinstance(node, ast.FunctionDef)
+    }
+    assert functions["expected_db_revision_for_cycle"].args.args[0].arg == "cycle_id"
+    for name in ("issue_authorization", "issue_gdt10e_authorization"):
+        assert "expected_db_revision" not in {
+            argument.arg for argument in functions[name].args.args
+        }
+        assert "expected_db_revision" not in {
+            argument.arg for argument in functions[name].args.kwonlyargs
+        }
+    assert not any(
+        isinstance(node, ast.Constant) and node.value == "--expected-db-revision"
+        for node in ast.walk(functions["_parser"])
+    )
+
+    runner_source = (HARNESS / "scripts/run-p0.py").read_text(encoding="utf-8")
+    assert ".expected_db_revision_for_cycle(" in runner_source
+
+    backend_source = (
+        ROOT / "backend/app/providers/cycle_authorization.py"
+    ).read_text(encoding="utf-8")
+    backend_tree = ast.parse(backend_source)
+    backend_functions = {
+        node.name: node
+        for node in backend_tree.body
+        if isinstance(node, ast.FunctionDef)
+    }
+    assert "_validate_expected_db_revision" in backend_functions

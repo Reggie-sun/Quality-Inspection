@@ -54,9 +54,20 @@ _ISSUANCE_KEYS = {
     "content_sha256",
 }
 _GDT10E_CYCLE_ID = "gdt10e-auth-remediated-live-20260802"
+_GDT10E_DB_REVISION = "0016"
+_LEGACY_DB_REVISION = "0014"
 _GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256 = (
     "db7c74f7fd0623c34a496309c744da3d32fd9614786fbde485e569968939749a"
 )
+
+
+def expected_db_revision_for_cycle(cycle_id: str) -> str:
+    """Return the lifecycle-owned database revision for one fixed cycle."""
+    return (
+        _GDT10E_DB_REVISION
+        if cycle_id == _GDT10E_CYCLE_ID
+        else _LEGACY_DB_REVISION
+    )
 _GDT10E_PRICING_DEADLINE = datetime(
     2026, 8, 3, 23, 59, 59, tzinfo=timezone(timedelta(hours=8))
 )
@@ -352,7 +363,7 @@ def _run_zero_paid_preflight() -> None:
     module.preflight_full_p0_live(
         input_set="current-four", source_root=source_root,
         current_four_run=None, symbol_eval_run=None, input_artifacts=artifacts,
-        environment=os.environ,
+        environment=os.environ, zero_paid_cycle_id=_GDT10E_CYCLE_ID,
     )
 
 
@@ -613,7 +624,7 @@ def issue_gdt10e(
         current_four_sha256=str(report["current_four_sha256"]),
         backend_image_id=str(report["backend_image_id"]),
         compose_project=str(report["compose_project"]),
-        expected_db_revision="0014", historical_committed_cny=historical_committed_cny,
+        historical_committed_cny=historical_committed_cny,
         max_total_cny=max_total_cny, overall_envelope_cny=overall_envelope_cny,
         plan_ref=plan_ref, prior_cycle_evidence_sha256=prior_cycle_evidence_sha256,
     )
@@ -2582,7 +2593,6 @@ def issue_authorization(
     current_four_sha256: str,
     backend_image_id: str,
     compose_project: str,
-    expected_db_revision: str,
     max_total_cny: str,
 ) -> dict[str, Any]:
     path = Path(root)
@@ -2592,6 +2602,9 @@ def issue_authorization(
     _fsync_directory(path.parent)
     _safe_root(path)
     safe_cycle_id = _safe_id(cycle_id, "cycle_id")
+    if safe_cycle_id == _GDT10E_CYCLE_ID:
+        raise ValueError("cycle authorization fixed boundary is invalid")
+    expected_db_revision = expected_db_revision_for_cycle(safe_cycle_id)
     _safe_id(compose_project, "compose_project")
     if _HEAD.fullmatch(head_revision) is None:
         raise ValueError("cycle authorization head_revision is invalid")
@@ -2604,7 +2617,7 @@ def issue_authorization(
         _sha256(value, field)
     if re.fullmatch(r"sha256:[0-9a-f]{64}", backend_image_id) is None:
         raise ValueError("cycle authorization backend image identity is invalid")
-    if expected_db_revision != "0014" or max_total_cny != "50.000000":
+    if max_total_cny != "50.000000":
         raise ValueError("cycle authorization fixed boundary is invalid")
     try:
         expiry = datetime.fromisoformat(expires_at)
@@ -2644,7 +2657,6 @@ def issue_gdt10e_authorization(
     current_four_sha256: str,
     backend_image_id: str,
     compose_project: str,
-    expected_db_revision: str,
     historical_committed_cny: str,
     max_total_cny: str,
     overall_envelope_cny: str,
@@ -2654,6 +2666,7 @@ def issue_gdt10e_authorization(
     """Issue the exact GDT-10E envelope only while readiness is still fresh."""
     if cycle_id != _GDT10E_CYCLE_ID or plan_ref != _GDT10E_PLAN_REF:
         raise ValueError("cycle authorization fixed boundary is invalid")
+    expected_db_revision = expected_db_revision_for_cycle(cycle_id)
     if _gdt10e_issuance_now() > _GDT10E_PRICING_DEADLINE:
         raise ValueError("cycle authorization pricing deadline is expired")
     historical = _six_decimal(historical_committed_cny, "historical_committed_cny")
@@ -2681,7 +2694,7 @@ def issue_gdt10e_authorization(
         ("current_four_sha256", current_four_sha256),
     ):
         _sha256(value, field)
-    if re.fullmatch(r"sha256:[0-9a-f]{64}", backend_image_id) is None or expected_db_revision != "0014":
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", backend_image_id) is None:
         raise ValueError("cycle authorization fixed boundary is invalid")
     try:
         expiry = datetime.fromisoformat(expires_at)
@@ -3212,6 +3225,8 @@ def _validate_gdt10e_issuance(
         or issuance.get("historical_committed_cny") != "3.526656"
         or issuance.get("max_total_cny") != "46.473344"
         or issuance.get("overall_envelope_cny") != "50.000000"
+        or issuance.get("expected_db_revision")
+        != expected_db_revision_for_cycle(_GDT10E_CYCLE_ID)
         or report.get("cycle_id") != _GDT10E_CYCLE_ID
         or report.get("no_delta_proved") is not True
         or any(issuance.get(field) != identity[field] for field in identity_fields)
@@ -3271,7 +3286,8 @@ def validate_issuance_for_start(
         or issuance["backend_image_id"] != _current_api_image_id()
         or issuance["compose_project"]
         != os.environ.get("COMPOSE_PROJECT_NAME", "").strip()
-        or issuance["expected_db_revision"] != "0014"
+        or issuance["expected_db_revision"]
+        != expected_db_revision_for_cycle(str(issuance["cycle_id"]))
         or issuance["max_total_cny"] != "50.000000"
     ):
         raise ValueError("paid cycle issuance does not match the committed runtime")
@@ -4287,7 +4303,6 @@ def _parser() -> argparse.ArgumentParser:
             child.add_argument("--current-four-sha256", required=True)
             child.add_argument("--backend-image-id", required=True)
             child.add_argument("--compose-project", required=True)
-            child.add_argument("--expected-db-revision", default="0014")
             child.add_argument("--max-total-cny", default="50.000000")
         if command == "prepare-zero-paid":
             child.add_argument("--override", required=True)
@@ -4374,7 +4389,6 @@ def main(argv: list[str] | None = None) -> int:
                 current_four_sha256=args.current_four_sha256,
                 backend_image_id=args.backend_image_id,
                 compose_project=args.compose_project,
-                expected_db_revision=args.expected_db_revision,
                 max_total_cny=args.max_total_cny,
             )
         elif args.command == "consume":

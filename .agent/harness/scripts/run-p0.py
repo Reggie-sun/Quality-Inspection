@@ -290,6 +290,20 @@ def _cycle_authorization_module() -> ModuleType:
     )
 
 
+def _bound_live_cycle_id(environment: Mapping[str, str]) -> str:
+    authorization_ref = environment.get(LIVE_CYCLE_AUTHORIZATION_ENV, "").strip()
+    if not authorization_ref:
+        raise ValueError(f"{LIVE_CYCLE_AUTHORIZATION_ENV} is required")
+    evidence = _cycle_authorization_module().authorization_evidence(
+        Path(authorization_ref),
+        require_run=True,
+    )
+    cycle_id = evidence.get("cycle_id")
+    if not isinstance(cycle_id, str) or not cycle_id:
+        raise ValueError("paid cycle authorization is inconsistent")
+    return cycle_id
+
+
 def _live_evidence_policy_module() -> ModuleType:
     name = "qi_live_evidence_policy"
     existing = sys.modules.get(name)
@@ -1418,7 +1432,10 @@ def _chrome_identity(environment: Mapping[str, str]) -> dict[str, str]:
     }
 
 
-def _require_compose_runtime_identity() -> None:
+def _require_compose_runtime_identity(*, cycle_id: str) -> None:
+    expected_db_revision = _cycle_authorization_module().expected_db_revision_for_cycle(
+        cycle_id
+    )
     expected_hashes: dict[str, str] = {}
     for relative in LIVE_API_GDT_RUNTIME_PATHS:
         path = ROOT / "backend" / relative
@@ -1513,7 +1530,7 @@ def _require_compose_runtime_identity() -> None:
         capture_output=True,
         text=True,
     )
-    if database.returncode != 0 or database.stdout.strip() != "0014":
+    if database.returncode != 0 or database.stdout.strip() != expected_db_revision:
         raise ValueError(
             "Compose runtime identity does not match GDT-10 live contract"
         )
@@ -1527,6 +1544,7 @@ def preflight_full_p0_live(
     symbol_eval_run: str | None = None,
     input_artifacts: Mapping[str, bytes] | None = None,
     environment: Mapping[str, str] | None = None,
+    zero_paid_cycle_id: str | None = None,
 ) -> LivePreflight:
     if input_set != "current-four":
         raise ValueError("full-p0 live requires --input-set current-four")
@@ -1537,7 +1555,14 @@ def preflight_full_p0_live(
     _current_live_identity(current_environment)
     if source_root is None or not source_root.strip():
         raise ValueError(f"{LIVE_SOURCE_ROOT_ENV} is required")
-    _require_compose_runtime_identity()
+    authorization = _cycle_authorization_module()
+    if zero_paid_cycle_id is None:
+        cycle_id = _bound_live_cycle_id(current_environment)
+    elif zero_paid_cycle_id == authorization._GDT10E_CYCLE_ID:
+        cycle_id = zero_paid_cycle_id
+    else:
+        raise ValueError("zero-paid cycle identity is invalid")
+    _require_compose_runtime_identity(cycle_id=cycle_id)
 
     receipt_module = _receipt_module()
     receipt_module.check_contract_authority(ROOT)
@@ -2103,6 +2128,9 @@ def _open_live_run(
         Path(authorization_ref),
         require_run=True,
     )
+    expected_db_revision = authorization.expected_db_revision_for_cycle(
+        str(cycle_evidence.get("cycle_id", ""))
+    )
     if (
         cycle_evidence.get("run_id") != run_id
         or cycle_evidence.get("head_revision") != _git_revision()
@@ -2110,7 +2138,7 @@ def _open_live_run(
         != hashlib.sha256(preflight.manifest_bytes).hexdigest()
         or cycle_evidence.get("compose_project")
         != os.environ.get(LIVE_COMPOSE_PROJECT_ENV, "").strip()
-        or cycle_evidence.get("expected_db_revision") != "0014"
+        or cycle_evidence.get("expected_db_revision") != expected_db_revision
         or cycle_evidence.get("max_total_cny")
         != (
             "46.473344"

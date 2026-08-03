@@ -1953,7 +1953,6 @@ def test_runtime_acceptance_collector_executes_against_real_ledger_and_storage(
         current_four_sha256="e" * 64,
         backend_image_id="sha256:" + "f" * 64,
         compose_project="quality_inspection-qa",
-        expected_db_revision="0014",
         historical_committed_cny="3.526656",
         max_total_cny="46.473344",
         overall_envelope_cny="50.000000",
@@ -2122,7 +2121,7 @@ def _real_runtime_acceptance_collector_case(
         plan_sha256="c" * 64, pricing_sha256=load_pricing_snapshot().content_sha256,
         runtime_closure_sha256="d" * 64, current_four_sha256="e" * 64,
         backend_image_id="sha256:" + "f" * 64, compose_project="quality_inspection-qa",
-        expected_db_revision="0014", historical_committed_cny="3.526656",
+        historical_committed_cny="3.526656",
         max_total_cny="46.473344", overall_envelope_cny="50.000000",
         plan_ref="docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md",
         prior_cycle_evidence_sha256=GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256,
@@ -2249,7 +2248,6 @@ def test_gdt10e_issuance_writer_rejects_invalid_envelope_and_stale_readiness(
         "current_four_sha256": "f" * 64,
         "backend_image_id": "sha256:" + "1" * 64,
         "compose_project": "quality_inspection-qa",
-        "expected_db_revision": "0014",
         "historical_committed_cny": "3.526656",
         "max_total_cny": "46.473344",
         "overall_envelope_cny": "50.000000",
@@ -2260,6 +2258,7 @@ def test_gdt10e_issuance_writer_rejects_invalid_envelope_and_stale_readiness(
         tmp_path / "authorization", **arguments
     )
     assert issued["readiness_sha256"] == "a" * 64
+    assert issued["expected_db_revision"] == "0016"
     assert authorization.consume_authorization(tmp_path / "authorization")[
         "issuance_sha256"
     ] == issued["content_sha256"]
@@ -2280,6 +2279,13 @@ def test_gdt10e_issuance_writer_rejects_invalid_envelope_and_stale_readiness(
         with pytest.raises(ValueError, match="cycle authorization"):
             authorization.issue_gdt10e_authorization(
                 tmp_path / f"invalid-{name}-{value}", **candidate
+            )
+    for revision in ("0014", "9999"):
+        with pytest.raises(TypeError, match="expected_db_revision"):
+            authorization.issue_gdt10e_authorization(
+                tmp_path / f"unexpected-revision-{revision}",
+                **arguments,
+                expected_db_revision=revision,
             )
     monkeypatch.setattr(
         authorization,
@@ -2325,7 +2331,6 @@ def test_gdt10e_consumption_rejects_canonical_foreign_predecessor(
         current_four_sha256="f" * 64,
         backend_image_id="sha256:" + "1" * 64,
         compose_project="quality_inspection-qa",
-        expected_db_revision="0014",
         historical_committed_cny="3.526656",
         max_total_cny="46.473344",
         overall_envelope_cny="50.000000",
@@ -2377,7 +2382,6 @@ def test_gdt10e_authorization_writer_binds_validated_sha_without_reopening_readi
         current_four_sha256="f" * 64,
         backend_image_id="sha256:" + "1" * 64,
         compose_project="quality_inspection-qa",
-        expected_db_revision="0014",
         historical_committed_cny="3.526656",
         max_total_cny="46.473344",
         overall_envelope_cny="50.000000",
@@ -2420,7 +2424,6 @@ def test_gdt10e_authorization_evidence_projects_the_immutable_v3_binding(
         current_four_sha256="f" * 64,
         backend_image_id="sha256:" + "1" * 64,
         compose_project="quality_inspection-qa",
-        expected_db_revision="0014",
         historical_committed_cny="3.526656",
         max_total_cny="46.473344",
         overall_envelope_cny="50.000000",
@@ -2551,6 +2554,186 @@ def test_gdt10e_preconsume_paths_reject_aliases_before_any_action(
     ):
         with pytest.raises(ValueError, match="GDT-10E path"):
             authorization._gdt10e_private_path(alias, "readiness")
+
+
+def test_gdt10e_zero_paid_preflight_passes_fixed_cycle_before_issuance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation caught: zero-paid preflight demanding an issued authorization."""
+    authorization = _load_module(
+        "qi_gdt10e_zero_paid_fixed_cycle",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    observed: dict[str, object] = {}
+
+    class Loader:
+        def exec_module(self, _module: object) -> None:
+            return None
+
+    harness = SimpleNamespace(
+        _current_live_input_artifacts=lambda source_root: {"source": source_root}
+    )
+
+    def preflight_full_p0_live(
+        *,
+        input_set: str,
+        source_root: str,
+        current_four_run: None,
+        symbol_eval_run: None,
+        input_artifacts: dict[str, str],
+        environment: object,
+        zero_paid_cycle_id: str,
+    ) -> None:
+        observed.update(
+            {
+                "input_set": input_set,
+                "source_root": source_root,
+                "input_artifacts": input_artifacts,
+                "environment": environment,
+                "zero_paid_cycle_id": zero_paid_cycle_id,
+            }
+        )
+
+    harness.preflight_full_p0_live = preflight_full_p0_live
+    monkeypatch.setattr(
+        authorization.importlib.util,
+        "spec_from_file_location",
+        lambda *_args: SimpleNamespace(loader=Loader()),
+    )
+    monkeypatch.setattr(
+        authorization.importlib.util,
+        "module_from_spec",
+        lambda _spec: harness,
+    )
+
+    authorization._run_zero_paid_preflight()
+
+    assert observed["input_set"] == "current-four"
+    assert observed["input_artifacts"] == {"source": ""}
+    assert observed["environment"] is authorization.os.environ
+    assert observed["zero_paid_cycle_id"] == ACCOUNT_READINESS_CYCLE
+
+
+def test_run_p0_zero_paid_preflight_uses_fixed_gdt10e_revision_without_authorization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation caught: zero-paid preflight reads an authorization or loses 0016."""
+    runner = _load_module(
+        "qi_run_p0_zero_paid_preflight_revision",
+        HARNESS / "scripts/run-p0.py",
+    )
+    manifest_bytes = json.dumps(
+        {"first_checkpoint": {"sha256": "a" * 64}}
+    ).encode()
+    artifacts = {
+        runner.CURRENT_FOUR_ARTIFACT: manifest_bytes,
+        runner.SYMBOL_EVAL_ARTIFACT: json.dumps(
+            {"source_sha256": "a" * 64}
+        ).encode(),
+        runner.SYMBOL_VERDICT_ARTIFACT: b"{}",
+    }
+    observed: list[tuple[str, str]] = []
+
+    class Receipt:
+        @staticmethod
+        def check_contract_authority(_root: Path) -> None:
+            return None
+
+        @staticmethod
+        def load_policies(_root: Path) -> dict[str, object]:
+            return {"p0_acceptance_policy": {"required_contract_count": 1}}
+
+        @staticmethod
+        def validate_schema(
+            _document: dict[str, object], _name: str, _root: Path
+        ) -> None:
+            return None
+
+        @staticmethod
+        def code_identity(_root: Path) -> dict[str, str]:
+            return {"kind": "code"}
+
+        @staticmethod
+        def config_identity(
+            *_args: object, **_kwargs: object
+        ) -> dict[str, str]:
+            return {"kind": "config"}
+
+        @staticmethod
+        def input_identity(
+            *_args: object, **_kwargs: object
+        ) -> dict[str, str]:
+            return {"kind": "input"}
+
+    frozen_document = SimpleNamespace(basename="current-four.pdf")
+    stage = SimpleNamespace(
+        FROZEN_DOCUMENTS=(frozen_document,),
+        _resolve_sources=lambda _manifest, _root: {
+            frozen_document.basename: Path("/current-four.pdf")
+        },
+        _verify_sources=lambda _sources: None,
+        _manifest_bytes=lambda _documents: manifest_bytes,
+    )
+    mirror = {
+        "contracts": [{"p0_contract_id": "P0-001"}],
+        "contract_definition_hash": "b" * 64,
+        "status_projection_hash": "c" * 64,
+    }
+    script_module = runner._script_module
+    authorization = runner._cycle_authorization_module()
+    assert authorization._GDT10E_CYCLE_ID == ACCOUNT_READINESS_CYCLE
+    monkeypatch.delenv(runner.LIVE_CYCLE_AUTHORIZATION_ENV, raising=False)
+    monkeypatch.setattr(runner, "_require_live_environment", lambda _env: None)
+    monkeypatch.setattr(runner, "_current_live_identity", lambda _env: {})
+    monkeypatch.setattr(runner, "_receipt_module", lambda: Receipt)
+    monkeypatch.setattr(
+        runner,
+        "_require_compose_runtime_identity",
+        lambda *, cycle_id: observed.append(
+            (cycle_id, authorization.expected_db_revision_for_cycle(cycle_id))
+        ),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_load_json",
+        lambda path: mirror if path == runner.MIRROR_PATH else {"bindings": []},
+    )
+    monkeypatch.setattr(
+        runner,
+        "_script_module",
+        lambda name, filename: (
+            stage
+            if (name, filename) == (
+                "qi_stage_current_four_for_live_preflight",
+                "stage-current-four.py",
+            )
+            else script_module(name, filename)
+        ),
+    )
+    monkeypatch.setattr(
+        runner, "_validate_input_artifacts", lambda bound: bound
+    )
+    monkeypatch.setattr(runner, "_validate_export_assets", lambda: None)
+
+    preflight = runner.preflight_full_p0_live(
+        input_set="current-four",
+        source_root="/current-four",
+        input_artifacts=artifacts,
+        environment={},
+        zero_paid_cycle_id=ACCOUNT_READINESS_CYCLE,
+    )
+
+    assert preflight.source_root == Path("/current-four")
+    assert observed == [(ACCOUNT_READINESS_CYCLE, "0016")]
+    with pytest.raises(ValueError, match="zero-paid cycle identity is invalid"):
+        runner.preflight_full_p0_live(
+            input_set="current-four",
+            source_root="/current-four",
+            input_artifacts=artifacts,
+            environment={},
+            zero_paid_cycle_id="gdt10e-auth-remediated-live-20260802-alias",
+        )
+    assert observed == [(ACCOUNT_READINESS_CYCLE, "0016")]
 
 
 def test_gdt10e_preconsume_cli_runs_real_zero_paid_chain_and_replays_reports(
@@ -2801,7 +2984,6 @@ def test_gdt10e_prepare_resume_reuses_only_the_bound_readiness_and_fact(
         readiness_sha256=str(readiness["content_sha256"]),
         cycle_id=ACCOUNT_READINESS_CYCLE,
         expires_at="2099-08-02T23:59:59+00:00",
-        expected_db_revision="0014",
         historical_committed_cny="3.526656",
         max_total_cny="46.473344",
         overall_envelope_cny="50.000000",
@@ -3538,7 +3720,9 @@ def test_live_runtime_identity_rejects_unbound_published_port(
         ValueError,
         match="Compose runtime identity does not match GDT-10 live contract",
     ):
-        runner._require_compose_runtime_identity()
+        runner._require_compose_runtime_identity(
+            cycle_id="gdt10d-classified-live-20260802"
+        )
 
 
 @pytest.mark.parametrize("service", ["api", "worker"])
@@ -3566,7 +3750,9 @@ def test_live_preflight_rejects_recognition_identity_mismatch(
         ValueError,
         match="Compose runtime identity does not match GDT-10 live contract",
     ):
-        runner._require_compose_runtime_identity()
+        runner._require_compose_runtime_identity(
+            cycle_id="gdt10d-classified-live-20260802"
+        )
 
 
 @pytest.mark.parametrize("service", ["api", "worker"])
@@ -3620,7 +3806,9 @@ def test_live_runtime_identity_rejects_each_stale_hash(
         ValueError,
         match="Compose runtime identity does not match GDT-10 live contract",
     ):
-        runner._require_compose_runtime_identity()
+        runner._require_compose_runtime_identity(
+            cycle_id="gdt10d-classified-live-20260802"
+        )
 
 
 @pytest.mark.parametrize("service", ["api", "worker", "postgres"])
@@ -3645,7 +3833,9 @@ def test_live_runtime_identity_rejects_missing_compose_service(
         ValueError,
         match="Compose runtime identity does not match GDT-10 live contract",
     ):
-        runner._require_compose_runtime_identity()
+        runner._require_compose_runtime_identity(
+            cycle_id="gdt10d-classified-live-20260802"
+        )
 
 
 @pytest.mark.parametrize("service", ["api", "worker"])
@@ -3672,7 +3862,9 @@ def test_live_runtime_identity_rejects_malformed_payload(
         ValueError,
         match="Compose runtime identity does not match GDT-10 live contract",
     ):
-        runner._require_compose_runtime_identity()
+        runner._require_compose_runtime_identity(
+            cycle_id="gdt10d-classified-live-20260802"
+        )
 
 
 @pytest.mark.parametrize(
@@ -3698,7 +3890,9 @@ def test_live_runtime_identity_rejects_database_revision_mismatch(
         ValueError,
         match="Compose runtime identity does not match GDT-10 live contract",
     ):
-        runner._require_compose_runtime_identity()
+        runner._require_compose_runtime_identity(
+            cycle_id="gdt10d-classified-live-20260802"
+        )
 
 
 def test_live_preflight_accepts_exact_api_worker_and_database_identity(
@@ -3713,7 +3907,37 @@ def test_live_preflight_accepts_exact_api_worker_and_database_identity(
     calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
 
-    runner._require_compose_runtime_identity()
+    runner._require_compose_runtime_identity(
+        cycle_id="gdt10d-classified-live-20260802"
+    )
+
+    assert calls == ["api", "worker", "api-port", "frontend-port", "postgres"]
+
+
+def test_live_runtime_identity_accepts_only_gdt10e_bound_database_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation caught: keeping the GDT-10E Compose database at legacy 0014."""
+    runner = _load_module(
+        "qi_run_p0_gdt10e_database_revision",
+        HARNESS / "scripts/run-p0.py",
+    )
+    valid = _expected_gdt_runtime_payload(runner)
+    payloads = {"api": valid, "worker": valid, "postgres": "0016\n"}
+    calls, fake_run = _runtime_identity_run(runner, payloads=payloads)
+    monkeypatch.setattr(
+        runner,
+        "LIVE_API_GDT_RUNTIME_HASHES",
+        {
+            f"backend/{relative}": hashlib.sha256(
+                (runner.ROOT / "backend" / relative).read_bytes()
+            ).hexdigest()
+            for relative in runner.LIVE_API_GDT_RUNTIME_PATHS
+        },
+    )
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    runner._require_compose_runtime_identity(cycle_id=ACCOUNT_READINESS_CYCLE)
 
     assert calls == ["api", "worker", "api-port", "frontend-port", "postgres"]
 
@@ -3743,13 +3967,19 @@ def test_live_runtime_identity_fails_before_registration_or_run_creation(
     monkeypatch.setattr(runner, "_require_live_environment", lambda _env: None)
     monkeypatch.setattr(runner, "_current_live_identity", lambda _env: {})
 
-    def reject_runtime() -> None:
+    def reject_runtime(*, cycle_id: str) -> None:
+        assert cycle_id == "gdt10d-classified-live-20260802"
         events.append("runtime-identity")
         raise ValueError(
             "Compose runtime identity does not match GDT-10 live contract"
         )
 
     monkeypatch.setattr(runner, "_require_compose_runtime_identity", reject_runtime)
+    monkeypatch.setattr(
+        runner,
+        "_bound_live_cycle_id",
+        lambda _environment: "gdt10d-classified-live-20260802",
+    )
     monkeypatch.setattr(
         runner,
         "run_task",
@@ -5047,7 +5277,6 @@ def _issue_cycle_authorization(module: ModuleType, root: Path) -> dict[str, str]
         "current_four_sha256": "e" * 64,
         "backend_image_id": "sha256:" + "9" * 64,
         "compose_project": "quality_inspection-qa",
-        "expected_db_revision": "0014",
         "max_total_cny": "50.000000",
     }
     module.issue_authorization(root, **identity)
@@ -6077,6 +6306,10 @@ def test_open_live_run_keeps_legacy_gdt10d_on_v2_schemas(
 
     class Authorization:
         @staticmethod
+        def expected_db_revision_for_cycle(cycle_id: str) -> str:
+            return "0016" if cycle_id == ACCOUNT_READINESS_CYCLE else "0014"
+
+        @staticmethod
         def authorization_evidence(
             path: Path, *, require_run: bool
         ) -> dict[str, object]:
@@ -6149,6 +6382,195 @@ def test_open_live_run_keeps_legacy_gdt10d_on_v2_schemas(
     assert "readiness_evidence" not in run["cycle_authorization"]
     assert "historical_committed_cny" not in live["paid_cycle"]
     assert "readiness_evidence" not in live["paid_cycle"]
+
+
+@pytest.mark.parametrize("issued_revision", ["0014", "9999"])
+def test_open_live_run_accepts_only_gdt10e_issued_revision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    issued_revision: str,
+) -> None:
+    """Mutation caught: _open_live_run stops validating the issued revision."""
+    runner = _load_module(
+        f"qi_run_p0_gdt10e_issued_revision_{issued_revision}",
+        HARNESS / "scripts/run-p0.py",
+    )
+    authorization_ref = tmp_path / "gdt10e-authorization.json"
+    authorization_ref.write_text("{}", encoding="utf-8")
+    manifest_bytes = b"gdt10e-current-four"
+    backend_image_id = "sha256:" + "8" * 64
+    run_id = "20260802T000000000000Z-deadbeef"
+    evidence = {
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "pricing_sha256": "1" * 64,
+        "issuance_sha256": "2" * 64,
+        "consumption_sha256": "3" * 64,
+        "backend_image_id": backend_image_id,
+        "run_id": run_id,
+        "run_authorization_sha256": "4" * 64,
+        "head_revision": "a" * 40,
+        "current_four_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+        "compose_project": "gdt10e-isolated",
+        "expected_db_revision": issued_revision,
+        "max_total_cny": "46.473344",
+        "runtime_closure_sha256": "5" * 64,
+        "historical_committed_cny": "3.526656",
+        "overall_envelope_cny": "50.000000",
+        "readiness_sha256": "6" * 64,
+    }
+
+    class Receipt:
+        @staticmethod
+        def policy_versions(_policies: object) -> dict[str, str]:
+            return {"harness_policy": "test"}
+
+        @staticmethod
+        def validate_schema(
+            _document: dict[str, object], _name: str, _root: Path
+        ) -> None:
+            return None
+
+    class Authorization:
+        @staticmethod
+        def expected_db_revision_for_cycle(cycle_id: str) -> str:
+            return "0016" if cycle_id == ACCOUNT_READINESS_CYCLE else "0014"
+
+        @staticmethod
+        def authorization_evidence(
+            path: Path, *, require_run: bool
+        ) -> dict[str, object]:
+            assert path == authorization_ref
+            assert require_run is True
+            return dict(evidence)
+
+        @staticmethod
+        def _runtime_closure_sha256() -> str:
+            return "5" * 64
+
+        @staticmethod
+        def _current_api_image_id() -> str:
+            return backend_image_id
+
+    preflight = SimpleNamespace(
+        manifest_bytes=manifest_bytes,
+        mirror={
+            "contract_definition_hash": "7" * 64,
+            "status_projection_hash": "8" * 64,
+            "contracts": [],
+        },
+        policies={},
+        code_identity={"source": "test"},
+        config_identity={"source": "test"},
+        input_identity={"source": "test"},
+        input_artifacts={runner.CURRENT_FOUR_ARTIFACT: manifest_bytes},
+    )
+    monkeypatch.setattr(runner, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(runner, "_git_revision", lambda: "a" * 40)
+    monkeypatch.setattr(runner, "_current_live_identity", lambda: {"test": True})
+    monkeypatch.setattr(runner, "_receipt_module", lambda: Receipt)
+    monkeypatch.setattr(runner, "_cycle_authorization_module", lambda: Authorization)
+    monkeypatch.setattr(
+        runner, "_attach_full_live_input_artifacts", lambda *_args: None
+    )
+    monkeypatch.setenv(runner.LIVE_CYCLE_AUTHORIZATION_ENV, str(authorization_ref))
+    monkeypatch.setenv(runner.LIVE_COMPOSE_PROJECT_ENV, "gdt10e-isolated")
+
+    with pytest.raises(ValueError, match="paid cycle run authorization is inconsistent"):
+        runner._open_live_run(preflight, authorized_run_id=run_id)
+
+
+def test_open_live_run_accepts_gdt10e_issued_revision_0016(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The exact GDT-10E issuance revision reaches the v3 run writer."""
+    runner = _load_module(
+        "qi_run_p0_gdt10e_issued_revision_0016",
+        HARNESS / "scripts/run-p0.py",
+    )
+    authorization_ref = tmp_path / "gdt10e-authorization.json"
+    authorization_ref.write_text("{}", encoding="utf-8")
+    manifest_bytes = b"gdt10e-current-four"
+    backend_image_id = "sha256:" + "8" * 64
+    run_id = "20260802T000000000000Z-deadbeef"
+
+    class Receipt:
+        @staticmethod
+        def policy_versions(_policies: object) -> dict[str, str]:
+            return {"harness_policy": "test"}
+
+        @staticmethod
+        def validate_schema(
+            _document: dict[str, object], _name: str, _root: Path
+        ) -> None:
+            return None
+
+    class Authorization:
+        @staticmethod
+        def expected_db_revision_for_cycle(cycle_id: str) -> str:
+            return "0016" if cycle_id == ACCOUNT_READINESS_CYCLE else "0014"
+
+        @staticmethod
+        def authorization_evidence(
+            _path: Path, *, require_run: bool
+        ) -> dict[str, object]:
+            assert require_run is True
+            return {
+                "cycle_id": ACCOUNT_READINESS_CYCLE,
+                "pricing_sha256": "1" * 64,
+                "issuance_sha256": "2" * 64,
+                "consumption_sha256": "3" * 64,
+                "backend_image_id": backend_image_id,
+                "run_id": run_id,
+                "run_authorization_sha256": "4" * 64,
+                "head_revision": "a" * 40,
+                "current_four_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+                "compose_project": "gdt10e-isolated",
+                "expected_db_revision": "0016",
+                "max_total_cny": "46.473344",
+                "runtime_closure_sha256": "5" * 64,
+                "historical_committed_cny": "3.526656",
+                "overall_envelope_cny": "50.000000",
+                "readiness_sha256": "6" * 64,
+            }
+
+        @staticmethod
+        def _runtime_closure_sha256() -> str:
+            return "5" * 64
+
+        @staticmethod
+        def _current_api_image_id() -> str:
+            return backend_image_id
+
+    preflight = SimpleNamespace(
+        manifest_bytes=manifest_bytes,
+        mirror={
+            "contract_definition_hash": "7" * 64,
+            "status_projection_hash": "8" * 64,
+            "contracts": [],
+        },
+        policies={},
+        code_identity={"source": "test"},
+        config_identity={"source": "test"},
+        input_identity={"source": "test"},
+        input_artifacts={runner.CURRENT_FOUR_ARTIFACT: manifest_bytes},
+    )
+    monkeypatch.setattr(runner, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(runner, "_git_revision", lambda: "a" * 40)
+    monkeypatch.setattr(runner, "_current_live_identity", lambda: {"test": True})
+    monkeypatch.setattr(runner, "_receipt_module", lambda: Receipt)
+    monkeypatch.setattr(runner, "_cycle_authorization_module", lambda: Authorization)
+    monkeypatch.setattr(
+        runner, "_attach_full_live_input_artifacts", lambda *_args: None
+    )
+    monkeypatch.setenv(runner.LIVE_CYCLE_AUTHORIZATION_ENV, str(authorization_ref))
+    monkeypatch.setenv(runner.LIVE_COMPOSE_PROJECT_ENV, "gdt10e-isolated")
+
+    run_dir = runner._open_live_run(preflight, authorized_run_id=run_id)
+
+    run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    assert run["schema_version"] == "run/3"
+    assert run["cycle_authorization"]["cycle_id"] == ACCOUNT_READINESS_CYCLE
 
 
 def _paid_policy_evidence(
@@ -9029,7 +9451,6 @@ def _issue_cleanup_authorization(authorization: ModuleType, root: Path) -> dict[
         current_four_sha256="e" * 64,
         backend_image_id="sha256:" + "f" * 64,
         compose_project="qi-cleanup-intent",
-        expected_db_revision="0014",
         historical_committed_cny="3.526656",
         max_total_cny="46.473344",
         overall_envelope_cny="50.000000",
