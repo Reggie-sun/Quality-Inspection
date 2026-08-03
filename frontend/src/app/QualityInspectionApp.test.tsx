@@ -56,6 +56,8 @@ function fakeApi(
     getProjectStatus,
     listProjects: vi.fn().mockResolvedValue([]),
     markProjectOpened: vi.fn().mockResolvedValue(undefined),
+    reprocessProject: vi.fn(),
+    deleteProject: vi.fn(),
   };
 }
 
@@ -280,6 +282,62 @@ test("快速返回列表会等待最近打开提交后再刷新排序", async ()
   const rows = screen.getAllByRole("row");
   expect(rows[1].textContent).toContain("B.pdf");
   expect(rows[2].textContent).toContain("A.pdf");
+});
+
+test("重新识别成功后切换到 successor 的处理流程", async () => {
+  const api = fakeApi(
+    undefined,
+    vi.fn(async (projectId: string) => projectId === OTHER_PROJECT_ID
+      ? status("processing", { stage: "recognizing" })
+      : status("ready_for_review")),
+  );
+  api.listProjects = vi.fn().mockResolvedValue([
+    drawing(PROJECT_ID, "待重新识别.pdf"),
+  ]);
+  api.reprocessProject = vi.fn().mockResolvedValue({
+    projectId: OTHER_PROJECT_ID,
+    predecessorProjectId: PROJECT_ID,
+  });
+  render(<QualityInspectionApp api={api} pollIntervalMs={60_000} />);
+
+  fireEvent.click(await screen.findByRole(
+    "button",
+    { name: "打开 待重新识别.pdf 的更多操作" },
+  ));
+  fireEvent.click(screen.getByRole("menuitem", { name: "重新识别" }));
+  fireEvent.click(screen.getByRole("button", { name: "确认重新识别" }));
+
+  expect(await screen.findByText("正在识别检验项")).not.toBeNull();
+  expect(api.reprocessProject).toHaveBeenCalledWith(PROJECT_ID);
+  expect(window.sessionStorage.getItem("qi.current-project-id"))
+    .toBe(OTHER_PROJECT_ID);
+});
+
+test("删除成功前保留当前行，成功后重新拉取服务端目录", async () => {
+  let finishDelete: (() => void) | undefined;
+  const api = fakeApi();
+  api.listProjects = vi.fn()
+    .mockResolvedValueOnce([drawing(PROJECT_ID, "待删除.pdf")])
+    .mockResolvedValueOnce([]);
+  api.deleteProject = vi.fn(() => new Promise<void>((resolve) => {
+    finishDelete = resolve;
+  }));
+  render(<QualityInspectionApp api={api} />);
+
+  fireEvent.click(await screen.findByRole(
+    "button",
+    { name: "打开 待删除.pdf 的更多操作" },
+  ));
+  fireEvent.click(screen.getByRole("menuitem", { name: "删除图纸" }));
+  fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+  expect(screen.getByText("待删除.pdf")).not.toBeNull();
+  expect(api.listProjects).toHaveBeenCalledTimes(1);
+
+  finishDelete?.();
+  expect(await screen.findByText("还没有图纸任务")).not.toBeNull();
+  expect(api.deleteProject).toHaveBeenCalledWith(PROJECT_ID);
+  expect(api.listProjects).toHaveBeenCalledTimes(2);
 });
 
 test("新上传图纸不再写入旧浏览器目录", async () => {

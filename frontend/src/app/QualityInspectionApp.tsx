@@ -160,6 +160,7 @@ export function QualityInspectionApp({
   const [screen, setScreen] = useState<ProductScreen>(initialScreen);
   const [drawings, setDrawings] = useState<ProjectListItem[]>([]);
   const [drawingListLoaded, setDrawingListLoaded] = useState(false);
+  const [catalogRevision, setCatalogRevision] = useState(0);
   const [registryWarning, setRegistryWarning] = useState<string>();
   const [selectedFile, setSelectedFile] = useState<File>();
   const [selectionError, setSelectionError] = useState<string>();
@@ -195,7 +196,7 @@ export function QualityInspectionApp({
         setRegistryWarning(projectErrorCopy("network_error"));
       });
     return () => controller.abort();
-  }, [api, screen.kind]);
+  }, [api, catalogRevision, screen.kind]);
 
   useEffect(() => {
     if (processingProjectId === undefined) return;
@@ -351,6 +352,22 @@ export function QualityInspectionApp({
       phase: "queued",
     });
   };
+  const reprocessDrawing = async (entry: ProjectListItem) => {
+    const result = await api.reprocessProject(entry.projectId);
+    setCurrentProjectId(result.projectId);
+    setSelectedFile(undefined);
+    setSelectionError(undefined);
+    setStatusError(false);
+    setScreen({
+      kind: "processing",
+      projectId: result.projectId,
+      phase: "queued",
+    });
+  };
+  const deleteDrawing = async (entry: ProjectListItem) => {
+    await api.deleteProject(entry.projectId);
+    setCatalogRevision((current) => current + 1);
+  };
   const openFilePicker = () => {
     if (fileInput.current === null) return;
     fileInput.current.value = "";
@@ -384,6 +401,8 @@ export function QualityInspectionApp({
           setScreen({ kind: "idle" });
         }}
         onOpen={openDrawing}
+        onReprocess={reprocessDrawing}
+        onDelete={deleteDrawing}
       />
     );
   }

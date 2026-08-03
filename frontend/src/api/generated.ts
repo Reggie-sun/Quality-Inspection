@@ -23,6 +23,10 @@ export interface paths {
     /** Create Project */
     post: operations["QI-API-PRJ-001"];
   };
+  "/api/v1/projects/{project_id}": {
+    /** Delete Project */
+    delete: operations["QI-API-PRJ-009"];
+  };
   "/api/v1/projects/{project_id}/balloons": {
     /** List Balloons */
     get: operations["QI-API-BAL-001"];
@@ -46,6 +50,10 @@ export interface paths {
   "/api/v1/projects/{project_id}/recognition-preview": {
     /** Get Recognition Preview */
     get: operations["QI-API-PRJ-005"];
+  };
+  "/api/v1/projects/{project_id}/reprocess": {
+    /** Reprocess Project */
+    post: operations["QI-API-PRJ-008"];
   };
   "/api/v1/projects/{project_id}/review/commands": {
     /** Apply Command */
@@ -444,6 +452,29 @@ export interface components {
      * @enum {string}
      */
     ProjectPhase: "queued" | "processing" | "ready_for_review" | "partial_review_required" | "failed";
+    /** ProjectReprocessResponse */
+    ProjectReprocessResponse: {
+      /**
+       * Lifecycle Status
+       * @constant
+       */
+      lifecycle_status: "reprocessing";
+      /**
+       * Phase
+       * @constant
+       */
+      phase: "processing";
+      /**
+       * Predecessor Project Id
+       * Format: uuid
+       */
+      predecessor_project_id: string;
+      /**
+       * Project Id
+       * Format: uuid
+       */
+      project_id: string;
+    };
     /**
      * ProjectState
      * @enum {string}
@@ -1151,6 +1182,44 @@ export interface operations {
       };
     };
   };
+  /** Delete Project */
+  "QI-API-PRJ-009": {
+    parameters: {
+      path: {
+        project_id: string;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        content: never;
+      };
+      /** @description Requested resource was not found. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Request conflicts with current aggregate or capability state. */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Request failed transport or business validation. */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Unexpected internal failure. */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+    };
+  };
   /** List Balloons */
   "QI-API-BAL-001": {
     parameters: {
@@ -1163,6 +1232,12 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["BalloonCollectionResponse"];
+        };
+      };
+      /** @description Requested resource was not found. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
         };
       };
       /** @description Request failed transport or business validation. */
@@ -1388,6 +1463,46 @@ export interface operations {
       };
       /** @description Unexpected internal failure. */
       500: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+    };
+  };
+  /** Reprocess Project */
+  "QI-API-PRJ-008": {
+    parameters: {
+      path: {
+        project_id: string;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        content: {
+          "application/json": components["schemas"]["ProjectReprocessResponse"];
+        };
+      };
+      /** @description Requested resource was not found. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Request conflicts with current aggregate or capability state. */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Request failed transport or business validation. */
+      422: {
+        content: {
+          "application/json": components["schemas"]["ErrorEnvelope"];
+        };
+      };
+      /** @description Required dispatch or service is unavailable. */
+      503: {
         content: {
           "application/json": components["schemas"]["ErrorEnvelope"];
         };
