@@ -2,9 +2,27 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260803-gdt10e-preconsume-cleanup-missing-safe-override
+
+- Status: 已修复；fix round 1 parent verification 与 same-reviewer re-review `accept`，待 commit
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: `.agent/harness/scripts/live_cycle_authorization.py::abort_preconsume()` safe-runtime proof/replay
+- Symptom: 合法 no-issuance attempt 在 Step 3 创建 overrides 前失败后，literal `abort-preconsume` 生成 `provider-cycle-cleanup-blocker/2`，failure code `safe_runtime_proof_failed`；root/readiness/intent/blocker 保留，receipt absent。
+- Root cause: `abort_preconsume(..., safe_override=...)` 已验证 explicit cleanup path，却忽略它并调用只读取 `QI_LIVE_CYCLE_SAFE_OVERRIDE_REF` 的 `deactivate_runtime()`。在 prepare-zero-paid 尚未创建 `safe.env` 的分支，cleanup 无法建立 safe compose/proof 前提；现有 tests 全部 mock `deactivate_runtime()`，未覆盖真实 control-plane selection。
+- Fix: preconsume cleanup 现在只使用已接收的 `safe_override_path`；路径和 symlink 均不存在时，复用 exclusive private writer 写入固定 credential/cycle/mount-free safe document，随后严格验证并调用既有 `_activate_safe_runtime(path)`。若本调用创建的 temporary safe override 在 writer、validation、compose 或 identity proof 中抛出，使用既有 strict private delete+directory fsync 恢复 absent 后重抛；原先已存在的 path 不删除。paid `activate_runtime()`、env-owned `deactivate_runtime()` 和 terminal cleanup 未改。
+- Regression check: 新增 tmp-path replay 从合法 intent 直接写入 exact `safe_runtime_proof_failed` blocker，并在唯一 abort replay 前 mock Docker subprocess；验证 base+safe `api/worker` recreate、两项 safe identity proof、receipt 写入，以及 intent/blocker/root 删除。旧实现因 env-only safe ref 失败，新实现完成 replay。TDD worker 的首次 refactor 回归错误保留了 RED 阶段的前置 abort，意外启动两组真实 compose；parent 立即中断全部明确 PID，核对 feature API/worker IDs 与 baseline 完全相同，并把 fixture 改为无 runtime side effect 的直接 blocker 构造。Fix round 1 后 focused selector `3 passed, 334 deselected`，全体 `gdt10e_abort_preconsume` 回归 `30 passed, 307 deselected`；前后无测试/compose 进程，API/worker IDs仍精确等于baseline，Ruff/diff-check clean。
+- Problem boundary: 只让 non-terminal preconsume cleanup 使用其 exact explicit safe path；若该 path 合法缺失，仅创建固定的无 credential/cycle/mount safe override，执行 base+safe `api/worker` rebuild 与两项 identity proof，然后继续既有 journal 删除/replay。不得创建 live override、authorization、Provider、DB 或 Harness evidence。
+- Single Owner: `abort_preconsume()` 及现有 `_activate_safe_runtime()`/safe override validator-writer。
+- Old path action: replace preconsume cleanup 对 env-only `deactivate_runtime()` 的调用；paid/terminal cleanup 与 `deactivate_runtime()` 保持不变。
+- Unchanged contract: blocker/intent/receipt schema、path hashes、cleanup order、fail-closed snapshot、safe runtime identity、paid gates和Task 6不变。
+- Current replay state: readiness SHA `c21169685a2386651095436f6e6e7bc4524eef6846d0a62f0a4f70d14bcf81ad`；blocker SHA `4e0500de5615d5d46c905c28cb6d80941e120dba7f422d5cca8f1b2093618e2c`；branch `no_issuance`，intent+blocker present、receipt/overrides/authorization absent。修复期间不得读取或改变 private state；复审/commit 后只能 replay literal abort。
+- Review finding: initial reviewer `reject`。当 existing blocker 声明 `safe_override_absent=true` 时，temporary safe override 的 write/compose/identity failure会留下该 path，使immutable blocker与actual snapshot冲突并永久阻断replay。Fix round 1 的参数化 regression 覆盖 write-after-create、compose 和 identity failure：每项失败后 `safe.env` absent、existing blocker bytes 保持 canonical，随后同一 literal replay 写入 receipt 并删除 intent/blocker/root。Same reviewer确认 prior High closed、无新 finding，verdict `accept`。
+
 ## BUG-20260803-gdt10e-readiness-dynamic-import-dataclass
 
-- Status: 已修复；parent verification 与 independent review `accept`，待 commit
+- Status: 已修复并提交于 `5017084`；parent verification 与 independent review `accept`
 - First reported: 2026-08-03
 - Last reported: 2026-08-03
 - Recurrence: 1
@@ -20,7 +38,7 @@
 
 ## BUG-20260803-gdt10e-safe-runtime-requires-authorization
 
-- Status: 已修复；待 parent focused verification 与独立 review
+- Status: 已修复并提交于 `f675cf9`；parent verification 与 independent review `accept with concerns`，证据文字 concern 已关闭
 - First reported: 2026-08-03
 - Last reported: 2026-08-03
 - Recurrence: 1

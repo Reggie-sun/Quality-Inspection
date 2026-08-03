@@ -436,6 +436,34 @@ def _create_zero_paid_overrides(override: Path, safe_override: Path) -> None:
     _write_private_override(safe_override, safe)
 
 
+def _create_or_validate_safe_override(safe_override: Path) -> None:
+    """Create the fixed credential-free override only when it is absent."""
+    created = not safe_override.exists() and not safe_override.is_symlink()
+    if created:
+        safe = {
+            "services": {
+                name: {"environment": _SAFE_RUNTIME_ENVIRONMENT}
+                for name in ("api", "worker")
+            }
+        }
+        _write_private_override(
+            safe_override,
+            safe,
+        )
+    validate_safe_override(safe_override)
+
+
+def _prove_preconsume_safe_runtime(safe_override: Path) -> None:
+    created = not safe_override.exists() and not safe_override.is_symlink()
+    try:
+        _create_or_validate_safe_override(safe_override)
+        _activate_safe_runtime(safe_override)
+    except BaseException:
+        if created:
+            _delete_private_control_file(safe_override, "safe override")
+        raise
+
+
 def _validate_future_live_override(path: Path) -> None:
     _validate_private_file(path, "live override")
     try:
@@ -1916,7 +1944,7 @@ def abort_preconsume(
     blocker_retired = False
     step = "safe"
     try:
-        deactivate_runtime()
+        _prove_preconsume_safe_runtime(safe_override_path)
         step = "controls"
         _delete_preconsume_file(override_path, "live override")
         _delete_preconsume_file(safe_override_path, "safe override")

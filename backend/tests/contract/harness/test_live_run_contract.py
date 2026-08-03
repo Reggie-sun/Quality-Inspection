@@ -9354,7 +9354,7 @@ def test_gdt10e_abort_preconsume_replays_intent_only_from_first_unmet_step(
         authorization._fsync_directory(root)
         return SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"])
 
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     monkeypatch.setattr(readiness_module, "dispose_account_readiness", dispose_only_sealed_intent)
 
     receipt = authorization.abort_preconsume(
@@ -9378,6 +9378,158 @@ def test_gdt10e_abort_preconsume_replays_intent_only_from_first_unmet_step(
     assert not root.exists() and not intent.exists()
 
 
+def test_gdt10e_abort_preconsume_replays_readiness_only_safe_runtime_blocker_with_safe_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: replay requiring an env-owned safe override before safe cleanup."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    monkeypatch.delenv("QI_LIVE_CYCLE_SAFE_OVERRIDE_REF", raising=False)
+    sealed_intent = _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    receipt_path = intent.with_name(intent.name.replace("intent", "receipt"))
+    blocker_path = intent.with_name(intent.name.replace("intent", "blocker"))
+    authorization._write_preconsume_journal(
+        blocker_path,
+        schema_version="provider-cycle-cleanup-blocker/2",
+        intent=sealed_intent,
+        completed_steps=authorization._cleanup_step_snapshot(),
+        failure_code="safe_runtime_proof_failed",
+    )
+    assert json.loads(blocker_path.read_text(encoding="utf-8"))["failure_code"] == (
+        "safe_runtime_proof_failed"
+    )
+
+    calls: list[list[str]] = []
+
+    def fake_docker_run(
+        argv: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        if "exec" not in argv:
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                {
+                    "credential_keys_present": [],
+                    "cycle_keys_present": [],
+                    "authorization_mount_present": False,
+                    "mode": "production_uncertainty",
+                    "model": "qwen3-vl-plus-2025-12-19",
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_docker_run)
+    receipt = authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=root / "safe.env", readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent, cleanup_receipt=receipt_path, cleanup_blocker=blocker_path,
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+
+    assert receipt["branch"] == "no_issuance"
+    assert all(receipt["completed_steps"].values())
+    assert receipt_path.exists() and not intent.exists() and not blocker_path.exists()
+    assert not root.exists()
+    assert len(calls) == 3
+    assert str(root / "safe.env") in calls[0]
+    assert str(root / "live.env") not in calls[0]
+    assert calls[0][-6:] == ["up", "-d", "--no-deps", "--force-recreate", "api", "worker"]
+    assert [call[call.index("exec") + 2] for call in calls[1:]] == ["api", "worker"]
+
+
+@pytest.mark.parametrize("failure_site", ("write", "compose", "identity"))
+def test_gdt10e_abort_preconsume_cleans_its_temporary_safe_override_before_replay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_site: str
+) -> None:
+    """Mutation caught: a failed safe proof leaving a path that contradicts its blocker."""
+    authorization, _, root, intent, _ = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    sealed_intent = _prepare_preconsume_cleanup_intent(authorization, root, intent)
+    safe_override = root / "safe.env"
+    receipt_path = intent.with_name(intent.name.replace("intent", "receipt"))
+    blocker_path = intent.with_name(intent.name.replace("intent", "blocker"))
+    authorization._write_preconsume_journal(
+        blocker_path,
+        schema_version="provider-cycle-cleanup-blocker/2",
+        intent=sealed_intent,
+        completed_steps=authorization._cleanup_step_snapshot(),
+        failure_code="safe_runtime_proof_failed",
+    )
+    original_blocker = blocker_path.read_bytes()
+    original_writer = authorization._write_private_override
+
+    def safe_identity() -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            [],
+            0,
+            json.dumps(
+                {
+                    "credential_keys_present": [],
+                    "cycle_keys_present": [],
+                    "authorization_mount_present": False,
+                    "mode": "production_uncertainty",
+                    "model": "qwen3-vl-plus-2025-12-19",
+                }
+            ),
+            "",
+        )
+
+    def fail_safe_runtime(
+        argv: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        if failure_site == "compose" and "up" in argv:
+            return subprocess.CompletedProcess(argv, 1, "", "compose failed")
+        if failure_site == "identity" and "exec" in argv:
+            return subprocess.CompletedProcess(argv, 1, "", "identity failed")
+        return safe_identity()
+
+    monkeypatch.setattr(authorization.subprocess, "run", fail_safe_runtime)
+    if failure_site == "write":
+        def write_then_fail(path: Path, document: dict[str, object]) -> None:
+            original_writer(path, document)
+            raise OSError("safe override write interrupted")
+
+        monkeypatch.setattr(authorization, "_write_private_override", write_then_fail)
+
+    with pytest.raises((OSError, RuntimeError)):
+        authorization.abort_preconsume(
+            authorization=root / "authorization", override=root / "live.env",
+            safe_override=safe_override, readiness=root / "account-readiness.json",
+            preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+            cleanup_intent=intent, cleanup_receipt=receipt_path, cleanup_blocker=blocker_path,
+            review_deadline="2026-08-09T23:59:59+08:00",
+        )
+
+    assert not safe_override.exists() and not safe_override.is_symlink()
+    assert blocker_path.read_bytes() == original_blocker
+    assert intent.exists() and not receipt_path.exists()
+
+    monkeypatch.setattr(authorization, "_write_private_override", original_writer)
+    monkeypatch.setattr(
+        authorization.subprocess,
+        "run",
+        lambda _argv, **_kwargs: safe_identity(),
+    )
+    receipt = authorization.abort_preconsume(
+        authorization=root / "authorization", override=root / "live.env",
+        safe_override=safe_override, readiness=root / "account-readiness.json",
+        preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json",
+        cleanup_intent=intent, cleanup_receipt=receipt_path, cleanup_blocker=blocker_path,
+        review_deadline="2026-08-09T23:59:59+08:00",
+    )
+
+    assert all(receipt["completed_steps"].values())
+    assert receipt_path.exists() and not intent.exists() and not blocker_path.exists()
+    assert not root.exists()
+
+
 def test_gdt10e_abort_preconsume_deletes_blocker_before_writing_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -9388,7 +9540,7 @@ def test_gdt10e_abort_preconsume_deletes_blocker_before_writing_receipt(
     _prepare_preconsume_cleanup_intent(authorization, root, intent)
     blocker = intent.with_name(intent.name.replace("intent", "blocker"))
     receipt = intent.with_name(intent.name.replace("intent", "receipt"))
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     monkeypatch.setattr(
         readiness_module,
         "dispose_account_readiness",
@@ -9421,7 +9573,7 @@ def test_gdt10e_abort_preconsume_failure_after_intent_seals_root_sibling_blocker
     )
     sealed = _prepare_preconsume_cleanup_intent(authorization, root, intent)
     blocker = intent.with_name(intent.name.replace("intent", "blocker"))
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     monkeypatch.setattr(
         readiness_module, "dispose_account_readiness",
         lambda _: (_ for _ in ()).throw(RuntimeError("interrupted")),
@@ -9452,7 +9604,7 @@ def test_gdt10e_abort_preconsume_receipt_only_is_terminal_replay(
     )
     _prepare_preconsume_cleanup_intent(authorization, root, intent)
     receipt = intent.with_name(intent.name.replace("intent", "receipt"))
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     monkeypatch.setattr(
         readiness_module,
         "dispose_account_readiness",
@@ -9471,8 +9623,10 @@ def test_gdt10e_abort_preconsume_receipt_only_is_terminal_replay(
         review_deadline="2026-08-09T23:59:59+08:00",
     )
     monkeypatch.setattr(
-        authorization, "deactivate_runtime",
-        lambda: (_ for _ in ()).throw(AssertionError("runtime must remain untouched")),
+        authorization, "_prove_preconsume_safe_runtime",
+        lambda _safe_override: (_ for _ in ()).throw(
+            AssertionError("runtime must remain untouched")
+        ),
     )
 
     replay = authorization.abort_preconsume(
@@ -9496,8 +9650,8 @@ def test_gdt10e_abort_preconsume_blocker_uses_frozen_failure_codes(
     _prepare_preconsume_cleanup_intent(authorization, root, intent)
     blocker = intent.with_name(intent.name.replace("intent", "blocker"))
     monkeypatch.setattr(
-        authorization, "deactivate_runtime",
-        lambda: (_ for _ in ()).throw(RuntimeError("safe runtime failed")),
+        authorization, "_prove_preconsume_safe_runtime",
+        lambda _safe_override: (_ for _ in ()).throw(RuntimeError("safe runtime failed")),
     )
     with pytest.raises(RuntimeError):
         authorization.abort_preconsume(
@@ -9519,7 +9673,7 @@ def test_gdt10e_abort_preconsume_accepts_durable_cancellation_before_intent(
     )
     issuance = _issue_cleanup_authorization(authorization, root)
     authorization._create_or_validate_unconsumed_cancellation(root / "authorization", issuance)
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     monkeypatch.setattr(
         readiness_module, "dispose_account_readiness",
         lambda _: ((root / "account-readiness.json").unlink(), authorization._fsync_directory(root), SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]))[-1],
@@ -9573,7 +9727,7 @@ def test_gdt10e_abort_preconsume_interruption_after_each_delete_fsync_replays(
     _prepare_preconsume_cleanup_intent(authorization, root, intent)
     receipt = intent.with_name(intent.name.replace("intent", "receipt"))
     blocker = intent.with_name(intent.name.replace("intent", "blocker"))
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     monkeypatch.setattr(
         readiness_module,
         "dispose_account_readiness",
@@ -9625,7 +9779,7 @@ def test_gdt10e_abort_preconsume_replays_task2_unlink_before_root_fsync(
     _prepare_preconsume_cleanup_intent(authorization, root, intent)
     receipt = intent.with_name(intent.name.replace("intent", "receipt"))
     blocker = intent.with_name(intent.name.replace("intent", "blocker"))
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     original_fsync = readiness_module._fsync_root_after_unlink
     monkeypatch.setattr(
         readiness_module,
@@ -9682,7 +9836,7 @@ def test_gdt10e_abort_preconsume_receipt_replay_rejects_target_reappearance(
     )
     _prepare_preconsume_cleanup_intent(authorization, root, intent)
     receipt = intent.with_name(intent.name.replace("intent", "receipt"))
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     monkeypatch.setattr(readiness_module, "dispose_account_readiness", lambda _: ((root / "account-readiness.json").unlink(), authorization._fsync_directory(root), SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"]))[-1])
     authorization.abort_preconsume(authorization=root / "authorization", override=root / "live.env", safe_override=root / "safe.env", readiness=root / "account-readiness.json", preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json", cleanup_intent=intent, cleanup_receipt=receipt, cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")), review_deadline="2026-08-09T23:59:59+08:00")
     root.mkdir(mode=0o700)
@@ -9710,7 +9864,7 @@ def test_gdt10e_abort_preconsume_deletes_controls_before_task2_readiness_only(
         authorization._fsync_directory(root)
         return SimpleNamespace(deleted=True, content_sha256=readiness["content_sha256"])
 
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     monkeypatch.setattr(readiness_module, "dispose_account_readiness", dispose_readiness_only)
     authorization.abort_preconsume(authorization=root / "authorization", override=root / "live.env", safe_override=root / "safe.env", readiness=root / "account-readiness.json", preparation_report=root / "preparation.json", zero_paid_report=root / "zero-paid-readiness.json", cleanup_intent=intent, cleanup_receipt=intent.with_name(intent.name.replace("intent", "receipt")), cleanup_blocker=intent.with_name(intent.name.replace("intent", "blocker")), review_deadline="2026-08-09T23:59:59+08:00")
 
@@ -9748,7 +9902,7 @@ def test_gdt10e_abort_preconsume_receipt_partial_write_reverts_to_intent_only_an
         completed_steps={name: False for name in authorization._PRECONSUME_CLEANUP_STEPS},
         failure_code="safe_runtime_proof_failed",
     )
-    monkeypatch.setattr(authorization, "deactivate_runtime", lambda: None)
+    monkeypatch.setattr(authorization, "_prove_preconsume_safe_runtime", lambda _safe_override: None)
     monkeypatch.setattr(
         readiness_module,
         "dispose_account_readiness",
