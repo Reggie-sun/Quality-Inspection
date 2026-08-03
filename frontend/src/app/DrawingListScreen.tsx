@@ -238,6 +238,7 @@ export function DrawingListScreen({
                     <td>
                       <div className="drawing-list-actions" data-drawing-actions>
                         <button
+                          className="drawing-list-actions__button"
                           type="button"
                           aria-label={zhCN.drawingList.continueDrawing(
                             entry.fileName,
@@ -248,7 +249,9 @@ export function DrawingListScreen({
                         </button>
                         <div className="drawing-list-actions__menu-anchor">
                           <button
-                            className="drawing-list-actions__more"
+                            className={
+                              "drawing-list-actions__button drawing-list-actions__more"
+                            }
                             type="button"
                             ref={(button) => {
                               moreButtonRefs.current[entry.projectId] = button;

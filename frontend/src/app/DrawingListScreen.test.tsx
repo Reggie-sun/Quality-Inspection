@@ -190,6 +190,29 @@ it("在继续处理旁提供重新识别和删除操作", async () => {
 });
 
 
+it("让行内主操作与更多操作保持单行等高", () => {
+  render(
+    <DrawingListScreen
+      entries={[ENTRY_A]}
+      api={fakeApi()}
+      onUpload={vi.fn()}
+      onOpen={vi.fn()}
+      onReprocess={vi.fn()}
+      onDelete={vi.fn()}
+    />,
+  );
+
+  const continueButton = screen.getByRole("button", { name: "继续处理 A.pdf" });
+  const moreButton = screen.getByRole("button", { name: "打开 A.pdf 的更多操作" });
+  expect(continueButton.classList.contains(
+    "drawing-list-actions__button",
+  )).toBe(true);
+  expect(moreButton.classList.contains(
+    "drawing-list-actions__button",
+  )).toBe(true);
+});
+
+
 it("确认重新识别时保留当前版本说明并防止重复提交", async () => {
   let finish: (() => void) | undefined;
   const onReprocess = vi.fn(() => new Promise<void>((resolve) => {

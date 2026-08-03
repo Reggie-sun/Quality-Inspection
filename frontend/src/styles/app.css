@@ -354,7 +354,7 @@ legend {
 }
 
 .drawing-list-table th:last-child {
-  width: 120px;
+  width: 148px;
 }
 
 .drawing-list-table td:first-child strong {
@@ -374,7 +374,15 @@ legend {
   gap: 4px;
 }
 
+.drawing-list-actions__button {
+  flex: 0 0 auto;
+  height: 36px;
+  min-height: 36px;
+  white-space: nowrap;
+}
+
 .drawing-list-actions__menu-anchor {
+  flex: 0 0 auto;
   position: relative;
 }
 
