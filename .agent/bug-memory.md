@@ -4,10 +4,10 @@
 
 ## BUG-20260801-drawing-list-get-405
 
-- Status: 已解决
+- Status: 调查中
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
-- Recurrence: 1
+- Recurrence: 2
 - Surface: `QualityInspectionApp` 图纸目录加载、`GET /api/v1/projects` 与本地 `5173 -> 8000` API proxy
 - Symptom: 打开 `http://127.0.0.1:5173/` 后页面一直显示“图纸列表加载中”，并提示“网络异常，请检查连接后重试。”
 - Previously correct behavior: 根地址应从服务端加载图纸目录，并显示图纸数量、空目录状态或已有图纸列表
@@ -54,6 +54,28 @@
 - Validation action: `completed`；root cause、focused TDD、geometry regression、build、headed Chrome 与独立 review 均已覆盖；当前全工作树 frontend suite 的无关并行失败不计为本任务通过证据
 - Independent review: 初审 `accept with concerns` 指出 CSS 删除回归和 component/CSS class seam 尚未持久覆盖；补充 Playwright geometry regression 与 `layout/results` class contract 后，最终 verdict 为 `accept`，无 blocker 或 remaining concern
 - Next verification: 已关闭；仅在 preview 再次出现默认 iframe、横向溢出或结果列表撑长整页时重开
+
+## BUG-20260801-review-lock-renewal-cross-project
+
+- Status: 已解决
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 1
+- Surface: `ProjectWorkbenchApp` review lock renewal、`POST /api/v1/projects/{project_id}/review/lock` 与 `review_locks` project scope
+- Symptom: 多人分别查看不同图纸时，进入审核页面仍会显示“审核锁续期失败，修改操作已暂停。”；用户观察到无论其他人查看的是第几份图纸都会触发
+- Previously correct behavior: review lock 必须按 `project_id` 隔离；不同 operator 同时查看或编辑不同图纸时互不影响，只有同一图纸被其他 operator 持有有效锁时才冲突
+- Reproduction: 用户在 `https://qa.srj666.com/` 截图确认已进入页面后出现 renewal failure 文案和“回到图纸列表”；API 日志随后显示 `266e…`、`b3d4…`、`fb057…` 三个项目各自存在独立 lock 请求，409 只发生在对应项目内；数据库同时显示这 3 个 active lock 均由测试 operator `4362748d-…` 持有
+- Root cause: Chrome 自动化遗留了 3 个长期打开的 `?project_id=…&operator_id=4362748d-…` 深链 tab，分别对 3 份目录图纸每 240 秒续租 300 秒 project lock；因此其他电脑点击这 3 份图纸都会被各自的测试租约拒绝，看起来像“无论第几份都被锁”。后端 `review_locks.project_id` 主键、`acquire_lock()` 查询和冲突条件均为 project-scoped，不存在全局 operator lock
+- Fix: 关闭 3 个已确认属于自动化的深链 tab，并仅将 operator `4362748d-…` 在 `266e…`、`b3d4…`、`fb057…` 上的 3 条测试租约设置为立即过期；验证结束后同样让本次 smoke operator `11111111-…` 的单条租约过期。未删除 review lock 表、未修改其他 operator/project lock、未改变 production code
+- Regression check: `backend/tests/integration/test_review_lock.py` 已有同项目第二 editor 拒绝、过期接管和同 operator 续期覆盖；本次只读 call-chain 核验进一步确认 router/model/query 均以 `project_id` 为唯一锁 scope。无需为已确认的测试运行态污染修改 production test/code
+- Runtime proof: 清理后数据库一度为 `active_locks=0`；headed Chrome 从 `https://qa.srj666.com/` 服务端 4 份图纸目录打开 `BK20101401-09L1000…`，成功进入含 124 个检验项的完整工作台且无 lock alert。随后外部 browser/operator `4362748d-…` 又主动续租 `266e…`，证明仍有该 operator 的真实页面运行；在此单项目锁有效期间，临时不同 operator 分别获取 `b3d4…` 与 `fb057…` 均返回 HTTP `200`，交叉验证不同图纸互不阻塞。两条临时租约已立即过期，最终只保留外部 browser 的 `266e…` 业务锁
+- Change: runtime cleanup only；no production code change
+- Selected lane: `Standard`；需要跨 browser tab、frontend renewal、API 日志和 PostgreSQL lock rows 对齐，但最终根因属于有界测试运行态污染
+- Problem boundary: 只清理本次自动化遗留的 3 条 project lease；不放宽“一项目一个 active editor”、不允许同图纸并发写、不触碰其他用户锁
+- Independent code mapping: 后端锁为明确 project-scoped；另发现 `ProjectWorkbenchApp` 对旧项目在途续租失败缺少 cancellation 的潜在 prop-switch 风险，但当前目录导航会卸载组件，且本次真实 409/DB 证据由 3 个自动化 tab 完整解释，因此不在此运行态修复中扩展代码范围
+- Recurrence evidence (2026-08-01): 用户再次在 `http://127.0.0.1:5173/` 被 review lock conflict 阻断；Chrome MCP 同时存在仍停留在工作台的 Headless Chrome tab，`266e…` 以 operator `4362748d-…` 持续成功续租，另有 smoke operator `11111111-…` 持有 `b3d4…`。数据库与网络记录证明即使无人实际操作，只要自动化 tab 未关闭或退出未释放，300 秒 lease 仍会每 240 秒延长
+- Recurrence fix: Unknown；本轮先验证 owner-scoped 主动 release API 与 frontend unmount/pagehide 生命周期，不放宽同项目单 editor 合同
+- Recurrence regression check: Pending TDD RED/GREEN、API contract gate、frontend lifecycle coverage 与真实 Chrome close/return smoke
 
 ## BUG-20260801-sip-metadata-auto-confirm
 
