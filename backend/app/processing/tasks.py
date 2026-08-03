@@ -26,6 +26,7 @@ from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.processing.recognition_preview import RecognitionPreviewService
 from app.projects.models import Project
+from app.projects.lifecycle import ProjectLifecycleService
 from app.providers.runtime import (
     OcrProviderFactory,
     VisionProviderFactory,
@@ -185,6 +186,9 @@ def inventory_project(
                 ReviewService(session, storage=storage).create_from_raw(
                     _automatic_result_id(existing)
                 )
+                ProjectLifecycleService(
+                    session
+                ).promote_reprocessed_project(uuid.UUID(project_id))
             except Exception:
                 _record_review_bootstrap_failure(session, project_id)
                 raise
@@ -243,9 +247,21 @@ def inventory_project(
             ReviewService(session, storage=storage).create_from_raw(
                 _automatic_result_id(result_ref)
             )
+            ProjectLifecycleService(
+                session
+            ).promote_reprocessed_project(uuid.UUID(project_id))
         except Exception:
             _record_review_bootstrap_failure(session, project_id)
             raise
         return result_ref
+    except Exception:
+        session.rollback()
+        try:
+            ProjectLifecycleService(session).mark_reprocess_failed(
+                uuid.UUID(project_id)
+            )
+        except Exception:
+            session.rollback()
+        raise
     finally:
         session.close()

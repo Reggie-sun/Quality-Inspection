@@ -23,7 +23,7 @@ from app.processing import tasks
 from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.processing.tasks import inventory_project
-from app.projects.models import Project
+from app.projects.models import Project, ProjectLifecycleStatus
 from app.projects.state import ProjectState
 from app.review.models import ReviewWorkingCopy
 from app.review.service import ReviewService
@@ -128,6 +128,41 @@ def _project_source_with_routing_identity(
     session.add_all([project, source_file])
     session.commit()
     return project, source_file
+
+
+def _reprocessing_project_source(
+    session: Session,
+    storage: LocalFileStorage,
+    tmp_path: Path,
+) -> tuple[Project, Project, StoredFile]:
+    predecessor = Project(
+        id=uuid.uuid4(),
+        state=ProjectState.EDITING,
+        source_filename="drawing.pdf",
+        lifecycle_status=ProjectLifecycleStatus.ACTIVE,
+    )
+    successor = Project(
+        id=uuid.uuid4(),
+        state=ProjectState.PROCESSING,
+        source_filename="drawing.pdf",
+        lifecycle_status=ProjectLifecycleStatus.REPROCESSING,
+        predecessor_project_id=predecessor.id,
+    )
+    content = _write_candidate_pdf(tmp_path / f"{predecessor.id}.pdf")
+    stored = storage.write_verified(
+        f"projects/{predecessor.id}/source.pdf",
+        content,
+        sha256(content).hexdigest(),
+    )
+    source = StoredFile(
+        resource_ref=stored.resource_ref,
+        sha256=stored.sha256,
+        size_bytes=stored.size_bytes,
+        mime_type="application/pdf",
+    )
+    session.add_all([predecessor, successor, source])
+    session.commit()
+    return predecessor, successor, source
 
 
 def _configure_task(
@@ -247,6 +282,181 @@ def test_canonical_task_creates_one_review_working_copy_and_is_idempotent(
             "source_ref",
             "logical_task_key",
         )
+    finally:
+        verify.close()
+
+
+def test_fresh_pipeline_promotes_reprocessed_project(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    setup = task_session_factory()
+    predecessor, successor, source = _reprocessing_project_source(
+        setup,
+        storage,
+        tmp_path,
+    )
+    setup.close()
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=[],
+    )
+
+    inventory_project.run(
+        str(successor.id),
+        source.resource_ref,
+        f"product-process:{successor.id}",
+    )
+
+    verify = task_session_factory()
+    try:
+        assert verify.get(
+            Project,
+            predecessor.id,
+        ).lifecycle_status == ProjectLifecycleStatus.SUPERSEDED
+        assert verify.get(
+            Project,
+            successor.id,
+        ).lifecycle_status == ProjectLifecycleStatus.ACTIVE
+    finally:
+        verify.close()
+
+
+def test_existing_result_path_promotes_reprocessed_project(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    setup = task_session_factory()
+    predecessor, successor, source = _reprocessing_project_source(
+        setup,
+        storage,
+        tmp_path,
+    )
+    successor.state = ProjectState.EDITING
+    raw_id = uuid.uuid4()
+    result_ref = f"automatic-result://{raw_id}"
+    job = LogicalJob(
+        project_id=str(successor.id),
+        logical_task_key=f"product-process:{successor.id}",
+        status="succeeded",
+        result_ref=result_ref,
+        processing_stage="preparing_review",
+    )
+    setup.add(job)
+    setup.flush()
+    raw = AutomaticResult(
+        id=raw_id,
+        project_id=successor.id,
+        source_file_id=source.id,
+        logical_job_id=job.id,
+        inventory_ref=f"asset://tests/{successor.id}/inventory.json",
+        candidates=[],
+        coverage={},
+        technical_requirements=[],
+        provider_call_ids=[],
+        schema_version="automatic-result/1",
+        completeness="complete",
+        recognition_summary={},
+    )
+    setup.add(raw)
+    setup.flush()
+    setup.add(
+        ReviewWorkingCopy(
+            project_id=successor.id,
+            raw_result_id=raw.id,
+            version=1,
+            items=[],
+            coverage={},
+            technical_requirements=[],
+            sip_metadata={},
+            numbering_stale=False,
+        )
+    )
+    setup.commit()
+    setup.close()
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=[],
+    )
+
+    assert inventory_project.run(
+        str(successor.id),
+        source.resource_ref,
+        f"product-process:{successor.id}",
+    ) == result_ref
+
+    verify = task_session_factory()
+    try:
+        assert verify.get(
+            Project,
+            predecessor.id,
+        ).lifecycle_status == ProjectLifecycleStatus.SUPERSEDED
+        assert verify.get(
+            Project,
+            successor.id,
+        ).lifecycle_status == ProjectLifecycleStatus.ACTIVE
+    finally:
+        verify.close()
+
+
+def test_pipeline_failure_marks_only_reprocessed_successor_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    setup = task_session_factory()
+    predecessor, successor, source = _reprocessing_project_source(
+        setup,
+        storage,
+        tmp_path,
+    )
+    setup.close()
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=[],
+    )
+
+    class FailingPipeline:
+        def run(self, project_id: str, source_ref: str, task_key: str) -> str:
+            assert project_id == str(successor.id)
+            assert source_ref == source.resource_ref
+            assert task_key == f"product-process:{successor.id}"
+            raise RuntimeError("recognition failed")
+
+    monkeypatch.setattr(
+        tasks,
+        "InventoryPipeline",
+        lambda *_args, **_kwargs: FailingPipeline(),
+    )
+
+    with pytest.raises(RuntimeError, match="recognition failed"):
+        inventory_project.run(
+            str(successor.id),
+            source.resource_ref,
+            f"product-process:{successor.id}",
+        )
+
+    verify = task_session_factory()
+    try:
+        assert verify.get(
+            Project,
+            predecessor.id,
+        ).lifecycle_status == ProjectLifecycleStatus.ACTIVE
+        assert verify.get(
+            Project,
+            successor.id,
+        ).lifecycle_status == ProjectLifecycleStatus.REPROCESS_FAILED
     finally:
         verify.close()
 
