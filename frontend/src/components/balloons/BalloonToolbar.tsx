@@ -6,6 +6,8 @@ type BalloonToolbarProps = {
   balloons: BalloonOverlay[];
   selectedBalloonId?: string;
   disabled?: boolean;
+  numberingStale: boolean;
+  itemLabels?: Readonly<Record<string, string>>;
   onDelete: (balloonId: string, expectedVersion: number) => void;
   onRebuild: (balloonId: string, expectedVersion: number) => void;
   onReorder: (balloonId: string, expectedVersion: number, sortOrder: number) => void;
@@ -13,10 +15,18 @@ type BalloonToolbarProps = {
 };
 
 
+function recoveryItemIdentity(balloon: BalloonOverlay): string {
+  const identity = balloon.itemId ?? balloon.id;
+  return identity.length > 8 ? identity.slice(-6) : identity;
+}
+
+
 export function BalloonToolbar({
   balloons,
   selectedBalloonId,
   disabled = false,
+  numberingStale,
+  itemLabels = {},
   onDelete,
   onRebuild,
   onReorder,
@@ -34,8 +44,18 @@ export function BalloonToolbar({
     selected?.version !== undefined && selected.status === "deleted"
       ? { balloon: selected, version: selected.version }
       : undefined;
+  const recoverableDeleted = balloons.filter(
+    (balloon) =>
+      balloon.status === "deleted"
+      && balloon.version !== undefined
+      && balloon.id !== selectedDeleted?.balloon.id,
+  );
 
-  if (active.length === 0 && selectedDeleted === undefined) return null;
+  if (
+    active.length === 0
+    && selectedDeleted === undefined
+    && recoverableDeleted.length === 0
+  ) return null;
 
   return (
     <section aria-label={zhCN.balloon.commands} className="balloon-toolbar">
@@ -43,6 +63,7 @@ export function BalloonToolbar({
         <h2>{zhCN.balloon.commands}</h2>
         <span>{active.length} {zhCN.balloon.active}</span>
       </div>
+      <p>{zhCN.balloon.adjustHint}</p>
       <div className="balloon-toolbar__actions">
         {selectedActive === undefined ? null : (
           <>
@@ -102,10 +123,27 @@ export function BalloonToolbar({
             {zhCN.balloon.rebuild}
           </button>
         )}
+        {recoverableDeleted.map((balloon) => (
+          <button
+            key={balloon.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onRebuild(
+              balloon.id,
+              balloon.version as number,
+            )}
+          >
+            {zhCN.balloon.rebuild} {balloon.number} · {
+              (balloon.itemId === undefined ? undefined : itemLabels[balloon.itemId])
+              ?? balloon.itemId
+              ?? balloon.id
+            } · #{recoveryItemIdentity(balloon)}
+          </button>
+        ))}
         {active.length === 0 ? null : (
           <button
             type="button"
-            disabled={disabled}
+            disabled={disabled || !numberingStale}
             onClick={() => onRenumber(
               active.map((balloon) => balloon.id),
               Object.fromEntries(

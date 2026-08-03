@@ -933,6 +933,10 @@ export function InspectionWorkbench({
                 balloons={balloons}
                 selectedBalloonId={selectedBalloonId}
                 disabled={busy || finalized}
+                numberingStale={workingCopy?.numbering_stale === true}
+                itemLabels={Object.fromEntries(
+                  reviewItems.map((item) => [item.item_id, item.raw_text]),
+                )}
                 onDelete={onDeleteBalloon}
                 onRebuild={onRebuildBalloon}
                 onReorder={onReorderBalloon}

@@ -354,6 +354,7 @@ test("未生成过正式气泡时隐藏气泡操作", () => {
   render(
     <BalloonToolbar
       balloons={[]}
+      numberingStale={false}
       onDelete={vi.fn()}
       onRebuild={vi.fn()}
       onReorder={vi.fn()}
@@ -380,6 +381,7 @@ test("未选择气泡时只显示全局重新编号", () => {
           sortOrder: 0,
         },
       ]}
+      numberingStale={false}
       onDelete={vi.fn()}
       onRebuild={vi.fn()}
       onReorder={vi.fn()}
@@ -388,11 +390,139 @@ test("未选择气泡时只显示全局重新编号", () => {
   );
 
   expect(screen.getByText("1 个有效气泡")).not.toBeNull();
+  expect(screen.getByText(/冻结检验项后仍可直接拖动气泡/)).not.toBeNull();
   expect(screen.getByRole("button", { name: "重新编号" })).not.toBeNull();
   expect(screen.queryByRole("button", { name: "删除气泡" })).toBeNull();
   expect(screen.queryByRole("button", { name: "重建气泡" })).toBeNull();
   expect(screen.queryByRole("button", { name: "编号顺序前移" })).toBeNull();
   expect(screen.queryByRole("button", { name: "编号顺序后移" })).toBeNull();
+});
+
+test("编号已经连续时重新编号保持禁用以避免无变化提交", () => {
+  const onRenumber = vi.fn();
+  render(
+    <BalloonToolbar
+      balloons={[
+        {
+          id: "b1",
+          itemId: "i1",
+          sourceId: "s1",
+          pageIndex: 0,
+          center: [50, 60],
+          number: 1,
+          version: 4,
+          status: "active",
+          sortOrder: 0,
+        },
+      ]}
+      numberingStale={false}
+      onDelete={vi.fn()}
+      onRebuild={vi.fn()}
+      onReorder={vi.fn()}
+      onRenumber={onRenumber}
+    />,
+  );
+
+  const renumber = screen.getByRole("button", { name: "重新编号" });
+  expect(renumber.hasAttribute("disabled")).toBe(true);
+  fireEvent.click(renumber);
+  expect(onRenumber).not.toHaveBeenCalled();
+});
+
+test("后端标记 numbering stale 时即使展示编号连续也允许重新编号", () => {
+  const onRenumber = vi.fn();
+  const authoritativeState = { numberingStale: true };
+  render(
+    <BalloonToolbar
+      {...authoritativeState}
+      balloons={[
+        {
+          id: "b1",
+          itemId: "i1",
+          sourceId: "s1",
+          pageIndex: 0,
+          center: [50, 60],
+          number: 1,
+          version: 4,
+          status: "active",
+          sortOrder: 0,
+        },
+      ]}
+      onDelete={vi.fn()}
+      onRebuild={vi.fn()}
+      onReorder={vi.fn()}
+      onRenumber={onRenumber}
+    />,
+  );
+
+  const renumber = screen.getByRole("button", { name: "重新编号" });
+  expect(renumber.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(renumber);
+  expect(onRenumber).toHaveBeenCalledWith(["b1"], { b1: 4 });
+});
+
+test("失去选中状态后仍可从气泡操作恢复已删除的必需气泡", () => {
+  const onRebuild = vi.fn();
+  const itemLabels = {
+    itemLabels: {
+      i4: "M6 螺纹",
+      i5: "M6 螺纹",
+    },
+  };
+  render(
+    <BalloonToolbar
+      {...itemLabels}
+      balloons={[
+        {
+          id: "active-b1",
+          itemId: "i1",
+          sourceId: "s1",
+          pageIndex: 0,
+          center: [50, 60],
+          number: 1,
+          version: 4,
+          status: "active",
+          sortOrder: 0,
+        },
+        {
+          id: "deleted-b4",
+          itemId: "i4",
+          sourceId: "s4",
+          pageIndex: 0,
+          center: [80, 90],
+          number: 4,
+          version: 7,
+          status: "deleted",
+          sortOrder: 3,
+        },
+        {
+          id: "deleted-b4-second",
+          itemId: "i5",
+          sourceId: "s5",
+          pageIndex: 0,
+          center: [100, 110],
+          number: 4,
+          version: 3,
+          status: "deleted",
+          sortOrder: 4,
+        },
+      ]}
+      numberingStale={false}
+      onDelete={vi.fn()}
+      onRebuild={onRebuild}
+      onReorder={vi.fn()}
+      onRenumber={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByRole("button", { name: "重建气泡 4 · M6 螺纹 · #i4" }))
+    .not.toBeNull();
+  expect(screen.getByRole("button", { name: "重建气泡 4 · M6 螺纹 · #i5" }))
+    .not.toBeNull();
+  fireEvent.click(screen.getByRole("button", {
+    name: "重建气泡 4 · M6 螺纹 · #i4",
+  }));
+  expect(onRebuild).toHaveBeenCalledWith("deleted-b4", 7);
 });
 
 test("删除后的所选气泡只保留重建入口", () => {
@@ -412,6 +542,7 @@ test("删除后的所选气泡只保留重建入口", () => {
         },
       ]}
       selectedBalloonId="deleted-b1"
+      numberingStale={false}
       onDelete={vi.fn()}
       onRebuild={vi.fn()}
       onReorder={vi.fn()}
@@ -441,13 +572,14 @@ test("P0-BAL-009/010/011/012 toolbar exposes selected balloon commands explicitl
           sourceId: "s1",
           pageIndex: 0,
           center: [50, 60],
-          number: 1,
+          number: 2,
           version: 4,
           status: "active",
           sortOrder: 0,
         },
       ]}
       selectedBalloonId="b1"
+      numberingStale
       onDelete={onDelete}
       onRebuild={onRebuild}
       onReorder={onReorder}

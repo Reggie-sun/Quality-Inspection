@@ -520,6 +520,7 @@ export const zhCN = {
   balloon: {
     commands: "气泡操作",
     active: "个有效气泡",
+    adjustHint: "冻结检验项后仍可直接拖动气泡调整位置；重新编号只处理编号顺序。",
     delete: "删除气泡",
     rebuild: "重建气泡",
     earlier: "编号顺序前移",

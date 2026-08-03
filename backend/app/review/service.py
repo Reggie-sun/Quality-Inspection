@@ -1662,6 +1662,7 @@ class ReviewService:
         active_items = [item for item in items if item.get("active", True)]
         if any(
             item.get(_SIP_DETAIL_CONFIRMED) is not True
+            or item.get("sip_mapping_exceptions", []) != []
             or any(
                 (
                     not isinstance(item.get(field), int)

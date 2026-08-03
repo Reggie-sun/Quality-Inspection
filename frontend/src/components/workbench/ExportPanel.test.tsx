@@ -167,6 +167,27 @@ test("未完成审核时优先显示精确的 SIP 异常阻断", () => {
   expect(screen.getByRole("status").textContent).toBe("待补充项目 SIP：物料编码");
 });
 
+test("检验项已冻结但气泡仍有阻断时显示真实气泡原因而不是尚未审核", () => {
+  const post = vi.fn() as unknown as PostJson;
+  render(
+    <ExportPanel
+      projectId="project-1"
+      reviewedResultId={undefined}
+      canFinalize={false}
+      balloonBlockers={[
+        "missing_required_balloon",
+        "manual_required",
+      ]}
+      projectMetadataConfirmed
+      post={post}
+    />,
+  );
+
+  expect(screen.getByRole("status").textContent).toBe("存在气泡阻断项");
+  expect(screen.getByRole("button", { name: "生成正式文件" })
+    .hasAttribute("disabled")).toBe(true);
+});
+
 test("项目 SIP 识别冲突时正式文件门禁显示精确原因", () => {
   const post = vi.fn() as unknown as PostJson;
   render(

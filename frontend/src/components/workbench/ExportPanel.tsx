@@ -86,12 +86,14 @@ export function ExportPanel({
     ? zhCN.export.sipExceptions(sipExceptionCount)
     : reviewedResultId === undefined && sipPendingCount > 0
       ? zhCN.export.sipPending(sipPendingCount)
-    : reviewedResultId === undefined && !projectMetadataConfirmed
+      : reviewedResultId === undefined && !projectMetadataConfirmed
       ? missingProjectMetadataFields.length > 0
         ? zhCN.export.missingProjectSip(missingProjectMetadataFields)
         : projectMetadataBlocker !== undefined
           ? zhCN.export.projectSipBlockers[projectMetadataBlocker]
         : zhCN.export.pendingProjectSip
+      : balloonBlockers.length > 0
+        ? zhCN.export.blocked
       : reviewedResultId === undefined && !canFinalize
         ? pendingReviewCount > 0 || pendingBalloonDecisionCount > 0
           ? zhCN.export.pendingReviewActions(
@@ -99,8 +101,6 @@ export function ExportPanel({
               pendingBalloonDecisionCount,
             )
           : zhCN.export.notReviewed
-    : balloonBlockers.length > 0
-      ? zhCN.export.blocked
       : exportInFlight
         ? zhCN.export.running
         : exportJob?.status === "failed" || error !== undefined
