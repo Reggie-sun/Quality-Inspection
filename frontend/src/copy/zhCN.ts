@@ -141,6 +141,8 @@ export const zhCN = {
     returnToDrawingList: "回到图纸列表",
     returnDialogTitle: "返回图纸列表？",
     returnDialogDescription: "当前图纸有未保存修改，请选择如何处理。",
+    returnSaveFailed:
+      "未能保存全部修改。请检查内容后重试；也可取消返回继续编辑，或选择“不保存返回”。",
     saveAndReturn: "保存并返回",
     discardAndReturn: "不保存返回",
     cancelReturn: "取消",
@@ -298,7 +300,6 @@ export const zhCN = {
     modify: "修改",
     waiting: "等待前一条确认",
     refreshing: "已提交，正在刷新结果",
-    proceed: "进入检验项审核",
     nextStepTitle: "下一步：检验项审核",
     nextStepHint:
       "检查受影响检验项中预填的 SIP 信息；技术要求确认不会直接冻结、编号或生成气泡。",
@@ -519,6 +520,7 @@ export const zhCN = {
   balloon: {
     commands: "气泡操作",
     active: "个有效气泡",
+    adjustHint: "冻结检验项后仍可直接拖动气泡调整位置；重新编号只处理编号顺序。",
     delete: "删除气泡",
     rebuild: "重建气泡",
     earlier: "编号顺序前移",

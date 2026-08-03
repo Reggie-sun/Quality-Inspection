@@ -410,6 +410,9 @@ def test_requirement_global_and_excluded_preserve_confirmed_values(
     global_item = _item(saved, global_id)
     assert global_item["active"] is True
     assert global_item["balloon_required"] is False
+    assert global_item["status"] == "kept"
+    assert global_item["requires_confirmation"] is False
+    assert global_item["acceptance_source"] == "manual"
     assert saved.technical_requirements[0]["generated_candidate_id"] == global_id
 
     excluded = review_service.apply(
@@ -427,6 +430,106 @@ def test_requirement_global_and_excluded_preserve_confirmed_values(
         item for item in excluded.items if item["item_id"] == global_id
     )["active"] is False
     assert excluded.technical_requirements[0]["review_status"] == "excluded"
+
+
+def test_requirement_global_accepts_pre_generated_candidate_once(
+    review_service: ReviewService,
+    working_copy: ReviewWorkingCopy,
+    db_session: Session,
+) -> None:
+    _set_technical_requirement_state(working_copy, db_session)
+    global_id = stable_candidate_id(
+        "technical-requirement-candidate",
+        "requirement-1",
+    )
+    decision = _confidence_decision("medium")
+    items = copy.deepcopy(working_copy.items)
+    for item in items:
+        item["active"] = False
+    items.append(
+        {
+            "item_id": global_id,
+            "item_type": "general_requirement",
+            "raw_text": "未注尺寸公差按GB/T 1804-m执行",
+            "normalized_text": "未注尺寸公差按GB/T 1804-m执行",
+            "coordinates": [1, 2, 3, 4],
+            "scope": "global_requirement",
+            "balloon_required": False,
+            "requires_confirmation": True,
+            "source_location_ids": ["requirement-source"],
+            "source_type": "automatic",
+            "status": "pending",
+            "acceptance_source": None,
+            "confidence_decision": decision,
+            "active": True,
+        }
+    )
+    working_copy.items = items
+    working_copy.coverage = {
+        "blocking_count": 0,
+        "review_required_count": 2,
+        "coverage_checked": True,
+        "blocking_observation_ids": [],
+        "entries": [
+            {
+                "observation_id": "coverage-global",
+                "disposition": "candidate",
+                "source_location_id": "source-global",
+                "coordinates": [1, 2, 3, 4],
+                "candidate_id": global_id,
+                "requires_confirmation": True,
+            },
+            {
+                "observation_id": "requirement-source",
+                "disposition": "reference_context",
+                "source_location_id": "requirement-source",
+                "coordinates": [1, 2, 3, 4],
+                "candidate_id": None,
+                "requires_confirmation": True,
+            },
+        ],
+        "relations": [],
+    }
+    db_session.commit()
+    db_session.refresh(working_copy)
+    before_version = working_copy.version
+
+    saved = review_service.apply(
+        working_copy.id,
+        expected_version=before_version,
+        operator_id="quality-1",
+        command={
+            "type": "set_technical_requirement_match",
+            "requirement_id": "requirement-1",
+            "outcome": "global_scope",
+        },
+    )
+
+    global_item = _item(saved, global_id)
+    assert global_item["status"] == "kept"
+    assert global_item["requires_confirmation"] is False
+    assert global_item["acceptance_source"] == "manual_override"
+    assert global_item["confidence_decision"] == decision
+    assert global_item["confirmation_accepted"] is True
+    assert all(
+        entry["requires_confirmation"] is False
+        and entry["confirmation_accepted"] is True
+        for entry in saved.coverage["entries"]
+    )
+    assert saved.coverage["review_required_count"] == 0
+    assert manual_review_count(saved.items, saved.coverage) == 0
+    assert "unresolved_confirmation" not in _freeze_blockers_with_completed_sip(
+        saved
+    )
+    assert saved.version == before_version + 1
+    record = db_session.scalar(
+        select(OperationRecord).where(
+            OperationRecord.project_id == saved.project_id
+        )
+    )
+    assert record is not None
+    assert record.command == "set_technical_requirement_match"
+    assert record.target_ids == ["requirement-1", global_id]
 
 
 def _confirm_requirement_target(

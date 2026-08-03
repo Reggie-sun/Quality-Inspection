@@ -382,6 +382,35 @@ def test_generated_exception_remains_a_freeze_blocker(
     assert error.value.blockers == ("unresolved_confirmation",)
 
 
+def test_explicit_sip_exception_blocks_freeze_even_if_fields_are_confirmed() -> None:
+    blockers = ReviewService.freeze_blockers(
+        [{
+            "item_id": "i1",
+            "active": True,
+            "requires_confirmation": False,
+            "balloon_required": True,
+            "sip_detail_fields_confirmed": True,
+            "sip_mapping_exceptions": ["composite_method_required"],
+            "inspection_item": "M6",
+            "inspection_standard": "6H",
+            "inspection_method": "thread gauge",
+            "key_dimension": "yes",
+            "inspection_role": "IPQC",
+            "source_page": 1,
+        }],
+        {"blocking_count": 0, "entries": []},
+        {
+            "material_code": "MAT-001",
+            "material_name": "fixture",
+            "drawing_number": "FREEZE-001",
+            "material": "steel",
+            "revision": "A",
+        },
+    )
+
+    assert blockers == ["unresolved_confirmation"]
+
+
 def test_freeze_reports_only_the_three_exact_blockers(
     db_session: Session,
     working_copy: ReviewWorkingCopy,

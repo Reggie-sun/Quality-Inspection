@@ -2,9 +2,61 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260803-save-and-return-no-feedback
+
+- Status: 已解决
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: `InspectionWorkbench` 未保存修改返回对话框、草稿批量保存与失败反馈
+- Symptom: 用户点击“保存并返回”后对话框保持不变，看起来按钮没有反应；页面摘要仅在遮罩后显示“保存失败”
+- Reproduction: live 项目 `f62ad156-b7dd-43ea-a8ee-fbeda4f78770` 点击后 working copy 仍为 version `1`，API 日志没有该项目的 `/review/commands` 请求，证明保存被前端草稿校验在请求前拒绝；当前对话框没有失败原因或处理建议
+- Root cause: `saveAndReturnToDrawingList()` 将草稿句柄的本地校验失败与 API 保存失败都折叠为 `saveState="保存失败"`，但 `saveState` 只显示在对话框后方的项目摘要；对话框继续显示原始未保存说明，没有错误提示或下一步，造成“点击没反应”的用户感知
+- Selected lane: `Standard`；局部 frontend 行为与文案修复，但需要 focused test、full frontend suite/build、真实 Chrome smoke 和独立 review
+- Selected plan: 本 bug-memory entry 作为当前 ad hoc task contract；不切换或扩展 P0 implementation plan
+- Problem boundary: 只让“保存并返回”的失败在当前对话框内可见且可操作；不放宽草稿校验，不自动丢弃内容，不改变保存顺序、Review API、锁、working-copy version 或返回导航语义
+- Single owner: `InspectionWorkbench` 继续拥有 return dialog 和多草稿保存编排
+- Old path action: 替换“失败后对话框内容完全不变”的静默路径；保留失败时停留工作台和保留草稿的既有安全行为
+- Unchanged contract: 只有全部草稿保存成功才调用 `onReset`；本地无效草稿不发 API；API 失败不丢草稿；“不保存返回”和“取消”语义不变
+- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/InspectionWorkbench.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`frontend/src/copy/zhCN.ts`
+- Writer ownership and order: 父 agent 在隔离 worktree `fix/save-and-return-feedback` 中为唯一 writer；主工作树同文件的另一任务改动不覆盖，完成后先整合最新 `main` 并重跑验证
+- Focused verification: `micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/InspectionWorkbench.test.tsx`
+- Validation action: 先新增“本地无效草稿不发请求但对话框显示可操作失败提示”的 RED，再做最小 GREEN；随后 full frontend、build、Chrome smoke 与 independent review
+- Fix: `InspectionWorkbench` 在打开、取消、放弃、重试和成功路径上显式管理 return-save failure；任一草稿或 metadata 保存失败时保留对话框与草稿，并在对话框内显示 `role="alert"` 的原因中立提示，允许检查后重试、继续编辑或明确不保存返回
+- Regression check: 先新增本地无效新增草稿 RED，精确失败于对话框缺少 `role="alert"`；review 后将 API 与本地失败统一文案改为原因中立，并再次取得两项 RED/GREEN。整合最新 `main@f28590a` 后 focused `InspectionWorkbench.test.tsx` 为 `51 passed`，full frontend 为 `25 files / 317 tests passed`，production build 和 `git diff --check` 通过；build 仅保留既有 Vite large-chunk warning
+- Runtime proof: Chrome 在 worktree frontend `15175` 对项目 `d5417ca0-2fe3-4dca-ba9f-10b9ba30032c` 填入不完整新增草稿 `M10` 后点击“保存并返回”，对话框保持打开并显示原因中立提示，`M10` 仍保留；浏览器 network 和 API access log 均无该项目 `/review/commands`，随后“不保存返回”回到列表且 `/review/lock/release` 返回 `200`；console 无 error/warning
+- Independent review: 初审 `accept with concerns`，指出统一文案会误导 API/锁失败且 `main` 已前进；文案改为原因中立并 fast-forward 整合 `main@f28590a` 后复审 `accept`，确认两项 concern 均关闭、无 blocking 或 non-blocking concern、阶段 gate 与本任务状态机均完整保留
+- Change: `.agent/bug-memory.md`、`InspectionWorkbench.tsx`、`InspectionWorkbench.test.tsx`、`zhCN.ts`
+
+## BUG-20260803-auto-accepted-items-remain-pending
+
+- Status: 修复待验证
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: 新上传图纸从 `automatic-result/3` 创建审核工作副本时的自动通过投影、`quality_inspection-worker-1`
+- Symptom: 用户在自动通过修复合入后重新上传图纸，界面仍没有任何自动通过气泡，全部检验项继续显示待人工审核
+- Previously correct behavior: `automatic-result/3` 中 `confidence_decision.review_disposition=auto_accepted` 的候选项应在新建审核工作副本时投影为已采纳，并保留其自动采纳来源
+- Reproduction: 2026-08-03 13:05 本地新项目 `6d8d9b3a-4083-4e4e-9540-fe9ca8bcd359` 的 raw result 有 139 项，其中 108 项为 `auto_accepted`、31 项为 `review_required`；同一项目的 working copy 却为 139 项全部 `pending + requires_confirmation=true + acceptance_source=null`
+- Root cause: `quality_inspection-worker-1` 启动于 2026-08-03 11:46，早于修复提交 `501fd42` 的 12:28；Celery worker 在进程启动时导入 `ReviewService`，不会像 API 的 Uvicorn reload 一样自动加载 bind mount 后续变更，因此用户新上传任务仍执行修复前的 working-copy 投影代码
+- Selected lane: `Standard`；不修改稳定 API/schema/runtime config，只恢复已合入代码的 worker runtime identity，并用真实数据库投影与队列状态验证原始 failure surface
+- Selected plan: 本 bug-memory entry 作为当前 ad hoc task contract；关闭后返回已批准的 GDT-10E paid-run plan，当前不触发额外 Provider 调用
+- Problem boundary: 只替换共享 Compose project 中已确认空闲的 `worker` 进程以加载当前 `main`；不重建 API、PostgreSQL、Redis，不删除 volume，不改变既有项目数据或自动重跑用户项目
+- Single owner: `quality_inspection-worker-1` 的 Celery 进程 runtime identity
+- Old path action: 退役启动于修复提交之前、仍持有旧 `ReviewService` 的 worker 进程；保留现有 Compose service、queue、database 和 storage Owner
+- Unchanged contract: `automatic-result/3`、review working-copy schema、confidence decision、人工审核、freeze、气泡和正式导出合同均不变
+- Allowed paths: `.agent/bug-memory.md`；production code 和 runtime config 不修改
+- Writer ownership: 父 agent 为唯一 writer；现有其他 agent 均为只读 reviewer/explorer，不拥有本文件
+- Validation action: 已确认 worker `active/reserved/scheduled` 为空，再执行 `docker compose -p quality_inspection -f /home/reggie/vscode_folder/Quality_Inspection/compose.yaml up -d --no-deps --force-recreate worker`；随后验证 worker 启动时间、代码 identity、Celery ping/queue、API health，并保留一次重传同一 PDF 的可见闭环验证
+- Fix: 仅重建 `quality_inspection-worker-1`，让 Celery 重新导入当前 `main@fe22698` 中含 `501fd42` 的 `ReviewService`；API、PostgreSQL、Redis、volume 和既有项目均未重建或改写。修复前已生成的 broken working copy 不做隐式迁移，避免覆盖人工审核状态
+- Regression check: 首次直接 focused pytest 因宿主机继承 Compose-only `postgres` hostname 而在 setup 失败，不作为代码 verdict；仓库隔离 Compose 又被本机 Docker address-pool exhaustion 阻断。改用 host-network + tmpfs disposable PostgreSQL 17，真实迁移至 head 后运行 `/2`、`/3` 参数化 working-copy regression，结果 `2 passed / 29 deselected`，临时容器已移除
+- Runtime proof: worker 从旧 ID `53659e4e1d02...` 替换为 `3a9d187f398d...`，新进程启动于 13:11:36+08，晚于 `501fd42`；worker 内 `app/review/service.py`、`app/processing/tasks.py`、`app/processing/automatic_result.py` 与 host 哈希一致，Celery `ping=pong` 且 `active/reserved/scheduled` 全空。API、PostgreSQL、Redis container ID 均保持不变，`5173` 同源 health 返回 `ok`
+- Independent review: verdict 为 `accept with concerns`，无 confirmed defect 或 recovery blocker；reviewer 确认 root-cause 时间链、worker-only recovery、关键文件 identity、队列和未改写既有项目。唯一 material risk 是尚缺 worker 重建后的真实新上传或等价 live replay，因而当前只能证明 runtime 已加载修复，不能宣称用户可见回归已经闭环
+- Next verification: 用户重传同一 PDF 后，确认 raw `auto_accepted` candidate IDs 与 working-copy `status=auto_accepted` item IDs 完全一致且非空，并在 Workbench 可见；在这项 live proof 前保持“修复待验证”
+
 ## BUG-20260801-drawing-list-get-405
 
-- Status: 调查中
+- Status: 已解决
 - First reported: 2026-08-01
 - Last reported: 2026-08-01
 - Recurrence: 2
@@ -174,8 +226,8 @@
 
 - Status: 已解决
 - First reported: 2026-08-01
-- Last reported: 2026-08-01
-- Recurrence: 1
+- Last reported: 2026-08-03
+- Recurrence: 3
 - Surface: 技术要求确认后的检验项列表、`ReviewPanel` 气泡选择动作与 SIP handoff
 - Symptom: 用户从技术要求进入检验项后，同一条通用要求再次显示为“待人工审核”；点击“设为需要气泡”后没有可感知反馈，也没有进入 SIP，流程语义看起来互相矛盾
 - Previously correct behavior: 技术要求确认完成后应明确进入哪个后续审核步骤；气泡选择动作应反馈已保存状态，并在满足 SIP 前置条件后提供清晰的 SIP 下一步，而不是让用户误以为该按钮本身等于“进入 SIP”
@@ -194,6 +246,50 @@
 - Focused verification: `cd frontend && npm test -- --run src/components/review/ReviewPanel.test.tsx src/components/workbench/inspectionItemPresentation.test.ts`
 - Main advancement gate: 实现期间 `main` 从 `7891a94` 前进到 `a698951`；`git diff --name-only 7891a94..a698951` 未触碰本修复的六个 Owner/test 文件，且已在新 HEAD 上重跑完整 frontend suite/build
 - Independent review: 初审 `accept with concerns` 指出 kept global 仍可重复确认；修复按钮退休与 rerender/no-second-command 回归后 follow-up verdict 为 `accept`
+
+### Recurrence 2
+
+- Symptom: 技术要求仍待确认时，同一原文已经作为 `global_requirement` 出现在下方检验项列表和详情中；用户同时看到两处“锐边去毛刺”，认为技术要求和检验项目重合
+- Reproduction: 2026-08-03 用户截图中技术要求共 6 条、待确认 6 条；技术要求列表显示“锐边去毛刺”，下方检验项 53 同时显示同一原文和“待确认进入 SIP”
+- Root cause: `ReviewService.create_from_raw()` 会同时投影 `technical_requirements` 与稳定 ID 的 global review item；`InspectionWorkbench` 未按技术要求阶段 gate 后者，因此第一阶段尚未完成时，第二阶段列表、详情和 `keep` 动作已经可见、可操作
+- Selected lane: `Standard`；只调整现有 frontend workbench 的阶段装配，但需要 focused regression、full frontend suite/build、headed browser smoke 和 independent review
+- Selected plan: 本 recurrence 作为当前 ad hoc task contract；不切换或扩展当前 P0 implementation plan
+- Problem boundary: 技术要求仍有 `review_required=true` 时，不在检验项列表、详情、SIP 摘要或选择入口暴露任何技术要求生成的 global item；全部技术要求确认后恢复现有检验项/SIP 审核阶段
+- Single owner: `InspectionWorkbench` 继续拥有 `TechnicalRequirementPanel`、`InspectionItemTable`、`ReviewPanel` 和 SIP 辅助面板的装配与选择 gate
+- Old path action: 替换“两个审核阶段同时可见、可操作”的装配路径；不删除 global item，也不建立新的后端或前端 Owner
+- Unchanged contract: `set_technical_requirement_match`、global item 稳定 ID、SIP mapping/export、review command、freeze、`balloon_required=false` 和无正式编号语义全部不变
+- Allowed paths: `.agent/bug-memory.md`、`frontend/src/components/workbench/InspectionWorkbench.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`
+- Writer ownership and order: 父 agent 为唯一 writer；只读 explorer 已完成调用链调查且未修改文件；当前无其他 writer 拥有 allowed paths
+- Validation action: 先用 `micromamba run -n qi-p0 npm --prefix frontend test -- --run src/components/workbench/InspectionWorkbench.test.tsx` 取得 RED/GREEN，再运行完整 frontend suite、production build、headed browser smoke 和 independent review
+- Fix: `InspectionWorkbench` 在任一技术要求仍待确认时，以 `generated_candidate_id` 精确 gate 对应的生成全局项；检验项表格、详情、PDF 选择、SIP/项目摘要和异常导航统一使用阶段可见 items。`manual_review_count` 只扣除被 gate 且 active/requires-confirmation 的生成项，保留普通 global/local item 和 source-only coverage；全部技术要求确认后自动恢复既有 SIP 审核项，若阶段回退则清空已隐藏项选择
+- Regression check: TDD RED 精确失败于生成全局项仍暴露，summary follow-up RED 精确失败于待人工审核仍计入隐藏项；focused `InspectionWorkbench` suite 为 `50 passed`，完整 frontend suite 为 `316 passed`，production build 与 `git diff --check` 通过。独立 reviewer 初审因摘要口径 defect 判定 `reject`，补齐 mixed global/local、summary 和 confirmed -> pending selection reset 覆盖后 follow-up verdict 为 `accept`，无 blocker 或 concern
+- Runtime proof: localhost headed Chrome 在真实 working copy（raw 139 active items、6 条技术要求待确认、2 条 generated global items）显示项目检验项与 SIP 待生成为 137、待人工审核 32；展开技术要求可见“锐边去毛刺”，逐页检查三页检验项均不显示该 generated row，详情无“确认进入 SIP：锐边去毛刺”，普通检验项与 3 条 source-only coverage 保持可见，console error/warn 为 0。只读浏览并返回目录释放 review lock，未提交任何 review command
+- Change: `fix(frontend): stage technical requirement review`
+
+### Recurrence 3
+
+- Symptom: 6 条技术要求全部显示“已确认”后，其 generated global items 仍以“待人工审核 / 待确认进入 SIP”重新出现，要求用户对同一业务结论再确认一次
+- Reproduction: 2026-08-03 用户截图中技术要求为“6 条 / 已确认 6”，进入检验项审核后第 54～58 条“锐边去毛刺”等通用要求仍全部显示待确认进入 SIP
+- Root cause: `ReviewService._set_technical_requirement_match(global_scope)` 已持久化用户对 requirement 范围和纳入 SIP 的明确选择，但 `_global_requirement_item()` 会把对应稳定 global item 重置为 `status="pending" / requires_confirmation=true`，且该分支没有调用既有 manual acceptance seam；因此同一业务 membership decision 被 requirement 与 item lifecycle 各要求一次
+- Contract correction: 早期 recurrence 把第二次 `keep` 记录为既有合同，但 approved `2026-07-31-sip-auto-mapping-and-exception-review-design.md` 明确规定检验项只审核一次、SIP 不重复询问是否纳入；用户本次反馈再次确认采用 single-review Owner，故本 recurrence supersedes 该条旧二次确认说明
+- Selected lane: `Standard`；改变 backend review 状态流转与 manual review/freeze 可见结果，需要 backend integration RED/GREEN、frontend contract regression、full suites/build、headed browser smoke 和 independent review
+- Problem boundary: `global_scope` 技术要求确认事务同时将其 generated global item 标为人工保留；bootstrap/尚未确认 requirement 的 generated item 继续 pending，普通人工 global item 继续走既有 item review
+- Single owner: `ReviewService._set_technical_requirement_match()` 继续拥有 requirement command 的原子投影；复用 `_complete_manual_item()`，不新增第二 Owner
+- Old path action: 退役“确认 global_scope 后仍等待 `keep`”的 generated-item 特例；保留 `keep` command 供其他待审核 item 使用
+- Unchanged contract: `set_technical_requirement_match` schema、stable generated ID、technical requirement refs、coverage、matched-items/excluded 分支、`balloon_required=false`、无正式编号、SIP mapping/export 与 freeze 的通用 unresolved veto 全部不变
+- Allowed paths: `.agent/bug-memory.md`、`backend/app/review/service.py`、`backend/tests/integration/test_review_operations.py`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`backend/alembic/versions/0017_confirmed_global_requirement_acceptance.py`、`backend/tests/integration/test_confirmed_global_requirement_migration.py`
+- Preflight amendment: production fix only covers future commands；现有 confirmed requirement working copies 必须通过 migration Owner 原地收敛，否则仍需重复确认。新增 `0017` data-only migration 与 isolated-schema test，不新增 column/schema/API；upgrade 仅修 exact confirmed-global/pending-generated rows 并递增 working-copy version，downgrade fail closed，避免把已经接受的业务状态静默改回 pending
+- Writer ownership and order: 父 agent 为唯一 writer；只读 debugger 已完成调用链审计且未修改文件；当前无其他 writer 拥有 allowed paths
+- Validation action: backend integration 先取得“global_scope command 后 item 已 kept 且 manual review count 不含该项”的 RED/GREEN；再更新 frontend stage fixture 证明确认后显示已确认且无第二次 SIP action，运行 focused/full backend+frontend、build、browser smoke 与 independent review
+- Follow-up UI decision: 用户确认直接移除“进入检验项审核”。该控件只会恢复全部筛选、选择一个 handoff item 并移动焦点，不提交 command 或改变 working-copy 状态；删除它以免形成第三个伪阶段。技术要求确认后检验项区域继续直接可见、可操作
+- Follow-up lane and paths: `Lite`；只退役导航 affordance 和对应 orphan callback/copy/style/test，允许修改 `.agent/bug-memory.md`、`frontend/src/components/workbench/TechnicalRequirementPanel.tsx`、`frontend/src/components/workbench/TechnicalRequirementPanel.test.tsx`、`frontend/src/components/workbench/InspectionWorkbench.tsx`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`frontend/src/copy/zhCN.ts`、`frontend/src/styles/workbench.css`
+- Follow-up regression: TDD RED 精确失败于终态摘要仍渲染“进入检验项审核”；移除按钮及 orphan `onEnterReview`、handoff target、focus ref、copy 和 CSS 后，focused `TechnicalRequirementPanel + InspectionWorkbench` 为 60 passed，full frontend 为 25 files / 316 tests passed，production build 与 `git diff --check` 通过；build 仅保留既有 Vite large-chunk warning
+- Follow-up runtime proof: 原截图项目当时由另一 operator 持有有效 review lock，未强行释放；改用 localhost 已有 confirmed-requirement 项目 `266e00ec-b97f-43a8-9f46-9af753374b01` 做 Chrome smoke，技术要求显示“6 条 / 已确认 6”，顶部只保留“展开技术要求”，`进入检验项审核` button count 为 0，检验项表格同屏直接可见 51 rows，console error/warn 为 0；返回图纸列表释放本次 review lock
+- Follow-up change: `fix(ui): remove technical review handoff`
+- Fix: `ReviewService._set_technical_requirement_match(global_scope)` 在同一 command 内复用 `_complete_manual_item()`，让 generated global item 与 requirement 一次性完成人工接受；`0017_confirmed_global_requirement_acceptance` 原地修复历史 confirmed-global/pending-generated 状态，并按既有 confidence contract 保留有效 decision 为 `manual_override`、无效或缺失 decision 为 `manual`
+- Regression check: TDD 先证明旧路径在 global_scope command 后仍返回 `status=pending`，再取得 focused GREEN；新增 pre-generated confidence candidate 用例证明 item、candidate/source coverage、`manual_review_count`、freeze blocker、version 与 operation record 原子关闭。backend review/migration focused 127 passed，frontend 25 files / 317 tests passed，production build、Ruff、`git diff --check` 与唯一 Alembic `0017 (head)` 均通过；完整 backend 运行 2125 passed / 53 failed，失败仅来自当前工作树既有 GDT runtime manifest identity 与 live Provider/Harness private-control 环境，不涉及本次 review/migration surface。独立 reviewer 首轮因 provenance 分歧 reject，修复后复审 accept、无 blocking 或 non-blocking concern
+- Runtime proof: localhost 数据库由 `0016` 升级到 `0017`，3 个历史 working copy 共 11 个 exact confirmed-global/pending-generated item 原地收敛；用户截图对应 `f62ad156-b7dd-43ea-a8ee-fbeda4f78770` 从 version 17 升到 18，5 个通用要求全部 accepted、remaining pending global item 为 0。headed Chrome 真实打开该 working copy，技术要求显示“6 条 / 已确认 6”，第 54～58 条通用要求均显示“已确认”；选择“锐边去毛刺”后详情显示“已纳入 SIP 检验项集合”，不存在“确认进入 SIP”动作，console error/warn 为 0。未重新识别、未提交 review command，并返回图纸列表释放 review lock
+- Change: `fix(review): accept confirmed global requirements`
 
 ## BUG-20260801-source-balloon-action-affordance
 
