@@ -40,7 +40,13 @@ deploy-main:
 			--exclude=compose.deploy.yaml \
 			"$$stage_dir/" "$$deploy_dir/"; \
 		cd "$$deploy_dir"; \
-		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml build api worker frontend; \
+		build_attempt=1; \
+		until docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml build api worker frontend; do \
+			if [ "$$build_attempt" -ge 3 ]; then echo "Image build failed after $$build_attempt attempts" >&2; exit 1; fi; \
+			build_attempt=$$((build_attempt + 1)); \
+			echo "Image build failed; retrying ($$build_attempt/3)" >&2; \
+			sleep 2; \
+		done; \
 		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml stop api worker frontend; \
 		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml run --rm --no-deps --interactive=false --entrypoint alembic api -c /app/alembic.ini upgrade head; \
 		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml up -d --remove-orphans; \
