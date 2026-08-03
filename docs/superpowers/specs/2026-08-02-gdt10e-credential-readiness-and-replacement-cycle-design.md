@@ -3,18 +3,19 @@
 ## Status
 
 - **Successor Step 0 resumption — 2026-08-03:** 用户要求从 selection-time `main` base `76f2d48ae86fbe631fc406219f165891a0b1dcfc` 创建 successor worktree `.worktrees/gdt10e-retry-archive-continuation` / branch `feature/gdt10e-retry-archive-continuation` 并继续此前任务。首次 amendment review 时本地 `main` 已前进到后继 commit `ac5ccf56ef5c370a24c446fd77d6fbd9408eaed1`，successor HEAD仍固定为批准的 base；本记录不授权 merge、rebase 或吸收该后继 commit。当前 validation action 是 `continue`，但只恢复已 reviewed 的 Step 0 amendment scope，并要求 fresh code/test/verification/review 后执行一次 fixed archive；旧 worktree 未提交 WIP 不复制、不 cherry-pick，也不作为实现证据。该指令不授权把 historical DB `0014` 自动迁移为 merged head `0016`，不授权 Provider、paid execution、Task 6、第二 replacement、budget expansion、forbidden `0015_drop_symbol_attempt_v1_default` 或 production promotion。Step 0 成功后，Task 5 Step 1 必须先捕获 successor runtime/DB truth；任何 live resume 仍受本文件既有 reviewed DB-identity/pricing amendment、freshness 和明确批准 gate 约束。
-- **Completed-function integration deferral — 2026-08-03:** 用户要求停止新增 receipt-archive/zero-paid retry 功能，先把已经完成、已复审、已提交的结构化几何公差能力合入 `main`。因此 `retire-no-issuance-receipt` implementation、真实 archive、Task 5 retry 与 Tasks 6-8 全部 deferred；当前未提交 archive code/tests 不属于 merge boundary。该决定不把 GDT-10 Step 4/5 或 parent objective 标记为完成，也不授权 Provider、paid execution、第二 replacement、budget expansion、`0015` 或 production promotion。后续恢复必须从本 design/companion 的未完成 gate 继续，不得把本次 partial integration 当作 live closure evidence。
+- **Completed-function integration deferral — 2026-08-03:** 用户要求停止新增 receipt-archive/zero-paid retry 功能，先把已经完成、已复审、已提交的结构化几何公差能力合入 `main`。因此 `retire-no-issuance-receipt` implementation、真实 archive、Task 5 retry 与 Tasks 6-8 全部 deferred；当前未提交 archive code/tests 不属于 merge boundary。该决定不把 GDT-10 Step 4/5 或 parent objective 标记为完成，也不授权 Provider、paid execution、第二 replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 或 production promotion。后续恢复必须从本 design/companion 的未完成 gate 继续，不得把本次 partial integration 当作 live closure evidence。
 - **Migration convergence for partial integration:** `main` 已拥有 `0013_project_catalog -> 0014_project_lifecycle`，因此 completed GDT migrations 在 integration merge 中仅重编号/重挂为 `0015_structured_geometric_tolerance -> 0016_symbol_provider_failure_diagnostics`；migration bodies 与 downgrade semantics 不变。这不是被禁止的 destructive `0015_drop_symbol_attempt_v1_default`，后者仍不存在且未授权。本文既有 DB `0014` live evidence 保持 historical/immutable；deferred GDT-10E 不得在 merged `0016` head 上恢复，除非先完成新的 reviewed DB-identity/pricing amendment 与明确批准。
+- **Successor DB-identity/pricing amendment — 2026-08-03:** Step 0 archive 和 Step 1 read-only baseline 已完成；用户随后明确批准先review本 amendment再继续plan-bounded successor execution。Supplemental schema audit证明target的`alembic_version=0014`属于旧feature collided chain：current `0013_project_catalog`/`0014_project_lifecycle` objects缺失，而byte-identical current `0016` diagnostic shape与`394 = 196 v1 + 198 v2` valid attempts已存在。DB mutation前必须先按companion Step 1A以TDD在六个fixed code/test paths把exact GDT-10E cycle唯一绑定到`0016`，同时generic/historical GDT-10D保持exact `0014`；parent verification、fresh implementation review、exact-file commit和HEAD runtime-closure check全部通过后，唯一允许的Step 1B收敛才是target-only、backup-first、writer-quiesced `stamp 0012 -> upgrade 0015 -> exact verify -> stamp 0016`。不得使用arbitrary revision override、broad allowlist、fallback、直接`upgrade head`、downgrade、auto-restore或改写historical GDT-10D/E `0014` evidence。Pricing继续引用companion已reviewed `2026-08-03` snapshot/deadline amendment，不创建第二 pricing Owner。
 - Parent plan：`docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md`。
 - Predecessor：GDT-10D full run `20260802T101404291929Z-884bec62` 与 evidence commit `daa3e6f`，保持 immutable。
 - 用户已明确批准 reviewed GDT-10E implementation、zero-paid activation 和 one paid cycle boundary；本 Task 只记录该批准并单独提交 docs，不执行 credential/runtime/Provider mutation。
-- 本 design 不授权读取或输出 credential value、direct Provider diagnostic、second replacement、`0015` 或 production promotion。
+- 本 design 不授权读取或输出 credential value、direct Provider diagnostic、second replacement、`0015_drop_symbol_attempt_v1_default` 或 production promotion。
 - 后续窗口只可按 companion plan 的 implementation、zero-paid activation、one-use authorization 和 one paid cycle gates 执行。
 - Initial independent review verdict was `reject` for four docs-level gaps：unowned `runtime_accepted` transition、expiry/immutable-resume conflict、pre-consume private-state cleanup gap andmissing literal CLI。First remediation added the single acceptance-fact writer、same-document resume rule、two-branch abort/disposal contract、versioned schemas、pricing freshness andexact commands。
 - Second review closed expiry/resume、sealed attribution、v2/v3 andpricing freshness，but remained`reject` for path-policy conflicts、cleanup order/blocker persistence andmissing active acceptance call-site/cross-file contract。Second remediation separated three path classes、added root-sibling intent/receipt/blocker journaling withone deletion order、bound failed/success run ID through theauthorization Owner andplaced deterministic acceptance projection beforefreeze/pause。
 - Third review verified cleanup、acceptance wiring andbound-run handling，but remained`reject` because`--root` itself was not categorized andone self-review sentence still namedmanual operator input asrun-ID source。Third remediation made the exact root a first-class allowlisted path withnegative tests andmade`bound-run-id` the sole run-ID source。
 - Final independent read-only review verdict：`accept`，with no blocking or non-blocking finding。It revalidated all three path classes、cleanup interruption/recovery、deterministic runtime acceptance、success/failure run binding、v2/v3 compatibility、expiry/resume、sealed evidence、budget/pricing、privacy anddocs-only authority。
-- **Cleanup proof amendment — 2026-08-02:** 用户选择 amendment option `A`。Review subsequently found that Task 2 had no canonical lifecycle-proof schema. Task 2 is paused while this amendment makes Task 3 the sole Owner of `provider-cycle-cleanup-intent/1`; implementation may resume only after an independent read-only amendment review returns `accept`. This amendment does not complete Task 2, parent GDT-10 Step 4, Step 5, or the parent objective, and preserves every block on credential/runtime mutation, Provider calls, paid execution, second replacement, budget expansion, `0015`, and production promotion。
+- **Cleanup proof amendment — 2026-08-02:** 用户选择 amendment option `A`。Review subsequently found that Task 2 had no canonical lifecycle-proof schema. Task 2 is paused while this amendment makes Task 3 the sole Owner of `provider-cycle-cleanup-intent/1`; implementation may resume only after an independent read-only amendment review returns `accept`. This amendment does not complete Task 2, parent GDT-10 Step 4, Step 5, or the parent objective, and preserves every block on credential/runtime mutation, Provider calls, paid execution, second replacement, budget expansion, `0015_drop_symbol_attempt_v1_default`, and production promotion。
 
 ## Execution Approval Record — 2026-08-02
 
@@ -25,7 +26,7 @@
 - Overall envelope: 50.000000 CNY
 - Provider starts: one
 - Resume: only one literal same-run resume after accepted pause
-- Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
+- Still blocked: direct Provider diagnostic, second replacement, `0015_drop_symbol_attempt_v1_default`, production promotion
 
 ## Problem
 
@@ -64,7 +65,7 @@ Presence 和 local binding 不能证明 account validity。GDT-10D 已经反证�
 - 不增加 direct Provider diagnostic、canary endpoint、model list、billing API 或第二条 network path。
 - 不增加 `50.000000 CNY` 总包络；给 replacement cycle 重新分配完整 `50.000000 CNY` 会把最坏总支出扩大到 `53.526656 CNY`，必须另获明确批准。
 - 不改变 Qwen endpoint、model、`timeout=60.0`、SDK `max_retries=0`、primary/actual/page/project/wall/in-flight limits。
-- 不执行 `0015_drop_symbol_attempt_v1_default`，不做 production promotion、main runtime/DB mutation或 destructive restore。
+- 不执行 `0015_drop_symbol_attempt_v1_default`，不做 production promotion、main/non-target runtime/DB mutation或 destructive restore；只允许companion reviewed amendment中的exact successor target reconciliation。
 - 不改变 GD&T schema、normalizer、review、frontend 或 export semantics。
 
 ## Read-Only Audit Findings
@@ -199,7 +200,7 @@ State transition只允许`not_yet_accepted -> runtime_accepted`一次；duplicat
 3. private root/attestation owner、mode、schema、content hash、cycle/model/region、`1800s` expiry和全部operator booleans通过；
 4. future live override exact Qwen key/workspace非空、workspace shape安全，并在内存中重新计算private bundle binding；只返回match boolean；
 5. live override exact八键、read-only authorization mount、safe/live override separation和worktree `.env` absence通过；
-6. API/worker committed full runtime closure、mode/router/model、feature Compose project/ports/health、DB exact `0014`通过；
+6. API/worker committed full runtime closure、mode/router/model、feature Compose project/ports/health、successor DB exact canonical head `0016`通过；historical GDT-10D/E `0014` evidence保持immutable；
 7. pricing snapshot/hash、public policy hard ceiling `50`、issuance incremental ceiling `46.473344`、reservation math与remaining budget通过；
 8. timeout/transport/auth/status/metadata retry为`0`；只有 `ProductionRetryCoordinator`可为schema-invalid授权一次second submission；
 9. Celery/Redis/Harness writers为空，DB/storage/run inventories未变化；
@@ -212,7 +213,7 @@ Zero-paid `NO-GO`必须调用lifecycle Owner的`abort-preconsume`，而不是人
 
 ### Single Zero-Paid Retry Receipt Archive Amendment — 2026-08-03
 
-用户仅批准一次新的 zero-paid Task 5 retry。它不授权 Provider 调用、paid execution、第二 replacement、budget expansion、`0015` 或 production promotion。该 retry 的唯一前置 destructive action 由 lifecycle Owner `.agent/harness/scripts/live_cycle_authorization.py` 的受限命令 `retire-no-issuance-receipt` 执行；`provider_account_readiness.py` 不参与，且不得创建 JSON schema、receipt、intent、blocker 或任何 private control。
+用户仅批准一次新的 zero-paid Task 5 retry。它不授权 Provider 调用、paid execution、第二 replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 或 production promotion。该 retry 的唯一前置 destructive action 由 lifecycle Owner `.agent/harness/scripts/live_cycle_authorization.py` 的受限命令 `retire-no-issuance-receipt` 执行；`provider_account_readiness.py` 不参与，且不得创建 JSON schema、receipt、intent、blocker 或任何 private control。
 
 该命令只接受以下固定 lexical absolute paths 和 immutable identity：source receipt `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json`；archive `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json`；cycle `gdt10e-auth-remediated-live-20260802`；schema `provider-cycle-cleanup-receipt/1`；branch `no_issuance`；file-bytes SHA-256 `67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb`；canonical `content_sha256` `15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532`；actual current uid/gid and mode `0600`。任何 path alias、trailing-slash variant、symlink、wrong owner/mode/schema/cycle/branch/SHA，或 private root/readiness/intent/blocker/authorization/overrides/reports reappearing，均 fail closed。
 
@@ -228,7 +229,7 @@ Archive 必须保留 source 的完全相同 bytes。首次 source-only execution
 - Overall plan envelope：`50.000000 CNY`。
 - GDT-10E exact incremental ceiling：`46.473344 CNY`。
 - Pricing snapshot与reservation仍复用 `provider-pricing-gdt10d/1` 和 exact SHA；未发生费率刷新授权。
-- Snapshot `retrieved_date=2026-08-02`只允许GDT-10E在`2026-08-02T23:59:59+08:00`之前issue。超过该时点必须在Provider work前fail closed并请求新的read-only public pricing verification、reviewed snapshot/plan amendment和用户明确批准；不得自动刷新、沿用stale费率或改变`50.000000 CNY`总包络。
+- Snapshot `retrieved_date=2026-08-02` 已由 companion 的 reviewed `Pricing Verification Amendment — 2026-08-03` 完成官方公开价格只读复核；snapshot bytes/content SHA、费率和总包络不变，GDT-10E只允许在 `2026-08-03T23:59:59+08:00` 之前issue。超过该时点必须在Provider work前fail closed并请求新的read-only public pricing verification、reviewed plan amendment和用户明确批准；不得自动刷新、沿用stale deadline或改变`50.000000 CNY`总包络。
 - Ledger每次reserve读取 active issuance `max_total_cny`；`committed + reservation > 46.473344` 在network前产生现有 Provider budget terminal。
 - Qwen unknown reservation仍 `1.763328 CNY`，OCR reservation仍 `0.500000 CNY`。
 - Authentication、request-rejected、rate-limited、service、metadata、timeout、transport failure均不retry；schema-invalid only由 `ProductionRetryCoordinator`最多retry一次，第二submission单独reserve。
@@ -244,7 +245,7 @@ Issuance新增并绑定：
 - sealed GDT-10D terminal/evidence SHA与historical cost；
 - private account-readiness document SHA；
 - pricing SHA、runtime closure SHA、current-four SHA、backend image ID；
-- feature Compose project、DB `0014`；
+- feature Compose project、successor DB exact head `0016`；
 - `max_total_cny=46.473344` 与expiry。
 
 Schema strategy是显式version bump而非optional fields：GDT-10E写`run/3`与`live-run-evidence/3`；existing `run/1|run/2`和`live-run-evidence/2` definitions保持原样。两个JSON Schema使用`schema_version` discriminated `oneOf`：v2只接受原`paid_cycle` exact keys，v3要求readiness evidence、`historical_committed_cny`、`max_total_cny`、`overall_envelope_cny`和runtime acceptance SHA/state。`additionalProperties:false`在每个版本继续生效。Policy validator对GDT-10E exact cycle只接受v3，对tracked GDT-10D仍只接受v2；tests必须逐字节重验sealed GDT-10D并证明v3缺字段、v2夹带v3字段、跨版本混合全部拒绝。
@@ -279,9 +280,9 @@ Account readiness在首个真实success response前必须保持 `operator_attest
 
 ## Cleanup, Rollback And Promotion Boundary
 
-- Runtime/DB change仅在用户批准后按companion plan执行。Zero-paid activation只重建feature `api/worker`；main/non-target IDs和volumes保持不变。
+- Runtime/DB change仅在用户批准且DB-identity/pricing amendment review `accept`并提交后按companion plan执行。DB reconciliation还必须等待Step 1A exact GDT-10E `0016` TDD、parent verification、fresh implementation review、code/test commit和HEAD runtime-closure check全部通过；只命中exact successor target。为取得无Compose `pg_isready`并发session的连续窗口，原target PostgreSQL container只可stop并保留exact ID/config，临时target只可用原exact image ID、同一sole volume、fixed isolated network、no ports和`--no-healthcheck`启动；final proof后移除临时container/network并restart原exact ID。Zero-paid activation只重建feature `api/worker`；main/non-target IDs和volumes保持不变。
 - Any consumed-cycle exit继续由现有 close bridge、quiescence与safe-deactivation contract收口；private readiness/live/safe/auth state只在run-bound copies、healthy DB和safe runtime proof后删除。
-- 本plan不需要新migration；DB保持`0014`。若future implementation改变authorization/evidence schema，仅是file/JSON schema change，不执行`0015`。
+- 本plan不创建或修改migration body；successor以companion的collision preflight、private backup、target writer quiescence和exact metadata reconciliation收敛到canonical `0016`。Historical GDT-10D/E DB `0014` evidence不变；任何failure保留backup并fail closed，不执行Alembic downgrade、volume deletion或automatic destructive restore。
 - Code rollback按GDT-10E implementation commits逆序revert；第一项验证是 existing GDT-10D sealed evidence仍可通过 `require_success=False` validation，随后运行 Harness/Provider focused tests。
 - `0015_drop_symbol_attempt_v1_default` 与 production promotion继续separately blocked。
 

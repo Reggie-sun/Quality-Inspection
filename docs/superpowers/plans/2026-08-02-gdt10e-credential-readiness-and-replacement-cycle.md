@@ -15,7 +15,7 @@
 - Overall envelope: 50.000000 CNY
 - Provider starts: one
 - Resume: only one literal same-run resume after accepted pause
-- Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
+- Still blocked: direct Provider diagnostic, second replacement, `0015_drop_symbol_attempt_v1_default`, production promotion
 - Cleanup-proof amendment: user selected option `A` on 2026-08-02. Task 2 is paused because review found no canonical lifecycle-proof schema; it may resume only after an independent read-only amendment review returns `accept`. This amendment does not complete Task 2, GDT-10 Step 4, Step 5, or the parent objective.
 
 ## Pricing Verification Amendment — 2026-08-03
@@ -26,6 +26,17 @@
 - Official sources：`https://cloud.tencent.com/document/product/866/17619`、`https://help.aliyun.com/zh/model-studio/qwen3-vl-plus`。
 - Immutable snapshot：继续复用 `provider-pricing-gdt10d/1`；文件 bytes SHA-256 仍为 `40893337440fde3bb7e9c572b5ba341fc4fe9782850a1c9c38e971a3fa317e19`，canonical content SHA-256 仍为 `c6b37f8a811d38444ccd89a5862d676343e414db21dbc02d9ca9979496364a2b`。不得修改 snapshot bytes 或 historical GDT-10D evidence。
 - Renewed issuance boundary：GDT-10E 只允许在 `2026-08-03T23:59:59+08:00` 前 issue；超过该时点继续 fail closed，并重新要求 read-only public pricing verification、reviewed plan amendment和用户明确批准。
+
+## Successor DB-Identity And Pricing Binding Amendment — 2026-08-03
+
+- User approval：Step 0 archive 与 Step 1 read-only baseline 完成后，用户于 `2026-08-03` 明确批准先完成本 DB-identity/pricing amendment 的 review，再继续 plan-bounded successor execution。该批准不授权 main/non-target mutation、Provider work before zero-paid `GO`、第二 replacement、budget expansion、`0015_drop_symbol_attempt_v1_default`、Task 6 before one-use issuance/consume gate 或 production promotion。
+- Historical identity：sealed GDT-10D/E evidence 继续以当时 feature chain 的 DB revision `0014` 为 immutable truth，不修改 run、receipt、Harness tree、migration history或历史描述，也不把历史 evidence 重标为 `0016`。
+- Collision truth：successor target 的单行 `alembic_version=0014` 来自旧 feature chain `0012 -> old 0013_structured_geometric_tolerance -> old 0014_symbol_provider_failure_diagnostics`，不是 merged canonical `0014_project_lifecycle`。只读检查证明 current `0013_project_catalog` 三列与 `0014_project_lifecycle` 三列、四约束和一索引均缺失；同时 current `0016` 的三 diagnostic columns/check 已 exact present，`394 = 196 v1 + 198 v2` attempts 全部满足约束。旧 `0013/0014` migration bodies 与 current `0015/0016` 除 revision docstring、`revision` 和 `down_revision` 外完全一致。
+- Canonical target：只允许当前 Compose project `structured-geometric-tolerance-recognition-qa` 从 collided feature identity 收敛到 `0013_project_catalog -> 0014_project_lifecycle -> 0015_structured_geometric_tolerance -> 0016_symbol_provider_failure_diagnostics`。不得直接 `upgrade head`，因为它会跳过 collided `0013/0014` 并在 `0016` 重复创建 diagnostic DDL。
+- Runtime contract convergence：current `run-p0.py`、Harness issuance与backend cycle validator仍把GDT-10D的`0014`硬编码应用到GDT-10E，若先迁移会在zero-paid、issuance、run start、active/terminal/empty-close paths拒绝`0016`。DB mutation前必须先以TDD只修改本plan列出的六个code/test paths：exact GDT-10E cycle唯一写入/接受`0016`，generic/historical GDT-10D继续唯一接受`0014`；任何caller-supplied arbitrary revision、`0014|0016` broad allowlist或fallback均禁止。完整focused suite、Ruff、contract/runtime-closure check、parent diff和fresh independent implementation review必须通过并单独commit。
+- Exact reconciliation：固定 reconciliation root `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-db-reconciliation/` 与 backup `pre-canonical-0016.dump` 当前均 absent。只在上述code/test/review commit、clean successor HEAD、target-only api/worker writer quiescence、empty Celery/Redis、zero other PostgreSQL client sessions/prepared transactions/ungranted locks、exact schema/count/digest preflight、committed migration SHA verification和该root下verified private `pg_dump --format=custom` backup 后继续。先把该backup restore到一次性 tmpfs PostgreSQL 17并用committed read-only migration mounts完整演练 metadata-only `alembic stamp 0012`、canonical `alembic upgrade 0015`、intermediate verification、metadata-only `alembic stamp 0016`和final verification；演练失败不得触碰target，演练成功并清理disposable runtime后才可对target执行同一state machine。三个 `0015` data-transform target tables在 preflight 必须均为零行，因此重复执行旧/current identical body是可证明的 vacuous transform；任一非零或 shape mismatch 均停止而不是迁移。
+- Recovery boundary：不执行 `alembic downgrade`，不删除 target volume，不自动 destructive restore。任何 backup、writer、schema、count、intermediate或final postcondition失败都在 issuance/Provider work 前 fail closed并保留 private backup；restore或backup删除需要独立 reviewed closeout authority。main/non-target IDs、volumes和DB保持不变。
+- Pricing binding：继续复用上方已reviewed `provider-pricing-gdt10d/1` snapshot，bytes SHA `40893337440fde3bb7e9c572b5ba341fc4fe9782850a1c9c38e971a3fa317e19`、content SHA `c6b37f8a811d38444ccd89a5862d676343e414db21dbc02d9ca9979496364a2b`、`3.526656 + 46.473344 = 50.000000 CNY` 和 rate table全部不变。DB reconciliation不是 issuance；任何 issuance 仍必须早于 `2026-08-03T23:59:59+08:00`，过期先重新完成 public pricing只读复核、reviewed amendment和明确批准。
 
 **Tech Stack:** Python 3.11、pytest、Ruff、Decimal、SHA-256、`O_CREAT|O_EXCL|O_NOFOLLOW`、JSON Schema、Docker Compose、PostgreSQL 17、repository Harness、Chrome headed QA、Micromamba `qi-p0`。
 
@@ -43,8 +54,8 @@
 - Pricing freshness：committed snapshot `retrieved_date=2026-08-02` 经 `2026-08-03` 独立只读公开价格复核、reviewed plan amendment和user approval后，只允许在`2026-08-03T23:59:59+08:00`前issue；超过时点再次fail closed，不得自动刷新/沿用。
 - No Provider work before Task 5 final independent `GO` and one-use issuance/consume。Task 6只允许一次`make verify-p0-live` start；Task 7仅允许accepted paused literal run的一次same-run resume。
 - Tasks 1-8 implementation/live boundary已获用户明确批准；所有既有 plan gates 仍为强制前置条件，不得从本 plan 存在推断超出已批准边界的 execution authority。
-- direct Provider diagnostic、second replacement、budget expansion、`0015` 与 production promotion仍被阻断；main runtime/DB mutation与model fallback不授权。
-- This docs-only amendment preserves blocks on credential/runtime mutation, Provider calls and paid execution; it changes only the cleanup-proof ownership/contract before Task 2 implementation resumes.
+- direct Provider diagnostic、second replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 与 production promotion仍被阻断；本 amendment 只授权 reviewed 后的 exact successor target DB reconciliation，main/non-target runtime/DB mutation与model fallback不授权。
+- The historical cleanup-proof docs-only amendment preserves blocks on credential/runtime mutation, Provider calls and paid execution; it changed only cleanup-proof ownership/contract before Task 2 implementation resumed. The current successor DB-identity/pricing amendment separately authorizes only its reviewed Step 1A code/test convergence and Step 1B exact target reconciliation under the gates above；它不授权Provider或paid execution。
 - Single retry archive amendment：在唯一一次新的 Task 5 zero-paid retry 前，`live_cycle_authorization.py` 的 `retire-no-issuance-receipt` 是 archive/replay 的唯一 Owner。它只允许固定 `no_issuance` receipt source `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json` 与 fixed archive `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json`，并固定 bytes SHA `67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb`、content SHA `15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532`、cycle/schema/branch、current uid/gid 与 `0600`。它用 no-overwrite hard-link、parent fsync、inode/device/bytes revalidation、source unlink 和 final parent fsync；仅 source-only、same-inode source+archive、archive-only 三态可安全 replay。任何 alias/symlink/identity/private-target reappearance或 archive conflict fail closed；不得创建新 schema或退役 future receipt。
 - Reviewer/explorer严格read-only；一个write-capable executor按Task 1 -> Task 8顺序执行。
 
@@ -56,7 +67,7 @@
 - Provider fact Owner：`QwenVisionProvider`，保持HTTP status safe classification；不验证console/account readiness。
 - Runtime acceptance fact Owner：`.agent/harness/scripts/run-p0.py::_seal_runtime_account_acceptance()`；`.agent/harness/scripts/live_evidence_policy.py`只验证/投影，不成为第二truth Owner。
 - Old path to replace：credential key presence作为充分readiness；多个模块hard-code`50.000000`而忽略plan-specific tighter issuance ceiling；unowned prose-only runtime acceptance；expired-attestation renewal会改写consumed issuance的路径。
-- Unchanged contract：endpoint/model、timeout/SDK retry、Provider permit、routing/review/GD&T semantics、DB `0014`、current-four inputs、close bridge、same-run export/receipt。
+- Unchanged contract：endpoint/model、timeout/SDK retry、Provider permit、routing/review/GD&T semantics、historical evidence DB `0014`、successor runtime exact head `0016`、current-four inputs、close bridge、same-run export/receipt。
 - Rollback first verification：revalidate sealed GDT-10D run with `validate_paid_cycle_evidence(require_success=False)`，then run focused Harness/Provider tests。
 
 ---
@@ -86,7 +97,7 @@ Incremental ceiling: 46.473344 CNY
 Overall envelope: 50.000000 CNY
 Provider starts: one
 Resume: only one literal same-run resume after accepted pause
-Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
+Still blocked: direct Provider diagnostic, second replacement, `0015_drop_symbol_attempt_v1_default`, production promotion
 ```
 
 - [x] **Step 2: Re-run documentation self-review**
@@ -99,7 +110,7 @@ rg -n 'TODO|TBD|FIXME|50\.000000|46\.473344|3\.526656|direct Provider|replacemen
 git diff --check
 ```
 
-Expected：无placeholder；三组Decimal一致；direct Provider、second replacement和`0015`只作为prohibition出现。
+Expected：无placeholder；三组Decimal一致；direct Provider、second replacement和`0015_drop_symbol_attempt_v1_default`只作为prohibition出现。
 
 - [x] **Step 3: Commit approved execution boundary**
 
@@ -438,12 +449,14 @@ Expected：clean committed HEAD；no private state、runtime、credential、DB�
 - Sanitized cleanup intent: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-intent.json`
 - Sanitized cleanup receipt: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json`
 - Sanitized cleanup blocker: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-blocker.json`
+- DB reconciliation root: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-db-reconciliation/`
+- DB backup: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-db-reconciliation/pre-canonical-0016.dump`
 - Harness/run tree: read-only; no new run before GO/issuance。
 - Runtime: feature `api/worker` safe-identity only after approved rebuild。
 
 **One-time retry entry amendment:** Before this retry only, run `retire-no-issuance-receipt` after implementation, focused verification and independent implementation review all pass. Its required postcondition replaces the ordinary all-absent receipt baseline only for this Task 5 Step 1: fixed archive exact present; fixed source receipt absent; private root/readiness/intent/blocker/authorization/live/safe controls/preparation/zero-paid reports absent; GDT-10E run count `0`. It is not an issuance, cleanup receipt rewrite, Provider action, paid attempt, DB mutation or Harness evidence mutation. Do not execute it again after archive-only success.
 
-- [ ] **Step 0: Retire the immutable no-issuance receipt exactly once**
+- [x] **Step 0: Retire the immutable no-issuance receipt exactly once**
 
 **Deferred integration boundary — 2026-08-03:** 用户要求本轮不再新增 receipt archive/retry 功能，只合并已完成、已复审、已提交的功能。Step 0、Task 5 retry 与 Tasks 6-8 均保持未完成且本轮不得执行；未提交的 archive implementation/tests 不进入 `main`。恢复时仍须从本 Step 0 的 code/test/review gate 开始，并继续遵守一次 retry、exclusive-writer、pricing freshness 与全部 Provider/paid boundaries。
 
@@ -461,14 +474,104 @@ micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.p
 
 Expected：only the fixed source/archive three-state replay succeeds; archive bytes are exactly the immutable source bytes, source is absent, and all private targets remain absent. Observable entry/device/inode replacement before destructive commit, terminal source/private reappearance, or archive mismatch fails closed. Tests do not simulate a concurrent replacement inside the final stat-to-unlink syscall gap because that violates the approved exclusive-writer precondition and `unlinkat` has no expected-inode condition. Archive-only replay with any different future source remains a conflict and never unlinks it. No Provider/paid/DB/Harness delta is permitted. Any failure is a hard stop; never delete, copy, rename or hand-write either receipt.
 
+Execution record：docs commit `d5b9d8f`、TDD/reviewed implementation commit `46ebb24`、parent two-file suite `399 passed`、Ruff和`git diff --check`全部通过；independent implementation reviewer final verdict `accept`。Literal archive command仅执行一次并返回 `status=ok`；source absent，fixed archive exact present with bytes/content SHA、schema/cycle/branch、uid/gid、mode and original inode all exact；private targets remain absent，GDT-10E run count remains `0`，Harness/runtime snapshot hashes and target container IDs stayed exact，DB remained reported `0014`。该 reported revision 随后在 Step 1 supplemental schema audit 中被识别为 old-feature collided identity，不是 canonical merged `0014_project_lifecycle`。
+
 **Interfaces:**
 
 - Consumes: operator-provided Qwen credential source and console readiness facts without exposing values。
 - Produces: private readiness SHA、sanitized zero-paid report、independent `GO|NO-GO`；authorization remainsunissued/unconsumed。
 
-- [ ] **Step 1: Capture immutable baseline before mutation**
+- [x] **Step 1: Capture immutable baseline before mutation**
 
-Record clean HEAD、target/non-target container IDs、volumes、ports、health、DB `0014`、Celery/Redis emptiness、GDT-10D tree hash、provider/storage/run inventories and absence ofworktree `.env`。For this one retry, require the exact archive from Step 0 present and exact source receipt absent; require private root、cleanup intent/blocker、authorization/cancellation andrun ID all absent before creation。Any other pre-existing path, archive mismatch or private target reappearance is a hard stop，not a reusable attempt。Do not read or print credential values。
+Record clean HEAD、target/non-target container IDs、volumes、ports、health、reported DB revision、Celery/Redis emptiness、GDT-10D tree hash、provider/storage/run inventories and absence ofworktree `.env`。For this one retry, require the exact archive from Step 0 present and exact source receipt absent; require private root、cleanup intent/blocker、authorization/cancellation andrun ID all absent before creation。Any other pre-existing path, archive mismatch or private target reappearance is a hard stop，not a reusable attempt。Do not read or print credential values。
+
+Execution record：baseline artifact `.superpowers/sdd/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle/task-5-step-1-read-only-baseline.md` records clean `46ebb24`、exact archive/source/private state、target/non-target IDs/volumes/ports/health、empty Celery/Redis、stable Harness/GDT-10D/storage hashes/counts and zero Provider/paid/DB/Harness mutation。Supplemental schema audit found the collision truth frozen in `Successor DB-Identity And Pricing Binding Amendment` above；therefore Step 1 is complete as an immutable observation, but its reported `0014` must not be treated as canonical `0014_project_lifecycle` or as permission to run `upgrade head`。
+
+- [ ] **Step 1A: Bind exact GDT-10E `0016` through the existing lifecycle Owner using TDD**
+
+**Allowed code/test paths:**
+
+- `.agent/harness/scripts/live_cycle_authorization.py`
+- `.agent/harness/scripts/run-p0.py`
+- `backend/app/providers/cycle_authorization.py`
+- `backend/tests/contract/harness/test_live_run_contract.py`
+- `backend/tests/contract/harness/test_contract_architecture.py`
+- `backend/tests/unit/providers/test_provider_usage_ledger.py`
+
+Start only after this three-doc amendment receives fresh independent `accept` and is committed。Use one fresh `tdd_developer` with no nested delegation。RED must first prove current exact GDT-10E cycle rejects successor `0016` in zero-paid runtime identity、issuance、run creation and backend active/terminal/empty-close validation。GREEN makes `.agent/harness/scripts/live_cycle_authorization.py` the fixed policy writer of GDT-10E `expected_db_revision=0016`; `run-p0.py` and backend cycle authorization only enforce that cycle-scoped fact/current DB。Generic `issue`、GDT-10D and every non-GDT-10E path remain exact `0014`。
+
+Required negative matrix：GDT-10E accepts only `0016` and rejects `0014`/arbitrary values；generic GDT-10D accepts only `0014` and rejects `0016`/arbitrary values。Only the GDT-10E fixtures in `test_provider_usage_ledger.py` move to`0016`; its generic/GDT-10D fixtures stay`0014`。No CLI flag, environment override, `{"0014", "0016"}` broad allowlist, fallback、schema change、migration change或second DB Owner is allowed。Parent must run the complete two approved Harness files plus the complete `backend/tests/unit/providers/test_provider_usage_ledger.py`，Ruff on all six paths, `git diff --check`, inspect the full diff and obtain a fresh independent implementation-review `accept` before an exact-file code/test commit。After commit, `check-contracts.py --runtime-closure-source HEAD` and clean worktree are mandatory；no runtime/DB mutation occurs in this step。
+
+- [ ] **Step 1B: Reconcile the collided successor DB identity before private readiness**
+
+This step starts only after this amendment receives fresh independent read-only `accept`、the three docs are committed、Step 1A TDD/parent verification/fresh implementation review all pass、the six code/test paths are committed and HEAD runtime-closure verification is clean。Revalidate exact public tuple、clean HEAD、fixed archive、private-target absence、zero GDT-10E runs、pricing deadline state、target/non-target identities、health、Celery/Redis emptiness、DB counts and the collision shape。Record the exact target PostgreSQL container ID、image ID and sole volume，then stop target `api/worker` and that exact PostgreSQL container without removing or recreating any of them；Redis、frontend and every non-target container/volume remain exact。Verify the original PostgreSQL container is stopped、its Compose `pg_isready` healthcheck is no longer executing、and the fixed names `quality-inspection-gdt10e-db-reconciliation-postgres` / `quality-inspection-gdt10e-db-reconciliation-network` are absent。Create the fixed internal-only network and start exactly one temporary PostgreSQL target container from the original exact `postgres:17-alpine` image ID with the sole target data volume、`--no-healthcheck`、no published port、no Compose network and no other mount except the fixed reconciliation root when required；the original container remains stopped and keeps its ID/config unchanged。After the temporary target reports SQL-ready through the sole parent inspection session and that session closes，run the final target preflight and establish one continuous operator-controlled exclusive target DB writer/session window that remains unbroken through backup creation、the entire disposable rehearsal and final temporary-target `0016` proof。No other agent、operator、service、lifecycle command or client may join the isolated network、open a target DB session or mutate the target；only the single parent-controlled serialized backup、verification or Alembic action may own one target client session at a time，and the disposable rehearsal may open sessions only against its separate isolated disposable DB。Each target action must close its session before the next begins；any unexpected or overlapping target client terminates the sequence fail-closed with the backup retained。
+
+Inside that already-active exclusive target window，create only the fixed absent reconciliation root `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-db-reconciliation/` as exclusive mode `0700` and its fixed `pre-canonical-0016.dump` through an O_EXCL mode-`0600` custom-format PostgreSQL backup without overwriting any existing path；the `pg_dump` connection is the sole target client。After it closes，recheck zero target clients/prepared transactions/ungranted locks，fsync file and parent、verify owner/mode/size/SHA and `pg_restore --list`。Record only sanitized path identity、size and SHA，never DB rows or credential/private binding。Compare working migration bytes with committed HEAD and verify the old/current body equivalence before mutation。Restore this exact backup into one disposable tmpfs PostgreSQL 17 on a separate fixed internal-only network and prove the full state machine plus counts/hashes there before target mutation，while the exclusive temporary-target window remains active with zero target sessions；after the disposable runtime/network are removed and their endpoints proved closed，recheck target zero-session state before the first target metadata transition。This makes the backup the exact pre-mutation target state rather than a stale earlier snapshot。This root is not the account-readiness root and is never removed by `abort-preconsume`；restore or deletion remains blocked pending an independent reviewed closeout decision。
+
+With committed `backend/alembic`、`alembic.ini` and `backend/app` mounted read-only into one fixed one-shot migration container joined only to the isolated reconciliation network，run exactly this state machine against the no-healthcheck temporary target DB：
+
+```text
+collided feature 0014
+-> alembic stamp 0012
+-> alembic upgrade 0015
+-> verify canonical 0013/0014 objects, zero-row 0015 targets and unchanged diagnostic evidence
+-> alembic stamp 0016
+-> verify exact canonical head and all invariants
+```
+
+Preconditions require project-catalog/lifecycle objects absent、diagnostic objects exact present、attempts exactly `394 = 196 v1 + 198 v2` with zero invalid rows、immutable trigger enabled and `automatic_results = review_working_copies = reviewed_results = 0`。Intermediate `0015` must add exact project catalog/lifecycle objects and backfill the three existing projects consistently while preserving every pre-count/hash and diagnostic row；final `0016` is metadata recognition of the already-applied byte-identical diagnostic body, not DDL replay。Any mismatch stops with target writers still quiesced and backup retained；never downgrade、delete a volume、auto-restore、issue、consume or call Provider。
+
+Writer/session preflight must run after target `api/worker` are stopped and before backup creation，and require all of the following exact SQL counts to be zero from the sole inspection session：other `pg_stat_activity` client backends for the target database、`pg_prepared_xacts` for the target database and ungranted `pg_locks`。The parent-controlled exclusive window starts with this pre-backup final target preflight and remains unbroken until final proof。Repeat the same zero-other-client/prepared/ungranted-lock check immediately after the backup closes、before and after the disposable rehearsal、immediately before each of `stamp 0012`、`upgrade 0015` and `stamp 0016`，immediately after each action before accepting its postcondition，and once more immediately before the final `0016` claim；the inspection session itself must be the sole target client and must close before the next serialized target backup/Alembic session starts。Capture two SHA-256 digests without printing row contents：(1) ordered `projects(id,state,version,recognition_mode,recognition_router_version)`；(2) ordered full `symbol_escalation_attempt_events` rows。Use the same literal digest queries before/after on disposable and target；the project-original-fields digest and attempt digest must remain exact，while whole-DB equality is not expected because `0013` intentionally writes transaction-time timestamps。
+
+```sql
+SELECT count(*) FROM pg_stat_activity
+WHERE datname = current_database()
+  AND pid <> pg_backend_pid()
+  AND backend_type = 'client backend';             -- expected 0
+SELECT count(*) FROM pg_prepared_xacts
+WHERE database = current_database();               -- expected 0
+SELECT count(*) FROM pg_locks WHERE NOT granted;   -- expected 0
+```
+
+The digest commands must run as one Bash process with `pipefail` enabled，must make `psql` stop on SQL errors，and must pipe `COPY ... TO STDOUT` directly to SHA-256 without rendering rows。Any upstream nonzero、missing output or output not matching exactly one lowercase 64-hex digest fails closed；the separately verified exact row counts make an empty successful result invalid：
+
+```text
+set -o pipefail
+if ! project_digest_line="$(docker exec "$target_pg_container" psql -X -v ON_ERROR_STOP=1 -U qi -d qi -qAt -c "COPY (SELECT jsonb_build_object('id',id,'state',state,'version',version,'recognition_mode',recognition_mode,'recognition_router_version',recognition_router_version)::text FROM projects ORDER BY id) TO STDOUT" | sha256sum)"; then
+  exit 1
+fi
+if [[ ! "$project_digest_line" =~ ^([0-9a-f]{64})[[:space:]][[:space:]]-$ ]]; then
+  exit 1
+fi
+project_digest="${BASH_REMATCH[1]}"
+if ! attempt_digest_line="$(docker exec "$target_pg_container" psql -X -v ON_ERROR_STOP=1 -U qi -d qi -qAt -c "COPY (SELECT row_to_json(t)::text FROM (SELECT * FROM symbol_escalation_attempt_events ORDER BY id) AS t) TO STDOUT" | sha256sum)"; then
+  exit 1
+fi
+if [[ ! "$attempt_digest_line" =~ ^([0-9a-f]{64})[[:space:]][[:space:]]-$ ]]; then
+  exit 1
+fi
+attempt_digest="${BASH_REMATCH[1]}"
+printf 'projects_sha256=%s\nattempts_sha256=%s\n' "$project_digest" "$attempt_digest"
+```
+
+Intermediate and final SQL postconditions are exact：all three projects keep the original-field digest, have `source_filename IS NULL`、non-null `created_at/last_opened_at`、`lifecycle_status='unlisted'`、`predecessor_project_id IS NULL` and `deleted_at IS NULL`；the three project-catalog columns、three lifecycle columns、four named constraints and `uq_projects_reprocessing_predecessor` exist once；`prevent_automatic_result_update_delete`、`prevent_reviewed_result_update_delete` and `prevent_symbol_escalation_attempt_events_update_delete` are enabled；all three `0015` target tables stay at zero rows；attempt digest/counts and `196 v1 + 198 v2 + 0 invalid` stay exact。Final Alembic table must contain exactly one row `0016`。
+
+The disposable rehearsal and target execution must use the same committed read-only `backend/alembic`、`backend/alembic.ini` and `backend/app` mounts and the same three literal Alembic actions/verification boundaries。For each database, run and record only sanitized counts/hashes from this sequence：
+
+```text
+verify collided pre-shape, zero sessions and both digests
+recheck exclusive window and zero other sessions
+alembic -c alembic.ini stamp 0012
+recheck zero other sessions; verify exactly one revision row = 0012 and no schema/data digest change
+recheck exclusive window and zero other sessions
+alembic -c alembic.ini upgrade 0015
+recheck zero other sessions; verify exactly one revision row = 0015 plus every intermediate postcondition above
+recheck exclusive window and zero other sessions
+alembic -c alembic.ini stamp 0016
+recheck zero other sessions; verify exactly one revision row = 0016 plus every final postcondition above; close with one final zero-other-session claim
+```
+
+After the temporary target final proof，close its last inspection session、stop and remove only the fixed temporary target container and isolated reconciliation network，then restart the original exact Compose PostgreSQL container by recorded ID without recreation。Require the same recorded image ID and sole volume、healthy Compose healthcheck、exact canonical `0016` and all final schema/count/digest invariants；the expected `pg_isready` probe is allowed only after the exclusive migration window has closed。Target `api/worker` remain stopped，Redis/frontend and every non-target ID/volume stay exact，and no readiness、issuance、Provider、run or Harness artifact may change。Failure before temporary-container removal keeps the original target PostgreSQL stopped and the private backup retained；failure after restart remains fail-closed and does not authorize downgrade、volume deletion、automatic restore or container recreation。
 
 - [ ] **Step 2: Create private readiness document through operator boundary**
 
@@ -503,7 +606,7 @@ micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.p
   --report /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/preparation.json
 ```
 
-It recreates onlyfeature `api/worker` with safe mode/model。Four credentials、cycle keys andauthorization mount remainabsent。Feature PostgreSQL/Redis/frontend、volumes and allmain IDs remainexact；DB stays`0014`。
+It recreates onlyfeature `api/worker` with safe mode/model。Four credentials、cycle keys andauthorization mount remainabsent。Feature PostgreSQL/Redis/frontend、volumes and allmain IDs remainexact；DB must stay at the reviewed successor exact head `0016` established by Step 1B。
 
 - [ ] **Step 4: Prepare but do not apply private live override**
 
@@ -520,7 +623,7 @@ private credential binding match true
 historical + incremental = overall = 50.000000
 API/worker runtime closure N/N
 mode/router/model exact
-DB 0014
+DB 0016
 safe runtime credential/cycle/mount absence
 policy/retry/wall/in-flight unchanged
 Celery/Redis empty
@@ -577,7 +680,7 @@ Require readiness/live/safe/auth root absent andsanitized cleanup receipt passed
 
 - [ ] **Step 1: Issue one-use authorization after GO**
 
-Issuance binds exact cycle ID、plan/readiness/predecessor/pricing/runtime/current-four/image hashes、DB`0014`、historical`3.526656`、incremental`46.473344`、overall`50.000000` andshort expiry。Require no prior issuance/consume/run/project/resume/terminal for GDT-10E andpricing deadline not passed。
+Issuance binds exact cycle ID、plan/readiness/predecessor/pricing/runtime/current-four/image hashes、successor DB exact head `0016`、historical`3.526656`、incremental`46.473344`、overall`50.000000` andshort expiry。Require no prior issuance/consume/run/project/resume/terminal for GDT-10E andpricing deadline not passed。
 
 ```bash
 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py issue-gdt10e \
@@ -682,7 +785,7 @@ The original attestation may be older than`1800s` at resume；it is used only fo
 
 - [ ] **Step 1: Verify lifecycle cleanup**
 
-Require Harness returned、Celery active/reserved/scheduled empty、Redis queue zero、four credentials/cycle keys/auth mount absent、safe mode/model/runtime closure/health/DB`0014` exact、non-target IDs unchanged、worktree `.env` absent。Repair only an allowlisted content-hashed cleanup blocker usingexisting network-none close bridge；never reactivate Provider forrepair。
+Require Harness returned、Celery active/reserved/scheduled empty、Redis queue zero、four credentials/cycle keys/auth mount absent、safe mode/model/runtime closure/health/successor DB `0016` exact、non-target IDs unchanged、worktree `.env` absent。Repair only an allowlisted content-hashed cleanup blocker usingexisting network-none close bridge；never reactivate Provider forrepair。
 
 - [ ] **Step 2: Dispose private state only after run-bound proof**
 
@@ -721,7 +824,7 @@ Validate both immutable GDT-10D failure and new GDT-10E evidence with their corr
 
 - [ ] **Step 4: Independent final review**
 
-Reviewer checks one issuance/consume/start、optional one literal same-run resume、operator-attested vs runtime-accepted truth、exact `3.526656 + 46.473344 = 50.000000` envelope、per-submission ledger、authentication zero retry、all admitted terminals、credential/private cleanup、GDT-10D immutability、same-reviewed-result evidence and`0015`/promotion block。Required verdict：`accept`。
+Reviewer checks one issuance/consume/start、optional one literal same-run resume、operator-attested vs runtime-accepted truth、exact `3.526656 + 46.473344 = 50.000000` envelope、per-submission ledger、authentication zero retry、all admitted terminals、credential/private cleanup、GDT-10D immutability、same-reviewed-result evidence and`0015_drop_symbol_attempt_v1_default`/promotion block。Required verdict：`accept`。
 
 - [ ] **Step 5: Update parent truth and commit exact evidence**
 
@@ -732,7 +835,7 @@ git diff --cached --check
 git commit -m "feat(gdt): seal credential-ready replacement evidence"
 ```
 
-Even onparent success，`0015` andproduction promotion remainseparately blocked。
+Even onparent success，`0015_drop_symbol_attempt_v1_default` andproduction promotion remainseparately blocked。
 
 ## Spec Coverage Matrix
 
@@ -762,7 +865,7 @@ Even onparent success，`0015` andproduction promotion remainseparately blocked�
 - Failure/cleanup boundary：zero-paid GO不宣称account valid；首个validated authenticated response才是runtime acceptance；authentication terminal不retry、不resume、不replacement。NO-GO、issued-unconsumed和sealed-terminal disposal都有literal CLI、exact target、cleanup receipt与blocker deadline。
 - Pricing boundary：`2026-08-03` reviewed amendment恢复的issuance window晚于`2026-08-03T23:59:59+08:00`自动失效；只能通过新的read-only public pricing verification、reviewed plan amendment和user approval恢复，total envelope不自动改变。
 - Independent docs review：前三轮`reject`逐项关闭runtime-acceptance Owner/call site、immutable resume、preconsume cleanup、literal CLI、v2/v3、pricing、path policy、cleanup journal和run-ID source；final verdict `accept`，无blocking或non-blocking finding。The later cleanup-proof amendment selected as option `A` pauses Task 2 until a separate independent read-only amendment review accepts the sole Task 3 intent Owner, exact schema and three-branch correlations.
-- Execution boundary：用户已明确批准 Tasks 1-8 implementation/live boundary；所有既有 plan gates 仍为强制前置条件，且 direct Provider diagnostic、second replacement、budget expansion、`0015` 与 production promotion仍被阻断。
+- Execution boundary：用户已明确批准 Tasks 1-8 implementation/live boundary；所有既有 plan gates 仍为强制前置条件，且 direct Provider diagnostic、second replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 与 production promotion仍被阻断。
 
 ## Completion Contract
 
@@ -772,7 +875,7 @@ Even onparent success，`0015` andproduction promotion remainseparately blocked�
 - exact one-use GDT-10E issuance/consume/start，incremental committed cost `<=46.473344`且overall envelope未超过`50.000000`；
 - new literal run达到parent Step 4 accepted pause；
 - headed Case A/B、structured edit、freeze、same-reviewed-result PDF/Excel和literal same-run resume/receipt全部通过；
-- credentials/private controls清理、DB`0014`/safe runtime/non-target identities/GDT-10D immutability通过；
+- credentials/private controls清理、successor DB `0016`/safe runtime/non-target identities/GDT-10D historical `0014` immutability通过；
 - independent final verdict `accept`。
 
 如果新run再次authentication-failed或未达到pause，本 companion cycle可以作为fully evidenced fail-closed closeout完成，但父计划仍未完成，且不自动授权another replacement。
