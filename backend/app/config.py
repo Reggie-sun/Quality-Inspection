@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     qwen_api_key: str | None = Field(default=None, repr=False)
     qwen_workspace_id: str | None = None
-    qwen_model: str = "qwen3-vl-plus"
+    qwen_model: str = "qwen3-vl-plus-2025-12-19"
     symbol_recognition_mode: SymbolRecognitionMode = "legacy_high_recall"
     provider_cycle_authorization_id: str | None = None
     provider_cycle_authorization_root: Path | None = None

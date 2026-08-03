@@ -9,6 +9,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_FILE = ROOT / "compose.yaml"
 QA_COMPOSE_FILE = ROOT / "compose.qa-dev.yaml"
+SERVER_COMPOSE_FILE = ROOT / "compose.server.yaml"
 TEST_COMPOSE_FILE = ROOT / "compose.test.yaml"
 
 
@@ -84,6 +85,32 @@ def _rendered_test_compose_config() -> dict:
     return json.loads(result.stdout)
 
 
+def _rendered_server_compose_config(project_name: str) -> dict:
+    assert SERVER_COMPOSE_FILE.is_file(), f"missing compose file: {SERVER_COMPOSE_FILE}"
+    environment = dict(os.environ)
+    environment["COMPOSE_PROJECT_NAME"] = project_name
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(COMPOSE_FILE),
+            "-f",
+            str(SERVER_COMPOSE_FILE),
+            "config",
+            "--format",
+            "json",
+        ],
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(result.stdout)
+
+
 def _rendered_qa_compose_config(project_name: str) -> dict:
     assert QA_COMPOSE_FILE.is_file(), f"missing compose file: {QA_COMPOSE_FILE}"
     environment = dict(os.environ)
@@ -134,6 +161,51 @@ def test_compose_has_exact_p0_services() -> None:
 
     assert _data_volume_source(services["api"]) == "qi_storage"
     assert _data_volume_source(services["worker"]) == "qi_storage"
+
+
+def test_repo_compose_runtimes_explicitly_promote_production_symbol_routing() -> None:
+    """Base, QA, and server consumers must not inherit a routing fallback."""
+    rendered_configs = (
+        _rendered_compose_config("quality-inspection-main"),
+        _rendered_qa_compose_config("quality-inspection-qa"),
+        _rendered_server_compose_config("quality-inspection-server"),
+    )
+
+    for config in rendered_configs:
+        for service_name in ("api", "worker"):
+            assert config["services"][service_name]["environment"][
+                "QI_SYMBOL_RECOGNITION_MODE"
+            ] == "production_uncertainty"
+
+
+def test_api_and_worker_bind_mount_the_current_backend_source() -> None:
+    """Development runtime must execute the selected worktree's backend source."""
+    services = _rendered_compose_config()["services"]
+
+    for service_name in ("api", "worker"):
+        assert services[service_name]["environment"][
+            "PYTHONDONTWRITEBYTECODE"
+        ] == "1"
+        source_mounts = [
+            mount
+            for mount in services[service_name].get("volumes", [])
+            if mount.get("type") == "bind" and mount.get("target") == "/app"
+        ]
+        assert source_mounts == [
+            {
+                "type": "bind",
+                "source": str(ROOT / "backend"),
+                "target": "/app",
+                "bind": {},
+            }
+        ]
+
+
+def test_api_reloads_when_mounted_backend_source_changes() -> None:
+    """The development API process must watch its bind-mounted source."""
+    api_command = _rendered_compose_config()["services"]["api"]["command"]
+
+    assert "--reload" in api_command
 
 
 def test_compose_project_and_data_volumes_are_worktree_scoped() -> None:

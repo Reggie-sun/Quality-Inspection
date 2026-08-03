@@ -422,8 +422,14 @@ def test_review_bootstrap_keeps_unresolved_technical_requirement_pending(
         )
 
 
-def test_v2_bootstrap_routes_only_high_confidence_away_from_manual_review(
+@pytest.mark.parametrize(
+    "schema_version",
+    ["automatic-result/2", "automatic-result/3"],
+    ids=["v2", "v3"],
+)
+def test_supported_bootstrap_routes_only_high_confidence_away_from_manual_review(
     db_session: Session,
+    schema_version: str,
 ) -> None:
     candidates: list[dict[str, object]] = []
     for band in ("high", "medium", "low"):
@@ -434,7 +440,7 @@ def test_v2_bootstrap_routes_only_high_confidence_away_from_manual_review(
     raw_result = _make_raw_result(
         db_session,
         candidates=candidates,
-        schema_version="automatic-result/2",
+        schema_version=schema_version,
     )
 
     working = ReviewService(db_session).create_from_raw(raw_result.id)

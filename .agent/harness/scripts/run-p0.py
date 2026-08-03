@@ -53,7 +53,7 @@ SYMBOL_RECOGNITION_SELECTOR = (
     "phase://live/symbol-recognition?input_set=current-four"
 )
 LIVE_EVIDENCE_ARTIFACT = "live-run-evidence.json"
-LIVE_EVIDENCE_SCHEMA_VERSION = "live-run-evidence/3"
+LIVE_EVIDENCE_SCHEMA_VERSION = "live-run-evidence/4"
 HUMAN_VERDICT_ARTIFACT = "artifacts/human-verdict.json"
 NO_SILENT_SUCCESS_CONTRACT_ID = "P0-ACC-007"
 NO_SILENT_SUCCESS_TEST = "backend/tests/e2e/test_no_silent_success.py"
@@ -2227,7 +2227,7 @@ def _open_live_run(
     _attach_full_live_input_artifacts(run_dir, preflight.input_artifacts)
     live = {
         "schema_version": (
-            "live-run-evidence/3" if is_gdt10e else "live-run-evidence/2"
+            LIVE_EVIDENCE_SCHEMA_VERSION if is_gdt10e else "live-run-evidence/2"
         ),
         "run_id": run_id,
         "input_set": "current-four",
@@ -2327,6 +2327,7 @@ import uuid
 from sqlalchemy import select
 
 from app.config import get_settings
+from app.candidates.confidence import validate_confidence_decision
 from app.db import SessionLocal
 from app.candidates.symbol_routing import symbol_routing_identity
 from app.candidates.models import AutomaticResult
@@ -2485,6 +2486,28 @@ def project_candidate_evidence(candidates, pages, coverage_entries):
     }
 
 
+def auto_accepted_ids(entries, *, identity_field, require_bootstrap_status):
+    accepted = []
+    for entry in entries:
+        decision = validate_confidence_decision(entry.get("confidence_decision"))
+        if decision.review_disposition != "auto_accepted":
+            continue
+        if require_bootstrap_status and (
+            entry.get("status") != "auto_accepted"
+            or entry.get("requires_confirmation") is not False
+            or entry.get("acceptance_source") != "confidence_policy"
+            or entry.get("active", True) is not True
+        ):
+            continue
+        identity = entry.get(identity_field)
+        if not isinstance(identity, str) or not identity:
+            raise RuntimeError("auto-accepted candidate identity is incomplete")
+        accepted.append(identity)
+    if len(accepted) != len(set(accepted)):
+        raise RuntimeError("auto-accepted candidate identity is duplicated")
+    return sorted(accepted)
+
+
 settings = get_settings()
 storage = LocalFileStorage(settings.storage_root)
 phase = os.environ["QI_P0_PREPARE_PHASE"]
@@ -2587,6 +2610,17 @@ try:
         "candidates": {
             "candidate_count": len(raw.candidates),
             **candidate_evidence,
+            "automatic_result_schema_version": raw.schema_version,
+            "automatic_result_auto_accepted_item_ids": auto_accepted_ids(
+                raw.candidates,
+                identity_field="candidate_id",
+                require_bootstrap_status=False,
+            ),
+            "working_copy_auto_accepted_item_ids": auto_accepted_ids(
+                working.items,
+                identity_field="item_id",
+                require_bootstrap_status=True,
+            ),
             "coverage_checked": raw.coverage.get("coverage_checked") is True,
             "coverage_blocking_count": int(raw.coverage.get("blocking_count", -1)),
             "coverage_disposition_count": sum(
@@ -3615,6 +3649,36 @@ finally:
 """
 
 
+def _workbench_auto_accepted_item_ids(
+    workbench: Mapping[str, Any],
+    *,
+    project_id: str,
+) -> list[str]:
+    project = workbench.get("project")
+    candidates = workbench.get("candidates")
+    if (
+        not isinstance(project, Mapping)
+        or str(project.get("id")) != project_id
+        or not isinstance(candidates, list)
+    ):
+        raise RuntimeError("workbench auto-accepted projection is incomplete")
+    accepted: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, Mapping):
+            raise RuntimeError("workbench auto-accepted projection is incomplete")
+        item_id = candidate.get("item_id")
+        if not isinstance(item_id, str) or not item_id:
+            raise RuntimeError("workbench auto-accepted projection is incomplete")
+        if (
+            candidate.get("review_disposition") == "auto_accepted"
+            and candidate.get("status") == "auto_accepted"
+        ):
+            accepted.append(item_id)
+    if len(accepted) != len(set(accepted)):
+        raise RuntimeError("workbench auto-accepted projection is duplicated")
+    return sorted(accepted)
+
+
 def _prepare_live_project(
     run_dir: Path,
     *,
@@ -3806,8 +3870,13 @@ def _prepare_live_project(
     if not isinstance(document, dict) or set(document) != required:
         raise RuntimeError(f"sample {order} project identity is incomplete")
     process = document.get("process")
-    if not isinstance(process, dict):
+    candidates = document.get("candidates")
+    if not isinstance(process, dict) or not isinstance(candidates, dict):
         raise RuntimeError(f"sample {order} process evidence is incomplete")
+    workbench = _http_json("GET", f"/api/v1/projects/{project_id}/workbench")
+    candidates["workbench_auto_accepted_item_ids"] = (
+        _workbench_auto_accepted_item_ids(workbench, project_id=project_id)
+    )
     process["prepare_log_sha256"] = hashlib.sha256(output).hexdigest()
     _refresh_paid_cycle_ledger(run_dir)
     _capture_paid_storage_inventory(

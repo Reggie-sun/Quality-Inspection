@@ -93,6 +93,90 @@ def test_runtime_acceptance_ast_gate_has_one_reachable_writer_and_projection() -
     assert projection_callers == {"start_live_run", "_second_projection"}
 
 
+def test_gdt10e_harness_runs_root_has_one_owner_without_local_selectors() -> None:
+    """Mutation caught: reintroducing a local, environment, CLI, or fallback run-root selector."""
+    readiness_source = (
+        HARNESS / "scripts/provider_account_readiness.py"
+    ).read_text(encoding="utf-8")
+    authorization_source = (
+        HARNESS / "scripts/live_cycle_authorization.py"
+    ).read_text(encoding="utf-8")
+    readiness_tree = ast.parse(readiness_source)
+    authorization_tree = ast.parse(authorization_source)
+    expected_root = (
+        "/home/reggie/vscode_folder/Quality_Inspection/.worktrees/"
+        "gdt10e-retry-archive-continuation/.agent/harness/runs"
+    )
+    assignments = [
+        node
+        for node in readiness_tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "HARNESS_RUNS_ROOT" for target in node.targets)
+    ]
+    assert len(assignments) == 1
+    assert ast.literal_eval(assignments[0].value.args[0]) == expected_root
+
+    functions = {
+        node.name: node
+        for node in authorization_tree.body
+        if isinstance(node, ast.FunctionDef)
+    }
+    active_consumers = {
+        "_terminal_cleanup_paths",
+        "_gdt10e_runtime_acceptance_path",
+        "_validate_terminal_public_binding",
+        "_write_close_bridge_evidence",
+        "_run_state",
+        "prove_run_quiescence",
+        "validate_paused_run",
+        "execute_start",
+        "execute_resume",
+    }
+    assert active_consumers <= set(functions)
+
+    def derives_local_run_root(node: ast.AST) -> bool:
+        if not isinstance(node, ast.BinOp) or not isinstance(node.op, ast.Div):
+            return False
+        return (
+            isinstance(node.right, ast.Constant)
+            and isinstance(node.right.value, str)
+            and ".agent/harness/runs" in node.right.value
+            and any(
+                isinstance(part, ast.Name) and part.id == "ROOT"
+                for part in ast.walk(node.left)
+            )
+        )
+
+    for name in active_consumers:
+        function = functions[name]
+        assert not any(derives_local_run_root(node) for node in ast.walk(function))
+
+    owner_function = functions["_gdt10e_harness_runs_root"]
+    assert not owner_function.args.posonlyargs
+    assert not owner_function.args.args
+    assert not owner_function.args.kwonlyargs
+    assert owner_function.args.vararg is None
+    assert owner_function.args.kwarg is None
+    body = owner_function.body
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+    assert len(body) == 1
+    statement = body[0]
+    assert isinstance(statement, ast.Return)
+    assert isinstance(statement.value, ast.Attribute)
+    assert statement.value.attr == "HARNESS_RUNS_ROOT"
+    assert isinstance(statement.value.value, ast.Call)
+    assert isinstance(statement.value.value.func, ast.Name)
+    assert statement.value.value.func.id == "_provider_account_readiness_module"
+    assert not statement.value.value.args
+    assert not statement.value.value.keywords
+
+
 def _load_stage_module() -> ModuleType:
     path = HARNESS / "scripts/stage-current-four.py"
     spec = importlib.util.spec_from_file_location("test_stage_current_four", path)

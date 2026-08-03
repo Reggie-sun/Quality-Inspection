@@ -26,6 +26,11 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 
 
+def _gdt10e_harness_runs_root() -> Path:
+    """Return the one readiness-owned public run-tree root."""
+    return _provider_account_readiness_module().HARNESS_RUNS_ROOT
+
+
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
@@ -754,11 +759,11 @@ def _preconsume_cleanup_path(value: str | Path, field: str) -> Path:
 
 
 def _terminal_cleanup_paths(run_id: str) -> dict[str, Path]:
-    """Extend the frozen cleanup map with the one literal public run tree."""
+    """Extend the frozen cleanup map with the readiness-owned public run tree."""
     if _RUN_ID.fullmatch(run_id) is None:
         raise ValueError("GDT-10E terminal cleanup run is invalid")
     paths = dict(_preconsume_cleanup_paths())
-    run_root = ROOT / ".agent/harness/runs" / run_id
+    run_root = _gdt10e_harness_runs_root() / run_id
     paths.update(
         {
             "harness_run_root": run_root,
@@ -1137,13 +1142,8 @@ def _validate_terminal_public_binding(
     paths = _terminal_cleanup_paths(run_id)
     run_root = paths["harness_run_root"]
     reports = run_root / "reports"
-    for directory in (
-        ROOT / ".agent",
-        ROOT / ".agent/harness",
-        ROOT / ".agent/harness/runs",
-        run_root,
-        reports,
-    ):
+    runs_root = _gdt10e_harness_runs_root()
+    for directory in (runs_root.parent.parent, runs_root.parent, runs_root, run_root, reports):
         try:
             metadata = directory.lstat()
         except OSError as exc:
@@ -1174,7 +1174,8 @@ def _validate_terminal_public_binding(
         != run.get("consumption_sha256")
         or run_document["cycle_authorization"].get("run_authorization_sha256")
         != run["content_sha256"]
-        or live.get("schema_version") != "live-run-evidence/3"
+        or live.get("schema_version")
+        not in {"live-run-evidence/3", "live-run-evidence/4"}
         or live.get("run_id") != run_id
         or not isinstance(live.get("paid_cycle"), Mapping)
         or live["paid_cycle"].get("cycle_id") != _GDT10E_CYCLE_ID
@@ -2980,7 +2981,7 @@ def _write_close_bridge_evidence(
     authorization_root: Path,
     terminal: Mapping[str, Any],
 ) -> dict[str, Any]:
-    run_dir = ROOT / ".agent/harness/runs" / run_id
+    run_dir = _gdt10e_harness_runs_root() / run_id
     reports = run_dir / "reports"
     if (
         run_dir.is_symlink()
@@ -3141,12 +3142,7 @@ def _current_api_image_id() -> str:
 def _gdt10e_runtime_acceptance_path(run_id: str) -> Path:
     if _RUN_ID.fullmatch(run_id) is None:
         raise ValueError("GDT-10E run identity is invalid")
-    return (
-        ROOT
-        / ".agent/harness/runs"
-        / run_id
-        / "reports/provider-account-runtime-acceptance.json"
-    )
+    return _gdt10e_harness_runs_root() / run_id / "reports/provider-account-runtime-acceptance.json"
 
 
 def _validate_gdt10e_readiness(
@@ -3633,7 +3629,7 @@ def check_head_contracts() -> None:
 def _run_state(run_id: str | None) -> str:
     if not isinstance(run_id, str) or _RUN_ID.fullmatch(run_id) is None:
         return "failed"
-    run_path = ROOT / ".agent/harness/runs" / run_id / "run.json"
+    run_path = _gdt10e_harness_runs_root() / run_id / "run.json"
     if run_path.is_symlink() or not run_path.is_file():
         return "failed"
     try:
@@ -3651,7 +3647,7 @@ def prove_run_quiescence(run_id: str, status: str) -> str:
         "aborted",
     }:
         raise ValueError("paid cycle quiescence identity is invalid")
-    run_dir = ROOT / ".agent/harness/runs" / run_id
+    run_dir = _gdt10e_harness_runs_root() / run_id
     if run_dir.is_symlink():
         raise ValueError("paid cycle run directory is invalid")
     if not run_dir.exists():
@@ -4013,9 +4009,7 @@ def execute_start(
                     status="failed",
                     quiescence_sha256=quiescence_sha256,
                 )
-                run_record = (
-                    ROOT / ".agent/harness/runs" / str(run_id) / "run.json"
-                )
+                run_record = _gdt10e_harness_runs_root() / str(run_id) / "run.json"
                 if (
                     isinstance(run_id, str)
                     and not run_record.is_symlink()
@@ -4071,7 +4065,7 @@ def execute_start(
 
 def validate_paused_run(run_id: str) -> str:
     safe_run_id = _safe_id(run_id, "run_id")
-    run_dir = ROOT / ".agent/harness/runs" / safe_run_id
+    run_dir = _gdt10e_harness_runs_root() / safe_run_id
     run_path = run_dir / "run.json"
     live_path = run_dir / "live-run-evidence.json"
     if (

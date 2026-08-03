@@ -679,6 +679,64 @@ def test_worker_uses_frozen_project_mode_after_settings_change(
     assert external_calls == []
 
 
+def test_worker_preserves_legacy_project_mode_in_production_process(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "legacy-project-storage")
+    setup = task_session_factory()
+    project, source = _project_source_with_routing_identity(
+        setup,
+        storage,
+        tmp_path,
+        recognition_mode="legacy_high_recall",
+        recognition_router_version="legacy",
+    )
+    setup.close()
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+    monkeypatch.setattr(
+        tasks,
+        "get_settings",
+        lambda: Settings(
+            storage_root=storage.root,
+            symbol_recognition_mode="production_uncertainty",
+        ),
+    )
+    seen_modes: list[tuple[str, str]] = []
+    original_advisor = tasks.CandidateAdvisor
+    original_recognition = tasks.RuntimeRecognition
+
+    def recording_advisor(settings: Settings, *args, **kwargs):
+        seen_modes.append(("advisor", settings.symbol_recognition_mode))
+        return original_advisor(settings, *args, **kwargs)
+
+    def recording_recognition(settings: Settings, *args, **kwargs):
+        seen_modes.append(("recognition", settings.symbol_recognition_mode))
+        return original_recognition(settings, *args, **kwargs)
+
+    monkeypatch.setattr(tasks, "CandidateAdvisor", recording_advisor)
+    monkeypatch.setattr(tasks, "RuntimeRecognition", recording_recognition)
+
+    inventory_project.run(
+        str(project.id),
+        source.resource_ref,
+        f"product-process:{project.id}",
+    )
+
+    assert seen_modes == [
+        ("advisor", "legacy_high_recall"),
+        ("recognition", "legacy_high_recall"),
+    ]
+    assert external_calls == []
+
+
 def test_cycle_task_injects_one_shared_usage_ledger_without_provider_work(
     monkeypatch: pytest.MonkeyPatch,
     task_session_factory: Callable[[], Session],

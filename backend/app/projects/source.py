@@ -44,4 +44,13 @@ def project_source_file(session: Session, project_id: uuid.UUID) -> StoredFile:
         source = session.get(StoredFile, raw.source_file_id)
         if source is not None:
             return source
+
+    source = session.scalar(
+        select(StoredFile).where(
+            StoredFile.resource_ref
+            == f"asset://projects/{project_id}/source.pdf"
+        )
+    )
+    if source is not None:
+        return source
     raise ProjectSourceUnavailable("project source PDF is unavailable")

@@ -1,0 +1,20 @@
+services:
+  api:
+    ports: !override
+      - "127.0.0.1:18000:8000"
+    volumes: !override
+      - qi_storage:/data
+
+  worker:
+    volumes: !override
+      - qi_storage:/data
+
+  frontend:
+    ports: !override
+      - "5173:3000"
+
+volumes:
+  qi_postgres:
+    name: qi_quality_inspection_postgres
+  qi_storage:
+    name: qi_quality_inspection_storage

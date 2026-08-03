@@ -15,7 +15,7 @@
     "samples"
   ],
   "properties": {
-    "schema_version": { "enum": ["live-run-evidence/2", "live-run-evidence/3"] },
+    "schema_version": { "enum": ["live-run-evidence/2", "live-run-evidence/3", "live-run-evidence/4"] },
     "run_id": {
       "type": "string",
       "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
@@ -57,12 +57,34 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "schema_version": { "const": "live-run-evidence/3" } }, "required": ["schema_version"] },
+      "if": { "properties": { "schema_version": { "enum": ["live-run-evidence/3", "live-run-evidence/4"] } }, "required": ["schema_version"] },
       "then": { "required": ["paid_cycle"], "properties": { "paid_cycle": { "required": ["historical_committed_cny", "max_total_cny", "overall_envelope_cny", "readiness_evidence"], "properties": { "cycle_id": { "const": "gdt10e-auth-remediated-live-20260802" } } } } }
     },
     {
       "if": { "properties": { "schema_version": { "const": "live-run-evidence/2" } }, "required": ["schema_version"] },
       "then": { "properties": { "paid_cycle": { "not": { "anyOf": [ { "required": ["historical_committed_cny"] }, { "required": ["max_total_cny"] }, { "required": ["overall_envelope_cny"] }, { "required": ["readiness_evidence"] } ] } } } }
+    },
+    {
+      "if": { "properties": { "schema_version": { "const": "live-run-evidence/4" } }, "required": ["schema_version"] },
+      "then": {
+        "properties": {
+          "samples": {
+            "items": {
+              "properties": {
+                "candidates": {
+                  "type": "object",
+                  "required": [
+                    "automatic_result_schema_version",
+                    "automatic_result_auto_accepted_item_ids",
+                    "working_copy_auto_accepted_item_ids",
+                    "workbench_auto_accepted_item_ids"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -512,6 +534,10 @@
       "properties": {
         "candidate_count": { "type": "integer", "minimum": 1 },
         "candidate_ids": { "$ref": "#/$defs/string_id_array" },
+        "automatic_result_schema_version": { "const": "automatic-result/3" },
+        "automatic_result_auto_accepted_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "working_copy_auto_accepted_item_ids": { "$ref": "#/$defs/string_id_array" },
+        "workbench_auto_accepted_item_ids": { "$ref": "#/$defs/string_id_array" },
         "source_location_ids": { "$ref": "#/$defs/string_id_array" },
         "coverage_checked": { "type": "boolean" },
         "coverage_blocking_count": { "type": "integer", "minimum": 0 },

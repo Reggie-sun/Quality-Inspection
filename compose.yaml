@@ -24,15 +24,18 @@ services:
 
   api:
     build: ./backend
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     env_file:
       - path: .env
         required: false
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       QI_STORAGE_ROOT: /data
+      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty
     ports:
       - "8000:8000"
     volumes:
+      - ./backend:/app
       - qi_storage:/data
     depends_on:
       postgres:
@@ -47,8 +50,11 @@ services:
       - path: .env
         required: false
     environment:
+      PYTHONDONTWRITEBYTECODE: "1"
       QI_STORAGE_ROOT: /data
+      QI_SYMBOL_RECOGNITION_MODE: production_uncertainty
     volumes:
+      - ./backend:/app
       - qi_storage:/data
     depends_on:
       postgres:

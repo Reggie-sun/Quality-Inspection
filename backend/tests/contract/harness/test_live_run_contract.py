@@ -59,6 +59,14 @@ GDT10E_PRIOR_CYCLE_EVIDENCE_SHA256 = (
 GDT10E_PRICING_DEADLINE = datetime(
     2026, 8, 3, 23, 59, 59, tzinfo=timezone(timedelta(hours=8))
 )
+GDT10E_SUCCESSOR_HARNESS_RUNS_ROOT = Path(
+    "/home/reggie/vscode_folder/Quality_Inspection/.worktrees/"
+    "gdt10e-retry-archive-continuation/.agent/harness/runs"
+)
+GDT10E_HISTORICAL_HARNESS_RUNS_ROOT = Path(
+    "/home/reggie/vscode_folder/Quality_Inspection/.worktrees/"
+    "structured-geometric-tolerance-recognition/.agent/harness/runs"
+)
 
 
 def _load_module(name: str, path: Path) -> ModuleType:
@@ -386,6 +394,10 @@ def _sample_evidence(order: int) -> dict[str, object]:
         "candidates": {
             "candidate_count": 3,
             "candidate_ids": candidate_ids,
+            "automatic_result_schema_version": "automatic-result/3",
+            "automatic_result_auto_accepted_item_ids": [item_ids[0]],
+            "working_copy_auto_accepted_item_ids": [item_ids[0]],
+            "workbench_auto_accepted_item_ids": [item_ids[0]],
             "source_location_ids": [
                 f"source-{order}-1",
                 f"source-{order}-2",
@@ -529,6 +541,10 @@ def _visual_text_candidate_evidence() -> dict[str, object]:
     return {
         "candidate_count": 1,
         "candidate_ids": [candidate_id],
+        "automatic_result_schema_version": "automatic-result/3",
+        "automatic_result_auto_accepted_item_ids": [candidate_id],
+        "working_copy_auto_accepted_item_ids": [candidate_id],
+        "workbench_auto_accepted_item_ids": [candidate_id],
         "source_location_ids": ["line-1", "span-1", "visual-1"],
         "coverage_checked": True,
         "coverage_blocking_count": 0,
@@ -775,6 +791,151 @@ def test_candidate_evidence_accepts_inventory_backed_visual_text_union() -> None
     )
 
     policy.validate_candidate_evidence(1, _visual_text_candidate_evidence())
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda value: value.__setitem__(
+            "automatic_result_auto_accepted_item_ids",
+            [],
+        ),
+        lambda value: value.__setitem__(
+            "working_copy_auto_accepted_item_ids",
+            [],
+        ),
+        lambda value: value.__setitem__(
+            "workbench_auto_accepted_item_ids",
+            [],
+        ),
+    ],
+)
+def test_candidate_evidence_rejects_auto_accepted_projection_drift(mutate) -> None:
+    policy = _load_module(
+        "qi_auto_accepted_projection_policy",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+    candidates = _visual_text_candidate_evidence()
+    mutate(candidates)
+
+    with pytest.raises(ValueError, match="auto-accepted projection is inconsistent"):
+        policy.validate_candidate_evidence(1, candidates)
+
+
+def test_workbench_auto_accepted_projection_requires_strict_status() -> None:
+    runner = _load_module(
+        "qi_workbench_auto_accepted_projection",
+        HARNESS / "scripts/run-p0.py",
+    )
+
+    assert runner._workbench_auto_accepted_item_ids(
+        {
+            "project": {"id": "project-1"},
+            "candidates": [
+                {
+                    "item_id": "item-accepted",
+                    "review_disposition": "auto_accepted",
+                    "status": "auto_accepted",
+                },
+                {
+                    "item_id": "item-status-drift",
+                    "review_disposition": "auto_accepted",
+                    "status": "pending",
+                },
+                {
+                    "item_id": "item-policy-drift",
+                    "review_disposition": "review_required",
+                    "status": "auto_accepted",
+                },
+            ],
+        },
+        project_id="project-1",
+    ) == ["item-accepted"]
+
+
+def test_prepare_auto_accepted_collector_uses_validated_bootstrap_semantics() -> None:
+    from app.candidates.confidence import validate_confidence_decision
+
+    runner = _load_module(
+        "qi_prepare_auto_accepted_projection",
+        HARNESS / "scripts/run-p0.py",
+    )
+    collect = _embedded_function(
+        runner._PREPARE_PROJECT_PROGRAM,
+        "auto_accepted_ids",
+        {"validate_confidence_decision": validate_confidence_decision},
+    )
+    high = {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": ["typed_schema_complete"],
+    }
+    review_required = {
+        "band": "medium",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": ["typed_schema_complete"],
+    }
+
+    assert collect(
+        [
+            {"candidate_id": "candidate-high", "confidence_decision": high},
+            {
+                "candidate_id": "candidate-medium",
+                "confidence_decision": review_required,
+            },
+        ],
+        identity_field="candidate_id",
+        require_bootstrap_status=False,
+    ) == ["candidate-high"]
+    assert collect(
+        [
+            {
+                "item_id": "item-high",
+                "confidence_decision": high,
+                "status": "auto_accepted",
+                "requires_confirmation": False,
+                "acceptance_source": "confidence_policy",
+                "active": True,
+            },
+            {
+                "item_id": "item-status-drift",
+                "confidence_decision": high,
+                "status": "pending",
+                "requires_confirmation": False,
+                "acceptance_source": "confidence_policy",
+                "active": True,
+            },
+            {
+                "item_id": "item-source-drift",
+                "confidence_decision": high,
+                "status": "auto_accepted",
+                "requires_confirmation": False,
+                "acceptance_source": None,
+                "active": True,
+            },
+            {
+                "item_id": "item-inactive",
+                "confidence_decision": high,
+                "status": "auto_accepted",
+                "requires_confirmation": False,
+                "acceptance_source": "confidence_policy",
+                "active": False,
+            },
+        ],
+        identity_field="item_id",
+        require_bootstrap_status=True,
+    ) == ["item-high"]
+    with pytest.raises(RuntimeError, match="identity is duplicated"):
+        collect(
+            [
+                {"candidate_id": "candidate-high", "confidence_decision": high},
+                {"candidate_id": "candidate-high", "confidence_decision": high},
+            ],
+            identity_field="candidate_id",
+            require_bootstrap_status=False,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1727,8 +1888,13 @@ def test_gdt10e_v3_lifecycle_requires_the_exact_fact_only_when_accepted(
         policy.account_readiness_projection(completed, completed_live, fact)
 
 
+@pytest.mark.parametrize(
+    "live_schema_version",
+    ["live-run-evidence/3", "live-run-evidence/4"],
+)
 def test_gdt10e_runtime_acceptance_projection_binds_only_the_fact_hash(
     tmp_path: Path,
+    live_schema_version: str,
 ) -> None:
     """Mutation caught: projecting acceptance without the immutable fact binding."""
     policy = _load_module(
@@ -1760,7 +1926,7 @@ def test_gdt10e_runtime_acceptance_projection_binds_only_the_fact_hash(
         "readiness_evidence": readiness,
     }
     live = _live_evidence()
-    live["schema_version"] = "live-run-evidence/3"
+    live["schema_version"] = live_schema_version
     live["paid_cycle"] = {
         "cycle_id": ACCOUNT_READINESS_CYCLE,
             "pricing_sha256": pricing_sha256,
@@ -3094,6 +3260,14 @@ def test_legacy_and_gdt10e_live_evidence_schemas_are_closed() -> None:
         HARNESS / "scripts/run-p0.py",
     )
     legacy_live = _live_evidence()
+    for sample in legacy_live["samples"]:
+        for field in (
+            "automatic_result_schema_version",
+            "automatic_result_auto_accepted_item_ids",
+            "working_copy_auto_accepted_item_ids",
+            "workbench_auto_accepted_item_ids",
+        ):
+            sample["candidates"].pop(field)
     assert legacy_live["schema_version"] == "live-run-evidence/2"
     _validate(legacy_live, "live-run-evidence.schema.json")
     with pytest.raises(jsonschema.ValidationError):
@@ -3101,13 +3275,25 @@ def test_legacy_and_gdt10e_live_evidence_schemas_are_closed() -> None:
             {**legacy_live, "unexpected": True}, "live-run-evidence.schema.json"
         )
 
+    legacy_gdt10e_live = _gdt10e_v3_live(_gdt10e_v3_run())
+    legacy_gdt10e_live["samples"] = json.loads(json.dumps(legacy_live["samples"]))
+    _validate(legacy_gdt10e_live, "live-run-evidence.schema.json")
+
     gdt10e_live = _gdt10e_v3_live(_gdt10e_v3_run())
+    gdt10e_live["schema_version"] = "live-run-evidence/4"
+    gdt10e_live["samples"] = _live_evidence()["samples"]
     assert runner.LIVE_EVIDENCE_SCHEMA_VERSION == gdt10e_live["schema_version"]
     _validate(gdt10e_live, "live-run-evidence.schema.json")
     with pytest.raises(jsonschema.ValidationError):
         _validate(
             {**gdt10e_live, "unexpected": True}, "live-run-evidence.schema.json"
         )
+    missing_projection = json.loads(json.dumps(gdt10e_live))
+    missing_projection["samples"][0]["candidates"].pop(
+        "workbench_auto_accepted_item_ids"
+    )
+    with pytest.raises(jsonschema.ValidationError):
+        _validate(missing_projection, "live-run-evidence.schema.json")
 
     verdict = {
         "schema_version": "human-verdict/1",
@@ -4911,6 +5097,17 @@ def test_live_phase_outcomes_require_strong_per_sample_evidence(
 
     weak = _materialize_bound_live_evidence(run_dir, design_qa)
     weak["samples"][0]["candidates"]["coverage_checked"] = False
+    (run_dir / "live-run-evidence.json").write_text(
+        json.dumps(weak),
+        encoding="utf-8",
+    )
+    assert runner._live_phase_outcome(
+        "phase://live/candidates?input_set=current-four",
+        run_dir,
+    )[1] == "blocked"
+
+    weak = _materialize_bound_live_evidence(run_dir, design_qa)
+    weak["samples"][0]["candidates"]["workbench_auto_accepted_item_ids"] = []
     (run_dir / "live-run-evidence.json").write_text(
         json.dumps(weak),
         encoding="utf-8",
@@ -8057,10 +8254,16 @@ def test_cycle_close_bridge_recovers_consumed_pre_harness_run_binding(
     root = tmp_path / "authorization"
     identity = _issue_cycle_authorization(authorization, root)
     authorization.consume_authorization(root)
-    (tmp_path / ".agent/harness/runs" / RUN_ID / "reports").mkdir(
+    readiness_owner = _account_readiness_module()
+    runs = tmp_path / ".agent/harness/runs"
+    (runs / RUN_ID / "reports").mkdir(
         parents=True
     )
     monkeypatch.setattr(authorization, "ROOT", tmp_path)
+    monkeypatch.setattr(readiness_owner, "HARNESS_RUNS_ROOT", runs)
+    monkeypatch.setattr(
+        authorization, "_provider_account_readiness_module", lambda: readiness_owner
+    )
 
     def fake_run(
         argv: list[str],
@@ -8105,8 +8308,7 @@ def test_cycle_close_bridge_recovers_consumed_pre_harness_run_binding(
         "run_id"
     ] == RUN_ID
     assert (
-        tmp_path
-        / ".agent/harness/runs"
+        runs
         / RUN_ID
         / "reports/provider-cycle-close-bridge.json"
     ).is_file()
@@ -8152,9 +8354,15 @@ def test_quiescence_evidence_is_written_only_after_harness_return(
         "qi_live_cycle_authorization_quiescence",
         HARNESS / "scripts/live_cycle_authorization.py",
     )
-    run_dir = tmp_path / ".agent/harness/runs" / RUN_ID
+    readiness_owner = _account_readiness_module()
+    runs = tmp_path / ".agent/harness/runs"
+    run_dir = runs / RUN_ID
     (run_dir / "reports").mkdir(parents=True)
     monkeypatch.setattr(authorization, "ROOT", tmp_path)
+    monkeypatch.setattr(readiness_owner, "HARNESS_RUNS_ROOT", runs)
+    monkeypatch.setattr(
+        authorization, "_provider_account_readiness_module", lambda: readiness_owner
+    )
 
     def fake_run(
         argv: list[str],
@@ -8188,6 +8396,83 @@ def test_quiescence_evidence_is_written_only_after_harness_return(
     assert report["content_sha256"] == digest
 
 
+def test_gdt10e_harness_runs_root_controls_quiescence_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: quiescence writing a GDT-10E report below local ROOT."""
+    authorization = _load_module(
+        f"qi_gdt10e_successor_quiescence_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    readiness_owner = _account_readiness_module()
+    successor_runs = tmp_path / "successor/.agent/harness/runs"
+    historical_runs = tmp_path / "historical-worktree/.agent/harness/runs"
+    for runs in (successor_runs, historical_runs):
+        (runs / RUN_ID / "reports").mkdir(parents=True)
+    monkeypatch.setattr(authorization, "ROOT", tmp_path / "historical-worktree")
+    monkeypatch.setattr(readiness_owner, "HARNESS_RUNS_ROOT", successor_runs)
+    monkeypatch.setattr(
+        authorization, "_provider_account_readiness_module", lambda: readiness_owner
+    )
+
+    def fake_run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        stdout = (
+            "0\n"
+            if "redis-cli" in argv
+            else json.dumps(
+                {
+                    "active": {"worker@fixture": []},
+                    "reserved": {"worker@fixture": []},
+                    "scheduled": {"worker@fixture": []},
+                }
+            )
+        )
+        return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+    monkeypatch.setattr(authorization.subprocess, "run", fake_run)
+    digest = authorization.prove_run_quiescence(RUN_ID, "failed")
+    successor_report = successor_runs / RUN_ID / "reports/provider-cycle-quiescence.json"
+
+    assert successor_report.is_file()
+    assert json.loads(successor_report.read_text(encoding="utf-8"))["content_sha256"] == digest
+    assert not (historical_runs / RUN_ID / "reports/provider-cycle-quiescence.json").exists()
+
+
+def test_gdt10e_harness_runs_root_controls_close_bridge_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: close-bridge evidence writing a GDT-10E report below local ROOT."""
+    authorization = _load_module(
+        f"qi_gdt10e_successor_close_bridge_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    readiness_owner = _account_readiness_module()
+    successor_runs = tmp_path / "successor/.agent/harness/runs"
+    historical_runs = tmp_path / "historical-worktree/.agent/harness/runs"
+    for runs in (successor_runs, historical_runs):
+        (runs / RUN_ID / "reports").mkdir(parents=True)
+    authorization_root = tmp_path / "authorization"
+    authorization_root.mkdir()
+    monkeypatch.setattr(authorization, "ROOT", tmp_path / "historical-worktree")
+    monkeypatch.setattr(readiness_owner, "HARNESS_RUNS_ROOT", successor_runs)
+    monkeypatch.setattr(
+        authorization, "_provider_account_readiness_module", lambda: readiness_owner
+    )
+
+    bridge = authorization._write_close_bridge_evidence(
+        run_id=RUN_ID,
+        image_id="sha256:" + "2" * 64,
+        storage_volume="fixture_storage_qa_dev",
+        authorization_root=authorization_root,
+        terminal={"content_sha256": "1" * 64},
+    )
+
+    successor_report = successor_runs / RUN_ID / "reports/provider-cycle-close-bridge.json"
+    assert successor_report.is_file()
+    assert json.loads(successor_report.read_text(encoding="utf-8")) == bridge
+    assert not (historical_runs / RUN_ID / "reports/provider-cycle-close-bridge.json").exists()
+
+
 def test_quiescence_creates_bounded_evidence_shell_before_harness_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -8196,8 +8481,14 @@ def test_quiescence_creates_bounded_evidence_shell_before_harness_run(
         "qi_live_cycle_authorization_pre_harness_quiescence",
         HARNESS / "scripts/live_cycle_authorization.py",
     )
-    (tmp_path / ".agent/harness/runs").mkdir(parents=True)
+    readiness_owner = _account_readiness_module()
+    runs = tmp_path / ".agent/harness/runs"
+    runs.mkdir(parents=True)
     monkeypatch.setattr(authorization, "ROOT", tmp_path)
+    monkeypatch.setattr(readiness_owner, "HARNESS_RUNS_ROOT", runs)
+    monkeypatch.setattr(
+        authorization, "_provider_account_readiness_module", lambda: readiness_owner
+    )
 
     def fake_run(
         argv: list[str],
@@ -8221,8 +8512,7 @@ def test_quiescence_creates_bounded_evidence_shell_before_harness_run(
     digest = authorization.prove_run_quiescence(RUN_ID, "failed")
 
     report_path = (
-        tmp_path
-        / ".agent/harness/runs"
+        runs
         / RUN_ID
         / "reports/provider-cycle-quiescence.json"
     )
@@ -8242,9 +8532,15 @@ def test_quiescence_stops_feature_worker_before_close_when_needed(
         f"qi_live_cycle_authorization_stop_worker_{inspection_mode}",
         HARNESS / "scripts/live_cycle_authorization.py",
     )
-    run_dir = tmp_path / ".agent/harness/runs" / RUN_ID
+    readiness_owner = _account_readiness_module()
+    runs = tmp_path / ".agent/harness/runs"
+    run_dir = runs / RUN_ID
     (run_dir / "reports").mkdir(parents=True)
     monkeypatch.setattr(authorization, "ROOT", tmp_path)
+    monkeypatch.setattr(readiness_owner, "HARNESS_RUNS_ROOT", runs)
+    monkeypatch.setattr(
+        authorization, "_provider_account_readiness_module", lambda: readiness_owner
+    )
     calls: list[list[str]] = []
 
     def fake_run(
@@ -8843,6 +9139,226 @@ def _write_runtime_acceptance(
     path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
     path.chmod(0o600)
     return path
+
+
+def test_gdt10e_harness_runs_root_is_the_exact_successor_owner() -> None:
+    """Mutation caught: retaining the historical worktree as the active run-root Owner."""
+    module = _account_readiness_module()
+
+    assert module.HARNESS_RUNS_ROOT == GDT10E_SUCCESSOR_HARNESS_RUNS_ROOT
+
+
+def test_gdt10e_harness_runs_root_real_loader_uses_the_readiness_owner() -> None:
+    """Mutation caught: replacing the production loader seam with a local-root selector or fallback."""
+    authorization = _load_module(
+        "qi_gdt10e_real_readiness_owner",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    readiness_owner = _account_readiness_module()
+
+    assert authorization._gdt10e_harness_runs_root() == readiness_owner.HARNESS_RUNS_ROOT
+    assert authorization._gdt10e_harness_runs_root() == GDT10E_SUCCESSOR_HARNESS_RUNS_ROOT
+
+
+def test_gdt10e_runtime_acceptance_rejects_the_historical_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: accepting an otherwise-valid runtime fact below the retired run root."""
+    module = _account_readiness_module()
+    root, _, _ = _configure_account_readiness_paths(module, tmp_path, monkeypatch)
+    successor_runs = tmp_path / "successor/.agent/harness/runs"
+    historical_runs = tmp_path / "historical/.agent/harness/runs"
+    monkeypatch.setattr(module, "HARNESS_RUNS_ROOT", successor_runs)
+    readiness = _issue_account_readiness(module, root)
+    successor_fact = _write_runtime_acceptance(
+        successor_runs, str(readiness["content_sha256"])
+    )
+    historical_fact = _write_runtime_acceptance(
+        historical_runs, str(readiness["content_sha256"])
+    )
+
+    assert _validate_account_readiness(
+        module,
+        root,
+        phase="resume",
+        runtime_acceptance=successor_fact,
+        expected_content_sha256=str(readiness["content_sha256"]),
+    ).content_sha256 == readiness["content_sha256"]
+    with pytest.raises(ValueError, match="account readiness"):
+        _validate_account_readiness(
+            module,
+            root,
+            phase="resume",
+            runtime_acceptance=historical_fact,
+            expected_content_sha256=str(readiness["content_sha256"]),
+        )
+
+
+def test_gdt10e_harness_runs_root_controls_resume_and_paused_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: resume accepting a fact or paused run beneath this module's ROOT."""
+    authorization, readiness_owner, root, _, readiness = _cleanup_intent_authorization_module(
+        tmp_path, monkeypatch
+    )
+    successor_runs = tmp_path / "successor/.agent/harness/runs"
+    monkeypatch.setattr(authorization, "ROOT", tmp_path / "historical-worktree")
+    monkeypatch.setattr(readiness_owner, "HARNESS_RUNS_ROOT", successor_runs)
+    issuance = _issue_cleanup_authorization(authorization, root)
+    authorization.consume_authorization(root / "authorization")
+    run_id = "20260802T000000000000Z-deadbeef"
+    authorization.bind_run(root / "authorization", run_id=run_id)
+    run_dir = successor_runs / run_id
+    run_dir.mkdir(parents=True, mode=0o700)
+    run_dir.joinpath("run.json").write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "mode": "live",
+                "scope": "full-p0",
+                "execution_state": "visual_qa_pending",
+                "completed_at": None,
+                "pause_identity": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    live_path = run_dir / "live-run-evidence.json"
+    live_path.write_text("{}\n", encoding="utf-8")
+    fact = _write_runtime_acceptance(
+        successor_runs, str(readiness["content_sha256"]), run_id=run_id
+    )
+    monkeypatch.setattr(authorization, "validate_issuance_for_start", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(authorization, "_create_zero_paid_overrides", lambda *_args: None)
+    monkeypatch.setattr(authorization, "_validate_future_live_override", lambda *_args: None)
+    monkeypatch.setattr(authorization, "validate_safe_override", lambda *_args: None)
+    pause_evidence_sha256 = hashlib.sha256(live_path.read_bytes()).hexdigest()
+    authorization.record_pause_handoff(
+        root / "authorization",
+        run_id=run_id,
+        pause_evidence_sha256=pause_evidence_sha256,
+    )
+
+    authorization.prepare_resume(
+        authorization=root / "authorization",
+        override=root / "live.env",
+        safe_override=root / "safe.env",
+        readiness=root / "account-readiness.json",
+        runtime_acceptance=fact,
+        run_id=run_id,
+    )
+
+    assert authorization.validate_paused_run(run_id) == pause_evidence_sha256
+    assert issuance["cycle_id"] == ACCOUNT_READINESS_CYCLE
+    assert (root / "authorization/pause-handoff.json").is_file()
+
+
+def test_gdt10e_terminal_cleanup_paths_use_the_readiness_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: deriving terminal public paths from this module's local ROOT."""
+    authorization = _load_module(
+        f"qi_gdt10e_terminal_path_owner_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    readiness_owner = _account_readiness_module()
+    successor_runs = tmp_path / "successor/.agent/harness/runs"
+    historical_worktree = tmp_path / "historical-worktree"
+    monkeypatch.setattr(readiness_owner, "HARNESS_RUNS_ROOT", successor_runs)
+    monkeypatch.setattr(
+        authorization, "_provider_account_readiness_module", lambda: readiness_owner
+    )
+    monkeypatch.setattr(authorization, "ROOT", historical_worktree)
+
+    paths = authorization._terminal_cleanup_paths(RUN_ID)
+
+    assert paths["harness_run_root"] == successor_runs / RUN_ID
+    assert paths["harness_runtime_acceptance"] == (
+        successor_runs / RUN_ID / "reports/provider-account-runtime-acceptance.json"
+    )
+
+
+def test_gdt10e_terminal_cleanup_rejects_a_changed_owner_before_deletion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: deleting private controls after the sealed and active run roots diverge."""
+    authorization, readiness_owner, root, intent, run_id, _, _ = _terminal_cleanup_fixture(
+        tmp_path, monkeypatch
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    authorization.prepare_terminal_cleanup_intent(
+        authorization=root / "authorization",
+        readiness=root / "account-readiness.json",
+        run_id=run_id,
+        cleanup_intent=intent,
+        cleanup_receipt=args["cleanup_receipt"],
+        cleanup_blocker=args["cleanup_blocker"],
+        review_deadline=args["review_deadline"],
+    )
+    monkeypatch.setattr(
+        readiness_owner, "HARNESS_RUNS_ROOT", GDT10E_HISTORICAL_HARNESS_RUNS_ROOT
+    )
+
+    with pytest.raises(ValueError, match="terminal cleanup intent"):
+        authorization.dispose_terminal(**args)
+
+    assert (root / "live.env").exists()
+    assert (root / "account-readiness.json").exists()
+
+
+def test_gdt10e_terminal_cleanup_seals_and_preserves_successor_public_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: sealing cleanup hashes or replaying public bytes from a non-owner run root."""
+    authorization, readiness_owner, root, intent, run_id, _, _ = _terminal_cleanup_fixture(
+        tmp_path, monkeypatch
+    )
+    args = _dispose_terminal_args(root, intent, run_id)
+    successor_runs = tmp_path / "successor/.agent/harness/runs"
+    successor_root = successor_runs / run_id
+    successor_paths = {
+        "harness_run_root": successor_root,
+        "harness_run_document": successor_root / "run.json",
+        "harness_live_evidence": successor_root / "live-run-evidence.json",
+        "harness_runtime_acceptance": successor_root
+        / "reports/provider-account-runtime-acceptance.json",
+        "harness_quiescence": successor_root / "reports/provider-cycle-quiescence.json",
+        "harness_close_bridge": successor_root / "reports/provider-cycle-close-bridge.json",
+    }
+    successor_root.mkdir(parents=True, mode=0o700)
+    preserved = {
+        name: f'{{"public":"{name}"}}\\n'.encode("utf-8")
+        for name in successor_paths
+        if name != "harness_run_root"
+    }
+    for name, payload in preserved.items():
+        path = successor_paths[name]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    monkeypatch.setattr(readiness_owner, "HARNESS_RUNS_ROOT", successor_runs)
+    monkeypatch.setattr(authorization, "ROOT", tmp_path / "historical-worktree")
+
+    sealed = authorization.prepare_terminal_cleanup_intent(
+        authorization=root / "authorization",
+        readiness=root / "account-readiness.json",
+        run_id=run_id,
+        cleanup_intent=intent,
+        cleanup_receipt=args["cleanup_receipt"],
+        cleanup_blocker=args["cleanup_blocker"],
+        review_deadline=args["review_deadline"],
+    )
+
+    assert {
+        name: sealed["safe_path_sha256s"][name]
+        for name in successor_paths
+    } == {
+        name: hashlib.sha256(str(path).encode("utf-8")).hexdigest()
+        for name, path in successor_paths.items()
+    }
+    receipt = authorization.dispose_terminal(**args)
+    assert receipt["branch"] == "terminal"
+    for name, payload in preserved.items():
+        assert successor_paths[name].read_bytes() == payload
 
 
 @pytest.mark.parametrize(
@@ -10472,11 +10988,10 @@ def test_gdt10e_terminal_cleanup_intent_binds_only_the_terminal_lifecycle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Mutation caught: terminal cleanup sealing a cancellation or foreign-run tuple."""
-    authorization, _, root, intent, readiness = _cleanup_intent_authorization_module(
+    authorization, readiness_owner, root, intent, readiness = _cleanup_intent_authorization_module(
         tmp_path, monkeypatch
     )
-    worktree = tmp_path / "worktree"
-    monkeypatch.setattr(authorization, "ROOT", worktree)
+    monkeypatch.setattr(authorization, "ROOT", tmp_path / "historical-worktree")
     issuance = _issue_cleanup_authorization(authorization, root)
     authorization.consume_authorization(root / "authorization")
     run_id = "20260802T000000000000Z-deadbeef"
@@ -10516,7 +11031,7 @@ def test_gdt10e_terminal_cleanup_intent_binds_only_the_terminal_lifecycle(
         "harness_quiescence", "harness_close_bridge",
     ]
     assert sealed["safe_path_sha256s"]["harness_run_root"] == hashlib.sha256(
-        str(worktree / ".agent/harness/runs" / run_id).encode("utf-8")
+        str(readiness_owner.HARNESS_RUNS_ROOT / run_id).encode("utf-8")
     ).hexdigest()
 
 
@@ -10574,15 +11089,21 @@ def test_gdt10e_terminal_cleanup_rejects_unpaired_or_unvalidated_authorization_c
     assert (root / "account-readiness.json").exists()
 
 
-def test_gdt10e_terminal_cleanup_public_v3_binding_rejects_duplicate_run_keys(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "live_schema_version",
+    ["live-run-evidence/3", "live-run-evidence/4"],
+)
+def test_gdt10e_terminal_cleanup_public_binding_rejects_duplicate_run_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_schema_version: str,
 ) -> None:
     """Mutation caught: JSON parsing a public run before duplicate-key rejection."""
     authorization, readiness_module, root, intent, readiness = (
         _cleanup_intent_authorization_module(tmp_path, monkeypatch)
     )
-    workspace = tmp_path / "worktree"
-    runs = workspace / ".agent/harness/runs"
+    workspace = tmp_path / "historical-worktree"
+    runs = tmp_path / "successor/.agent/harness/runs"
     schema_directory = workspace / ".agent/harness/schemas"
     schema_directory.parent.mkdir(parents=True)
     schema_directory.symlink_to(HARNESS / "schemas", target_is_directory=True)
@@ -10630,6 +11151,7 @@ def test_gdt10e_terminal_cleanup_public_v3_binding_rejects_duplicate_run_keys(
     )
     _validate(public_run, "run.schema.json")
     public_live = _gdt10e_v3_live(public_run)
+    public_live["schema_version"] = live_schema_version
     public_live["run_id"] = run_id
     public_live["paid_cycle"].update({
         "issuance_sha256": issuance["content_sha256"],
@@ -10706,7 +11228,7 @@ def test_gdt10e_terminal_cleanup_public_v3_binding_rejects_duplicate_run_keys(
     authorization._validate_terminal_public_binding(
         sealed, issuance, lifecycle_run, terminal
     )
-    harness_directory = workspace / ".agent/harness"
+    harness_directory = runs.parent
     moved_harness = tmp_path / "moved-harness"
     harness_directory.rename(moved_harness)
     harness_directory.symlink_to(moved_harness, target_is_directory=True)

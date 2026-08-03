@@ -412,8 +412,8 @@ class QwenVisionProvider:
     def __init__(
         self,
         client: Any,
-        model: str = "qwen3-vl-plus",
         *,
+        model: str,
         require_cycle_permit: bool = False,
     ) -> None:
         self._client = client

@@ -589,6 +589,15 @@ base64、private-path 和 raw-response privacy scan。
 
 ### Production Versus Verification Mode
 
+#### Current-main default promotion amendment — 2026-08-03
+
+用户已明确要求把先前完成但未启用的低延迟路径用于重新识别，并持续测试并发以取得当前 Provider/样本下的合适频率。此决定批准 current-main 的新项目默认路由从 `legacy_high_recall` 提升为 `production_uncertainty`，但不批准删除 legacy rollback、扩大既有 Provider call/wall/retry budget，或把并发提升到既有验证上限 `2` 以上。
+
+- base `compose.yaml` 是所有 repo-owned Compose consumers（dev-local、feature worktree、QA overlay、server/deploy-main）的 public mode selection Owner；本次 repo-wide promotion 必须在 base、QA 与 server rendered config 中为 `api/worker` 显式得到 `QI_SYMBOL_RECOGNITION_MODE=production_uncertainty`，不得从 canonical `.env` 选择 routing。`Settings` 与 DB server default 继续保持 `legacy_high_recall` fail-safe；project intake/lifecycle 把 deployment selection 冻结为 `recognition_mode + recognition_router_version` immutable pair，已有项目不迁移、不重写。
+- `CandidateAdvisor` 继续是 production ROI scheduling 与 in-flight window 的唯一 Owner。首轮 live tuning 只验证既有 `MAX_VISUAL_IN_FLIGHT=2`，并以同一输入的 legacy serial baseline、call count、wall time、Provider failure category 和 final semantics 判断是否保留 `2`；不得用 blind concurrency escalation 代替 uncertainty routing。
+- rollback 不得删除 mode override 或依赖 `.env`/backend fallback；必须把 base Compose 的 API/worker literal 显式改为 `legacy_high_recall` 并重建 API/worker。rollback 只做 rendered config 与 effective settings 的 zero-paid identity proof；若已耗尽本 amendment 的两个 successor 额度，不得创建第三个 successor。已经冻结或生成的 production result 保持 immutable，任何 post-rollback successor 需要新的 paid-run authorization。
+- promotion acceptance 要求 static fail-safe 仍为 legacy、rendered Compose 对 API/worker 都是 production、production concurrency/failure tests、fresh API/worker identity、至少一次真实 reprocess success，以及无 `rate_limited`/budget/wall failure。若 `2` 不稳定，只允许回到 serial/停止并形成新的 bounded amendment；不得在本 amendment 内尝试 `3+`。
+
 | Mode | Purpose | Provider routing | Final write authority |
 | --- | --- | --- | --- |
 | `production_uncertainty` | 默认用户路径 | only reason-coded escalations | new router through `CandidateAdvisor` |

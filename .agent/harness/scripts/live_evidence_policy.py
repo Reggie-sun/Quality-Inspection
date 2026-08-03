@@ -319,6 +319,15 @@ def design_qa_evidence(
 
 def validate_candidate_evidence(order: int, candidates: Mapping[str, Any]) -> None:
     candidate_ids = _unique_strings(candidates.get("candidate_ids"))
+    automatic_ids = _unique_strings(
+        candidates.get("automatic_result_auto_accepted_item_ids")
+    )
+    working_ids = _unique_strings(
+        candidates.get("working_copy_auto_accepted_item_ids")
+    )
+    workbench_ids = _unique_strings(
+        candidates.get("workbench_auto_accepted_item_ids")
+    )
     source_ids = _unique_strings(candidates.get("source_location_ids"))
     records = candidates.get("candidate_records")
     count = candidates.get("candidate_count")
@@ -339,6 +348,24 @@ def validate_candidate_evidence(order: int, candidates: Mapping[str, Any]) -> No
         or coverage_count < count
     ):
         raise ValueError(f"sample {order} candidate coverage is incomplete")
+    projection_fields = {
+        "automatic_result_schema_version",
+        "automatic_result_auto_accepted_item_ids",
+        "working_copy_auto_accepted_item_ids",
+        "workbench_auto_accepted_item_ids",
+    }
+    if projection_fields & set(candidates):
+        if (
+            candidates.get("automatic_result_schema_version")
+            != "automatic-result/3"
+            or not automatic_ids
+            or automatic_ids != working_ids
+            or automatic_ids != workbench_ids
+            or not set(automatic_ids) <= set(candidate_ids)
+        ):
+            raise ValueError(
+                f"sample {order} auto-accepted projection is inconsistent"
+            )
     record_ids: list[str] = []
     observed_source_ids: list[str] = []
     for record in records:
@@ -1651,7 +1678,8 @@ def account_readiness_projection(
     paid = live.get("paid_cycle")
     if (
         run.get("schema_version") != "run/3"
-        or live.get("schema_version") != "live-run-evidence/3"
+        or live.get("schema_version")
+        not in {"live-run-evidence/3", "live-run-evidence/4"}
         or not isinstance(authorization, Mapping)
         or not isinstance(paid, Mapping)
         or runtime_acceptance.get("run_id") != run.get("run_id")

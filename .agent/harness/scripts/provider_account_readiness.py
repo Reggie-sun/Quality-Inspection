@@ -24,7 +24,7 @@ CLEANUP_INTENT_PATH = Path(
     "/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-intent.json"
 )
 HARNESS_RUNS_ROOT = Path(
-    "/home/reggie/vscode_folder/Quality_Inspection/.worktrees/structured-geometric-tolerance-recognition/.agent/harness/runs"
+    "/home/reggie/vscode_folder/Quality_Inspection/.worktrees/gdt10e-retry-archive-continuation/.agent/harness/runs"
 )
 DOCUMENT_NAME = "account-readiness.json"
 CYCLE_ID = "gdt10e-auth-remediated-live-20260802"
