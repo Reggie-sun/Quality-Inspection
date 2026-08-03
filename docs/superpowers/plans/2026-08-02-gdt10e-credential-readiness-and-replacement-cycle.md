@@ -62,11 +62,12 @@
 - Qwen identity：`qwen3-vl-plus-2025-12-19`、`cn-beijing`、`production_uncertainty/symbol-uncertainty-router/1`。
 - Retry：timeout/transport/authentication/request-rejected/rate-limited/service/metadata均`0`；only `ProductionRetryCoordinator`可为schema-invalid授权一次second submission，且单独reserve。
 - Pricing freshness：committed snapshot `retrieved_date=2026-08-02` 经 `2026-08-03` 独立只读公开价格复核、reviewed plan amendment和user approval后，只允许在`2026-08-03T23:59:59+08:00`前issue；超过时点再次fail closed，不得自动刷新/沿用。
-- No Provider work before Task 5 final independent `GO` and one-use issuance/consume。Task 6只允许一次`make verify-p0-live` start；Task 7仅允许accepted paused literal run的一次same-run resume。
-- Tasks 1-8 implementation/live boundary已获用户明确批准；所有既有 plan gates 仍为强制前置条件，不得从本 plan 存在推断超出已批准边界的 execution authority。
+- No Provider work before Task 5 final independent `GO` and a new separate paid authorization。The historical Tasks 1-8 live approval is suspended for this continuation；本次 authority只到Task 5 Step 6 closure，`GO`必须停在Task 6 boundary，Task 6 issuance/consume/`make verify-p0-live`和Task 7 resume均未授权。
+- Tasks 1-8 implementation/live boundary的历史批准不再是active execution authority；所有既有 plan gates 仍为强制前置条件，且不得从本 plan 存在或历史 approval record 推断 Task 6/7 paid authority。
 - direct Provider diagnostic、second replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 与 production promotion仍被阻断；本 amendment 只授权 reviewed 后的 exact successor target DB reconciliation，main/non-target runtime/DB mutation与model fallback不授权。
 - The historical cleanup-proof docs-only amendment preserves blocks on credential/runtime mutation, Provider calls and paid execution; it changed only cleanup-proof ownership/contract before Task 2 implementation resumed. The current successor DB-identity/pricing amendment separately authorizes only its reviewed Step 1A code/test convergence and Step 1B exact target reconciliation under the gates above；它不授权Provider或paid execution。
 - Single retry archive amendment：在唯一一次新的 Task 5 zero-paid retry 前，`live_cycle_authorization.py` 的 `retire-no-issuance-receipt` 是 archive/replay 的唯一 Owner。它只允许固定 `no_issuance` receipt source `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json` 与 fixed archive `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json`，并固定 bytes SHA `67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb`、content SHA `15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532`、cycle/schema/branch、current uid/gid 与 `0600`。它用 no-overwrite hard-link、parent fsync、inode/device/bytes revalidation、source unlink 和 final parent fsync；仅 source-only、same-inode source+archive、archive-only 三态可安全 replay。任何 alias/symlink/identity/private-target reappearance或 archive conflict fail closed；不得创建新 schema或退役 future receipt。
+- Final retry archive amendment：首轮 Task 5 zero-paid retry 在Harness前因Python bytecode污染clean HEAD而fail closed，并已通过exact `abort-preconsume`生成第二个immutable `no_issuance` receipt。用户只批准一次additional zero-paid retry；同一`retire_no_issuance_receipt()` Owner必须保持原archive exact，并只允许当前fixed source以bytes SHA `a70b73faefcffcdf6977bd70f602d6798de2328abd4c4fb948f8cceebab04d9b`、content SHA `215f2973036e4b4620cc7daa8b4331ebb11fced1c9406fb1fa1add47473d26bd`进入fixed final archive `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry-2.json`。不得加入ordinal、caller-selected path/hash、retry参数、fallback、新schema或第二cleanup/archive Owner。Task 5/6 direct Python命令以及`Makefile` live recipes必须在interpreter启动前设置`PYTHONDONTWRITEBYTECODE=1`。
 - Reviewer/explorer严格read-only；一个write-capable executor按Task 1 -> Task 8顺序执行。
 
 ## Problem Boundary Record
@@ -458,6 +459,8 @@ Expected：clean committed HEAD；no private state、runtime、credential、DB�
 - Sanitized zero-paid report: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/zero-paid-readiness.json`
 - Sanitized cleanup intent: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-intent.json`
 - Sanitized cleanup receipt: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json`
+- First immutable retry archive: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json`
+- Final immutable retry archive: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry-2.json`
 - Sanitized cleanup blocker: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-blocker.json`
 - DB reconciliation root: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-db-reconciliation/`
 - DB backup: `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-db-reconciliation/pre-canonical-0016.dump`
@@ -465,6 +468,8 @@ Expected：clean committed HEAD；no private state、runtime、credential、DB�
 - Runtime: feature `api/worker` safe-identity only after approved rebuild。
 
 **One-time retry entry amendment:** Before this retry only, run `retire-no-issuance-receipt` after implementation, focused verification and independent implementation review all pass. Its required postcondition replaces the ordinary all-absent receipt baseline only for this Task 5 Step 1: fixed archive exact present; fixed source receipt absent; private root/readiness/intent/blocker/authorization/live/safe controls/preparation/zero-paid reports absent; GDT-10E run count `0`. It is not an issuance, cleanup receipt rewrite, Provider action, paid attempt, DB mutation or Harness evidence mutation. Do not execute it again after archive-only success.
+
+**Final retry entry amendment — 2026-08-03:** 上述first archive保持immutable且不得重跑。首轮zero-paid sequence已完成Step 2和Steps 3-4，但Step 5在调用真实Harness preflight前因Python import生成tracked/untracked `.pyc`、触发clean-HEAD gate而fail closed；没有issuance、consumption、run、project、upload、ledger或Provider delta，随后exact `abort-preconsume`成功形成当前source receipt。用户现只批准一次additional zero-paid retry closure；它不授权Task 6或paid/Provider work。第二且最终archive/bytecode-clean实现必须先通过docs review/commit、TDD、parent verification、fresh implementation review和code commit，再执行Step 1C一次；之后只能按Step 2 -> Step 3 -> Step 4 -> Step 5 -> Step 6继续。若pricing deadline `2026-08-03T23:59:59+08:00` 已过，在任何readiness/runtime mutation前fail closed并重新完成public pricing review、amendment和明确批准。
 
 - [x] **Step 0: Retire the immutable no-issuance receipt exactly once**
 
@@ -477,7 +482,7 @@ Partial integration 保留 `main` 的 `0013_project_catalog -> 0014_project_life
 Run only after the code/test/review gates for this amendment are closed and the parent has established an operator-controlled exclusive-writer window. From the first fixed parent/source/archive validation through final parent `fsync` and terminal source/private/archive rechecks, no concurrent same-UID/root process、agent、operator or lifecycle command may create、rename、replace、unlink or rewrite either receipt or any private target. This is a required threat-model precondition, not an advisory-lock guarantee; do not run if exclusive ownership is uncertain.
 
 ```bash
-micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py retire-no-issuance-receipt \
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py retire-no-issuance-receipt \
   --receipt /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json \
   --archive /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json
 ```
@@ -497,7 +502,7 @@ Record clean HEAD、target/non-target container IDs、volumes、ports、health�
 
 Execution record：baseline artifact `.superpowers/sdd/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle/task-5-step-1-read-only-baseline.md` records clean `46ebb24`、exact archive/source/private state、target/non-target IDs/volumes/ports/health、empty Celery/Redis、stable Harness/GDT-10D/storage hashes/counts and zero Provider/paid/DB/Harness mutation。Supplemental schema audit found the collision truth frozen in `Successor DB-Identity And Pricing Binding Amendment` above；therefore Step 1 is complete as an immutable observation, but its reported `0014` must not be treated as canonical `0014_project_lifecycle` or as permission to run `upgrade head`。
 
-- [ ] **Step 1A: Bind exact GDT-10E `0016` through the existing lifecycle Owner using TDD**
+- [x] **Step 1A: Bind exact GDT-10E `0016` through the existing lifecycle Owner using TDD**
 
 **Allowed code/test paths:**
 
@@ -516,7 +521,9 @@ Start only after this three-doc amendment receives fresh independent `accept` an
 
 Required negative matrix：GDT-10E accepts only `0016` and rejects `0014`/arbitrary values；generic GDT-10D accepts only `0014` and rejects `0016`/arbitrary values。Only the GDT-10E fixtures in `test_provider_usage_ledger.py` move to`0016`; its generic/GDT-10D fixtures stay`0014`。No CLI flag, environment override, `{"0014", "0016"}` broad allowlist, fallback、schema change、migration change或second DB Owner is allowed。After the six code/test paths reach focused GREEN and final production bytes are stable, update only the existing `cycle_authorization.py` SHA row in `gdt10d-runtime-closure.txt`; this manifest remains a mechanical full-runtime inventory and may not encode cycle policy。Parent must run the complete two approved Harness files plus the complete `backend/tests/unit/providers/test_provider_usage_ledger.py`，Ruff on all six code/test paths, `check-contracts.py --runtime-closure-source working`, `git diff --check`, inspect the full seven-file diff and obtain a fresh independent implementation-review `accept`。Then stage exactly seven files, require `check-contracts.py --runtime-closure-source index`, commit them together, and require `check-contracts.py --runtime-closure-source HEAD` plus a clean worktree；no runtime/DB mutation occurs in this step。
 
-- [ ] **Step 1B: Reconcile the collided successor DB identity before private readiness**
+Execution record：docs repair commit `0a44ea1acf20f9793f923097688a9f15d1047ac2`；reviewed seven-file code/test/manifest commit `4ca07629eeb871f114ab02c1cb9c27a82a1296b2`。Parent complete approved suite `443 passed`、Ruff、working/index/HEAD runtime closure `96`、`git diff --check` and fresh reviewer final `accept` all passed。Latest-main/run-root convergence随后由two-parent merge commit `6430148a2491c3b45464573fd379392c4dd7f174`关闭；不得重跑Step 1A。
+
+- [x] **Step 1B: Reconcile the collided successor DB identity before private readiness**
 
 This step starts only after this amendment receives fresh independent read-only `accept`、the three docs are committed、Step 1A TDD/parent verification/fresh implementation review all pass、the six code/test paths plus the mechanical runtime-closure manifest are committed together、exact `main@fe22698` is merged into successor、`501fd42` and `fe22698` are both proven ancestors of successor HEAD、the successor-only run-root retarget has its own TDD and fresh independent `accept`、and final HEAD runtime-closure plus complete offline gates are clean。Revalidate exact public tuple、clean HEAD、fixed archive、private-target absence、zero GDT-10E runs、pricing deadline state、target/non-target identities、health、Celery/Redis emptiness、DB counts and the collision shape。Record the exact target PostgreSQL container ID、image ID and sole volume，then stop target `api/worker` and that exact PostgreSQL container without removing or recreating any of them；Redis、frontend and every non-target container/volume remain exact。Verify the original PostgreSQL container is stopped、its Compose `pg_isready` healthcheck is no longer executing、and the fixed names `quality-inspection-gdt10e-db-reconciliation-postgres` / `quality-inspection-gdt10e-db-reconciliation-network` are absent。Create the fixed internal-only network and start exactly one temporary PostgreSQL target container from the original exact `postgres:17-alpine` image ID with the sole target data volume、`--no-healthcheck`、no published port、no Compose network and no other mount except the fixed reconciliation root when required；the original container remains stopped and keeps its ID/config unchanged。After the temporary target reports SQL-ready through the sole parent inspection session and that session closes，run the final target preflight and establish one continuous operator-controlled exclusive target DB writer/session window that remains unbroken through backup creation、the entire disposable rehearsal and final temporary-target `0016` proof。No other agent、operator、service、lifecycle command or client may join the isolated network、open a target DB session or mutate the target；only the single parent-controlled serialized backup、verification或Alembic action may own one target client session at a time，and the disposable rehearsal may open sessions only against its separate isolated disposable DB。Each target action must close its session before the next begins；any unexpected or overlapping target client terminates the sequence fail-closed with the backup retained。
 
@@ -587,12 +594,28 @@ recheck zero other sessions; verify exactly one revision row = 0016 plus every f
 
 After the temporary target final proof，close its last inspection session、stop and remove only the fixed temporary target container and isolated reconciliation network，then restart the original exact Compose PostgreSQL container by recorded ID without recreation。Require the same recorded image ID and sole volume、healthy Compose healthcheck、exact canonical `0016` and all final schema/count/digest invariants；the expected `pg_isready` probe is allowed only after the exclusive migration window has closed。Target `api/worker` remain stopped，Redis/frontend and every non-target ID/volume stay exact，and no readiness、issuance、Provider、run or Harness artifact may change。Failure before temporary-container removal keeps the original target PostgreSQL stopped and the private backup retained；failure after restart remains fail-closed and does not authorize downgrade、volume deletion、automatic restore or container recreation。
 
+Execution record：Step 1B completed at clean exact HEAD `6430148a2491c3b45464573fd379392c4dd7f174`。Disposable tmpfs rehearsal and exact target both passed `0014 -> stamp 0012 -> upgrade 0015 -> stamp 0016`；target final revision is exact single-row `0016`，counts/digests/attempts and zero-session gates remained exact。Original PostgreSQL ID/image/sole volume restarted healthy；target `api/worker` stopped，Redis/frontend and non-target identities preserved。Fixed backup remains exact at `303383` bytes / SHA `e354f8f8a0653a6766db261a00ce5356e96cc099b93ca90f2c2bb2a1255bf8c0` and is not authorized for delete/restore。不得重跑Step 1B。
+
+- [ ] **Step 1C: Archive the second no-issuance receipt exactly once and enforce bytecode-clean entrypoints**
+
+Start only after this final retry amendment receives independent read-only `accept` and the three docs are committed。Use one fresh `tdd_developer` with no nested delegation。Allowed tracked implementation paths are only `.agent/harness/scripts/live_cycle_authorization.py`、`backend/tests/contract/harness/test_live_run_contract.py`、`backend/tests/contract/harness/test_contract_architecture.py` and `Makefile`。RED/GREEN must prove：(1) first archive exact + fixed source-2 exact + archive-2 absent transitions by the existing hard-link/fsync/revalidation/unlink contract；(2) publication后source-2/archive-2 exact same-inode是唯一可恢复中间态，且publication/unlink/fsync interruptions均安全重放；(3) first archive exact + second archive exact + source absent is the sole terminal replay；(4) missing/mismatched first archive、different source、wrong second archive、aliases/symlinks/private-target reappearance and both-absent states fail closed；(5) caller cannot select ordinal/path/hash or activate a generic retry surface；(6) Task 5/6 direct Python commands and `Makefile` `verify-p0-live`/`resume-gdt10e-live` start Python with `PYTHONDONTWRITEBYTECODE=1`。No schema、manifest、migration、Provider、DB或readiness code changes。Parent focused verification、Ruff、`git diff --check` and fresh independent implementation review must pass before exact four-file commit。
+
+Then establish the same exclusive-writer threat-model window as Step 0 and run exactly once：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py retire-no-issuance-receipt \
+  --receipt /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json \
+  --archive /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry-2.json
+```
+
+Required postcondition：first archive remains exact；second archive exact matches source bytes/content/inode identity；source、private root、readiness、intent、blocker、authorization、overrides和reports absent；DB/backup/runtime/non-target IDs、Redis/Celery、GDT-10E run/project/upload/ledger/Provider inventories unchanged；tracked worktree clean。Do not run this transition again after terminal replay success。
+
 - [ ] **Step 2: Create private readiness document through operator boundary**
 
 Operator confirms in Provider console：remediation complete、workspace/account binding、compatible-mode、exact model entitlement、`cn-beijing`、billing/quota at least`46.473344 CNY`。The helper reads Qwen key/workspace only in its private process and writes`account-readiness.json`；terminal output is limited tocontent SHA andboolean success。
 
 ```bash
-micromamba run -n qi-p0 python .agent/harness/scripts/provider_account_readiness.py issue \
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/provider_account_readiness.py issue \
   --root /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d \
   --cycle-id gdt10e-auth-remediated-live-20260802 \
   --region cn-beijing \
@@ -612,7 +635,7 @@ Required environment keys are checked forpresence but never echoed；key/workspa
 Quiesce target writers and run the sole preparation command：
 
 ```bash
-micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py prepare-zero-paid \
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py prepare-zero-paid \
   --authorization /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/authorization \
   --override /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/live.env \
   --safe-override /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/safe.env \
@@ -648,7 +671,7 @@ run/project/upload/ledger/provider deltas all zero
 Run the literal no-network entrypoint：
 
 ```bash
-micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py zero-paid-preflight \
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py zero-paid-preflight \
   --authorization /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/authorization \
   --override /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/live.env \
   --safe-override /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/safe.env \
@@ -666,7 +689,7 @@ Reviewer receives only safe IDs/hashes/counts/key names/readiness booleans and e
 For any `NO-GO` run exactly：
 
 ```bash
-micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py abort-preconsume \
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py abort-preconsume \
   --authorization /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/authorization \
   --override /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/live.env \
   --safe-override /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/safe.env \
@@ -697,7 +720,7 @@ Require readiness/live/safe/auth root absent andsanitized cleanup receipt passed
 Issuance binds exact cycle ID、plan/readiness/predecessor/pricing/runtime/current-four/image hashes、successor DB exact head `0016`、historical`3.526656`、incremental`46.473344`、overall`50.000000` andshort expiry。Require no prior issuance/consume/run/project/resume/terminal for GDT-10E andpricing deadline not passed。
 
 ```bash
-micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py issue-gdt10e \
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py issue-gdt10e \
   --authorization /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/authorization \
   --readiness /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/account-readiness.json \
   --zero-paid-report /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/zero-paid-readiness.json \
@@ -715,7 +738,7 @@ micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.p
 Recheck clean HEAD、readinessnot expired、private binding、no concurrent writer/Harness、Celery/Redis empty、target/non-target IDs andunconsumed issuance：
 
 ```bash
-micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py validate-unconsumed \
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py validate-unconsumed \
   --authorization /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/authorization \
   --override /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/live.env \
   --readiness /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/account-readiness.json \
@@ -745,7 +768,7 @@ Do not invoke again for any exit。Lifecycle consumes/binds run beforecredential
 For every post-consume exit，includingauthentication/other failure，bind the shell variable only from the sole lifecycle authorization Owner：
 
 ```bash
-GDT10E_RUN_ID="$(micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py bound-run-id \
+GDT10E_RUN_ID="$(PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py bound-run-id \
   --authorization /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d/authorization)"
 export GDT10E_RUN_ID
 case "$GDT10E_RUN_ID" in
@@ -879,7 +902,7 @@ Even onparent success，`0015_drop_symbol_attempt_v1_default` andproduction prom
 - Failure/cleanup boundary：zero-paid GO不宣称account valid；首个validated authenticated response才是runtime acceptance；authentication terminal不retry、不resume、不replacement。NO-GO、issued-unconsumed和sealed-terminal disposal都有literal CLI、exact target、cleanup receipt与blocker deadline。
 - Pricing boundary：`2026-08-03` reviewed amendment恢复的issuance window晚于`2026-08-03T23:59:59+08:00`自动失效；只能通过新的read-only public pricing verification、reviewed plan amendment和user approval恢复，total envelope不自动改变。
 - Independent docs review：前三轮`reject`逐项关闭runtime-acceptance Owner/call site、immutable resume、preconsume cleanup、literal CLI、v2/v3、pricing、path policy、cleanup journal和run-ID source；final verdict `accept`，无blocking或non-blocking finding。The later cleanup-proof amendment selected as option `A` pauses Task 2 until a separate independent read-only amendment review accepts the sole Task 3 intent Owner, exact schema and three-branch correlations.
-- Execution boundary：用户已明确批准 Tasks 1-8 implementation/live boundary；所有既有 plan gates 仍为强制前置条件，且 direct Provider diagnostic、second replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 与 production promotion仍被阻断。
+- Execution boundary：historical Tasks 1-8 live approval已被本continuation authority明确暂停；当前只授权Task 5 final zero-paid retry closure，`GO`停在Task 6等待新的单独paid授权。所有既有 plan gates 仍为强制前置条件，且 direct Provider diagnostic、second replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 与 production promotion仍被阻断。
 
 ## Completion Contract
 
