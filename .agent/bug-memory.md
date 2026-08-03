@@ -2,6 +2,22 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260803-gdt10e-readiness-dynamic-import-dataclass
+
+- Status: 已修复；parent verification 与 independent review `accept`，待 commit
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: `.agent/harness/scripts/live_cycle_authorization.py::_provider_account_readiness_module()` 与 Task 5 `prepare-zero-paid`
+- Symptom: Task 5 Step 2 已生成有效 readiness，但 Step 3 在读取该 fact 时动态加载 `provider_account_readiness.py`，`@dataclass` 初始化触发 `AttributeError: 'NoneType' object has no attribute '__dict__'`，早于 override 创建或 safe runtime activation。
+- Root cause: 生产 loader 调用 `module_from_spec()` 后直接 `exec_module()`，没有先将模块注册到 `sys.modules`；Python 3.11 `dataclasses` 在 decoration 期间通过 `sys.modules[cls.__module__]` 查找 module namespace。测试共享 `_load_module()` 正确注册模块，因此 real zero-paid chain test 又在 control-plane seam 注入已加载 readiness module，掩盖了生产差异。
+- Problem boundary: 只恢复生产 readiness Owner 的标准动态导入语义并让既有 real zero-paid chain test 使用该生产 loader；不改变 readiness schema、credential binding、safe/live runtime、authorization、Provider、DB、Harness evidence 或 Task 6。
+- Single Owner: `.agent/harness/scripts/live_cycle_authorization.py::_provider_account_readiness_module()`。
+- Old path action: replace unregistered `exec_module()` path; on execution failure do not retain a poisoned `sys.modules` entry。
+- Unchanged contract: readiness 仍由 `provider_account_readiness.py` 单独拥有；CLI、路径、schema、输出脱敏和所有 paid gates 不变。
+- Runtime state: 当前 exact private root 仅含 mode `0700` root 与 mode `0600` readiness；live/safe override、authorization、preparation/zero-paid reports 均 absent。修复期间不得读取或改变该 state；复审通过后必须以 literal `abort-preconsume` 收敛 NO-GO，禁止直接重试。
+- Corrective evidence: Task 5B 先将既有 zero-paid chain 改为通过生产 loader 首次加载 Owner，RED 在 Python 3.11 `dataclasses` 的 `sys.modules` namespace lookup 处失败；GREEN 后 focused selector 为 `2 passed, 331 deselected`，且 loader execution failure 不保留本次 module entry。未执行 Docker、Provider、DB、authorization、cleanup 或 Harness run/evidence。
+
 ## BUG-20260803-gdt10e-safe-runtime-requires-authorization
 
 - Status: 已修复；待 parent focused verification 与独立 review

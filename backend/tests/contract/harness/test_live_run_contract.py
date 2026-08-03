@@ -2564,7 +2564,7 @@ def test_gdt10e_preconsume_cli_runs_real_zero_paid_chain_and_replays_reports(
     root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
     root.mkdir(mode=0o700)
     monkeypatch.setattr(authorization, "_GDT10E_PRIVATE_ROOT", root, raising=False)
-    readiness_owner = _account_readiness_module()
+    readiness_owner = authorization._provider_account_readiness_module()
     monkeypatch.setattr(readiness_owner, "PRIVATE_ROOT", root)
     for key, value in _account_readiness_environment().items():
         monkeypatch.setenv(key, value)
@@ -2683,6 +2683,38 @@ def test_gdt10e_preconsume_cli_runs_real_zero_paid_chain_and_replays_reports(
     } == before
     (paths["authorization"] / "consumption.json").write_text("{}", encoding="utf-8")
     assert authorization.main(["validate-unconsumed", "--authorization", str(paths["authorization"]), "--override", str(paths["override"]), "--readiness", str(readiness), "--zero-paid-report", str(paths["zero"])]) == 2
+
+
+def test_gdt10e_provider_account_readiness_loader_removes_failed_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mutation caught: a failed readiness import leaves its module poisoned."""
+    authorization = _load_module(
+        "qi_gdt10e_readiness_loader_cleanup",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    module_name = "qi_gdt10e_account_readiness"
+
+    class FailingLoader:
+        def create_module(self, spec: object) -> None:
+            return None
+
+        def exec_module(self, module: ModuleType) -> None:
+            raise RuntimeError("forced readiness import failure")
+
+    failed_spec = importlib.util.spec_from_loader(module_name, FailingLoader())
+    assert failed_spec is not None
+    monkeypatch.delitem(sys.modules, module_name, raising=False)
+    monkeypatch.setattr(
+        authorization.importlib.util,
+        "spec_from_file_location",
+        lambda *_: failed_spec,
+    )
+
+    with pytest.raises(RuntimeError, match="forced readiness import failure"):
+        authorization._provider_account_readiness_module()
+
+    assert module_name not in sys.modules
 
 
 def test_gdt10e_preconsume_rejects_symlinked_readiness_before_gate(
