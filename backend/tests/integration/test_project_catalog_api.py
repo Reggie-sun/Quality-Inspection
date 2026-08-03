@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db import engine
 from app.main import app
-from app.projects.models import Project
+from app.projects.models import Project, ProjectLifecycleStatus
 from app.projects.router import get_session
 from app.projects.state import ProjectState
 
@@ -185,3 +185,33 @@ def test_mark_project_opened_rejects_non_catalog_project(
 
     assert missing_response.status_code == 404
     assert missing_response.json()["error"]["code"] == "project_not_found"
+
+
+def test_catalog_hides_non_active_lifecycle_versions(
+    catalog_context: CatalogContext,
+) -> None:
+    active = _project(
+        "11111111-1111-4111-8111-111111111111",
+        filename="active.pdf",
+        created_at="2026-01-01T00:00:00+00:00",
+        last_opened_at="2026-01-01T00:00:00+00:00",
+    )
+    hidden = _project(
+        "22222222-2222-4222-8222-222222222222",
+        filename="hidden.pdf",
+        created_at="2026-01-02T00:00:00+00:00",
+        last_opened_at="2026-01-02T00:00:00+00:00",
+    )
+    hidden.lifecycle_status = ProjectLifecycleStatus.REPROCESSING
+    hidden.predecessor_project_id = active.id
+    catalog_context.session.add_all([active, hidden])
+    catalog_context.session.commit()
+
+    listed = catalog_context.client.get("/api/v1/projects")
+    opened = catalog_context.client.post(f"/api/v1/projects/{hidden.id}/open")
+
+    assert [item["project_id"] for item in listed.json()["items"]] == [
+        str(active.id)
+    ]
+    assert opened.status_code == 404
+    assert opened.json()["error"]["code"] == "project_not_found"

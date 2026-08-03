@@ -16,7 +16,7 @@ from app.candidates.symbol_routing import (
 from app.errors.models import ErrorRecord
 from app.candidates.models import AutomaticResult
 from app.jobs.idempotency import LogicalJob
-from app.projects.models import Project
+from app.projects.models import Project, ProjectLifecycleStatus
 from app.projects.schemas import (
     ProjectError,
     ProjectListItemResponse,
@@ -55,7 +55,10 @@ class ProjectCatalogService:
     def list_projects(self) -> ProjectListResponse:
         projects = self.session.scalars(
             select(Project)
-            .where(Project.source_filename.is_not(None))
+            .where(
+                Project.source_filename.is_not(None),
+                Project.lifecycle_status == ProjectLifecycleStatus.ACTIVE,
+            )
             .order_by(Project.last_opened_at.desc(), Project.id.desc())
         ).all()
         items = [self._catalog_item(project) for project in projects]
@@ -67,6 +70,7 @@ class ProjectCatalogService:
             .where(
                 Project.id == project_id,
                 Project.source_filename.is_not(None),
+                Project.lifecycle_status == ProjectLifecycleStatus.ACTIVE,
             )
             .with_for_update()
         )
@@ -171,6 +175,7 @@ class ProjectIntakeService:
             recognition_mode=self.recognition_mode,
             recognition_router_version=self.recognition_router_version,
             source_filename=_catalog_filename(source_filename),
+            lifecycle_status=ProjectLifecycleStatus.ACTIVE,
         )
         stored = self.storage.write_verified(
             f"projects/{project.id}/source.pdf",

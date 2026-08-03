@@ -47,6 +47,11 @@ from app.projects.service import (
     ProjectIntakeService,
     ProjectNotFound,
 )
+from app.projects.source import (
+    ProjectSourceNotFound,
+    ProjectSourceUnavailable,
+    project_source_file,
+)
 from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.schemas import normalize_sip_metadata
 from app.review.service import ReviewService, manual_review_count
@@ -380,20 +385,12 @@ def get_recognition_preview(
 
 
 def _source_pdf_file(session: Session, project_id: uuid.UUID) -> StoredFile:
-    if session.get(Project, project_id) is None:
-        raise ProjectWorkbenchNotFound("project was not found")
-    head = session.get(RecognitionPreviewHead, project_id)
-    if head is not None and head.terminal_result_id is None:
-        revision = session.get(RecognitionPreviewRevision, head.revision_id)
-        if revision is not None:
-            source = session.get(StoredFile, revision.source_file_id)
-            if source is not None:
-                return source
-    _, _, raw = _project_review_result(session, project_id)
-    source = session.get(StoredFile, raw.source_file_id)
-    if source is None:
-        raise ProjectWorkbenchUnavailable("project source PDF is unavailable")
-    return source
+    try:
+        return project_source_file(session, project_id)
+    except ProjectSourceNotFound as error:
+        raise ProjectWorkbenchNotFound(str(error)) from error
+    except ProjectSourceUnavailable as error:
+        raise ProjectWorkbenchUnavailable(str(error)) from error
 
 
 def _workbench_payload(
