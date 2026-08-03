@@ -551,7 +551,10 @@ class ReviewService:
                 "automatic-result/3"
             )
         validated_decision = None
-        if raw_schema_version == "automatic-result/2":
+        if raw_schema_version in {
+            "automatic-result/2",
+            "automatic-result/3",
+        }:
             try:
                 validated_decision = validate_confidence_decision(
                     candidate.get("confidence_decision")
