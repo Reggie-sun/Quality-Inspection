@@ -196,6 +196,15 @@
 - Credential/runtime mutation, Provider calls, paid execution, second replacement, budget expansion, `0015`, and production promotion remain blocked.
 - Fix Round 2 freezes `readiness_expires_at` into the canonical cleanup intent and requires root-sibling blocker `/2` to copy/cross-check it only from that intent, so replay never needs deleted readiness bytes. It is pending scoped independent read-only re-review; no authorization boundary changes.
 
+### GDT-10E Single Zero-Paid Retry Archive Amendment — 2026-08-03
+
+- Selected lane: `Heavy`; selected companion remains `docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md`.
+- Validation action: `amend`。用户仅批准一次新的 zero-paid Task 5 retry，且先固定 archive 原 immutable no-issuance receipt；不授权 Provider、paid execution、第二 replacement、budget expansion、`0015` 或 production promotion。
+- Problem boundary / single Owner: `.agent/harness/scripts/live_cycle_authorization.py` 新增受限 `retire-no-issuance-receipt`，唯一拥有固定 receipt 的 hard-link archive/replay。旧 source receipt 的 action 是 `replace` 为 fixed archive，archive-only terminal replay不形成第二 Owner；`provider_account_readiness.py`、Provider、DB 和 Harness 不改变。
+- Unchanged contract: only fixed source/archive paths, `provider-cycle-cleanup-receipt/1`, `no_issuance`, cycle `gdt10e-auth-remediated-live-20260802`, bytes SHA `67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb`, content SHA `15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532`, current uid/gid and `0600` are accepted. Archive bytes must equal source exactly; source-only, same-inode source+archive and archive-only are the sole valid states; aliases, symlinks, mismatch/conflict or private-target reappearance fail closed. Archive once means no future receipt may be retired.
+- Planned files: `.agent/harness/scripts/live_cycle_authorization.py`, `backend/tests/contract/harness/test_live_run_contract.py`, `backend/tests/contract/harness/test_contract_architecture.py`, the GDT-10E design/companion/parent status and corresponding SDD artifacts only. Focused verification: archive/replay contract pytest selectors, Ruff, `git diff --check`, full diff and independent review before the one real archive command.
+- Next verification: independent read-only amendment review must return `accept`; then commit docs amendment, use TDD for the bounded implementation, independently review it, archive once, and restart Task 5 Step 1 under its special archive-present/source-absent baseline. Parent GDT-10 Step 4/5 remains incomplete.
+
 ## Status
 
 - Date: `2026-08-02`

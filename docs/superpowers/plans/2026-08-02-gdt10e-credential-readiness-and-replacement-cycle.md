@@ -45,6 +45,7 @@
 - Tasks 1-8 implementation/live boundary已获用户明确批准；所有既有 plan gates 仍为强制前置条件，不得从本 plan 存在推断超出已批准边界的 execution authority。
 - direct Provider diagnostic、second replacement、budget expansion、`0015` 与 production promotion仍被阻断；main runtime/DB mutation与model fallback不授权。
 - This docs-only amendment preserves blocks on credential/runtime mutation, Provider calls and paid execution; it changes only the cleanup-proof ownership/contract before Task 2 implementation resumes.
+- Single retry archive amendment：在唯一一次新的 Task 5 zero-paid retry 前，`live_cycle_authorization.py` 的 `retire-no-issuance-receipt` 是 archive/replay 的唯一 Owner。它只允许固定 `no_issuance` receipt source `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json` 与 fixed archive `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json`，并固定 bytes SHA `67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb`、content SHA `15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532`、cycle/schema/branch、current uid/gid 与 `0600`。它用 no-overwrite hard-link、parent fsync、inode/device/bytes revalidation、source unlink 和 final parent fsync；仅 source-only、same-inode source+archive、archive-only 三态可安全 replay。任何 alias/symlink/identity/private-target reappearance或 archive conflict fail closed；不得创建新 schema或退役 future receipt。
 - Reviewer/explorer严格read-only；一个write-capable executor按Task 1 -> Task 8顺序执行。
 
 ## Problem Boundary Record
@@ -440,6 +441,20 @@ Expected：clean committed HEAD；no private state、runtime、credential、DB�
 - Harness/run tree: read-only; no new run before GO/issuance。
 - Runtime: feature `api/worker` safe-identity only after approved rebuild。
 
+**One-time retry entry amendment:** Before this retry only, run `retire-no-issuance-receipt` after implementation, focused verification and independent implementation review all pass. Its required postcondition replaces the ordinary all-absent receipt baseline only for this Task 5 Step 1: fixed archive exact present; fixed source receipt absent; private root/readiness/intent/blocker/authorization/live/safe controls/preparation/zero-paid reports absent; GDT-10E run count `0`. It is not an issuance, cleanup receipt rewrite, Provider action, paid attempt, DB mutation or Harness evidence mutation. Do not execute it again after archive-only success.
+
+- [ ] **Step 0: Retire the immutable no-issuance receipt exactly once**
+
+Run only after the code/test/review gates for this amendment are closed:
+
+```bash
+micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py retire-no-issuance-receipt \
+  --receipt /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json \
+  --archive /var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json
+```
+
+Expected：only the fixed source/archive three-state replay succeeds; archive bytes are exactly the immutable source bytes, source is absent, and all private targets remain absent. No Provider/paid/DB/Harness delta is permitted. Any failure is a hard stop; never delete, copy, rename or hand-write either receipt.
+
 **Interfaces:**
 
 - Consumes: operator-provided Qwen credential source and console readiness facts without exposing values。
@@ -447,7 +462,7 @@ Expected：clean committed HEAD；no private state、runtime、credential、DB�
 
 - [ ] **Step 1: Capture immutable baseline before mutation**
 
-Record clean HEAD、target/non-target container IDs、volumes、ports、health、DB `0014`、Celery/Redis emptiness、GDT-10D tree hash、provider/storage/run inventories and absence ofworktree `.env`。Require exact GDT-10E private root、cleanup intent/receipt/blocker、authorization/cancellation andrun ID all absent before creation；any pre-existing path is a hard stop，not a reusable attempt。Do not read or print credential values。
+Record clean HEAD、target/non-target container IDs、volumes、ports、health、DB `0014`、Celery/Redis emptiness、GDT-10D tree hash、provider/storage/run inventories and absence ofworktree `.env`。For this one retry, require the exact archive from Step 0 present and exact source receipt absent; require private root、cleanup intent/blocker、authorization/cancellation andrun ID all absent before creation。Any other pre-existing path, archive mismatch or private target reappearance is a hard stop，not a reusable attempt。Do not read or print credential values。
 
 - [ ] **Step 2: Create private readiness document through operator boundary**
 
