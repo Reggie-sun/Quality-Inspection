@@ -159,7 +159,7 @@ Expected: FAIL，因为 lifecycle Owner 和 active-only catalog filter 尚不存
 
 - [ ] **Step 4: Implement `ProjectLifecycleService`**
 
-实现 `ProjectAccess` 的 `ACTIVE / PROCESSING_READ / STATUS_READ` 三个值，以及 Interfaces 中列出的五个 public methods。所有 transition 使用 SQLAlchemy `with_for_update()` row lock；commit/rollback 由 Owner 完成。Dispatch 在 successor DB commit 后执行；dispatch exception 进入 `reprocess_failed` 并抛 `ProjectDispatchFailed`。Promotion 必须验证 working copy，按 successor 后 predecessor 的稳定锁序更新，并允许已完成状态幂等返回。Delete 使用 PostgreSQL `func.now()` 判断 review lock expiry，只写 tombstone。
+实现 `ProjectAccess` 的 `ACTIVE / PROCESSING_READ / STATUS_READ` 三个值，以及 Interfaces 中列出的五个 public methods。所有 transition 使用 SQLAlchemy `with_for_update()` row lock；commit/rollback 由 Owner 完成。Dispatch 在 successor DB commit 后执行；dispatch exception 进入 `reprocess_failed` 并抛 `ProjectDispatchFailed`。所有同时涉及 lineage 两行的操作固定先锁 predecessor、再锁 successor；promotion 必须在取得两把锁后重新验证 working copy 与双方 lifecycle 状态，并允许已完成状态幂等返回。Delete 使用 PostgreSQL `func.now()` 判断 review lock expiry，只写 tombstone。
 
 - [ ] **Step 5: Make intake and catalog lifecycle-aware**
 
