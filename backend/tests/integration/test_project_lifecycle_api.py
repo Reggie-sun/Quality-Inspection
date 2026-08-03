@@ -163,6 +163,28 @@ def test_reprocess_rejects_duplicate_successor(
     assert response.json()["error"]["code"] == "project_reprocess_in_progress"
 
 
+def test_reprocess_maps_missing_source_to_stable_conflict(
+    lifecycle_api_context: LifecycleApiContext,
+) -> None:
+    project = Project(
+        id=uuid.uuid4(),
+        state=ProjectState.EDITING,
+        recognition_mode="legacy_high_recall",
+        recognition_router_version="legacy",
+        source_filename="missing.pdf",
+        lifecycle_status=ProjectLifecycleStatus.ACTIVE,
+    )
+    lifecycle_api_context.session.add(project)
+    lifecycle_api_context.session.commit()
+
+    response = lifecycle_api_context.client.post(
+        f"/api/v1/projects/{project.id}/reprocess"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "project_source_pdf_unavailable"
+
+
 def test_delete_tombstones_and_blocks_project_entry_points(
     lifecycle_api_context: LifecycleApiContext,
 ) -> None:

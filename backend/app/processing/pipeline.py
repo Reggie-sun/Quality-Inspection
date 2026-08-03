@@ -206,6 +206,9 @@ class InventoryPipeline:
         location_ref: str | None,
         cause_category: str,
     ) -> str | None:
+        project = ProjectLifecycleService(
+            self._session
+        ).require_processing_task(project.id, for_update=True)
         project_id = project.id
         job_id = job.id
         self._session.rollback()

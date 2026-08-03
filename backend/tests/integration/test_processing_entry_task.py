@@ -508,9 +508,11 @@ def test_hidden_project_is_rejected_before_processing_starts(
         verify.close()
 
 
-def test_pipeline_rechecks_lifecycle_after_inventory_before_formal_result(
+@pytest.mark.parametrize("support_level", ["supported", "unsupported"])
+def test_pipeline_rechecks_lifecycle_after_inventory_before_any_result(
     task_session_factory: Callable[[], Session],
     tmp_path: Path,
+    support_level: str,
 ) -> None:
     storage = LocalFileStorage(tmp_path / "storage")
     session = task_session_factory()
@@ -520,7 +522,7 @@ def test_pipeline_rechecks_lifecycle_after_inventory_before_formal_result(
         "InventoryPage",
         (),
         {
-            "support_level": "supported",
+            "support_level": support_level,
             "to_dict": lambda self: {
                 "page_index": 0,
                 "width": 200.0,
