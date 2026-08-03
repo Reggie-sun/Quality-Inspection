@@ -932,6 +932,13 @@ def test_inventory_task_injects_required_independent_symbol_sessions(
     )
     monkeypatch.setattr(processing_tasks, "InventoryPipeline", Pipeline)
     monkeypatch.setattr(processing_tasks, "ReviewService", Review)
+    monkeypatch.setattr(
+        processing_tasks,
+        "ProjectLifecycleService",
+        lambda _session: SimpleNamespace(
+            promote_reprocessed_project=lambda _project_id: None,
+        ),
+    )
 
     processing_tasks.inventory_project.run(
         str(project_id),
