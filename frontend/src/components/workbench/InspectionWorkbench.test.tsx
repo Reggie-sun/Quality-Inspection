@@ -2936,6 +2936,18 @@ describe("InspectionWorkbench", () => {
       balloon_required: true,
     };
     const items = [globalItem, manualGlobalItem, localItem];
+    const confirmedGlobalItem = {
+      ...globalItem,
+      status: "kept",
+      requires_confirmation: false,
+      acceptance_source: "manual" as const,
+      confirmation_accepted: true,
+    };
+    const confirmedItems = [
+      confirmedGlobalItem,
+      manualGlobalItem,
+      localItem,
+    ];
     const technicalRequirement = {
       requirement_id: "requirement-deburr",
       ordinal: 1,
@@ -3018,10 +3030,12 @@ describe("InspectionWorkbench", () => {
         }]}
         sources={[]}
         balloons={[]}
-        items={items}
+        items={confirmedItems}
         workingCopy={{
           ...pendingWorkingCopy,
           version: 2,
+          items: confirmedItems,
+          manual_review_count: 2,
           technical_requirements: [{
             ...technicalRequirement,
             review_required: false,
@@ -3033,9 +3047,12 @@ describe("InspectionWorkbench", () => {
     );
 
     fireEvent.click(screen.getByRole("row", { name: /锐边去毛刺/ }));
-    expect(screen.getByRole("button", {
+    expect(screen.queryByRole("button", {
       name: "确认进入 SIP：锐边去毛刺",
-    })).not.toBeNull();
+    })).toBeNull();
+    expect(screen.getByRole("row", { name: /锐边去毛刺.*已确认/ })).not.toBeNull();
+    expect(screen.getByTestId("summary-review-count").textContent).toBe("2");
+    expect(projectSummary.getByText("检验项").nextElementSibling?.textContent).toBe("3");
     expect(candidate.getAttribute("data-selected")).toBe("true");
 
     view.rerender(

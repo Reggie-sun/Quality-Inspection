@@ -224,10 +224,10 @@
 
 ## BUG-20260801-technical-requirement-balloon-sip-handoff
 
-- Status: 调查中
+- Status: 已解决
 - First reported: 2026-08-01
 - Last reported: 2026-08-03
-- Recurrence: 2
+- Recurrence: 3
 - Surface: 技术要求确认后的检验项列表、`ReviewPanel` 气泡选择动作与 SIP handoff
 - Symptom: 用户从技术要求进入检验项后，同一条通用要求再次显示为“待人工审核”；点击“设为需要气泡”后没有可感知反馈，也没有进入 SIP，流程语义看起来互相矛盾
 - Previously correct behavior: 技术要求确认完成后应明确进入哪个后续审核步骤；气泡选择动作应反馈已保存状态，并在满足 SIP 前置条件后提供清晰的 SIP 下一步，而不是让用户误以为该按钮本身等于“进入 SIP”
@@ -265,6 +265,26 @@
 - Regression check: TDD RED 精确失败于生成全局项仍暴露，summary follow-up RED 精确失败于待人工审核仍计入隐藏项；focused `InspectionWorkbench` suite 为 `50 passed`，完整 frontend suite 为 `316 passed`，production build 与 `git diff --check` 通过。独立 reviewer 初审因摘要口径 defect 判定 `reject`，补齐 mixed global/local、summary 和 confirmed -> pending selection reset 覆盖后 follow-up verdict 为 `accept`，无 blocker 或 concern
 - Runtime proof: localhost headed Chrome 在真实 working copy（raw 139 active items、6 条技术要求待确认、2 条 generated global items）显示项目检验项与 SIP 待生成为 137、待人工审核 32；展开技术要求可见“锐边去毛刺”，逐页检查三页检验项均不显示该 generated row，详情无“确认进入 SIP：锐边去毛刺”，普通检验项与 3 条 source-only coverage 保持可见，console error/warn 为 0。只读浏览并返回目录释放 review lock，未提交任何 review command
 - Change: `fix(frontend): stage technical requirement review`
+
+### Recurrence 3
+
+- Symptom: 6 条技术要求全部显示“已确认”后，其 generated global items 仍以“待人工审核 / 待确认进入 SIP”重新出现，要求用户对同一业务结论再确认一次
+- Reproduction: 2026-08-03 用户截图中技术要求为“6 条 / 已确认 6”，进入检验项审核后第 54～58 条“锐边去毛刺”等通用要求仍全部显示待确认进入 SIP
+- Root cause: `ReviewService._set_technical_requirement_match(global_scope)` 已持久化用户对 requirement 范围和纳入 SIP 的明确选择，但 `_global_requirement_item()` 会把对应稳定 global item 重置为 `status="pending" / requires_confirmation=true`，且该分支没有调用既有 manual acceptance seam；因此同一业务 membership decision 被 requirement 与 item lifecycle 各要求一次
+- Contract correction: 早期 recurrence 把第二次 `keep` 记录为既有合同，但 approved `2026-07-31-sip-auto-mapping-and-exception-review-design.md` 明确规定检验项只审核一次、SIP 不重复询问是否纳入；用户本次反馈再次确认采用 single-review Owner，故本 recurrence supersedes 该条旧二次确认说明
+- Selected lane: `Standard`；改变 backend review 状态流转与 manual review/freeze 可见结果，需要 backend integration RED/GREEN、frontend contract regression、full suites/build、headed browser smoke 和 independent review
+- Problem boundary: `global_scope` 技术要求确认事务同时将其 generated global item 标为人工保留；bootstrap/尚未确认 requirement 的 generated item 继续 pending，普通人工 global item 继续走既有 item review
+- Single owner: `ReviewService._set_technical_requirement_match()` 继续拥有 requirement command 的原子投影；复用 `_complete_manual_item()`，不新增第二 Owner
+- Old path action: 退役“确认 global_scope 后仍等待 `keep`”的 generated-item 特例；保留 `keep` command 供其他待审核 item 使用
+- Unchanged contract: `set_technical_requirement_match` schema、stable generated ID、technical requirement refs、coverage、matched-items/excluded 分支、`balloon_required=false`、无正式编号、SIP mapping/export 与 freeze 的通用 unresolved veto 全部不变
+- Allowed paths: `.agent/bug-memory.md`、`backend/app/review/service.py`、`backend/tests/integration/test_review_operations.py`、`frontend/src/components/workbench/InspectionWorkbench.test.tsx`、`backend/alembic/versions/0017_confirmed_global_requirement_acceptance.py`、`backend/tests/integration/test_confirmed_global_requirement_migration.py`
+- Preflight amendment: production fix only covers future commands；现有 confirmed requirement working copies 必须通过 migration Owner 原地收敛，否则仍需重复确认。新增 `0017` data-only migration 与 isolated-schema test，不新增 column/schema/API；upgrade 仅修 exact confirmed-global/pending-generated rows 并递增 working-copy version，downgrade fail closed，避免把已经接受的业务状态静默改回 pending
+- Writer ownership and order: 父 agent 为唯一 writer；只读 debugger 已完成调用链审计且未修改文件；当前无其他 writer 拥有 allowed paths
+- Validation action: backend integration 先取得“global_scope command 后 item 已 kept 且 manual review count 不含该项”的 RED/GREEN；再更新 frontend stage fixture 证明确认后显示已确认且无第二次 SIP action，运行 focused/full backend+frontend、build、browser smoke 与 independent review
+- Fix: `ReviewService._set_technical_requirement_match(global_scope)` 在同一 command 内复用 `_complete_manual_item()`，让 generated global item 与 requirement 一次性完成人工接受；`0017_confirmed_global_requirement_acceptance` 原地修复历史 confirmed-global/pending-generated 状态，并按既有 confidence contract 保留有效 decision 为 `manual_override`、无效或缺失 decision 为 `manual`
+- Regression check: TDD 先证明旧路径在 global_scope command 后仍返回 `status=pending`，再取得 focused GREEN；新增 pre-generated confidence candidate 用例证明 item、candidate/source coverage、`manual_review_count`、freeze blocker、version 与 operation record 原子关闭。backend review/migration focused 127 passed，frontend 25 files / 317 tests passed，production build、Ruff、`git diff --check` 与唯一 Alembic `0017 (head)` 均通过；完整 backend 运行 2125 passed / 53 failed，失败仅来自当前工作树既有 GDT runtime manifest identity 与 live Provider/Harness private-control 环境，不涉及本次 review/migration surface。独立 reviewer 首轮因 provenance 分歧 reject，修复后复审 accept、无 blocking 或 non-blocking concern
+- Runtime proof: localhost 数据库由 `0016` 升级到 `0017`，3 个历史 working copy 共 11 个 exact confirmed-global/pending-generated item 原地收敛；用户截图对应 `f62ad156-b7dd-43ea-a8ee-fbeda4f78770` 从 version 17 升到 18，5 个通用要求全部 accepted、remaining pending global item 为 0。headed Chrome 真实打开该 working copy，技术要求显示“6 条 / 已确认 6”，第 54～58 条通用要求均显示“已确认”；选择“锐边去毛刺”后详情显示“已纳入 SIP 检验项集合”，不存在“确认进入 SIP”动作，console error/warn 为 0。未重新识别、未提交 review command，并返回图纸列表释放 review lock
+- Change: `fix(review): accept confirmed global requirements`
 
 ## BUG-20260801-source-balloon-action-affordance
 

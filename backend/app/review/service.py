@@ -1431,6 +1431,7 @@ class ReviewService:
             )
             self._add_requirement_ref(item, command.requirement_id)
             self._apply_requirement_suggestion(item, requirement)
+            self._complete_manual_item(item, coverage, accepted=True)
             target_ids.append(generated_id)
             numbering_stale = True
         else:
