@@ -10920,3 +10920,530 @@ def test_gdt10e_terminal_receipt_only_replay_rejects_an_incomplete_receipt(
             run_id=run_id, cleanup_intent=intent, cleanup_receipt=receipt,
             cleanup_blocker=blocker, review_deadline="2026-08-09T23:59:59+08:00",
         )
+
+
+def _retry_receipt_authorization_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[ModuleType, Path, Path, bytes]:
+    """Load the lifecycle Owner against only temporary, non-private paths."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    authorization = _load_module(
+        f"qi_gdt10e_retry_receipt_{tmp_path.name}",
+        HARNESS / "scripts/live_cycle_authorization.py",
+    )
+    root = tmp_path / "quality-inspection-gdt10e-20260802-db2265ae5e7d"
+    receipt = tmp_path / f"{root.name}-cleanup-receipt.json"
+    archive = tmp_path / f"{root.name}-cleanup-receipt-zero-paid-retry.json"
+    document: dict[str, object] = {
+        "schema_version": "provider-cycle-cleanup-receipt/1",
+        "cycle_id": ACCOUNT_READINESS_CYCLE,
+        "branch": "no_issuance",
+    }
+    document["content_sha256"] = _canonical_content_hash(document)
+    payload = (
+        json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    receipt.write_bytes(payload)
+    receipt.chmod(0o600)
+    monkeypatch.setattr(authorization, "_GDT10E_PRIVATE_ROOT", root)
+    monkeypatch.setattr(
+        authorization, "_GDT10E_RETRY_RECEIPT_PATH", receipt, raising=False
+    )
+    monkeypatch.setattr(
+        authorization, "_GDT10E_RETRY_ARCHIVE_PATH", archive, raising=False
+    )
+    monkeypatch.setattr(
+        authorization,
+        "_GDT10E_RETRY_RECEIPT_BYTES_SHA256",
+        hashlib.sha256(payload).hexdigest(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        authorization,
+        "_GDT10E_RETRY_RECEIPT_CONTENT_SHA256",
+        document["content_sha256"],
+        raising=False,
+    )
+    return authorization, receipt, archive, payload
+
+
+def _rewrite_retry_receipt(
+    authorization: ModuleType,
+    path: Path,
+    document: dict[str, object],
+    *,
+    expected_content_sha256: str | None = None,
+) -> bytes:
+    """Write a hand-built fixture and bind its expected immutable bytes."""
+    payload = (
+        json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
+    ).encode("utf-8")
+    path.write_bytes(payload)
+    path.chmod(0o600)
+    authorization._GDT10E_RETRY_RECEIPT_BYTES_SHA256 = hashlib.sha256(
+        payload
+    ).hexdigest()
+    authorization._GDT10E_RETRY_RECEIPT_CONTENT_SHA256 = (
+        str(document["content_sha256"])
+        if expected_content_sha256 is None
+        else expected_content_sha256
+    )
+    return payload
+
+
+def test_gdt10e_retire_no_issuance_receipt_archives_exact_source_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: copying, rewriting, or retaining the fixed source receipt."""
+    authorization, receipt, archive, payload = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    assert not receipt.exists()
+    assert archive.read_bytes() == payload
+    metadata = archive.stat()
+    assert stat.S_IMODE(metadata.st_mode) == 0o600
+    assert (metadata.st_uid, metadata.st_gid) == (os.getuid(), os.getgid())
+
+
+def test_gdt10e_retire_no_issuance_receipt_replays_only_same_inode_or_archive_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a replay publishes a replacement or rejects the approved states."""
+    authorization, receipt, archive, payload = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    os.link(receipt, archive)
+
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    assert not receipt.exists() and archive.read_bytes() == payload
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    assert archive.read_bytes() == payload
+
+
+def test_gdt10e_retire_no_issuance_receipt_rejects_absence_conflicts_and_private_reappearance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a later or conflicting receipt is deleted after archive publication."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    receipt.unlink()
+    with pytest.raises(ValueError, match="receipt"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    receipt.write_bytes(b"future-receipt\n")
+    receipt.chmod(0o600)
+    archive.write_bytes(b"immutable-archive\n")
+    archive.chmod(0o600)
+    with pytest.raises(ValueError, match="receipt"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    assert receipt.read_bytes() == b"future-receipt\n"
+    assert archive.read_bytes() == b"immutable-archive\n"
+
+    archive.unlink()
+    receipt.unlink()
+    private_authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path / "private", monkeypatch
+    )
+    private_authorization._GDT10E_PRIVATE_ROOT.mkdir(mode=0o700)
+    with pytest.raises(ValueError, match="private"):
+        private_authorization.retire_no_issuance_receipt(
+            receipt=receipt, archive=archive
+        )
+    assert receipt.exists() and not archive.exists()
+
+
+@pytest.mark.parametrize("mutation", ("mode", "symlink"))
+def test_gdt10e_retire_no_issuance_receipt_fails_closed_for_source_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    """Mutation caught: malformed, aliased, or weakly protected sources are retired."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    if mutation == "mode":
+        receipt.chmod(0o644)
+    elif mutation == "symlink":
+        target = tmp_path / "receipt-target.json"
+        target.write_bytes(receipt.read_bytes())
+        target.chmod(0o600)
+        receipt.unlink()
+        receipt.symlink_to(target)
+    with pytest.raises(ValueError, match="receipt"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    assert receipt.exists() and not archive.exists()
+
+
+def test_gdt10e_retire_no_issuance_receipt_cli_has_no_authorization_surface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: the archive action gains lifecycle or private-control inputs."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        authorization,
+        "retire_no_issuance_receipt",
+        lambda **kwargs: calls.append(kwargs),
+        raising=False,
+    )
+
+    assert authorization.main([
+        "retire-no-issuance-receipt", "--receipt", str(receipt),
+        "--archive", str(archive),
+    ]) == 0
+    assert calls == [{"receipt": str(receipt), "archive": str(archive)}]
+    with pytest.raises(SystemExit):
+        authorization.main([
+            "retire-no-issuance-receipt", "--receipt", str(receipt),
+            "--archive", str(archive), "--authorization", str(tmp_path / "auth"),
+        ])
+    for arguments in (
+        ("--rece", str(receipt), "--archive", str(archive)),
+        ("--receipt", str(receipt), "--arch", str(archive)),
+    ):
+        with pytest.raises(SystemExit):
+            authorization.main([
+                "retire-no-issuance-receipt", *arguments,
+            ])
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        ("schema", "receipt"),
+        ("cycle", "receipt"),
+        ("branch", "receipt"),
+        ("content_sha", "receipt"),
+        ("uid", "receipt"),
+        ("gid", "receipt"),
+        ("receipt_alias", "path"),
+        ("archive_alias", "path"),
+    ),
+)
+def test_gdt10e_retire_no_issuance_receipt_rejects_every_fixed_identity_dimension(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+    message: str,
+) -> None:
+    """Mutation caught: a fixed identity field, owner, or lexical path is relaxed."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    receipt_value: str | Path = receipt
+    archive_value: str | Path = archive
+    if mutation in {"schema", "cycle", "branch", "content_sha"}:
+        document = json.loads(receipt.read_text(encoding="utf-8"))
+        if mutation == "schema":
+            document["schema_version"] = "provider-cycle-cleanup-receipt/other"
+            document["content_sha256"] = _canonical_content_hash(document)
+        elif mutation == "cycle":
+            document["cycle_id"] = "other-cycle"
+            document["content_sha256"] = _canonical_content_hash(document)
+        elif mutation == "branch":
+            document["branch"] = "issued_unconsumed"
+            document["content_sha256"] = _canonical_content_hash(document)
+        else:
+            document["content_sha256"] = "0" * 64
+        _rewrite_retry_receipt(
+            authorization,
+            receipt,
+            document,
+            expected_content_sha256=(
+                "0" * 64 if mutation == "content_sha" else None
+            ),
+        )
+    elif mutation == "uid":
+        uid = os.getuid()
+        monkeypatch.setattr(authorization.os, "getuid", lambda: uid + 1)
+    elif mutation == "gid":
+        gid = os.getgid()
+        monkeypatch.setattr(authorization.os, "getgid", lambda: gid + 1)
+    elif mutation == "receipt_alias":
+        receipt_value = f"{receipt.parent}/./{receipt.name}"
+    else:
+        archive_value = f"{archive.parent}/./{archive.name}"
+
+    with pytest.raises(ValueError, match=message):
+        authorization.retire_no_issuance_receipt(
+            receipt=receipt_value,
+            archive=archive_value,
+        )
+    assert receipt.exists() and not archive.exists()
+
+
+def test_gdt10e_retire_no_issuance_receipt_preserves_future_source_after_archive_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: archive-only replay removes a future, different receipt."""
+    authorization, receipt, archive, payload = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    receipt.write_bytes(b"future-receipt\n")
+    receipt.chmod(0o600)
+
+    with pytest.raises(ValueError, match="receipt"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    assert receipt.read_bytes() == b"future-receipt\n"
+    assert archive.read_bytes() == payload
+
+
+def test_gdt10e_retire_no_issuance_receipt_detects_replacement_and_fsyncs_before_unlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a changed entry is unlinked or publication lacks parent durability."""
+    authorization, receipt, archive, payload = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    original_link = authorization.os.link
+    original_fsync = authorization.os.fsync
+    original_unlink = authorization.os.unlink
+    events: list[str] = []
+
+    def replace_source_after_link(*args: object, **kwargs: object) -> None:
+        original_link(*args, **kwargs)
+        original_unlink(receipt)
+        receipt.write_bytes(payload)
+        receipt.chmod(0o600)
+
+    monkeypatch.setattr(authorization.os, "link", replace_source_after_link)
+    monkeypatch.setattr(
+        authorization.os,
+        "fsync",
+        lambda descriptor: (events.append("fsync"), original_fsync(descriptor))[1],
+    )
+    monkeypatch.setattr(
+        authorization.os,
+        "unlink",
+        lambda *args, **kwargs: (events.append("unlink"), original_unlink(*args, **kwargs))[1],
+    )
+
+    with pytest.raises(ValueError, match="conflicts"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    assert receipt.exists() and archive.exists()
+    assert receipt.stat().st_ino != archive.stat().st_ino
+    assert events == ["fsync"]
+
+
+def test_gdt10e_retire_no_issuance_receipt_replay_fsyncs_before_unlink_after_publication_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a durable replay unlinks after the first publication fsync failed."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    original_fsync = authorization.os.fsync
+    monkeypatch.setattr(
+        authorization.os,
+        "fsync",
+        lambda _descriptor: (_ for _ in ()).throw(OSError("publication fsync")),
+    )
+    with pytest.raises(OSError, match="publication fsync"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    assert receipt.exists() and archive.exists()
+    assert receipt.stat().st_ino == archive.stat().st_ino
+
+    events: list[str] = []
+    original_unlink = authorization.os.unlink
+    monkeypatch.setattr(
+        authorization.os,
+        "fsync",
+        lambda descriptor: (events.append("fsync"), original_fsync(descriptor))[1],
+    )
+    monkeypatch.setattr(
+        authorization.os,
+        "unlink",
+        lambda *args, **kwargs: (
+            events.append("unlink"), original_unlink(*args, **kwargs)
+        )[1],
+    )
+
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    assert events == ["fsync", "unlink", "fsync"]
+    assert not receipt.exists() and archive.exists()
+
+
+def test_gdt10e_retire_no_issuance_receipt_preserves_source_on_publish_or_unlink_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: publication or precommit failure deletes the source receipt."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path / "publish", monkeypatch
+    )
+    original_link = authorization.os.link
+    monkeypatch.setattr(
+        authorization.os,
+        "link",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("link failed")),
+    )
+    with pytest.raises(ValueError, match="publication"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    assert receipt.exists() and not archive.exists()
+
+    unlink_authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path / "unlink", monkeypatch
+    )
+    monkeypatch.setattr(unlink_authorization.os, "link", original_link)
+    monkeypatch.setattr(
+        unlink_authorization.os,
+        "unlink",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("unlink failed")),
+    )
+    with pytest.raises(ValueError, match="retirement"):
+        unlink_authorization.retire_no_issuance_receipt(
+            receipt=receipt, archive=archive
+        )
+    assert receipt.exists() and archive.exists()
+    assert receipt.stat().st_ino == archive.stat().st_ino
+
+
+def test_gdt10e_retire_no_issuance_receipt_post_unlink_fsync_failure_keeps_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: a reported post-unlink durability failure loses the only archive."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    original_fsync = authorization.os.fsync
+    calls = 0
+
+    def fail_only_after_unlink(descriptor: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("post-unlink fsync")
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(authorization.os, "fsync", fail_only_after_unlink)
+
+    with pytest.raises(OSError, match="post-unlink fsync"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    assert calls == 2
+    assert not receipt.exists() and archive.exists()
+
+
+def test_gdt10e_retire_no_issuance_receipt_archive_only_replay_fsyncs_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: archive-only idempotence skips the required parent durability step."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    original_fsync = authorization.os.fsync
+    calls: list[int] = []
+    monkeypatch.setattr(
+        authorization.os,
+        "fsync",
+        lambda descriptor: (calls.append(descriptor), original_fsync(descriptor))[1],
+    )
+
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+
+    assert len(calls) == 1
+    assert not receipt.exists() and archive.exists()
+
+
+@pytest.mark.parametrize("terminal_change", ("source", "intent", "archive"))
+def test_gdt10e_retire_no_issuance_receipt_archive_only_rechecks_after_fsync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, terminal_change: str
+) -> None:
+    """Mutation caught: archive-only replay returns before its durable terminal checks."""
+    authorization, receipt, archive, payload = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    original_fsync = authorization.os.fsync
+
+    def reappear_after_fsync(descriptor: int) -> None:
+        original_fsync(descriptor)
+        if terminal_change == "source":
+            receipt.write_bytes(payload)
+            receipt.chmod(0o600)
+        elif terminal_change == "intent":
+            intent = authorization._GDT10E_PRIVATE_ROOT.with_name(
+                f"{authorization._GDT10E_PRIVATE_ROOT.name}-cleanup-intent.json"
+            )
+            intent.write_text("{}\n", encoding="utf-8")
+        else:
+            archive.write_bytes(b"changed-archive\n")
+            archive.chmod(0o600)
+
+    monkeypatch.setattr(authorization.os, "fsync", reappear_after_fsync)
+
+    with pytest.raises(ValueError):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    assert archive.exists()
+
+
+def test_gdt10e_retire_no_issuance_receipt_rejects_exact_bytes_with_different_inode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mutation caught: an exact duplicate archive is accepted without inode identity."""
+    authorization, receipt, archive, payload = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    archive.write_bytes(payload)
+    archive.chmod(0o600)
+
+    with pytest.raises(ValueError, match="conflicts"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    assert receipt.exists() and archive.exists()
+    assert receipt.stat().st_ino != archive.stat().st_ino
+
+
+@pytest.mark.parametrize("private_name", ("cleanup-intent", "cleanup-blocker"))
+def test_gdt10e_retire_no_issuance_receipt_rejects_each_sibling_private_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, private_name: str
+) -> None:
+    """Mutation caught: retry retirement ignores an individual sibling private control."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    private_target = authorization._GDT10E_PRIVATE_ROOT.with_name(
+        f"{authorization._GDT10E_PRIVATE_ROOT.name}-{private_name}.json"
+    )
+    private_target.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="private"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    assert receipt.exists() and not archive.exists()
+
+
+@pytest.mark.parametrize("mutation", ("mode", "symlink", "semantic"))
+def test_gdt10e_retire_no_issuance_receipt_rejects_invalid_archive_only_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    """Mutation caught: archive-only success accepts a weak or semantically wrong archive."""
+    authorization, receipt, archive, _ = _retry_receipt_authorization_module(
+        tmp_path, monkeypatch
+    )
+    authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    if mutation == "mode":
+        archive.chmod(0o644)
+    elif mutation == "symlink":
+        target = tmp_path / "archive-target.json"
+        target.write_bytes(archive.read_bytes())
+        target.chmod(0o600)
+        archive.unlink()
+        archive.symlink_to(target)
+    else:
+        document = json.loads(archive.read_text(encoding="utf-8"))
+        document["cycle_id"] = "other-cycle"
+        document["content_sha256"] = _canonical_content_hash(document)
+        _rewrite_retry_receipt(authorization, archive, document)
+
+    with pytest.raises(ValueError, match="receipt"):
+        authorization.retire_no_issuance_receipt(receipt=receipt, archive=archive)
+    assert not receipt.exists() and archive.exists()

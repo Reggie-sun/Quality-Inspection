@@ -1068,3 +1068,46 @@ def test_account_readiness_architecture_exposes_only_the_public_evidence_shape(
             }
         }
         assert "binding_salt" in schema_field_names(nested_mutation)
+
+
+def test_gdt10e_retry_receipt_archive_owner_is_fixed_no_overwrite_and_durable() -> None:
+    """Mutation caught: a second function or CLI path owns the fixed archive action."""
+    source = (HARNESS / "scripts/live_cycle_authorization.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(source)
+    functions = [
+        node for node in tree.body if isinstance(node, ast.FunctionDef)
+    ]
+    owners = [
+        function for function in functions
+        if function.name == "retire_no_issuance_receipt"
+    ]
+    callers = {
+        function.name
+        for function in functions
+        if any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "retire_no_issuance_receipt"
+            for node in ast.walk(function)
+        )
+    }
+    constants = {
+        node.targets[0].id: node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    }
+
+    assert len(owners) == 1
+    assert callers == {"main"}
+    assert constants["_GDT10E_RETRY_RECEIPT_BYTES_SHA256"] == (
+        "67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb"
+    )
+    assert constants["_GDT10E_RETRY_RECEIPT_CONTENT_SHA256"] == (
+        "15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532"
+    )

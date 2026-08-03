@@ -82,6 +82,20 @@ _GDT10E_PRIVATE_NAMES = {
     "preparation_report": "preparation.json",
     "zero_paid_report": "zero-paid-readiness.json",
 }
+_GDT10E_RETRY_RECEIPT_PATH = Path(
+    "/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json"
+)
+_GDT10E_RETRY_ARCHIVE_PATH = Path(
+    "/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json"
+)
+_GDT10E_RETRY_RECEIPT_BYTES_SHA256 = (
+    "67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb"
+)
+_GDT10E_RETRY_RECEIPT_CONTENT_SHA256 = (
+    "15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532"
+)
+_GDT10E_RETRY_RECEIPT_SCHEMA = "provider-cycle-cleanup-receipt/1"
+_GDT10E_RETRY_RECEIPT_BRANCH = "no_issuance"
 _LIVE_CREDENTIAL_KEYS = {
     "QI_TENCENT_SECRET_ID",
     "QI_TENCENT_SECRET_KEY",
@@ -2047,6 +2061,180 @@ def _fsync_directory(path: Path) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _gdt10e_retry_path(value: str | Path, expected: Path) -> Path:
+    """Accept only the literal retry archive path; never normalize an alias."""
+    if os.fspath(value) != str(expected):
+        raise ValueError("GDT-10E retry receipt path is invalid")
+    return expected
+
+
+def _gdt10e_retry_private_targets_are_absent() -> None:
+    """Keep retry retirement isolated from every private lifecycle control."""
+    root = _GDT10E_PRIVATE_ROOT
+    targets = (
+        root,
+        root.with_name(f"{root.name}-cleanup-intent.json"),
+        root.with_name(f"{root.name}-cleanup-blocker.json"),
+    )
+    for target in targets:
+        try:
+            os.lstat(target)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            raise ValueError("GDT-10E retry private target is unavailable") from exc
+        raise ValueError("GDT-10E retry private target reappeared")
+
+
+def _open_gdt10e_retry_parent(path: Path) -> int:
+    """Open a stable, no-follow descriptor for the fixed receipt directory."""
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise ValueError("GDT-10E retry receipt parent is unavailable") from exc
+    if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+        raise ValueError("GDT-10E retry receipt parent is invalid")
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(
+        os, "O_NOFOLLOW", 0
+    )
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError("GDT-10E retry receipt parent is unavailable") from exc
+    opened = os.fstat(descriptor)
+    if (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino):
+        os.close(descriptor)
+        raise ValueError("GDT-10E retry receipt parent changed")
+    return descriptor
+
+
+def _read_gdt10e_retry_receipt(
+    parent_fd: int,
+    name: str,
+) -> tuple[os.stat_result, bytes]:
+    """Read one immutable receipt through the validated parent descriptor."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(name, flags, dir_fd=parent_fd)
+    except OSError as exc:
+        raise ValueError("GDT-10E retry receipt is unavailable") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        entry = os.lstat(name, dir_fd=parent_fd)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_ISLNK(entry.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or metadata.st_gid != os.getgid()
+            or (metadata.st_dev, metadata.st_ino)
+            != (entry.st_dev, entry.st_ino)
+            or metadata.st_size > 64 * 1024
+        ):
+            raise ValueError("GDT-10E retry receipt is invalid")
+        content = b""
+        while True:
+            chunk = os.read(descriptor, 64 * 1024)
+            if not chunk:
+                break
+            content += chunk
+    finally:
+        os.close(descriptor)
+    try:
+        document = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("GDT-10E retry receipt is invalid") from exc
+    if (
+        not isinstance(document, Mapping)
+        or hashlib.sha256(content).hexdigest()
+        != _GDT10E_RETRY_RECEIPT_BYTES_SHA256
+        or document.get("schema_version") != _GDT10E_RETRY_RECEIPT_SCHEMA
+        or document.get("cycle_id") != _GDT10E_CYCLE_ID
+        or document.get("branch") != _GDT10E_RETRY_RECEIPT_BRANCH
+        or document.get("content_sha256") != _GDT10E_RETRY_RECEIPT_CONTENT_SHA256
+        or document.get("content_sha256") != _canonical_hash(document)
+    ):
+        raise ValueError("GDT-10E retry receipt is invalid")
+    return metadata, content
+
+
+def _gdt10e_retry_receipt_entry(
+    parent_fd: int,
+    name: str,
+) -> tuple[os.stat_result, bytes] | None:
+    try:
+        os.lstat(name, dir_fd=parent_fd)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ValueError("GDT-10E retry receipt is unavailable") from exc
+    return _read_gdt10e_retry_receipt(parent_fd, name)
+
+
+def retire_no_issuance_receipt(
+    *,
+    receipt: str | Path,
+    archive: str | Path,
+) -> None:
+    """Hard-link the one fixed no-issuance receipt and retire only that entry."""
+    receipt_path = _gdt10e_retry_path(receipt, _GDT10E_RETRY_RECEIPT_PATH)
+    archive_path = _gdt10e_retry_path(archive, _GDT10E_RETRY_ARCHIVE_PATH)
+    if receipt_path.parent != archive_path.parent:
+        raise ValueError("GDT-10E retry receipt parent is invalid")
+    parent_fd = _open_gdt10e_retry_parent(receipt_path.parent)
+    try:
+        _gdt10e_retry_private_targets_are_absent()
+        source = _gdt10e_retry_receipt_entry(parent_fd, receipt_path.name)
+        archived = _gdt10e_retry_receipt_entry(parent_fd, archive_path.name)
+        if source is None:
+            if archived is None:
+                raise ValueError("GDT-10E retry receipt is absent")
+            os.fsync(parent_fd)
+            if _gdt10e_retry_receipt_entry(parent_fd, receipt_path.name) is not None:
+                raise ValueError("GDT-10E retry receipt reappeared")
+            _gdt10e_retry_private_targets_are_absent()
+            _read_gdt10e_retry_receipt(parent_fd, archive_path.name)
+            return
+        if archived is None:
+            try:
+                os.link(
+                    receipt_path.name,
+                    archive_path.name,
+                    src_dir_fd=parent_fd,
+                    dst_dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+            except OSError as exc:
+                raise ValueError("GDT-10E retry receipt archive publication failed") from exc
+            os.fsync(parent_fd)
+            _gdt10e_retry_private_targets_are_absent()
+            source = _read_gdt10e_retry_receipt(parent_fd, receipt_path.name)
+            archived = _read_gdt10e_retry_receipt(parent_fd, archive_path.name)
+        else:
+            os.fsync(parent_fd)
+        if source is None or archived is None:
+            raise ValueError("GDT-10E retry receipt is unavailable")
+        source_metadata, _ = source
+        archive_metadata, _ = archived
+        if (source_metadata.st_dev, source_metadata.st_ino) != (
+            archive_metadata.st_dev,
+            archive_metadata.st_ino,
+        ):
+            raise ValueError("GDT-10E retry receipt conflicts with archive")
+        _gdt10e_retry_private_targets_are_absent()
+        try:
+            os.unlink(receipt_path.name, dir_fd=parent_fd)
+        except OSError as exc:
+            raise ValueError("GDT-10E retry receipt retirement failed") from exc
+        os.fsync(parent_fd)
+        if _gdt10e_retry_receipt_entry(parent_fd, receipt_path.name) is not None:
+            raise ValueError("GDT-10E retry receipt reappeared")
+        _gdt10e_retry_private_targets_are_absent()
+        _read_gdt10e_retry_receipt(parent_fd, archive_path.name)
+    finally:
+        os.close(parent_fd)
 
 
 def _exclusive_fact(path: Path, document: Mapping[str, Any]) -> dict[str, Any]:
@@ -4078,9 +4266,17 @@ def _parser() -> argparse.ArgumentParser:
         "bound-run-id",
         "abort-preconsume",
         "dispose-terminal",
+        "retire-no-issuance-receipt",
     ):
-        child = subparsers.add_parser(command)
-        child.add_argument("--authorization", required=True)
+        child = subparsers.add_parser(
+            command,
+            allow_abbrev=command != "retire-no-issuance-receipt",
+        )
+        if command != "retire-no-issuance-receipt":
+            child.add_argument("--authorization", required=True)
+        if command == "retire-no-issuance-receipt":
+            child.add_argument("--receipt", required=True)
+            child.add_argument("--archive", required=True)
         if command == "issue":
             child.add_argument("--cycle-id", required=True)
             child.add_argument("--expires-at", required=True)
@@ -4272,6 +4468,11 @@ def main(argv: list[str] | None = None) -> int:
                 cleanup_receipt=args.cleanup_receipt,
                 cleanup_blocker=args.cleanup_blocker,
                 review_deadline=args.review_deadline,
+            )
+        elif args.command == "retire-no-issuance-receipt":
+            retire_no_issuance_receipt(
+                receipt=args.receipt,
+                archive=args.archive,
             )
         elif args.command == "execute-resume":
             install_lifecycle_signal_handlers()
