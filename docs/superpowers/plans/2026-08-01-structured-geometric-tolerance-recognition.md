@@ -52,6 +52,14 @@
 - Focused verification command: `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_symbol_recognition_pipeline.py -k 'runtime_identity or provider_failure or owner_committed_discriminator' -q`。
 - Next verification: 先完成 GDT-10A offline tests/reviewer，并等待 `docs/superpowers/specs/2026-08-01-compose-worktree-runtime-isolation-design.md` 与 `docs/superpowers/plans/2026-08-01-compose-worktree-runtime-isolation.md` 合入本 branch、通过其 topology/runtime completion contract；随后由 GDT-10A zero-paid preflight 直接证明 API/worker current worktree `/3` hashes、database exact `0013`、`production_uncertainty`、`symbol-uncertainty-router/1` 和 exact model。未满足前不得再次运行 `make verify-p0-live`。
 
+### GDT-10E Latest-Main Paid Target Record — 2026-08-03
+
+- Selected lane/plan：`Heavy`；继续 `docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md`，不建立新 paid cycle。
+- Selection evidence：用户选择“整合最新 main”，要求 paid run 验证 `main@fe22698` 中的 `501fd42` confidence projection 修复和 `fe22698` auto-accepted Harness invariant。
+- Validation action：`amend` 后继续。先完成 successor Step 1A，再 merge exact `main@fe22698`，把唯一新 GDT-10E run-root从旧 feature worktree收敛到 `.worktrees/gdt10e-retry-archive-continuation`，完成 offline/review/DB `0016`/zero-paid GO 后才可 issue。
+- Unchanged contract：仍只有一个 `<=46.473344 CNY` incremental cycle、一次 start和条件式同-run resume；Provider/model、current-four、Compose target、budget/retry、historical GDT-10D evidence与promotion block均不变。
+- Stop condition：successor HEAD未同时包含 `501fd42`/`fe22698`、run-root仍分裂、Step 1B或zero-paid review未通过，或超过 pricing deadline时，不得创建 authorization、run、upload或Provider调用。
+
 ### GDT-10A Continuation Record — 2026-08-01
 
 - Selected lane: `Heavy`。
@@ -223,7 +231,7 @@
 - Date: `2026-08-03`
 - Status: `GDT-10D is terminal; GDT-10E Task 5 Step 0 and Step 1 are complete on the successor worktree; DB-identity/pricing amendment review and collided-state reconciliation are the current gate; GDT-10 Step 4 remains incomplete and Step 5 was not run`
 - Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
-- Current gate: Step 0 archive和Step 1 immutable baseline已完成；用户已明确批准reviewed DB-identity/pricing amendment后的plan-bounded continuation。下一顺序只能是本amendment独立review `accept`、三docs commit、companion Step 1A exact GDT-10E `0016` TDD/parent verification/fresh implementation review/code commit/HEAD runtime-closure check，然后才是Step 1B target-only backup-first collided-state reconciliation及post-proof；在这些gate关闭前不得创建readiness、issue/consume、调用Provider或进入Task 6。Direct Provider diagnostic、second replacement、budget expansion、`0015_drop_symbol_attempt_v1_default`和production promotion仍blocked。
+- Current gate: Step 0 archive和Step 1 immutable baseline已完成；用户已明确选择把 latest `main@fe22698` 整合到 paid target。下一顺序只能是 latest-main amendment独立review `accept`、三docs commit、companion Step 1A exact GDT-10E `0016` TDD/parent verification/fresh implementation review/code commit/HEAD runtime-closure check、merge exact `main@fe22698`并证明`501fd42`/`fe22698` ancestry、successor-only run-root retarget TDD/fresh independent review、complete offline/HEAD gate，然后才是Step 1B target-only backup-first collided-state reconciliation及post-proof；在这些gate关闭前不得创建readiness、issue/consume、调用Provider或进入Task 6。Direct Provider diagnostic、second replacement、budget expansion、`0015_drop_symbol_attempt_v1_default`和production promotion仍blocked。
 - Worktree: `.worktrees/gdt10e-retry-archive-continuation`
 - Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`, `b548191`, `4150ce8`, `5f4cfbf`, `bd75be6`, `1ba4c83`, `c66dcac`, `fd41879`, `d972a82`, `1e22e4b`, `53ef149`, `8866881`, `e033752`, `7d7da66`, `d49464c`, `462f7eb`, `91e02b5`, `9b182f4`, `e5bdf11`, `544e04c`, `9a77193`, `699ddf5`, `09af74a`, `77bcdb2`, `e4b0d9e`, `eb0e32e`, `7e49e341`, `129a023`, `1dcdf04`, `1128f05`, `4b3e182`, `86d5851`, `ba5f821`, `91a0ead`, `d5b9d8f`, `46ebb24`。
 
