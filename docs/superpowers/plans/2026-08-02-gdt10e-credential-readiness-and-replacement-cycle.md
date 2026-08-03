@@ -48,6 +48,14 @@
 - Owner/File Closure Preflight：problem boundary 是消除 paid producer HEAD 与 cleanup/resume run-root 分裂；old path 是向旧 feature worktree写入新 GDT-10E run；unchanged contract 是 one-use issuance、`46.473344 CNY` incremental ceiling、`0016`、archive-only baseline、no direct diagnostic、no second replacement和no production promotion。Planned merge后改动 paths 仅为 `provider_account_readiness.py`、`live_cycle_authorization.py`、`backend/tests/contract/harness/test_live_run_contract.py`、`backend/tests/contract/harness/test_contract_architecture.py`、merge产生的 mechanical runtime-closure manifest和本三份 docs；若 merge evidence证明还需其它 Owner，必须在写入前 amend。
 - Verification/stop：先完成 Step 1A focused/full tests、working/index/HEAD closure和独立 `accept`；merge latest main后重跑 complete Harness/Provider/backend gates并验证 `501fd42`、`fe22698` 都是 successor HEAD ancestors；run-root retarget必须 TDD + independent `accept`。随后才进入 Step 1B DB reconciliation和Task 5 zero-paid GO。任何 gate未在 pricing deadline前关闭都停止，不issue、不调用Provider。
 
+## Final Zero-Paid Retry NO-GO Record — 2026-08-03
+
+- Step 1C closure：three-doc amendment commit `d1f9f370318712f03029d8b984d6a91d84e9d4a2` 和 four-file implementation commit `bfd85c235f54728acf6e1a9aaca49cbba025a8c9` 均通过 parent verification 与 fresh independent `accept`。Final archive transition exact-once成功；source-2 absent，archive-1 exact，archive-2 mode `0600` / bytes SHA `a70b73faefcffcdf6977bd70f602d6798de2328abd4c4fb948f8cceebab04d9b`，并保留 source inode。不得重跑Step 1C。
+- Steps 2-4 closure：fresh private readiness的operator checks和credential binding均为true；safe committed target `api/worker`与private preparation成功。Authorization始终absent，live override未apply，PostgreSQL/Redis/frontend、DB `0016`、fixed backup和non-target identities保持exact。
+- Step 5 `NO-GO`：literal zero-paid entrypoint在report创建前返回`authorization_error=ValueError` / `source selection contains a non-current-four PDF`。Read-only decomposition证明paths、readiness、preparation、safe override和HEAD contracts均通过；唯一failure位于`_run_zero_paid_preflight()`。Canonical environment injection后`QI_P0_LIVE_SOURCE_ROOT`和`QI_CURRENT_FOUR_SOURCE_ROOT`均absent；missing live source root被转换为empty string，随后`stage-current-four.py::_resolve_sources()`递归current worktree并发现`.local/design-qa/invalid.pdf`和four frozen PDFs。没有合成source root、没有environment override、没有重跑Step 5；zero-paid report未创建。
+- Cleanup / terminal proof：exact `abort-preconsume`返回`status=ok`；private root/readiness/live/safe/preparation/authorization/intent/blocker/zero-paid report均absent。新的immutable `no_issuance` receipt为mode `0600`、bytes SHA `a53b26021803988f62c4f5c1cb62db7292cee183c5c6b48d9260eaabc1f0e536`、content SHA `0e53bee04bf68b809686abb08e4e4402a5b9da272a1054053f45f711f0df4cc8`。Provider、issuance、consumption、run、project、upload和ledger delta均为零；GDT-10E run count `0`，DB/Redis/archive/backup/runtime inventories保持exact。
+- Stop boundary：Step 6未进入，因为Step 5未生成zero-paid report。Final reviewed retry authority已消耗；Task 6、Provider、paid issuance/consumption、another replacement、budget expansion、forbidden migration、production promotion和backup delete/restore均未发生且继续unauthorized。Companion plan与parent objective均未完成；继续前需要新的source-root contract amendment、独立review和明确批准，pricing deadline过期后还需新的官方公开价格只读复核。
+
 **Tech Stack:** Python 3.11、pytest、Ruff、Decimal、SHA-256、`O_CREAT|O_EXCL|O_NOFOLLOW`、JSON Schema、Docker Compose、PostgreSQL 17、repository Harness、Chrome headed QA、Micromamba `qi-p0`。
 
 ## Global Constraints
@@ -62,13 +70,13 @@
 - Qwen identity：`qwen3-vl-plus-2025-12-19`、`cn-beijing`、`production_uncertainty/symbol-uncertainty-router/1`。
 - Retry：timeout/transport/authentication/request-rejected/rate-limited/service/metadata均`0`；only `ProductionRetryCoordinator`可为schema-invalid授权一次second submission，且单独reserve。
 - Pricing freshness：committed snapshot `retrieved_date=2026-08-02` 经 `2026-08-03` 独立只读公开价格复核、reviewed plan amendment和user approval后，只允许在`2026-08-03T23:59:59+08:00`前issue；超过时点再次fail closed，不得自动刷新/沿用。
-- No Provider work before Task 5 final independent `GO` and a new separate paid authorization。The historical Tasks 1-8 live approval is suspended for this continuation；本次 authority只到Task 5 Step 6 closure，`GO`必须停在Task 6 boundary，Task 6 issuance/consume/`make verify-p0-live`和Task 7 resume均未授权。
+- No active continuation authority：historical Tasks 1-8 live approval保持suspended，final reviewed zero-paid retry authority已在Step 5 `NO-GO`和exact cleanup后消耗。当前不授权重跑Task 5 Step 5、进入Step 6、创建新的readiness/runtime/private artifacts，或执行Task 6 issuance/consume/`make verify-p0-live`与Task 7 resume。任何继续都需要新的source-root contract amendment、独立review和明确批准；paid work仍另外需要新的单独授权。
 - Tasks 1-8 implementation/live boundary的历史批准不再是active execution authority；所有既有 plan gates 仍为强制前置条件，且不得从本 plan 存在或历史 approval record 推断 Task 6/7 paid authority。
-- direct Provider diagnostic、second replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 与 production promotion仍被阻断；本 amendment 只授权 reviewed 后的 exact successor target DB reconciliation，main/non-target runtime/DB mutation与model fallback不授权。
-- The historical cleanup-proof docs-only amendment preserves blocks on credential/runtime mutation, Provider calls and paid execution; it changed only cleanup-proof ownership/contract before Task 2 implementation resumed. The current successor DB-identity/pricing amendment separately authorizes only its reviewed Step 1A code/test convergence and Step 1B exact target reconciliation under the gates above；它不授权Provider或paid execution。
-- Single retry archive amendment：在唯一一次新的 Task 5 zero-paid retry 前，`live_cycle_authorization.py` 的 `retire-no-issuance-receipt` 是 archive/replay 的唯一 Owner。它只允许固定 `no_issuance` receipt source `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt.json` 与 fixed archive `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry.json`，并固定 bytes SHA `67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb`、content SHA `15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532`、cycle/schema/branch、current uid/gid 与 `0600`。它用 no-overwrite hard-link、parent fsync、inode/device/bytes revalidation、source unlink 和 final parent fsync；仅 source-only、same-inode source+archive、archive-only 三态可安全 replay。任何 alias/symlink/identity/private-target reappearance或 archive conflict fail closed；不得创建新 schema或退役 future receipt。
-- Final retry archive amendment：首轮 Task 5 zero-paid retry 在Harness前因Python bytecode污染clean HEAD而fail closed，并已通过exact `abort-preconsume`生成第二个immutable `no_issuance` receipt。用户只批准一次additional zero-paid retry；同一`retire_no_issuance_receipt()` Owner必须保持原archive exact，并只允许当前fixed source以bytes SHA `a70b73faefcffcdf6977bd70f602d6798de2328abd4c4fb948f8cceebab04d9b`、content SHA `215f2973036e4b4620cc7daa8b4331ebb11fced1c9406fb1fa1add47473d26bd`进入fixed final archive `/var/tmp/quality-inspection-gdt10e-20260802-db2265ae5e7d-cleanup-receipt-zero-paid-retry-2.json`。不得加入ordinal、caller-selected path/hash、retry参数、fallback、新schema或第二cleanup/archive Owner。Task 5/6 direct Python命令以及`Makefile` live recipes必须在interpreter启动前设置`PYTHONDONTWRITEBYTECODE=1`。
-- Reviewer/explorer严格read-only；一个write-capable executor按Task 1 -> Task 8顺序执行。
+- direct Provider diagnostic、another replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 与 production promotion仍被阻断；historical successor DB-reconciliation authority已完成并消耗，不是新的runtime/private/DB mutation authority，main/non-target runtime/DB mutation与model fallback继续不授权。
+- Historical cleanup-proof与successor DB-identity/pricing amendments仅记录已经完成的ownership/code/DB convergence；它们不再提供active execution authority，也不授权Provider或paid execution。
+- Historical single-retry archive amendment：`live_cycle_authorization.py` 的 `retire-no-issuance-receipt` 保持 archive/replay 的唯一 Owner。First archive和final archive均已进入terminal exact state；其固定path/hash/state-machine只作为immutable replay contract保留，不得再次执行archive transition、创建future receipt、新schema或第二Owner。
+- Historical final-retry bytecode contract仍约束任何未来reviewed entrypoint：Task 5/6 direct Python命令和`Makefile` live recipes必须在interpreter启动前设置`PYTHONDONTWRITEBYTECODE=1`。该contract不提供重跑final retry的authority。
+- Reviewer/explorer严格read-only；当前没有active write-capable executor。任何future writer必须由新的reviewed amendment和明确批准给出exact Task、Owner、paths与verification boundary，不得从历史Task 1 -> Task 8顺序推断authority。
 
 ## Problem Boundary Record
 
@@ -596,7 +604,7 @@ After the temporary target final proof，close its last inspection session、sto
 
 Execution record：Step 1B completed at clean exact HEAD `6430148a2491c3b45464573fd379392c4dd7f174`。Disposable tmpfs rehearsal and exact target both passed `0014 -> stamp 0012 -> upgrade 0015 -> stamp 0016`；target final revision is exact single-row `0016`，counts/digests/attempts and zero-session gates remained exact。Original PostgreSQL ID/image/sole volume restarted healthy；target `api/worker` stopped，Redis/frontend and non-target identities preserved。Fixed backup remains exact at `303383` bytes / SHA `e354f8f8a0653a6766db261a00ce5356e96cc099b93ca90f2c2bb2a1255bf8c0` and is not authorized for delete/restore。不得重跑Step 1B。
 
-- [ ] **Step 1C: Archive the second no-issuance receipt exactly once and enforce bytecode-clean entrypoints**
+- [x] **Step 1C: Archive the second no-issuance receipt exactly once and enforce bytecode-clean entrypoints**
 
 Start only after this final retry amendment receives independent read-only `accept` and the three docs are committed。Use one fresh `tdd_developer` with no nested delegation。Allowed tracked implementation paths are only `.agent/harness/scripts/live_cycle_authorization.py`、`backend/tests/contract/harness/test_live_run_contract.py`、`backend/tests/contract/harness/test_contract_architecture.py` and `Makefile`。RED/GREEN must prove：(1) first archive exact + fixed source-2 exact + archive-2 absent transitions by the existing hard-link/fsync/revalidation/unlink contract；(2) publication后source-2/archive-2 exact same-inode是唯一可恢复中间态，且publication/unlink/fsync interruptions均安全重放；(3) first archive exact + second archive exact + source absent is the sole terminal replay；(4) missing/mismatched first archive、different source、wrong second archive、aliases/symlinks/private-target reappearance and both-absent states fail closed；(5) caller cannot select ordinal/path/hash or activate a generic retry surface；(6) Task 5/6 direct Python commands and `Makefile` `verify-p0-live`/`resume-gdt10e-live` start Python with `PYTHONDONTWRITEBYTECODE=1`。No schema、manifest、migration、Provider、DB或readiness code changes。Parent focused verification、Ruff、`git diff --check` and fresh independent implementation review must pass before exact four-file commit。
 
@@ -610,7 +618,9 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/
 
 Required postcondition：first archive remains exact；second archive exact matches source bytes/content/inode identity；source、private root、readiness、intent、blocker、authorization、overrides和reports absent；DB/backup/runtime/non-target IDs、Redis/Celery、GDT-10E run/project/upload/ledger/Provider inventories unchanged；tracked worktree clean。Do not run this transition again after terminal replay success。
 
-- [ ] **Step 2: Create private readiness document through operator boundary**
+Execution record：reviewed commits `d1f9f370318712f03029d8b984d6a91d84e9d4a2` / `bfd85c235f54728acf6e1a9aaca49cbba025a8c9` closed docs、TDD、parent verification和fresh implementation review。Exact transition returned `status=ok` once；source-2 absent、archive-1 exact、archive-2 exact mode `0600` / bytes SHA `a70b73faefcffcdf6977bd70f602d6798de2328abd4c4fb948f8cceebab04d9b`并保留source inode。DB/backup/runtime/non-target/Redis/GDT-10E inventories和tracked HEAD不变。不得重跑Step 1C。
+
+- [x] **Step 2: Create private readiness document through operator boundary**
 
 Operator confirms in Provider console：remediation complete、workspace/account binding、compatible-mode、exact model entitlement、`cn-beijing`、billing/quota at least`46.473344 CNY`。The helper reads Qwen key/workspace only in its private process and writes`account-readiness.json`；terminal output is limited tocontent SHA andboolean success。
 
@@ -630,7 +640,9 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/
 
 Required environment keys are checked forpresence but never echoed；key/workspace values are forbidden in argv。
 
-- [ ] **Step 3: Build safe committed runtime only**
+Execution record：fresh private readiness issued with all operator checks andcredential binding true；only sanitized content SHA andtimestamps were recorded。No credential或private binding value was exposed。
+
+- [x] **Step 3: Build safe committed runtime only**
 
 Quiesce target writers and run the sole preparation command：
 
@@ -645,9 +657,11 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/
 
 It recreates onlyfeature `api/worker` with safe mode/model。Four credentials、cycle keys andauthorization mount remainabsent。Feature PostgreSQL/Redis/frontend、volumes and allmain IDs remainexact；DB must stay at the reviewed successor exact head `0016` established by Step 1B。
 
-- [ ] **Step 4: Prepare but do not apply private live override**
+- [x] **Step 4: Prepare but do not apply private live override**
 
 The same `prepare-zero-paid` command creates exact mode`0600` live/safe overrides，validates four credential key names、mode/model、future cycle ID/root、read-only mount andprivate bundle binding withoutprinting values。No authorization root/issuance exists；the live override remainsunapplied。
+
+Execution record：Steps 3-4 completed only the target safe runtime andprivate preparation。Authorization remained absent，live override remained unapplied，andPostgreSQL/Redis/frontend、DB `0016`、fixed backup andall non-target identities remained exact。
 
 - [ ] **Step 5: Run zero-paid preflight**
 
@@ -682,9 +696,13 @@ PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 python .agent/harness/scripts/
 
 It calls `preflight_full_p0_live(..., input_artifacts=current artifacts)` directly andatomically records safe no-delta evidence。Assert no issuance、consumption、run、project、upload、ledger或Provider fact。
 
+Execution record — `NO-GO`：the literal entrypoint failed before report creation with `ValueError: source selection contains a non-current-four PDF`。The exact cause is absent `QI_P0_LIVE_SOURCE_ROOT` / `QI_CURRENT_FOUR_SOURCE_ROOT` after canonical environment injection；empty-string source root recursively selected the current worktree and encountered `.local/design-qa/invalid.pdf` beside the four frozen PDFs。Step 5 was not rerun and remains unchecked；zero-paid/Provider/paid/run/project/upload/ledger deltas stayed zero。
+
 - [ ] **Step 6: Independent zero-paid review**
 
 Reviewer receives only safe IDs/hashes/counts/key names/readiness booleans and exact Decimal arithmetic。It must explicitly state：`GO` means local binding + operator attestation ready；Provider account validity remainsunproven until first real response。
+
+Execution record：not entered because Step 5 produced no zero-paid report。The plan-defined `NO-GO` cleanup path was executed directly；there is no independent `GO|NO-GO` Step 6 verdict to reuse。
 
 For any `NO-GO` run exactly：
 
@@ -902,7 +920,7 @@ Even onparent success，`0015_drop_symbol_attempt_v1_default` andproduction prom
 - Failure/cleanup boundary：zero-paid GO不宣称account valid；首个validated authenticated response才是runtime acceptance；authentication terminal不retry、不resume、不replacement。NO-GO、issued-unconsumed和sealed-terminal disposal都有literal CLI、exact target、cleanup receipt与blocker deadline。
 - Pricing boundary：`2026-08-03` reviewed amendment恢复的issuance window晚于`2026-08-03T23:59:59+08:00`自动失效；只能通过新的read-only public pricing verification、reviewed plan amendment和user approval恢复，total envelope不自动改变。
 - Independent docs review：前三轮`reject`逐项关闭runtime-acceptance Owner/call site、immutable resume、preconsume cleanup、literal CLI、v2/v3、pricing、path policy、cleanup journal和run-ID source；final verdict `accept`，无blocking或non-blocking finding。The later cleanup-proof amendment selected as option `A` pauses Task 2 until a separate independent read-only amendment review accepts the sole Task 3 intent Owner, exact schema and three-branch correlations.
-- Execution boundary：historical Tasks 1-8 live approval已被本continuation authority明确暂停；当前只授权Task 5 final zero-paid retry closure，`GO`停在Task 6等待新的单独paid授权。所有既有 plan gates 仍为强制前置条件，且 direct Provider diagnostic、second replacement、budget expansion、`0015_drop_symbol_attempt_v1_default` 与 production promotion仍被阻断。
+- Execution boundary：historical Tasks 1-8 live approval保持暂停；final zero-paid retry authority已在Step 5 `NO-GO`和exact cleanup后消耗，当前没有Task 5 Step 5/6、Task 6/7、private/runtime、Provider或paid execution authority。继续必须先完成新的source-root contract amendment、独立review和明确批准；pricing deadline过期后还需新的官方公开价格只读复核。Direct Provider diagnostic、another replacement、budget expansion、`0015_drop_symbol_attempt_v1_default`与production promotion继续被阻断。
 
 ## Completion Contract
 
