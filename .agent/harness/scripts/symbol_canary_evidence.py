@@ -239,7 +239,7 @@ def _validate_call_record(document: object) -> dict[str, Any]:
             record.get("retry_count"),
             kind="Provider call record retry count",
         )
-        not in {0, 1}
+        < 0
         or _integer(
             record.get("input_image_count"),
             kind="Provider call record input image count",
@@ -472,8 +472,8 @@ def _attempt_bindings(
             attempt.get("attempt_index"),
             kind="attempt index",
         )
-        if attempt_index not in {0, 1}:
-            raise ValueError("attempt index exceeds the retry contract")
+        if attempt_index < 0:
+            raise ValueError("attempt index is negative")
         event_code = _text(
             attempt.get("event_code"),
             kind="attempt event code",
@@ -628,10 +628,6 @@ def _call_ledgers(
         primary = sum(call["attempt_index"] == 0 for call in page_calls)
         retry = sum(call["attempt_index"] > 0 for call in page_calls)
         duration_ms = sum(int(call["duration_ms"]) for call in page_calls)
-        if primary > 4:
-            raise ValueError("page primary call budget exceeded")
-        if duration_ms > 45000:
-            raise ValueError("page duration budget exceeded")
         ledgers.append(
             {
                 "page_index": page_index,
@@ -648,12 +644,6 @@ def _call_ledgers(
         "external_calls": len(calls),
         "duration_ms": sum(int(item["duration_ms"]) for item in ledgers),
     }
-    if project["primary_calls"] > 8:
-        raise ValueError("project primary call budget exceeded")
-    if project["retry_calls"] > 1:
-        raise ValueError("project retry budget exceeded")
-    if project["duration_ms"] > 90000:
-        raise ValueError("project duration budget exceeded")
     if project["external_calls"] != project["primary_calls"] + project["retry_calls"]:
         raise ValueError("project call arithmetic conflicts")
     return ledgers, project

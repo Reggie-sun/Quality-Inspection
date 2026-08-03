@@ -2195,8 +2195,6 @@ def test_selector_environment_uses_host_reachable_current_database(
             "QI_QWEN_WORKSPACE_ID": "server-secret",
             "QI_TENCENT_SECRET_ID": "server-secret",
             "QI_TENCENT_SECRET_KEY": "server-secret",
-            "QI_PROVIDER_MODE": "live",
-            "QI_PROVIDER_NETWORK_ENABLED": "enabled",
             "QI_DATABASE_URL": (
                 "postgresql+psycopg://qi:qi@postgres:5432/qi?sslmode=disable"
             ),
@@ -2212,9 +2210,6 @@ def test_selector_environment_uses_host_reachable_current_database(
         "/existing/pythonpath",
     ]
     assert all(key not in environment for key in runner.LIVE_CREDENTIAL_KEYS)
-    assert runner.LIVE_PROVIDER_MODE not in environment
-    assert runner.LIVE_PROVIDER_NETWORK not in environment
-
     default_environment = runner._selector_environment({"PATH": "/usr/bin"})
     assert urlsplit(default_environment["QI_DATABASE_URL"]).hostname == "172.23.0.4"
 
@@ -2236,6 +2231,26 @@ def test_live_phase_outcomes_require_strong_per_sample_evidence(
         assert exit_code == 0
         assert state == "passed"
         assert refs
+
+    uncapped = _materialize_bound_live_evidence(run_dir, design_qa)
+    symbol = uncapped["symbol_recognition"]
+    symbol["visual_calls_by_page"][0]["count"] = 17
+    symbol["total_vision_calls_by_page"][0]["count"] = 18
+    symbol_report_path = run_dir / symbol["report_ref"]
+    symbol_report = json.loads(symbol_report_path.read_text(encoding="utf-8"))
+    symbol_report["visual_calls_by_page"] = symbol["visual_calls_by_page"]
+    symbol_report["total_vision_calls_by_page"] = symbol[
+        "total_vision_calls_by_page"
+    ]
+    symbol["report_sha256"] = _write_hashed(
+        symbol_report_path,
+        _json_bytes(symbol_report),
+    )
+    (run_dir / "live-run-evidence.json").write_bytes(_json_bytes(uncapped))
+    assert runner._live_phase_outcome(
+        "phase://live/process?input_set=current-four",
+        run_dir,
+    )[1] == "passed"
 
     weak = _materialize_bound_live_evidence(run_dir, design_qa)
     weak["samples"][0]["candidates"]["coverage_checked"] = False
@@ -2461,46 +2476,15 @@ def test_all_twelve_harness_schemas_are_checked_and_bound_to_code_identity() -> 
     assert set(receipt.SCHEMA_FILES) == expected
 
 
-def test_live_policy_requires_visual_symbol_page_budget() -> None:
-    """P0-REC-005: live visual review stays within sixteen calls per page."""
+def test_live_credentials_do_not_require_paid_call_controls() -> None:
+    """Full-P0 live needs credentials without a separate paid-call approval."""
     runner = _load_module(
-        "qi_runner_visual_page_budget",
+        "qi_runner_without_paid_call_controls",
         HARNESS / "scripts/run-p0.py",
     )
-    provider_policy = {
-        "explicit_flag_required": True,
-        "max_retries_per_call": 2,
-        "max_crop_expansions": 1,
-        "max_ocr_calls_per_page": 16,
-        "max_vision_calls_per_candidate": 2,
-        "max_total_estimated_cost_cny": 50,
-        "budget_exceeded_result": "blocked",
-    }
-    with pytest.raises(ValueError, match="budget/retry"):
-        runner._validate_live_policy(
-            {"provider_call_policy": {"live": provider_policy}}
-        )
+    environment = {key: "configured" for key in runner.LIVE_CREDENTIAL_KEYS}
 
-    plan = (
-        ROOT
-        / "docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md"
-    ).read_text(encoding="utf-8")
-    provider_example = plan.split(
-        "# .agent/harness/policy/provider-call-policy.yaml",
-        1,
-    )[1].split("```", 1)[0]
-    assert "max_vision_calls_per_page: 16" in provider_example
-
-    provider_policy["max_vision_calls_per_page"] = 16
-    runner._validate_live_policy(
-        {"provider_call_policy": {"live": provider_policy}}
-    )
-
-    provider_policy["max_vision_calls_per_page"] = 17
-    with pytest.raises(ValueError, match="budget/retry"):
-        runner._validate_live_policy(
-            {"provider_call_policy": {"live": provider_policy}}
-        )
+    runner._require_live_environment(environment)
 
 
 def _materialize_visual_retry_chain(
@@ -2681,10 +2665,10 @@ def test_live_symbol_retry_chain_is_canonical_and_identity_bound(
     ) == [(cache, 2)]
 
 
-def test_live_symbol_retry_chain_rejects_second_document_retry(
+def test_live_symbol_retry_chain_accepts_multiple_document_retries(
     tmp_path: Path,
 ) -> None:
-    """P0-REC-005: Harness rejects two valid retry chains in one document."""
+    """Harness validates retry evidence without imposing a document budget."""
     (
         paired_cache,
         project_root,
@@ -2770,13 +2754,17 @@ def test_live_symbol_retry_chain_rejects_second_document_retry(
         serialize_call_record(retry_audit),
     )
 
-    with pytest.raises(RuntimeError, match="retry evidence"):
-        paired_cache(
-            project_root,
-            storage,
-            project_id,
-            "qwen-symbol",
-        )
+    pairs = paired_cache(
+        project_root,
+        storage,
+        project_id,
+        "qwen-symbol",
+    )
+
+    assert sorted((pair[0]["request_id"], pair[1]) for pair in pairs) == [
+        ("fixture-final-request", 2),
+        ("fixture-second-final-request", 2),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -2868,8 +2856,8 @@ def test_live_symbol_retry_chain_rejects_orphan_or_tampered_evidence(
         )
 
 
-def test_live_symbol_retry_attempt_counts_are_bounded_and_audited() -> None:
-    """P0-REC-005: one explicit schema retry counts as one actual Vision call."""
+def test_live_symbol_retry_attempt_counts_are_audited_without_a_harness_limit() -> None:
+    """Harness derives call counts without owning the production retry limit."""
     runner = _load_module(
         "qi_runner_visual_retry_budget",
         HARNESS / "scripts/run-p0.py",
@@ -2887,8 +2875,16 @@ def test_live_symbol_retry_attempt_counts_are_bounded_and_audited() -> None:
         "retry_count": 0,
         "failure_stage": "tool_arguments_schema_invalid",
     }
+    second_retry = {
+        **retry,
+        "request_id": "fixture-second-request",
+    }
 
     assert attempt_count(canonical, [retry]) == 2
+    assert attempt_count(
+        {**canonical, "retry_count": 2},
+        [retry, second_retry],
+    ) == 3
     assert attempt_count(
         {"request_id": "fixture-no-retry", "retry_count": 0},
         [],
@@ -2896,7 +2892,6 @@ def test_live_symbol_retry_attempt_counts_are_bounded_and_audited() -> None:
 
     invalid_cases = (
         (canonical, []),
-        ({**canonical, "retry_count": 2}, [retry, retry]),
         (canonical, [{**retry, "retry_count": 1}]),
         (
             canonical,
@@ -2909,14 +2904,14 @@ def test_live_symbol_retry_attempt_counts_are_bounded_and_audited() -> None:
             attempt_count(audit, retries)
 
 
-def test_live_symbol_retry_derived_seventeenth_call_is_blocked() -> None:
-    """P0-REC-005: a retry-derived seventeenth Vision call blocks the gate."""
+def test_live_symbol_call_counts_are_not_capped_by_the_harness() -> None:
+    """Production owns call limits; Harness only checks count consistency."""
     runner = _load_module(
         "qi_runner_visual_retry_budget_exceeded",
         HARNESS / "scripts/run-p0.py",
     )
 
-    assert runner._vision_call_budget_failures(
+    assert runner._vision_call_evidence_failures(
         [
             {"page_index": 0, "count": 17},
             {"page_index": 1, "count": 16},
@@ -2925,7 +2920,4 @@ def test_live_symbol_retry_derived_seventeenth_call_is_blocked() -> None:
             {"page_index": 0, "count": 17},
             {"page_index": 1, "count": 16},
         ],
-    ) == [
-        {"reason": "visual_call_budget_exceeded"},
-        {"reason": "total_vision_call_budget_exceeded"},
-    ]
+    ) == []

@@ -1189,8 +1189,6 @@ def validate_symbol_recognition_evidence(
             or not isinstance(total.get("count"), int)
             or visual["count"] < 0
             or total["count"] < visual["count"]
-            or visual["count"] > 16
-            or total["count"] > 16
             for visual, total in zip(visual_calls, total_calls, strict=True)
             if isinstance(visual, Mapping) and isinstance(total, Mapping)
         )

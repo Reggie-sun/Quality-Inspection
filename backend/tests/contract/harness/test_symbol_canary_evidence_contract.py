@@ -574,7 +574,9 @@ def test_collector_rejects_provider_call_intermediate_symlink(
         _build(module, bundle, storage_root)
 
 
-def test_collector_rejects_observed_budget_excess(tmp_path: Path) -> None:
+def test_collector_records_observed_usage_without_a_harness_budget(
+    tmp_path: Path,
+) -> None:
     module = _collector()
     bundle, storage_root = _fixture(tmp_path)
     primary = (
@@ -583,8 +585,76 @@ def test_collector_rejects_observed_budget_excess(tmp_path: Path) -> None:
     )
     _write_json(primary, _call_record("req-primary", 45001, 0))
 
-    with pytest.raises(ValueError, match="page duration budget"):
-        _build(module, bundle, storage_root)
+    evidence = _build(module, bundle, storage_root)
+
+    jsonschema.Draft202012Validator(
+        _schema(),
+        format_checker=jsonschema.FormatChecker(),
+    ).validate(evidence)
+    assert evidence["page_ledgers"][0]["duration_ms"] == 45001
+    assert evidence["project_ledger"]["duration_ms"] == 50001
+
+
+def test_collector_audits_retry_indices_without_a_harness_limit(
+    tmp_path: Path,
+) -> None:
+    module = _collector()
+    bundle, storage_root = _fixture(tmp_path)
+    retry = next(
+        item
+        for item in bundle["attempts"]
+        if item["provider_request_id"] == "req-retry-secondary"
+    )
+    retry["attempt_index"] = 2
+    secondary = (
+        storage_root / f"projects/{PROJECT_ID}/provider-calls/qwen-symbol-retries/"
+        "req-retry-secondary.json"
+    )
+    _write_json(secondary, _call_record("req-retry-secondary", 4000, 2))
+
+    evidence = _build(module, bundle, storage_root)
+
+    jsonschema.Draft202012Validator(
+        _schema(),
+        format_checker=jsonschema.FormatChecker(),
+    ).validate(evidence)
+    assert evidence["call_records"][-1]["attempt_index"] == 2
+    assert evidence["call_records"][-1]["retry_count"] == 2
+
+
+def test_call_ledgers_record_usage_above_old_harness_limits() -> None:
+    module = _collector()
+    visual_pages = {
+        f"visual-{index}": 0 if index < 5 else 1
+        for index in range(9)
+    }
+    calls = [
+        {
+            "page_index": 0 if index < 5 else 1,
+            "attempt_index": 0,
+            "duration_ms": 10001,
+        }
+        for index in range(9)
+    ]
+    calls.extend(
+        [
+            {"page_index": 1, "attempt_index": 1, "duration_ms": 1000},
+            {"page_index": 1, "attempt_index": 2, "duration_ms": 1000},
+        ]
+    )
+
+    page_ledgers, project_ledger = module._call_ledgers(
+        visual_pages,
+        calls,
+    )
+
+    assert page_ledgers[0]["primary_calls"] == 5
+    assert project_ledger == {
+        "primary_calls": 9,
+        "retry_calls": 2,
+        "external_calls": 11,
+        "duration_ms": 92009,
+    }
 
 
 def test_cli_accepts_only_isolated_database_and_four_required_flags() -> None:

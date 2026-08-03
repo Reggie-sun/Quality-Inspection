@@ -109,8 +109,6 @@ FIXTURE_PROVIDER_NETWORK_KEYS = (
     "OCR_PROVIDER_NETWORK_ENABLED",
     "VISION_PROVIDER_NETWORK_ENABLED",
 )
-LIVE_PROVIDER_MODE = "QI_PROVIDER_MODE"
-LIVE_PROVIDER_NETWORK = "QI_PROVIDER_NETWORK_ENABLED"
 SELECTOR_COMPOSE_DATABASE_URL = "postgresql+psycopg://qi:qi@postgres:5432/qi"
 LIVE_PAUSE_BARRIER = "first-pdf-balloons"
 LIVE_BROWSER = "chrome"
@@ -488,7 +486,7 @@ def _selector_environment(
     ]
     environment["PYTHONPATH"] = os.pathsep.join([backend_root, *python_paths])
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    for key in (*LIVE_CREDENTIAL_KEYS, LIVE_PROVIDER_MODE, LIVE_PROVIDER_NETWORK):
+    for key in LIVE_CREDENTIAL_KEYS:
         environment.pop(key, None)
 
     database_url = environment.get(
@@ -981,7 +979,6 @@ def register_live_input_artifacts(
     mirror = _load_json(MIRROR_PATH)
     bindings = _load_json(BINDINGS_PATH)
     policies = receipt.load_policies(ROOT)
-    _validate_live_policy(policies)
     receipt.validate_schema(mirror, "p0-contracts.schema.json", ROOT)
     receipt.validate_schema(
         bindings,
@@ -1156,17 +1153,6 @@ def _require_live_environment(environment: Mapping[str, str]) -> None:
             "server-only Provider configuration is incomplete: "
             + ", ".join(missing)
         )
-    if environment.get(LIVE_PROVIDER_MODE, "").strip().lower() != "live":
-        raise ValueError(f"{LIVE_PROVIDER_MODE}=live is required")
-    if environment.get(LIVE_PROVIDER_NETWORK, "").strip().lower() not in {
-        "1",
-        "true",
-        "yes",
-        "on",
-        "enabled",
-        "live",
-    }:
-        raise ValueError(f"{LIVE_PROVIDER_NETWORK}=enabled is required")
 
 
 def _current_live_identity(
@@ -1196,24 +1182,6 @@ def _current_live_identity(
         "browser": _chrome_identity(current),
         "viewport": dict(LIVE_VIEWPORT),
     }
-
-
-def _validate_live_policy(policies: Mapping[str, Mapping[str, Any]]) -> None:
-    live = policies.get("provider_call_policy", {}).get("live")
-    if not isinstance(live, Mapping):
-        raise ValueError("live Provider call policy is unavailable")
-    exact_limits = {
-        "explicit_flag_required": True,
-        "max_retries_per_call": 2,
-        "max_crop_expansions": 1,
-        "max_ocr_calls_per_page": 16,
-        "max_vision_calls_per_page": 16,
-        "max_vision_calls_per_candidate": 2,
-        "max_total_estimated_cost_cny": 50,
-        "budget_exceeded_result": "blocked",
-    }
-    if any(live.get(key) != value for key, value in exact_limits.items()):
-        raise ValueError("live Provider budget/retry policy changed")
 
 
 def _validate_export_assets() -> None:
@@ -1284,8 +1252,8 @@ def preflight_full_p0_live(
     if input_set != "current-four":
         raise ValueError("full-p0 live requires --input-set current-four")
     current_environment = os.environ if environment is None else environment
-    # Credential/control checks intentionally precede source reads, identity
-    # hashing, run creation, uploads, and every potentially paid operation.
+    # Credential checks intentionally precede source reads, identity hashing,
+    # run creation, uploads, and every external Provider operation.
     _require_live_environment(current_environment)
     _current_live_identity(current_environment)
     if source_root is None or not source_root.strip():
@@ -1294,9 +1262,6 @@ def preflight_full_p0_live(
     receipt_module = _receipt_module()
     receipt_module.check_contract_authority(ROOT)
     policies = receipt_module.load_policies(ROOT)
-    _validate_live_policy(policies)
-    if not receipt_module.provider_network_enabled(current_environment):
-        raise ValueError("live Provider network control is not enabled")
 
     mirror = _load_json(MIRROR_PATH)
     bindings = _load_json(BINDINGS_PATH)
@@ -1776,11 +1741,12 @@ def visual_attempt_count(audit, retry_evidence):
         or not audit["request_id"]
         or not isinstance(audit.get("retry_count"), int)
         or isinstance(audit["retry_count"], bool)
-        or audit["retry_count"] not in (0, 1)
+        or audit["retry_count"] < 0
         or not isinstance(retry_evidence, list)
         or len(retry_evidence) != audit["retry_count"]
     ):
         raise RuntimeError("visual Provider retry evidence is invalid")
+    retry_request_ids = set()
     for retry in retry_evidence:
         if (
             not isinstance(retry, dict)
@@ -1789,11 +1755,13 @@ def visual_attempt_count(audit, retry_evidence):
             or not isinstance(retry["request_id"], str)
             or not retry["request_id"]
             or retry["request_id"] == audit["request_id"]
+            or retry["request_id"] in retry_request_ids
             or retry["retry_count"] != 0
             or retry["failure_stage"]
             != "tool_arguments_schema_invalid"
         ):
             raise RuntimeError("visual Provider retry evidence is invalid")
+        retry_request_ids.add(retry["request_id"])
     return 1 + audit["retry_count"]
 
 
@@ -1978,11 +1946,6 @@ def paired_cache(project_root, storage, project_id, relative):
 
         pairs.append((cache, visual_attempt_count(audit, retry_evidence)))
     if retry_by_cache:
-        raise RuntimeError("visual Provider retry evidence is invalid")
-    if (
-        relative == "qwen-symbol"
-        and sum(attempt_count - 1 for _, attempt_count in pairs) > 1
-    ):
         raise RuntimeError("visual Provider retry evidence is invalid")
     return pairs
 
@@ -2624,15 +2587,11 @@ def _call_counts(
     return normalized
 
 
-def _vision_call_budget_failures(
+def _vision_call_evidence_failures(
     visual_calls: list[dict[str, int]],
     total_calls: list[dict[str, int]],
 ) -> list[dict[str, str]]:
     failures: list[dict[str, str]] = []
-    if any(entry["count"] > 16 for entry in visual_calls):
-        failures.append({"reason": "visual_call_budget_exceeded"})
-    if any(entry["count"] > 16 for entry in total_calls):
-        failures.append({"reason": "total_vision_call_budget_exceeded"})
     if any(
         total["count"] < visual["count"]
         for visual, total in zip(visual_calls, total_calls, strict=True)
@@ -2717,7 +2676,7 @@ def _run_symbol_recognition_gate(
     )
     failures = list(evaluation.get("failures", []))
     failures.extend(
-        _vision_call_budget_failures(
+        _vision_call_evidence_failures(
             visual_calls,
             total_calls,
         )

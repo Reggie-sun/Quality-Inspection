@@ -95,13 +95,11 @@
         },
         "primary_calls": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 8
+          "minimum": 0
         },
         "retry_calls": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 1
+          "minimum": 0
         },
         "external_calls": {
           "$ref": "#/$defs/count"
@@ -139,21 +137,18 @@
       "properties": {
         "primary_calls": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 8
+          "minimum": 0
         },
         "retry_calls": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 1
+          "minimum": 0
         },
         "external_calls": {
           "$ref": "#/$defs/count"
         },
         "duration_ms": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 90000
+          "minimum": 0
         }
       }
     },
@@ -289,8 +284,7 @@
         },
         "primary_calls": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 4
+          "minimum": 0
         },
         "retry_calls": {
           "$ref": "#/$defs/count"
@@ -300,8 +294,7 @@
         },
         "duration_ms": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 45000
+          "minimum": 0
         }
       }
     },
@@ -331,8 +324,7 @@
         },
         "attempt_index": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 1
+          "minimum": 0
         },
         "provider": {
           "const": "qwen-vl"
@@ -356,8 +348,7 @@
         },
         "retry_count": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 1
+          "minimum": 0
         },
         "input_image_count": {
           "const": 1

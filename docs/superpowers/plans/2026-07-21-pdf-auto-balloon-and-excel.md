@@ -31,6 +31,20 @@
 - Unchanged contract: Provider 不是正式语义 Owner；frontend 不产生 formal result；三产物不允许部分发布；P1/P2 全部保持未实现。
 - Focused verification: 每个 task 的最后一个 test command；Day 7 使用 current-four live receipt 收口。
 
+### Harness paid-call control removal amendment — 2026-08-03
+
+- Selected lane: `Standard`。本次只删除正式 `full-P0 live Harness` 的显式付费调用启用门禁及 Harness-owned budget/retry policy；不改变 production Provider 调度、runtime config、API/schema 或业务 Owner。
+- Selected plan: 本文件仍是唯一 current plan；用户先选择删除全部收费控制，看到 production call-budget inventory 后明确收窄为 Harness-only 方案 A。
+- Selection evidence: 用户明确选择只删除 Harness 的收费批准开关、预算、次数和重试校验，并保留 production OCR/Vision 次数、wall-time、retry、并发及 SDK 行为。
+- Validation action: `amend` 后 `continue`。先新增 live credential preflight 不再要求 `QI_PROVIDER_MODE` / `QI_PROVIDER_NETWORK_ENABLED` 的 RED regression，再删除旧 gate 和 exact live policy validation。
+- Problem boundary and single Owner: production Provider 调度仍是唯一调用预算 Owner；Harness 只删除 `run-p0.py` preflight/gate 以及 live/canary evidence validator/schema 中重复的上限裁决，继续记录并校验证据身份与计数一致性。`backend/app/processing/runtime_recognition.py`、`backend/app/candidates/symbol_escalation_*`、`backend/app/candidates/advisor.py` 与 `backend/app/providers/runtime.py` 保持不变。
+- Old path action: full-P0 live 对 `QI_PROVIDER_MODE`、`QI_PROVIDER_NETWORK_ENABLED` 和 Harness `live` budget/retry mapping 的检查选择 `remove`；不得保留 hidden approval flag、compatibility branch 或第二套 budget policy。fixture external-call tripwire 选择 `preserve`，因为 fixture/offline contract 仍是 verified consumer。
+- Unchanged contracts: server-only credentials、Provider privacy/redaction、fixture zero-network、production OCR/Vision call budgets、production retry/wall/concurrency、Provider call metadata 与 `PROV-005` 全部保持不变。
+- Allowed paths: `.agent/harness/policy/provider-call-policy.yaml`、`.agent/harness/scripts/{run-p0.py,live_evidence_policy.py,symbol_canary_evidence.py}`、`.agent/harness/schemas/{live-run-evidence.schema.json,symbol-routing-canary-evidence.schema.json}`、`backend/tests/contract/harness/{test_live_run_contract.py,test_symbol_eval_contract.py,test_symbol_canary_evidence_contract.py}` 与本 plan。不得修改 production backend、Provider adapters、candidate/processing budgets、receipts、generated contract mirror 或既有 run evidence。
+- Writer ownership and order: parent 是唯一 writer；先 RED test，再最小 Harness removal，再 focused contract test、`check-contracts.py`、focused diff review 和单独 commit。read-only explorer 已完成 consumer inventory，不拥有文件。
+- Rollback: 只 revert 本 amendment commit；rollback 后第一项验证为 focused Harness contract test，恢复旧显式 gate 与 exact policy validation。
+- Next verification: `micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -q`，随后 `micromamba run -n qi-p0 python .agent/harness/scripts/check-contracts.py`。
+
 ### Workbench background finalization amendment — 2026-07-30
 
 - Selected lane: `Standard`。本次只调整 React workbench 对既有 canonical backend APIs 的调用时机与可见控件，需要 frontend smoke，但不新增或改变 API/schema、backend Owner、runtime entry 或数据完整性边界。
@@ -2058,7 +2072,7 @@ micromamba run -n qi-p0 pytest backend/tests/integration/test_schema.py -q
 | `compose.yaml` | 五个 P0 runtime services 与共享 volume |
 | `Makefile` | 精确 offline/live verification 入口 |
 | `.agent/harness/README.md` | 四层 Owner、目录边界、fixture/live 和 immutable run 约定 |
-| `.agent/harness/policy/{harness-policy,p0-acceptance-policy,provider-call-policy,failure-severity-policy}.yaml` | 状态、severity、freshness、current-four、调用预算和总体 verdict 规则 |
+| `.agent/harness/policy/{harness-policy,p0-acceptance-policy,provider-call-policy,failure-severity-policy}.yaml` | 状态、severity、freshness、current-four、fixture Provider 网络边界和总体 verdict 规则 |
 | `.agent/harness/contracts/p0-contracts.json` | 由 P0 Markdown 生成的 111-row 机器镜像 |
 | `.agent/harness/contracts/global-contract-bindings.json` | 由 mirror 生成的 global → primary/related-business/related-implementation 三类 P0 反向索引；禁止手工双写或把 related 冒充 enforcement |
 | `.agent/harness/schemas/*.schema.json` | contract、binding、run、result、receipt、manifest 和 Provider fixture schema |
@@ -2147,7 +2161,7 @@ P0 Markdown Traceability Matrix
 - Receipt scope 只允许 `task / full-p0`：task receipt 只裁决选中 task，永远不能声明 formal P0 passed；只有 full-p0 receipt 可给正式结论。
 - `blocked` 可如实记录任一 contract 的执行期阻塞，但 full-p0 passed 的 `blocked_allowed_contract_ids` 与 `not_run_allowed_contract_ids` 都为空；111 条当前 P0 均须 passed。
 - Mirror 保留 `current_status`，但 canonical `contract_definition_hash` 排除且只排除该 evidence projection；`status_projection_hash` 单独记录。Receipt freshness 绑定 definition/executable-content/policy/config/input identity，不因合法 status projection 更新或只提交该 projection 而自失效；Git revision 仅作诊断记录。
-- Fixture 是默认模式，不产生付费调用；live 必须显式传 `live` 和 `--input-set current-four`，并应用 Provider call/budget/retry 上限。
+- Fixture 是默认模式，不产生外部 Provider 调用；formal live 仍必须显式选择 `live` 和 `--input-set current-four`，但不再要求独立 paid-call control variables，也不在 Harness policy 中重复 production call/budget/retry 上限。
 - Stale receipt、`latest` pointer、旧 run、docs claim 或 test count 不能证明当前版本。
 - 每次命令先创建唯一 `.agent/harness/runs/<run-id>/`，写入 code/config/input identity；目录完成后只读，任何可变 latest 指针都不能替代该目录。
 - `latest` 或 `latest-successful` 只能是指针/摘要，不能替代具体 run 目录。
@@ -2375,15 +2389,6 @@ fixture_can_satisfy_live_contracts: false
 schema_version: provider-call-policy/1
 fixture:
   external_calls_allowed: false
-live:
-  explicit_flag_required: true
-  max_retries_per_call: 2
-  max_crop_expansions: 1
-  max_ocr_calls_per_page: 16
-  max_vision_calls_per_page: 16
-  max_vision_calls_per_candidate: 2
-  max_total_estimated_cost_cny: 50
-  budget_exceeded_result: blocked
 ```
 
 ```yaml
@@ -5717,7 +5722,7 @@ The screenshot is a density and interaction benchmark, not a brand or pixel-copy
 
 - [ ] **Step 5: Extend the single live runner and human verdict without creating another run**
 
-`run-p0.py live --scope full-p0 --input-set current-four` remains the only formal live entry. It must fail before creating a paid task unless explicit live/current-four mode、source identity、server-only Provider config、template/font approval、Provider budget and executable/config/contract identities all pass. `stage-current-four.py` attaches the exact four-file identity manifest to the same open run without copying PDFs or creating a child run.
+`run-p0.py live --scope full-p0 --input-set current-four` remains the only formal live entry. It must fail before creating a live task unless literal live/current-four CLI selection、source identity、server-only Provider config、template/font approval and executable/config/contract identities all pass；不再要求独立 paid-call control variables，也不在 Harness 中重复校验 production Provider budget。`stage-current-four.py` attaches the exact four-file identity manifest to the same open run without copying PDFs or creating a child run.
 
 The runner groups identical ordinary selectors, internally dispatches all `phase://` selectors, executes the fixed first PDF through the entire chain before the remaining three, and writes exactly 111 unique results:
 

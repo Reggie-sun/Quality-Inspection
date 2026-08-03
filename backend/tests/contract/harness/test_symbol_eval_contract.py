@@ -1432,41 +1432,6 @@ def test_symbol_eval_cli_and_schema_errors_never_echo_private_keys(
     assert injected not in str(schema_error.value)
 
 
-@pytest.mark.parametrize("policy_case", ("missing", "changed"))
-def test_symbol_registration_preflight_rejects_noncanonical_live_policy(
-    policy_case: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """P0-REC-005: registration validates the exact live budget before writes."""
-    stage = _stage_module()
-    runner = _runner_module()
-    receipt = _receipt_module()
-    runs = tmp_path / "runs"
-    runs.mkdir()
-    monkeypatch.setattr(runner, "RUNS", runs)
-    policies = copy.deepcopy(receipt.load_policies(ROOT))
-    live = policies["provider_call_policy"]["live"]
-    if policy_case == "missing":
-        live.pop("max_vision_calls_per_page")
-    else:
-        live["max_vision_calls_per_page"] = 17
-    monkeypatch.setattr(receipt, "load_policies", lambda _root=ROOT: policies)
-    monkeypatch.setattr(runner, "_receipt_module", lambda: receipt)
-    artifacts = stage.build_artifacts(
-        _manifest(),
-        PAGE_BOXES,
-        recorded_at="2026-07-27T00:00:00Z",
-    )
-
-    with pytest.raises(ValueError, match="budget/retry"):
-        runner.register_live_input_artifacts(
-            task_id="D7-T2",
-            artifacts=artifacts,
-        )
-    assert list(runs.iterdir()) == []
-
-
 def test_symbol_registration_validates_new_run_before_directory_creation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
