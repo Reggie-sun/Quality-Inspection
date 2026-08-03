@@ -2,6 +2,32 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260803-auto-accepted-items-remain-pending
+
+- Status: 修复待验证
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: 新上传图纸从 `automatic-result/3` 创建审核工作副本时的自动通过投影、`quality_inspection-worker-1`
+- Symptom: 用户在自动通过修复合入后重新上传图纸，界面仍没有任何自动通过气泡，全部检验项继续显示待人工审核
+- Previously correct behavior: `automatic-result/3` 中 `confidence_decision.review_disposition=auto_accepted` 的候选项应在新建审核工作副本时投影为已采纳，并保留其自动采纳来源
+- Reproduction: 2026-08-03 13:05 本地新项目 `6d8d9b3a-4083-4e4e-9540-fe9ca8bcd359` 的 raw result 有 139 项，其中 108 项为 `auto_accepted`、31 项为 `review_required`；同一项目的 working copy 却为 139 项全部 `pending + requires_confirmation=true + acceptance_source=null`
+- Root cause: `quality_inspection-worker-1` 启动于 2026-08-03 11:46，早于修复提交 `501fd42` 的 12:28；Celery worker 在进程启动时导入 `ReviewService`，不会像 API 的 Uvicorn reload 一样自动加载 bind mount 后续变更，因此用户新上传任务仍执行修复前的 working-copy 投影代码
+- Selected lane: `Standard`；不修改稳定 API/schema/runtime config，只恢复已合入代码的 worker runtime identity，并用真实数据库投影与队列状态验证原始 failure surface
+- Selected plan: 本 bug-memory entry 作为当前 ad hoc task contract；关闭后返回已批准的 GDT-10E paid-run plan，当前不触发额外 Provider 调用
+- Problem boundary: 只替换共享 Compose project 中已确认空闲的 `worker` 进程以加载当前 `main`；不重建 API、PostgreSQL、Redis，不删除 volume，不改变既有项目数据或自动重跑用户项目
+- Single owner: `quality_inspection-worker-1` 的 Celery 进程 runtime identity
+- Old path action: 退役启动于修复提交之前、仍持有旧 `ReviewService` 的 worker 进程；保留现有 Compose service、queue、database 和 storage Owner
+- Unchanged contract: `automatic-result/3`、review working-copy schema、confidence decision、人工审核、freeze、气泡和正式导出合同均不变
+- Allowed paths: `.agent/bug-memory.md`；production code 和 runtime config 不修改
+- Writer ownership: 父 agent 为唯一 writer；现有其他 agent 均为只读 reviewer/explorer，不拥有本文件
+- Validation action: 已确认 worker `active/reserved/scheduled` 为空，再执行 `docker compose -p quality_inspection -f /home/reggie/vscode_folder/Quality_Inspection/compose.yaml up -d --no-deps --force-recreate worker`；随后验证 worker 启动时间、代码 identity、Celery ping/queue、API health，并保留一次重传同一 PDF 的可见闭环验证
+- Fix: 仅重建 `quality_inspection-worker-1`，让 Celery 重新导入当前 `main@fe22698` 中含 `501fd42` 的 `ReviewService`；API、PostgreSQL、Redis、volume 和既有项目均未重建或改写。修复前已生成的 broken working copy 不做隐式迁移，避免覆盖人工审核状态
+- Regression check: 首次直接 focused pytest 因宿主机继承 Compose-only `postgres` hostname 而在 setup 失败，不作为代码 verdict；仓库隔离 Compose 又被本机 Docker address-pool exhaustion 阻断。改用 host-network + tmpfs disposable PostgreSQL 17，真实迁移至 head 后运行 `/2`、`/3` 参数化 working-copy regression，结果 `2 passed / 29 deselected`，临时容器已移除
+- Runtime proof: worker 从旧 ID `53659e4e1d02...` 替换为 `3a9d187f398d...`，新进程启动于 13:11:36+08，晚于 `501fd42`；worker 内 `app/review/service.py`、`app/processing/tasks.py`、`app/processing/automatic_result.py` 与 host 哈希一致，Celery `ping=pong` 且 `active/reserved/scheduled` 全空。API、PostgreSQL、Redis container ID 均保持不变，`5173` 同源 health 返回 `ok`
+- Independent review: verdict 为 `accept with concerns`，无 confirmed defect 或 recovery blocker；reviewer 确认 root-cause 时间链、worker-only recovery、关键文件 identity、队列和未改写既有项目。唯一 material risk 是尚缺 worker 重建后的真实新上传或等价 live replay，因而当前只能证明 runtime 已加载修复，不能宣称用户可见回归已经闭环
+- Next verification: 用户重传同一 PDF 后，确认 raw `auto_accepted` candidate IDs 与 working-copy `status=auto_accepted` item IDs 完全一致且非空，并在 Workbench 可见；在这项 live proof 前保持“修复待验证”
+
 ## BUG-20260801-drawing-list-get-405
 
 - Status: 调查中
