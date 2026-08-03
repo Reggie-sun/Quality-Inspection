@@ -42,6 +42,19 @@ from tests.support.provider_cycle import open_cycle_ledger
 
 
 _VISUAL_TOOL_NAME = "submit_visual_symbol_review"
+_TEST_QWEN_MODEL = "qwen3-vl-plus"
+
+
+def _qwen_provider(
+    client: object,
+    *,
+    require_cycle_permit: bool = False,
+) -> QwenVisionProvider:
+    return QwenVisionProvider(
+        client,
+        model=_TEST_QWEN_MODEL,
+        require_cycle_permit=require_cycle_permit,
+    )
 
 
 def test_provider_failure_fact_rejects_inconsistent_http_metadata() -> None:
@@ -135,7 +148,7 @@ def test_qwen_candidate_provider_localizes_transport_failures(
         def create(self, **_kwargs):
             raise provider_error
 
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(completions=FailingCompletions())
         )
@@ -158,7 +171,7 @@ def test_qwen_candidate_provider_localizes_malformed_response() -> None:
                 usage={"total_tokens": 4},
             )
 
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(completions=MalformedCompletions())
         )
@@ -215,7 +228,7 @@ def _failing_visual_provider(error: Exception) -> QwenVisionProvider:
         def create(**_kwargs: object) -> object:
             raise error
 
-    return QwenVisionProvider(
+    return _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(completions=FailingCompletions())
         )
@@ -234,7 +247,7 @@ def test_exact_cycle_qwen_adapter_requires_permit_before_sdk_submission(
             raise ConnectionError("controlled transport failure")
 
     completions = CountingCompletions()
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(chat=SimpleNamespace(completions=completions)),
         require_cycle_permit=True,
     )
@@ -284,7 +297,7 @@ def test_exact_cycle_qwen_same_permit_concurrency_allows_one_sdk_call(
             raise ConnectionError("controlled transport failure")
 
     completions = CountingCompletions()
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(chat=SimpleNamespace(completions=completions)),
         require_cycle_permit=True,
     )
@@ -433,7 +446,7 @@ def test_review_symbols_classifies_metadata_failure_without_private_detail(
                 usage=usage,
             )
 
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(
                 completions=InvalidMetadataCompletions()
@@ -579,7 +592,7 @@ def test_qwen_visual_symbol_sampling_temperature_is_pinned_to_zero() -> None:
             )
 
     completions = SamplingCompletions()
-    QwenVisionProvider(
+    _qwen_provider(
         SimpleNamespace(chat=SimpleNamespace(completions=completions))
     ).review_symbols(_png(text=None), "safe prompt")
 
@@ -779,7 +792,7 @@ def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
     )
 
     for provider_completion, expected_stage in cases:
-        provider = QwenVisionProvider(
+        provider = _qwen_provider(
             SimpleNamespace(
                 chat=SimpleNamespace(
                     completions=FixedCompletions(
@@ -802,7 +815,7 @@ def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
 
     missing_schema = tmp_path / "missing-visual-symbol.schema.json"
     monkeypatch.setattr(symbol_review, "SCHEMA_PATH", missing_schema)
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(
                 completions=FixedCompletions(
@@ -873,7 +886,7 @@ def test_qwen_localized_failures_expose_sanitized_stable_categories(
                 usage={"total_tokens": 4},
             )
 
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(
                 completions=LocalizedFailureCompletions()
@@ -926,7 +939,7 @@ def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
                 usage={"prompt_tokens": 3, "completion_tokens": 1},
             )
 
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(completions=InvalidCompletions())
         )
@@ -981,7 +994,7 @@ def test_qwen_native_integer_bbox_is_normalized_before_strict_schema() -> None:
                     usage={"total_tokens": 4},
                 )
 
-        return QwenVisionProvider(
+        return _qwen_provider(
             SimpleNamespace(
                 chat=SimpleNamespace(completions=FixedCompletions())
             )
@@ -1045,7 +1058,7 @@ def test_qwen_missing_structural_schema_version_is_normalized() -> None:
                 usage={"total_tokens": 4},
             )
 
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(completions=FixedCompletions())
         )
@@ -1092,7 +1105,7 @@ def test_qwen_structural_normalization_preserves_other_schema_failures(
                 usage={"total_tokens": 4},
             )
 
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(completions=InvalidCompletions())
         )
@@ -1149,7 +1162,7 @@ def test_qwen_native_bbox_normalization_rejects_other_invalid_forms(
                 usage={"total_tokens": 4},
             )
 
-    provider = QwenVisionProvider(
+    provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(completions=InvalidCompletions())
         )
@@ -1456,7 +1469,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         sort_keys=True,
         separators=(",", ":"),
     )
-    result = QwenVisionProvider(
+    result = _qwen_provider(
         SimpleNamespace(chat=SimpleNamespace(completions=completions))
     ).review_symbols(image, prompt)
 
@@ -1600,7 +1613,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                 usage={"total_tokens": 4},
             )
 
-    invalid_provider = QwenVisionProvider(
+    invalid_provider = _qwen_provider(
         SimpleNamespace(
             chat=SimpleNamespace(completions=InvalidCompletions())
         )
@@ -1668,7 +1681,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                     usage={"total_tokens": 4},
                 )
 
-        invalid_tool_provider = QwenVisionProvider(
+        invalid_tool_provider = _qwen_provider(
             SimpleNamespace(
                 chat=SimpleNamespace(
                     completions=InvalidToolCompletions()
@@ -1724,7 +1737,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
             VisualSymbolInputError,
             match="^visual symbol input must be one bounded PNG crop$",
         ):
-            QwenVisionProvider(
+            _qwen_provider(
                 SimpleNamespace(
                     chat=SimpleNamespace(completions=never)
                 )
@@ -1752,7 +1765,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                     usage=usage,
                 )
 
-        return QwenVisionProvider(
+        return _qwen_provider(
             SimpleNamespace(
                 chat=SimpleNamespace(completions=MetadataCompletions())
             )

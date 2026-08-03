@@ -65,6 +65,15 @@
 - Live result: implementation commit `1c3c693` 后，fresh API/worker effective identity 均为 `production_uncertainty`、`qwen3-vl-plus-2025-12-19`、cycle `none`，host/container `config.py` 与 `advisor.py` SHA-256 一致。attempt 1 successor `9f9613c0-a7f4-45df-b339-7c2eb911d6bb` 在 API 约 `32.35s`、worker `30.44s` 完成；attempt 2 successor `59801627-07c8-4112-8c0e-a5b8a75a392b` 在 API 约 `32.24s`、worker `31.39s` 完成。两次都冻结 `production_uncertainty/symbol-uncertainty-router/1`，持久化 `AutomaticResult` 与 recognition evidence，进入 `editing/active`、`partial_review_required`，各 `16` call records、`0` retry、`0` ErrorRecord，模型 identity 一致。
 - Tuning verdict: 保留 `MAX_VISUAL_IN_FLIGHT=2`。相对同输入 legacy serial baseline `90.23s`，两次 fresh worker wall 约 `30–31s`，稳定接近 `2.9x` 加速且没有 `rate_limited`、budget 或 wall failure。两个 paid successor 额度已经耗尽；本 amendment 到此停止，不授权第三次运行或 `3+` 并发。
 
+### Qwen model fallback unification follow-up — 2026-08-03
+
+- Selected lane / plan: `Heavy`，继续使用本文件作为唯一 current plan；用户明确要求把生产环境与代码 fallback 统一为同一个 frozen model，不新增第二份 spec。
+- Problem boundary / single Owner: `Settings.qwen_model` 仍是缺少显式环境值时的唯一 runtime fallback Owner；canonical `.env` 已选择 `qwen3-vl-plus-2025-12-19`，本 follow-up 只让代码 default 与 `.env.example` 对齐。Provider adapter 继续消费 settings，不拥有模型选择。
+- Old path / unchanged contract: moving alias `qwen3-vl-plus` 作为 runtime fallback 选择 `replace`，统一为 `qwen3-vl-plus-2025-12-19`。显式注入模型的 adapter test fixtures、Provider API/schema、symbol routing、并发 `2`、预算和既有 project/result identity 保持不变；不触发新的 Provider call。
+- Allowed paths / writer: parent 是唯一 writer；只允许 `backend/app/config.py`、`backend/app/providers/qwen_vl.py`、`.env.example`、`backend/tests/contract/test_qwen_vl_provider.py`、`backend/tests/contract/test_qwen_symbol_provider.py`、`backend/tests/contract/test_provider_call_records.py` 与本 plan。先写 consumer-visible RED tests，再做最小 fallback retirement；后两份 contract tests 只允许把原隐式 adapter model 改为显式 test-only fixture model，不改变其断言语义。
+- Verification / rollback: focused provider contract tests、Settings/provider-cycle related selectors、ruff、`check-contracts.py`、rendered/effective API/worker identity。rollback 只 revert 本 follow-up commit；若实际 rollback，第一项验证为默认 Provider model 恢复原 alias 的 focused test。运行容器已经从 canonical `.env` 获得 frozen model，因此代码提交不需要重建或付费 smoke。
+- Review amendment: independent reviewer 首轮 `reject` 证明 `QwenVisionProvider.__init__` 仍以 moving alias 作为第二个隐式 fallback Owner。修正必须让 adapter model 成为 required argument；明确测试 alias compatibility 的 fixture 可显式传值，但不得依赖 constructor default。下一项验证为 `provider requires explicit model` RED/GREEN、完整 Qwen Provider contract suite 与 reviewer re-review。
+
 ### Workbench background finalization amendment — 2026-07-30
 
 - Selected lane: `Standard`。本次只调整 React workbench 对既有 canonical backend APIs 的调用时机与可见控件，需要 frontend smoke，但不新增或改变 API/schema、backend Owner、runtime entry 或数据完整性边界。

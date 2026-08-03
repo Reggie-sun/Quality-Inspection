@@ -72,12 +72,15 @@ def test_qwen_request_shape_is_exact(qwen_fixture: dict) -> None:
     image = b"\x89PNG\r\ncontrolled-candidate-crop"
     prompt = "Classify this local annotation."
 
-    result = QwenVisionProvider(client).review_candidate(image, prompt)
+    result = QwenVisionProvider(
+        client,
+        model="qwen3-vl-plus-2025-12-19",
+    ).review_candidate(image, prompt)
 
     data_url = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
     assert completions.calls == [
         {
-            "model": "qwen3-vl-plus",
+            "model": "qwen3-vl-plus-2025-12-19",
             "messages": [
                 {
                     "role": "system",
@@ -124,7 +127,10 @@ def test_qwen_response_requires_non_empty_request_id(qwen_fixture: dict) -> None
     )
 
     with pytest.raises(LocalizedProviderFailure) as raised:
-        QwenVisionProvider(client).review_candidate(b"controlled", "Review")
+        QwenVisionProvider(
+            client,
+            model="qwen3-vl-plus-2025-12-19",
+        ).review_candidate(b"controlled", "Review")
 
     assert raised.value.failure_category == "schema"
     assert raised.value.__cause__ is None
@@ -157,6 +163,41 @@ def test_runtime_factory_builds_beijing_workspace_client(monkeypatch) -> None:
         "timeout": 60.0,
         "max_retries": 0,
     }
+
+
+def test_runtime_factory_uses_frozen_default_model(monkeypatch) -> None:
+    class FakeOpenAI:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+    monkeypatch.setattr("app.providers.runtime.OpenAI", FakeOpenAI)
+
+    provider = build_vision_provider(
+        Settings(
+            _env_file=None,
+            qwen_api_key="test-only-key",
+            qwen_workspace_id="ws-test-123",
+        )
+    )
+
+    assert provider._model == "qwen3-vl-plus-2025-12-19"
+
+
+def test_provider_requires_explicit_model_identity() -> None:
+    with pytest.raises(TypeError):
+        QwenVisionProvider(object())
+
+
+def test_example_environment_selects_frozen_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("QI_QWEN_MODEL", raising=False)
+
+    settings = Settings(
+        _env_file=Path(__file__).resolve().parents[3] / ".env.example"
+    )
+
+    assert settings.qwen_model == "qwen3-vl-plus-2025-12-19"
 
 
 def test_exact_cycle_settings_require_complete_frozen_runtime_identity(

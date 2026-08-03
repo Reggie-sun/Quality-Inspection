@@ -541,9 +541,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
     storage = LocalFileStorage(tmp_path / "storage")
     completions = FakeCompletions()
     success_provider = QwenVisionProvider(
-        SimpleNamespace(
-            chat=SimpleNamespace(completions=completions)
-        )
+        SimpleNamespace(chat=SimpleNamespace(completions=completions)),
+        model="qwen3-vl-plus",
     )
     advisor = CandidateAdvisor(
         Settings(qwen_model="qwen3-vl-plus"),
