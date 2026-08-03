@@ -253,6 +253,7 @@ git commit -m "feat: promote successful reprocessing"
 - Test: `backend/tests/integration/test_balloon_api.py`
 - Test: `backend/tests/integration/test_excel_export.py`
 - Test: `backend/tests/contract/test_openapi_contract.py`
+- Modify: `backend/tests/contract/snapshots/api-v1.openapi.json`
 
 **Interfaces:**
 - Consumes: Task 2 lifecycle methods and `ProjectAccess` modes。
@@ -314,6 +315,12 @@ Projects routes 使用：status=`STATUS_READ`；source/preview=`PROCESSING_READ`
 ("DELETE", "/api/v1/projects/{project_id}"): "QI-API-PRJ-009",
 ```
 
+Regenerate the approved projection with:
+
+Run: `cd backend && micromamba run -n qi-p0 python -m app.contracts.openapi --baseline tests/contract/snapshots/api-v1.openapi.json --write`
+
+Expected: `openapi_snapshot_written=tests/contract/snapshots/api-v1.openapi.json`。
+
 - [ ] **Step 6: Run tests to verify GREEN**
 
 Run: `micromamba run -n qi-p0 pytest backend/tests/integration/test_project_lifecycle_api.py backend/tests/integration/test_project_workbench_api.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_balloon_api.py backend/tests/integration/test_excel_export.py backend/tests/contract/test_openapi_contract.py -q`
@@ -323,7 +330,7 @@ Expected: PASS。
 - [ ] **Step 7: Commit**
 
 ```bash
-git add backend/app/projects/schemas.py backend/app/projects/router.py backend/app/review/router.py backend/app/balloons/router.py backend/app/exports/router.py backend/app/exports/service.py backend/tests/integration/test_project_lifecycle_api.py backend/tests/integration/test_project_workbench_api.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_balloon_api.py backend/tests/integration/test_excel_export.py backend/tests/contract/test_openapi_contract.py
+git add backend/app/projects/schemas.py backend/app/projects/router.py backend/app/review/router.py backend/app/balloons/router.py backend/app/exports/router.py backend/app/exports/service.py backend/tests/integration/test_project_lifecycle_api.py backend/tests/integration/test_project_workbench_api.py backend/tests/integration/test_review_operations.py backend/tests/integration/test_balloon_api.py backend/tests/integration/test_excel_export.py backend/tests/contract/test_openapi_contract.py backend/tests/contract/snapshots/api-v1.openapi.json
 git commit -m "feat: expose guarded project lifecycle APIs"
 ```
 
@@ -457,7 +464,6 @@ git commit -m "feat: add drawing lifecycle actions"
 **Files:**
 - Modify: `frontend/src/app/QualityInspectionApp.tsx:128-330`
 - Modify: `frontend/src/app/QualityInspectionApp.test.tsx`
-- Modify: `backend/tests/contract/snapshots/api-v1.openapi.json`
 - Modify: `frontend/src/api/generated.ts`
 - Modify: `docs/contracts/API_SURFACE_INDEX.md`
 
@@ -517,10 +523,6 @@ Run: `cd frontend && npm run build`
 Expected: exit 0。
 
 - [ ] **Step 5: Regenerate stable contract artifacts**
-
-Run: `cd backend && micromamba run -n qi-p0 python -m app.contracts.openapi --baseline tests/contract/snapshots/api-v1.openapi.json --write`
-
-Expected: 输出 `openapi_snapshot_written=tests/contract/snapshots/api-v1.openapi.json`；不得手改 generated schema 来绕过 generator。
 
 Run: `cd frontend && npm run api:generate`
 
