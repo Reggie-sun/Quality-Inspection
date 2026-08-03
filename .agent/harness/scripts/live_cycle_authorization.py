@@ -1149,7 +1149,8 @@ def _validate_terminal_public_binding(
         != run.get("consumption_sha256")
         or run_document["cycle_authorization"].get("run_authorization_sha256")
         != run["content_sha256"]
-        or live.get("schema_version") != "live-run-evidence/3"
+        or live.get("schema_version")
+        not in {"live-run-evidence/3", "live-run-evidence/4"}
         or live.get("run_id") != run_id
         or not isinstance(live.get("paid_cycle"), Mapping)
         or live["paid_cycle"].get("cycle_id") != _GDT10E_CYCLE_ID

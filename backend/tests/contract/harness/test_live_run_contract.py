@@ -386,6 +386,10 @@ def _sample_evidence(order: int) -> dict[str, object]:
         "candidates": {
             "candidate_count": 3,
             "candidate_ids": candidate_ids,
+            "automatic_result_schema_version": "automatic-result/3",
+            "automatic_result_auto_accepted_item_ids": [item_ids[0]],
+            "working_copy_auto_accepted_item_ids": [item_ids[0]],
+            "workbench_auto_accepted_item_ids": [item_ids[0]],
             "source_location_ids": [
                 f"source-{order}-1",
                 f"source-{order}-2",
@@ -529,6 +533,10 @@ def _visual_text_candidate_evidence() -> dict[str, object]:
     return {
         "candidate_count": 1,
         "candidate_ids": [candidate_id],
+        "automatic_result_schema_version": "automatic-result/3",
+        "automatic_result_auto_accepted_item_ids": [candidate_id],
+        "working_copy_auto_accepted_item_ids": [candidate_id],
+        "workbench_auto_accepted_item_ids": [candidate_id],
         "source_location_ids": ["line-1", "span-1", "visual-1"],
         "coverage_checked": True,
         "coverage_blocking_count": 0,
@@ -775,6 +783,151 @@ def test_candidate_evidence_accepts_inventory_backed_visual_text_union() -> None
     )
 
     policy.validate_candidate_evidence(1, _visual_text_candidate_evidence())
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda value: value.__setitem__(
+            "automatic_result_auto_accepted_item_ids",
+            [],
+        ),
+        lambda value: value.__setitem__(
+            "working_copy_auto_accepted_item_ids",
+            [],
+        ),
+        lambda value: value.__setitem__(
+            "workbench_auto_accepted_item_ids",
+            [],
+        ),
+    ],
+)
+def test_candidate_evidence_rejects_auto_accepted_projection_drift(mutate) -> None:
+    policy = _load_module(
+        "qi_auto_accepted_projection_policy",
+        HARNESS / "scripts/live_evidence_policy.py",
+    )
+    candidates = _visual_text_candidate_evidence()
+    mutate(candidates)
+
+    with pytest.raises(ValueError, match="auto-accepted projection is inconsistent"):
+        policy.validate_candidate_evidence(1, candidates)
+
+
+def test_workbench_auto_accepted_projection_requires_strict_status() -> None:
+    runner = _load_module(
+        "qi_workbench_auto_accepted_projection",
+        HARNESS / "scripts/run-p0.py",
+    )
+
+    assert runner._workbench_auto_accepted_item_ids(
+        {
+            "project": {"id": "project-1"},
+            "candidates": [
+                {
+                    "item_id": "item-accepted",
+                    "review_disposition": "auto_accepted",
+                    "status": "auto_accepted",
+                },
+                {
+                    "item_id": "item-status-drift",
+                    "review_disposition": "auto_accepted",
+                    "status": "pending",
+                },
+                {
+                    "item_id": "item-policy-drift",
+                    "review_disposition": "review_required",
+                    "status": "auto_accepted",
+                },
+            ],
+        },
+        project_id="project-1",
+    ) == ["item-accepted"]
+
+
+def test_prepare_auto_accepted_collector_uses_validated_bootstrap_semantics() -> None:
+    from app.candidates.confidence import validate_confidence_decision
+
+    runner = _load_module(
+        "qi_prepare_auto_accepted_projection",
+        HARNESS / "scripts/run-p0.py",
+    )
+    collect = _embedded_function(
+        runner._PREPARE_PROJECT_PROGRAM,
+        "auto_accepted_ids",
+        {"validate_confidence_decision": validate_confidence_decision},
+    )
+    high = {
+        "band": "high",
+        "review_disposition": "auto_accepted",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": ["typed_schema_complete"],
+    }
+    review_required = {
+        "band": "medium",
+        "review_disposition": "review_required",
+        "policy_version": "candidate-confidence/1",
+        "evidence_codes": ["typed_schema_complete"],
+    }
+
+    assert collect(
+        [
+            {"candidate_id": "candidate-high", "confidence_decision": high},
+            {
+                "candidate_id": "candidate-medium",
+                "confidence_decision": review_required,
+            },
+        ],
+        identity_field="candidate_id",
+        require_bootstrap_status=False,
+    ) == ["candidate-high"]
+    assert collect(
+        [
+            {
+                "item_id": "item-high",
+                "confidence_decision": high,
+                "status": "auto_accepted",
+                "requires_confirmation": False,
+                "acceptance_source": "confidence_policy",
+                "active": True,
+            },
+            {
+                "item_id": "item-status-drift",
+                "confidence_decision": high,
+                "status": "pending",
+                "requires_confirmation": False,
+                "acceptance_source": "confidence_policy",
+                "active": True,
+            },
+            {
+                "item_id": "item-source-drift",
+                "confidence_decision": high,
+                "status": "auto_accepted",
+                "requires_confirmation": False,
+                "acceptance_source": None,
+                "active": True,
+            },
+            {
+                "item_id": "item-inactive",
+                "confidence_decision": high,
+                "status": "auto_accepted",
+                "requires_confirmation": False,
+                "acceptance_source": "confidence_policy",
+                "active": False,
+            },
+        ],
+        identity_field="item_id",
+        require_bootstrap_status=True,
+    ) == ["item-high"]
+    with pytest.raises(RuntimeError, match="identity is duplicated"):
+        collect(
+            [
+                {"candidate_id": "candidate-high", "confidence_decision": high},
+                {"candidate_id": "candidate-high", "confidence_decision": high},
+            ],
+            identity_field="candidate_id",
+            require_bootstrap_status=False,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1727,8 +1880,13 @@ def test_gdt10e_v3_lifecycle_requires_the_exact_fact_only_when_accepted(
         policy.account_readiness_projection(completed, completed_live, fact)
 
 
+@pytest.mark.parametrize(
+    "live_schema_version",
+    ["live-run-evidence/3", "live-run-evidence/4"],
+)
 def test_gdt10e_runtime_acceptance_projection_binds_only_the_fact_hash(
     tmp_path: Path,
+    live_schema_version: str,
 ) -> None:
     """Mutation caught: projecting acceptance without the immutable fact binding."""
     policy = _load_module(
@@ -1760,7 +1918,7 @@ def test_gdt10e_runtime_acceptance_projection_binds_only_the_fact_hash(
         "readiness_evidence": readiness,
     }
     live = _live_evidence()
-    live["schema_version"] = "live-run-evidence/3"
+    live["schema_version"] = live_schema_version
     live["paid_cycle"] = {
         "cycle_id": ACCOUNT_READINESS_CYCLE,
             "pricing_sha256": pricing_sha256,
@@ -2912,6 +3070,14 @@ def test_legacy_and_gdt10e_live_evidence_schemas_are_closed() -> None:
         HARNESS / "scripts/run-p0.py",
     )
     legacy_live = _live_evidence()
+    for sample in legacy_live["samples"]:
+        for field in (
+            "automatic_result_schema_version",
+            "automatic_result_auto_accepted_item_ids",
+            "working_copy_auto_accepted_item_ids",
+            "workbench_auto_accepted_item_ids",
+        ):
+            sample["candidates"].pop(field)
     assert legacy_live["schema_version"] == "live-run-evidence/2"
     _validate(legacy_live, "live-run-evidence.schema.json")
     with pytest.raises(jsonschema.ValidationError):
@@ -2919,13 +3085,25 @@ def test_legacy_and_gdt10e_live_evidence_schemas_are_closed() -> None:
             {**legacy_live, "unexpected": True}, "live-run-evidence.schema.json"
         )
 
+    legacy_gdt10e_live = _gdt10e_v3_live(_gdt10e_v3_run())
+    legacy_gdt10e_live["samples"] = json.loads(json.dumps(legacy_live["samples"]))
+    _validate(legacy_gdt10e_live, "live-run-evidence.schema.json")
+
     gdt10e_live = _gdt10e_v3_live(_gdt10e_v3_run())
+    gdt10e_live["schema_version"] = "live-run-evidence/4"
+    gdt10e_live["samples"] = _live_evidence()["samples"]
     assert runner.LIVE_EVIDENCE_SCHEMA_VERSION == gdt10e_live["schema_version"]
     _validate(gdt10e_live, "live-run-evidence.schema.json")
     with pytest.raises(jsonschema.ValidationError):
         _validate(
             {**gdt10e_live, "unexpected": True}, "live-run-evidence.schema.json"
         )
+    missing_projection = json.loads(json.dumps(gdt10e_live))
+    missing_projection["samples"][0]["candidates"].pop(
+        "workbench_auto_accepted_item_ids"
+    )
+    with pytest.raises(jsonschema.ValidationError):
+        _validate(missing_projection, "live-run-evidence.schema.json")
 
     verdict = {
         "schema_version": "human-verdict/1",
@@ -4681,6 +4859,17 @@ def test_live_phase_outcomes_require_strong_per_sample_evidence(
 
     weak = _materialize_bound_live_evidence(run_dir, design_qa)
     weak["samples"][0]["candidates"]["coverage_checked"] = False
+    (run_dir / "live-run-evidence.json").write_text(
+        json.dumps(weak),
+        encoding="utf-8",
+    )
+    assert runner._live_phase_outcome(
+        "phase://live/candidates?input_set=current-four",
+        run_dir,
+    )[1] == "blocked"
+
+    weak = _materialize_bound_live_evidence(run_dir, design_qa)
+    weak["samples"][0]["candidates"]["workbench_auto_accepted_item_ids"] = []
     (run_dir / "live-run-evidence.json").write_text(
         json.dumps(weak),
         encoding="utf-8",
@@ -10153,8 +10342,14 @@ def test_gdt10e_terminal_cleanup_rejects_unpaired_or_unvalidated_authorization_c
     assert (root / "account-readiness.json").exists()
 
 
-def test_gdt10e_terminal_cleanup_public_v3_binding_rejects_duplicate_run_keys(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "live_schema_version",
+    ["live-run-evidence/3", "live-run-evidence/4"],
+)
+def test_gdt10e_terminal_cleanup_public_binding_rejects_duplicate_run_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_schema_version: str,
 ) -> None:
     """Mutation caught: JSON parsing a public run before duplicate-key rejection."""
     authorization, readiness_module, root, intent, readiness = (
@@ -10209,6 +10404,7 @@ def test_gdt10e_terminal_cleanup_public_v3_binding_rejects_duplicate_run_keys(
     )
     _validate(public_run, "run.schema.json")
     public_live = _gdt10e_v3_live(public_run)
+    public_live["schema_version"] = live_schema_version
     public_live["run_id"] = run_id
     public_live["paid_cycle"].update({
         "issuance_sha256": issuance["content_sha256"],
