@@ -3156,67 +3156,6 @@ describe("InspectionWorkbench", () => {
       .getAttribute("data-selected")).toBe("true");
   });
 
-  test("技术要求入口在目标已选中时仍将焦点交给检验项审核", () => {
-    const items = [{
-      item_id: "pending-dimension-100",
-      item_type: "linear_dimension" as const,
-      raw_text: "100",
-      nominal: "100",
-      status: "pending",
-      requires_confirmation: true,
-      balloon_required: true,
-      active: true,
-    }];
-    render(
-      <InspectionWorkbench
-        pdfDocument={null}
-        candidates={[]}
-        sources={[]}
-        balloons={[]}
-        items={items}
-        workingCopy={{
-          id: "technical-navigation-selected-working-copy",
-          project_id: "project",
-          raw_result_id: "raw",
-          version: 1,
-          items,
-          coverage: { blocking_count: 0, review_required_count: 1 },
-          technical_requirements: [{
-            requirement_id: "requirement-confirmed",
-            ordinal: 1,
-            raw_text: "未注尺寸公差按 GB/T 1804-m 执行",
-            normalized_text: "未注尺寸公差按 GB/T 1804-m 执行",
-            source_location_ids: ["source-1"],
-            page_index: 0,
-            category: "applicability_rule",
-            subtype: "general_dimensional_tolerance",
-            parsed_parameters: {},
-            match_outcome: "matched_items",
-            matched_candidate_ids: ["pending-dimension-100"],
-            rule_version: "technical-requirement/1",
-            review_required: false,
-            review_status: "confirmed",
-          }],
-          manual_review_count: 1,
-          numbering_stale: false,
-          items_frozen_at: null,
-          items_frozen_by: null,
-          items_frozen_version: null,
-        }}
-        onSave={vi.fn().mockResolvedValue(undefined)}
-      />,
-    );
-
-    const selectedRow = screen.getByRole("row", { name: /100/ });
-    expect(selectedRow.getAttribute("data-selected")).toBe("true");
-
-    fireEvent.click(screen.getByRole("button", {
-      name: "进入检验项审核",
-    }));
-
-    return waitFor(() => expect(document.activeElement).toBe(selectedRow));
-  });
-
   test("有草稿时返回列表提供保存、不保存和取消三种选择", () => {
     const onReset = vi.fn();
     const onSave = vi.fn().mockResolvedValue(undefined);

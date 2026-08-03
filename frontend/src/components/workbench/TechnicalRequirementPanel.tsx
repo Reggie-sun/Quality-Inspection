@@ -22,7 +22,6 @@ type TechnicalRequirementPanelProps = {
   items: ReviewItem[];
   disabled?: boolean;
   onSelectItem: (itemId: string) => boolean | void;
-  onEnterReview: (itemId: string) => boolean | void;
   onCommand: (
     command: ReviewCommand,
   ) => boolean | void | Promise<boolean | void>;
@@ -127,7 +126,6 @@ export function TechnicalRequirementPanel({
   items,
   disabled = false,
   onSelectItem,
-  onEnterReview,
   onCommand,
   onDraftChange,
   draftSaveRef,
@@ -169,11 +167,6 @@ export function TechnicalRequirementPanel({
   const activeRequirement = requirements.find(
     (requirement) => requirement.requirement_id === activeRequirementId,
   );
-  const handoffTargetId = requirements
-    .flatMap((requirement) => requirement.matched_candidate_ids)
-    .find((itemId) => itemById.has(itemId))
-    ?? candidateItems[0]?.item_id;
-
   useEffect(() => {
     if (activeRequirement === undefined) {
       setDraft(EMPTY_DRAFT);
@@ -368,15 +361,6 @@ export function TechnicalRequirementPanel({
               {zhCN.technicalRequirements.pendingCount(pendingCount)}
             </span>
           )}
-          {pendingCount === 0 && handoffTargetId !== undefined ? (
-            <button
-              type="button"
-              className="technical-requirements__next"
-              onClick={() => onEnterReview(handoffTargetId)}
-            >
-              {zhCN.technicalRequirements.proceed}
-            </button>
-          ) : null}
           <button
             type="button"
             aria-controls={listId}

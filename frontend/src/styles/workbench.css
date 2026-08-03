@@ -1964,12 +1964,6 @@
   font-weight: 650;
 }
 
-.technical-requirements__meta .technical-requirements__next {
-  border-color: #b2ddff;
-  background: #eff8ff;
-  color: #175cd3;
-}
-
 .technical-requirements__list {
   display: grid;
   align-content: start;

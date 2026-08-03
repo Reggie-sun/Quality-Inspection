@@ -300,7 +300,6 @@ export const zhCN = {
     modify: "修改",
     waiting: "等待前一条确认",
     refreshing: "已提交，正在刷新结果",
-    proceed: "进入检验项审核",
     nextStepTitle: "下一步：检验项审核",
     nextStepHint:
       "检查受影响检验项中预填的 SIP 信息；技术要求确认不会直接冻结、编号或生成气泡。",

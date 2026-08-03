@@ -299,7 +299,6 @@ export function InspectionWorkbench({
   const sourceDraftSaveRef = useRef<DraftSaveHandle>(null);
   const selectedSipDraftSaveRef = useRef<DraftSaveHandle>(null);
   const technicalRequirementDraftSaveRef = useRef<DraftSaveHandle>(null);
-  const inspectionReviewWorkspaceRef = useRef<HTMLDivElement>(null);
   const returnActionRef = useRef<HTMLButtonElement>(null);
   const saveAndReturnRef = useRef<HTMLButtonElement>(null);
   const prepareAttemptRef = useRef<string | undefined>(undefined);
@@ -637,18 +636,6 @@ export function InspectionWorkbench({
     setPageIndex(item?.page_index ?? balloon?.pageIndex ?? pageIndex);
     return true;
   };
-  const enterInspectionReview = (itemId: string): boolean => {
-    setFilter("all");
-    if (!selectItem(itemId)) return false;
-    window.setTimeout(() => {
-      const selectedRow = inspectionReviewWorkspaceRef.current
-        ?.querySelector<HTMLElement>("[role='row'][data-selected='true']");
-      const focusTarget = selectedRow ?? inspectionReviewWorkspaceRef.current;
-      focusTarget?.focus({ preventScroll: true });
-      selectedRow?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-    }, 0);
-    return true;
-  };
   const selectSource = (sourceId: string): boolean => {
     if (!pendingSources.some((source) => source.sourceId === sourceId)) {
       return false;
@@ -891,17 +878,14 @@ export function InspectionWorkbench({
               setFilter("all");
               return selectItem(itemId);
             }}
-            onEnterReview={enterInspectionReview}
             onCommand={submitCommand}
             onDraftChange={setTechnicalRequirementDraftDirty}
             draftSaveRef={technicalRequirementDraftSaveRef}
           />
           <div
-            ref={inspectionReviewWorkspaceRef}
             className="inspection-review-workspace"
             role="group"
             aria-label={zhCN.workbench.mergedReviewWorkspace}
-            tabIndex={-1}
           >
             <div className="inspection-review-workspace__list">
               <InspectionItemTable

@@ -76,7 +76,6 @@ test("显示 matched、global 和 unresolved 技术要求状态", () => {
         },
       ]}
       onSelectItem={vi.fn()}
-      onEnterReview={vi.fn()}
       onCommand={vi.fn()}
     />,
   );
@@ -116,7 +115,6 @@ test("系统建议先形成草稿，预览影响后才提交并进入下一条",
       },
     ],
     onSelectItem: vi.fn(),
-    onEnterReview: vi.fn(),
     onCommand,
   };
   const { rerender } = render(
@@ -207,7 +205,6 @@ test("部分检验项使用可搜索多选，并一次提交完整 target 集合
         },
       ]}
       onSelectItem={vi.fn()}
-      onEnterReview={vi.fn()}
       onCommand={onCommand}
     />,
   );
@@ -252,9 +249,8 @@ test("部分检验项使用可搜索多选，并一次提交完整 target 集合
   });
 });
 
-test("终态收敛为只读摘要，并可查看、修改和进入检验项审核", () => {
+test("终态收敛为只读摘要且不再显示额外审核入口", () => {
   const onSelectItem = vi.fn();
-  const onEnterReview = vi.fn();
   render(
     <TechnicalRequirementPanel
       requirements={[
@@ -280,14 +276,12 @@ test("终态收敛为只读摘要，并可查看、修改和进入检验项审�
         },
       ]}
       onSelectItem={onSelectItem}
-      onEnterReview={onEnterReview}
       onCommand={vi.fn()}
     />,
   );
 
   expect(screen.getByText("已确认 1")).not.toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "进入检验项审核" }));
-  expect(onEnterReview).toHaveBeenCalledWith("dimension-25");
+  expect(screen.queryByRole("button", { name: "进入检验项审核" })).toBeNull();
   expect(onSelectItem).not.toHaveBeenCalled();
 
   fireEvent.click(screen.getByRole("button", { name: "展开技术要求" }));
@@ -323,7 +317,6 @@ test("全局和排除选择只在显式确认后提交", async () => {
       })]}
       items={[]}
       onSelectItem={vi.fn()}
-      onEnterReview={vi.fn()}
       onCommand={onCommand}
     />,
   );
@@ -356,7 +349,6 @@ test("修改已确认全局要求时不再把用户决策标成系统建议", ()
       })]}
       items={[]}
       onSelectItem={vi.fn()}
-      onEnterReview={vi.fn()}
       onCommand={vi.fn()}
     />,
   );
@@ -384,7 +376,6 @@ test("从部分检验项切回全局时只提交最终模式且不携带旧关�
         active: true,
       }]}
       onSelectItem={vi.fn()}
-      onEnterReview={vi.fn()}
       onCommand={onCommand}
     />,
   );
@@ -419,7 +410,6 @@ test("提交失败保留草稿，取消后才清除 dirty 状态", async () => {
       requirements={[requirement("failed", "未注尺寸公差")]}
       items={[]}
       onSelectItem={vi.fn()}
-      onEnterReview={vi.fn()}
       onCommand={onCommand}
       onDraftChange={onDraftChange}
     />,
@@ -454,7 +444,6 @@ test("排除要求只在显式确认后提交，disabled 状态禁止形成草�
     requirements: [requirement("excluded", "非本次检验范围")],
     items: [],
     onSelectItem: vi.fn(),
-    onEnterReview: vi.fn(),
     onCommand,
     onDraftChange,
   };
@@ -496,7 +485,6 @@ test("当前要求存在 dirty 草稿时禁止切换修改其他终态要求", a
       ]}
       items={[]}
       onSelectItem={vi.fn()}
-      onEnterReview={vi.fn()}
       onCommand={vi.fn()}
       onDraftChange={onDraftChange}
     />,
