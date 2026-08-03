@@ -38,6 +38,7 @@
 - Modify: `backend/app/projects/models.py:1-47`
 - Modify: `backend/alembic/env.py:1-18`
 - Test: `backend/tests/integration/test_project_lifecycle_schema.py`
+- Test: `backend/tests/integration/test_schema.py:90-120`
 
 **Interfaces:**
 - Consumes: 既有 `Project.id`, `Project.state`, `Project.source_filename` 和 migration head `0013`。
@@ -60,6 +61,8 @@ def test_project_lifecycle_migration_is_attached_to_current_head() -> None:
 ```
 
 在 PostgreSQL transaction fixture 中增加 upgrade assertions：catalog row backfill 为 `active`、无 filename row 为 `unlisted`、self predecessor 和 invalid deleted timestamp 被 constraint 拒绝、同一 predecessor 的第二个 `reprocessing` successor 被 partial unique index 拒绝。增加 downgrade assertion：存在非初始 lifecycle truth 时 `downgrade()` 抛出 `RuntimeError`。
+
+同步扩展既有 exact project schema assertion，要求新增且仅新增 `lifecycle_status`、`predecessor_project_id`、`deleted_at` 三列，并验证 lifecycle column non-null/default 与 self foreign key。
 
 - [ ] **Step 2: Run tests to verify RED**
 
@@ -101,7 +104,7 @@ Expected: PASS。
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/alembic/versions/0014_project_lifecycle.py backend/alembic/env.py backend/app/projects/models.py backend/tests/integration/test_project_lifecycle_schema.py
+git add backend/alembic/versions/0014_project_lifecycle.py backend/alembic/env.py backend/app/projects/models.py backend/tests/integration/test_project_lifecycle_schema.py backend/tests/integration/test_schema.py
 git commit -m "feat: add project lifecycle schema"
 ```
 
