@@ -54,6 +54,8 @@ function fakeApi(
     getProjectStatus,
     listProjects: vi.fn().mockResolvedValue([]),
     markProjectOpened: vi.fn().mockResolvedValue(undefined),
+    reprocessProject: vi.fn(),
+    deleteProject: vi.fn(),
   };
 }
 
@@ -69,6 +71,8 @@ it("shows an empty drawing list with an upload action", () => {
       api={fakeApi()}
       onUpload={onUpload}
       onOpen={vi.fn()}
+      onReprocess={vi.fn()}
+      onDelete={vi.fn()}
     />,
   );
 
@@ -97,6 +101,8 @@ it("shows multiple drawings and opens the selected entry", async () => {
       api={fakeApi(getProjectStatus)}
       onUpload={vi.fn()}
       onOpen={onOpen}
+      onReprocess={vi.fn()}
+      onDelete={vi.fn()}
     />,
   );
 
@@ -121,6 +127,8 @@ it("isolates a status request failure to its drawing row", async () => {
       api={fakeApi(getProjectStatus)}
       onUpload={vi.fn()}
       onOpen={vi.fn()}
+      onReprocess={vi.fn()}
+      onDelete={vi.fn()}
     />,
   );
 
@@ -145,10 +153,98 @@ it("aborts pending status requests when unmounted", async () => {
       api={fakeApi(getProjectStatus)}
       onUpload={vi.fn()}
       onOpen={vi.fn()}
+      onReprocess={vi.fn()}
+      onDelete={vi.fn()}
     />,
   );
 
   await waitFor(() => expect(signals).toHaveLength(2));
   unmount();
   expect(signals.every((signal) => signal.aborted)).toBe(true);
+});
+
+
+it("在继续处理旁提供重新识别和删除操作", async () => {
+  render(
+    <DrawingListScreen
+      entries={[ENTRY_A]}
+      api={fakeApi()}
+      onUpload={vi.fn()}
+      onOpen={vi.fn()}
+      onReprocess={vi.fn()}
+      onDelete={vi.fn()}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "打开 A.pdf 的更多操作" }));
+  const menu = screen.getByRole("menu");
+  expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent))
+    .toEqual(["重新识别", "删除图纸"]);
+
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("menu")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "打开 A.pdf 的更多操作" }));
+  fireEvent.mouseDown(document.body);
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+
+it("确认重新识别时保留当前版本说明并防止重复提交", async () => {
+  let finish: (() => void) | undefined;
+  const onReprocess = vi.fn(() => new Promise<void>((resolve) => {
+    finish = resolve;
+  }));
+  render(
+    <DrawingListScreen
+      entries={[ENTRY_A]}
+      api={fakeApi()}
+      onUpload={vi.fn()}
+      onOpen={vi.fn()}
+      onReprocess={onReprocess}
+      onDelete={vi.fn()}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "打开 A.pdf 的更多操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "重新识别" }));
+  const dialog = screen.getByRole("dialog", { name: "重新识别 A.pdf？" });
+  expect(within(dialog).getByText(
+    "系统将使用当前识别能力重新处理原始 PDF。新结果成功前，当前版本仍可继续使用；成功后将切换到新版本。",
+  )).not.toBeNull();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "确认重新识别" }));
+  expect(onReprocess).toHaveBeenCalledOnce();
+  expect(within(dialog).getByRole("button", { name: "正在提交" })
+    .hasAttribute("disabled")).toBe(true);
+
+  finish?.();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
+
+it("删除确认说明产品侧不可恢复并安全呈现失败", async () => {
+  const onDelete = vi.fn().mockRejectedValue(new Error("private backend detail"));
+  render(
+    <DrawingListScreen
+      entries={[ENTRY_A]}
+      api={fakeApi()}
+      onUpload={vi.fn()}
+      onOpen={vi.fn()}
+      onReprocess={vi.fn()}
+      onDelete={onDelete}
+    />,
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "打开 A.pdf 的更多操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "删除图纸" }));
+  const dialog = screen.getByRole("dialog", { name: "删除 A.pdf？" });
+  expect(within(dialog).getByText(
+    "删除后，这张图纸将从图纸列表和工作区永久移除，无法恢复。系统仅按审计和数据完整性要求保留内部记录。",
+  )).not.toBeNull();
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "确认删除" }));
+  expect((await within(dialog).findByRole("alert")).textContent)
+    .toContain("操作失败，请稍后重试。");
+  expect(document.body.textContent).not.toContain("private backend detail");
 });

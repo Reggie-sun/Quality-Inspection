@@ -11,7 +11,14 @@ type DrawingListScreenProps = {
   warning?: string;
   onUpload: () => void;
   onOpen: (entry: ProjectListItem) => void;
+  onReprocess: (entry: ProjectListItem) => Promise<void>;
+  onDelete: (entry: ProjectListItem) => Promise<void>;
   loaded?: boolean;
+};
+
+type LifecycleAction = {
+  kind: "reprocess" | "delete";
+  entry: ProjectListItem;
 };
 
 type DrawingStatus =
@@ -51,9 +58,15 @@ export function DrawingListScreen({
   warning,
   onUpload,
   onOpen,
+  onReprocess,
+  onDelete,
   loaded = true,
 }: DrawingListScreenProps) {
   const [statuses, setStatuses] = useState<Record<string, DrawingStatus>>({});
+  const [openMenuProjectId, setOpenMenuProjectId] = useState<string>();
+  const [action, setAction] = useState<LifecycleAction>();
+  const [actionPending, setActionPending] = useState(false);
+  const [actionError, setActionError] = useState<string>();
 
   useEffect(() => {
     const controllers = entries.map((entry) => {
@@ -83,6 +96,55 @@ export function DrawingListScreen({
       for (const controller of controllers) controller.abort();
     };
   }, [api, entries]);
+
+  useEffect(() => {
+    if (openMenuProjectId === undefined) return;
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!(event.target instanceof Element)) return;
+      if (event.target.closest("[data-drawing-actions]") === null) {
+        setOpenMenuProjectId(undefined);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenuProjectId(undefined);
+    };
+    document.addEventListener("mousedown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [openMenuProjectId]);
+
+  const chooseAction = (
+    kind: LifecycleAction["kind"],
+    entry: ProjectListItem,
+  ) => {
+    setOpenMenuProjectId(undefined);
+    setAction({ kind, entry });
+    setActionError(undefined);
+  };
+
+  const closeDialog = () => {
+    if (actionPending) return;
+    setAction(undefined);
+    setActionError(undefined);
+  };
+
+  const confirmAction = async () => {
+    if (action === undefined || actionPending) return;
+    setActionPending(true);
+    setActionError(undefined);
+    try {
+      if (action.kind === "reprocess") await onReprocess(action.entry);
+      else await onDelete(action.entry);
+      setAction(undefined);
+    } catch {
+      setActionError(zhCN.drawingList.actionFailed);
+    } finally {
+      setActionPending(false);
+    }
+  };
 
   return (
     <main className="drawing-list-shell">
@@ -156,15 +218,51 @@ export function DrawingListScreen({
                     </td>
                     <td>{readableDate(entry.lastOpenedAt)}</td>
                     <td>
-                      <button
-                        type="button"
-                        aria-label={zhCN.drawingList.continueDrawing(
-                          entry.fileName,
-                        )}
-                        onClick={() => onOpen(entry)}
-                      >
-                        {zhCN.drawingList.continue}
-                      </button>
+                      <div className="drawing-list-actions" data-drawing-actions>
+                        <button
+                          type="button"
+                          aria-label={zhCN.drawingList.continueDrawing(
+                            entry.fileName,
+                          )}
+                          onClick={() => onOpen(entry)}
+                        >
+                          {zhCN.drawingList.continue}
+                        </button>
+                        <div className="drawing-list-actions__menu-anchor">
+                          <button
+                            className="drawing-list-actions__more"
+                            type="button"
+                            aria-label={zhCN.drawingList.moreActions(entry.fileName)}
+                            aria-haspopup="menu"
+                            aria-expanded={openMenuProjectId === entry.projectId}
+                            onClick={() => setOpenMenuProjectId((current) =>
+                              current === entry.projectId
+                                ? undefined
+                                : entry.projectId)}
+                          >
+                            ⋯
+                          </button>
+                          {openMenuProjectId !== entry.projectId ? null : (
+                            <div className="drawing-list-actions__menu" role="menu">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => chooseAction("reprocess", entry)}
+                              >
+                                {zhCN.drawingList.reprocess}
+                              </button>
+                              <button
+                                className="drawing-list-actions__danger"
+                                type="button"
+                                role="menuitem"
+                                onClick={() => chooseAction("delete", entry)}
+                              >
+                                {zhCN.drawingList.delete}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -173,6 +271,50 @@ export function DrawingListScreen({
           </div>
         )}
       </section>
+
+      {action === undefined ? null : (
+        <div className="drawing-action-dialog-backdrop">
+          <section
+            className="drawing-action-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="drawing-action-dialog-title"
+          >
+            <h2 id="drawing-action-dialog-title">
+              {action.kind === "reprocess"
+                ? zhCN.drawingList.reprocessTitle(action.entry.fileName)
+                : zhCN.drawingList.deleteTitle(action.entry.fileName)}
+            </h2>
+            <p>
+              {action.kind === "reprocess"
+                ? zhCN.drawingList.reprocessDescription
+                : zhCN.drawingList.deleteDescription}
+            </p>
+            {actionError === undefined ? null : (
+              <p className="message message--error" role="alert">{actionError}</p>
+            )}
+            <div className="drawing-action-dialog__actions">
+              <button type="button" disabled={actionPending} onClick={closeDialog}>
+                {zhCN.drawingList.cancel}
+              </button>
+              <button
+                className={action.kind === "delete"
+                  ? "button drawing-action-dialog__danger"
+                  : "button button--primary"}
+                type="button"
+                disabled={actionPending}
+                onClick={() => void confirmAction()}
+              >
+                {actionPending
+                  ? zhCN.drawingList.submitting
+                  : action.kind === "reprocess"
+                    ? zhCN.drawingList.confirmReprocess
+                    : zhCN.drawingList.confirmDelete}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
