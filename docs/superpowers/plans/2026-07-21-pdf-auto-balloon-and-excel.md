@@ -62,6 +62,8 @@
 - Verification transition: topology RED 按预期以 missing `QI_SYMBOL_RECOGNITION_MODE` 失败；Compose promotion 后完整 `test_runtime_topology.py` 为 `11 passed`，rendered API/worker mode 都是 `production_uncertainty`，`check-contracts.py` 与 `git diff --check` 通过。直接修改 `Settings` 的旧尝试及其测试改动已完全撤回。
 - Full-suite boundary: 直连业务 PostgreSQL 的 full test 结果因 live rows/迁移 evidence 污染而无效；随后 repository-owned isolated `make test-backend` 在创建 disposable network 前被 Docker `all predefined address pools have been fully subnetted` 阻断，未运行测试、未清理任何 network。该 external capacity blocker 不替代 focused gate。
 - Next verification: 补齐 base/QA/server rendered config、legacy-row-on-production-process 与 legacy-predecessor-to-production-successor regressions；independent review 接受后 commit 精确 allowed paths，再按 exact activation identity 激活并执行 bounded attempt 1。
+- Live result: implementation commit `1c3c693` 后，fresh API/worker effective identity 均为 `production_uncertainty`、`qwen3-vl-plus-2025-12-19`、cycle `none`，host/container `config.py` 与 `advisor.py` SHA-256 一致。attempt 1 successor `9f9613c0-a7f4-45df-b339-7c2eb911d6bb` 在 API 约 `32.35s`、worker `30.44s` 完成；attempt 2 successor `59801627-07c8-4112-8c0e-a5b8a75a392b` 在 API 约 `32.24s`、worker `31.39s` 完成。两次都冻结 `production_uncertainty/symbol-uncertainty-router/1`，持久化 `AutomaticResult` 与 recognition evidence，进入 `editing/active`、`partial_review_required`，各 `16` call records、`0` retry、`0` ErrorRecord，模型 identity 一致。
+- Tuning verdict: 保留 `MAX_VISUAL_IN_FLIGHT=2`。相对同输入 legacy serial baseline `90.23s`，两次 fresh worker wall 约 `30–31s`，稳定接近 `2.9x` 加速且没有 `rate_limited`、budget 或 wall failure。两个 paid successor 额度已经耗尽；本 amendment 到此停止，不授权第三次运行或 `3+` 并发。
 
 ### Workbench background finalization amendment — 2026-07-30
 
