@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { ProjectStatus } from "../api/types";
 import { zhCN } from "../copy/zhCN";
@@ -67,6 +67,9 @@ export function DrawingListScreen({
   const [action, setAction] = useState<LifecycleAction>();
   const [actionPending, setActionPending] = useState(false);
   const [actionError, setActionError] = useState<string>();
+  const actionTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const moreButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useEffect(() => {
     const controllers = entries.map((entry) => {
@@ -116,10 +119,24 @@ export function DrawingListScreen({
     };
   }, [openMenuProjectId]);
 
+  useEffect(() => {
+    if (action === undefined) return;
+    cancelButtonRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || actionPending) return;
+      setAction(undefined);
+      setActionError(undefined);
+      actionTriggerRef.current?.focus();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [action, actionPending]);
+
   const chooseAction = (
     kind: LifecycleAction["kind"],
     entry: ProjectListItem,
   ) => {
+    actionTriggerRef.current = moreButtonRefs.current[entry.projectId];
     setOpenMenuProjectId(undefined);
     setAction({ kind, entry });
     setActionError(undefined);
@@ -129,6 +146,7 @@ export function DrawingListScreen({
     if (actionPending) return;
     setAction(undefined);
     setActionError(undefined);
+    actionTriggerRef.current?.focus();
   };
 
   const confirmAction = async () => {
@@ -232,6 +250,9 @@ export function DrawingListScreen({
                           <button
                             className="drawing-list-actions__more"
                             type="button"
+                            ref={(button) => {
+                              moreButtonRefs.current[entry.projectId] = button;
+                            }}
                             aria-label={zhCN.drawingList.moreActions(entry.fileName)}
                             aria-haspopup="menu"
                             aria-expanded={openMenuProjectId === entry.projectId}
@@ -273,7 +294,12 @@ export function DrawingListScreen({
       </section>
 
       {action === undefined ? null : (
-        <div className="drawing-action-dialog-backdrop">
+        <div
+          className="drawing-action-dialog-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeDialog();
+          }}
+        >
           <section
             className="drawing-action-dialog"
             role="dialog"
@@ -294,7 +320,12 @@ export function DrawingListScreen({
               <p className="message message--error" role="alert">{actionError}</p>
             )}
             <div className="drawing-action-dialog__actions">
-              <button type="button" disabled={actionPending} onClick={closeDialog}>
+              <button
+                ref={cancelButtonRef}
+                type="button"
+                disabled={actionPending}
+                onClick={closeDialog}
+              >
                 {zhCN.drawingList.cancel}
               </button>
               <button

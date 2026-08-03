@@ -200,12 +200,24 @@ def test_reprocessing_successor_allows_progress_reads_but_not_workbench(
     status = lifecycle_api_context.client.get(
         f"/api/v1/projects/{successor_id}/status"
     )
+    source = lifecycle_api_context.client.get(
+        f"/api/v1/projects/{successor_id}/source-pdf"
+    )
+    preview = lifecycle_api_context.client.get(
+        f"/api/v1/projects/{successor_id}/recognition-preview"
+    )
     workbench = lifecycle_api_context.client.get(
         f"/api/v1/projects/{successor_id}/workbench"
     )
 
     assert status.status_code == 200
     assert status.json()["phase"] == "queued"
+    assert source.status_code == 409
+    assert source.json()["error"]["code"] == "project_source_pdf_unavailable"
+    assert preview.status_code == 409
+    assert preview.json()["error"]["code"] == (
+        "project_recognition_preview_unavailable"
+    )
     assert workbench.status_code == 404
     assert workbench.json()["error"]["code"] == "project_not_found"
 

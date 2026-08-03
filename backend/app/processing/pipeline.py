@@ -43,6 +43,10 @@ from app.processing.automatic_result import (
     candidate_snapshot_from_inventory,
 )
 from app.providers.base import LOCALIZED_PROVIDER_FAILURE_CATEGORIES
+from app.projects.lifecycle import (
+    ProjectLifecycleNotFound,
+    ProjectLifecycleService,
+)
 from app.projects.models import Project
 from app.projects.state import InvalidTransition, ProjectState, transition
 from app.storage.local import LocalFileStorage
@@ -122,15 +126,10 @@ class InventoryPipeline:
             identity = uuid.UUID(project_id)
         except ValueError as exc:
             raise ValueError("project_id must be one UUID") from exc
-        project = self._session.get(
-            Project,
+        return ProjectLifecycleService(self._session).require_processing_task(
             identity,
-            populate_existing=True,
-            with_for_update={"key_share": True} if for_update else False,
+            for_update=for_update,
         )
-        if project is None:
-            raise ValueError("project does not exist")
-        return project
 
     def _validated_automatic_result_ref(
         self,
@@ -371,6 +370,9 @@ class InventoryPipeline:
         except UnsupportedInput:
             raise
         except InvalidTransition:
+            raise
+        except ProjectLifecycleNotFound:
+            self._session.rollback()
             raise
         except CoverageBlocking as exc:
             existing = self._record_failure(

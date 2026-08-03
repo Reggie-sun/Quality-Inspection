@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import fitz
 import pytest
 from openpyxl import load_workbook
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.balloons.service import BalloonService
@@ -27,7 +27,7 @@ from app.exports.router import _content_disposition
 from app.exports.service import ExportInProgress, ExportService
 from app.exports.template_registry import load_template_registration
 from app.jobs.idempotency import LogicalJob, claim_logical_job
-from app.projects.models import Project
+from app.projects.models import Project, ProjectLifecycleStatus
 from app.projects.state import ProjectState
 from app.review.locks import acquire_lock
 from app.review.models import ReviewedResult
@@ -323,6 +323,48 @@ def test_no_artifact_is_downloadable_after_subartifact_failure(
     assert all(artifact.published_ref is None for artifact in artifacts)
     for kind in ("ballooned_pdf", "sip_excel", "manifest"):
         assert service.download_ref(export.id, kind) is None
+
+
+@pytest.mark.parametrize(
+    "status",
+    [ProjectLifecycleStatus.DELETED, ProjectLifecycleStatus.SUPERSEDED],
+)
+def test_hidden_project_never_publishes_staged_export_artifacts(
+    db_session: Session,
+    reviewed_result: tuple[ReviewedResult, LocalFileStorage],
+    status: ProjectLifecycleStatus,
+) -> None:
+    reviewed, storage = reviewed_result
+
+    def hide_project(manifest) -> bytes:
+        values: dict[str, object] = {"lifecycle_status": status}
+        if status == ProjectLifecycleStatus.DELETED:
+            values["deleted_at"] = datetime.now(timezone.utc)
+        db_session.execute(
+            update(Project)
+            .where(Project.id == reviewed.project_id)
+            .values(**values)
+        )
+        db_session.commit()
+        return manifest.to_bytes()
+
+    service = ExportService(
+        db_session,
+        storage=storage,
+        manifest_serializer=hide_project,
+    )
+
+    export = service.create(reviewed.id)
+
+    assert export.status == "failed"
+    artifacts = list(
+        db_session.scalars(
+            select(ExportArtifact).where(ExportArtifact.export_id == export.id)
+        )
+    )
+    assert len(artifacts) == 3
+    assert all(artifact.published_ref is None for artifact in artifacts)
+    assert not (storage.root / "exports" / str(export.id)).exists()
 
 
 @pytest.mark.parametrize("reviewed_result", [True], indirect=True)

@@ -936,6 +936,10 @@ def test_inventory_task_injects_required_independent_symbol_sessions(
         processing_tasks,
         "ProjectLifecycleService",
         lambda _session: SimpleNamespace(
+            require_processing_task=lambda identity, **_kwargs: session.get(
+                Project,
+                identity,
+            ),
             promote_reprocessed_project=lambda _project_id: None,
         ),
     )

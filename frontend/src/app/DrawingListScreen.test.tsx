@@ -223,6 +223,40 @@ it("确认重新识别时保留当前版本说明并防止重复提交", async (
 });
 
 
+it("对话框支持安全取消并把焦点还给更多操作按钮", async () => {
+  render(
+    <DrawingListScreen
+      entries={[ENTRY_A]}
+      api={fakeApi()}
+      onUpload={vi.fn()}
+      onOpen={vi.fn()}
+      onReprocess={vi.fn()}
+      onDelete={vi.fn()}
+    />,
+  );
+  const trigger = screen.getByRole("button", { name: "打开 A.pdf 的更多操作" });
+
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("menuitem", { name: "重新识别" }));
+  const reprocessDialog = screen.getByRole("dialog", { name: "重新识别 A.pdf？" });
+  await waitFor(() => expect(document.activeElement).toBe(
+    within(reprocessDialog).getByRole("button", { name: "取消" }),
+  ));
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("menuitem", { name: "删除图纸" }));
+  const deleteDialog = screen.getByRole("dialog", { name: "删除 A.pdf？" });
+  fireEvent.mouseDown(deleteDialog);
+  expect(screen.getByRole("dialog")).toBe(deleteDialog);
+  fireEvent.mouseDown(deleteDialog.parentElement as HTMLElement);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
+
 it("删除确认说明产品侧不可恢复并安全呈现失败", async () => {
   const onDelete = vi.fn().mockRejectedValue(new Error("private backend detail"));
   render(

@@ -45,6 +45,7 @@ from app.jobs.idempotency import (
     claim_logical_job_failure,
     complete_logical_job,
 )
+from app.projects.lifecycle import ProjectAccess, ProjectLifecycleService
 from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.schemas import (
     SIP_METADATA_FIELDS,
@@ -455,6 +456,11 @@ class ExportService:
             )
 
             stage = "publish"
+            ProjectLifecycleService(self.session).require_access(
+                reviewed.project_id,
+                ProjectAccess.ACTIVE,
+                for_update=True,
+            )
             contents = {
                 "ballooned_pdf": staged_pdf,
                 "sip_excel": staged_excel,

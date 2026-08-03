@@ -209,8 +209,15 @@ class ProjectLifecycleService:
         self,
         project_id: uuid.UUID,
         access: ProjectAccess,
+        *,
+        for_update: bool = False,
     ) -> Project:
-        project = self.session.get(Project, project_id, populate_existing=True)
+        query = select(Project).where(Project.id == project_id)
+        if for_update:
+            query = query.with_for_update(key_share=True)
+        project = self.session.scalar(
+            query.execution_options(populate_existing=True)
+        )
         if project is None:
             raise ProjectLifecycleNotFound("project was not found")
         status = ProjectLifecycleStatus(project.lifecycle_status)
@@ -232,5 +239,27 @@ class ProjectLifecycleService:
             )
         )
         if not allowed:
+            raise ProjectLifecycleNotFound("project was not found")
+        return project
+
+    def require_processing_task(
+        self,
+        project_id: uuid.UUID,
+        *,
+        for_update: bool = False,
+    ) -> Project:
+        query = select(Project).where(Project.id == project_id)
+        if for_update:
+            query = query.with_for_update(key_share=True)
+        project = self.session.scalar(
+            query.execution_options(populate_existing=True)
+        )
+        if project is None or ProjectLifecycleStatus(
+            project.lifecycle_status
+        ) not in {
+            ProjectLifecycleStatus.UNLISTED,
+            ProjectLifecycleStatus.ACTIVE,
+            ProjectLifecycleStatus.REPROCESSING,
+        }:
             raise ProjectLifecycleNotFound("project was not found")
         return project

@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import uuid
 from collections.abc import Callable, Iterator, Mapping
+from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.processing.tasks import inventory_project
 from app.projects.models import Project, ProjectLifecycleStatus
+from app.projects.lifecycle import ProjectLifecycleNotFound
 from app.projects.state import ProjectState
 from app.review.models import ReviewWorkingCopy
 from app.review.service import ReviewService
@@ -459,6 +461,107 @@ def test_pipeline_failure_marks_only_reprocessed_successor_failed(
         ).lifecycle_status == ProjectLifecycleStatus.REPROCESS_FAILED
     finally:
         verify.close()
+
+
+@pytest.mark.parametrize(
+    "status",
+    [ProjectLifecycleStatus.DELETED, ProjectLifecycleStatus.SUPERSEDED],
+)
+def test_hidden_project_is_rejected_before_processing_starts(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+    status: ProjectLifecycleStatus,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    setup = task_session_factory()
+    project, source = _project_source(setup, storage, tmp_path)
+    project.lifecycle_status = status
+    project.deleted_at = (
+        datetime.now(UTC) if status == ProjectLifecycleStatus.DELETED else None
+    )
+    setup.commit()
+    setup.close()
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=[],
+    )
+
+    with pytest.raises(ProjectLifecycleNotFound):
+        inventory_project.run(
+            str(project.id),
+            source.resource_ref,
+            f"product-process:{project.id}",
+        )
+
+    verify = task_session_factory()
+    try:
+        assert _counts(verify, project.id) == {
+            "raw": 0,
+            "job": 0,
+            "working": 0,
+            "error": 0,
+        }
+    finally:
+        verify.close()
+
+
+def test_pipeline_rechecks_lifecycle_after_inventory_before_formal_result(
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "storage")
+    session = task_session_factory()
+    project, source = _project_source(session, storage, tmp_path)
+
+    page = type(
+        "InventoryPage",
+        (),
+        {
+            "support_level": "supported",
+            "to_dict": lambda self: {
+                "page_index": 0,
+                "width": 200.0,
+                "height": 200.0,
+                "rotation": 0,
+                "pdf_to_render_matrix": [1, 0, 0, 1, 0, 0],
+                "render_to_pdf_matrix": [1, 0, 0, 1, 0, 0],
+                "observations": [],
+            },
+        },
+    )()
+
+    def inventory_then_delete(_path: Path) -> tuple[object, ...]:
+        current = session.get(Project, project.id)
+        assert current is not None
+        current.lifecycle_status = ProjectLifecycleStatus.DELETED
+        current.deleted_at = datetime.now(UTC)
+        session.commit()
+        return (page,)
+
+    pipeline = InventoryPipeline(
+        session,
+        storage,
+        PassingPreflight(),
+        inventory_builder=inventory_then_delete,
+    )
+
+    with pytest.raises(ProjectLifecycleNotFound):
+        pipeline.run(
+            str(project.id),
+            source.resource_ref,
+            f"product-process:{project.id}",
+        )
+
+    assert _counts(session, project.id) == {
+        "raw": 0,
+        "job": 1,
+        "working": 0,
+        "error": 0,
+    }
+    session.close()
 
 
 def test_worker_uses_frozen_project_mode_after_settings_change(

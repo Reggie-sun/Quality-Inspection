@@ -265,6 +265,78 @@ def test_promotion_requires_successor_working_copy(
     ).lifecycle_status == ProjectLifecycleStatus.ACTIVE
 
 
+def test_reprocess_rejects_project_without_source_pdf(
+    lifecycle_context: LifecycleContext,
+) -> None:
+    module = _lifecycle_module()
+    project = Project(
+        id=uuid.uuid4(),
+        state=ProjectState.EDITING,
+        recognition_mode="legacy_high_recall",
+        recognition_router_version="legacy",
+        source_filename="missing.pdf",
+        lifecycle_status=ProjectLifecycleStatus.ACTIVE,
+    )
+    lifecycle_context.session.add(project)
+    lifecycle_context.session.commit()
+
+    with pytest.raises(module.ProjectSourceUnavailable):
+        lifecycle_context.lifecycle().start_reprocess(
+            project.id,
+            recognition_mode="legacy_high_recall",
+            recognition_router_version="legacy",
+        )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        ProjectLifecycleStatus.UNLISTED,
+        ProjectLifecycleStatus.ACTIVE,
+        ProjectLifecycleStatus.REPROCESSING,
+    ],
+)
+def test_processing_task_accepts_only_visible_intake_states(
+    lifecycle_context: LifecycleContext,
+    status: ProjectLifecycleStatus,
+) -> None:
+    lifecycle_context.active.lifecycle_status = status
+    lifecycle_context.session.commit()
+
+    project = lifecycle_context.lifecycle().require_processing_task(
+        lifecycle_context.active.id,
+        for_update=True,
+    )
+
+    assert project.id == lifecycle_context.active.id
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        ProjectLifecycleStatus.REPROCESS_FAILED,
+        ProjectLifecycleStatus.SUPERSEDED,
+        ProjectLifecycleStatus.DELETED,
+    ],
+)
+def test_processing_task_rejects_hidden_lifecycle_states(
+    lifecycle_context: LifecycleContext,
+    status: ProjectLifecycleStatus,
+) -> None:
+    module = _lifecycle_module()
+    lifecycle_context.active.lifecycle_status = status
+    lifecycle_context.active.deleted_at = (
+        datetime.now(UTC) if status == ProjectLifecycleStatus.DELETED else None
+    )
+    lifecycle_context.session.commit()
+
+    with pytest.raises(module.ProjectLifecycleNotFound):
+        lifecycle_context.lifecycle().require_processing_task(
+            lifecycle_context.active.id,
+            for_update=True,
+        )
+
+
 def test_delete_tombstones_without_deleting_source(
     lifecycle_context: LifecycleContext,
 ) -> None:
