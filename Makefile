@@ -50,6 +50,20 @@ deploy-main:
 		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml stop api worker frontend; \
 		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml run --rm --no-deps --interactive=false --entrypoint alembic api -c /app/alembic.ini upgrade head; \
 		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml up -d --remove-orphans; \
+		worker_attempt=0; \
+		while :; do \
+			worker_attempt=$$((worker_attempt + 1)); \
+			worker_ping_output=""; \
+			if worker_ping_output=$$(docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml exec -T worker celery -A app.celery_app:celery_app inspect ping --timeout=5 2>&1); then \
+				case "$$worker_ping_output" in *pong*) printf "%s\n" "$$worker_ping_output"; break ;; esac; \
+			fi; \
+			if [ "$$worker_attempt" -ge 30 ]; then \
+				printf "%s\n" "$$worker_ping_output" >&2; \
+				echo "Worker readiness check failed" >&2; \
+				exit 1; \
+			fi; \
+			sleep 1; \
+		done; \
 		attempt=0; \
 		until curl -fsS http://127.0.0.1:5173/api/v1/health; do \
 			attempt=$$((attempt + 1)); \

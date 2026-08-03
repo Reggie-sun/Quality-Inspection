@@ -272,6 +272,116 @@ def test_make_runtime_entries_use_worktree_scoped_projects() -> None:
     assert "--strictPort" in frontend.stdout
 
 
+def test_deploy_main_requires_a_live_worker_ping_before_success() -> None:
+    """A deployment cannot complete until the rebuilt Celery worker replies."""
+    result = subprocess.run(
+        ["make", "--dry-run", "deploy-main"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    command = result.stdout
+    assert "inspect ping --timeout=5" in command
+    assert 'case "$worker_ping_output" in *pong*)' in command
+    assert "Worker readiness check failed" in command
+    assert "| grep -q" not in command
+    assert "| rg -q" not in command
+    assert command.index("up -d --remove-orphans") < command.index("inspect ping")
+    assert command.index("inspect ping") < command.index("Deployment complete")
+
+
+def _deploy_worker_gate_shell() -> str:
+    result = subprocess.run(
+        ["make", "--dry-run", "deploy-main"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    start = result.stdout.index("worker_attempt=0;")
+    end = result.stdout.index("\n\tattempt=0;", start)
+    return result.stdout[start:end] + "true\n"
+
+
+def _run_deploy_worker_gate(
+    tmp_path: Path,
+    *,
+    mode: str,
+) -> tuple[subprocess.CompletedProcess[str], int]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    state = tmp_path / "docker-attempts"
+    state.write_text("0\n", encoding="utf-8")
+    fake_docker = bin_dir / "docker"
+    fake_docker.write_text(
+        "#!/bin/sh\n"
+        'attempt=$(cat "$FAKE_DOCKER_STATE")\n'
+        "attempt=$((attempt + 1))\n"
+        'printf "%s\\n" "$attempt" >"$FAKE_DOCKER_STATE"\n'
+        'case "$FAKE_DOCKER_MODE" in\n'
+        "  pong-after-three)\n"
+        '    if [ "$attempt" -ge 3 ]; then\n'
+        '      printf "%s\\n" "-> celery@worker: OK" "        pong"\n'
+        "      exit 0\n"
+        "    fi\n"
+        "    exit 69\n"
+        "    ;;\n"
+        "  zero-without-pong)\n"
+        '    printf "%s\\n" "1 node online."\n'
+        "    exit 0\n"
+        "    ;;\n"
+        "  always-fail) exit 69 ;;\n"
+        "esac\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o755)
+    fake_sleep = bin_dir / "sleep"
+    fake_sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_sleep.chmod(0o755)
+    environment = dict(os.environ)
+    environment.update(
+        {
+            "FAKE_DOCKER_MODE": mode,
+            "FAKE_DOCKER_STATE": str(state),
+            "PATH": f"{bin_dir}:{environment['PATH']}",
+        }
+    )
+    result = subprocess.run(
+        ["sh", "-c", _deploy_worker_gate_shell()],
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    return result, int(state.read_text(encoding="utf-8").strip())
+
+
+def test_deploy_worker_gate_retries_until_a_worker_replies(tmp_path: Path) -> None:
+    result, attempts = _run_deploy_worker_gate(tmp_path, mode="pong-after-three")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert attempts == 3
+    assert "pong" in result.stdout
+
+
+def test_deploy_worker_gate_fails_closed_without_a_pong(tmp_path: Path) -> None:
+    for mode in ("always-fail", "zero-without-pong"):
+        case_path = tmp_path / mode
+        case_path.mkdir()
+        result, attempts = _run_deploy_worker_gate(case_path, mode=mode)
+
+        assert result.returncode == 1
+        assert attempts == 30
+        assert "Worker readiness check failed" in result.stderr
+
+
 def test_qa_compose_volumes_are_worktree_scoped() -> None:
     """QA-dev data and dependency volumes follow its isolated project owner."""
     main = _rendered_qa_compose_config("quality-inspection-main-qa")
