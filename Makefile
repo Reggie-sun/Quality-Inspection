@@ -5,8 +5,12 @@ QA_DEV_COMPOSE = docker compose -p $(QI_QA_COMPOSE_PROJECT) -f compose.yaml -f c
 TEST_BACKEND_COMPOSE = docker compose -f compose.test.yaml
 LOCAL_API_PORT ?= 8000
 LOCAL_FRONTEND_PORT ?= 5173
+QI_DEPLOY_HOST ?= lenovo@192.168.10.200
+QI_DEPLOY_DIR ?= /home/lenovo/quality-inspection
+QI_DEPLOY_PROJECT ?= qi-deploy
+QI_DEPLOY_REF ?= main
 
-.PHONY: check-contracts check-api-contracts test-backend test-frontend verify-p0-offline verify-p0-live resume-gdt10e-live qa-dev-config qa-dev-up qa-dev-down qa-dev-down-legacy qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
+.PHONY: check-contracts check-api-contracts test-backend test-frontend verify-p0-offline verify-p0-live resume-gdt10e-live qa-dev-config qa-dev-up qa-dev-down qa-dev-down-legacy qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend deploy-main
 
 dev-local-api:
 	@$(BASE_COMPOSE) stop api >/dev/null 2>&1 || true
@@ -14,6 +18,40 @@ dev-local-api:
 
 dev-local-frontend:
 	QI_API_PROXY_TARGET=http://127.0.0.1:$(LOCAL_API_PORT) npm --prefix frontend run dev -- --host 0.0.0.0 --port $(LOCAL_FRONTEND_PORT) --strictPort
+
+deploy-main:
+	@set -eu; \
+	deploy_commit="$$(git rev-parse --verify "$(QI_DEPLOY_REF)^{commit}")"; \
+	echo "Deploying $(QI_DEPLOY_REF) ($$deploy_commit) to $(QI_DEPLOY_HOST):$(QI_DEPLOY_DIR)"; \
+	git archive --format=tar "$$deploy_commit" | \
+	ssh "$(QI_DEPLOY_HOST)" 'set -eu; \
+		deploy_dir="$(QI_DEPLOY_DIR)"; \
+		deploy_project="$(QI_DEPLOY_PROJECT)"; \
+		case "$$deploy_dir" in ""|/) echo "Unsafe QI_DEPLOY_DIR: $$deploy_dir" >&2; exit 2 ;; esac; \
+		stage_dir=$$(mktemp -d /home/lenovo/.qi-deploy-main.XXXXXX); \
+		trap '\''rm -rf -- "$$stage_dir"'\'' EXIT; \
+		tar -xf - -C "$$stage_dir"; \
+		test -f "$$stage_dir/compose.yaml"; \
+		test -f "$$stage_dir/compose.server.yaml"; \
+		mkdir -p "$$deploy_dir"; \
+		rsync -a --delete \
+			--exclude=.env \
+			--exclude=backups/ \
+			--exclude=compose.deploy.yaml \
+			"$$stage_dir/" "$$deploy_dir/"; \
+		cd "$$deploy_dir"; \
+		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml build api worker frontend; \
+		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml stop api worker frontend; \
+		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml run --rm --no-deps --interactive=false --entrypoint alembic api -c /app/alembic.ini upgrade head; \
+		docker compose -p "$$deploy_project" -f compose.yaml -f compose.server.yaml up -d --remove-orphans; \
+		attempt=0; \
+		until curl -fsS http://127.0.0.1:5173/api/v1/health; do \
+			attempt=$$((attempt + 1)); \
+			if [ "$$attempt" -ge 30 ]; then echo "Deployment health check failed" >&2; exit 1; fi; \
+			sleep 1; \
+		done; \
+		echo; \
+		echo "Deployment complete: http://192.168.10.200:5173/"'
 
 qa-dev-config:
 	$(QA_DEV_COMPOSE) config
