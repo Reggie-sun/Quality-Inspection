@@ -1,0 +1,5 @@
+exit_code=0
+stdout:
+{"project_id": "55dbd769-8fab-44a2-bcbd-768b8bbf4312", "source_ref": "asset://projects/55dbd769-8fab-44a2-bcbd-768b8bbf4312/source.pdf", "source_sha256": "58b9cf08ad90ad4ef647661165e989cd45984dbeaa9c0f63042a69eccc017bec"}
+
+stderr:

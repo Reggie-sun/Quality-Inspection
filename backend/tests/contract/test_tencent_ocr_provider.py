@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.providers.tencent_ocr import TencentOcrProvider, normalize_response
+from tests.support.provider_cycle import open_cycle_ledger
 
 
 def test_normalizes_text_polygon_angle_and_request_id(tencent_fixture: dict) -> None:
@@ -57,6 +58,49 @@ def test_general_accurate_request_shape_is_exact() -> None:
         "IsWords": False,
         "EnableDetectSplit": True,
     }
+
+
+def test_exact_cycle_tencent_adapter_requires_and_consumes_one_permit(
+    tmp_path,
+) -> None:
+    class FakeTencentClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def GeneralAccurateOCR(self, _request):
+            self.calls += 1
+            return SimpleNamespace(
+                RequestId="fake-cycle-request-id",
+                Angle=0.0,
+                TextDetections=[],
+            )
+
+    ledger = open_cycle_ledger(tmp_path, project_id="project-tencent-adapter")
+    client = FakeTencentClient()
+    provider = TencentOcrProvider(client, require_cycle_permit=True)
+    image = b"\x89PNG\r\ncontrolled-crop"
+
+    with pytest.raises(ValueError, match="permit"):
+        provider.recognize_png(image)
+    assert client.calls == 0
+
+    permit = ledger.reserve(
+        provider="tencent-ocr",
+        operation="GeneralAccurateOCR",
+        page_index=0,
+        subject_kind="ocr_region",
+        subject_id="fixture-region",
+        retry_index=0,
+        crop_expansion_count=0,
+    )
+    result = provider.recognize_png(image, reservation_permit=permit)
+    assert result.request_id == "fake-cycle-request-id"
+    assert client.calls == 1
+    assert ledger.snapshot().submission_started_count == 1
+
+    with pytest.raises(ValueError, match="permit"):
+        provider.recognize_png(image, reservation_permit=permit)
+    assert client.calls == 1
 
 
 @pytest.mark.parametrize(

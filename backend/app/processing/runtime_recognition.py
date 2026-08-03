@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import replace
 from pathlib import Path
@@ -10,6 +11,8 @@ import pymupdf
 from app.candidates.advisor import CandidateAdvisor
 from app.config import Settings
 from app.pdf.coordinates import BBox, PageTransform, Point
+from app.pdf.gdt_frames import GdtFrameObservation
+from app.pdf.gdt_raster_frames import detect_raster_gdt_frames
 from app.pdf.inventory import (
     append_ocr_observations,
     build_inventory as build_native_inventory,
@@ -22,6 +25,7 @@ from app.processing.automatic_result import (
 )
 from app.providers.base import OcrProvider
 from app.providers.runtime import OcrProviderFactory, build_ocr_provider
+from app.providers.usage_ledger import ProviderUsageLedger
 
 
 _MAX_OCR_CALLS_PER_PAGE = 16
@@ -38,6 +42,7 @@ class RuntimeRecognition:
         *,
         provider_factory: OcrProviderFactory = build_ocr_provider,
         advisor: CandidateAdvisor | None = None,
+        usage_ledger: ProviderUsageLedger | None = None,
         render_scale: float = 2.0,
     ) -> None:
         self._settings = settings
@@ -45,10 +50,12 @@ class RuntimeRecognition:
         self._render_scale = render_scale
         self._provider_call_ids: tuple[str, ...] = ()
         self._advisor = advisor
+        self._usage_ledger = usage_ledger
         self._source_path: Path | None = None
 
     def build_inventory(self, pdf_path: Path) -> tuple[PageInventory, ...]:
         self._source_path = pdf_path
+        source_sha256 = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
         native_pages = build_native_inventory(
             pdf_path,
             render_scale=self._render_scale,
@@ -59,11 +66,13 @@ class RuntimeRecognition:
 
         with pymupdf.open(pdf_path) as document:
             for page_index, inventory in enumerate(native_pages):
-                if (
-                    inventory.processing_route != "hybrid"
-                    or inventory.support_level == "unsupported"
+                if not (
+                    inventory.processing_route == "hybrid"
+                    or inventory.page_type == "scanned"
                 ):
                     continue
+                if inventory.page_type == "scanned" and not inventory.review_required:
+                    inventory = replace(inventory, review_required=True)
                 page = document[page_index]
                 transform = PageTransform(
                     width=inventory.width,
@@ -72,6 +81,7 @@ class RuntimeRecognition:
                     scale=self._render_scale,
                 )
                 appended: list[TextObservation] = []
+                raster_frames: dict[str, GdtFrameObservation] = {}
                 for region in self._eligible_regions(page, inventory):
                     if provider is None:
                         provider = self._provider_factory(self._settings)
@@ -80,8 +90,48 @@ class RuntimeRecognition:
                         region,
                         transform,
                     )
-                    result = provider.recognize_png(png)
+                    permit = None
+                    if self._usage_ledger is not None:
+                        region_identity = hashlib.sha256(
+                            (
+                                f"{page_index}:"
+                                f"{float(region.x0):.6f}:"
+                                f"{float(region.y0):.6f}:"
+                                f"{float(region.x1):.6f}:"
+                                f"{float(region.y1):.6f}"
+                            ).encode("ascii")
+                        ).hexdigest()
+                        permit = self._usage_ledger.reserve(
+                            provider="tencent-ocr",
+                            operation="GeneralAccurateOCR",
+                            page_index=page_index,
+                            subject_kind="ocr_region",
+                            subject_id=region_identity,
+                            retry_index=0,
+                            crop_expansion_count=0,
+                        )
+                    try:
+                        if permit is None:
+                            result = provider.recognize_png(png)
+                        else:
+                            result = provider.recognize_png(
+                                png,
+                                reservation_permit=permit,
+                            )
+                            self._usage_ledger.settle(
+                                permit,
+                                usage=None,
+                                request_id=result.request_id,
+                            )
+                    except Exception:
+                        if permit is not None:
+                            self._usage_ledger.retain_unknown_if_started(
+                                permit,
+                                request_id_state="absent",
+                            )
+                        raise
                     provider_call_ids.append(result.request_id)
+                    region_observations: list[TextObservation] = []
                     for observation_index, observation in enumerate(
                         result.observations
                     ):
@@ -92,27 +142,65 @@ class RuntimeRecognition:
                         )
                         if bbox_pdf is None:
                             continue
-                        appended.append(
-                            build_ocr_observation(
-                                page_index=page_index,
-                                raw_text=observation.raw_text,
-                                bbox_pdf=bbox_pdf,
-                                confidence=observation.confidence,
-                                angle_degrees=self._pdf_angle(
-                                    observation.angle,
-                                    render_origin=render_origin,
-                                    transform=transform,
-                                ),
-                                request_id=result.request_id,
-                                observation_index=observation_index,
+                        ocr_observation = build_ocr_observation(
+                            page_index=page_index,
+                            raw_text=observation.raw_text,
+                            bbox_pdf=bbox_pdf,
+                            confidence=observation.confidence,
+                            angle_degrees=self._pdf_angle(
+                                observation.angle,
+                                render_origin=render_origin,
                                 transform=transform,
-                            )
+                            ),
+                            request_id=result.request_id,
+                            observation_index=observation_index,
+                            transform=transform,
                         )
+                        appended.append(ocr_observation)
+                        region_observations.append(ocr_observation)
+                    for frame in detect_raster_gdt_frames(
+                        png=png,
+                        page_index=page_index,
+                        transform=transform,
+                        crop_bbox_pdf=transform.clip_bbox(
+                            (
+                                float(region.x0),
+                                float(region.y0),
+                                float(region.x1),
+                                float(region.y1),
+                            )
+                        ),
+                        text_observations=tuple(region_observations),
+                        source_sha256=source_sha256,
+                    ):
+                        raster_frames[frame.observation_id] = frame
+                enhanced_inventory = inventory
                 if appended:
-                    enhanced_pages[page_index] = append_ocr_observations(
-                        inventory,
+                    enhanced_inventory = append_ocr_observations(
+                        enhanced_inventory,
                         tuple(appended),
                     )
+                if raster_frames:
+                    existing = {
+                        frame.observation_id: frame
+                        for frame in enhanced_inventory.gdt_frame_observations
+                    }
+                    existing.update(raster_frames)
+                    enhanced_inventory = replace(
+                        enhanced_inventory,
+                        gdt_frame_observations=tuple(
+                            sorted(
+                                existing.values(),
+                                key=lambda frame: (
+                                    frame.bbox_pdf[1],
+                                    frame.bbox_pdf[0],
+                                    frame.observation_id,
+                                ),
+                            )
+                        ),
+                    )
+                if enhanced_inventory != inventory:
+                    enhanced_pages[page_index] = enhanced_inventory
 
         self._provider_call_ids = tuple(provider_call_ids)
         return tuple(enhanced_pages)

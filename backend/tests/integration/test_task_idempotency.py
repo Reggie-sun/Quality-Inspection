@@ -440,7 +440,7 @@ def test_inventory_pipeline_persists_one_successful_raw_result(
     assert events == ["preflight", "inventory", "confidence_policy"]
     assert json.loads(storage.read_bytes(raw_result.inventory_ref)) == {
         "pages": [{"support_level": "supported"}],
-        "schema_version": "page-inventory/1",
+        "schema_version": "page-inventory/2",
     }
     assert db_session.get(Project, project.id).state == ProjectState.READY_FOR_EDIT
 

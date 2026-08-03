@@ -1,0 +1,8 @@
+command=pytest backend/tests/unit/pdf/test_inventory.py::test_span_and_line_text_round_trip -q
+exit_code=0
+stdout:
+.                                                                        [100%]
+1 passed in 0.83s
+
+stderr:
+

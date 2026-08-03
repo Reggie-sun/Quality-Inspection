@@ -189,11 +189,11 @@ def test_legacy_source_only_confirmation_is_normalized_before_freeze(
     assert frozen.items_frozen_at is not None
     assert frozen.coverage["review_required_count"] == 0
     assert frozen.coverage["entries"] == [
-            {
-                "observation_id": "source-only",
-                "source_location_id": "source-only",
-                "candidate_id": None,
-                "disposition": "non_inspection",
+        {
+            "observation_id": "source-only",
+            "source_location_id": "source-only",
+            "candidate_id": None,
+            "disposition": "non_inspection",
             "coordinates": [5, 6, 7, 8],
             "requires_confirmation": False,
             "confirmation_accepted": False,

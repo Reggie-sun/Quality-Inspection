@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from functools import lru_cache
 from pathlib import Path
+import re
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.candidates.symbol_routing import SymbolRecognitionMode
@@ -27,6 +30,29 @@ class Settings(BaseSettings):
     qwen_workspace_id: str | None = None
     qwen_model: str = "qwen3-vl-plus"
     symbol_recognition_mode: SymbolRecognitionMode = "legacy_high_recall"
+    provider_cycle_authorization_id: str | None = None
+    provider_cycle_authorization_root: Path | None = None
+
+    @model_validator(mode="after")
+    def validate_provider_cycle(self) -> Settings:
+        cycle_id = self.provider_cycle_authorization_id
+        authorization_root = self.provider_cycle_authorization_root
+        if (cycle_id is None) != (authorization_root is None):
+            raise ValueError(
+                "Provider cycle ID and authorization root must be configured together"
+            )
+        if cycle_id is None:
+            return self
+        if (
+            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", cycle_id)
+            is None
+            or authorization_root is None
+            or not authorization_root.is_absolute()
+            or self.qwen_model != "qwen3-vl-plus-2025-12-19"
+            or self.symbol_recognition_mode != "production_uncertainty"
+        ):
+            raise ValueError("Provider cycle runtime identity is invalid")
+        return self
 
 
 @lru_cache

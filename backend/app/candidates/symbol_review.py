@@ -17,10 +17,16 @@ import jsonschema
 import pymupdf
 
 from app.candidates.coverage import Disposition
+from app.candidates.gdt_evidence import GdtFrameEvidence
+from app.candidates.geometric_tolerance import (
+    GdtNormalizationFailure,
+    GeometricToleranceNormalizer,
+)
 from app.candidates.grouping import group_observations
 from app.candidates.parser import NUMBER, normalize_text, parse_annotation
 from app.candidates.schemas import Candidate, stable_candidate_id
 from app.pdf.coordinates import BBox
+from app.pdf.gdt_frames import GdtFrameObservation
 from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
 from app.pdf.visual_observations import (
     PROPOSAL_RULE_VERSION,
@@ -35,7 +41,7 @@ SCHEMA_PATH = (
     Path(__file__).parents[1] / "providers/visual_symbol_review.schema.json"
 )
 VISUAL_PROMPT_VERSION = "visual-symbol-prompt/4"
-VISUAL_SCHEMA_VERSION = "visual-symbol-review/2"
+VISUAL_SCHEMA_VERSION = "visual-symbol-review/3"
 VISUAL_ADAPTER_VERSION = "qwen-openai-compatible/5"
 VISUAL_CACHE_SCHEMA_VERSION = "visual-symbol-advisor-cache/1"
 VISUAL_REQUEST_SCHEMA_VERSION = "visual-symbol-call-request/1"
@@ -96,10 +102,17 @@ _SAFE_INSTANCE_PATH_MEMBERS = frozenset(
     {
         "associated_text_observation_ids",
         "bbox_normalized",
+        "cell_index",
+        "cell_role",
         "confidence_signal",
         "detections",
+        "frame_bbox_normalized",
+        "frame_observation_id",
+        "gdt_frames",
+        "raw_token",
         "schema_version",
         "symbol_kind",
+        "tolerance_type_signal",
         "visual_observation_id",
     }
 )
@@ -108,10 +121,15 @@ _SAFE_SCHEMA_PATH_MEMBERS = frozenset(
         "additionalProperties",
         "associated_text_observation_ids",
         "bbox_normalized",
+        "cell_index",
+        "cell_role",
         "confidence_signal",
         "const",
         "detections",
         "enum",
+        "frame_bbox_normalized",
+        "frame_observation_id",
+        "gdt_frames",
         "items",
         "maxItems",
         "maximum",
@@ -120,9 +138,11 @@ _SAFE_SCHEMA_PATH_MEMBERS = frozenset(
         "minLength",
         "pattern",
         "properties",
+        "raw_token",
         "required",
         "schema_version",
         "symbol_kind",
+        "tolerance_type_signal",
         "type",
         "uniqueItems",
         "visual_observation_id",
@@ -466,6 +486,7 @@ def visual_review_prompt(
     *,
     text_observations: Mapping[str, TextObservation],
     crop_bbox_pdf: BBox,
+    gdt_frames: Sequence[GdtFrameObservation] = (),
 ) -> str:
     visual_ids = tuple(
         observation.observation_id for observation in visual_observations
@@ -515,6 +536,42 @@ def visual_review_prompt(
             }
         )
     response_schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    gdt_contexts: list[dict[str, Any]] = []
+    for frame in gdt_frames:
+        if frame.page_index != visual_observations[0].page_index:
+            raise ValueError("visual symbol prompt context is invalid")
+        frame_texts = [
+            text_observations[identity]
+            for identity in frame.associated_text_observation_ids
+            if identity in text_observations
+        ]
+        if len(frame_texts) != len(frame.associated_text_observation_ids):
+            raise ValueError("visual symbol prompt context is invalid")
+        gdt_contexts.append(
+            {
+                "frame_observation_id": frame.observation_id,
+                "frame_bbox_normalized": list(
+                    _prompt_context_bbox(frame.bbox_pdf, crop_bbox_pdf)
+                ),
+                "cells": [
+                    {
+                        "cell_index": cell.cell_index,
+                        "bbox_normalized": list(
+                            _prompt_context_bbox(cell.bbox_pdf, crop_bbox_pdf)
+                        ),
+                    }
+                    for cell in frame.cells
+                ],
+                "associated_text_allowlist": [
+                    {
+                        "observation_id": text.observation_id,
+                        "observation_level": text.observation_level,
+                        "raw_text": text.raw_text,
+                    }
+                    for text in frame_texts
+                ],
+            }
+        )
     return json.dumps(
         {
             "task": "review_local_engineering_drawing_symbol_contexts",
@@ -522,6 +579,7 @@ def visual_review_prompt(
             "schema_version": VISUAL_SCHEMA_VERSION,
             "visual_observation_ids": list(visual_ids),
             "visual_contexts": contexts,
+            "gdt_frame_contexts": gdt_contexts,
             "symbol_kind_guide": {
                 "diameter": "Φ/∅/⌀ beside a size value",
                 "depth": "depth symbol beside a depth value",
@@ -570,9 +628,11 @@ def visual_review_prompt(
                 "inspect_each_listed_visual_context",
                 "use_only_listed_visual_observation_ids",
                 (
-                    "use_only_associated_text_observation_ids_from_the_"
-                    "matching_visual_context"
-                ),
+                "use_only_associated_text_observation_ids_from_the_"
+                "matching_visual_context"
+            ),
+            "emit_empty_gdt_frames_when_no_frame_is_present",
+            "use_only_ordered_gdt_frame_cells_and_allowlisted_text_ids",
                 "detection_bbox_normalized_is_relative_to_the_entire_crop",
                 "detection_bbox_must_have_positive_width_and_height",
                 "prefer_line_level_text_when_line_and_span_duplicate_raw_text",
@@ -791,14 +851,31 @@ def parse_visual_symbol_json(
     schema_validation_failed = False
     try:
         validator.validate(payload)
-        if any(
-            not math.isfinite(float(value))
+        finite_values = [
+            value
             for detection in payload["detections"]
             for value in (
                 *detection["bbox_normalized"],
                 detection["confidence_signal"],
             )
-        ):
+        ]
+        finite_values.extend(
+            value
+            for frame in payload["gdt_frames"]
+            for value in (
+                *frame["frame_bbox_normalized"],
+                frame["confidence_signal"],
+                *(
+                    value
+                    for cell in frame["cells"]
+                    for value in (
+                        *cell["bbox_normalized"],
+                        cell["confidence_signal"],
+                    )
+                ),
+            )
+        )
+        if any(not math.isfinite(float(value)) for value in finite_values):
             raise ValueError("non-finite bbox")
     except jsonschema.ValidationError as exc:
         schema_validation_failed = True
@@ -1225,21 +1302,6 @@ def _distinct_ascii_decimals(
             for token in _ascii_decimal_tokens(item.raw_text)
         )
     )
-
-
-def _gdt_datum_tokens(
-    texts: Sequence[TextObservation],
-) -> tuple[str, ...] | None:
-    datums: list[str] = []
-    for item in texts:
-        for token in item.raw_text.split():
-            if re.fullmatch(NUMBER, token):
-                continue
-            if re.fullmatch(r"[A-Z]", token):
-                datums.append(token)
-                continue
-            return None
-    return tuple(dict.fromkeys(datums))
 
 
 def _typed_depth_projection(
@@ -1997,6 +2059,8 @@ def project_visual_observation(
     candidates: Sequence[Mapping[str, Any]],
     geometry_context: VisualGeometryContext | None,
     source_observations: Sequence[VisualObservation] = (),
+    gdt_evidence_by_frame_id: Mapping[str, GdtFrameEvidence] = {},
+    gdt_frame_observations: Sequence[GdtFrameObservation] = (),
 ) -> VisualReviewDecision:
     """Project one validated visual response through deterministic local rules."""
     visual_sources = tuple(
@@ -2515,21 +2579,49 @@ def project_visual_observation(
                 "coarse_type": "roughness",
             }
     elif kinds[0].startswith("gdt_"):
-        tolerances = _distinct_ascii_decimals(texts)
-        datums = _gdt_datum_tokens(texts)
-        if len(tolerances) == 1 and datums is not None:
-            symbols = {
-                "gdt_parallelism": "∥",
-                "gdt_perpendicularity": "⊥",
-                "gdt_flatness": "⏥",
-            }
-            payload = {
-                "raw_text": f"{symbols[kinds[0]]} {raw_text}",
-                "coordinates": coordinates,
-                "coarse_type": "geometric_tolerance",
-            }
-        elif len(tolerances) > 1:
-            projection_rejection_code = "visual_projection_conflict"
+        matching_frames = tuple(
+            frame
+            for frame in gdt_frame_observations
+            if _overlap_fraction(frame.bbox_pdf, coordinates) >= 0.5
+        )
+        if len(matching_frames) != 1:
+            projection_rejection_code = (
+                "gdt_frame_not_found"
+                if not matching_frames
+                else "gdt_projection_conflict"
+            )
+        else:
+            frame = matching_frames[0]
+            frame_evidence = gdt_evidence_by_frame_id.get(
+                frame.observation_id
+            )
+            if frame_evidence is None:
+                projection_rejection_code = "gdt_frame_segmentation_ambiguous"
+            else:
+                normalized = GeometricToleranceNormalizer().normalize(
+                    evidence=frame_evidence,
+                    observation=frame,
+                    evidence_ref=frame_evidence.frame_observation_id,
+                )
+                if isinstance(normalized, GdtNormalizationFailure):
+                    if normalized.code in {
+                        "gdt_symbol_unknown",
+                        "gdt_modifier_unknown",
+                    }:
+                        payload = normalized.typed_unknown.model_dump(
+                            mode="json",
+                            exclude_none=True,
+                        )
+                    else:
+                        projection_rejection_code = normalized.code
+                else:
+                    payload = normalized.model_dump(
+                        mode="json",
+                        exclude_none=True,
+                    )
+                if payload is not None:
+                    payload["coordinates"] = coordinates
+                    payload["source_location_ids"] = list(source_ids)
 
     if payload is None:
         return _ambiguous(
@@ -2759,6 +2851,8 @@ def project_visual_page(
     candidates: Sequence[Mapping[str, Any]],
     geometry_contexts: Mapping[str, VisualGeometryContext],
     local_decisions: Sequence[VisualReviewDecision] = (),
+    gdt_evidence_by_frame_id: Mapping[str, GdtFrameEvidence] = {},
+    gdt_frame_observations: Sequence[GdtFrameObservation] = (),
 ) -> tuple[VisualReviewDecision, ...]:
     """Project one page only after every batch response has been validated."""
     ordered_visuals = tuple(sorted(visual_observations, key=_visual_reading_key))
@@ -2892,6 +2986,8 @@ def project_visual_page(
                     None,
                 ),
                 source_observations=sources,
+                gdt_evidence_by_frame_id=gdt_evidence_by_frame_id,
+                gdt_frame_observations=gdt_frame_observations,
             )
         decisions.append(primary)
         for alias in sources[1:]:

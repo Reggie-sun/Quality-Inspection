@@ -112,6 +112,9 @@
       ],
       "description": "Fixture mode records literal zero only under the offline Provider policy; other modes report unavailable as null."
     },
+    "paid_cycle": {
+      "$ref": "#/$defs/paid_cycle_receipt"
+    },
     "overall_verdict": {
       "enum": [
         "passed",
@@ -315,6 +318,26 @@
         "related_implementation_p0_contract_ids": {
           "$ref": "#/$defs/p0_ids"
         }
+      }
+    },
+    "paid_cycle_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cycle_id",
+        "pricing_sha256",
+        "ledger_evidence_sha256",
+        "resume_consumed_sha256",
+        "terminal_sha256",
+        "bridge_evidence_sha256"
+      ],
+      "properties": {
+        "cycle_id": { "type": "string", "minLength": 1 },
+        "pricing_sha256": { "$ref": "#/$defs/sha256" },
+        "ledger_evidence_sha256": { "$ref": "#/$defs/sha256" },
+        "resume_consumed_sha256": { "$ref": "#/$defs/sha256" },
+        "terminal_sha256": { "$ref": "#/$defs/sha256" },
+        "bridge_evidence_sha256": { "$ref": "#/$defs/sha256" }
       }
     }
   }

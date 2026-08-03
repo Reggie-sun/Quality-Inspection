@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import copy
 import hashlib
 import json
@@ -23,6 +24,9 @@ GLOBAL = ROOT / "docs/contracts/MAIN_CONTRACT_MATRIX.md"
 MIRROR_PATH = HARNESS / "contracts/p0-contracts.json"
 BINDINGS_PATH = HARNESS / "contracts/global-contract-bindings.json"
 FAILURE_SEVERITY_POLICY_PATH = HARNESS / "policy/failure-severity-policy.yaml"
+RUNTIME_CLOSURE_MANIFEST_PATH = (
+    HARNESS / "policy/gdt10d-runtime-closure.txt"
+)
 SCHEMAS = HARNESS / "schemas"
 EXPECTED_SCHEMA_FILES = (
     "contract-result.schema.json",
@@ -31,6 +35,7 @@ EXPECTED_SCHEMA_FILES = (
     "human-verdict.schema.json",
     "live-run-evidence.schema.json",
     "p0-contracts.schema.json",
+    "provider-account-runtime-acceptance.schema.json",
     "provider-fixture.schema.json",
     "receipt.schema.json",
     "run.schema.json",
@@ -63,6 +68,150 @@ BUCKETS = (
 
 class ContractCheckError(RuntimeError):
     """A deterministic contract check failed."""
+
+
+def _git_bytes(*args: str) -> bytes:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise ContractCheckError("runtime closure Git identity is unavailable")
+    return result.stdout
+
+
+def _runtime_manifest_bytes(source: str) -> bytes:
+    relative = str(RUNTIME_CLOSURE_MANIFEST_PATH.relative_to(ROOT))
+    if source == "working":
+        try:
+            return RUNTIME_CLOSURE_MANIFEST_PATH.read_bytes()
+        except OSError as exc:
+            raise ContractCheckError("runtime closure manifest is unavailable") from exc
+    if source == "index":
+        return _git_bytes("show", f":{relative}")
+    if source == "HEAD":
+        return _git_bytes("show", f"HEAD:{relative}")
+    raise ContractCheckError("runtime closure source is invalid")
+
+
+def _parse_runtime_manifest(content: bytes) -> dict[str, str]:
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ContractCheckError("runtime closure manifest is invalid") from exc
+    if not text.endswith("\n") or "\r" in text:
+        raise ContractCheckError("runtime closure manifest bytes are invalid")
+    entries: dict[str, str] = {}
+    lines = text.splitlines()
+    for line in lines:
+        match = re.fullmatch(
+            r"([0-9a-f]{64})  (backend/app/[A-Za-z0-9._/-]+\.(?:py|json))",
+            line,
+        )
+        if (
+            match is None
+            or "//" in line
+            or "/../" in line
+            or "/./" in line
+            or "/__pycache__/" in line
+        ):
+            raise ContractCheckError("runtime closure manifest entry is invalid")
+        digest, path = match.groups()
+        if path in entries:
+            raise ContractCheckError("runtime closure manifest path is duplicated")
+        entries[path] = digest
+    if not entries or list(entries) != sorted(entries):
+        raise ContractCheckError("runtime closure manifest is not sorted")
+    return entries
+
+
+def _working_runtime_components() -> dict[str, str]:
+    paths = _git_bytes(
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--",
+        "backend/app",
+    ).decode("utf-8").splitlines()
+    components: dict[str, str] = {}
+    for relative in sorted(set(paths)):
+        path = ROOT / relative
+        if Path(relative).suffix not in {".py", ".json"}:
+            continue
+        if (
+            not relative.startswith("backend/app/")
+            or "__pycache__" in Path(relative).parts
+            or path.is_symlink()
+            or not path.is_file()
+        ):
+            raise ContractCheckError("working runtime closure path is invalid")
+        components[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return components
+
+
+def _git_runtime_components(source: str) -> dict[str, str]:
+    if source == "index":
+        listing = _git_bytes("ls-files", "--stage", "--", "backend/app")
+        revision = ":"
+    elif source == "HEAD":
+        listing = _git_bytes(
+            "ls-tree",
+            "-r",
+            "--full-tree",
+            "HEAD",
+            "--",
+            "backend/app",
+        )
+        revision = "HEAD:"
+    else:
+        raise ContractCheckError("runtime closure source is invalid")
+    components: dict[str, str] = {}
+    try:
+        lines = listing.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise ContractCheckError("runtime closure Git paths are invalid") from exc
+    for line in lines:
+        metadata, separator, relative = line.partition("\t")
+        if not separator:
+            raise ContractCheckError("runtime closure Git entry is invalid")
+        mode = metadata.split(" ", 1)[0]
+        if Path(relative).suffix not in {".py", ".json"}:
+            continue
+        if (
+            mode not in {"100644", "100755"}
+            or not relative.startswith("backend/app/")
+            or "__pycache__" in Path(relative).parts
+            or relative in components
+        ):
+            raise ContractCheckError("runtime closure Git path is invalid")
+        content = _git_bytes("show", f"{revision}{relative}")
+        components[relative] = hashlib.sha256(content).hexdigest()
+    return dict(sorted(components.items()))
+
+
+def validate_runtime_closure(source: str) -> int:
+    manifest = _parse_runtime_manifest(_runtime_manifest_bytes(source))
+    observed = (
+        _working_runtime_components()
+        if source == "working"
+        else _git_runtime_components(source)
+    )
+    if manifest != observed:
+        missing = sorted(set(observed) - set(manifest))
+        extra = sorted(set(manifest) - set(observed))
+        changed = sorted(
+            path
+            for path in set(manifest) & set(observed)
+            if manifest[path] != observed[path]
+        )
+        raise ContractCheckError(
+            "runtime closure manifest mismatch: "
+            f"missing={len(missing)} extra={len(extra)} changed={len(changed)}"
+        )
+    return len(manifest)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -227,7 +376,7 @@ def _failure_proof_selector_drift(contracts: list[dict[str, Any]]) -> int:
     return 0
 
 
-def check() -> dict[str, int]:
+def check(runtime_closure_source: str | None = None) -> dict[str, int]:
     # 1. Validate all Draft 2020-12 schemas, then the two generated instances.
     mirror, bindings_document = _validate_schemas_and_instances()
     contracts = mirror["contracts"]
@@ -353,7 +502,7 @@ def check() -> dict[str, int]:
     if not definition_hash_stable:
         raise ContractCheckError("definition hash is not stable under a status-only change")
 
-    return {
+    metrics = {
         "global_contracts": len(global_contracts),
         "p0_contracts": len(contracts),
         "mapped": mapped,
@@ -369,11 +518,22 @@ def check() -> dict[str, int]:
         "binding_relation_conflict": binding_relation_conflict,
         "definition_hash_stable_under_status_only_change": definition_hash_stable,
     }
+    if runtime_closure_source is not None:
+        metrics["runtime_closure_files"] = validate_runtime_closure(
+            runtime_closure_source
+        )
+    return metrics
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--runtime-closure-source",
+        choices=("working", "index", "HEAD"),
+    )
+    args = parser.parse_args(argv)
     try:
-        metrics = check()
+        metrics = check(args.runtime_closure_source)
     except (ContractCheckError, OSError, KeyError, TypeError, ValueError) as exc:
         print(f"contract check failed: {exc}", file=sys.stderr)
         return 1

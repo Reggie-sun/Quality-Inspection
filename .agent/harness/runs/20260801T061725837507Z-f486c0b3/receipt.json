@@ -1,0 +1,133 @@
+{
+  "binding_evidence": [
+    {
+      "direct_enforcement": true,
+      "global_contract_id": "PDF-001",
+      "primary_p0_contract_ids": [
+        "P0-REC-002",
+        "P0-REC-006B"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "direct_enforcement": true,
+      "global_contract_id": "PDF-002",
+      "primary_p0_contract_ids": [
+        "P0-REC-006C",
+        "P0-REC-006F"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "direct_enforcement": true,
+      "global_contract_id": "PDF-003",
+      "primary_p0_contract_ids": [
+        "P0-REC-006E"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "direct_enforcement": true,
+      "global_contract_id": "PDF-004",
+      "primary_p0_contract_ids": [
+        "P0-REC-006A",
+        "P0-REC-006D"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "direct_enforcement": true,
+      "global_contract_id": "PDF-006",
+      "primary_p0_contract_ids": [
+        "P0-REC-003"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    },
+    {
+      "direct_enforcement": true,
+      "global_contract_id": "PDF-008",
+      "primary_p0_contract_ids": [
+        "P0-REC-001"
+      ],
+      "related_business_p0_contract_ids": [],
+      "related_implementation_p0_contract_ids": []
+    }
+  ],
+  "contract_definition_hash": "072eb7353b633164ff70b6b0f003268cb828fcc37d0f26484a3380f502759c7e",
+  "external_calls": null,
+  "formal_p0_verdict": null,
+  "formal_p0_verdict_allowed": false,
+  "freshness": {
+    "fresh": true,
+    "reasons": [],
+    "receipt_freshness_hours": 24,
+    "valid_until": "2026-08-02T06:17:33.650731Z"
+  },
+  "generated_at": "2026-08-01T06:17:33.650731Z",
+  "overall_verdict": "passed",
+  "per_severity_counts": {
+    "blocking": {
+      "blocked": 0,
+      "failed": 0,
+      "not_run": 0,
+      "passed": 9
+    },
+    "fatal": {
+      "blocked": 0,
+      "failed": 0,
+      "not_run": 0,
+      "passed": 0
+    },
+    "informational": {
+      "blocked": 0,
+      "failed": 0,
+      "not_run": 0,
+      "passed": 0
+    },
+    "review_required": {
+      "blocked": 0,
+      "failed": 0,
+      "not_run": 0,
+      "passed": 0
+    },
+    "warning": {
+      "blocked": 0,
+      "failed": 0,
+      "not_run": 0,
+      "passed": 0
+    }
+  },
+  "policy_versions": {
+    "failure_severity_policy": "failure-severity-policy/2",
+    "harness_policy": "harness-policy/1",
+    "p0_acceptance_policy": "p0-acceptance-policy/1",
+    "provider_call_policy": "provider-call-policy/1"
+  },
+  "receipt_scope": "task",
+  "result_counts": {
+    "blocked": 0,
+    "failed": 0,
+    "not_run": 0,
+    "passed": 9
+  },
+  "run_id": "20260801T061725837507Z-f486c0b3",
+  "schema_version": "receipt/1",
+  "selected_contract_ids": [
+    "P0-REC-001",
+    "P0-REC-002",
+    "P0-REC-003",
+    "P0-REC-006A",
+    "P0-REC-006B",
+    "P0-REC-006C",
+    "P0-REC-006D",
+    "P0-REC-006E",
+    "P0-REC-006F"
+  ],
+  "status_projection_hash": "c18a682e0bb85b77722568fa43178b08958182d7b9202be9f5947df4a00061cd",
+  "task_id": "D2-T1"
+}

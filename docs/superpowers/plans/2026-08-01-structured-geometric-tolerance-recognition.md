@@ -11,8 +11,9 @@
 ## Global Constraints
 
 - Selected lane: `Heavy`，因为本计划改变稳定 candidate/OpenAPI schema、JSONB data shape、Provider response contract，并跨 PDF、candidate、review、API、frontend、export data-integrity boundary。
-- Plan status: `proposed / not selected as current plan`。本文件不覆盖 `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`，也不授权立即修改 production code。
+- Plan status: `selected as the current plan for this execution`。本文件不覆盖 `docs/superpowers/plans/2026-07-21-pdf-auto-balloon-and-excel.md`，不改变 public runtime config 或 production deployment；唯一 contract-matrix amendment 是用户在 GDT-10D option `A` 批准的 `PROV-005` one-use pricing/usage evidence，具体边界由 GDT-10D companion design/plan拥有。
 - Design source: `docs/superpowers/specs/2026-08-01-structured-geometric-tolerance-recognition-design.md`。
+- GDT-10 timeout design source: `docs/superpowers/specs/2026-08-01-provider-timeout-retry-and-partial-failure-design.md`。
 - Current-state source: `docs/superpowers/audits/2026-08-01-geometric-tolerance-recognition-current-state.md`。
 - Live evidence source: `docs/superpowers/audits/evidence/2026-08-01-geometric-tolerance-live-receipt.json`。
 - Execution activation: 用户必须明确将本文件选为唯一 current plan，并点名从 `GDT-1` 开始；不得与七天 P0 task 并行执行。
@@ -39,19 +40,200 @@
 ## Plan Selection Record
 
 - Selected lane: `Heavy`。
-- Selected plan: 本文件目前为 proposed；只有用户显式切换后才成为 current plan。
-- Selection evidence: current audit、sealed Case A/B receipt、structured GD&T design、用户“写plan”。
-- Validation action: `replan`，因为目标新增 stable candidate/API contract 与 data migration；不是现有七天 P0 plan 的 amendment。
-- Writer ownership and order: 单 writer，严格顺序，reviewer/read-only explorer 不拥有写权限。
-- First execution verification: 对激活后的 worktree 运行 `git status --short && git rev-parse HEAD && rg -n "revision =|down_revision =" backend/alembic/versions/*.py`，确认 clean base、expected HEAD 和唯一 Alembic head。
+- Selected plan: 本文件由用户显式选为 current plan，并在独立 worktree 中执行。
+- Selection evidence: 用户显式调用本 plan 的 `superpowers:executing-plans`。
+- Prior validation action: `amend` for GDT-10 Step 4/5，已补齐 registration/pause/resume 与 literal run-ID evidence sequence。
+- Current validation action: `replan` only for the GDT-10 Provider timeout boundary。两次 authenticated timeout 已证明这不是可继续重跑规避的偶发 Harness noise；stable failure/retry/runtime identity 必须先由独立 design spec 冻结，再修改 GDT-10，不重写 GDT-1..9。
+- Problem boundary: 只修正 GDT-10 isolated live project 的 recognition identity preflight 和 localized Provider timeout proof；不改 GD&T domain schema、normalizer、API、frontend、export 或 current-four semantics。
+- Single owner: `CandidateAdvisor`/`ProductionRetryCoordinator` 继续唯一拥有 `production_uncertainty` visual retry authorization 和 localized failure disposition；Provider wrapper 只分类，`ReviewService` 只保留 Owner-committed failure entry，Harness 只做 activation preflight。现有 legacy sequential schema retry 不属于 GDT-10 isolated path，本 amendment 不重构它。
+- Old path action: retire GDT-10 中“继承 `legacy_high_recall` default 后直接进入 paid processing”的未验证 activation path，并替换 `ReviewService._review_coverage()` 把 localized Provider failure 静默改成 `non_inspection` 的 generic default；不删除仍有 consumer 的 global legacy mode，也不改变普通 `visual_no_detection` default。
+- Writer ownership and order: 一个 writer 先按 GDT-10A 增补 Harness、localized timeout/transport 和 review-projection RED，再最小修改 `run-p0.py` 与 `ReviewService`；只有 integration RED 证明 CandidateAdvisor evidence 缺口时才允许修改 `advisor.py`。最后派发独立 read-only reviewer。
+- Unchanged contract: current P0 contract matrix、public runtime config、production deployment、`timeout=60.0`、SDK `max_retries=0`、现有 wall/call budget、schema-only single retry、literal run-ID validation 和 authenticated Provider/no-synthetic requirement 均不改变。
+- Focused verification command: `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_symbol_recognition_pipeline.py -k 'runtime_identity or provider_failure or owner_committed_discriminator' -q`。
+- Next verification: 先完成 GDT-10A offline tests/reviewer，并等待 `docs/superpowers/specs/2026-08-01-compose-worktree-runtime-isolation-design.md` 与 `docs/superpowers/plans/2026-08-01-compose-worktree-runtime-isolation.md` 合入本 branch、通过其 topology/runtime completion contract；随后由 GDT-10A zero-paid preflight 直接证明 API/worker current worktree `/3` hashes、database exact `0013`、`production_uncertainty`、`symbol-uncertainty-router/1` 和 exact model。未满足前不得再次运行 `make verify-p0-live`。
+
+### GDT-10A Continuation Record — 2026-08-01
+
+- Selected lane: `Heavy`。
+- Selected plan: `docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md`；不新建 roadmap。
+- Selection evidence: 用户在 feature `2b1d8c25d40086462c278b0c5f634f15f0d284e0` 显式批准继续 GDT-10A Steps 1–9，并指定先解决 main `713fb527bb2b3c64386d51c0c8ed8b5697f367f9` 在 `backend/app/review/service.py` 和 `backend/tests/integration/test_review_working_copy.py` 的 overlap。当前 main 为 `b8c6517fa375cefa3d226fdceed4c6fd376ae467`，merge-base 为 `066a42a1871e0222ece6adfcc24fda742629e2f8`，启动时 worktree clean。
+- Validation action: `continue`。不 merge/rebase 已大幅分叉且拥有不同 `0013` migration 的整个 main；先只融合 `713fb52` 与 overlap 直接相关的 backend formal-readiness owner 链，然后继续 GDT-10A。
+- Problem boundary: 保留 main 的 coverage normalization、malformed-entry fail-closed、optional material normalization 和 API projection 行为；同时保留 feature 的 typed GD&T item/command union、`automatic-result/2` legacy-GDT rejection、`EditGeometricTolerance` 处理和 `visual-symbol-review/3` projection。
+- Allowed overlap paths: `backend/app/review/schemas.py`、`backend/app/review/router.py`、`backend/app/projects/router.py`、`backend/app/review/service.py`、`backend/tests/integration/test_review_working_copy.py`、`backend/tests/integration/test_review_freeze.py`、`backend/tests/integration/test_project_workbench_api.py`、`backend/tests/contract/snapshots/api-v1.openapi.json`。前三者是 `713fb52` formal-readiness 行为的直接 runtime dependency；后三个 test/contract 文件是 source-only normalization、malformed fail-closed 和 optional `material` contract 的直接 regression dependency。不带入其 frontend 冲突、其他 main 历史或任一 migration。
+- Old path action: `replace` overlap 中会将 malformed source-only coverage 静默解决或在 projection/freeze 前跳过 normalization 的 feature-side 旧路径；保留 ordinary `visual_no_detection -> non_inspection + system_default`，GDT-10A 随后只为 allowlisted localized Provider failure 增加例外。
+- Unchanged contract: `timeout=60.0`、SDK `max_retries=0`、page/project/call budgets、production schema-only single retry、public runtime default、legacy sequential retry、structured-GD&T semantics 和本窗口 no-paid-live 边界均不改变。
+- Writer ownership and order: 当前父 agent 是 overlap 和 GDT-10A 唯一 writer；`code_mapper` explorer 与后续 reviewer 严格只读；`backend/app/candidates/advisor.py` 只有在 Step 3 RED 证明 Owner 缺口时才允许修改。
+- Next verification: 先运行 overlap RED，证明当前 feature 缺少 formal normalization；融合后运行 `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_review_working_copy.py backend/tests/integration/test_geometric_tolerance_pipeline.py -q` 与 focused OpenAPI contract gate，然后进入 GDT-10A Step 1 `runtime_identity` RED。
+- Overlap validation amendment: 首轮宽一层的 review regression 得到 `2 failed, 113 passed`；两个 failure 均是 feature 保留了 `713fb52` 之前的旧预期，分别要求 source-only entry 阻断 freeze 和 workbench 暴露 `manual_review_count=3`。Validation action 为 `amend`：只把 `test_review_freeze.py` 和 `test_project_workbench_api.py` 的对应 `713fb52` 断言纳入 allowed paths，然后重跑同一 regression set。
+- Full-backend overlap residual: GDT-10A Step 7 首轮得到 `1716 passed, 2 failed`。`test_balloon_validation.py` 的 unresolved source fixture 缺少 `candidate_id`，仍停留在 `713fb52` 前的旧 shape；将该测试文件加入 overlap allowed paths，只同步 main 已验证的单字段 fixture。
+- Compose prerequisite integration: feature 已有 `63be9ad` 的 `Makefile`/Compose project、network 和 volume isolation runtime 实现，但缺少 main `e38c806` 的 `backend/tests/integration/test_runtime_topology.py`、`docs/superpowers/specs/2026-08-01-compose-worktree-runtime-isolation-design.md`、`docs/superpowers/plans/2026-08-01-compose-worktree-runtime-isolation.md` 和 operator isolation guidance。Validation action 为 `amend`：以独立 prerequisite commit 补齐这些文件，不放入 GDT-10A implementation commit，不修改当前 branch 的 `127.0.0.1:5173` public tunnel invariant，不停止、替换或删除任一现有 runtime/volume。
+- Compose prerequisite next verification: 运行 isolation plan 的 focused topology test、两个 Compose config checks 和 Makefile dry runs；然后只读验证 main/feature project/network/volume identity 不同、当前 local health/projects 和 public `qa.srj666.com` health/list 可用。如果 runtime 不是已有安全 Owner，停在 zero-paid gate，不自行 rebuild/recreate。
+
+### GDT-10 Step 4 Standing Live Authorization Record — 2026-08-01
+
+- Selected lane: `Heavy`。
+- Selected plan: `docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md`；继续 GDT-10 Step 4，不新建 roadmap。
+- Selection evidence: 用户在 `feature/structured-geometric-tolerance-recognition@c66dcac61524f380f9df82b9ab05ea0edfe974aa` 明确授权当前付费 live，并要求移除以后同类 repository-owned live verification 的逐次人工授权 gate。
+- Validation action: `continue`。GDT-10A Steps 1–9、独立 reviewer、完整 offline regression 和 Compose-isolated zero-paid runtime gate 已完成；本次先 fresh revalidate zero-paid identity，再执行计划唯一命令 `make verify-p0-live`。
+- Problem boundary: 只移除重复的 user-confirmation checkpoint；不改变 current-four、Provider/model、source、call/cost/wall budget、zero retry、literal run ID、pause/resume、headed QA、same-reviewed-result export 或 formal receipt acceptance。
+- Exact paid execution ceiling: 本 cycle 只允许一次 `make verify-p0-live` invocation，不允许 failure 后 replacement run 或第二次 invocation。`Provider-call policy Owner` 的唯一 live policy 为 `.agent/harness/policy/provider-call-policy.yaml`，整次 invocation 的 `max_total_estimated_cost_cny=50`、`max_ocr_calls_per_page=16`、`max_vision_calls_per_page=16`、`max_vision_calls_per_candidate=2`、`max_crop_expansions=1`；policy drift 由 `run-p0.py::_validate_live_policy()` 在 Provider work 前 fail closed。GDT production route 另受 `PROV-005`/`backend/app/candidates/symbol_escalation_contracts.py` 的更严格上限约束：visual primary groups `4/page, 8/project`、text+visual actual attempts `16/page`、wall `45s/page, 90s/project`；`provider_timeout|provider_transport_failure` retry 为 `0`，只有 schema-invalid 可由 `ProductionRetryCoordinator` 授权最多 `1` 次且同样消耗 actual/wall budget。
+- Durable authorization Owner: `.agent/rules/workflow-lanes.md` 的 `Repository-Owned Live Verification Standing Authorization`。本 plan 只拥有 GDT-10 的 exact command、inputs、attempt 和 acceptance evidence，不建立第二套 workflow rule。
+- Old gate action: `replace` “zero-paid GO 后仍等待逐次用户授权”的 checkpoint；以 standing authorization + fresh zero-paid preflight 代替。runtime identity mismatch、credential 缺失、budget scope 不明、paid attempt 已耗尽、public/production promotion、破坏性动作或 scope expansion 仍 fail closed。
+- Writer ownership and order: 当前父 agent 是 workflow/plan amendment 的唯一 writer；amendment focused review 完成并单独提交后，才运行 live。live 失败不自动授权 replacement run 或额外 retry。
+- Next verification: fresh 检查 feature-only Compose target、API/worker `production_uncertainty` + router/model + 12/12 hashes、database exact `0013`、credential presence 和 Provider rows quiet；通过后执行一次 `make verify-p0-live`，并只按本 plan Step 4 evidence 判定 `continue|blocked`。
+- Isolated-target validation amendment: fresh zero-paid inspection 证明 feature runtime 已由 approved isolation prerequisite 唯一运行在 Compose project `structured-geometric-tolerance-recognition-qa`、API `127.0.0.1:18000`、frontend `127.0.0.1:14173`，main runtime 继续独立占用 `8000`。当前 `run-p0.py::_current_live_identity()` 仍只接受 `localhost:8000/3000`，且 `_require_compose_runtime_identity()` 未把 selected Compose project 与 published HTTP ports 绑定；Validation action 为 `amend`，在任何 paid invocation 前用 TDD 替换该 stale main-target activation path。
+- Isolated-target problem boundary: 只绑定 GDT-10 plan-approved feature QA project、API/frontend loopback ports 与现有 API/worker/hash/database identity；不改变 Provider/model、source、budget/retry、public main runtime、Compose volumes、business API/schema、pause/resume 或 acceptance semantics。
+- Isolated-target old path action: `replace` 固定 main `8000/3000` 且未验证 Compose project/published port 对应关系的 live target；main runtime 不删除也不重启，仍服务其现有 consumer，但不再是本 GDT-10 paid path 的 target。
+- Isolated-target allowed paths: `.agent/bug-memory.md`、`.agent/harness/scripts/run-p0.py`、`.agent/harness/schemas/run.schema.json`、`backend/tests/contract/harness/test_live_run_contract.py` 与本 plan。完整 Harness RED 证明 receipt/pause schema 也仍绑定旧 main bases；该 schema 作为同一 stale activation path 一并 amend，同时保留历史 main receipts 的可校验兼容性。当前父 agent 是唯一 writer；实现后运行 focused/full Harness、independent reviewer 和 fresh zero-paid real-runtime proof，再决定是否消费本 cycle 唯一 paid invocation。
+- Isolated-target next verification: RED 必须证明 exact feature bases 当前被拒绝，并证明 main/default/mixed project-port 不能越过 preflight；GREEN 后 exact `structured-geometric-tolerance-recognition-qa + 18000/14173 + 12/12 hashes + 0013` 才能进入 input registration。
+- Isolated-target verification result: active target 与 published-port RED→GREEN 后，focused live contract `111 passed`、full Harness `223 passed`。Independent reviewer 首轮 verdict `reject`，确认 schema 的两个独立 old/new enums 会错误接受 mixed API/frontend pair；补充四组 paired-identity RED（mixed `2 failed`）后用 mutually exclusive pairs 修复。Fresh focused `115 passed`、full Harness `227 passed`、`check-contracts.py`、`ruff`、`git diff --check` 均通过，tracked historical sealed run `20260728T080321805661Z-b59c87de` 仍通过 schema validation。Reviewer remediation targeted tests `9 passed`，最终 verdict `accept`；提交后重新执行 real-runtime zero-paid preflight。
+- Runtime activation amendment: committed isolated target gate `1e22e4b` 通过后，fresh inspection 证明 feature `api/worker` 的 Compose `env_file` 相对 worktree 解析，而 credential source 只存在于 repository root `.env`；当前 container 仅有 safe identity override，不能通过 credential-presence preflight。Validation action 为 `amend`。Independent reviewer 首轮 `reject` 证明把整份 root `.env` 作为 service `env_file` 会额外注入 DB/Redis/operator/runtime-control keys；该路径不得实施。替代方案只在 host shell 读取既有 source，temporary override 仅 allowlist `LIVE_CREDENTIAL_KEYS` 四项，并为 `api/worker` 固定 `QI_SYMBOL_RECOGNITION_MODE=production_uncertainty` 与 `QI_QWEN_MODEL=qwen3-vl-plus-2025-12-19`；`QI_PROVIDER_MODE=live` 与 `QI_PROVIDER_NETWORK_ENABLED=enabled` 只供 host Harness preflight 使用，不注入 container。
+- Runtime activation boundary: exact project `structured-geometric-tolerance-recognition-qa`；base files `compose.yaml`、`compose.qa-dev.yaml`；temporary file `/tmp/qi-gdt10a-live-credentials.yaml`；唯一可重建 services 为 `api worker`。完整命令为 `docker compose -p structured-geometric-tolerance-recognition-qa -f compose.yaml -f compose.qa-dev.yaml -f /tmp/qi-gdt10a-live-credentials.yaml up -d --force-recreate --no-deps api worker`。Override 只能包含 `${QI_TENCENT_SECRET_ID:?required}`、`${QI_TENCENT_SECRET_KEY:?required}`、`${QI_QWEN_API_KEY:?required}`、`${QI_QWEN_WORKSPACE_ID:?required}` 和上述两个 literal identity keys；禁止 service-level root `env_file`，不修改 credential values、account、billing policy、database/Redis/frontend、Compose volumes/data、main project `quality_inspection` 或 public runtime。
+- Runtime activation old path action: `replace` 已删除的 safe-identity-only override，并 `retire` 整份 root `.env` service injection 方案；不复用或重启 main。Writer ownership 仍为当前父 agent；durable authorization owner 只 amend `.agent/rules/workflow-lanes.md`，本 plan 只记录本次 exact activation。Independent reviewer remediation `accept` 后单独提交；执行前先用 sanitized Compose config 只输出 `api/worker` environment key inventory，必须证明无 `QI_DATABASE_URL`、`QI_REDIS_URL`、`QI_PROVIDER_MODE`、`QI_PROVIDER_NETWORK_ENABLED`、`QI_P0_OPERATOR_ID` 或其他 root-only keys，再执行 recreate、health/identity/hash/database/credential/zero-row preflight；任一失败都在 paid invocation 前 blocked。
+- Runtime activation result: amendment committed at `53ef149`。Sanitized Compose config 证明 `api/worker` environment 只有 `PYTHONDONTWRITEBYTECODE`、`QI_STORAGE_ROOT`、四个 `LIVE_CREDENTIAL_KEYS` 与 literal mode/model；bounded recreate 只更换 feature `api/worker`，feature PostgreSQL/Redis/frontend 与 main project container identities 全部保持不变。Fresh zero-paid proof：API/frontend proxy `200/200`、exact isolated target、API/worker `production_uncertainty` + expected router/model + `12/12` hashes、database `0013`、credential presence pass、forbidden runtime keys absent、Provider-related rows `0|0|0`、run directories unchanged at `26`。Paid invocation count 仍为 `0`，Step 4 选择 `GO`。
+
+### GDT-10B Harness Project Identity Amendment — 2026-08-01
+
+- Selected lane / plan: `Heavy`，继续本 GDT plan 的 GDT-10 activation contract；不新建 roadmap。
+- Selection evidence: 本 cycle 唯一 paid invocation 创建并封存 run `20260801T151943793270Z-846f40a1`，runtime monitor 无漂移，但 sample 1 project `b79a18ae-9b92-4020-aee8-482003a2a61c` 的 DB identity 为 `legacy_high_recall/legacy`，与 paid 前已证明的 container `production_uncertainty/symbol-uncertainty-router/1` 矛盾。Source evidence 精确指向 `_PREPARE_PROJECT_PROGRAM` 的 default-backed `Project(...)`；正式 API `ProjectIntakeService` 已拥有正确 explicit freeze path。
+- Validation action: `amend` Harness activation implementation and tests；本次 failed run、project、crop、error 与 run evidence 保持不可复用，不删除、不改写。Paid invocation 已消费；本 amendment 不自动授权 replacement run、direct diagnostic call 或 retry。
+- Problem boundary: 只让 full-live Harness 在 application project creation 时消费已通过 preflight 的 `settings.symbol_recognition_mode` 与 canonical `symbol_routing_identity()` router；不改变 database defaults、public API、ProjectIntakeService、worker trust rule、Provider/model/request、budget/retry、current-four、domain schema、review/export 或 main runtime。
+- Single Owner / old path: `ProjectIntakeService` 继续拥有正式 intake identity semantics；Harness 是 plan-bounded executor，只镜像同一 canonical function。Replace `_PREPARE_PROJECT_PROGRAM` 依赖 `Project` column defaults 的旧 path；无新 fallback、flag 或 second router Owner。
+- Allowed paths / writer: 当前父 agent 是唯一 writer；仅 `.agent/bug-memory.md`、`.agent/harness/scripts/run-p0.py`、`backend/tests/contract/harness/test_live_run_contract.py` 与本 plan。不得改 Provider adapter、business service、schema、runtime config 或 sealed evidence。
+- Unchanged contract / next verification: TDD 必须先证明 embedded Harness project creation 在 `production_uncertainty` 下仍错误得到 legacy defaults，再证明 explicit `production_uncertainty/symbol-uncertainty-router/1` pair；同时证明 legacy runtime 仍得到 legacy pair。运行 focused live contract、full Harness、Ruff、contracts、full backend relevant gate 和 independent reviewer。通过后只可另写一个明确的新 cycle selection 与 exact budget；不得把当前失败 invocation 当成可继续的同一 run。
+- GDT-10B verification result: RED 两项因缺少 `create_live_project` 失败；minimal GREEN 使用 canonical `symbol_routing_identity()` 并显式构造两个 frozen fields。Targeted `9 passed`、focused live contract `117 passed`、full Harness `229 passed`、contracts、Ruff、diff-check 通过。直接 `pytest backend/tests` 错误继承 Compose-only `postgres` 得到 `53 failed / 280 errors`，首个根因是 DNS；correct `make test-backend` 又命中 repo 已知 `all predefined address pools have been fully subnetted`。等价 isolated PostgreSQL 17 fallback 使用 host network、loopback `55433`、tmpfs 和明确临时 container，迁移后相同 suite 为 `1734 passed / 14 warnings`，container 已清理。`auto-feature-smoke-test` 以 targeted embedded identity gate 通过；无 UI 改动，Chrome smoke 不适用。Independent reviewer targeted tests `4 passed`、three run schemas `3 passed`，verdict `accept`；immutable live evidence committed at `e033752`。
+
+### GDT-10C Post-Fix Live Verification Cycle — 2026-08-01
+
+- Selected lane / plan: `Heavy`，继续本 GDT plan；不新建 roadmap。Selection evidence 为 standing authorization、已封存且不可复用的 failed run `20260801T151943793270Z-846f40a1`、根因修复 `7d7da66`、live evidence `e033752`、full backend `1734 passed` 与 independent reviewer `accept`。
+- Validation action: `continue` 到一个新的 post-fix verification cycle；这不是失败 run 的 resume、retry 或 blind replacement。Old run/project/evidence 保持 immutable；新 cycle 只有在本 selection 独立审查、单独提交和 fresh zero-paid gates 全部通过后才能创建新的 registrations/full run。
+- Exact paid ceiling: 本 cycle 最多一次 `make verify-p0-live` invocation，total estimated cost `<= CNY 50`，OCR `<=16/page`、Vision `<=16/page`、Vision `<=2/candidate`、crop expansion `<=1`；production route visual primary `<=4/page, <=8/project`、actual attempts `<=16/page`、wall `<=45s/page, <=90s/project`。Timeout/transport retry `0`；schema-invalid 仅由 `ProductionRetryCoordinator` 最多授权 `1` 次且计入同一 actual/wall budget。失败后不得追加 invocation、direct diagnostic、model fallback、budget 或 replacement run。
+- Inputs / identity / command: exact current-four source root、model `qwen3-vl-plus-2025-12-19`、mode/router `production_uncertainty/symbol-uncertainty-router/1`、isolated project `structured-geometric-tolerance-recognition-qa`、API/frontend `127.0.0.1:18000/14173`、database `0013`、temporary four-key allowlist override 与 literal `make verify-p0-live` 不变。Harness 必须创建全新的 registration/run IDs，禁止引用 previous `latest` 或复用 failed project。
+- Fresh zero-paid gates: clean committed `7d7da66`；targeted embedded constructor 明确输出 production mode/router pair；API/worker `12/12` hashes 和 runtime identity；published ports；health `200/200`；sanitized container key inventory；credential presence only；database `0013`；Provider-related rows仍为 `0|0|0`；feature failed project/evidence仍存在；run directory count不变。任一失败都不创建 run、不调用 Provider。
+- Writer/order/failure stop: 当前父 agent 只拥有 plan/status/evidence 更新；执行期间监控 feature API/worker/PostgreSQL/Redis/frontend 与 main container identities，任一漂移立即终止。Invocation 若达到 `visual_qa_pending:first-pdf-balloons` 才进入同一 run 的 headed QA；否则封存失败并停止，不自动开启 GDT-10D。
+- Selection review result: independent reviewer verified `e033752`/`7d7da66` ancestry、sealed evidence、policy/PROV-005 ceilings、new-cycle distinction and standing-authorization applicability；verdict `accept`。No new user decision is required；fresh zero-paid preflight remains the next gate。
+- GDT-10C zero-paid result: clean committed state；constructor/routing/runtime targeted `4 passed`；exact isolated target、API/worker `12/12` hashes、published ports、health `200/200`、sanitized key inventory、credential presence and forbidden-key absence、database `0013` 全部通过。Provider-related rows `0|0|0`，prior failed project/evidence preserved，run directory count `29 -> 29`。GDT-10C paid invocation count remains `0`，selection is `GO`。
+- GDT-10C live result: sole invocation created registrations `20260801T153339428826Z-f5165843`、`20260801T153346779223Z-fb6bee16` and full run `20260801T153347947042Z-0fea7c81`；runtime identity monitor remained stable。Project `b6db6078-9839-4cf0-8a31-4465a0057012` correctly froze `production_uncertainty/symbol-uncertainty-router/1`，so GDT-10B is runtime-proven。Production route persisted `199` decisions、`194` attempts and `192` outcomes。Of `198` escalated groups，`190` were plan-denied and recorded budget-exhausted；`8` were admitted，the first two wrote crops then failed in under one second with no request ID/call record/cache，and the other `6` were not submitted after those first-batch worker failures、leaving no terminal attempt/outcome evidence。The full run sealed failed with no AutomaticResult、pause、symbol report or receipt；evidence committed at `91e02b5`。
+- GDT-10C blocker decision: current sanitized artifacts cannot safely distinguish HTTP status rejection、fast transport or metadata failure。The fallback persistence says `provider_transport_failure`，but the propagated `CandidateAdvisorFailure.failure_category` is `None`，so production localized partial handling correctly refuses to assume a safe category and the document fails closed。No GDT-10D or extra diagnostic/live call is authorized；next work requires a separate design/plan for safe Provider status classification plus redacted durable diagnostic evidence。
+- GDT-10C evidence review: independent reviewer initially rejected the outcome record because it omitted the `6` admitted-but-never-submitted groups。After separating exact invariants `199 total routing decisions` and `198 escalated groups = 190 plan-denied + 8 admitted = 2 failed + 6 never submitted`，the reviewer rechecked read-only DB aggregates、sealed run state and failure control flow；final verdict `accept`。
+- GDT-10C runtime cleanup: after the terminal stop，only isolated `api/worker` were recreated with the pinned production identity and without the four live credential keys；the non-target running-container identity hash remained unchanged。API/frontend health returned `200/200`，the exact mode/router/model、12/12 runtime hashes、published ports and database `0013` identity check passed。`/tmp/qi-gdt10a-live-credentials.yaml`、the temporary safe-identity override and retained `/tmp/qi-symbol-recognition-compose.override.yaml` root-`.env` injection path were then removed。
+
+### Provider Failure Classification Design Selection Record — 2026-08-02
+
+- Selected lane: `Heavy`。本轮只写 design spec 和 implementation plan，但拟议行为会改变 Provider failure classification、routing evidence schema、scheduler terminal semantics 和跨模块 error projection。
+- Selected plan: 本文件继续是唯一 current plan；本轮产出受限 companion spec `docs/superpowers/specs/2026-08-02-provider-failure-classification-and-durable-evidence-design.md` 与 companion implementation plan `docs/superpowers/plans/2026-08-02-provider-failure-classification-and-durable-evidence.md`，不创建 `GDT-10D`，不重开 GDT-1..9。
+- Selection evidence: sealed GDT-10C run `20260801T153347947042Z-0fea7c81`、evidence commit `91e02b5`、plan/bug-memory blocker record和 current source共同证明：两个 fast failures 被持久化为 `provider_transport_failure`，但传播的 `CandidateAdvisorFailure.failure_category=None`；production collector 因此 fail closed，另外六个 admitted groups 从未提交且没有 terminal evidence。
+- Validation action: `replan` only for safe Provider status/failure classification、redacted durable diagnostics、persisted/propagated consistency and admitted-but-never-submitted terminal semantics。未批准 implementation、额外 live cycle、retry/budget 扩张、runtime mutation 或 production promotion。
+- Problem boundary / single owners: `QwenVisionProvider` 只拥有 SDK/status/metadata safe fact classification；`CandidateAdvisor`/`ProductionRetryCoordinator` 继续唯一拥有 retry 与 localized-vs-project-blocking disposition；`RoutingEvidenceRepository` 只原子验证/持久化 committed evidence；`InventoryPipeline` 只投影已提交的 safe cause category。
+- Old path action: `replace` unknown failure 被默认写成 `provider_transport_failure` 的两处 fallback，以及 scheduler 在 project-blocking worker failure 后让未提交 admitted groups 无 terminal evidence 的路径。保留 timeout/transport zero retry、production schema-only single retry、legacy behavior、GDT semantics、current-four acceptance 和 ReviewService failure preservation。
+- Writer ownership and order: 当前父 agent 是三个 documentation files 的唯一 writer；`code_mapper` explorer 与后续 `reviewer` 严格只读。实现文件、tests、migration、runtime、credentials、Harness runs 和 Provider 都不在本轮写权限内。
+- Next verification: 完成只读 call-chain/sealed-evidence audit，写 spec/plan 并做 placeholder/consistency/scope/type self-review；随后由独立 read-only reviewer 返回 `accept|accept with concerns|reject`。只有 reviewer 通过且用户批准新行为边界后，才可另轮进入 TDD implementation。
+- Independent design review: local `reviewer` profile（actual `agent_role=reviewer`、`model=gpt-5.6-sol`、`reasoning_effort=high`）严格只读。首轮与第二轮 `reject` 分别发现 immutable-trigger migration、schema retry carrier/Owner、v2 downgrade、request-ID/context privacy、Advisor-boundary scheduler semantics 和 orphan retry-pair 风险；全部在 companion spec/plan中收敛。第三轮 `accept with concerns` 的唯一措辞残留已修正，final wording recheck verdict `accept`，blocking/non-blocking findings均为 `0`。
+- Approval gate: 本轮只完成 reviewed design/plan artifacts。GDT-10 Step 4 仍 blocked；没有 implementation、Provider/live invocation、`GDT-10D`、credential/runtime mutation、budget expansion、`0014/0015` execution或 production promotion。下一动作只能是用户批准或拒绝新的 classification/evidence behavior boundary。
+
+### Provider Failure Classification Implementation Closeout — 2026-08-02
+
+- Approved scope: 用户批准 companion plan 后，只执行 offline code/tests/docs；未调用 Provider、未运行 `make verify-p0-live`、未创建 `GDT-10D`、未注入 credential、未修改 runtime、未扩大 retry/budget、未批准 production promotion。
+- Implementation commits: design/plan baseline `9b182f4`；Task 1 safe Provider classification `e5bdf11`；Task 2 versioned atomic evidence `544e04c`；Task 3 persisted/propagated equality `9a77193`；Task 4 stop/drain/cancellation terminal `699ddf5`；independent-review remediation `09af74a`；Task 5 pipeline/status projection `77bcdb2`。
+- Behavior result: `QwenVisionProvider`把 SDK status/timeout/connection、metadata、schema 与 unknown boundary转换为 sanitized typed facts；Advisor拥有唯一 scope/cause disposition，production schema retry仍只由 `ProductionRetryCoordinator`授权。v2 attempt diagnostic与 terminal在 caller transaction原子写入；project-blocking failure停止新提交、drain已提交工作，并为其余六个 admitted groups写 `not_started_after_project_failure` terminal。routing-evidence persistence failure保持 fail closed并优先传播，不会被 sibling Provider failure掩盖。
+- Verification: Provider contract `49 passed`；Advisor unit `72 passed`；malformed carrier、legacy transient 与 mixed drain focused `3 passed`；scheduler/routing pure slice `6 passed`；integration collection `43`；Ruff、`git diff --check` 与 `.agent/harness/scripts/check-contracts.py` 均通过，contract matrix为 `69 global / 111 P0 / 101 mapped / 10 implementation-only / 0 drift`。Static gates确认没有 unknown-to-`provider_transport_failure` fallback、没有 failure-path raw body/headers/exception rendering、并发与 budget paths未扩张。
+- Verification debt: inherited `QI_DATABASE_URL` 指向不可解析的 `postgres` host；本轮用户边界又禁止创建或修改 runtime，因此 DB-backed migration/repository/pipeline/status tests只完成 collection，`make test-backend`未运行。该 debt不否定离线代码 review，但禁止宣称完整 acceptance gate、runtime success或 production-ready。
+- Independent implementation review: local `reviewer` profile首轮 `reject`，确认 legacy transient projection regression与 mixed drain masking routing-evidence failure；两个 P1与 malformed carrier P2均以 RED/GREEN最小修复。复审 verdict `accept with concerns`，无代码 blocker；parent直接核对剩余 concerns仅为 DB execution debt与未来可补的双 routing-failure冗余测试。
+- Evidence/promotion boundary: sealed GDT-10C evidence `20260801T153347947042Z-0fea7c81` / `91e02b5` 保持 immutable，新 v2 schema只适用于 future attempts。`0014` v1 server default是 temporary compatibility bridge；production promotion additionally blocked pending separately approved `0015_drop_symbol_attempt_v1_default` after all-writers-v2 runtime proof and a no-new-v1 observation window。
+- Current gate: GDT-10 Step 4 remains blocked pending explicit authorization for a new plan-bounded live cycle. Offline classification/evidence implementation does not prove Provider runtime success and does not authorize GDT-10D or Step 5。
+
+### Provider Failure DB Gate Closeout — 2026-08-02
+
+- User authorization: option `C` explicitly authorized completing the GDT plan, including isolated DB/runtime changes and a reviewed new paid Provider cycle；production promotion、budget expansion与 unreviewed live仍不授权。
+- Root cause/fix: fresh PostgreSQL 17 proved Python `None` was bound as JSONB literal `null` and violated the correct v1 SQL-NULL constraint。`eb0e32e` changed only the ORM bind type to `JSONB(none_as_null=True)`，kept migration `0014` strict，added a real SQL-NULL regression and aligned five direct integration call sites with the production retry-coordinator invariant。
+- Verification: new regression RED hit `ck_symbol_attempt_diagnostic_version` with `Jsonb(None)`；GREEN `1 passed`。routing/schema/migration `56 passed`、Advisor/pipeline/status `139 passed`、Provider contract `49 passed`、full backend `1801 passed / 14 warnings` on explicitly named loopback/tmpfs PostgreSQL 17；Ruff、contract checker and diff-check passed。`make test-backend` itself remained blocked before DB creation by Docker global address-pool exhaustion；the equivalent Alembic + full `backend/tests` fallback completed and the temporary container was removed。
+- Independent review: local `reviewer` profile first returned `accept with concerns` for one evidence assertion gap and one 5-vs-6 wording defect；both were remediated，targeted matrix `5 passed`、DB suite `56 passed`，final verdict `accept`。
+- Result: classification/evidence DB-backed acceptance debt is closed。This does not itself prove Provider runtime success or authorize promotion；feature QA runtime remains on DB `0013` until the reviewed GDT-10D activation plan executes。
+
+### GDT-10D Classified Provider Live Cycle Selection — 2026-08-02
+
+- Selected lane / authorization: `Heavy`；user option `C` authorizes completion of the bounded DB/runtime/live sequence。After independent review exposed that the existing `CNY 50` value was not mechanically auditable，user option `A` additionally authorizes a versioned public list-price snapshot、durable usage ledger、conservative pre-submission reservation and one-use cycle token。
+- Design/plan: `docs/superpowers/specs/2026-08-02-gdt10d-classified-provider-live-verification-design.md` and `docs/superpowers/plans/2026-08-02-gdt10d-classified-provider-live-verification.md`。
+- Validation action: `amend` the stale activation contract from `0013 + 12 runtime files` to exact `0014 + committed full backend/app runtime closure` plus committed migration identity，then preserve the existing feature QA project/volumes while quiescing target writers、backing up/migrating its DB additively and recreating only feature `api/worker`。
+- Problem boundary / old path: replace the Harness gate that would reject correct `0014` or miss stale Provider/evidence/budget owners；replace static cost text with the `PROV-005` one-use authorization + pre-submission reservation Owner。Do not create a new Compose project/volume、direct diagnostic、model fallback、second retry Owner or production promotion。
+- Exact paid ceiling: at most one `make verify-p0-live` invocation；`<= CNY 50`、OCR `<=16/page`、Vision `<=16/page` and `<=2/candidate`、crop expansion `<=1`；production primary `<=4/page, <=8/project`、actual attempts `<=16/page`、wall `<=45s/page, <=90s/project`、in-flight `2`、timeout `60s`、SDK retry `0`。Only coordinator-owned schema-invalid may retry once within the same budget。
+- Stop boundary: any review/preflight/migration/runtime/policy failure stops before Provider；any paid failure consumes the cycle and forbids replacement。Step 5 is conditional on exact `visual_qa_pending:first-pdf-balloons` plus all Step 4 acceptance evidence and must resume the literal same run。
+- Promotion boundary: `0015_drop_symbol_attempt_v1_default` and production promotion remain outside GDT-10D and blocked；GDT-10D success does not auto-authorize either。
+- Supersession: the stale GDT-10 Steps 4-7 below no longer authorize execution；their replacement is Tasks 1-10 of the GDT-10D companion plan。
+- Next gate: independent read-only design/plan review已最终 `accept`；先单独commit contract/design/plan/parent amendments，再按companion plan Tasks 2-6以TDD实现并完成offline implementation review。No runtime mutation or Provider invocation before those gates；Task 7仍需fresh zero-paid reviewer `GO`。
+- GDT-10D implementation/zero-paid result: implementation commit `7e49e341`、plan gate `129a023`、private backup-stream correction `1dcdf04`、Compose v5 image normalization `1128f05` and shared close-bridge identity fix `4b3e182` passed full backend `1930`、Harness `179` after closeout regressions、Provider `47`、lifecycle `23`、runtime closure `94/94` and independent implementation/zero-paid reviews `accept / GO`。Feature DB was additively migrated `0013 -> 0014`；GDT-10C tree `f0c3b0540dcadf85a8bec07bc879ba659f7c7553` remained byte-identical to `91e02b5`。
+- GDT-10D sole paid result: exactly one `make verify-p0-live` invocation created current-four registration `20260802T101410283666Z-12d482b3`、symbol registration `20260802T101417588825Z-07a91d32` and full run `20260802T101404291929Z-884bec62`。Project `55dbd769-8fab-44a2-bcbd-768b8bbf4312` was durably admitted before processing。The sealed run tree directly proves `198 = 190` plan-denied `+ 8` admitted、the first `2` durably submission-started and classified `provider_authentication_failed`、and the remaining `6` durably cancelled as `not_started_after_project_failure` with zero paid artifacts；the committed closeout record separately reports sanitized `request_id_state=accepted`。Cycle ledger conservatively retained the full unknown-usage charge at `3.526656 CNY <= 50.000000`；no reserved-only/unsettled entry exists。
+- GDT-10D terminal/cleanup result: the cycle closed through the network-none exact-image bridge and the feature runtime returned to safe identity。A Harness schema defect initially rejected valid single-digit totals and left `terminal_pending` plus a redacted cleanup blocker；TDD commits `86d5851` and `ba5f821` expanded the exact `[0, 50]` amount domain and recovered the already content-hashed ledger report without Provider/runtime reactivation。Storage/routing reconciliation then sealed the full run `failed` with no AutomaticResult、pause、symbol report or full-run/formal receipt；the separate current-four registration receipt is passed and preserved。Private backup/authorization state was deleted only after healthy DB `0014`、run-bound copies and safe runtime proof；the original pre-0014 dump and raw private authorization bytes are no longer recoverable，and only the healthy post-migration live DB plus sanitized run-bound Harness evidence remain。
+- GDT-10D decision: the companion plan's fully evidenced fail-closed closeout is complete，but GDT-10 Step 4 is not successful and Step 5 was not executed。The one-use authorization and sole start are consumed；no replacement cycle、second start/resume、direct Provider call、budget increase、`0015` or production promotion is authorized。
+- GDT-10D closeout evidence: exact sanitized runs、parent/companion truth and bug-memory were committed at `daa3e6f`。Fresh completion gates passed Harness `179`、contract matrix `69/111/101/10`、runtime closure `94`、Ruff、sealed failed-cycle schema/policy、safe API/worker identity、DB `0014`、empty Celery/Redis、health and GDT-10C immutability；independent reviewer verdict remains `accept`。This completes the bounded GDT-10D companion plan only and does not complete the parent objective。
+
+### GDT-10E Credential Readiness Replacement Approval — 2026-08-02
+
+- Selected lane / current authority: `Heavy`。用户已明确批准 reviewed GDT-10E implementation、zero-paid activation 和 one paid cycle boundary；本 Task 只记录该批准并单独提交 docs，不执行 credential/runtime/Provider mutation。
+- Read-only evidence decision: sealed run `20260802T101404291929Z-884bec62` proves two actual Qwen submissions reached the configured endpoint and both returned the safe class `provider_authentication_failed`；the remaining six admitted groups were cancelled as `not_started_after_project_failure`。It does not distinguish invalid/expired API key、workspace entitlement、account state、model access or billing/quota, and therefore cannot select or prove an operator-side remediation。
+- Zero-paid boundary: repository code can prove only credential presence/shape、private binding to a fresh operator attestation、exact model/region/runtime identity、cycle freshness and policy/budget readiness without displaying secret values or calling Provider。Only operator console evidence can assert account/workspace/model readiness；only the first real response in a separately authorized full-run cycle can prove runtime acceptance。
+- Selected proposal: option `A` in `docs/superpowers/specs/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle-design.md`；the executable sequence is `docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md`。A private short-lived `provider-account-readiness/1` document is bound to the exact future credential bundle；public evidence contains only its SHA and sanitized booleans。No direct Provider diagnostic/canary path is added。
+- Budget / retry / stop proposal: preserve the original overall envelope exactly: historical GDT-10D committed cost `3.526656 CNY` plus GDT-10E incremental ceiling `46.473344 CNY` equals `50.000000 CNY`。Authentication and every non-schema failure have zero retry；only the existing coordinator-owned schema-invalid path may authorize one additional paid submission within the same ceiling。Any authentication failure terminates the replacement cycle and forbids resume/replacement。
+- Ownership / old-path action: `provider_account_readiness.py` would become the sole private attestation/binding Owner；cycle authorization remains the sole lifecycle Owner and `ProviderUsageLedger` remains the cost Owner。The proposal replaces presence-only readiness and plan-insensitive hard-coded active ceiling use while keeping the public `50.000000 CNY` policy ceiling、Qwen adapter classification、business schema、DB `0014` and same-run Step 5 contract unchanged。
+- Review / approval gate: independent read-only review completed after three rejected drafts and exact remediation；final verdict is `accept` with no blocking or non-blocking finding。用户已批准 GDT-10E 的 reviewed implementation/live boundary；GDT-10 Step 4 remains incomplete and Step 5 remains unexecuted，后续只可按 selected companion 的 tasks、gates 和 one-use boundary 执行。
+
+### GDT-10E Execution Approval Record — 2026-08-02
+
+- Selected lane: Heavy
+- Selected companion: 2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md
+- Historical cost: 3.526656 CNY
+- Incremental ceiling: 46.473344 CNY
+- Overall envelope: 50.000000 CNY
+- Provider starts: one
+- Resume: only one literal same-run resume after accepted pause
+- Still blocked: direct Provider diagnostic, second replacement, 0015, production promotion
+
+### GDT-10E Cleanup Proof Amendment Record — 2026-08-02
+
+- User selected amendment option `A` on 2026-08-02. Review exposed a missing canonical lifecycle-proof schema for Task 2 readiness disposal; this docs-only amendment makes Task 3 `.agent/harness/scripts/live_cycle_authorization.py` the sole writer and semantic Owner of immutable `provider-cycle-cleanup-intent/1`.
+- Task 2 `.agent/harness/scripts/provider_account_readiness.py` is paused. Its `dispose` surface may validate only the exact Task 3 intent and delete only exact `account-readiness.json`; it must never create, repair, rewrite or infer lifecycle proof, delete authorization/private-root/journal state, or overload `--runtime-acceptance` (reserved for `validate --phase resume`) instead of `--cleanup-intent`.
+- Implementation may resume only after an independent read-only amendment review returns `accept`. This amendment does not mark Task 2, GDT-10 Step 4, Step 5, or the parent objective complete.
+- Credential/runtime mutation, Provider calls, paid execution, second replacement, budget expansion, `0015`, and production promotion remain blocked.
+- Fix Round 2 freezes `readiness_expires_at` into the canonical cleanup intent and requires root-sibling blocker `/2` to copy/cross-check it only from that intent, so replay never needs deleted readiness bytes. It is pending scoped independent read-only re-review; no authorization boundary changes.
+
+### GDT-10E Single Zero-Paid Retry Archive Amendment — 2026-08-03
+
+- Selected lane: `Heavy`; selected companion remains `docs/superpowers/plans/2026-08-02-gdt10e-credential-readiness-and-replacement-cycle.md`.
+- Validation action: `amend`。用户仅批准一次新的 zero-paid Task 5 retry，且先固定 archive 原 immutable no-issuance receipt；不授权 Provider、paid execution、第二 replacement、budget expansion、`0015` 或 production promotion。
+- Problem boundary / single Owner: `.agent/harness/scripts/live_cycle_authorization.py` 新增受限 `retire-no-issuance-receipt`，唯一拥有固定 receipt 的 hard-link archive/replay。旧 source receipt 的 action 是 `replace` 为 fixed archive，archive-only terminal replay不形成第二 Owner；`provider_account_readiness.py`、Provider、DB 和 Harness 不改变。
+- Unchanged contract: only fixed source/archive paths, `provider-cycle-cleanup-receipt/1`, `no_issuance`, cycle `gdt10e-auth-remediated-live-20260802`, bytes SHA `67b901bff1dd44431fb3bda6cf1aa0cbcbe79f62ce7302486a1c80f32d3281bb`, content SHA `15e4865a81244962b6e20438fa0bf577084ad63a878f3e6f7e1072605210a532`, current uid/gid and `0600` are accepted. Archive bytes must equal source exactly; source-only, same-inode source+archive and archive-only are the sole valid states; aliases, symlinks, mismatch/conflict or private-target reappearance fail closed. Archive once means no future receipt may be retired.
+- Atomicity decision: after implementation review proved `unlinkat(parent_fd, name)` cannot atomically require an expected inode, the user selected `Exclusive writer` on 2026-08-03. Step 0 must run in an operator-controlled window with no concurrent same-UID/root process、agent、operator or lifecycle command mutating source/archive/private targets from first validation through final parent `fsync` and terminal rechecks. The implementation does not claim protection against a mutation that violates this precondition; it must still detect observable replacements and keep archive-present + different-source replay fail closed. No rename/quarantine path、advisory-lock guarantee、new schema or extra retry is authorized.
+- Planned files: `.agent/harness/scripts/live_cycle_authorization.py`, `backend/tests/contract/harness/test_live_run_contract.py`, `backend/tests/contract/harness/test_contract_architecture.py`, the GDT-10E design/companion/parent status and corresponding SDD artifacts only. Focused verification: archive/replay contract pytest selectors, Ruff, `git diff --check`, full diff and independent review before the one real archive command.
+- Next verification: independent read-only amendment review must return `accept`; then commit docs amendment, use TDD for the bounded implementation, independently review it, archive once, and restart Task 5 Step 1 under its special archive-present/source-absent baseline. Parent GDT-10 Step 4/5 remains incomplete.
+- Partial integration decision: 用户要求停止本轮新增 archive/retry 功能并优先合并已经完成、已复审、已提交的结构化几何公差功能。`retire-no-issuance-receipt` implementation、真实 archive、Task 5 retry、Tasks 6-8、GDT-10 Step 4/5 live closure 与 parent final review 均 deferred；当前未提交 archive code/tests 明确排除在 `main` merge boundary 外。此次 merge 只能声明 completed-function integration，不能声明 GDT-10 或 parent objective complete/production-ready。
+- Main convergence: preserve `main` migrations `0013_project_catalog -> 0014_project_lifecycle`; rebase only the completed feature migrations to `0015_structured_geometric_tolerance -> 0016_symbol_provider_failure_diagnostics`. Their upgrade/downgrade bodies are unchanged, and the separately forbidden destructive `0015_drop_symbol_attempt_v1_default` remains absent. Historical GDT-10D/E `0014` evidence stays immutable; any deferred live resume on merged head `0016` requires a new reviewed DB-identity/pricing amendment and explicit approval.
 
 ## Status
 
-- Date: `2026-08-01`
-- Status: `proposed; audit/spec complete; implementation not authorized`
-- Proposed Task order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
-- Current blocker: 用户尚未把本文件切换为唯一 current plan，也尚未批准任何 implementation Task ID。
-- Next action after approval: create isolated worktree, record exact baseline/ownership, then run GDT-1 RED only。
+- Date: `2026-08-02`
+- Status: `GDT-10D is terminal; GDT-10E execution boundary is explicitly approved; Task 2 is paused pending independent read-only cleanup-proof amendment review; GDT-10 Step 4 remains incomplete and Step 5 was not run`
+- Execution order: `GDT-1 -> GDT-2 -> GDT-3 -> GDT-4 -> GDT-5 -> GDT-6 -> GDT-7 -> GDT-8 -> GDT-9 -> GDT-10`
+- Current blocker: the sole approved GDT-10D cycle is terminal and consumed。The sealed run tree directly proves two submission-started `provider_authentication_failed` terminals、six post-project-failure cancellations and no AutomaticResult/accepted pause；the committed GDT-10D closeout record separately reports sanitized `request_id_state=accepted`。The GDT-10E boundary is explicitly approved, but Step 4 cannot be reinterpreted as success and Step 5 cannot run；direct Provider diagnostic、second replacement、`0015` and production promotion remain blocked.
+- Worktree: `.worktrees/structured-geometric-tolerance-recognition`
+- Commits: `e1193fc`, `1a58f05`, `e4dab49`, `81e716f`, `494b8b6`, `23453cd`, `be70226`, `5c21fd7`, `6bbaf90`, `b548191`, `4150ce8`, `5f4cfbf`, `bd75be6`, `1ba4c83`, `c66dcac`, `fd41879`, `d972a82`, `1e22e4b`, `53ef149`, `8866881`, `e033752`, `7d7da66`, `d49464c`, `462f7eb`, `91e02b5`, `9b182f4`, `e5bdf11`, `544e04c`, `9a77193`, `699ddf5`, `09af74a`, `77bcdb2`, `e4b0d9e`, `eb0e32e`, `7e49e341`, `129a023`, `1dcdf04`, `1128f05`, `4b3e182`, `86d5851`, `ba5f821`, `91a0ead`。
+
+## Execution Verification
+
+- Migration convergence: isolated PostgreSQL upgrade `0012 -> 0013` leaves zero legacy GDT rows in `automatic_results`、`review_working_copies` and `reviewed_results`；downgrade restores the old coarse shape for all three layers。
+- Rollback-first: previous application commit `6bbaf90` served the known workbench GET successfully against the isolated `0012` database；database was restored to `0013` afterward。
+- Contract/static: `check-contracts.py`、OpenAPI breaking gate (`0` changes)、frontend `api:check`、contract architecture gate and `git diff --check` passed；production coarse-writer search returned no matches。
+- Tests: offline backend full suite `1647 passed`；frontend full suite `26 files / 278 tests passed`；frontend production build passed；GDT backend/frontend offline E2E passed earlier in GDT-9。
+- Provider failure classification/evidence implementation: initial offline gates were Provider contract `49 passed`、Advisor unit `72 passed`、focused remediation `3 passed`、pure scheduler/routing `6 passed`、integration collection `43`、Ruff、diff-check与 contract matrix `69/111/101/10` zero drift。After option `C` authorized isolated DB work，real PostgreSQL regression RED reproduced JSONB `null` vs SQL `NULL`，`eb0e32e` closed it；DB routing/schema/migration `56 passed`、Advisor/pipeline/status `139 passed` and full backend `1801 passed / 14 warnings`。Final independent DB remediation review verdict is `accept`。
+- Live activation amendment: focused Harness RED reproduced target/CLI、false credential coverage、typed Case A/B、run-bound crop、malformed nested policy and stale API runtime identity gaps；focused contract file is `62 passed`，final Harness contract suite is `174 passed`，Ruff/diff checks pass，and final independent reviewer verdict is `accept`。Fresh registration runs `20260801T054718154038Z-b4e4b0de` and `20260801T054725654107Z-01c1bb35` were generated only by Harness。Full-P0 run `20260801T054726079099Z-83f03a78` made `28` authenticated Qwen calls with well-formed source/crop/model/prompt/schema hashes and matching crop bytes, but the stale `/2` API runtime produced `0` structured GDT candidates against `7` approved GDT labels；the evaluator matched only one perpendicularity label, Case A/B were absent, and no formal symbol report/receipt was sealed。After adding the exact 12-file runtime guard, `make verify-p0-live` exits `2` before run creation with `Compose API runtime identity does not match current worktree` and run directory count remains `17 -> 17`。
+- Live runtime convergence: temporary worktree `.env` symlink was removed after the authorized Compose rebuild；API health passed and API/worker each matched all 12 current GDT runtime hashes。Fresh `make verify-p0-live` passed `69` global / `111` P0 contract mapping and generated exactly three Harness runs (`17 -> 20`)。Sample 1 source bytes match manifest SHA `58b9cf08...`；`12` authenticated `/3` call records have nonempty Provider request IDs and exact model/prompt/schema identity, all `12` request-bound crop hashes match bytes, and one 13th run-bound crop remains without request/response/call evidence after a 60-second timeout。Full run `20260801T061734601479Z-7a7c7f3d` is `failed` with `live_start_failed:RuntimeError` and `sample 1 application upload/process failed`；this is not accepted risk or Step 4 success。
+- Post-run runtime recurrence: final read-only check found API container `dbaae635f952` recreated from `/home/reggie/vscode_folder/Quality_Inspection/compose.yaml` after the failed run；it reports `visual-symbol-review/2` and fails the exact API identity guard。Worker `f3adcef47eea` remains the worktree `/3` deployment。No second deployment or live run was attempted against this mixed topology。
+- Mid-run runtime recurrence: authorized retry passed API health、database `0013`、API/worker `/3`、exact 12-file equality and Provider set/unset checks。Exactly one `make verify-p0-live` passed `69` global / `111` P0 contract mapping and generated three Harness runs (`20 -> 23`)。Before sample 1 completed, API was recreated from `/home/reggie/vscode_folder/Quality_Inspection/compose.yaml`；the run-bound `docker compose exec api` returned `137` and full run `20260801T063642486237Z-bbcb7b3d` failed closed。Harness artifacts are preserved by `5f4cfbf`；they contain no samples、symbol report、typed Case A/B、pause evidence or full-P0 receipt。Worker remained this worktree `/3`；current API is main-worktree `/2`。
+- Recurrent Provider timeout: after an observed 60-second external-writer quiet window, API/worker were rebuilt from this worktree and preflight again proved health、database `0013`、both `/3` schemas、exact 12/12 host/API/worker hashes and required Provider set/unset controls。Exactly one repository-owned `make verify-p0-live` generated three fresh Harness runs and kept both container IDs stable through command exit。Full run `20260801T071203401727Z-09cb5cc6` completed `18` authenticated request/response/cache/call records with `visual-symbol-prompt/4` and `visual-symbol-review/3` identity, then wrote a 19th crop without its matching records；Harness failed `60.236s` later with `CandidateAdvisorFailure: Visual symbol Advisor call failed`。This matches the unchanged `backend/app/providers/runtime.py` `timeout=60.0` and is the second confirmed Provider-timeout recurrence。Evidence is preserved by `1ba4c83`；Step 4 did not reach pause and Step 5 was not run。
+- Post-timeout runtime recurrence: the timeout failure was sealed at `15:20:12+08:00` before main-worktree `make dev-local-api` started at `15:20:42+08:00`。That later command recreated API from `/home/reggie/vscode_folder/Quality_Inspection` as `/2` at `15:23:11+08:00` while worker remained this worktree `/3`。It did not cause the timeout, but it reconfirms that the shared Compose project lacks an exclusive owner for any future live window。
+- Timeout root-cause decision: the failing stack entered the `legacy_high_recall` sequential visual branch even though the symbol canary contract requires `production_uncertainty`。The existing production path already persists localized `provider_timeout` and preserves siblings as `partial_review_required`。Automatic timeout retry is rejected: `timeout=60.0` already exceeds the `45.0s` page wall budget, and a no-response attempt has no Provider request ID proving it is safe to resubmit。The approved design is `docs/superpowers/specs/2026-08-01-provider-timeout-retry-and-partial-failure-design.md`。
+- Environment note: `make test-backend` could not create its fresh Docker network because Docker reported `all predefined address pools have been fully subnetted`；the equivalent full backend suite ran against the isolated PostgreSQL and passed。
+- GDT-10D live verification: pricing/authorization/ledger evidence、`0014` migration、94-file runtime closure、zero-paid GO and the sole paid invocation are complete。Full run `20260802T101404291929Z-884bec62` is sealed `failed` with exact `190 denied + 2 authentication-failed submissions + 6 cancelled` reconciliation，ledger `3.526656 CNY` and no missing admitted terminal。Safe runtime/health、empty Celery/Redis、main/non-target identities and GDT-10C immutability were re-proved after finalization。
+- Remaining completion gate: the parent structured-recognition objective remains incomplete because GDT-10 Step 4 did not produce an AutomaticResult/accepted pause and Step 5 was therefore not executed。The current cycle cannot be reused；the GDT-10E execution boundary is explicitly approved, subject to its selected companion plan and one-use gates。`0015` retirement and production promotion remain separately blocked。
 
 ## Rollback Contract
 
@@ -1119,7 +1301,13 @@ git commit -m "test(gdt): close export and offline e2e"
 - Modify: `backend/app/review/service.py`
 - Modify: `backend/tests/integration/test_geometric_tolerance_migration.py`
 - Modify: `.agent/harness/scripts/run-p0.py` only after the plan is explicitly activated for the symbol-recognition current-four contract。
+- Modify: `.agent/harness/scripts/live_evidence_policy.py` with the same activation, only to validate typed Case A/B and sealed Provider identity hashes in the symbol report。
 - Modify: `backend/tests/contract/harness/test_live_run_contract.py` only with the same activation。
+- Modify: `backend/tests/integration/test_symbol_recognition_pipeline.py` only to freeze the existing production localized-timeout/no-retry/partial-result contract。
+- Modify: `backend/app/review/service.py` only to preserve Owner-committed localized Provider failure coverage instead of applying the generic system default。
+- Modify: `backend/tests/integration/test_review_working_copy.py` to lock failure preservation and unchanged no-detection default。
+- Modify: `Makefile` only to invoke repository-owned current input registration/full-live pause activation；do not add implicit `latest` selection。
+- Modify: `.agent/bug-memory.md` to record and close the confirmed live-target regression。
 - Generate under: `.agent/harness/runs/` only through the existing Harness command；never choose a run ID or hand-write run evidence。
 - Modify: this plan Status/verification section after evidence is sealed。
 
@@ -1161,41 +1349,196 @@ rg -n 'coarse_type.?=.?("|\x27)geometric_tolerance|coarse_candidate\([^\n]*geome
 
 Expected: all gates pass；final `rg` returns no production writer or compatibility reader for GD&T coarse semantics。
 
-- [ ] **Step 4: Run current-four live Provider evidence only after explicit live authorization**
+#### GDT-10A: Bind Recognition Identity And Freeze Localized Timeout Semantics
 
-Run the repository-owned command:
+**Design source:**
 
-```bash
-make verify-p0-live
+- `docs/superpowers/specs/2026-08-01-provider-timeout-retry-and-partial-failure-design.md`
+
+**Runtime prerequisite:**
+
+- Merge `docs/superpowers/specs/2026-08-01-compose-worktree-runtime-isolation-design.md` and `docs/superpowers/plans/2026-08-01-compose-worktree-runtime-isolation.md` into this branch before live。
+- The isolation owner is checkout/worktree root identity；its completion proof must include distinct main/feature Compose project、network and volume identities，unchanged main data identities，port-conflict fail-closed behavior，focused topology tests and runtime/public smoke。
+- Required prerequisite commands are the isolation plan's `micromamba run -n qi-p0 pytest backend/tests/integration/test_runtime_topology.py -q`、two Compose config checks and runtime health/project-list checks。GDT-10A does not edit or stage those files。
+- During the eventual GDT live window，this worktree's project must be the exclusive owner of the configured API/frontend ports；another project may not be stopped、recreated or overwritten implicitly。
+
+**Problem boundary:**
+
+- Single owner: `CandidateAdvisor`/`ProductionRetryCoordinator` own `production_uncertainty` retry and localized disposition；`ReviewService` only preserves that decision。
+- Old activation path: GDT-10 live project inherits unchecked `legacy_high_recall` and reaches paid processing before mode mismatch is observable。
+- Old review path: `ReviewService._review_coverage()` applies generic `system_default` to localized Provider failures and silently changes them to `non_inspection`。
+- Replacement: zero-paid API/worker/hash/database recognition preflight，existing production localized-failure path，and working-copy preservation of the Owner-committed failure stage。
+- Unchanged: `timeout=60.0`、SDK `max_retries=0`、production schema-only single retry、page/project/call budgets、public runtime default、legacy sequential retry behavior、ordinary `visual_no_detection` default and all GDT semantics。
+
+**Files:**
+
+- Modify: `.agent/harness/scripts/run-p0.py`
+- Modify: `backend/tests/contract/harness/test_live_run_contract.py`
+- Modify: `backend/tests/integration/test_symbol_recognition_pipeline.py`
+- Modify: `backend/app/review/service.py`
+- Modify: `backend/tests/integration/test_review_working_copy.py`
+- Modify: `backend/app/candidates/advisor.py` only if the focused integration RED proves the documented production path is not already satisfied；do not refactor or modify legacy behavior otherwise。
+
+**Interfaces:**
+
+- Consumes: API/worker code hashes、`Settings.symbol_recognition_mode`、`symbol_routing_identity()`、model identity、PostgreSQL Alembic revision and CandidateAdvisor coverage entry。
+- Produces: zero-paid exact runtime preflight；timeout/transport attempt event/outcome with no fabricated Provider identity；sibling-preserving `AutomaticResult.completeness`/project phase；working-copy `ambiguous + requires_confirmation` coverage。
+
+- [x] **Step 1: Write RED Harness runtime-identity tests**
+
+Add contract cases around `preflight_full_p0_live()` proving:
+
+```python
+def test_full_live_rejects_mixed_runtime_before_run_or_paid_work(...) -> None:
+    observed = {
+        "api": {
+            "mode": "legacy_high_recall",
+            "router": "legacy",
+            "model": "qwen3-vl-plus-2025-12-19",
+            "hashes": current_hashes(),
+        },
+        "worker": {
+            "mode": "production_uncertainty",
+            "router": "symbol-uncertainty-router/1",
+            "model": "qwen3-vl-plus-2025-12-19",
+            "hashes": stale_hashes(),
+        },
+        "database_revision": "0012",
+    }
+    with pytest.raises(ValueError, match="runtime identity"):
+        preflight_with_runtime_identity(observed)
+    assert harness_run_directories() == before
+    assert registration_calls == []
+    assert provider_calls == []
 ```
 
-The generated symbol-recognition report must add typed Case A/B fields and retain all existing non-GD&T contract results。Formal success requires current authenticated Provider calls、sealed source/crop/model/prompt/schema hashes、no synthetic substitution and a passing full-P0 receipt；otherwise record the exact blocker without converting it to accepted risk。
+Add isolated cases for API/worker mode、model、router、each of the 12 code hashes、missing container、invalid JSON and database revision mismatch，plus one exact success case。Do not assert or print credential、database URL or environment values。
 
-- [ ] **Step 5: Run headed workbench QA and export proof**
-
-Using Chrome MCP or the repository `browse` skill, open the exact live project and separately record:
-
-- API payload for Case A/B；
-- list labels/value/datum；
-- structured edit A -> B；
-- save + reload persistence；
-- freeze gate behavior；
-- PDF/Excel export from the same reviewed result。
-
-Do not treat API proof as headed UI proof。Do not acquire/overwrite another operator's review lock；if lock ownership conflicts, stop with the exact project/operator/expiry metadata but no credential values。
-
-- [ ] **Step 6: Final independent review**
-
-Reviewer output must include verdict、blocking/non-blocking issues、active Owner inventory、old path removal evidence、migration/downgrade evidence、Case A/B live proof、frontend no-parser proof、export same-reviewed-result proof and test commands。Any remaining second Owner、coarse writer、unsealed live evidence or failed current-four contract blocks completion。
-
-- [ ] **Step 7: Update plan closeout and commit GDT-10**
-
-Update Status from `proposed` to the actual execution state only after every required gate。Record commits、exact test counts、run ID、receipt paths、review verdict、remaining risk and rollback evidence。
+Run:
 
 ```bash
-git add backend/app/processing/automatic_result.py backend/app/review/service.py backend/tests/integration/test_geometric_tolerance_migration.py .agent/harness/scripts/run-p0.py backend/tests/contract/harness/test_live_run_contract.py docs/superpowers/plans/2026-08-01-structured-geometric-tolerance-recognition.md
-git commit -m "feat(gdt): close structured recognition rollout"
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -k 'runtime_identity' -q
 ```
+
+Expected: RED because current preflight validates only API file hashes，not worker hashes、mode/model/router or database revision。
+
+- [x] **Step 2: Write RED working-copy failure-preservation tests**
+
+In `test_review_working_copy.py`，call `ReviewService._review_coverage()` with the exact production failure shape:
+
+```python
+{
+    "observation_id": "visual-timeout",
+    "disposition": "ambiguous",
+    "source_location_id": "visual-timeout",
+    "coordinates": [1, 2, 3, 4],
+    "candidate_id": None,
+    "requires_confirmation": True,
+    "advisor_review": {
+        "route": "visual_symbol",
+        "schema_version": "visual-symbol-review/3",
+        "failure_stage": "provider_timeout",
+    },
+}
+```
+
+Assert the projected entry retains `disposition="ambiguous"`、`requires_confirmation=true`、coordinates/source ID and a safe top-level `failure_stage="provider_timeout"`，with `review_required_count=1` and no raw exception。Parameterize `provider_timeout|provider_transport_failure|provider_schema_invalid`。Keep the existing `visual_no_detection -> non_inspection + system_default` test unchanged and GREEN。
+
+Run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_review_working_copy.py -k 'provider_failure or owner_committed_discriminator' -q
+```
+
+Expected: localized Provider case is RED because current generic default silently resolves it；ordinary no-detection remains GREEN。
+
+- [x] **Step 3: Strengthen production localized-failure characterization**
+
+Extend `test_one_localized_provider_failure_preserves_every_sibling_as_partial` for `failure_family in {"timeout", "transport"}` to assert:
+
+- failed ROI Provider method is invoked exactly once；
+- attempt event is the exact safe failure stage with `attempt_index=0` and null `provider_request_id`；
+- terminal outcome is `unresolved` with the corresponding observation outcome；
+- no call record、request/response artifact、cache winner or retry artifact exists for the failed timeout/transport crop；
+- successful/cache siblings、technical requirements、Coverage coordinates and candidates remain intact；
+- `AutomaticResult.completeness="partial_review_required"` and `ProjectService.status().phase="partial_review_required"`；do not add a duplicate working-copy completeness field；
+- exception text/path/token is absent from persisted and returned evidence。
+
+Run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_symbol_recognition_pipeline.py -k 'localized_provider_failure' -q
+```
+
+Expected: CandidateAdvisor/AutomaticResult behavior should remain GREEN；new exact call-count/artifact/project-phase assertions expose any real gap。If RED，change only the exact owning seam and do not add timeout/transport retry。
+
+- [x] **Step 4: Preserve localized Provider failure through review projection**
+
+In `ReviewService._review_coverage()`，recognize only the exact allowlisted advisor-review shape with `route="visual_symbol"`、`schema_version="visual-symbol-review/3"` and one of the three localized failure stages。Copy only `failure_stage` to the projected entry before removing `advisor_review`，and exclude that entry from the generic system-default conversion。Do not preserve arbitrary Provider metadata。Do not change regular no-detection、technical-requirement or candidate coverage handling。
+
+- [x] **Step 5: Implement zero-paid API/worker/hash/database preflight**
+
+In `run-p0.py`，replace the API-only helper with one bounded `_require_compose_runtime_identity()` called by `preflight_full_p0_live()` before registration/run creation/source upload。For both `api` and `worker`，compare every `LIVE_API_GDT_RUNTIME_PATHS` SHA against current worktree bytes and compare this exact sanitized identity:
+
+```python
+EXPECTED_RECOGNITION_IDENTITY = {
+    "mode": "production_uncertainty",
+    "router": "symbol-uncertainty-router/1",
+    "model": "qwen3-vl-plus-2025-12-19",
+}
+```
+
+Then query only `SELECT version_num FROM alembic_version` through the current Compose `postgres` service and require exact `0013`。The container programs may import `get_settings()` and `symbol_routing_identity()` but must output only hashes/mode/router/model；the database command may output only revision。Any missing container、nonzero exit、invalid/extra/missing field or mismatch raises `ValueError("Compose runtime identity does not match GDT-10 live contract")`。Do not output database URL、mutate container env/project rows or run migration inside preflight。
+
+- [x] **Step 6: Run focused GREEN and retry invariants**
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -k 'runtime_identity' -q
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_review_working_copy.py -k 'provider_failure or owner_committed_discriminator' -q
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/integration/test_symbol_recognition_pipeline.py -k 'localized_provider_failure or actual_primary_wall_blocks_retry' -q
+rg -n 'timeout=60\.0|max_retries=0' backend/app/providers/runtime.py
+rg -n 'MAX_VISUAL_PAGE_WALL_SECONDS = 45\.0|MAX_VISUAL_PROJECT_WALL_SECONDS = 90\.0' backend/app/candidates/symbol_escalation_contracts.py
+git diff --check
+```
+
+Expected: focused tests pass；timeout/transport use zero retry；production schema invalid remains the only `ProductionRetryCoordinator`-authorized retry；legacy sequential retry remains unchanged；all four runtime/budget constants are unchanged。
+
+- [x] **Step 7: Run full offline regression gates**
+
+```bash
+python .agent/harness/scripts/check-contracts.py
+PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness -q
+make test-backend
+git diff --check
+```
+
+No live Provider command is allowed in this step。
+
+- [x] **Step 8: Independent timeout-boundary review**
+
+Reviewer must return `accept|accept with concerns|reject` and verify production single retry Owner、zero timeout/transport retry、no fabricated Provider identity、working-copy failure preservation、unchanged no-detection default、legacy activation retirement、API/worker/hash/database preflight ordering、privacy、budget invariants and false-success boundary。Any new production retry outside `ProductionRetryCoordinator`、mode/hash/DB check after paid work、silent failure-to-non-inspection conversion or partial-to-success conversion is blocking。
+
+- [x] **Step 9: Commit GDT-10A implementation only**
+
+```bash
+git add .agent/harness/scripts/run-p0.py backend/tests/contract/harness/test_live_run_contract.py backend/tests/integration/test_symbol_recognition_pipeline.py backend/app/review/service.py backend/tests/integration/test_review_working_copy.py
+git add backend/app/candidates/advisor.py  # only when Step 3 proved a real implementation gap
+git commit -m "fix(gdt): bind live timeout disposition"
+```
+
+The approved spec/plan amendment is committed separately before implementation。Do not stage Compose isolation files、generated run evidence or unrelated dirty artifacts in the implementation commit。
+
+- [ ] **Steps 4-7: Superseded by the reviewed GDT-10D companion plan**
+
+The former direct `make verify-p0-live`、headed QA、final review and closeout instructions were written for stale `0013 + 12-file` activation and a non-auditable static cost ceiling。They do not authorize any current command。
+
+Execute only Tasks 1-10 in:
+
+```text
+docs/superpowers/plans/2026-08-02-gdt10d-classified-provider-live-verification.md
+```
+
+That replacement requires `PROV-005` pricing/cycle-wide usage implementation and review、per-submission one-use authorization、writer quiescence、private backup、`0014 + full backend/app runtime closure` identity and independent credential-free zero-paid `GO` before the sole cycle start。Step 5 remains conditional on the exact same run reaching an accepted `visual_qa_pending:first-pdf-balloons` terminal and is the only allowed literal resume；final review/closeout remain mandatory。
 
 ## Spec Coverage Matrix
 
@@ -1216,6 +1559,7 @@ git commit -m "feat(gdt): close structured recognition rollout"
 | Frontend subtype/value/datum/modifier presentation without raw parser | GDT-8 |
 | Same-reviewed-result export and frozen/offline E2E | GDT-9 |
 | Legacy zero-count, rollback-first proof, authorized live and headed UI | GDT-10 |
+| Provider timeout ownership, zero-retry boundary and isolated recognition identity | GDT-10A |
 
 ## Self-Review Record
 
@@ -1226,6 +1570,7 @@ git commit -m "feat(gdt): close structured recognition rollout"
 - Old-path convergence: all new GD&T inputs reach `GeometricToleranceNormalizer`；legacy coarse payloads become typed unknown；the temporary `/2` adapter has a real consumer、trigger、deadline and explicit removal in GDT-10。
 - Rollback: isolated downgrade and workbench GET are ordered before broader tests；production rollback remains vetoed without snapshot/backup authority。
 - Verification separation: unit、contract、integration、offline E2E、live Provider、headed UI and export evidence are each explicit and are not treated as interchangeable。
+- Timeout boundary: `60s` Provider timeout is not retried against a `45s` page wall budget；GDT-10 uses the existing production localized partial path and rejects legacy mode before paid work。
 
 ## Completion Contract
 
@@ -1240,4 +1585,4 @@ git commit -m "feat(gdt): close structured recognition rollout"
 - upgrade/downgrade 和 rollback-first workbench GET 已验证；
 - focused/full backend、frontend、OpenAPI、build、offline E2E、authorized live current-four、headed UI、export proof 全部实际运行；
 - independent reviewer verdict 为 `accept`；
-- current P0 contract matrix、runtime config 或 production deployment 未经额外授权不改变。
+- current P0 contract matrix、public runtime config 或 production deployment 未经额外授权不改变；GDT-10 isolated verification runtime 必须显式证明 `production_uncertainty` identity。

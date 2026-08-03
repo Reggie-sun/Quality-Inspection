@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -14,13 +14,18 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
-from app.candidates.advisor import CandidateAdvisorFailure
+from app.candidates.advisor import (
+    CandidateAdvisor,
+    CandidateAdvisorFailure,
+    classify_provider_failure,
+)
 from app.candidates.models import AutomaticResult
 from app.config import Settings
 from app.db import SessionLocal, engine
 from app.errors.models import ErrorRecord
 from app.jobs.idempotency import LogicalJob, set_processing_stage
 from app.processing import tasks
+from app.processing.automatic_result import CandidateSnapshot
 from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.processing.tasks import inventory_project
@@ -29,9 +34,14 @@ from app.projects.lifecycle import ProjectLifecycleNotFound
 from app.projects.state import ProjectState
 from app.review.models import ReviewWorkingCopy
 from app.review.service import ReviewService
-from app.providers.base import VisionResult
+from app.providers.base import (
+    ProviderFailureFact,
+    VisionResult,
+    provider_failure_category_for_http_status,
+)
 from app.storage.local import LocalFileStorage
 from app.storage.models import StoredFile
+from tests.support.provider_cycle import CYCLE_ID, create_cycle_authorization
 
 
 class PassingPreflight:
@@ -669,6 +679,70 @@ def test_worker_uses_frozen_project_mode_after_settings_change(
     assert external_calls == []
 
 
+def test_cycle_task_injects_one_shared_usage_ledger_without_provider_work(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "cycle-task-storage")
+    setup = task_session_factory()
+    project, source = _project_source_with_routing_identity(
+        setup,
+        storage,
+        tmp_path,
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
+    setup.close()
+    authorization_root = create_cycle_authorization(
+        tmp_path / "cycle-task-authorization",
+        project_ids=(str(project.id),),
+    )
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+    monkeypatch.setattr(
+        tasks,
+        "get_settings",
+        lambda: Settings(
+            storage_root=storage.root,
+            qwen_model="qwen3-vl-plus-2025-12-19",
+            symbol_recognition_mode="production_uncertainty",
+            provider_cycle_authorization_id=CYCLE_ID,
+            provider_cycle_authorization_root=authorization_root,
+        ),
+    )
+    original_advisor = tasks.CandidateAdvisor
+    original_recognition = tasks.RuntimeRecognition
+    injected: list[object] = []
+
+    def recording_advisor(settings: Settings, *args, **kwargs):
+        injected.append(kwargs["usage_ledger"])
+        return original_advisor(settings, *args, **kwargs)
+
+    def recording_recognition(settings: Settings, *args, **kwargs):
+        injected.append(kwargs["usage_ledger"])
+        return original_recognition(settings, *args, **kwargs)
+
+    monkeypatch.setattr(tasks, "CandidateAdvisor", recording_advisor)
+    monkeypatch.setattr(tasks, "RuntimeRecognition", recording_recognition)
+
+    inventory_project.run(
+        str(project.id),
+        source.resource_ref,
+        f"product-process:{project.id}",
+    )
+
+    assert len(injected) == 2
+    assert injected[0] is injected[1]
+    assert injected[0].snapshot().reservation_count == 0
+    assert external_calls == []
+
+
 def test_task_injects_one_session_bound_preview_sink_into_candidate_advisor(
     monkeypatch: pytest.MonkeyPatch,
     task_session_factory: Callable[[], Session],
@@ -1187,29 +1261,120 @@ def test_canonical_task_calls_vision_once_for_eligible_candidate(
         verify.close()
 
 
+def test_legacy_provider_failure_remains_transient_and_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "legacy-failure-storage")
+    setup = task_session_factory()
+    project, source = _project_source(
+        setup,
+        storage,
+        tmp_path,
+        raw_text="Ra 3.2",
+    )
+    setup.close()
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+    private_marker = "private://customer/token-do-not-leak"
+
+    class FailingLegacyVisionProvider:
+        def review_candidate(
+            self,
+            _image: bytes,
+            _prompt: str,
+        ) -> VisionResult:
+            raise TimeoutError(private_marker)
+
+    monkeypatch.setattr(
+        tasks,
+        "VISION_PROVIDER_FACTORY",
+        lambda _settings: FailingLegacyVisionProvider(),
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as raised:
+        inventory_project.run(
+            str(project.id),
+            source.resource_ref,
+            f"product-process:{project.id}",
+        )
+
+    assert raised.value.failure_category == "timeout"
+    assert (
+        raised.value.pipeline_cause_category
+        == "transient_provider_failure"
+    )
+    assert private_marker not in str(raised.value)
+
+    verify = task_session_factory()
+    try:
+        error = verify.scalar(
+            select(ErrorRecord).where(ErrorRecord.project_id == project.id)
+        )
+        assert error is not None
+        assert error.code == "vision_provider_call_failed"
+        assert error.cause_category == "transient_provider_failure"
+        assert _counts(verify, project.id)["raw"] == 0
+        assert _counts(verify, project.id)["working"] == 0
+        assert private_marker not in error.message
+        assert external_calls == []
+    finally:
+        verify.close()
+
+
+def _status_fact(status: int) -> ProviderFailureFact:
+    return ProviderFailureFact(
+        category=provider_failure_category_for_http_status(status),
+        origin="sdk_http_status",
+        http_status=status,
+        provider_request_id=None,
+        request_id_state="absent",
+    )
+
+
+def _metadata_fact() -> ProviderFailureFact:
+    return ProviderFailureFact(
+        category="metadata_invalid",
+        origin="response_metadata",
+        http_status=None,
+        provider_request_id=None,
+        request_id_state="absent",
+    )
+
+
+def _unclassified_fact() -> ProviderFailureFact:
+    return ProviderFailureFact(
+        category="unclassified",
+        origin="provider_boundary",
+        http_status=None,
+        provider_request_id=None,
+        request_id_state="absent",
+    )
+
+
 @pytest.mark.parametrize(
-    ("provider_exception", "expected_category"),
+    ("fact", "expected_cause"),
     (
-        (
-            lambda private_detail: RuntimeError(private_detail),
-            "transport",
-        ),
-        (
-            lambda _private_detail: CandidateAdvisorFailure(
-                "typed Provider response failure",
-                failure_category="schema",
-            ),
-            "schema",
-        ),
+        (_status_fact(401), "invalid_configuration"),
+        (_status_fact(429), "transient_provider_failure"),
+        (_status_fact(503), "transient_provider_failure"),
+        (_status_fact(422), "processing_defect"),
+        (_metadata_fact(), "processing_defect"),
+        (_unclassified_fact(), "processing_defect"),
     ),
-    ids=("generic-runtime", "typed-schema"),
 )
 def test_vision_failure_is_sanitized_without_result_layers(
     monkeypatch: pytest.MonkeyPatch,
     task_session_factory: Callable[[], Session],
     tmp_path: Path,
-    provider_exception: Callable[[str], Exception],
-    expected_category: str,
+    fact: ProviderFailureFact,
+    expected_cause: str,
 ) -> None:
     storage = LocalFileStorage(tmp_path / "storage")
     setup = task_session_factory()
@@ -1227,17 +1392,23 @@ def test_vision_failure_is_sanitized_without_result_layers(
         storage_root=storage.root,
         external_calls=external_calls,
     )
-    private_detail = "/srv/private/customer.pdf credential=do-not-leak"
+    private_marker = "private://customer/token-do-not-leak"
+    classification = classify_provider_failure(fact)
 
-    class FailingVisionProvider:
-        def review_candidate(self, _image: bytes, _prompt: str) -> VisionResult:
-            raise provider_exception(private_detail)
+    def fail_review(
+        _advisor: CandidateAdvisor,
+        _source: Path,
+        _pages: Sequence[object],
+        _snapshot: CandidateSnapshot,
+        **_kwargs: object,
+    ) -> CandidateSnapshot:
+        raise CandidateAdvisorFailure(
+            "Visual symbol Advisor call failed",
+            classification=classification,
+            failure_event_sha256="a" * 64,
+        )
 
-    monkeypatch.setattr(
-        tasks,
-        "VISION_PROVIDER_FACTORY",
-        lambda _settings: FailingVisionProvider(),
-    )
+    monkeypatch.setattr(CandidateAdvisor, "review", fail_review)
 
     with pytest.raises(CandidateAdvisorFailure) as raised:
         inventory_project.run(
@@ -1245,7 +1416,11 @@ def test_vision_failure_is_sanitized_without_result_layers(
             source.resource_ref,
             f"product-process:{project.id}",
         )
-    assert raised.value.failure_category == expected_category
+    assert raised.value.failure_category == fact.category
+    assert raised.value.failure_event_sha256 == "a" * 64
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+    assert private_marker not in str(raised.value)
 
     verify = task_session_factory()
     try:
@@ -1257,8 +1432,71 @@ def test_vision_failure_is_sanitized_without_result_layers(
         assert error is not None
         assert error.code == "vision_provider_call_failed"
         assert error.stage == "candidate_advisor"
-        assert error.cause_category == "transient_provider_failure"
-        assert private_detail not in error.message
+        assert error.cause_category == expected_cause
+        assert private_marker not in error.message
+        assert external_calls == []
+        for artifact in storage.root.rglob("*"):
+            if artifact.is_file():
+                assert private_marker.encode("utf-8") not in (
+                    artifact.read_bytes()
+                )
+    finally:
+        verify.close()
+
+
+def test_routing_evidence_failed_takes_precedence_over_provider_projection(
+    monkeypatch: pytest.MonkeyPatch,
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    storage = LocalFileStorage(tmp_path / "routing-evidence-storage")
+    setup = task_session_factory()
+    project, source = _project_source(setup, storage, tmp_path)
+    setup.close()
+    external_calls: list[str] = []
+    _configure_task(
+        monkeypatch,
+        session_factory=task_session_factory,
+        storage_root=storage.root,
+        external_calls=external_calls,
+    )
+
+    def fail_review(
+        _advisor: CandidateAdvisor,
+        _source: Path,
+        _pages: Sequence[object],
+        _snapshot: CandidateSnapshot,
+        **_kwargs: object,
+    ) -> CandidateSnapshot:
+        raise CandidateAdvisorFailure(
+            "Visual symbol routing evidence write failed",
+            failure_origin="routing_evidence",
+        )
+
+    monkeypatch.setattr(CandidateAdvisor, "review", fail_review)
+
+    with pytest.raises(CandidateAdvisorFailure) as raised:
+        inventory_project.run(
+            str(project.id),
+            source.resource_ref,
+            f"product-process:{project.id}",
+        )
+
+    verify = task_session_factory()
+    try:
+        error = verify.scalar(
+            select(ErrorRecord).where(ErrorRecord.project_id == project.id)
+        )
+        assert error is not None
+        assert error.code == "symbol_routing_evidence_failed"
+        assert error.cause_category == "processing_defect"
+        assert _counts(verify, project.id)["raw"] == 0
+        assert _counts(verify, project.id)["working"] == 0
+        assert raised.value.failure_origin == "routing_evidence"
+        assert raised.value.failure_category is None
+        assert raised.value.__cause__ is None
+        assert raised.value.__context__ is None
+        assert external_calls == []
     finally:
         verify.close()
 

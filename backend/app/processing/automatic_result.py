@@ -33,6 +33,7 @@ from app.candidates.duplicates import (
     suggest_cross_view_duplicates,
 )
 from app.candidates.grouping import group_observations
+from app.candidates.geometric_tolerance import GeometricToleranceCandidate
 from app.candidates.models import AutomaticResult
 from app.candidates.schemas import Candidate, stable_candidate_id
 from app.candidates.technical_requirements import (
@@ -52,7 +53,10 @@ from app.projects.state import InvalidTransition, ProjectState, transition
 
 
 LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/1"
-AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"
+# automatic-result/2 remains only for the general confidence-decision
+# compatibility contract; GD&T coarse payloads must be migrated before review.
+COMPAT_AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/2"
+AUTOMATIC_RESULT_SCHEMA_VERSION = "automatic-result/3"
 ROUGHNESS_TOKEN = re.compile(r"(?<![A-Za-z])Ra(?=\s*[0-9])", re.IGNORECASE)
 SYMBOL_RECOGNITION_SUMMARY_VERSION = "symbol-recognition-summary/1"
 _ROUTED_RECOGNITION_MODES = frozenset(
@@ -195,8 +199,6 @@ def _coarse_type(raw_text: str) -> str | None:
         return "roughness"
     if "焊" in raw_text:
         return "weld"
-    if any(symbol in raw_text for symbol in ("⌖", "⌒", "⏥", "∥", "⊥")):
-        return "geometric_tolerance"
     return None
 
 
@@ -219,17 +221,19 @@ def _composite_at(
     return best
 
 
-def _candidate_payload(candidate: Candidate | CoarseCandidate) -> dict[str, Any]:
+def _candidate_payload(
+    candidate: Candidate | CoarseCandidate | GeometricToleranceCandidate,
+) -> dict[str, Any]:
     return candidate.model_dump(mode="json", exclude_none=True)
 
 
 def _candidate_envelope(
-    candidate: Candidate | CoarseCandidate,
+    candidate: Candidate | CoarseCandidate | GeometricToleranceCandidate,
     observations: Sequence[TextObservation],
 ) -> dict[str, Any]:
     candidate_id = (
         candidate.candidate_id
-        if isinstance(candidate, Candidate)
+        if isinstance(candidate, (Candidate, GeometricToleranceCandidate))
         else stable_candidate_id(
             "coarse-observation",
             *(observation.observation_id for observation in observations),
@@ -587,7 +591,9 @@ def candidate_snapshot_from_inventory(
 
     while index < len(local_observations):
         observation = local_observations[index]
-        candidate: Candidate | CoarseCandidate | None = None
+        candidate: (
+            Candidate | CoarseCandidate | GeometricToleranceCandidate | None
+        ) = None
         members: tuple[TextObservation, ...] = (observation,)
 
         has_visual_context = (
@@ -622,6 +628,35 @@ def candidate_snapshot_from_inventory(
                             observation.raw_text,
                             coarse_type,
                             observation.bbox_pdf,
+                        )
+                    elif any(
+                        symbol in observation.raw_text
+                        for symbol in (
+                            "⏤",
+                            "▱",
+                            "⏥",
+                            "○",
+                            "⌭",
+                            "⌒",
+                            "⌓",
+                            "∠",
+                            "⊥",
+                            "∥",
+                            "⌖",
+                            "◎",
+                            "⌯",
+                            "↗",
+                            "⌰",
+                        )
+                    ):
+                        candidate = GeometricToleranceCandidate.from_legacy_unknown(
+                            candidate_id=stable_candidate_id(
+                                "geometric-tolerance-unknown",
+                                observation.observation_id,
+                            ),
+                            raw_text=observation.raw_text,
+                            coordinates=observation.bbox_pdf,
+                            source_location_ids=(observation.observation_id,),
                         )
 
         if candidate is None:
@@ -812,7 +847,10 @@ def _validated_candidates_for_schema(
 ) -> Sequence[Mapping[str, Any]]:
     if schema_version == LEGACY_AUTOMATIC_RESULT_SCHEMA_VERSION:
         return candidates
-    if schema_version != AUTOMATIC_RESULT_SCHEMA_VERSION:
+    if schema_version not in {
+        COMPAT_AUTOMATIC_RESULT_SCHEMA_VERSION,
+        AUTOMATIC_RESULT_SCHEMA_VERSION,
+    }:
         raise ConfidenceDecisionContractError(
             f"automatic result schema_version is unknown: {schema_version}"
         )
@@ -822,7 +860,7 @@ def _validated_candidates_for_schema(
         or isinstance(candidates, Mapping)
     ):
         raise ConfidenceDecisionContractError(
-            "automatic-result/2 candidates must be a non-string sequence"
+            f"{schema_version} candidates must be a non-string sequence"
         )
     for index, candidate in enumerate(candidates):
         if not isinstance(candidate, Mapping):

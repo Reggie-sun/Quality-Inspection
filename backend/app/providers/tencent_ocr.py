@@ -9,6 +9,7 @@ from typing import Any
 from tencentcloud.ocr.v20181119 import models
 
 from app.providers.base import OcrObservation, OcrResult
+from app.providers.usage_ledger import ReservationPermit
 
 
 def _value(source: Any, name: str, default: Any = None) -> Any:
@@ -70,10 +71,16 @@ def normalize_response(response: Any) -> OcrResult:
 
 
 class TencentOcrProvider:
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, *, require_cycle_permit: bool = False) -> None:
         self._client = client
+        self._require_cycle_permit = require_cycle_permit
 
-    def recognize_png(self, image: bytes) -> OcrResult:
+    def recognize_png(
+        self,
+        image: bytes,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> OcrResult:
         request = models.GeneralAccurateOCRRequest()
         request.from_json_string(
             json.dumps(
@@ -86,4 +93,14 @@ class TencentOcrProvider:
                 }
             )
         )
+        if reservation_permit is None:
+            if self._require_cycle_permit:
+                raise ValueError("exact-cycle Provider call requires one permit")
+        elif not isinstance(reservation_permit, ReservationPermit):
+            raise ValueError("reservation permit is invalid")
+        else:
+            reservation_permit.consume_for_adapter(
+                provider="tencent-ocr",
+                operation="GeneralAccurateOCR",
+            )
         return normalize_response(self._client.GeneralAccurateOCR(request))

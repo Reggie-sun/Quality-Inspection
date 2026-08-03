@@ -32,7 +32,7 @@ def _identity(**overrides: object) -> SymbolCacheIdentity:
         "router_version": "symbol-uncertainty-router/1",
         "proposal_version": "visual-observation-proposal/1",
         "prompt_version": "visual-symbol-prompt/4",
-        "response_schema_version": "visual-symbol-review/2",
+        "response_schema_version": "visual-symbol-review/3",
         "adapter_version": "qwen-visual-symbol-adapter/5",
         "model_identity": "qwen3-vl-plus",
         "pymupdf_version": "1.26.3",
@@ -81,7 +81,8 @@ def _entry(
 
 def _response() -> dict[str, object]:
     return {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
+        "gdt_frames": [],
         "detections": [],
     }
 
@@ -106,7 +107,7 @@ def _response_sha256() -> str:
         ("router_version", "symbol-uncertainty-router/2"),
         ("proposal_version", "visual-observation-proposal/2"),
         ("prompt_version", "visual-symbol-prompt/5"),
-        ("response_schema_version", "visual-symbol-review/3"),
+        ("response_schema_version", "visual-symbol-review/4"),
         ("adapter_version", "qwen-visual-symbol-adapter/6"),
         ("model_identity", "qwen3-vl-next"),
         ("pymupdf_version", "1.27.0"),

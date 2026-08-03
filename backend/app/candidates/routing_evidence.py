@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -19,10 +21,45 @@ from app.candidates.symbol_routing import (
     RoutingDecision,
     validate_routing_decision,
 )
+from app.providers.base import (
+    ProviderFailureCategory,
+    ProviderFailureFact,
+    ProviderFailureOrigin,
+    ProviderRequestIdState,
+    classify_provider_failure_request_id,
+)
 
 
-ESCALATION_ATTEMPT_SCHEMA_VERSION = "symbol-escalation-attempt/1"
+ESCALATION_ATTEMPT_SCHEMA_VERSION_V1 = "symbol-escalation-attempt/1"
+ESCALATION_ATTEMPT_SCHEMA_VERSION_V2 = "symbol-escalation-attempt/2"
+ESCALATION_ATTEMPT_SCHEMA_VERSION = ESCALATION_ATTEMPT_SCHEMA_VERSION_V1
 ESCALATION_OUTCOME_SCHEMA_VERSION = "symbol-escalation-outcome/1"
+PROVIDER_FAILURE_EVENT_CODES = frozenset(
+    {
+        "provider_schema_invalid",
+        "provider_timeout",
+        "provider_transport_failure",
+        "provider_authentication_failed",
+        "provider_request_rejected",
+        "provider_rate_limited",
+        "provider_service_failure",
+        "provider_metadata_invalid",
+        "provider_unclassified_failure",
+    }
+)
+ADVISOR_BOUNDARY_FAILURE_EVENT_CODES = frozenset(
+    {
+        "provider_factory_failed",
+        "provider_contract_failure",
+        "advisor_result_missing",
+    }
+)
+PROJECT_FAILURE_CANCELLATION_EVENT_CODE = (
+    "not_started_after_project_failure"
+)
+PROJECT_FAILURE_CANCELLATION_OUTCOME_CODE = (
+    "cancelled_after_project_failure"
+)
 ATTEMPT_EVENT_CODES = frozenset(
     {
         "cache_hit_valid",
@@ -37,6 +74,9 @@ ATTEMPT_EVENT_CODES = frozenset(
         "not_started_budget_exhausted",
         "cancelled_after_project_budget",
     }
+    | PROVIDER_FAILURE_EVENT_CODES
+    | ADVISOR_BOUNDARY_FAILURE_EVENT_CODES
+    | {PROJECT_FAILURE_CANCELLATION_EVENT_CODE}
 )
 ATTEMPT_EVENT_ORDER = {
     code: index
@@ -50,9 +90,19 @@ ATTEMPT_EVENT_ORDER = {
             "provider_schema_invalid",
             "provider_timeout",
             "provider_transport_failure",
+            "provider_authentication_failed",
+            "provider_request_rejected",
+            "provider_rate_limited",
+            "provider_service_failure",
+            "provider_metadata_invalid",
+            "provider_unclassified_failure",
+            "provider_factory_failed",
+            "provider_contract_failure",
+            "advisor_result_missing",
             "retry_scheduled",
             "not_started_budget_exhausted",
             "cancelled_after_project_budget",
+            PROJECT_FAILURE_CANCELLATION_EVENT_CODE,
         )
     )
 }
@@ -77,6 +127,89 @@ OBSERVATION_OUTCOME_CODES = frozenset(
         "provider_transport_failure",
         "routing_budget_exhausted",
         "cancelled_after_project_budget",
+    }
+    | PROVIDER_FAILURE_EVENT_CODES
+    | ADVISOR_BOUNDARY_FAILURE_EVENT_CODES
+    | {PROJECT_FAILURE_CANCELLATION_OUTCOME_CODE}
+)
+
+_PROVIDER_FAILURE_CLASSIFICATION = {
+    "timeout": ("provider_timeout", "roi_localized", None),
+    "transport": ("provider_transport_failure", "roi_localized", None),
+    "schema": ("provider_schema_invalid", "roi_localized", None),
+    "authentication": (
+        "provider_authentication_failed",
+        "project_blocking",
+        "invalid_configuration",
+    ),
+    "request_rejected": (
+        "provider_request_rejected",
+        "project_blocking",
+        "processing_defect",
+    ),
+    "rate_limited": (
+        "provider_rate_limited",
+        "project_blocking",
+        "transient_provider_failure",
+    ),
+    "service_failure": (
+        "provider_service_failure",
+        "project_blocking",
+        "transient_provider_failure",
+    ),
+    "metadata_invalid": (
+        "provider_metadata_invalid",
+        "project_blocking",
+        "processing_defect",
+    ),
+    "unclassified": (
+        "provider_unclassified_failure",
+        "project_blocking",
+        "processing_defect",
+    ),
+}
+_PROVIDER_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "schema_version",
+        "failure_category",
+        "failure_stage",
+        "scope",
+        "origin",
+        "http_status",
+        "request_id_state",
+        "pipeline_cause_category",
+        "retry_decision",
+    }
+)
+_ADVISOR_BOUNDARY_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "schema_version",
+        "failure_stage",
+        "scope",
+        "pipeline_cause_category",
+        "provider_work_started",
+    }
+)
+_RETRY_CONTROL_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "schema_version",
+        "retry_reason",
+        "authorization_owner",
+        "failure_event_sha256",
+    }
+)
+_SCHEDULER_STOP_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "schema_version",
+        "stop_reason",
+        "blocking_event_sha256",
+        "provider_work_started",
+    }
+)
+_BUDGET_CONTROL_DIAGNOSTIC_KEYS = frozenset(
+    {
+        "schema_version",
+        "budget_origin",
     }
 )
 
@@ -110,6 +243,305 @@ def _valid_text(value: object) -> bool:
     )
 
 
+def validate_provider_failure_diagnostic(
+    document: Mapping[str, object],
+) -> None:
+    category = document.get("failure_category")
+    origin = document.get("origin")
+    http_status = document.get("http_status")
+    request_id_state = document.get("request_id_state")
+    expected = (
+        _PROVIDER_FAILURE_CLASSIFICATION.get(category)
+        if isinstance(category, str)
+        else None
+    )
+    if (
+        set(document) != _PROVIDER_DIAGNOSTIC_KEYS
+        or document.get("schema_version")
+        != "visual-symbol-provider-failure/1"
+        or expected is None
+        or (
+            document.get("failure_stage"),
+            document.get("scope"),
+            document.get("pipeline_cause_category"),
+        )
+        != expected
+        or document.get("retry_decision")
+        not in {"not_authorized", "authorized_schema_retry"}
+        or (
+            document.get("retry_decision") == "authorized_schema_retry"
+            and category != "schema"
+        )
+    ):
+        raise ValueError("Provider failure diagnostic is invalid")
+    try:
+        ProviderFailureFact(
+            category=cast(ProviderFailureCategory, category),
+            origin=cast(ProviderFailureOrigin, origin),
+            http_status=cast(int | None, http_status),
+            provider_request_id=(
+                "accepted-request-id"
+                if request_id_state == "accepted"
+                else None
+            ),
+            request_id_state=cast(
+                ProviderRequestIdState,
+                request_id_state,
+            ),
+        )
+    except (TypeError, ValueError):
+        raise ValueError("Provider failure diagnostic is invalid") from None
+
+
+def validate_advisor_boundary_failure_diagnostic(
+    document: Mapping[str, object],
+) -> None:
+    failure_stage = document.get("failure_stage")
+    expected_work_started = {
+        "provider_factory_failed": False,
+        "provider_contract_failure": True,
+        "advisor_result_missing": True,
+    }.get(failure_stage) if isinstance(failure_stage, str) else None
+    if (
+        set(document) != _ADVISOR_BOUNDARY_DIAGNOSTIC_KEYS
+        or document.get("schema_version")
+        != "visual-symbol-advisor-boundary-failure/1"
+        or expected_work_started is None
+        or document.get("scope") != "project_blocking"
+        or document.get("pipeline_cause_category") != "processing_defect"
+        or document.get("provider_work_started") is not expected_work_started
+    ):
+        raise ValueError("Advisor boundary failure diagnostic is invalid")
+
+
+def validate_retry_control_diagnostic(
+    document: Mapping[str, object],
+) -> None:
+    if (
+        set(document) != _RETRY_CONTROL_DIAGNOSTIC_KEYS
+        or document.get("schema_version") != "visual-symbol-retry-control/1"
+        or document.get("retry_reason") != "schema_invalid"
+        or document.get("authorization_owner")
+        != "production_retry_coordinator"
+        or not _valid_sha256(document.get("failure_event_sha256"))
+    ):
+        raise ValueError("Retry control diagnostic is invalid")
+
+
+def validate_scheduler_stop_diagnostic(
+    document: Mapping[str, object],
+) -> None:
+    stop_reason = document.get("stop_reason")
+    if (
+        set(document) != _SCHEDULER_STOP_DIAGNOSTIC_KEYS
+        or document.get("schema_version")
+        != "visual-symbol-scheduler-stop/1"
+        or not isinstance(stop_reason, str)
+        or stop_reason
+        not in {
+            "project_blocking_provider_failure",
+            "project_blocking_advisor_boundary_failure",
+        }
+        or not _valid_sha256(document.get("blocking_event_sha256"))
+        or document.get("provider_work_started") is not False
+    ):
+        raise ValueError("Scheduler stop diagnostic is invalid")
+
+
+def validate_budget_control_diagnostic(
+    document: Mapping[str, object],
+) -> None:
+    if (
+        set(document) != _BUDGET_CONTROL_DIAGNOSTIC_KEYS
+        or document.get("schema_version")
+        != "visual-symbol-budget-control/1"
+        or document.get("budget_origin")
+        not in {"routing_plan", "provider_cycle_reservation"}
+    ):
+        raise ValueError("Budget control diagnostic is invalid")
+
+
+@dataclass(frozen=True)
+class ProviderFailureDiagnostic:
+    schema_version: str
+    failure_category: str
+    failure_stage: str
+    scope: str
+    origin: str
+    http_status: int | None
+    request_id_state: str
+    pipeline_cause_category: str | None
+    retry_decision: str
+
+    def as_dict(self) -> dict[str, object]:
+        document = asdict(self)
+        validate_provider_failure_diagnostic(document)
+        return document
+
+
+@dataclass(frozen=True)
+class AdvisorBoundaryFailureDiagnostic:
+    schema_version: str
+    failure_stage: str
+    scope: str
+    pipeline_cause_category: str
+    provider_work_started: bool
+
+    def as_dict(self) -> dict[str, object]:
+        document = asdict(self)
+        validate_advisor_boundary_failure_diagnostic(document)
+        return document
+
+
+@dataclass(frozen=True)
+class RetryControlDiagnostic:
+    schema_version: str
+    retry_reason: str
+    authorization_owner: str
+    failure_event_sha256: str
+
+    def as_dict(self) -> dict[str, object]:
+        document = asdict(self)
+        validate_retry_control_diagnostic(document)
+        return document
+
+
+@dataclass(frozen=True)
+class SchedulerStopDiagnostic:
+    schema_version: str
+    stop_reason: str
+    blocking_event_sha256: str
+    provider_work_started: bool
+
+    def as_dict(self) -> dict[str, object]:
+        document = asdict(self)
+        validate_scheduler_stop_diagnostic(document)
+        return document
+
+
+@dataclass(frozen=True)
+class BudgetControlDiagnostic:
+    schema_version: str
+    budget_origin: str
+
+    def as_dict(self) -> dict[str, object]:
+        document = asdict(self)
+        validate_budget_control_diagnostic(document)
+        return document
+
+
+def _validate_attempt_diagnostic(
+    event: EscalationAttemptEvent,
+) -> None:
+    document = event.diagnostic
+    if not isinstance(document, Mapping):
+        raise ValueError("symbol escalation attempt event invalid")
+    schema_version = document.get("schema_version")
+    try:
+        if schema_version == "visual-symbol-provider-failure/1":
+            validate_provider_failure_diagnostic(document)
+            if document.get("failure_stage") != event.event_code:
+                raise ValueError
+            request_id_state = document.get("request_id_state")
+            ProviderFailureFact(
+                category=cast(
+                    ProviderFailureCategory,
+                    document.get("failure_category"),
+                ),
+                origin=cast(
+                    ProviderFailureOrigin,
+                    document.get("origin"),
+                ),
+                http_status=cast(int | None, document.get("http_status")),
+                provider_request_id=event.provider_request_id,
+                request_id_state=cast(
+                    ProviderRequestIdState,
+                    request_id_state,
+                ),
+            )
+        elif schema_version == "visual-symbol-advisor-boundary-failure/1":
+            validate_advisor_boundary_failure_diagnostic(document)
+            if (
+                document.get("failure_stage") != event.event_code
+                or event.provider_request_id is not None
+            ):
+                raise ValueError
+        elif schema_version == "visual-symbol-retry-control/1":
+            validate_retry_control_diagnostic(document)
+            if event.event_code != "retry_scheduled":
+                raise ValueError
+            if event.provider_request_id is not None and (
+                classify_provider_failure_request_id(
+                    event.provider_request_id
+                )[1]
+                != "accepted"
+            ):
+                raise ValueError
+        elif schema_version == "visual-symbol-scheduler-stop/1":
+            validate_scheduler_stop_diagnostic(document)
+            if (
+                event.event_code != PROJECT_FAILURE_CANCELLATION_EVENT_CODE
+                or event.attempt_index != 0
+                or event.provider_request_id is not None
+            ):
+                raise ValueError
+        elif schema_version == "visual-symbol-budget-control/1":
+            validate_budget_control_diagnostic(document)
+            if (
+                event.event_code != "not_started_budget_exhausted"
+                or event.attempt_index != 0
+                or event.cache_entry_id is not None
+                or event.provider_request_id is not None
+            ):
+                raise ValueError
+        else:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ValueError("symbol escalation attempt event invalid") from None
+
+
+def _is_schema_retry_pair_member(event: EscalationAttemptEvent) -> bool:
+    return event.event_code == "retry_scheduled" or (
+        isinstance(event.diagnostic, Mapping)
+        and event.diagnostic.get("schema_version")
+        == "visual-symbol-provider-failure/1"
+        and event.diagnostic.get("retry_decision")
+        == "authorized_schema_retry"
+    )
+
+
+def _validate_schema_retry_pair(
+    failure_event: EscalationAttemptEvent,
+    retry_event: EscalationAttemptEvent,
+) -> None:
+    failure_diagnostic = failure_event.diagnostic
+    retry_diagnostic = retry_event.diagnostic
+    if (
+        failure_event.schema_version
+        != ESCALATION_ATTEMPT_SCHEMA_VERSION_V2
+        or failure_event.event_code != "provider_schema_invalid"
+        or not isinstance(failure_diagnostic, Mapping)
+        or failure_diagnostic.get("retry_decision")
+        != "authorized_schema_retry"
+        or retry_event.schema_version
+        != ESCALATION_ATTEMPT_SCHEMA_VERSION_V2
+        or retry_event.event_code != "retry_scheduled"
+        or not isinstance(retry_diagnostic, Mapping)
+        or failure_event.escalation_group_id
+        != retry_event.escalation_group_id
+        or failure_event.routing_decision_sha256
+        != retry_event.routing_decision_sha256
+        or failure_event.attempt_index != retry_event.attempt_index
+        or failure_event.provider_request_id
+        != retry_event.provider_request_id
+        or retry_diagnostic.get("failure_event_sha256")
+        != failure_event.event_sha256
+        or ATTEMPT_EVENT_ORDER["provider_schema_invalid"]
+        >= ATTEMPT_EVENT_ORDER["retry_scheduled"]
+    ):
+        raise RoutingEvidenceConflict("schema retry evidence conflicts")
+
+
 @dataclass(frozen=True)
 class EscalationAttemptEvent:
     schema_version: str
@@ -119,6 +551,7 @@ class EscalationAttemptEvent:
     event_code: str
     cache_entry_id: uuid.UUID | None
     provider_request_id: str | None
+    diagnostic: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         cache_event = self.event_code in {
@@ -126,7 +559,11 @@ class EscalationAttemptEvent:
             "cache_provenance_invalid",
         }
         if (
-            self.schema_version != ESCALATION_ATTEMPT_SCHEMA_VERSION
+            self.schema_version
+            not in {
+                ESCALATION_ATTEMPT_SCHEMA_VERSION_V1,
+                ESCALATION_ATTEMPT_SCHEMA_VERSION_V2,
+            }
             or not _valid_text(self.escalation_group_id)
             or not _valid_sha256(self.routing_decision_sha256)
             or not isinstance(self.attempt_index, int)
@@ -140,12 +577,37 @@ class EscalationAttemptEvent:
             )
         ):
             raise ValueError("symbol escalation attempt event invalid")
+        if self.schema_version == ESCALATION_ATTEMPT_SCHEMA_VERSION_V1:
+            if self.diagnostic is not None:
+                raise ValueError("symbol escalation attempt event invalid")
+        else:
+            _validate_attempt_diagnostic(self)
+
+    @property
+    def diagnostic_sha256(self) -> str | None:
+        if self.schema_version == ESCALATION_ATTEMPT_SCHEMA_VERSION_V1:
+            return None
+        return _canonical_sha256(dict(self.diagnostic or {}))
 
     @property
     def event_sha256(self) -> str:
-        payload = asdict(self)
-        if self.cache_entry_id is not None:
-            payload["cache_entry_id"] = str(self.cache_entry_id)
+        payload: dict[str, object] = {
+            "schema_version": self.schema_version,
+            "escalation_group_id": self.escalation_group_id,
+            "routing_decision_sha256": self.routing_decision_sha256,
+            "attempt_index": self.attempt_index,
+            "event_code": self.event_code,
+            "cache_entry_id": (
+                None
+                if self.cache_entry_id is None
+                else str(self.cache_entry_id)
+            ),
+            "provider_request_id": self.provider_request_id,
+        }
+        if self.schema_version == ESCALATION_ATTEMPT_SCHEMA_VERSION_V2:
+            diagnostic = dict(self.diagnostic or {})
+            payload["diagnostic"] = diagnostic
+            payload["diagnostic_sha256"] = self.diagnostic_sha256
         return _canonical_sha256(payload)
 
 
@@ -214,9 +676,11 @@ class EscalationOutcome:
                     if all_codes == {"routing_budget_exhausted"}
                     else (
                         "cancelled"
-                        if all_codes == {
-                            "cancelled_after_project_budget"
-                        }
+                        if all_codes
+                        in (
+                            {"cancelled_after_project_budget"},
+                            {PROJECT_FAILURE_CANCELLATION_OUTCOME_CODE},
+                        )
                         else "unresolved"
                     )
                 )
@@ -493,6 +957,78 @@ class RoutingEvidenceRepository:
         project_id: uuid.UUID,
         event: EscalationAttemptEvent,
     ) -> SymbolEscalationAttemptEventRecord:
+        if _is_schema_retry_pair_member(event):
+            raise RoutingEvidenceConflict(
+                "schema retry evidence requires pair writer"
+            )
+        return self._append_attempt_record(
+            project_id=project_id,
+            event=event,
+        )
+
+    def _validate_scheduler_stop_reference(
+        self,
+        *,
+        project_id: uuid.UUID,
+        event: EscalationAttemptEvent,
+    ) -> None:
+        diagnostic = event.diagnostic
+        if (
+            not isinstance(diagnostic, Mapping)
+            or diagnostic.get("schema_version")
+            != "visual-symbol-scheduler-stop/1"
+        ):
+            return
+        blocking = self._session.scalar(
+            select(SymbolEscalationAttemptEventRecord).where(
+                SymbolEscalationAttemptEventRecord.project_id == project_id,
+                SymbolEscalationAttemptEventRecord.event_sha256
+                == diagnostic.get("blocking_event_sha256"),
+            )
+        )
+        blocking_diagnostic = (
+            None if blocking is None else blocking.diagnostic
+        )
+        expected_schema = {
+            "project_blocking_provider_failure": (
+                "visual-symbol-provider-failure/1"
+            ),
+            "project_blocking_advisor_boundary_failure": (
+                "visual-symbol-advisor-boundary-failure/1"
+            ),
+        }.get(diagnostic.get("stop_reason"))
+        if (
+            not isinstance(blocking_diagnostic, Mapping)
+            or blocking_diagnostic.get("schema_version") != expected_schema
+            or blocking_diagnostic.get("scope") != "project_blocking"
+        ):
+            raise RoutingEvidenceConflict(
+                "scheduler stop evidence conflicts"
+            )
+
+    @staticmethod
+    def _attempt_record_matches(
+        record: SymbolEscalationAttemptEventRecord,
+        event: EscalationAttemptEvent,
+    ) -> bool:
+        expected_diagnostic = (
+            None
+            if event.diagnostic is None
+            else dict(event.diagnostic)
+        )
+        return (
+            record.event_sha256 == event.event_sha256
+            and record.schema_version == event.schema_version
+            and record.diagnostic == expected_diagnostic
+            and record.diagnostic_sha256 == event.diagnostic_sha256
+        )
+
+    def _append_attempt_record(
+        self,
+        *,
+        project_id: uuid.UUID,
+        event: EscalationAttemptEvent,
+    ) -> SymbolEscalationAttemptEventRecord:
         event_hash = event.event_sha256
         existing = self._session.scalar(
             select(SymbolEscalationAttemptEventRecord).where(
@@ -506,7 +1042,7 @@ class RoutingEvidenceRepository:
             )
         )
         if existing is not None:
-            if existing.event_sha256 != event_hash:
+            if not self._attempt_record_matches(existing, event):
                 raise RoutingEvidenceConflict(
                     "symbol escalation attempt replay conflicts"
                 )
@@ -527,6 +1063,10 @@ class RoutingEvidenceRepository:
             raise RoutingEvidenceConflict(
                 "symbol escalation attempt follows terminal outcome"
             )
+        self._validate_scheduler_stop_reference(
+            project_id=project_id,
+            event=event,
+        )
         if event.cache_entry_id is not None:
             cache_entry = self._session.get(
                 VisualSymbolCacheEntryRecord,
@@ -552,6 +1092,13 @@ class RoutingEvidenceRepository:
                 event_code=event.event_code,
                 cache_entry_id=event.cache_entry_id,
                 provider_request_id=event.provider_request_id,
+                schema_version=event.schema_version,
+                diagnostic=(
+                    None
+                    if event.diagnostic is None
+                    else dict(event.diagnostic)
+                ),
+                diagnostic_sha256=event.diagnostic_sha256,
                 event_sha256=event_hash,
             )
             .on_conflict_do_nothing()
@@ -568,11 +1115,175 @@ class RoutingEvidenceRepository:
                 == event.event_code,
             )
         )
-        if record is None or record.event_sha256 != event_hash:
+        if record is None or not self._attempt_record_matches(record, event):
             raise RoutingEvidenceConflict(
                 "symbol escalation attempt replay conflicts"
             )
         return record
+
+    def _validate_project_failure_cancellation_reference(
+        self,
+        *,
+        project_id: uuid.UUID,
+        event: EscalationAttemptEvent,
+    ) -> None:
+        diagnostic = event.diagnostic
+        if (
+            event.event_code
+            != PROJECT_FAILURE_CANCELLATION_EVENT_CODE
+            or not isinstance(diagnostic, Mapping)
+        ):
+            raise RoutingEvidenceConflict(
+                "scheduler stop evidence conflicts"
+            )
+        blocking_event_sha256 = diagnostic.get(
+            "blocking_event_sha256"
+        )
+        blocking = self._session.scalar(
+            select(SymbolEscalationAttemptEventRecord).where(
+                SymbolEscalationAttemptEventRecord.project_id
+                == project_id,
+                SymbolEscalationAttemptEventRecord.event_sha256
+                == blocking_event_sha256,
+            )
+        )
+        stop_reason = diagnostic.get("stop_reason")
+        expected_schema = {
+            "project_blocking_provider_failure": (
+                "visual-symbol-provider-failure/1"
+            ),
+            "project_blocking_advisor_boundary_failure": (
+                "visual-symbol-advisor-boundary-failure/1"
+            ),
+        }.get(stop_reason)
+        expected_codes = (
+            PROVIDER_FAILURE_EVENT_CODES
+            if stop_reason == "project_blocking_provider_failure"
+            else ADVISOR_BOUNDARY_FAILURE_EVENT_CODES
+        )
+        blocking_diagnostic = (
+            blocking.diagnostic if blocking is not None else None
+        )
+        if (
+            blocking is None
+            or blocking.schema_version
+            != ESCALATION_ATTEMPT_SCHEMA_VERSION_V2
+            or blocking.escalation_group_id
+            == event.escalation_group_id
+            or blocking.event_code not in expected_codes
+            or not isinstance(blocking_diagnostic, Mapping)
+            or blocking_diagnostic.get("schema_version")
+            != expected_schema
+            or blocking_diagnostic.get("failure_stage")
+            != blocking.event_code
+            or blocking_diagnostic.get("scope") != "project_blocking"
+        ):
+            raise RoutingEvidenceConflict(
+                "scheduler stop evidence conflicts"
+            )
+        terminal = self._session.scalar(
+            select(SymbolEscalationOutcomeRecord).where(
+                SymbolEscalationOutcomeRecord.project_id == project_id,
+                SymbolEscalationOutcomeRecord.escalation_group_id
+                == blocking.escalation_group_id,
+            )
+        )
+        if (
+            terminal is None
+            or terminal.terminal is not True
+            or blocking_event_sha256
+            not in terminal.attempt_event_sha256s
+        ):
+            raise RoutingEvidenceConflict(
+                "scheduler stop evidence conflicts"
+            )
+
+    def record_failure_terminal(
+        self,
+        *,
+        project_id: uuid.UUID,
+        event: EscalationAttemptEvent,
+        outcome_code: str,
+        observation_outcomes: tuple[ObservationOutcome, ...],
+    ) -> str:
+        if _is_schema_retry_pair_member(event):
+            raise RoutingEvidenceConflict(
+                "schema retry evidence requires pair writer"
+            )
+        if (
+            event.schema_version
+            != ESCALATION_ATTEMPT_SCHEMA_VERSION_V2
+            or event.event_code
+            not in (
+                PROVIDER_FAILURE_EVENT_CODES
+                | ADVISOR_BOUNDARY_FAILURE_EVENT_CODES
+                | {PROJECT_FAILURE_CANCELLATION_EVENT_CODE}
+            )
+        ):
+            raise RoutingEvidenceConflict(
+                "failure terminal evidence conflicts"
+            )
+        if event.event_code == PROJECT_FAILURE_CANCELLATION_EVENT_CODE:
+            self._validate_project_failure_cancellation_reference(
+                project_id=project_id,
+                event=event,
+            )
+        attempt = self.append_attempt(
+            project_id=project_id,
+            event=event,
+        )
+        attempt_sha256s = self.canonical_attempt_sha256s(
+            project_id=project_id,
+            escalation_group_id=event.escalation_group_id,
+            routing_decision_sha256=event.routing_decision_sha256,
+        )
+        self.record_terminal_outcome(
+            project_id=project_id,
+            outcome=EscalationOutcome(
+                schema_version=ESCALATION_OUTCOME_SCHEMA_VERSION,
+                escalation_group_id=event.escalation_group_id,
+                routing_decision_sha256=event.routing_decision_sha256,
+                outcome_code=outcome_code,
+                observation_outcomes=observation_outcomes,
+                attempt_event_sha256s=attempt_sha256s,
+                terminal=True,
+            ),
+        )
+        return attempt.event_sha256
+
+    def record_schema_retry(
+        self,
+        *,
+        project_id: uuid.UUID,
+        failure_event: EscalationAttemptEvent,
+    ) -> str:
+        retry_event = EscalationAttemptEvent(
+            schema_version=ESCALATION_ATTEMPT_SCHEMA_VERSION_V2,
+            escalation_group_id=failure_event.escalation_group_id,
+            routing_decision_sha256=(
+                failure_event.routing_decision_sha256
+            ),
+            attempt_index=failure_event.attempt_index,
+            event_code="retry_scheduled",
+            cache_entry_id=None,
+            provider_request_id=failure_event.provider_request_id,
+            diagnostic=RetryControlDiagnostic(
+                schema_version="visual-symbol-retry-control/1",
+                retry_reason="schema_invalid",
+                authorization_owner="production_retry_coordinator",
+                failure_event_sha256=failure_event.event_sha256,
+            ).as_dict(),
+        )
+        _validate_schema_retry_pair(failure_event, retry_event)
+        failure_attempt = self._append_attempt_record(
+            project_id=project_id,
+            event=failure_event,
+        )
+        self._append_attempt_record(
+            project_id=project_id,
+            event=retry_event,
+        )
+        return failure_attempt.event_sha256
 
     def canonical_attempt_sha256s(
         self,

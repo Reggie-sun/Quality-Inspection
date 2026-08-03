@@ -1,0 +1,19 @@
+{
+  "artifacts": [
+    {
+      "ref": "asset://projects/55dbd769-8fab-44a2-bcbd-768b8bbf4312/provider-inputs/qwen-symbol/ab0dd0b375c39feed170ebbaad601d8fff2c99c0790becbdfa862c7f20b1eb3d.png",
+      "sha256": "ab0dd0b375c39feed170ebbaad601d8fff2c99c0790becbdfa862c7f20b1eb3d",
+      "size": 4149
+    },
+    {
+      "ref": "asset://projects/55dbd769-8fab-44a2-bcbd-768b8bbf4312/provider-inputs/qwen-symbol/f38a80f5655325c55473690e2ae03fc00277abfe9d42177dfe5aecebfda474d6.png",
+      "sha256": "f38a80f5655325c55473690e2ae03fc00277abfe9d42177dfe5aecebfda474d6",
+      "size": 6545
+    }
+  ],
+  "content_sha256": "34f85ac8e31a3a1131e9d187e79bcf7eb290c8f4d19438d50456ad3fc99b79bf",
+  "order": 1,
+  "project_id": "55dbd769-8fab-44a2-bcbd-768b8bbf4312",
+  "run_id": "20260802T101404291929Z-884bec62",
+  "schema_version": "provider-storage-inventory/1"
+}

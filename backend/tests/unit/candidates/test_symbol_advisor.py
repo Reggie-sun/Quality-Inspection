@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import copy
+import re
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 import app.candidates.symbol_review as symbol_review
+from app.candidates.gdt_evidence import GdtCellEvidence, GdtFrameEvidence
 from app.candidates.coverage import CoverageEntry
 from app.candidates.local_symbol_resolution import resolve_visual_observation
 from app.candidates.symbol_review import (
@@ -24,6 +26,7 @@ from app.candidates.symbol_review import (
     visual_cache_key,
 )
 from app.pdf.schemas import PageInventory, TextObservation, VisualObservation
+from app.pdf.gdt_frames import GdtCellObservation, GdtFrameObservation
 from app.pdf.visual_observations import (
     PROPOSAL_RULE_VERSION,
     VisualGeometryContext,
@@ -58,7 +61,8 @@ def test_visual_cache_identity_uses_proposal_owner_version() -> None:
 
 def _payload() -> dict[str, object]:
     return {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
+        "gdt_frames": [],
         "detections": [
             {
                 "visual_observation_id": "visual-001",
@@ -187,8 +191,8 @@ def test_visual_symbol_response_reports_only_safe_parser_stages(
                 "instance_type": "object",
                 "required_member": "symbol_kind",
                 "schema_sha256": (
-                    "8f331090b210d1057e4da36cd9b61b82"
-                    "c9b07f5a308f29d07ca999f9ffc92b66"
+                    "cb4ee4ce69568b863dd8a2b5b1e96112"
+                    "59b2284fe47859f83246f8b6fb39767a"
                 ),
             },
         ),
@@ -208,8 +212,8 @@ def test_visual_symbol_response_reports_only_safe_parser_stages(
                 "instance_type": "string",
                 "required_member": None,
                 "schema_sha256": (
-                    "8f331090b210d1057e4da36cd9b61b82"
-                    "c9b07f5a308f29d07ca999f9ffc92b66"
+                    "cb4ee4ce69568b863dd8a2b5b1e96112"
+                    "59b2284fe47859f83246f8b6fb39767a"
                 ),
             },
         ),
@@ -228,8 +232,8 @@ def test_visual_symbol_response_reports_only_safe_parser_stages(
                 "instance_type": "string",
                 "required_member": None,
                 "schema_sha256": (
-                    "8f331090b210d1057e4da36cd9b61b82"
-                    "c9b07f5a308f29d07ca999f9ffc92b66"
+                    "cb4ee4ce69568b863dd8a2b5b1e96112"
+                    "59b2284fe47859f83246f8b6fb39767a"
                 ),
             },
         ),
@@ -248,8 +252,8 @@ def test_visual_symbol_response_reports_only_safe_parser_stages(
                 "instance_type": "object",
                 "required_member": None,
                 "schema_sha256": (
-                    "8f331090b210d1057e4da36cd9b61b82"
-                    "c9b07f5a308f29d07ca999f9ffc92b66"
+                    "cb4ee4ce69568b863dd8a2b5b1e96112"
+                    "59b2284fe47859f83246f8b6fb39767a"
                 ),
             },
         ),
@@ -299,8 +303,8 @@ def test_visual_symbol_schema_diagnostic_rejects_untrusted_or_inconsistent_conte
         "instance_type": "object",
         "required_member": "symbol_kind",
         "schema_sha256": (
-            "8f331090b210d1057e4da36cd9b61b82"
-            "c9b07f5a308f29d07ca999f9ffc92b66"
+            "cb4ee4ce69568b863dd8a2b5b1e96112"
+            "59b2284fe47859f83246f8b6fb39767a"
         ),
     }
     diagnostic[field] = unsafe_value
@@ -458,6 +462,106 @@ def _visual(
     )
 
 
+def _gdt_context(
+    visual: VisualObservation,
+    texts: tuple[TextObservation, ...],
+    kind: str,
+) -> tuple[GdtFrameObservation, GdtFrameEvidence]:
+    frame_id = f"frame-{visual.observation_id}"
+    frame_bbox = (10.0, 15.0, 80.0, 35.0)
+    cell_bboxes = (
+        (10.0, 15.0, 30.0, 35.0),
+        (30.0, 15.0, 55.0, 35.0),
+        (55.0, 15.0, 80.0, 35.0),
+    )
+    frame = GdtFrameObservation(
+        observation_id=frame_id,
+        page_index=0,
+        bbox_pdf=frame_bbox,
+        bbox_normalized=tuple(value / 200 for value in frame_bbox),
+        cells=tuple(
+            GdtCellObservation(
+                index,
+                bbox,
+                tuple(value / 200 for value in bbox),
+            )
+            for index, bbox in enumerate(cell_bboxes)
+        ),
+        associated_text_observation_ids=tuple(
+            item.observation_id for item in texts
+        ),
+        proposal_source="native_vector",
+        proposal_state="complete",
+        geometry_sha256="b" * 64,
+    )
+    symbols = {
+        "gdt_parallelism": "∥",
+        "gdt_perpendicularity": "⊥",
+        "gdt_flatness": "⏥",
+    }
+    numeric_tokens = tuple(
+        dict.fromkeys(
+            re.findall(
+                r"[0-9]+(?:\.[0-9]+)?",
+                " ".join(item.raw_text for item in texts),
+            )
+        )
+    )
+    tolerance_token = numeric_tokens[0] if numeric_tokens else "A"
+    raw_joined = " ".join(item.raw_text for item in texts)
+    datum_match = re.search(r"([A-Z]+)$", raw_joined)
+    datum_token = datum_match.group(1) if datum_match else ""
+    evidence_cells = [
+        GdtCellEvidence(
+            cell_index=0,
+            cell_role="symbol",
+            bbox_normalized=tuple(value / 200 for value in cell_bboxes[0]),
+            raw_token=symbols[kind],
+            confidence_signal=0.98,
+        ),
+        GdtCellEvidence(
+            cell_index=1,
+            cell_role="tolerance",
+            bbox_normalized=tuple(value / 200 for value in cell_bboxes[1]),
+            raw_token=(
+                "0.1 0.2"
+                if len(numeric_tokens) > 1
+                else tolerance_token
+            ),
+            associated_text_observation_ids=tuple(
+                item.observation_id for item in texts
+            ),
+            confidence_signal=0.98,
+        ),
+    ]
+    tolerance_type = {
+        "gdt_parallelism": "parallelism",
+        "gdt_perpendicularity": "perpendicularity",
+        "gdt_flatness": "flatness",
+    }[kind]
+    if datum_token:
+        evidence_cells.append(
+            GdtCellEvidence(
+                cell_index=2,
+                cell_role="datum",
+                bbox_normalized=tuple(value / 200 for value in cell_bboxes[2]),
+                raw_token=datum_token,
+                associated_text_observation_ids=tuple(
+                    item.observation_id for item in texts
+                ),
+                confidence_signal=0.96,
+            )
+        )
+    evidence = GdtFrameEvidence(
+        frame_observation_id=frame_id,
+        frame_bbox_normalized=tuple(value / 200 for value in frame_bbox),
+        tolerance_type_signal=tolerance_type,
+        cells=tuple(evidence_cells),
+        confidence_signal=0.97,
+    )
+    return frame, evidence
+
+
 def _page(
     texts: tuple[TextObservation, ...],
     visuals: tuple[VisualObservation, ...],
@@ -553,12 +657,20 @@ def _decision(
         }
         for kind in kinds
     )
+    gdt_frames: tuple[GdtFrameObservation, ...] = ()
+    gdt_evidence: dict[str, GdtFrameEvidence] = {}
+    if kinds and kinds[0].startswith("gdt_"):
+        frame, evidence = _gdt_context(visual, page.observations, kinds[0])
+        gdt_frames = (frame,)
+        gdt_evidence[frame.observation_id] = evidence
     return project_visual_observation(
         observation=visual,
         detections=detections,
         text_observations=page.observations,
         candidates=(),
         geometry_context=context,
+        gdt_evidence_by_frame_id=gdt_evidence,
+        gdt_frame_observations=gdt_frames,
     )
 
 
@@ -1555,11 +1667,11 @@ def test_roughness_decimal_distinctness_and_duplicate_sources() -> None:
         ("gdt_flatness", "⏥"),
     ),
 )
-def test_gdt_kinds_map_to_four_field_coarse_candidate(
+def test_gdt_kinds_map_to_structured_candidate(
     kind: str,
     symbol: str,
 ) -> None:
-    """ADV-07: each GD&T kind maps to one frozen coarse candidate."""
+    """ADV-07: each GD&T kind maps to the canonical typed candidate."""
     tolerance = _text("text-1", "0.1", (20, 20, 32, 28))
     datum = _text("text-2", "A", (34, 20, 40, 28))
     page = _page(
@@ -1568,13 +1680,12 @@ def test_gdt_kinds_map_to_four_field_coarse_candidate(
     )
     decision = _decision(page, (kind,))
     payload = decision.candidate_envelope["payload"]  # type: ignore[index]
-    assert set(payload) == {
-        "raw_text",
-        "coordinates",
-        "coarse_type",
-        "requires_confirmation",
-    }
-    assert payload["raw_text"] == f"{symbol} 0.1\nA"
+    assert payload["item_type"] == "geometric_tolerance"
+    assert payload["tolerance_type"] == kind.removeprefix("gdt_")
+    assert payload["tolerance_symbol"] == symbol
+    assert payload["tolerance_value"] == "0.1"
+    assert payload["datum_references"] == [{"datum": "A", "modifiers": []}]
+    assert payload["requires_confirmation"] is True
 
 
 def test_gdt_combined_line_and_duplicate_sources_extract_ascii_tokens() -> None:
@@ -1585,7 +1696,7 @@ def test_gdt_combined_line_and_duplicate_sources_extract_ascii_tokens() -> None:
         ("gdt_parallelism",),
     )
     assert projected.candidate_envelope is not None
-    assert projected.candidate_envelope["payload"]["raw_text"] == "∥ 0.1 A"
+    assert projected.candidate_envelope["payload"]["raw_text"] == "∥ | 0.1 | A"
 
     duplicate = _text("duplicate", "0.1 A", (20, 20, 52, 28))
     duplicate_visual = replace(
@@ -1598,7 +1709,7 @@ def test_gdt_combined_line_and_duplicate_sources_extract_ascii_tokens() -> None:
     )
     assert deduplicated.candidate_envelope is not None
     assert deduplicated.candidate_envelope["payload"]["raw_text"] == (
-        "∥ 0.1 A\n0.1 A"
+        "∥ | 0.1 | A"
     )
 
     conflicting = _text(
@@ -1614,7 +1725,7 @@ def test_gdt_combined_line_and_duplicate_sources_extract_ascii_tokens() -> None:
         ("gdt_parallelism",),
     )
     assert conflict.disposition == "ambiguous"
-    assert conflict.rejection_code == "visual_projection_conflict"
+    assert conflict.rejection_code == "gdt_value_missing"
 
     invalid_datum = _text(
         "invalid-datum",
@@ -1629,7 +1740,7 @@ def test_gdt_combined_line_and_duplicate_sources_extract_ascii_tokens() -> None:
         ("gdt_parallelism",),
     )
     assert invalid.disposition == "ambiguous"
-    assert invalid.rejection_code == "visual_local_parse_failed"
+    assert invalid.rejection_code == "gdt_datum_association_ambiguous"
 
 
 @pytest.mark.parametrize(
@@ -1654,7 +1765,12 @@ def test_valid_kind_set_with_missing_local_value_is_local_parse_failed(
     )
 
     assert decision.disposition == "ambiguous"
-    assert decision.rejection_code == "visual_local_parse_failed"
+    expected_rejection = (
+        "gdt_value_missing"
+        if kinds == ("gdt_parallelism",)
+        else "visual_local_parse_failed"
+    )
+    assert decision.rejection_code == expected_rejection
 
 
 def test_gdt_accepts_duplicate_source_with_one_distinct_tolerance() -> None:
@@ -1670,7 +1786,7 @@ def test_gdt_accepts_duplicate_source_with_one_distinct_tolerance() -> None:
     decision = _decision(page, ("gdt_parallelism",))
     assert decision.candidate_envelope is not None
     assert decision.candidate_envelope["payload"]["raw_text"] == (
-        "∥ 0.1\n0.1\nA"
+        "∥ | 0.1 | A"
     )
 
 

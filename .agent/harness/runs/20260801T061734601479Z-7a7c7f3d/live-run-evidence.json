@@ -1,0 +1,17 @@
+{
+  "child_run_ids": [],
+  "design_qa": null,
+  "input_set": "current-four",
+  "phases": [
+    "process",
+    "candidates",
+    "review",
+    "balloons",
+    "export",
+    "consistency"
+  ],
+  "run_id": "20260801T061734601479Z-7a7c7f3d",
+  "samples": [],
+  "schema_version": "live-run-evidence/2",
+  "symbol_recognition": null
+}

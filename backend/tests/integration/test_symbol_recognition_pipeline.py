@@ -70,12 +70,19 @@ from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.processing.tasks import inventory_project
 from app.projects.models import Project
+from app.projects.service import ProjectIntakeService
 from app.projects.state import ProjectState
-from app.providers.base import VisionResult
+from app.providers.base import (
+    ClassifiedProviderFailure,
+    ProviderFailureFact,
+    VisionResult,
+)
 from app.providers.qwen_vl import (
     VisualSymbolProviderError,
     canonicalize_visual_png,
 )
+from app.providers.usage_ledger import ProviderUsageLedger, ReservationPermit
+from tests.support.provider_cycle import CYCLE_ID, create_cycle_authorization
 from app.review.locks import acquire_lock
 from app.review.models import ReviewWorkingCopy
 from app.review.service import ReviewNotFound, ReviewService
@@ -110,6 +117,12 @@ _SYMBOL_KINDS_BY_TEXT = {
 class PassingPreflight:
     def check(self) -> None:
         return None
+
+
+class NoSchemaRetryCoordinator:
+    @staticmethod
+    def authorize_schema_retry(*_args: object) -> bool:
+        return False
 
 
 @dataclass(frozen=True)
@@ -172,11 +185,70 @@ class FixtureVisionProvider:
                             "confidence_signal": 0.98,
                         }
                     )
+        gdt_frames = []
+        tolerance_symbols = {
+            "gdt_parallelism": "∥",
+            "gdt_perpendicularity": "⊥",
+            "gdt_flatness": "⏥",
+        }
+        for frame_context in request["gdt_frame_contexts"]:
+            frame_text_ids = {
+                item["observation_id"]
+                for item in frame_context["associated_text_allowlist"]
+                if item["observation_level"] == "line"
+            }
+            frame_texts = tuple(
+                item["raw_text"]
+                for item in frame_context["associated_text_allowlist"]
+                if item["observation_level"] == "line"
+            )
+            frame_kinds = _SYMBOL_KINDS_BY_TEXT.get(frame_texts[0], ())
+            gdt_kind = next(
+                kind for kind in frame_kinds if kind.startswith("gdt_")
+            )
+            value_and_datum = frame_texts[0].split()
+            cells = frame_context["cells"]
+            cell_evidence = [
+                {
+                    "cell_index": cells[0]["cell_index"],
+                    "cell_role": "symbol",
+                    "bbox_normalized": cells[0]["bbox_normalized"],
+                    "raw_token": tolerance_symbols[gdt_kind],
+                    "associated_text_observation_ids": list(frame_text_ids),
+                    "confidence_signal": 0.98,
+                },
+                {
+                    "cell_index": cells[1]["cell_index"],
+                    "cell_role": "tolerance",
+                    "bbox_normalized": cells[1]["bbox_normalized"],
+                    "raw_token": value_and_datum[0],
+                    "associated_text_observation_ids": list(frame_text_ids),
+                    "confidence_signal": 0.98,
+                },
+            ]
+            if len(cells) == 3:
+                assert len(value_and_datum) == 2
+                cell_evidence.append({
+                    "cell_index": cells[2]["cell_index"],
+                    "cell_role": "datum",
+                    "bbox_normalized": cells[2]["bbox_normalized"],
+                    "raw_token": value_and_datum[1],
+                    "associated_text_observation_ids": list(frame_text_ids),
+                    "confidence_signal": 0.98,
+                })
+            gdt_frames.append({
+                "frame_observation_id": frame_context["frame_observation_id"],
+                "frame_bbox_normalized": frame_context["frame_bbox_normalized"],
+                "tolerance_type_signal": gdt_kind.removeprefix("gdt_"),
+                "cells": cell_evidence,
+                "confidence_signal": 0.98,
+            })
         return VisionResult(
             request_id=f"fixture-visual-{self.symbol_calls}",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
                 "detections": detections,
+                "gdt_frames": gdt_frames,
             },
             usage={},
         )
@@ -368,7 +440,7 @@ def _visual_review(
 ) -> dict[str, object]:
     return {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "symbol_kinds": symbol_kinds,
         "rejection_code": rejection_code,
         "confidence_signal": (
@@ -465,12 +537,22 @@ def _bounded_symbol_input(
 ) -> tuple[Path, tuple[PageInventory, ...], CandidateSnapshot]:
     source, _manifest = build_symbol_fixture(tmp_path / "bounded-fixture")
     original_pages = tuple(build_inventory(source))
-    selected_ids = {
+    text_by_id = {
+        observation.observation_id: observation
+        for page in original_pages
+        for observation in page.observations
+    }
+    preferred_ids = [
         visual.observation_id
         for page in original_pages
         for visual in page.visual_observations
-    }
-    selected_ids = set(sorted(selected_ids)[:2])
+        if any(
+            text_by_id[text_id].raw_text in {"18", "20"}
+            and text_by_id[text_id].observation_level == "line"
+            for text_id in visual.associated_text_observation_ids
+        )
+    ]
+    selected_ids = set(preferred_ids[:2])
     assert len(selected_ids) == 2
     contexts = tuple(
         context
@@ -497,6 +579,130 @@ def _bounded_symbol_input(
         lambda _path, _pages: contexts,
     )
     return source, pages, candidate_snapshot_from_inventory(pages)
+
+
+def _eight_admitted_symbol_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, tuple[PageInventory, ...], CandidateSnapshot]:
+    source = tmp_path / "eight-admitted-fixture.pdf"
+    document = pymupdf.open()
+    for _page_index in range(2):
+        page = document.new_page(width=240, height=180)
+        page.insert_text((48, 24), "10")
+        page.draw_line((34, 14), (42, 14), color=(0, 0, 0), width=1)
+    document.save(source)
+    document.close()
+    original_pages = tuple(build_inventory(source))
+    original_snapshot = candidate_snapshot_from_inventory(original_pages)
+    original_contexts = reconstruct_visual_geometry_contexts(
+        source,
+        original_pages,
+    )
+    assert len(original_contexts) == 2
+    visuals = tuple(
+        replace(
+            original_pages[index // 4].visual_observations[0],
+            observation_id=f"fixture-visual-{index}",
+            bbox_pdf=(
+                8.0 + (index % 4) * 56.0,
+                8.0,
+                28.0 + (index % 4) * 56.0,
+                28.0,
+            ),
+            bbox_normalized=(
+                (8.0 + (index % 4) * 56.0) / 240.0,
+                8.0 / 180.0,
+                (28.0 + (index % 4) * 56.0) / 240.0,
+                28.0 / 180.0,
+            ),
+            geometry_sha256=sha256(
+                f"fixture-visual-{index}".encode()
+            ).hexdigest(),
+        )
+        for index in range(8)
+    )
+    pages = tuple(
+        replace(
+            original_pages[page_index],
+            visual_observations=visuals[
+                page_index * 4:(page_index + 1) * 4
+            ],
+        )
+        for page_index in range(2)
+    )
+    original_visual_ids = {
+        page.visual_observations[0].observation_id
+        for page in original_pages
+    }
+    original_visual_coverage = {
+        entry.observation_id: entry
+        for entry in original_snapshot.coverage_entries
+        if entry.observation_id in original_visual_ids
+    }
+    snapshot = replace(
+        original_snapshot,
+        coverage_entries=(
+            *(
+                entry
+                for entry in original_snapshot.coverage_entries
+                if entry.observation_id not in original_visual_ids
+            ),
+            *(
+                replace(
+                    original_visual_coverage[
+                        original_pages[visual.page_index]
+                        .visual_observations[0]
+                        .observation_id
+                    ],
+                    observation_id=visual.observation_id,
+                    source_location_id=visual.observation_id,
+                    coordinates=visual.bbox_pdf,
+                )
+                for visual in visuals
+            ),
+        ),
+        expected_observation_ids=(
+            *(
+                identity
+                for identity in original_snapshot.expected_observation_ids
+                if identity not in original_visual_ids
+            ),
+            *(visual.observation_id for visual in visuals),
+        ),
+        required_visual_observation_ids=tuple(
+            visual.observation_id for visual in visuals
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "reconstruct_visual_geometry_contexts",
+        lambda _path, _pages: tuple(
+            replace(
+                original_contexts[visual.page_index],
+                observation_id=visual.observation_id,
+                geometry_sha256=visual.geometry_sha256,
+            )
+            for visual in visuals
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "prepare_local_family_hypotheses",
+        lambda **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "resolve_visual_observation",
+        lambda **kwargs: LocalResolution(
+            visual_observation_id=kwargs["observation"].observation_id,
+            family_hypotheses=(),
+            resolved_family=None,
+            reason_codes=("unknown_symbol_pattern",),
+            projection=None,
+        ),
+    )
+    return source, pages, snapshot
 
 
 @dataclass(frozen=True)
@@ -764,6 +970,7 @@ def _seed_matrix_cache(
                 )
             ),
         ),
+        production_retry_coordinator=NoSchemaRetryCoordinator(),
     )
     assert outcome.cache_hit is False
     assert cache_provider.symbol_observation_ids == [
@@ -990,12 +1197,24 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
             assert matrix.local_visual.observation_id not in observation_ids
             if matrix.failed_visual.observation_id in observation_ids:
                 if failure_family == "timeout":
-                    raise TimeoutError(
-                        "/srv/private/customer.pdf token=do-not-leak"
+                    raise ClassifiedProviderFailure(
+                        ProviderFailureFact(
+                            category="timeout",
+                            origin="sdk_timeout",
+                            http_status=None,
+                            provider_request_id=None,
+                            request_id_state="absent",
+                        )
                     )
                 if failure_family == "transport":
-                    raise ConnectionError(
-                        "/srv/private/customer.pdf token=do-not-leak"
+                    raise ClassifiedProviderFailure(
+                        ProviderFailureFact(
+                            category="transport",
+                            origin="sdk_connection",
+                            http_status=None,
+                            provider_request_id=None,
+                            request_id_state="absent",
+                        )
                     )
                 raise VisualSymbolProviderError(
                     request_id="fixture-localized-schema",
@@ -1102,6 +1321,111 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
         matrix.vlm_visual.observation_id,
         matrix.failed_visual.observation_id,
     }
+    if failure_family in {"timeout", "transport"}:
+        assert sum(
+            matrix.failed_visual.observation_id in observation_ids
+            for observation_ids in provider.symbol_observation_ids
+        ) == 1
+        failed_attempts = tuple(
+            db_session.scalars(
+                select(SymbolEscalationAttemptEventRecord).where(
+                    SymbolEscalationAttemptEventRecord.project_id == project.id,
+                    SymbolEscalationAttemptEventRecord.event_code
+                    == expected_failure_stage,
+                )
+            )
+        )
+        assert len(failed_attempts) == 1
+        assert failed_attempts[0].attempt_index == 0
+        assert failed_attempts[0].provider_request_id is None
+        assert failed_attempts[0].schema_version == (
+            "symbol-escalation-attempt/2"
+        )
+        assert failed_attempts[0].diagnostic == {
+            "schema_version": "visual-symbol-provider-failure/1",
+            "failure_category": failure_family,
+            "failure_stage": expected_failure_stage,
+            "scope": "roi_localized",
+            "origin": (
+                "sdk_timeout"
+                if failure_family == "timeout"
+                else "sdk_connection"
+            ),
+            "http_status": None,
+            "request_id_state": "absent",
+            "pipeline_cause_category": None,
+            "retry_decision": "not_authorized",
+        }
+        assert failed_attempts[0].diagnostic_sha256 is not None
+        assert len(failed_attempts[0].diagnostic_sha256) == 64
+        failed_outcome = next(
+            outcome
+            for outcome in outcomes
+            if outcome.observation_outcomes == [
+                {
+                    "visual_observation_id": (
+                        matrix.failed_visual.observation_id
+                    ),
+                    "outcome_code": expected_failure_stage,
+                }
+            ]
+        )
+        assert failed_outcome.outcome_code == "unresolved"
+
+        project_storage = storage.root / "projects" / str(project.id)
+        request_dir = project_storage / "provider-requests" / "qwen-symbol"
+        request_documents = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in request_dir.glob("*.json")
+        ]
+        referenced_crop_refs = {
+            document["crop_ref"] for document in request_documents
+        }
+        crop_dir = project_storage / "provider-inputs" / "qwen-symbol"
+        unreferenced_crops = [
+            path
+            for path in crop_dir.glob("*.png")
+            if (
+                "asset://"
+                + path.relative_to(storage.root).as_posix()
+            )
+            not in referenced_crop_refs
+        ]
+        assert len(unreferenced_crops) == 1
+        failed_crop_sha256 = unreferenced_crops[0].stem
+        cache_records = tuple(
+            db_session.scalars(
+                select(VisualSymbolCacheEntryRecord).where(
+                    VisualSymbolCacheEntryRecord.project_id == project.id
+                )
+            )
+        )
+        assert all(
+            record.identity.get("canonical_crop_sha256")
+            != failed_crop_sha256
+            for record in cache_records
+        )
+        assert not (
+            project_storage / "provider-calls" / "qwen-symbol-retries"
+        ).exists()
+        assert not (
+            project_storage / "provider-requests" / "qwen-symbol-retries"
+        ).exists()
+        assert not (
+            project_storage / "provider-responses" / "qwen-symbol-retries"
+        ).exists()
+        persisted_evidence = b"".join(
+            path.read_bytes()
+            for directory in (
+                project_storage / "provider-calls",
+                project_storage / "provider-requests",
+                project_storage / "provider-responses",
+                project_storage / "provider-cache",
+            )
+            if directory.exists()
+            for path in directory.rglob("*.json")
+        )
+        assert b"do-not-leak" not in persisted_evidence
 
     raw = db_session.scalar(
         select(AutomaticResult).where(
@@ -1140,7 +1464,7 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
     assert local_review["symbol_kinds"] == ["revision_marker"]
 
     cache_candidate_id = "f6c9f7280582b7403b89108c"
-    vlm_candidate_id = "9e9f419c9d84cd74f263dc3b"
+    vlm_candidate_id = "914e3d058f97c3a3356655f5"
     cache_entry = coverage_by_id[matrix.cache_visual.observation_id]
     vlm_entry = coverage_by_id[matrix.vlm_visual.observation_id]
     assert (
@@ -1257,6 +1581,14 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
         "raw_text"
     ]
     assert first.technical_requirements[0]["match_outcome"] == "unresolved"
+    status = ProjectIntakeService(
+        db_session,
+        storage,
+        lambda *_args: None,
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    ).status(project.id)
+    assert status.phase == "partial_review_required"
     assert (
         db_session.scalar(
             select(func.count())
@@ -1272,6 +1604,223 @@ def test_one_localized_provider_failure_preserves_every_sibling_as_partial(
             .where(ReviewWorkingCopy.project_id == project.id)
         )
         == 1
+    )
+
+
+def test_project_failure_terminalizes_all_admitted_groups_without_result(
+    monkeypatch: pytest.MonkeyPatch,
+    committed_db_session: Session,
+    tmp_path: Path,
+) -> None:
+    source, pages, snapshot = _eight_admitted_symbol_input(
+        tmp_path,
+        monkeypatch,
+    )
+    observation_ids = tuple(
+        visual.observation_id
+        for page in pages
+        for visual in page.visual_observations
+    )
+    assert len(observation_ids) == 8
+    storage = LocalFileStorage(tmp_path / "project-failure-storage")
+    db_session = committed_db_session
+    project, _source_file = _store_project_source(
+        db_session,
+        storage,
+        source.read_bytes(),
+        recognition_mode="production_uncertainty",
+        recognition_router_version="symbol-uncertainty-router/1",
+    )
+    authorization_root = create_cycle_authorization(
+        tmp_path / "project-failure-authorization",
+        project_ids=(str(project.id),),
+    )
+    ledger = ProviderUsageLedger.open(
+        cycle_id=CYCLE_ID,
+        storage_root=storage.root,
+        authorization_root=authorization_root,
+        project_id=str(project.id),
+    )
+
+    class ProjectBlockingProvider:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def review_symbols(
+            self,
+            _image: bytes,
+            prompt: str,
+            *,
+            reservation_permit: ReservationPermit | None = None,
+        ) -> VisionResult:
+            observation_id = json.loads(prompt)[
+                "visual_observation_ids"
+            ][0]
+            assert reservation_permit is not None
+            reservation_permit.consume_for_adapter(
+                provider="qwen-vl",
+                operation="review_symbols",
+            )
+            self.calls.append(observation_id)
+            raise ClassifiedProviderFailure(
+                ProviderFailureFact(
+                    category="rate_limited",
+                    origin="sdk_http_status",
+                    http_status=429,
+                    provider_request_id=(
+                        f"safe-rate-{len(self.calls)}"
+                    ),
+                    request_id_state="accepted",
+                )
+            )
+
+        def review_candidate(
+            self,
+            _image: bytes,
+            _prompt: str,
+        ) -> VisionResult:
+            raise AssertionError("legacy review must not run")
+
+    provider = ProjectBlockingProvider()
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        storage,
+        project_id=str(project.id),
+        provider_factory=lambda _settings: provider,
+        symbol_session_factory=SessionLocal,
+        require_symbol_persistence=True,
+        usage_ledger=ledger,
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as caught:
+        advisor.review(source, pages, snapshot)
+
+    db_session.expire_all()
+    decisions = tuple(
+        db_session.scalars(
+            select(SymbolRoutingDecisionRecord).where(
+                SymbolRoutingDecisionRecord.project_id == project.id,
+                SymbolRoutingDecisionRecord.disposition == "escalate",
+            )
+        )
+    )
+    attempts = tuple(
+        db_session.scalars(
+            select(SymbolEscalationAttemptEventRecord).where(
+                SymbolEscalationAttemptEventRecord.project_id
+                == project.id
+            )
+        )
+    )
+    outcomes = tuple(
+        db_session.scalars(
+            select(SymbolEscalationOutcomeRecord).where(
+                SymbolEscalationOutcomeRecord.project_id == project.id
+            )
+        )
+    )
+    blocking_attempts = tuple(
+        attempt
+        for attempt in attempts
+        if attempt.event_code == "provider_rate_limited"
+    )
+    cancelled_attempts = tuple(
+        attempt
+        for attempt in attempts
+        if attempt.event_code
+        == "not_started_after_project_failure"
+    )
+
+    assert len(decisions) == 8
+    assert len(provider.calls) == 2
+    assert set(provider.calls) == set(observation_ids[:2])
+    assert len(outcomes) == 8
+    assert len(blocking_attempts) == 2
+    assert len(cancelled_attempts) == 6
+    first_group = next(
+        outcome.escalation_group_id
+        for outcome in outcomes
+        if outcome.observation_outcomes[0]["visual_observation_id"]
+        == observation_ids[0]
+    )
+    first_blocking = next(
+        attempt
+        for attempt in blocking_attempts
+        if attempt.escalation_group_id == first_group
+    )
+    assert caught.value.failure_event_sha256 == (
+        first_blocking.event_sha256
+    )
+    assert caught.value.failure_category == "rate_limited"
+    assert caught.value.failure_scope == "project_blocking"
+    assert {
+        attempt.diagnostic["blocking_event_sha256"]
+        for attempt in cancelled_attempts
+    } == {first_blocking.event_sha256}
+    assert {
+        attempt.diagnostic["stop_reason"]
+        for attempt in cancelled_attempts
+    } == {"project_blocking_provider_failure"}
+    cancelled_group_ids = {
+        attempt.escalation_group_id for attempt in cancelled_attempts
+    }
+    admitted_group_ids = {
+        decision.escalation_group_id for decision in decisions
+    }
+    submission_started_group_ids = {
+        entry.subject_id for entry in ledger.snapshot().entries
+    }
+    terminal_group_ids = {
+        outcome.escalation_group_id for outcome in outcomes
+    }
+    assert admitted_group_ids == (
+        submission_started_group_ids | cancelled_group_ids
+    )
+    assert submission_started_group_ids.isdisjoint(cancelled_group_ids)
+    assert terminal_group_ids == admitted_group_ids
+    assert len(submission_started_group_ids) == 2
+    ledger_snapshot = ledger.snapshot()
+    assert ledger_snapshot.reserved_only_count == 0
+    assert ledger_snapshot.submission_started_count == 2
+    assert ledger_snapshot.unsettled_started_count == 0
+    assert ledger_snapshot.committed_total_cny == "3.526656"
+    assert {
+        entry.state for entry in ledger_snapshot.entries
+    } == {"reserved_unknown"}
+    assert all(
+        outcome.outcome_code == "cancelled"
+        and {
+            item["outcome_code"]
+            for item in outcome.observation_outcomes
+        } == {"cancelled_after_project_failure"}
+        for outcome in outcomes
+        if outcome.escalation_group_id in cancelled_group_ids
+    )
+    assert db_session.scalar(
+        select(func.count()).select_from(AutomaticResult).where(
+            AutomaticResult.project_id == project.id
+        )
+    ) == 0
+    assert db_session.scalar(
+        select(func.count()).select_from(ReviewWorkingCopy).where(
+            ReviewWorkingCopy.project_id == project.id
+        )
+    ) == 0
+    project_storage = storage.root / "projects" / str(project.id)
+    crop_dir = project_storage / "provider-inputs" / "qwen-symbol"
+    assert len(tuple(crop_dir.glob("*.png"))) == 2
+    written_paths = {
+        str(path.relative_to(storage.root))
+        for path in storage.root.rglob("*")
+        if path.is_file()
+    }
+    assert not any(
+        marker in path
+        for path in written_paths
+        for marker in ("pause", "symbol-report", "receipt")
     )
 
 
@@ -1340,6 +1889,11 @@ def test_hard_budget_denial_preserves_admitted_siblings_as_partial(
         )
     )
     assert len(attempts) == 1
+    assert attempts[0].schema_version == "symbol-escalation-attempt/2"
+    assert attempts[0].diagnostic == {
+        "schema_version": "visual-symbol-budget-control/1",
+        "budget_origin": "routing_plan",
+    }
     assert len(outcomes) == 1
     assert outcomes[0].observation_outcomes == [
         {
@@ -1497,8 +2051,9 @@ def test_invalid_project_cache_is_quarantined_before_fresh_recomputation(
         )
     )
     response = {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "detections": [],
+        "gdt_frames": [],
     }
     response_sha256 = sha256(
         json.dumps(
@@ -1582,6 +2137,7 @@ def test_invalid_project_cache_is_quarantined_before_fresh_recomputation(
                 )
             ),
         ),
+        production_retry_coordinator=NoSchemaRetryCoordinator(),
     )
 
     assert outcome.cache_hit is False
@@ -1643,8 +2199,9 @@ def test_persisted_routing_evidence_revalidation_failure_creates_no_result(
             return VisionResult(
                 request_id="provider-must-not-run",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
                     "detections": [],
+                    "gdt_frames": [],
                 },
                 usage={},
             )
@@ -2098,7 +2655,7 @@ def test_roughness_gdt_and_datum_project_without_schema_expansion(
     task_session_factory: Callable[[], Session],
     tmp_path: Path,
 ) -> None:
-    """INT-03 reuses coarse shapes and keeps datum as source-only context."""
+    """INT-03 reuses coarse shapes and keeps typed GDTs separate."""
     project, _provider, _result_ref, visual_ids = _fixture_task(
         monkeypatch,
         task_session_factory,
@@ -2117,11 +2674,15 @@ def test_roughness_gdt_and_datum_project_without_schema_expansion(
         )
         assert raw is not None
         assert working is not None
-        assert {
+        assert "roughness" in {
             item["coarse_type"]
             for item in working.items
             if "coarse_type" in item
-        }.issuperset({"roughness", "geometric_tolerance"})
+        }
+        assert any(
+            item.get("item_type") == "geometric_tolerance"
+            for item in working.items
+        )
         datum_entries = [
             entry
             for entry in raw.coverage["entries"]
@@ -2202,7 +2763,6 @@ def test_roughness_gdt_and_datum_project_without_schema_expansion(
             "composite",
         }
         assert set(get_args(CoarseType)) == {
-            "geometric_tolerance",
             "roughness",
             "weld",
             "cross_view_duplicate",
@@ -2298,7 +2858,7 @@ def test_systemic_symbol_failure_creates_no_result(
                     requires_confirmation=True,
                     advisor_review={
                         "route": "visual_symbol",
-                        "schema_version": "visual-symbol-review/2",
+                        "schema_version": "visual-symbol-review/3",
                         "symbol_kinds": ["diameter"],
                         "rejection_code": "visual_no_detection",
                         "confidence_signal": None,

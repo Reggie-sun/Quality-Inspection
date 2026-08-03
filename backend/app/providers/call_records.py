@@ -5,7 +5,8 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from decimal import Decimal, InvalidOperation
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -107,6 +108,32 @@ class ProviderCallRecord:
             raise ValueError("estimated_cost must be null or non-negative")
         if not isinstance(self.logical_task_reused, bool):
             raise ValueError("logical_task_reused must be boolean")
+
+
+def bind_authorized_cycle_cost(
+    record: ProviderCallRecord,
+    *,
+    charged_cny: str,
+) -> ProviderCallRecord:
+    if not isinstance(record, ProviderCallRecord) or not isinstance(
+        charged_cny, str
+    ):
+        raise ValueError("authorized cycle cost is invalid")
+    try:
+        amount = Decimal(charged_cny)
+    except InvalidOperation as exc:
+        raise ValueError("authorized cycle cost is invalid") from exc
+    if (
+        not amount.is_finite()
+        or amount < 0
+        or amount.as_tuple().exponent < -6
+    ):
+        raise ValueError("authorized cycle cost is invalid")
+    if record.estimated_cost is not None and Decimal(
+        str(record.estimated_cost)
+    ) != amount:
+        raise ValueError("authorized cycle cost does not match the ledger")
+    return replace(record, estimated_cost=float(amount))
 
 
 def _reject_forbidden_keys(value: Any) -> None:

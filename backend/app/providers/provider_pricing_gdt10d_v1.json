@@ -1,0 +1,41 @@
+{
+  "schema_version": "provider-pricing-snapshot/1",
+  "snapshot_id": "provider-pricing-gdt10d/1",
+  "currency": "CNY",
+  "retrieved_date": "2026-08-02",
+  "content_sha256": "c6b37f8a811d38444ccd89a5862d676343e414db21dbc02d9ca9979496364a2b",
+  "tencent_ocr": {
+    "provider": "tencent-ocr",
+    "operation": "GeneralAccurateOCR",
+    "source_url": "https://cloud.tencent.com/document/product/866/17619",
+    "api_source_url": "https://cloud.tencent.com/document/product/866/34937",
+    "billing_unit": "submission",
+    "cny_per_submission": "0.500000"
+  },
+  "qwen_vision": {
+    "provider": "qwen-vl",
+    "model": "qwen3-vl-plus-2025-12-19",
+    "region": "cn-beijing",
+    "source_url": "https://help.aliyun.com/zh/model-studio/qwen3-vl-plus",
+    "billing_unit": "million_tokens",
+    "max_prompt_tokens": 260096,
+    "max_completion_tokens": 32768,
+    "tiers": [
+      {
+        "max_prompt_tokens": 32768,
+        "input_cny_per_million": "1",
+        "output_cny_per_million": "10"
+      },
+      {
+        "max_prompt_tokens": 131072,
+        "input_cny_per_million": "1.5",
+        "output_cny_per_million": "15"
+      },
+      {
+        "max_prompt_tokens": 260096,
+        "input_cny_per_million": "3",
+        "output_cny_per_million": "30"
+      }
+    ]
+  }
+}

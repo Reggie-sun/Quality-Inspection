@@ -1567,7 +1567,7 @@ def test_pipeline_freezes_mixed_confidence_decisions_after_coverage(
     )
     assert result is not None
     assert result_ref == f"automatic-result://{result.id}"
-    assert result.schema_version == "automatic-result/2"
+    assert result.schema_version == "automatic-result/3"
     decisions = [
         candidate["confidence_decision"] for candidate in result.candidates
     ]
@@ -1739,7 +1739,7 @@ def test_invalid_confidence_candidate_container_is_structured_and_atomic(
         )
 
     assert str(failure.value.__cause__) == (
-        "automatic-result/2 candidates must be a non-string sequence"
+        "automatic-result/3 candidates must be a non-string sequence"
     )
     assert db_session.scalar(
         select(func.count()).select_from(AutomaticResult).where(

@@ -223,6 +223,197 @@
 - Current amendment: `Standard` lane 继续；按钮不再因缺少 `itemType` 原生禁用，点击时必须阻止提交、显示“请选择检验类型”并聚焦对应 select；不默认或猜测类型，不改变 `promote_source`、draft save、freeze 或 numbering contract
 - Validation action: `continue`；同一目标、Owner 和 command seam 不变，只修首次改动遗留的不可交互状态
 - Next verification: 已完成；仅在按钮再次因缺少类型变灰，或点击缺少类型时发送 command / 不显示提示时重开
+## BUG-20260803-gdt10e-preconsume-cleanup-missing-safe-override
+
+- Status: 已修复；fix round 1 parent verification 与 same-reviewer re-review `accept`，待 commit
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: `.agent/harness/scripts/live_cycle_authorization.py::abort_preconsume()` safe-runtime proof/replay
+- Symptom: 合法 no-issuance attempt 在 Step 3 创建 overrides 前失败后，literal `abort-preconsume` 生成 `provider-cycle-cleanup-blocker/2`，failure code `safe_runtime_proof_failed`；root/readiness/intent/blocker 保留，receipt absent。
+- Root cause: `abort_preconsume(..., safe_override=...)` 已验证 explicit cleanup path，却忽略它并调用只读取 `QI_LIVE_CYCLE_SAFE_OVERRIDE_REF` 的 `deactivate_runtime()`。在 prepare-zero-paid 尚未创建 `safe.env` 的分支，cleanup 无法建立 safe compose/proof 前提；现有 tests 全部 mock `deactivate_runtime()`，未覆盖真实 control-plane selection。
+- Fix: preconsume cleanup 现在只使用已接收的 `safe_override_path`；路径和 symlink 均不存在时，复用 exclusive private writer 写入固定 credential/cycle/mount-free safe document，随后严格验证并调用既有 `_activate_safe_runtime(path)`。若本调用创建的 temporary safe override 在 writer、validation、compose 或 identity proof 中抛出，使用既有 strict private delete+directory fsync 恢复 absent 后重抛；原先已存在的 path 不删除。paid `activate_runtime()`、env-owned `deactivate_runtime()` 和 terminal cleanup 未改。
+- Regression check: 新增 tmp-path replay 从合法 intent 直接写入 exact `safe_runtime_proof_failed` blocker，并在唯一 abort replay 前 mock Docker subprocess；验证 base+safe `api/worker` recreate、两项 safe identity proof、receipt 写入，以及 intent/blocker/root 删除。旧实现因 env-only safe ref 失败，新实现完成 replay。TDD worker 的首次 refactor 回归错误保留了 RED 阶段的前置 abort，意外启动两组真实 compose；parent 立即中断全部明确 PID，核对 feature API/worker IDs 与 baseline 完全相同，并把 fixture 改为无 runtime side effect 的直接 blocker 构造。Fix round 1 后 focused selector `3 passed, 334 deselected`，全体 `gdt10e_abort_preconsume` 回归 `30 passed, 307 deselected`；前后无测试/compose 进程，API/worker IDs仍精确等于baseline，Ruff/diff-check clean。
+- Problem boundary: 只让 non-terminal preconsume cleanup 使用其 exact explicit safe path；若该 path 合法缺失，仅创建固定的无 credential/cycle/mount safe override，执行 base+safe `api/worker` rebuild 与两项 identity proof，然后继续既有 journal 删除/replay。不得创建 live override、authorization、Provider、DB 或 Harness evidence。
+- Single Owner: `abort_preconsume()` 及现有 `_activate_safe_runtime()`/safe override validator-writer。
+- Old path action: replace preconsume cleanup 对 env-only `deactivate_runtime()` 的调用；paid/terminal cleanup 与 `deactivate_runtime()` 保持不变。
+- Unchanged contract: blocker/intent/receipt schema、path hashes、cleanup order、fail-closed snapshot、safe runtime identity、paid gates和Task 6不变。
+- Current replay state: readiness SHA `c21169685a2386651095436f6e6e7bc4524eef6846d0a62f0a4f70d14bcf81ad`；blocker SHA `4e0500de5615d5d46c905c28cb6d80941e120dba7f422d5cca8f1b2093618e2c`；branch `no_issuance`，intent+blocker present、receipt/overrides/authorization absent。修复期间不得读取或改变 private state；复审/commit 后只能 replay literal abort。
+- Review finding: initial reviewer `reject`。当 existing blocker 声明 `safe_override_absent=true` 时，temporary safe override 的 write/compose/identity failure会留下该 path，使immutable blocker与actual snapshot冲突并永久阻断replay。Fix round 1 的参数化 regression 覆盖 write-after-create、compose 和 identity failure：每项失败后 `safe.env` absent、existing blocker bytes 保持 canonical，随后同一 literal replay 写入 receipt 并删除 intent/blocker/root。Same reviewer确认 prior High closed、无新 finding，verdict `accept`。
+
+## BUG-20260803-gdt10e-readiness-dynamic-import-dataclass
+
+- Status: 已修复并提交于 `5017084`；parent verification 与 independent review `accept`
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: `.agent/harness/scripts/live_cycle_authorization.py::_provider_account_readiness_module()` 与 Task 5 `prepare-zero-paid`
+- Symptom: Task 5 Step 2 已生成有效 readiness，但 Step 3 在读取该 fact 时动态加载 `provider_account_readiness.py`，`@dataclass` 初始化触发 `AttributeError: 'NoneType' object has no attribute '__dict__'`，早于 override 创建或 safe runtime activation。
+- Root cause: 生产 loader 调用 `module_from_spec()` 后直接 `exec_module()`，没有先将模块注册到 `sys.modules`；Python 3.11 `dataclasses` 在 decoration 期间通过 `sys.modules[cls.__module__]` 查找 module namespace。测试共享 `_load_module()` 正确注册模块，因此 real zero-paid chain test 又在 control-plane seam 注入已加载 readiness module，掩盖了生产差异。
+- Problem boundary: 只恢复生产 readiness Owner 的标准动态导入语义并让既有 real zero-paid chain test 使用该生产 loader；不改变 readiness schema、credential binding、safe/live runtime、authorization、Provider、DB、Harness evidence 或 Task 6。
+- Single Owner: `.agent/harness/scripts/live_cycle_authorization.py::_provider_account_readiness_module()`。
+- Old path action: replace unregistered `exec_module()` path; on execution failure do not retain a poisoned `sys.modules` entry。
+- Unchanged contract: readiness 仍由 `provider_account_readiness.py` 单独拥有；CLI、路径、schema、输出脱敏和所有 paid gates 不变。
+- Runtime state: 当前 exact private root 仅含 mode `0700` root 与 mode `0600` readiness；live/safe override、authorization、preparation/zero-paid reports 均 absent。修复期间不得读取或改变该 state；复审通过后必须以 literal `abort-preconsume` 收敛 NO-GO，禁止直接重试。
+- Corrective evidence: Task 5B 先将既有 zero-paid chain 改为通过生产 loader 首次加载 Owner，RED 在 Python 3.11 `dataclasses` 的 `sys.modules` namespace lookup 处失败；GREEN 后 focused selector 为 `2 passed, 331 deselected`，且 loader execution failure 不保留本次 module entry。未执行 Docker、Provider、DB、authorization、cleanup 或 Harness run/evidence。
+
+## BUG-20260803-gdt10e-safe-runtime-requires-authorization
+
+- Status: 已修复并提交于 `f675cf9`；parent verification 与 independent review `accept with concerns`，证据文字 concern 已关闭
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: `.agent/harness/scripts/live_cycle_authorization.py::prepare_zero_paid()`、`activate_runtime()` 与 Task 5 zero-paid safe-runtime preparation
+- Symptom: Task 5 的 `prepare-zero-paid` 本应在 authorization/credential/cycle mount 全部缺席时重建 safe `api/worker`，但当前调用链把 `safe.env` 交给 live activation validator；该 validator 要求 authorization issuance，导致零付费准备在 mutation 前不可达。
+- Previously correct behavior: `prepare-zero-paid` 应只使用 safe override 重建 target `api/worker`，验证 credential/cycle/mount 缺席，并在 Task 5 independent `GO` 前保持 authorization 未签发、未消费且无 Provider work。
+- Reproduction: bounded Task 5 worker 在 clean `53e0caa` 上静态追踪到 `prepare_zero_paid()` 调用 `activate_runtime(safe_override_path)`，而后者要求 live override 与 issuance；worker 按 fail-closed contract 在 source credential 和创建 private artifacts 前停止。父线程随后在显式提供 safe ref 后，用 mode `0600` 的真实 safe override 直接调用当前 `activate_runtime()`，稳定得到 `ValueError: live override authorization source is invalid`；与此同时现有所谓 real zero-paid chain test 因整函数 mock `activate_runtime` 仍返回 `1 passed`，确认测试误绿。Task 5A 的 RED 去除该 control-plane mock、仅 mock `subprocess.run` 后，focused test 以 exit `1` / `authorization_error=ValueError` 失败；该次 RED 只证明错误进入 paid activator preconditions，不把 CLI 的脱敏错误归因到某个更深 validator。
+- Root cause: Task 3 实现把 authorization-free safe preparation 错接到 paid-only `activate_runtime()`；该函数正确要求 future live override、issuance 和 live identity。相邻 `deactivate_runtime()` 才实现 base + safe override 重建及 credential/cycle/mount absence proof，但它只从 `QI_LIVE_CYCLE_SAFE_OVERRIDE_REF` 取路径。现有 zero-paid chain test 在 control-plane seam mock 掉 `activate_runtime()`，没有把 mock 下沉到外部 Docker subprocess boundary，因此未执行真实 activation selection。
+- Problem boundary: 只恢复 Task 5 已批准的 authorization-free safe `api/worker` preparation；不改变 paid activation、issuance/consume、Provider、credential schema、DB、Harness evidence 或 Task 6。
+- Single Owner: `.agent/harness/scripts/live_cycle_authorization.py` 继续拥有 safe/live runtime activation；safe activation必须接受已验证的 explicit safe override path并被 `prepare_zero_paid()` 与既有 deactivation path共享，paid `activate_runtime()`保持唯一 live activation。
+- Old path action: replace `prepare_zero_paid()` 对 paid `activate_runtime()` 的错误调用；preserve paid activator及其真实 consumers，不新增 fallback/flag。
+- Unchanged contract: safe runtime仍只含 mode/model，必须证明四个 credential keys、两个 cycle keys和authorization mount全部缺席；live override仍只为未来 Task 6 保存且不得在 Task 5 应用。
+- Allowed paths: `.agent/bug-memory.md`、`.agent/harness/scripts/live_cycle_authorization.py`、`backend/tests/contract/harness/test_live_run_contract.py`、对应 SDD brief/report/progress artifact。
+- Fix: 新增私有 `_activate_safe_runtime(safe_override)`，它只执行 base compose + 已验证 safe override 的 `up -d --no-deps --force-recreate api worker`，并对两个服务复用 `_prove_safe_runtime_identity()`。`prepare_zero_paid()` 与 `deactivate_runtime()` 均复用此 helper；paid `activate_runtime()` 及其 issuance/live identity 逻辑未改。
+- Regression check: Task 5A RED 为 `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -k 'gdt10e_preconsume_cli_runs_real_zero_paid_chain' -q`，结果 `1 failed, 331 deselected`，CLI surface 为 `authorization_error=ValueError`。GREEN/Refactor selector 为 `-k 'gdt10e_preconsume_cli_runs_real_zero_paid_chain or deactivate_runtime or activate_runtime' -q`，结果 `4 passed, 328 deselected`；`ruff check` 与指定 `git diff --check` 均通过。测试断言仅有 safe override、只重建 `api`/`worker`、两个真实 safe identity program 均执行，且 authorization 根不存在。
+- Runtime proof: 未执行真实 Docker、Provider、DB 或 Harness run；focused test 只 mock 外部 `subprocess.run`，从而验证控制面调用参数和 safe identity 响应。当前 private root、authorization、Provider、DB 和 Harness evidence 均未改变。
+- Change: Task 5A corrective change 已写入工作树，未 stage/commit；Task 5 仍只应重新进入执行，不可据此标记 complete。
+
+## BUG-20260802-symbol-attempt-v1-json-null
+
+- Status: 已解决；isolated PostgreSQL regression 与 full backend gate 已通过
+- First reported: 2026-08-02
+- Last reported: 2026-08-02
+- Recurrence: 1
+- Surface: `backend/app/candidates/models.py`、`RoutingEvidenceRepository.append_attempt()` 与 migration `0014` 的 v1 compatibility bridge
+- Symptom: fresh isolated PostgreSQL 17 上，legacy v1 routing/cache attempt insert 被 `ck_symbol_attempt_diagnostic_version` 拒绝；同一 DB gate 另有 5 个 direct `_visual_review_result()` integration source call sites 因缺少 production retry coordinator context 产生 6 个 failing cases。
+- Previously correct behavior: v1 attempt writer必须在 `0014` migration-first window继续写 SQL `NULL` diagnostic/hash；production evidence context必须与唯一 retry coordinator成对出现。
+- Reproduction: `make test-backend` 先因 Docker address-pool exhaustion在创建 DB 前失败；等价 host-network、loopback-only、tmpfs PostgreSQL 17完成 `alembic upgrade head` 后，focused routing/schema/migration suite稳定为 `13 failed / 41 passed`。7 个 failure是 v1 `diagnostic=None` insert违反 check constraint，6 个 failure是 coordinator/context invariant。
+- Root cause: `SymbolEscalationAttemptEventRecord.diagnostic` 使用默认 `JSONB(none_as_null=False)`；SQLAlchemy/psycopg 因而把 Python `None` 绑定为 JSONB literal `null`，而 `0014` 的 strict compatibility constraint 正确要求 v1 row 使用 SQL `NULL`。另外 6 个失败来自 direct `_visual_review_result()` integration fixtures 未随 production context invariant 传入 `ProductionRetryCoordinator`；production scheduler 已正确传入，不是第二个 production defect。
+- Fix: 仅把 attempt model 的 `diagnostic` column type 改为 `JSONB(none_as_null=True)`，不放宽或修改 migration constraint；新增真实 PostgreSQL v1 SQL-NULL regression，并为 5 个 direct test call sites 注入 deny-all schema retry coordinator stub，保持 production retry Owner 与 fail-closed invariant 不变。
+- Regression check: 新 SQL-NULL test 先以 `ck_symbol_attempt_diagnostic_version` RED，修复后 `1 passed`；routing/schema/migration `56 passed`，Advisor/pipeline/status `139 passed`，Provider contract `49 passed`，full backend `1801 passed / 14 warnings`，Ruff、offline contract checker与 `git diff --check` 均通过。
+- Runtime proof: 仅使用显式命名、loopback `55433`、tmpfs 的 isolated PostgreSQL 17 test runtime；未调用 Provider/live Harness，临时 container 已清理。`make test-backend` 在 DB 创建前仍被 Docker global address-pool exhaustion 阻断，等价 fallback 完成相同 Alembic + full `backend/tests` gate。
+- Change: companion plan DB-gate follow-up；commit ID 由 parent plan closeout 记录。
+
+## BUG-20260801-gdt-rejection-coverage-blocking
+
+- Status: 已解决；fix 已合入 source feature branch 并在 shared worker 激活
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 2 次同一 PDF 上传均稳定复现
+- Surface: `project_visual_page()` 的 GD&T ambiguous projection 与 `check_coverage()` 的 required visual semantic validation
+- Symptom: `FB26042401-042#梯形螺杆固定座2#A0.PDF` 已完成 Provider 识别，却以 `coverage_blocking: 1 blocking observations` 终止，无法生成 `AutomaticResult`
+- Root cause: GDT projection 新增 `gdt_frame_not_found` 等可人工审核 rejection code，但 coverage 的 `_VISUAL_REJECTION_CODES` 仍只接受旧 visual code；唯一 live blocker `c404bfddf31ebbaa13d2d53c` 因此从 `ambiguous/requires_confirmation` 被错误升级为 fatal coverage failure
+- Selected lane: `Standard`；稳定 public API/schema、runtime entry 与配置均不变，但 producer/validator 跨模块 contract 需要 focused regression、同一缓存 evidence replay 与独立 review
+- Selected plan: 本 bug-memory entry 作为 ad hoc task contract；不切换当前 GDT implementation plan，也不扩展 live full-P0 scope
+- Selection evidence: 两次 live 上传、DB error、worker log 与保存的 inventory/provider cache 纯内存复算均指向同一 allowlist drift；Provider 23 个 required visual response 完整且无 schema rejection
+- Validation action: `continue`；先以 `gdt_frame_not_found` 写 RED，再补齐当前 producer 可发出的 reviewable GDT rejection codes并复跑同一缓存 evidence
+- Problem boundary: 只修合法 GDT ambiguous rejection 被 coverage 错判为 blocking；不放宽 malformed/unknown rejection、不自动接受 GD&T、不改变 candidate、Provider、routing、review command 或 API contract
+- Single owner: `backend/app/candidates/coverage.py::check_coverage()` 继续拥有 required visual completeness gate；`symbol_review.py` 继续拥有 GDT projection outcome
+- Old path action: replace 只认识旧 visual rejection code 的 validator allowlist；保留未知 rejection fail-closed
+- Unchanged contract: 合法 GDT projection failure 必须 `review_required`，未知/结构不完整 advisor review 仍 blocking，`AutomaticResult` 不得绕过 coverage gate
+- Allowed paths: `.agent/bug-memory.md`、`backend/app/candidates/coverage.py`、`backend/tests/unit/candidates/test_coverage.py`
+- Writer ownership and order: 父 agent 为唯一 writer；目标 feature worktree 的 Harness artifacts 保持不动；实现后派发独立只读 reviewer
+- Fix: 将六个 GDT projection rejection code 作为独立 allowlist；仅当 review 为 `ambiguous/requires_confirmation` 且包含单一、已知的 `gdt_` symbol kind 时转为人工审核，空 kind、非 GDT、多个 GDT、unknown code 和缺少 confirmation 继续 fail-closed
+- Regression check: 新增六个合法 GDT code 正向用例和空/非 GDT/canonical 多 GDT kind 负向用例；相关 coverage、GDT normalization、advisor 与 AutomaticResult contract 共 `151 passed`，Ruff 与 `git diff --check` 通过
+- Runtime proof: 对同一失败项目保存的 inventory/provider cache 使用 isolated worktree 代码、只读 storage 与 `--network none` 回放；`blocking_count=0`、`review_required_count=52`，目标 observation 保持 `ambiguous + gdt_frame_not_found + requires_confirmation=true`，未调用 Provider 或写入 storage
+- Runtime activation: source feature branch 已 fast-forward 到 `a588bd8`；shared `quality_inspection-worker-1` 的 `coverage.py` hash 与 source 一致，Celery `inspect ping` 返回 `pong`，API OpenAPI 为 HTTP 200，Postgres healthy 且原 `137` 个项目完整保留
+- Review: 独立 reviewer 首轮发现 GDT code 可与非 GDT/空 kind 错误组合并 `reject`；收紧语义后复验合法/错误组合与旧 visual 语义均正确，阻断问题清零。其两项非阻断维护建议也已落实：移除第三份 GDT kind 清单，并让 canonical 多 kind 测试直接命中新 guard
+- Change: `fix(gdt): keep projection failures reviewable`
+
+## BUG-20260801-live-qwen-symbol-timeout
+
+- Status: classification/evidence 已获真实 GDT-10D proof；sole cycle 因 Provider authentication failure 封存，GDT-10 Step 4 仍 blocked
+- First reported: 2026-08-01
+- Last reported: 2026-08-02
+- Recurrence: 5
+- Surface: authenticated `qwen3-vl-plus` visual-symbol call during repository-owned full-P0 live sample preparation
+- Symptom: current runtime identity and `/3` Provider contract are correct, but `make verify-p0-live` fails before the first sample creates an automatic result；Harness reports `sample 1 application upload/process failed` and `CandidateAdvisorFailure: Visual symbol Advisor call failed`
+- Previously correct behavior: every required symbol crop must receive a current authenticated response, persist request/response/call identity, complete typed Case A/B + existing non-GD&T evaluation, and pause at `visual_qa_pending:first-pdf-balloons`
+- Reproduction: Harness generated current-four registration `20260801T061725837507Z-f486c0b3`、symbol registration `20260801T061734054016Z-565ed5e2` and full run `20260801T061734601479Z-7a7c7f3d`。The full run completed `12` authenticated calls, wrote the 13th crop at `2026-08-01T06:21:26.367Z`, then failed at `06:22:26.982Z` without a 13th request/response/call record
+- Root cause: the 13th Qwen request exceeded the OpenAI client `timeout=60.0` in `backend/app/providers/runtime.py`；`QwenVisionProvider.review_symbols()` localizes the timeout and `CandidateAdvisor` fails closed。The measured crop-to-run-failure interval is about `60.6s`
+- Runtime identity proof: both affected paid attempts started only after API health、database revision `0013`、container schema `visual-symbol-review/3` and exact host/API/worker 12-file GDT hash equality passed。The latest attempt also verified all required Provider controls as set without exposing values, and its API/worker container IDs stayed unchanged through the Harness command
+- Contract result: no typed Case A/B、non-GD&T symbol report、pause identity or receipt was sealed；Step 4 remains failed and Step 5 was not run
+- Action taken: preserved both exact Harness timeout failures and left runtime config/retry policy unchanged；did not convert either failure to accepted risk。The latest evidence is committed as `1ba4c83`
+- Latest rerun: after a verified 60-second quiet handoff and a fresh `/3` convergence, Harness generated current-four registration `20260801T071155661189Z-0acc0a66`、symbol registration `20260801T071202897748Z-f7514006` and full run `20260801T071203401727Z-09cb5cc6`。The full run completed `18` authenticated request/response/cache/call records, wrote a 19th crop at `2026-08-01T07:19:11.764Z`, then failed at `07:20:12.294Z` without a 19th request/response/call record。The measured `60.236s` interval matches the unchanged OpenAI client `timeout=60.0`
+- Superseded gate: this offline-only statement was the pre-GDT-10D boundary。Recurrence 5 records the separately approved live proof；that one-use cycle is now consumed and failed on classified authentication，so Step 4 remains blocked for the newer terminal reason rather than for missing live evidence。
+
+### Recurrence 3 — Harness-created project identity drift
+
+- Reproduction: standing-authorized isolated run `20260801T151943793270Z-846f40a1` passed exact feature project、API/worker `production_uncertainty` + router/model + `12/12` hashes、database `0013`、credential presence and zero-row preflight，then failed on sample 1 after creating project `b79a18ae-9b92-4020-aee8-482003a2a61c`。The project row is `recognition_mode=legacy_high_recall`、`recognition_router_version=legacy`，logical job is `failed/local_ready`，and the run sealed `live_start_failed:RuntimeError` without AutomaticResult、routing evidence、pause or receipt。
+- Root cause: `.agent/harness/scripts/run-p0.py::_PREPARE_PROJECT_PROGRAM` bypasses `ProjectIntakeService` and creates `Project(id=..., state=...)` without the two frozen routing fields，so database defaults silently replace the preflight-verified runtime identity。`inventory_project()` correctly trusts the frozen project row and therefore re-enters the legacy path。
+- Failure classification boundary: the first Qwen symbol call failed in less than one second after the crop write，but `CandidateAdvisor` intentionally redacts the original exception to `Visual symbol Advisor call failed` and the failed transaction left no Provider call record。Current evidence cannot safely distinguish HTTP status rejection、fast transport failure or metadata failure；do not relabel it as the earlier confirmed 60-second timeout and do not replay it.
+- Selected lane: `Heavy` bounded GDT-10 activation regression；the change is Harness-only but controls retrieval/routing ownership and paid Provider entry。
+- Old path action: replace direct default-backed Harness project construction；`ProjectIntakeService` remains the business intake Owner and the Harness must mirror its `symbol_routing_identity(settings.symbol_recognition_mode)` freeze exactly。
+- Fix: `_PREPARE_PROJECT_PROGRAM::create_live_project()` 通过 canonical `symbol_routing_identity(settings.symbol_recognition_mode)` 枡结项目 mode/router，并把二者显式传给 `Project`；legacy runtime 仍得到 `legacy_high_recall/legacy`，不改变 database default 或正式 intake Owner。
+- Regression check: RED 为 production/legacy 两项均因缺少 frozen project constructor 失败；GREEN targeted identity/runtime `9 passed`、focused live contract `117 passed`、full Harness `229 passed`、`check-contracts.py`、Ruff 和 diff-check 通过。直接 full pytest 因错误继承 Compose-only `postgres` host 得到 DNS 级联，不作为 code verdict；`make test-backend` 又被已知 Docker address-pool exhaustion 阻断。等价 host-network + tmpfs disposable PostgreSQL 17 完成 migration 和相同 backend suite，结果 `1734 passed / 14 warnings`，临时 container 已移除。
+- Smoke: `auto-feature-smoke-test` 选择 embedded project identity targeted gate；API/UI contract 未变，Chrome smoke 不适用。
+- Review/Change: independent reviewer confirmed model defaults、formal intake Owner、worker trust rule、sealed run state and both production/legacy pairs；verdict `accept`。Immutable registrations/full-run failure are preserved by `e033752`，and the Harness identity fix is committed at `7d7da66`。The paid invocation is consumed and no replacement run is authorized by this bug record。
+
+### Recurrence 4 — correct production identity, unclassified fast Provider failures
+
+- Reproduction: new reviewed post-fix cycle created registrations `20260801T153339428826Z-f5165843`、`20260801T153346779223Z-fb6bee16` and full run `20260801T153347947042Z-0fea7c81`。Runtime stayed stable；project `b6db6078-9839-4cf0-8a31-4465a0057012` correctly froze `production_uncertainty/symbol-uncertainty-router/1`，proving GDT-10B is active。
+- Observed failure: production routing persisted `199` decisions、`194` attempt events and `192` outcomes。Of `198` escalated groups，`190` were denied by the plan budget and recorded `not_started_budget_exhausted` / `budget_exhausted`；`8` were admitted，but only the first two reached Provider work、wrote run-bound crops and then recorded `provider_transport_failure` with no Provider request ID in under one second。The other `6` admitted groups were not submitted after the first-batch worker failures and therefore have no attempt/outcome terminal evidence。No Provider call record、cache、AutomaticResult、pause、symbol report or receipt exists；run sealed `live_start_failed:RuntimeError` and evidence is committed at `91e02b5`。
+- Classification gap: `QwenVisionProvider.review_symbols()` only localizes timeout/connection exceptions；a status/metadata/other exception reaches `CandidateAdvisor.call_once()` as unclassified。`_visual_review_result()` persists unknown `CandidateAdvisorFailure` as `provider_transport_failure` but rethrows it with `failure_category=None`；the production collector therefore cannot place it in `localized_failure_stages` and fails the entire document。The current redacted evidence cannot distinguish HTTP 4xx/5xx、fast transport or metadata failure，so treating every unknown as transport/partial would be unsafe。
+- Stop boundary: GDT-10C is consumed。No GDT-10D、direct Provider diagnostic or additional live call is authorized。Safe Provider status classification 与 redacted durable diagnostic evidence 已按 approved companion plan 离线实现，但新 verification cycle 仍需单独授权。
+- Review/cleanup: independent reviewer first rejected the record because it omitted the `6` admitted-but-never-submitted groups；the corrected `190 + 8 = 2 + 6` evidence account and safe stop boundary received final verdict `accept`。After the cycle ended，only isolated `api/worker` were recreated without the four credential keys while preserving `production_uncertainty/symbol-uncertainty-router/1` and the pinned model；other running-container identity hash stayed unchanged，health remained `200/200`，and the 12/12 runtime/database identity check passed。The live、safe-identity and retained root-`.env` temporary Compose override files were all removed。
+- Offline fix: commits `e5bdf11`、`544e04c`、`9a77193`、`699ddf5`、`09af74a`、`77bcdb2` 分别增加 safe Provider facts/status classification、v2 atomic diagnostics、persisted/propagated equality、stop/drain/cancellation terminal、review remediation 与 pipeline cause/status projection。Unknown/status/metadata failure不再自动冒充 transport；malformed typed carrier和 routing-evidence persistence failure均 fail closed。
+- Prevention: Provider只拥有事实分类，Advisor/`ProductionRetryCoordinator`继续拥有 scope/retry，routing repository只验证并原子持久化。两个 in-flight worker failure 后，六个 admitted-but-never-submitted groups使用真实 durable blocking event写 cancellation terminal；若 drain 同时发现 routing-evidence failure，则写完 queued cancellations 后传播最低 job-index routing failure。
+- Regression check: Provider contract `49 passed`、Advisor unit `72 passed`、mixed/legacy/malformed focused `3 passed`、scheduler/routing pure slice `6 passed`、Ruff、`git diff --check` 和 contract matrix `69 global / 111 P0 / 0 drift` 通过；DB-backed integration/migration tests collection通过，但 inherited `QI_DATABASE_URL` 的 `postgres` host不可解析，且本轮禁止创建/修改 runtime，因此没有宣称完整 DB acceptance gate或 production-ready。
+- Implementation review: local `reviewer` profile首轮因 legacy transient projection 与 mixed drain routing-evidence masking 两个 P1 返回 `reject`；修复后复审 `accept with concerns`，无代码 blocker。剩余 concern仅为上述 DB execution debt，以及未来可补的双 routing-failure冗余测试。
+- Evidence immutability / promotion gate: sealed GDT-10C run `20260801T153347947042Z-0fea7c81` 与 `91e02b5` 不重写；v2 schema只适用于 future attempts。`0014` 的 v1 server default只是 migration-first compatibility bridge；production promotion继续 blocked，直到另行批准的 `0015_drop_symbol_attempt_v1_default` 在 all-writers-v2 runtime proof 与 no-new-v1 observation window 后退休该 default。
+
+### Recurrence 5 — classified authentication terminal and Harness ledger-binding gap
+
+- Reproduction: user-approved one-use GDT-10D cycle invoked literal `make verify-p0-live` exactly once and created full run `20260802T101404291929Z-884bec62`。Project `55dbd769-8fab-44a2-bcbd-768b8bbf4312` persisted `199` routing decisions and admitted `8` escalation groups；the first `2` reached the adapter/network seam，the other `6` never submitted。
+- Provider result: both actual Qwen attempts persisted v2 diagnostics with `failure_category=authentication`、event code `provider_authentication_failed` and `request_id_state=accepted` for sanitized Provider request IDs。The propagated failure category matches persisted evidence；the project stops fail-closed。The remaining six groups persist `not_started_after_project_failure` cancellation terminals and have zero paid artifacts，so the prior GDT-10C evidence gap is closed。
+- Usage/authorization result: one issuance was consumed once and bound to the literal run/project。Both actual submissions were pre-reserved、permit-consumed and marked submission-started；unavailable usage retained the full `1.763328 CNY` each，cycle total `3.526656 CNY <= 50.000000`，with zero reserved-only or unsettled entries。No second start、resume、direct Provider call or budget change occurred。
+- Harness root cause: `_refresh_paid_cycle_ledger()` durably wrote the content-hashed ledger report，then `live-run-evidence.schema.json` rejected the valid single-digit `3.526656` amount because its pattern accepted only `0.x` or `10.x-50.x`。The lifecycle had already closed the authorization and safely deactivated runtime，but finalization stayed `terminal_pending` and recorded redacted cleanup code `quiescence_close_or_finalize_failed`。
+- Harness fix: commit `86d5851` changes only the closed amount pattern to accept every six-decimal value from `0.000000` through `50.000000`；the regression first failed exactly for `3.526656` and `9.999999`，then all six boundary cases passed。Commit `ba5f821` adds strict recovery of the run/cycle/pricing/journal-bound content-hashed ledger report so a crash or schema failure between report and live binding can finalize without credentials or Provider reactivation；review remediation `91a0ead` proves content-hash、run、cycle、pricing、journal and count mutations all fail closed。
+- Verification/cleanup: Harness `179 passed`、contract matrix `69/111/101/10` with 94-file runtime closure and Ruff/diff checks passed。Storage/routing evidence sealed exact `190 denied + 2 started/authentication-failed + 6 cancelled = 198 terminal`；full run is read-only `failed` with no AutomaticResult、pause、symbol report or full-run/formal receipt，while the separate current-four registration receipt remains passed。API/worker returned to safe identity，health passed，Celery/Redis were empty，DB remained healthy `0014`，main/non-target IDs and GDT-10C tree remained unchanged。The exact private backup/authorization root was deleted only after these run-bound proofs；the original pre-0014 dump and raw private authorization bytes are no longer recoverable，and only the healthy post-migration live DB plus sanitized run-bound Harness evidence remain。
+- Stop boundary: this is a fully evidenced terminal closeout，not Step 4 success。The one-use cycle is consumed；credential/account remediation and any replacement live verification require new explicit authority。`0015` and production promotion remain blocked。
+
+## BUG-20260801-live-api-runtime-identity-drift
+
+- Status: Harness guard 已解决；shared Compose API drift recurred again after the latest timeout run
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 4
+- Surface: `.agent/harness/scripts/run-p0.py` full-P0 zero-paid preflight 与 running Compose API GDT production runtime
+- Symptom: host/worktree checks can pass against a correct `/3` API, but the shared Compose service may later be replaced by main-worktree `/2` before or during paid live execution；current GDT worktree requires one stable `/3` API/worker topology
+- Reproduction: first stale-runtime full run `20260801T054726079099Z-83f03a78` completed `28` authenticated Qwen calls but produced `0` structured GDT candidates。After a later post-run recreate, the next authorized retry generated registrations `20260801T063633719670Z-576cbd9d` / `20260801T063641922869Z-b9dd7dda` and full run `20260801T063642486237Z-bbcb7b3d`；main-worktree Compose then replaced API during sample 1 preparation, causing `docker compose exec api` exit `137`。After the subsequent full run `20260801T071203401727Z-09cb5cc6` had already failed independently on Provider timeout at `15:20:12+08:00`, main-worktree `make dev-local-api` started at `15:20:42+08:00` and recreated API from the main worktree at `15:23:11+08:00`
+- Root cause: the original preflight omitted exact container production-file identity；that guard is fixed。The remaining control-plane cause is that all worktrees use the same fixed Compose project `quality-inspection` and service names, so an external main-worktree Compose operation can replace the GDT worktree API after preflight
+- Fix: 在 source upload、fresh registration、run creation 和 Provider call 之前，exact 比较 API container 与 worktree 的 12-file GDT runtime hash set，覆盖 Provider schema/Qwen、advisor/evidence/normalizer/symbol/fallback、automatic/runtime recognition 以及 native/raster frame inventory；nonzero、non-JSON、missing/extra/stale hash 全部 fail-closed
+- Regression check: focused runtime guard GREEN；contract file `62 passed`、完整 Harness `174 passed`、Ruff 和 diff checks 通过。独立 reviewer 对单独 stale `advisor.py`、单独 stale `runtime_recognition.py` 及 parsing/hash bypass 复测后 verdict `accept`
+- Runtime proof: before the latest retry, health、database `0013`、API/worker `/3` and all 12 host/container hashes passed。During full run `20260801T063642486237Z-bbcb7b3d`, API container `091df70a...` was replaced at `2026-08-01T06:38:14.897Z` by main-worktree container `00422fe1...`；the worker stayed on this worktree `/3`。Harness failed closed and evidence commit is `5f4cfbf`。For the later timeout run, the API/worker IDs stayed stable through Harness exit；the new main-worktree recreate began 30 seconds afterward, so it is a distinct post-failure recurrence rather than the cause of that timeout
+- Remaining blocker: current API is again main-worktree `/2` while worker remains this worktree `/3`；the topology must not be retried until the shared Compose project has an exclusive owner for the full live window。A preflight-only guard cannot prevent a later external recreate
+
+## BUG-20260801-full-live-target-activation
+
+- Status: 已解决；Recurrence 2 isolated runtime target binding 已通过回归与 independent reviewer `accept`
+- First reported: 2026-08-01
+- Last reported: 2026-08-01
+- Recurrence: 2
+- Surface: `Makefile:verify-p0-live`、`.agent/harness/scripts/run-p0.py` full-P0 live start/resume lifecycle、symbol-recognition live report
+- Symptom: repository-owned `make verify-p0-live` 在任何 Provider preflight 之前必然退出，无法生成 current-four authenticated Provider evidence；plan 同时要求 Step 4 在 Step 5 headed QA 之前产生 final receipt，但 Harness 只有 resume 后才写 receipt
+- Previously correct behavior: 单一 repository target 应自行生成 fresh registration IDs、以 literal IDs 启动 full-live、完成 authenticated symbol gate后暂停；headed QA 通过后 resume 同一 run 才生成 final receipt
+- Reproduction: `make verify-p0-live` 的 `check-contracts.py` 通过后，`run-p0.py` 返回 exit `2`：full-P0 live start 缺少 literal current-four/symbol registration runs 和 first-PDF pause；`.agent/harness/runs/` 未新增 run，Provider call count 为 `0`
+- Root cause: `verify-p0-live` 没有激活 fresh input registration 和 pause 参数；missing-credential 测试也在参数校验前提前退出，形成假覆盖。计划把 pre-pause Step 4 与 post-headed-QA receipt 混为同一成功条件；symbol report exact policy 尚未容纳 typed Case A/B 或可重算的 Provider identity hashes
+- Fix: target 使用显式 `--activate-current-inputs --pause-after first-pdf-balloons`；runner 先做 credential/runtime/source/contract zero-paid preflight，再从 exact current sources 和 Git-HEAD 唯一 approved annotation bytes 生成 fresh Harness registration IDs，并把 literal IDs 传回原 full-live path。symbol report `/2` 新增 exact typed Case A/B、source/crop/model/prompt/schema identity hashes；Provider crop 按真实 bytes 写入本次 run 并由 policy 重哈希，Case A/B 同时绑定 evaluator label 与 manifest symbol kind。Step 4/5 plan 改为 pause 后 headed QA，再 resume 同一 literal run 生成 receipt
+- Regression check: `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness -q` 返回 `173 passed`；focused contract file `61 passed`，`ruff check` 和 `git diff --check` 通过。独立 reviewer 对 malformed counts 与真实 crop-byte tamper 复测均 fail-closed，final verdict `accept`
+- Runtime proof: fresh `make verify-p0-live` 先通过 `69` global / `111` P0 contract mapping，再准确退出 `2`：四项 server-only Provider credential 未注入；run directory count 保持 `14 -> 14`，未创建 run、未调用 Provider。activation regression 已解决，GDT-10 live evidence 仍由外部 runtime identity injection 阻塞
+- Change: `fix(harness): activate structured GDT live gate`
+
+### Recurrence 2 — isolated runtime target binding
+
+- Last reported: 2026-08-01
+- Symptom: GDT-10 feature-only runtime 已按 approved Compose isolation contract 运行在 loopback `127.0.0.1:18000/14173`，但 `run-p0.py::_current_live_identity()` 仍只接受 `http://localhost:8000/3000`；继续执行 `make verify-p0-live` 会拒绝正确 isolated target，或在省略显式 target 时命中 main runtime。
+- Previously correct behavior: full-live preflight 必须把 HTTP API/frontend target 与同一次 `_require_compose_runtime_identity()` 验证的 feature-only Compose project 绑定，并在 registration、run creation、upload 和 Provider work 前拒绝 main/feature 混用。
+- Reproduction: current source 在 `run-p0.py:1331-1343` 对 API/frontend 使用固定字面量；running Compose labels 证明 feature project 为 `structured-geometric-tolerance-recognition-qa` 且 ports 为 `18000/14173`，main project 仍独立占用 `8000`。尚未运行 Provider/live command。
+- Root cause: Compose isolation prerequisite 把 GDT-10 QA runtime 切到 feature-only project 和 `18000/14173`，但 Harness active target、published-port preflight 与 `run.schema.json` receipt identity 仍保留 main `8000/3000`。第一次 schema amendment 又把 old/new bases 写成两个独立 `enum`，会错误接受 mixed API/frontend pair；independent reviewer 的 in-memory probe 捕获该 false success。
+- Fix: `_current_live_identity()` 现在要求显式 exact feature project + isolated API/frontend bases；`_require_compose_runtime_identity()` 绑定真实 published ports；`_http_json()` 与 `_browser_environment()` 移除 main defaults；`run.schema.json` 只接受 old-old historical pair 或 isolated-isolated current pair，拒绝 mixed pair并保留历史 sealed receipt 兼容。
+- Regression check: exact target/main-default-mixed target 与 published-port tests 已完成 RED→GREEN；schema old/new/mixed 四组测试完成 RED→GREEN。Focused live contract `115 passed`、full Harness `227 passed`、`check-contracts.py`、`ruff`、`git diff --check` 全部通过。
+- Runtime proof: fresh zero-paid feature runtime target/health/identity proof 在实现前通过；代码修复后 historical sealed run `20260728T080321805661Z-b59c87de` schema validation 通过。paid invocation count `0`；提交后仍须重跑 fresh real-runtime preflight。
+- Change: `fix(harness): bind live gate to isolated runtime`（pending commit at record update）
 
 ## BUG-20260801-source-disposition-stale-tests
 

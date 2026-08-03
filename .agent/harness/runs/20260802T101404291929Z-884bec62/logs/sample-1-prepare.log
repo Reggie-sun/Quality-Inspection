@@ -1,0 +1,36 @@
+exit_code=1
+stdout:
+
+stderr:
+Traceback (most recent call last):
+  File "<string>", line 207, in <module>
+  File "/app/app/processing/tasks.py", line 257, in inventory_project
+    ).run(
+      ^^^^
+  File "/app/app/processing/pipeline.py", line 324, in run
+    snapshot = self._build_snapshot(pages, source_file.id)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/processing/pipeline.py", line 113, in _build_snapshot
+    return self._candidate_snapshot_builder(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/processing/runtime_recognition.py", line 222, in build_candidate_snapshot
+    return self._advisor.review(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/candidates/advisor.py", line 3944, in review
+    raise first_blocking
+  File "/app/app/candidates/advisor.py", line 3781, in review
+    outcome = future.result()
+              ^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/usr/local/lib/python3.11/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/candidates/advisor.py", line 2501, in _visual_review_result
+    propagate_classified_failure(
+  File "/app/app/candidates/advisor.py", line 2479, in propagate_classified_failure
+    raise CandidateAdvisorFailure(
+app.candidates.advisor.CandidateAdvisorFailure: Visual symbol Advisor call failed

@@ -8,6 +8,7 @@ import { zhCN } from "../../copy/zhCN";
 import {
   INSPECTION_ITEM_STATUS_LABELS,
   inspectionItemPresentation,
+  isGeometricToleranceItem,
   isAutoAcceptedItem,
   isReviewRequiredItem,
 } from "./inspectionItemPresentation";
@@ -306,8 +307,17 @@ export function InspectionItemTable({
                 </span>
                 {compact ? null : (
                   <span role="cell">
-                    <strong>{item.nominal ?? item.raw_text}</strong>
-                    <small>{tolerance(item)}</small>
+                    <strong>{presentation.valueLabel ?? item.nominal ?? item.raw_text}</strong>
+                    {isGeometricToleranceItem(item) ? (
+                      <>
+                        {presentation.datumLabels?.length ? (
+                          <small>{presentation.datumLabels.join("、")}</small>
+                        ) : null}
+                        {presentation.modifierLabels?.length ? (
+                          <small>{presentation.modifierLabels.join("、")}</small>
+                        ) : null}
+                      </>
+                    ) : <small>{tolerance(item)}</small>}
                   </span>
                 )}
                 {compact ? null : (

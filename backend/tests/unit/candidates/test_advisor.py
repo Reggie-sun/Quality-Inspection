@@ -14,10 +14,14 @@ import pytest
 
 import app.candidates.advisor as advisor_module
 from app.candidates.advisor import (
+    AdvisorFailureClassification,
     CandidateAdvisor,
     CandidateAdvisorFailure,
+    ProductionRetryCoordinator,
+    RoutedObject,
     VisualEvidenceContext,
     VisualExecutionIdentity,
+    classify_provider_failure,
 )
 from app.candidates.coverage import CoverageEntry
 from app.candidates.confidence import CandidateSourceSignal
@@ -43,9 +47,420 @@ from app.processing.automatic_result import (
     CandidateSnapshot,
     candidate_snapshot_from_inventory,
 )
-from app.providers.base import VisionResult
+from app.providers.base import (
+    ClassifiedProviderFailure,
+    ProviderFailureFact,
+    VisionResult,
+)
 from app.providers.qwen_vl import VisualSymbolProviderError
+from app.providers.usage_ledger import ProviderUsageLedger, ReservationPermit
+from app.providers.usage_ledger import ProviderBudgetExceeded
 from app.storage.local import LocalFileStorage
+from tests.support.provider_cycle import open_cycle_ledger
+
+
+def provider_fact_for_test(category: str) -> ProviderFailureFact:
+    origin_by_category = {
+        "timeout": "sdk_timeout",
+        "transport": "sdk_connection",
+        "schema": "response_schema",
+        "authentication": "sdk_http_status",
+        "request_rejected": "sdk_http_status",
+        "rate_limited": "sdk_http_status",
+        "service_failure": "sdk_http_status",
+        "metadata_invalid": "response_metadata",
+        "unclassified": "provider_boundary",
+    }
+    status_by_category = {
+        "authentication": 401,
+        "request_rejected": 422,
+        "rate_limited": 429,
+        "service_failure": 503,
+    }
+    return ProviderFailureFact(
+        category=category,
+        origin=origin_by_category[category],
+        http_status=status_by_category.get(category),
+        provider_request_id=None,
+        request_id_state="absent",
+    )
+
+
+@pytest.mark.parametrize(
+    ("category", "stage", "scope", "cause"),
+    (
+        ("timeout", "provider_timeout", "roi_localized", None),
+        ("transport", "provider_transport_failure", "roi_localized", None),
+        ("schema", "provider_schema_invalid", "roi_localized", None),
+        (
+            "authentication",
+            "provider_authentication_failed",
+            "project_blocking",
+            "invalid_configuration",
+        ),
+        (
+            "request_rejected",
+            "provider_request_rejected",
+            "project_blocking",
+            "processing_defect",
+        ),
+        (
+            "rate_limited",
+            "provider_rate_limited",
+            "project_blocking",
+            "transient_provider_failure",
+        ),
+        (
+            "service_failure",
+            "provider_service_failure",
+            "project_blocking",
+            "transient_provider_failure",
+        ),
+        (
+            "metadata_invalid",
+            "provider_metadata_invalid",
+            "project_blocking",
+            "processing_defect",
+        ),
+        (
+            "unclassified",
+            "provider_unclassified_failure",
+            "project_blocking",
+            "processing_defect",
+        ),
+    ),
+)
+def test_provider_failure_disposition_is_frozen(
+    category: str,
+    stage: str,
+    scope: str,
+    cause: str | None,
+) -> None:
+    classification = classify_provider_failure(
+        provider_fact_for_test(category)
+    )
+
+    assert (
+        classification.failure_stage,
+        classification.scope,
+        classification.pipeline_cause_category,
+    ) == (stage, scope, cause)
+
+
+def test_advisor_failure_classification_rejects_mapping_mismatch() -> None:
+    with pytest.raises(
+        ValueError,
+        match="^Advisor Provider failure classification is invalid$",
+    ):
+        AdvisorFailureClassification(
+            fact=provider_fact_for_test("rate_limited"),
+            failure_stage="provider_transport_failure",
+            scope="roi_localized",
+            pipeline_cause_category=None,
+        )
+
+
+def test_production_retry_coordinator_alone_owns_schema_eligibility() -> None:
+    coordinator = object.__new__(ProductionRetryCoordinator)
+    calls: list[tuple[object, int]] = []
+
+    def authorize_budget(
+        *,
+        identity: object,
+        primary_duration_ms: int,
+    ) -> bool:
+        calls.append((identity, primary_duration_ms))
+        return True
+
+    coordinator._authorize_retry_budget = authorize_budget
+    identity = SimpleNamespace(content_sha256="a" * 64)
+    shape_failure = VisualSymbolProviderError(
+        request_id="safe-message-shape",
+        usage={"total_tokens": 4},
+        failure_stage="message_shape_invalid",
+    )
+    schema_failure = VisualSymbolProviderError(
+        request_id="safe-schema-invalid",
+        usage={"total_tokens": 4},
+        failure_stage="tool_arguments_schema_invalid",
+    )
+
+    assert coordinator.authorize_schema_retry(
+        shape_failure,
+        identity,
+        12,
+    ) is False
+    assert calls == []
+    assert coordinator.authorize_schema_retry(
+        schema_failure,
+        identity,
+        34,
+    ) is True
+    assert calls == [(identity, 34)]
+
+
+def test_candidate_advisor_failure_requires_classification_event_pair() -> None:
+    classification = classify_provider_failure(
+        provider_fact_for_test("rate_limited")
+    )
+    event_sha = "a" * 64
+    error = CandidateAdvisorFailure(
+        "Visual symbol Advisor call failed",
+        classification=classification,
+        failure_event_sha256=event_sha,
+    )
+
+    assert error.classification is classification
+    assert error.failure_category == "rate_limited"
+    assert error.failure_stage == "provider_rate_limited"
+    assert error.failure_scope == "project_blocking"
+    assert error.pipeline_cause_category == "transient_provider_failure"
+    assert error.failure_event_sha256 == event_sha
+    assert error.provider_request_id is None
+    for values in (
+        {"classification": classification},
+        {"failure_event_sha256": event_sha},
+        {
+            "classification": classification,
+            "failure_event_sha256": "not-a-sha",
+        },
+        {
+            "classification": classification,
+            "failure_event_sha256": event_sha,
+            "failure_origin": "routing_evidence",
+        },
+    ):
+        with pytest.raises(
+            ValueError,
+            match="^CandidateAdvisor failure evidence is invalid$",
+        ):
+            CandidateAdvisorFailure("invalid", **values)
+
+
+def test_legacy_candidate_advisor_failure_preserves_transient_cause() -> None:
+    error = advisor_module._LegacyCandidateAdvisorFailure(
+        "Visual candidate Advisor call failed",
+        failure_category="timeout",
+    )
+
+    assert error.failure_category == "timeout"
+    assert error.pipeline_cause_category == "transient_provider_failure"
+
+
+def test_persisted_provider_failure_matches_propagated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    session = SimpleNamespace(
+        commit=lambda: captured.update(committed=True),
+        rollback=lambda: captured.update(rolled_back=True),
+        close=lambda: captured.update(closed=True),
+    )
+
+    class RecordingEvidence:
+        def __init__(self, seen_session: object) -> None:
+            assert seen_session is session
+
+        def record_failure_terminal(self, **kwargs: object) -> str:
+            captured.update(kwargs)
+            return kwargs["event"].event_sha256  # type: ignore[union-attr]
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        RecordingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: object(),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+    classification = classify_provider_failure(
+        ProviderFailureFact(
+            category="rate_limited",
+            origin="sdk_http_status",
+            http_status=429,
+            provider_request_id="safe-rate-request",
+            request_id_state="accepted",
+        )
+    )
+
+    event_sha = advisor._record_classified_failure_terminal(
+        context=VisualEvidenceContext(
+            escalation_group_id="group-1",
+            routing_decision_sha256="a" * 64,
+        ),
+        attempt_index=1,
+        classification=classification,
+        visual_observations=(SimpleNamespace(observation_id="visual-1"),),
+    )
+    propagated = CandidateAdvisorFailure(
+        "Visual symbol Advisor call failed",
+        classification=classification,
+        failure_event_sha256=event_sha,
+    )
+    event = captured["event"]
+
+    assert event.diagnostic["failure_category"] == (
+        propagated.failure_category
+    )
+    assert event.diagnostic["failure_stage"] == event.event_code
+    assert event.event_code == propagated.failure_stage
+    assert event.diagnostic["scope"] == propagated.failure_scope
+    assert event.event_sha256 == propagated.failure_event_sha256
+    assert event.provider_request_id == propagated.provider_request_id
+    assert captured["committed"] is True
+    assert captured["closed"] is True
+    assert "private://customer/token-do-not-leak" not in json.dumps(
+        event.diagnostic
+    )
+
+
+def test_routing_failure_does_not_localize(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "private://customer/token-do-not-leak"
+    state: dict[str, bool] = {}
+    session = SimpleNamespace(
+        commit=lambda: state.update(committed=True),
+        rollback=lambda: state.update(rolled_back=True),
+        close=lambda: state.update(closed=True),
+    )
+
+    class FailingEvidence:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        def record_failure_terminal(self, **_kwargs: object) -> str:
+            raise RuntimeError(marker)
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        FailingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: object(),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as caught:
+        advisor._record_classified_failure_terminal(
+            context=VisualEvidenceContext(
+                escalation_group_id="group-1",
+                routing_decision_sha256="a" * 64,
+            ),
+            attempt_index=0,
+            classification=classify_provider_failure(
+                provider_fact_for_test("transport")
+            ),
+            visual_observations=(
+                SimpleNamespace(observation_id="visual-1"),
+            ),
+        )
+
+    assert caught.value.failure_origin == "routing_evidence"
+    assert caught.value.classification is None
+    assert caught.value.failure_event_sha256 is None
+    assert caught.value.failure_category is None
+    assert marker not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert state == {"rolled_back": True, "closed": True}
+
+
+def test_never_submitted_project_failure_terminal_is_exact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    session = SimpleNamespace(
+        commit=lambda: captured.update(committed=True),
+        rollback=lambda: captured.update(rolled_back=True),
+        close=lambda: captured.update(closed=True),
+    )
+
+    class RecordingEvidence:
+        def __init__(self, seen_session: object) -> None:
+            assert seen_session is session
+
+        def record_failure_terminal(self, **kwargs: object) -> str:
+            captured.update(kwargs)
+            return kwargs["event"].event_sha256  # type: ignore[union-attr]
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        RecordingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(qwen_model="qwen3-vl-plus"),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: object(),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+    classification = classify_provider_failure(
+        provider_fact_for_test("rate_limited")
+    )
+
+    event_sha = advisor._record_not_started_after_project_failure(
+        context=VisualEvidenceContext(
+            escalation_group_id="queued-group",
+            routing_decision_sha256="a" * 64,
+        ),
+        blocking_event_sha256="b" * 64,
+        blocking_classification=classification,
+        stop_reason="project_blocking_provider_failure",
+        visual_observations=(
+            SimpleNamespace(observation_id="queued-visual"),
+        ),
+    )
+    event = captured["event"]
+
+    assert event.event_sha256 == event_sha
+    assert event.attempt_index == 0
+    assert event.event_code == "not_started_after_project_failure"
+    assert event.provider_request_id is None
+    assert event.cache_entry_id is None
+    assert event.diagnostic == {
+        "schema_version": "visual-symbol-scheduler-stop/1",
+        "stop_reason": "project_blocking_provider_failure",
+        "blocking_event_sha256": "b" * 64,
+        "provider_work_started": False,
+    }
+    assert captured["outcome_code"] == "cancelled"
+    assert tuple(
+        (item.visual_observation_id, item.outcome_code)
+        for item in captured["observation_outcomes"]
+    ) == (("queued-visual", "cancelled_after_project_failure"),)
+    assert captured["committed"] is True
+    assert captured["closed"] is True
+
+    with pytest.raises(CandidateAdvisorFailure) as mismatch:
+        advisor._record_not_started_after_project_failure(
+            context=VisualEvidenceContext(
+                escalation_group_id="queued-group-2",
+                routing_decision_sha256="c" * 64,
+            ),
+            blocking_event_sha256="d" * 64,
+            blocking_classification=classification,
+            stop_reason="project_blocking_advisor_boundary_failure",
+            visual_observations=(
+                SimpleNamespace(observation_id="queued-visual-2"),
+            ),
+        )
+    assert mismatch.value.failure_origin == "routing_evidence"
 
 
 def advisor_payload(
@@ -122,12 +537,13 @@ class UnifiedRecordingProvider(EchoVisionProvider):
 
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
-        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/2"
+        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/3"
         self.call_order.append("visual")
         return VisionResult(
             request_id="fixture-visual-request-1",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [],
             },
             usage={},
@@ -141,7 +557,7 @@ class UnifiedRecordingProvider(EchoVisionProvider):
 class RetryRecordingProvider(UnifiedRecordingProvider):
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
-        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/2"
+        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/3"
         self.call_order.append("visual")
         call_count = self.call_order.count("visual")
         if call_count == 1:
@@ -153,11 +569,102 @@ class RetryRecordingProvider(UnifiedRecordingProvider):
         return VisionResult(
             request_id="fixture-visual-retry-success",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [],
             },
             usage={"total_tokens": 12},
         )
+
+
+class LedgerAwareVisionProvider:
+    def __init__(
+        self,
+        ledger: ProviderUsageLedger,
+        *,
+        schema_retry: bool = False,
+        classified_failure: bool = False,
+    ) -> None:
+        self._ledger = ledger
+        self._schema_retry = schema_retry
+        self._classified_failure = classified_failure
+        self.calls = 0
+
+    def review_symbols(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
+        assert image.startswith(b"\x89PNG")
+        assert json.loads(prompt)["schema_version"] == "visual-symbol-review/3"
+        assert reservation_permit is not None
+        reservation_permit.consume_for_adapter(
+            provider="qwen-vl",
+            operation="review_symbols",
+        )
+        self.calls += 1
+        if self._classified_failure:
+            raise ClassifiedProviderFailure(
+                provider_fact_for_test("transport")
+            )
+        if self._schema_retry and self.calls == 1:
+            raise VisualSymbolProviderError(
+                request_id="fixture-ledger-schema-retry",
+                usage={"prompt_tokens": 100, "completion_tokens": 10},
+                failure_stage="tool_arguments_schema_invalid",
+            )
+        return VisionResult(
+            request_id=f"fixture-ledger-success-{self.calls}",
+            payload={
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
+                "detections": [],
+            },
+            usage={"prompt_tokens": 100, "completion_tokens": 10},
+        )
+
+
+class LedgerAwareCandidateProvider:
+    def __init__(self, ledger: ProviderUsageLedger) -> None:
+        self._ledger = ledger
+        self.calls = 0
+
+    def review_candidate(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
+        assert image.startswith(b"\x89PNG")
+        assert json.loads(prompt)["raw_text"] == "M6"
+        assert reservation_permit is not None
+        reservation_permit.consume_for_adapter(
+            provider="qwen-vl",
+            operation="review_candidate",
+        )
+        self.calls += 1
+        return VisionResult(
+            request_id="fixture-ledger-candidate-success",
+            payload=advisor_payload("M6", "thread", "M6", True),
+            usage={"prompt_tokens": 100, "completion_tokens": 10},
+        )
+
+
+class ReservedOnlyCrashProvider:
+    network_calls = 0
+
+    def review_symbols(
+        self,
+        _image: bytes,
+        _prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
+        assert reservation_permit is not None
+        raise RuntimeError("controlled pre-SDK crash")
 
 
 class VisualDiameterProvider(EchoVisionProvider):
@@ -168,7 +675,7 @@ class VisualDiameterProvider(EchoVisionProvider):
     def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
         assert image.startswith(b"\x89PNG")
         request = json.loads(prompt)
-        assert request["schema_version"] == "visual-symbol-review/2"
+        assert request["schema_version"] == "visual-symbol-review/3"
         assert request["prompt_version"] == "visual-symbol-prompt/4"
         assert len(request["visual_contexts"]) == 1
         context = request["visual_contexts"][0]
@@ -189,7 +696,8 @@ class VisualDiameterProvider(EchoVisionProvider):
         return VisionResult(
             request_id="fixture-visual-diameter-request",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [
                     {
                         "visual_observation_id": context[
@@ -231,7 +739,8 @@ class VisualRoughnessProvider(EchoVisionProvider):
         return VisionResult(
             request_id="fixture-visual-roughness-request",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [
                     {
                         "visual_observation_id": context[
@@ -438,9 +947,12 @@ def visual_diameter_fixture(
     return source, pages, candidate_snapshot_from_inventory(pages)
 
 
-def three_visual_escalation_fixture(
+def _visual_escalation_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    labels: tuple[str, ...],
+    boxes: tuple[tuple[float, float, float, float], ...],
 ) -> tuple[Path, tuple[object, ...], CandidateSnapshot]:
     source, original_pages, original_snapshot = visual_diameter_fixture(
         tmp_path
@@ -450,11 +962,6 @@ def three_visual_escalation_fixture(
         source,
         original_pages,
     )[0]
-    boxes = (
-        (8.0, 8.0, 28.0, 28.0),
-        (88.0, 8.0, 108.0, 28.0),
-        (168.0, 8.0, 188.0, 28.0),
-    )
     visuals = tuple(
         replace(
             original_visual,
@@ -468,7 +975,7 @@ def three_visual_escalation_fixture(
             ),
             geometry_sha256=label * 64,
         )
-        for label, bbox in zip(("a", "b", "c"), boxes, strict=True)
+        for label, bbox in zip(labels, boxes, strict=True)
     )
     pages = (
         replace(original_pages[0], visual_observations=visuals),
@@ -541,11 +1048,151 @@ def three_visual_escalation_fixture(
     return source, pages, snapshot
 
 
+def three_visual_escalation_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, tuple[object, ...], CandidateSnapshot]:
+    return _visual_escalation_fixture(
+        tmp_path,
+        monkeypatch,
+        labels=("a", "b", "c"),
+        boxes=(
+            (8.0, 8.0, 28.0, 28.0),
+            (88.0, 8.0, 108.0, 28.0),
+            (168.0, 8.0, 188.0, 28.0),
+        ),
+    )
+
+
+def eight_visual_escalation_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Path, tuple[object, ...], CandidateSnapshot]:
+    source = tmp_path / "eight-visual-escalation.pdf"
+    document = pymupdf.open()
+    for _page_index in range(2):
+        page = document.new_page(width=240, height=180)
+        page.insert_text((48, 24), "10")
+        page.draw_line((34, 14), (42, 14), color=(0, 0, 0), width=1)
+    document.save(source)
+    document.close()
+    original_pages = tuple(build_inventory(source))
+    original_snapshot = candidate_snapshot_from_inventory(original_pages)
+    original_contexts = reconstruct_visual_geometry_contexts(
+        source,
+        original_pages,
+    )
+    assert len(original_contexts) == 2
+    visuals = tuple(
+        replace(
+            original_pages[index // 4].visual_observations[0],
+            observation_id=f"fixture-visual-{index}",
+            bbox_pdf=(
+                8.0 + (index % 4) * 56.0,
+                8.0,
+                28.0 + (index % 4) * 56.0,
+                28.0,
+            ),
+            bbox_normalized=(
+                (8.0 + (index % 4) * 56.0) / 240.0,
+                8.0 / 180.0,
+                (28.0 + (index % 4) * 56.0) / 240.0,
+                28.0 / 180.0,
+            ),
+            geometry_sha256=str(index) * 64,
+        )
+        for index in range(8)
+    )
+    pages = tuple(
+        replace(
+            original_pages[page_index],
+            visual_observations=visuals[
+                page_index * 4:(page_index + 1) * 4
+            ],
+        )
+        for page_index in range(2)
+    )
+    original_visual_ids = {
+        page.visual_observations[0].observation_id
+        for page in original_pages
+    }
+    original_visual_coverage = {
+        entry.observation_id: entry
+        for entry in original_snapshot.coverage_entries
+        if entry.observation_id in original_visual_ids
+    }
+    snapshot = replace(
+        original_snapshot,
+        coverage_entries=(
+            *(
+                entry
+                for entry in original_snapshot.coverage_entries
+                if entry.observation_id not in original_visual_ids
+            ),
+            *(
+                replace(
+                    original_visual_coverage[
+                        original_pages[visual.page_index]
+                        .visual_observations[0]
+                        .observation_id
+                    ],
+                    observation_id=visual.observation_id,
+                    source_location_id=visual.observation_id,
+                    coordinates=visual.bbox_pdf,
+                )
+                for visual in visuals
+            ),
+        ),
+        expected_observation_ids=(
+            *(
+                identity
+                for identity in original_snapshot.expected_observation_ids
+                if identity not in original_visual_ids
+            ),
+            *(visual.observation_id for visual in visuals),
+        ),
+        required_visual_observation_ids=tuple(
+            visual.observation_id for visual in visuals
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "reconstruct_visual_geometry_contexts",
+        lambda _pdf_path, _pages: tuple(
+            replace(
+                original_contexts[visual.page_index],
+                observation_id=visual.observation_id,
+                geometry_sha256=visual.geometry_sha256,
+            )
+            for visual in visuals
+        ),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "prepare_local_family_hypotheses",
+        lambda **_kwargs: (),
+    )
+    monkeypatch.setattr(
+        advisor_module,
+        "resolve_visual_observation",
+        lambda **kwargs: LocalResolution(
+            visual_observation_id=kwargs["observation"].observation_id,
+            family_hypotheses=(),
+            resolved_family=None,
+            reason_codes=("unknown_symbol_pattern",),
+            projection=None,
+        ),
+    )
+    return source, pages, snapshot
+
+
 def candidate_advisor(
     tmp_path: Path,
     provider: object,
     *,
     symbol_recognition_mode: str | None = "legacy_high_recall",
+    project_id: str = "project-test",
+    usage_ledger: ProviderUsageLedger | None = None,
 ) -> CandidateAdvisor:
     settings = {"qwen_model": "qwen3-vl-plus"}
     if symbol_recognition_mode is not None:
@@ -553,8 +1200,9 @@ def candidate_advisor(
     return CandidateAdvisor(
         Settings(**settings),
         LocalFileStorage(tmp_path / "storage"),
-        project_id="project-test",
+        project_id=project_id,
         provider_factory=lambda _settings: provider,
+        usage_ledger=usage_ledger,
     )
 
 
@@ -729,9 +1377,13 @@ def test_preview_enrichment_retains_localized_provider_failure_count(
     )
 
     def localized_transport_failure(_self: CandidateAdvisor, **_kwargs: object) -> object:
+        classification = classify_provider_failure(
+            provider_fact_for_test("transport")
+        )
         raise CandidateAdvisorFailure(
             "fixture provider transport failure",
-            failure_category="transport",
+            classification=classification,
+            failure_event_sha256="e" * 64,
         )
 
     monkeypatch.setattr(
@@ -841,7 +1493,7 @@ def test_production_locally_resolved_visual_skips_provider(
         if key != "local_resolution_evidence"
     } == {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "symbol_kinds": ["revision_marker"],
         "rejection_code": None,
         "confidence_signal": None,
@@ -1162,7 +1814,8 @@ def test_production_sends_only_escalated_visuals_to_provider(
             return VisionResult(
                 request_id="fixture-escalated-request",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -1465,6 +2118,359 @@ def test_visual_retry_outcome_sums_both_attempts_after_authorization(
     assert outcome.cache_hit is False
 
 
+def test_usage_ledger_visual_success_settles_and_cache_hit_is_zero_cost(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-visual-ledger"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareVisionProvider(ledger)
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        crop_bbox_pdf = (0.0, 0.0, 80.0, 80.0)
+        arguments = {
+            "provider": provider,
+            "crop_png": advisor_module._render_visual_crop(
+                document[0], crop_bbox_pdf
+            ),
+            "crop_bbox_pdf": crop_bbox_pdf,
+            "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+            "visual_observations": (visual,),
+            "text_observations": {
+                observation.observation_id: observation
+                for observation in pages[0].observations
+            },
+            "model": "qwen3-vl-plus",
+        }
+        first = advisor._visual_review_result(**arguments)
+        second = advisor._visual_review_result(**arguments)
+    finally:
+        document.close()
+
+    snapshot = ledger.snapshot()
+    assert first.cache_hit is False
+    assert second.cache_hit is True
+    assert provider.calls == 1
+    assert snapshot.reservation_count == 1
+    assert snapshot.submission_started_count == 1
+    assert snapshot.settled_count == 1
+    assert snapshot.entries[0].charged_cny == "0.000200"
+    audit_path = next(
+        (tmp_path / "storage").glob(
+            f"projects/{project_id}/provider-calls/qwen-symbol/*.json"
+        )
+    )
+    assert json.loads(audit_path.read_text(encoding="utf-8"))[
+        "estimated_cost"
+    ] == 0.0002
+
+
+def test_usage_ledger_visual_schema_retry_has_two_distinct_submissions(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-visual-ledger-retry"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareVisionProvider(ledger, schema_retry=True)
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        outcome = advisor._visual_review_result(
+            provider=provider,
+            crop_png=advisor_module._render_visual_crop(
+                document[0], (0.0, 0.0, 80.0, 80.0)
+            ),
+            crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+            source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            visual_observations=(visual,),
+            text_observations={
+                observation.observation_id: observation
+                for observation in pages[0].observations
+            },
+            model="qwen3-vl-plus",
+            allow_schema_retry=True,
+            retry_authorizer=lambda _identity, _duration: True,
+        )
+    finally:
+        document.close()
+
+    snapshot = ledger.snapshot()
+    assert outcome.retry_count == 1
+    assert provider.calls == 2
+    assert snapshot.reservation_count == 2
+    assert snapshot.submission_started_count == 2
+    assert snapshot.settled_count == 2
+    assert [entry.retry_index for entry in snapshot.entries] == [0, 1]
+    assert [entry.charged_cny for entry in snapshot.entries] == [
+        "0.000200",
+        "0.000200",
+    ]
+
+
+def test_usage_ledger_visual_classified_failure_retains_maximum(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-visual-ledger-failure"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareVisionProvider(ledger, classified_failure=True)
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        with pytest.raises(CandidateAdvisorFailure):
+            advisor._visual_review_result(
+                provider=provider,
+                crop_png=advisor_module._render_visual_crop(
+                    document[0], (0.0, 0.0, 80.0, 80.0)
+                ),
+                crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+                source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                visual_observations=(visual,),
+                text_observations={
+                    observation.observation_id: observation
+                    for observation in pages[0].observations
+                },
+                model="qwen3-vl-plus",
+            )
+    finally:
+        document.close()
+
+    snapshot = ledger.snapshot()
+    assert provider.calls == 1
+    assert snapshot.submission_started_count == 1
+    assert snapshot.settled_count == 1
+    assert snapshot.committed_total_cny == "1.763328"
+    assert snapshot.entries[0].state == "reserved_unknown"
+
+
+def test_usage_ledger_text_crop_records_one_expansion_and_settled_cost(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-text-ledger"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = LedgerAwareCandidateProvider(ledger)
+    source, pages, _snapshot = drawing_fixture(tmp_path, raw_text="M6")
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        crop = pymupdf.Rect(0.0, 0.0, 80.0, 80.0)
+        result, _, cache_hit = advisor._review_result(
+            provider=provider,
+            route=RoutedObject(
+                page_index=0,
+                source_ids=(pages[0].observations[0].observation_id,),
+                raw_text="M6",
+                expected_type="thread",
+                review_reason="fixture",
+                bbox_pdf=(10.0, 10.0, 30.0, 30.0),
+                candidate_index=0,
+                candidate_id="fixture-candidate",
+                coverage_index=0,
+                requires_confirmation=True,
+            ),
+            crop_png=advisor_module._render_crop(document[0], crop),
+            crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+            padding_pdf=2.0,
+            model="qwen3-vl-plus",
+        )
+    finally:
+        document.close()
+
+    assert result.request_id == "fixture-ledger-candidate-success"
+    assert cache_hit is False
+    snapshot = ledger.snapshot()
+    assert provider.calls == 1
+    assert snapshot.reservation_count == 1
+    assert snapshot.entries[0].subject_kind == "text_route"
+    assert snapshot.entries[0].charged_cny == "0.000200"
+    reservation = json.loads(
+        next(
+            (tmp_path / "storage" / "provider-usage-cycles").rglob(
+                "*-reserved.json"
+            )
+        ).read_text(encoding="utf-8")
+    )
+    assert reservation["crop_expansion_count"] == 1
+
+
+def test_usage_ledger_pre_sdk_crash_remains_reserved_only(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-reserved-only-crash"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    provider = ReservedOnlyCrashProvider()
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        with pytest.raises(CandidateAdvisorFailure):
+            advisor._visual_review_result(
+                provider=provider,
+                crop_png=advisor_module._render_visual_crop(
+                    document[0], (0.0, 0.0, 80.0, 80.0)
+                ),
+                crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+                source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                visual_observations=(visual,),
+                text_observations={
+                    observation.observation_id: observation
+                    for observation in pages[0].observations
+                },
+                model="qwen3-vl-plus",
+            )
+    finally:
+        document.close()
+
+    snapshot = ledger.snapshot()
+    assert provider.network_calls == 0
+    assert snapshot.reservation_count == 1
+    assert snapshot.reserved_only_count == 1
+    assert snapshot.submission_started_count == 0
+    assert snapshot.settled_count == 0
+    assert snapshot.committed_total_cny == "1.763328"
+
+
+def test_usage_ledger_cycle_budget_rejects_before_visual_provider_method(
+    tmp_path: Path,
+) -> None:
+    project_id = "project-cycle-budget-rejection"
+    ledger = open_cycle_ledger(tmp_path, project_id=project_id)
+    for index in range(28):
+        ledger.reserve(
+            provider="qwen-vl",
+            operation="review_symbols",
+            page_index=10 + index // 16,
+            subject_kind="escalation_group",
+            subject_id=f"prefill-{index:02d}",
+            retry_index=0,
+            crop_expansion_count=0,
+        )
+    provider = LedgerAwareVisionProvider(ledger)
+    source, pages, _snapshot = visual_diameter_fixture(tmp_path)
+    visual = pages[0].visual_observations[0]
+    advisor = candidate_advisor(
+        tmp_path,
+        provider,
+        project_id=project_id,
+        usage_ledger=ledger,
+    )
+    document = pymupdf.open(source)
+    try:
+        with pytest.raises(ProviderBudgetExceeded, match="cycle"):
+            advisor._visual_review_result(
+                provider=provider,
+                crop_png=advisor_module._render_visual_crop(
+                    document[0], (0.0, 0.0, 80.0, 80.0)
+                ),
+                crop_bbox_pdf=(0.0, 0.0, 80.0, 80.0),
+                source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                visual_observations=(visual,),
+                text_observations={
+                    observation.observation_id: observation
+                    for observation in pages[0].observations
+                },
+                model="qwen3-vl-plus",
+            )
+    finally:
+        document.close()
+
+    assert provider.calls == 0
+    assert ledger.snapshot().reservation_count == 28
+
+
+def test_provider_cycle_budget_terminal_persists_reservation_origin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    session = SimpleNamespace(
+        commit=lambda: None,
+        rollback=lambda: None,
+        close=lambda: None,
+    )
+
+    class RecordingEvidence:
+        def __init__(self, _session: object) -> None:
+            pass
+
+        def append_attempt(self, **kwargs: object) -> object:
+            event = kwargs["event"]
+            captured["event"] = event
+            return SimpleNamespace(event_sha256=event.event_sha256)
+
+        def canonical_attempt_sha256s(self, **_kwargs: object) -> tuple[str, ...]:
+            return (captured["event"].event_sha256,)
+
+        def record_terminal_outcome(self, **kwargs: object) -> None:
+            captured["outcome"] = kwargs["outcome"]
+
+    monkeypatch.setattr(
+        advisor_module,
+        "RoutingEvidenceRepository",
+        RecordingEvidence,
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id=str(uuid.uuid4()),
+        provider_factory=lambda _settings: object(),
+        symbol_session_factory=lambda: session,  # type: ignore[arg-type]
+        require_symbol_persistence=True,
+    )
+
+    advisor._record_project_budget_terminal(
+        context=VisualEvidenceContext(
+            escalation_group_id="provider-cycle-denied",
+            routing_decision_sha256="a" * 64,
+        ),
+        visual_observations=(
+            SimpleNamespace(observation_id="visual-budget"),
+        ),
+        cancelled=False,
+    )
+
+    event = captured["event"]
+    assert event.event_code == "not_started_budget_exhausted"
+    assert event.diagnostic == {
+        "schema_version": "visual-symbol-budget-control/1",
+        "budget_origin": "provider_cycle_reservation",
+    }
+    assert captured["outcome"].outcome_code == "budget_exhausted"
+
+
 def test_visual_retry_authorizer_denial_prevents_second_call(
     tmp_path: Path,
 ) -> None:
@@ -1708,6 +2714,9 @@ def test_production_cache_evidence_failure_is_not_labeled_as_provider(
                 escalation_group_id="a" * 64,
                 routing_decision_sha256="b" * 64,
             ),
+            production_retry_coordinator=object.__new__(
+                ProductionRetryCoordinator
+            ),
         )
 
     assert getattr(raised.value, "failure_origin", None) == "routing_evidence"
@@ -1836,7 +2845,8 @@ def test_production_visual_executor_is_bounded_and_prepares_crops_first(
                 return VisionResult(
                     request_id=f"fixture-bounded-{call_index}",
                     payload={
-                        "schema_version": "visual-symbol-review/2",
+                        "schema_version": "visual-symbol-review/3",
+                        "gdt_frames": [],
                         "detections": [],
                     },
                     usage={},
@@ -1899,7 +2909,8 @@ def test_success_terminal_refills_sliding_window_while_peer_is_blocked(
             return VisionResult(
                 request_id=f"sliding-{identity}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -1942,15 +2953,49 @@ def test_production_failure_stops_before_queued_job_provider_call(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source, pages, snapshot = three_visual_escalation_fixture(
+    source, pages, snapshot = eight_visual_escalation_fixture(
         tmp_path,
         monkeypatch,
     )
+
+    def record_blocking_failure(
+        _self: CandidateAdvisor,
+        **kwargs: object,
+    ) -> str:
+        observations = kwargs["visual_observations"]
+        observation_id = observations[0].observation_id
+        return (
+            "a" * 64
+            if observation_id == "fixture-visual-0"
+            else "b" * 64
+        )
+
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_classified_failure_terminal",
+        record_blocking_failure,
+    )
+    cancellations: list[dict[str, object]] = []
+
+    def record_cancellation(
+        _self: CandidateAdvisor,
+        **kwargs: object,
+    ) -> None:
+        cancellations.append(kwargs)
+
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_not_started_after_project_failure",
+        record_cancellation,
+        raising=False,
+    )
     observation_ids = tuple(
-        visual.observation_id for visual in pages[0].visual_observations
+        visual.observation_id
+        for page in pages
+        for visual in page.visual_observations
     )
     first_pair = threading.Barrier(2)
-    release_second = threading.Event()
+    release_first = threading.Event()
     failure_returned = threading.Event()
     third_started = threading.Event()
     calls: list[str] = []
@@ -1986,20 +3031,34 @@ def test_production_failure_stops_before_queued_job_provider_call(
                 calls.append(identity)
             if identity == observation_ids[0]:
                 first_pair.wait(timeout=3)
-                raise VisualSymbolProviderError(
-                    request_id="fixture-window-failure",
-                    usage={},
-                    failure_stage="message_shape_invalid",
+                assert release_first.wait(timeout=3)
+                raise ClassifiedProviderFailure(
+                    ProviderFailureFact(
+                        category="rate_limited",
+                        origin="sdk_http_status",
+                        http_status=429,
+                        provider_request_id="safe-window-rate-limit",
+                        request_id_state="accepted",
+                    )
                 )
             if identity == observation_ids[1]:
                 first_pair.wait(timeout=3)
-                assert release_second.wait(timeout=3)
+                raise ClassifiedProviderFailure(
+                    ProviderFailureFact(
+                        category="rate_limited",
+                        origin="sdk_http_status",
+                        http_status=429,
+                        provider_request_id="safe-window-rate-limit-peer",
+                        request_id_state="accepted",
+                    )
+                )
             if identity == observation_ids[2]:
                 third_started.set()
             return VisionResult(
                 request_id=f"success-{identity}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -2027,16 +3086,187 @@ def test_production_failure_stops_before_queued_job_provider_call(
     review_thread.start()
     assert failure_returned.wait(timeout=3)
     assert not third_started.is_set()
-    release_second.set()
+    release_first.set()
     review_thread.join(timeout=3)
 
     assert not review_thread.is_alive()
     assert len(failures) == 1
     assert isinstance(failures[0], CandidateAdvisorFailure)
-    assert str(failures[0]) == "Visual symbol Advisor response is invalid"
+    assert failures[0].failure_scope == "project_blocking"
+    assert failures[0].failure_category == "rate_limited"
+    assert failures[0].failure_event_sha256 == "a" * 64
     assert set(calls) == set(observation_ids[:2])
     assert len(calls) == 2
-    assert observation_ids[2] not in calls
+    assert not set(observation_ids[2:]).intersection(calls)
+    assert len(cancellations) == 6
+    assert {
+        item["blocking_event_sha256"] for item in cancellations
+    } == {"a" * 64}
+    assert {item["stop_reason"] for item in cancellations} == {
+        "project_blocking_provider_failure"
+    }
+    assert [
+        tuple(
+            observation.observation_id
+            for observation in item["visual_observations"]
+        )
+        for item in cancellations
+    ] == [(observation_id,) for observation_id in observation_ids[2:]]
+
+
+def test_routing_evidence_failure_wins_after_durable_failure_drains(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, snapshot = eight_visual_escalation_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    observation_ids = tuple(
+        visual.observation_id
+        for page in pages
+        for visual in page.visual_observations
+    )
+    first_pair = threading.Barrier(2)
+    calls: list[str] = []
+    cancellations: list[dict[str, object]] = []
+    classification = classify_provider_failure(
+        provider_fact_for_test("rate_limited")
+    )
+
+    def fail_submitted_jobs(
+        _self: CandidateAdvisor,
+        **kwargs: object,
+    ) -> object:
+        observations = kwargs["visual_observations"]
+        observation_id = observations[0].observation_id
+        calls.append(observation_id)
+        first_pair.wait(timeout=3)
+        if observation_id == observation_ids[0]:
+            raise CandidateAdvisorFailure(
+                "Visual symbol routing evidence write failed",
+                failure_origin="routing_evidence",
+            )
+        raise CandidateAdvisorFailure(
+            "Visual symbol Advisor call failed",
+            classification=classification,
+            failure_event_sha256="b" * 64,
+        )
+
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_visual_review_result",
+        fail_submitted_jobs,
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_not_started_after_project_failure",
+        lambda _self, **kwargs: cancellations.append(kwargs),
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id="mixed-failure-window",
+        provider_factory=lambda _settings: object(),
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as caught:
+        advisor.review(source, pages, snapshot)
+
+    assert caught.value.failure_origin == "routing_evidence"
+    assert caught.value.failure_category is None
+    assert caught.value.pipeline_cause_category is None
+    assert set(calls) == set(observation_ids[:2])
+    assert len(calls) == 2
+    assert len(cancellations) == 6
+    assert {
+        item["blocking_event_sha256"] for item in cancellations
+    } == {"b" * 64}
+    assert {item["stop_reason"] for item in cancellations} == {
+        "project_blocking_provider_failure"
+    }
+    assert [
+        tuple(
+            observation.observation_id
+            for observation in item["visual_observations"]
+        )
+        for item in cancellations
+    ] == [(observation_id,) for observation_id in observation_ids[2:]]
+
+
+def test_advisor_boundary_failure_cancels_queued_jobs_with_exact_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source, pages, snapshot = eight_visual_escalation_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    observation_ids = tuple(
+        visual.observation_id
+        for page in pages
+        for visual in page.visual_observations
+    )
+    factory_calls = 0
+    cancellations: list[dict[str, object]] = []
+
+    def fail_factory(_settings: Settings) -> object:
+        nonlocal factory_calls
+        factory_calls += 1
+        raise RuntimeError("private factory detail")
+
+    def record_blocking_failure(
+        _self: CandidateAdvisor,
+        **kwargs: object,
+    ) -> str:
+        observations = kwargs["visual_observations"]
+        return (
+            "c" * 64
+            if observations[0].observation_id == observation_ids[0]
+            else "d" * 64
+        )
+
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_classified_failure_terminal",
+        record_blocking_failure,
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_not_started_after_project_failure",
+        lambda _self, **kwargs: cancellations.append(kwargs),
+    )
+    advisor = CandidateAdvisor(
+        Settings(
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        ),
+        LocalFileStorage(tmp_path / "storage"),
+        project_id="boundary-failure-window",
+        provider_factory=fail_factory,
+    )
+
+    with pytest.raises(CandidateAdvisorFailure) as caught:
+        advisor.review(source, pages, snapshot)
+
+    assert caught.value.failure_stage == "provider_factory_failed"
+    assert caught.value.failure_scope == "project_blocking"
+    assert caught.value.failure_category is None
+    assert caught.value.failure_event_sha256 == "c" * 64
+    assert factory_calls == 2
+    assert len(cancellations) == 6
+    assert {item["stop_reason"] for item in cancellations} == {
+        "project_blocking_advisor_boundary_failure"
+    }
+    assert {
+        item["blocking_event_sha256"] for item in cancellations
+    } == {"c" * 64}
+    assert "private factory detail" not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
 
 
 def test_actual_wall_budget_stops_queued_job_with_fake_clock(
@@ -2081,7 +3311,8 @@ def test_actual_wall_budget_stops_queued_job_with_fake_clock(
             return VisionResult(
                 request_id=f"slow-{identity}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -2118,6 +3349,11 @@ def test_actual_primary_wall_blocks_retry_before_second_call(
         advisor_module.time,
         "perf_counter_ns",
         lambda: next(clock),
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_classified_failure_terminal",
+        lambda _self, **_kwargs: "e" * 64,
     )
     calls = 0
 
@@ -2199,7 +3435,8 @@ def test_production_completion_permutations_keep_planner_ordered_bytes(
                 return VisionResult(
                     request_id=f"request-{identity}",
                     payload={
-                        "schema_version": "visual-symbol-review/2",
+                        "schema_version": "visual-symbol-review/3",
+                        "gdt_frames": [],
                         "detections": [],
                     },
                     usage={},
@@ -2272,6 +3509,16 @@ def test_concurrent_schema_failures_reserve_exactly_one_project_retry(
         tmp_path,
         monkeypatch,
     )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_classified_failure_terminal",
+        lambda _self, **_kwargs: "e" * 64,
+    )
+    monkeypatch.setattr(
+        CandidateAdvisor,
+        "_record_schema_retry",
+        lambda _self, **_kwargs: ("a" * 64, "b" * 64),
+    )
     competing_ids = {
         visual.observation_id
         for visual in pages[0].visual_observations[:2]
@@ -2319,7 +3566,8 @@ def test_concurrent_schema_failures_reserve_exactly_one_project_retry(
             return VisionResult(
                 request_id=f"success-{identity}-{attempt}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={},
@@ -2865,7 +4113,7 @@ def test_visual_calls_precede_the_text_budget_remainder(tmp_path: Path) -> None:
     )
     assert visual_coverage.advisor_review == {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "symbol_kinds": [],
         "rejection_code": "visual_no_detection",
         "confidence_signal": None,
@@ -2957,7 +4205,8 @@ def test_second_visual_schema_failure_in_document_is_not_retried(
             return VisionResult(
                 request_id=f"fixture-schema-success-{self.calls}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={"total_tokens": self.calls},
@@ -3018,7 +4267,8 @@ def test_second_cached_visual_retry_chain_in_document_fails_closed(
             return VisionResult(
                 request_id=f"fixture-cached-success-{self.calls}",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={"total_tokens": self.calls},
@@ -3111,7 +4361,8 @@ def test_full_visual_page_has_no_retry_spare(
             return VisionResult(
                 request_id="fixture-no-spare-success",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={"total_tokens": 1},

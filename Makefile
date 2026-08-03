@@ -6,7 +6,7 @@ TEST_BACKEND_COMPOSE = docker compose -f compose.test.yaml
 LOCAL_API_PORT ?= 8000
 LOCAL_FRONTEND_PORT ?= 5173
 
-.PHONY: check-contracts check-api-contracts test-backend test-frontend verify-p0-offline verify-p0-live qa-dev-config qa-dev-up qa-dev-down qa-dev-down-legacy qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
+.PHONY: check-contracts check-api-contracts test-backend test-frontend verify-p0-offline verify-p0-live resume-gdt10e-live qa-dev-config qa-dev-up qa-dev-down qa-dev-down-legacy qa-dev-status qa-dev-restart-worker dev-local-api dev-local-frontend
 
 dev-local-api:
 	@$(BASE_COMPOSE) stop api >/dev/null 2>&1 || true
@@ -87,5 +87,13 @@ verify-p0-offline: check-contracts
 	@test -n "$(TASK)" || { echo "TASK is required (example: make verify-p0-offline TASK=D1-T2)" >&2; exit 2; }
 	micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py fixture --scope task --task "$(TASK)"
 
-verify-p0-live: check-contracts
-	micromamba run -n qi-p0 python .agent/harness/scripts/run-p0.py live --scope full-p0 --input-set current-four
+verify-p0-live:
+	@micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py execute-start \
+		--authorization "$${QI_LIVE_CYCLE_AUTHORIZATION_REF:?}" \
+		--override "$${QI_LIVE_CYCLE_OVERRIDE_REF:?}"
+
+resume-gdt10e-live:
+	@micromamba run -n qi-p0 python .agent/harness/scripts/live_cycle_authorization.py execute-resume \
+		--authorization "$${QI_LIVE_CYCLE_AUTHORIZATION_REF:?}" \
+		--override "$${QI_LIVE_CYCLE_OVERRIDE_REF:?}" \
+		--run-id "$${GDT10E_RUN_ID:?}"

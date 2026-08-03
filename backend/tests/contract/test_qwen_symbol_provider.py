@@ -4,13 +4,14 @@ import base64
 import hashlib
 import json
 import zlib
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import httpx
-from openai import APIConnectionError, APITimeoutError
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 from openai.types.completion_usage import CompletionUsage
 from PIL import Image
 
@@ -22,20 +23,85 @@ from app.candidates.symbol_review import (
     visual_cache_key,
     visual_review_prompt,
 )
+from app.pdf.gdt_frames import GdtCellObservation, GdtFrameObservation
 from app.pdf.schemas import TextObservation, VisualObservation
 from app.pdf.visual_observations import PROPOSAL_RULE_VERSION
 from app.providers.qwen_vl import (
     QwenVisionProvider,
     VisualSymbolInputError,
-    VisualSymbolMetadataError,
     VisualSymbolProviderError,
     canonicalize_visual_png,
     validate_visual_request_metadata,
 )
-from app.providers.base import LocalizedProviderFailure
+from app.providers.base import (
+    ClassifiedProviderFailure,
+    LocalizedProviderFailure,
+    ProviderFailureFact,
+)
+from tests.support.provider_cycle import open_cycle_ledger
 
 
 _VISUAL_TOOL_NAME = "submit_visual_symbol_review"
+
+
+def test_provider_failure_fact_rejects_inconsistent_http_metadata() -> None:
+    with pytest.raises(ValueError, match="^Provider failure fact is invalid$"):
+        ProviderFailureFact(
+            category="rate_limited",
+            origin="sdk_http_status",
+            http_status=None,
+            provider_request_id=None,
+            request_id_state="absent",
+        )
+
+
+def test_classified_provider_failure_does_not_render_private_detail() -> None:
+    fact = ProviderFailureFact(
+        category="unclassified",
+        origin="provider_boundary",
+        http_status=None,
+        provider_request_id=None,
+        request_id_state="absent",
+    )
+    error = ClassifiedProviderFailure(fact)
+
+    assert str(error) == "visual symbol Provider request failed"
+    assert error.fact is fact
+
+
+def test_classified_provider_failure_rejects_malformed_fact_safely() -> None:
+    private_marker = "private://customer/token-do-not-leak"
+    malformed = SimpleNamespace(
+        category="unclassified",
+        private_detail=private_marker,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="^Provider failure fact is invalid$",
+    ) as caught:
+        ClassifiedProviderFailure(malformed)  # type: ignore[arg-type]
+
+    assert private_marker not in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    "unsafe_id",
+    ("token-do-not-leak", "PASSWORD-value", "session.cookie"),
+)
+def test_provider_failure_fact_rejects_unsafe_accepted_request_id(
+    unsafe_id: str,
+) -> None:
+    with pytest.raises(ValueError, match="^Provider failure fact is invalid$"):
+        ProviderFailureFact(
+            category="service_failure",
+            origin="sdk_http_status",
+            http_status=503,
+            provider_request_id=unsafe_id,
+            request_id_state="accepted",
+        )
 
 
 @pytest.mark.parametrize(
@@ -143,6 +209,289 @@ def _png(
     )
 
 
+def _failing_visual_provider(error: Exception) -> QwenVisionProvider:
+    class FailingCompletions:
+        @staticmethod
+        def create(**_kwargs: object) -> object:
+            raise error
+
+    return QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(completions=FailingCompletions())
+        )
+    )
+
+
+def test_exact_cycle_qwen_adapter_requires_permit_before_sdk_submission(
+    tmp_path: Path,
+) -> None:
+    class CountingCompletions:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def create(self, **_kwargs):
+            self.calls += 1
+            raise ConnectionError("controlled transport failure")
+
+    completions = CountingCompletions()
+    provider = QwenVisionProvider(
+        SimpleNamespace(chat=SimpleNamespace(completions=completions)),
+        require_cycle_permit=True,
+    )
+    image = _png(text=None)
+
+    with pytest.raises(ValueError, match="permit"):
+        provider.review_symbols(image, "safe prompt")
+    assert completions.calls == 0
+
+    ledger = open_cycle_ledger(tmp_path, project_id="project-qwen-adapter")
+    permit = ledger.reserve(
+        provider="qwen-vl",
+        operation="review_symbols",
+        page_index=0,
+        subject_kind="escalation_group",
+        subject_id="fixture-group",
+        retry_index=0,
+        crop_expansion_count=0,
+    )
+    with pytest.raises(ClassifiedProviderFailure):
+        provider.review_symbols(
+            image,
+            "safe prompt",
+            reservation_permit=permit,
+        )
+
+    assert completions.calls == 1
+    assert ledger.snapshot().submission_started_count == 1
+    with pytest.raises(ValueError, match="permit"):
+        provider.review_symbols(
+            image,
+            "safe prompt",
+            reservation_permit=permit,
+        )
+    assert completions.calls == 1
+
+
+def test_exact_cycle_qwen_same_permit_concurrency_allows_one_sdk_call(
+    tmp_path: Path,
+) -> None:
+    class CountingCompletions:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def create(self, **_kwargs):
+            self.calls += 1
+            raise ConnectionError("controlled transport failure")
+
+    completions = CountingCompletions()
+    provider = QwenVisionProvider(
+        SimpleNamespace(chat=SimpleNamespace(completions=completions)),
+        require_cycle_permit=True,
+    )
+    ledger = open_cycle_ledger(
+        tmp_path,
+        project_id="project-qwen-concurrent-permit",
+    )
+    permit = ledger.reserve(
+        provider="qwen-vl",
+        operation="review_symbols",
+        page_index=0,
+        subject_kind="escalation_group",
+        subject_id="fixture-concurrent-group",
+        retry_index=0,
+        crop_expansion_count=0,
+    )
+
+    def invoke() -> type[BaseException]:
+        try:
+            provider.review_symbols(
+                _png(text=None),
+                "safe prompt",
+                reservation_permit=permit,
+            )
+        except BaseException as exc:  # asserted below
+            return type(exc)
+        raise AssertionError("controlled Provider call unexpectedly succeeded")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        failures = tuple(executor.map(lambda _index: invoke(), range(2)))
+
+    assert set(failures) == {ClassifiedProviderFailure, ValueError}
+    assert completions.calls == 1
+    assert ledger.snapshot().submission_started_count == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "category"),
+    (
+        (401, "authentication"),
+        (403, "authentication"),
+        (408, "timeout"),
+        (429, "rate_limited"),
+        (500, "service_failure"),
+        (503, "service_failure"),
+        (400, "request_rejected"),
+        (422, "request_rejected"),
+    ),
+)
+def test_review_symbols_classifies_http_status_without_private_detail(
+    status: int,
+    category: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    marker = "private://customer/token-do-not-leak"
+    response = httpx.Response(
+        status,
+        request=httpx.Request("POST", "https://private.invalid/v1"),
+        headers={"x-request-id": "safe-status-request"},
+    )
+    provider_error = APIStatusError(
+        marker,
+        response=response,
+        body={"detail": marker},
+    )
+
+    with pytest.raises(ClassifiedProviderFailure) as caught:
+        _failing_visual_provider(provider_error).review_symbols(
+            _png(text=None),
+            "safe prompt",
+        )
+
+    assert caught.value.fact.category == category
+    assert caught.value.fact.origin == "sdk_http_status"
+    assert caught.value.fact.http_status == status
+    assert caught.value.fact.provider_request_id == "safe-status-request"
+    assert caught.value.fact.request_id_state == "accepted"
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value.fact)
+    assert marker not in caplog.text
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "category", "origin"),
+    (
+        (
+            APITimeoutError(
+                request=httpx.Request("POST", "https://private.invalid/v1")
+            ),
+            "timeout",
+            "sdk_timeout",
+        ),
+        (
+            APIConnectionError(
+                request=httpx.Request("POST", "https://private.invalid/v1")
+            ),
+            "transport",
+            "sdk_connection",
+        ),
+    ),
+)
+def test_review_symbols_classifies_timeout_and_connection_without_raw_chain(
+    provider_error: Exception,
+    category: str,
+    origin: str,
+) -> None:
+    with pytest.raises(ClassifiedProviderFailure) as caught:
+        _failing_visual_provider(provider_error).review_symbols(
+            _png(text=None),
+            "safe prompt",
+        )
+
+    assert caught.value.fact.category == category
+    assert caught.value.fact.origin == origin
+    assert caught.value.fact.http_status is None
+    assert caught.value.fact.provider_request_id is None
+    assert caught.value.fact.request_id_state == "absent"
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    ("request_id", "usage", "request_id_state", "provider_request_id"),
+    (
+        (None, {"total_tokens": 4}, "absent", None),
+        ("token-do-not-leak", {"total_tokens": 4}, "rejected", None),
+        ("safe-metadata-request", {"total_tokens": -1}, "accepted", "safe-metadata-request"),
+    ),
+)
+def test_review_symbols_classifies_metadata_failure_without_private_detail(
+    request_id: object,
+    usage: object,
+    request_id_state: str,
+    provider_request_id: str | None,
+) -> None:
+    marker = "private metadata detail"
+
+    class InvalidMetadataCompletions:
+        @staticmethod
+        def create(**_kwargs: object) -> object:
+            return SimpleNamespace(
+                id=request_id,
+                choices=marker,
+                usage=usage,
+            )
+
+    provider = QwenVisionProvider(
+        SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=InvalidMetadataCompletions()
+            )
+        )
+    )
+    with pytest.raises(ClassifiedProviderFailure) as caught:
+        provider.review_symbols(_png(text=None), "safe prompt")
+
+    assert caught.value.fact.category == "metadata_invalid"
+    assert caught.value.fact.origin == "response_metadata"
+    assert caught.value.fact.http_status is None
+    assert caught.value.fact.request_id_state == request_id_state
+    assert caught.value.fact.provider_request_id == provider_request_id
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value.fact)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+def test_review_symbols_classifies_unknown_failure_without_private_detail() -> None:
+    marker = "private://customer/PASSWORD-value"
+
+    with pytest.raises(ClassifiedProviderFailure) as caught:
+        _failing_visual_provider(RuntimeError(marker)).review_symbols(
+            _png(text=None),
+            "safe prompt",
+        )
+
+    assert caught.value.fact == ProviderFailureFact(
+        category="unclassified",
+        origin="provider_boundary",
+        http_status=None,
+        provider_request_id=None,
+        request_id_state="absent",
+    )
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value.fact)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+def test_visual_symbol_schema_error_preserves_safe_provider_fact() -> None:
+    error = VisualSymbolProviderError(
+        request_id="safe-schema-request",
+        usage={"total_tokens": 4},
+        failure_stage="tool_arguments_schema_invalid",
+    )
+
+    assert error.fact == ProviderFailureFact(
+        category="schema",
+        origin="response_schema",
+        http_status=None,
+        provider_request_id="safe-schema-request",
+        request_id_state="accepted",
+    )
+
+
 def _text_observation(
     observation_id: str,
     raw_text: str,
@@ -215,9 +564,10 @@ def test_qwen_visual_symbol_sampling_temperature_is_pinned_to_zero() -> None:
                                     json.dumps(
                                         {
                                             "schema_version": (
-                                                "visual-symbol-review/2"
+                                                "visual-symbol-review/3"
                                             ),
                                             "detections": [],
+                                            "gdt_frames": [],
                                         }
                                     )
                                 )
@@ -246,7 +596,7 @@ def test_qwen_visual_symbol_sampling_temperature_is_pinned_to_zero() -> None:
         for key, value in completions.calls[0].items()
         if key in sampling_keys
     } == {"temperature": 0}
-    assert VISUAL_SCHEMA_VERSION == "visual-symbol-review/2"
+    assert VISUAL_SCHEMA_VERSION == "visual-symbol-review/3"
 
 
 def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
@@ -255,8 +605,9 @@ def test_qwen_visual_symbol_failure_stage_enum_is_exhaustive_and_redacted(
 ) -> None:
     valid_arguments = json.dumps(
         {
-            "schema_version": "visual-symbol-review/2",
+            "schema_version": "visual-symbol-review/3",
             "detections": [],
+            "gdt_frames": [],
         }
     )
     private_marker = "private-marker-provider-response"
@@ -536,11 +887,7 @@ def test_qwen_localized_failures_expose_sanitized_stable_categories(
         failure = exc
 
     assert failure is not None
-    category = getattr(
-        failure,
-        "failure_category",
-        getattr(failure, "category", None),
-    )
+    category = failure.fact.category
     assert category == expected_category
     assert private_marker not in str(failure)
     assert private_marker not in repr(vars(failure))
@@ -550,7 +897,7 @@ def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
     private_marker = "private-marker-provider-response"
     arguments = json.dumps(
         {
-            "schema_version": "visual-symbol-review/2",
+            "schema_version": "visual-symbol-review/3",
             "detections": [
                 {
                     "visual_observation_id": "visual-001",
@@ -559,6 +906,7 @@ def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
                     "confidence_signal": 0.98,
                 }
             ],
+            "gdt_frames": [],
         }
     )
 
@@ -598,8 +946,8 @@ def test_qwen_schema_failure_exposes_only_hashed_safe_diagnostic() -> None:
             "instance_type": "object",
             "required_member": "symbol_kind",
             "schema_sha256": (
-                "8f331090b210d1057e4da36cd9b61b82"
-                "c9b07f5a308f29d07ca999f9ffc92b66"
+                "cb4ee4ce69568b863dd8a2b5b1e96112"
+                "59b2284fe47859f83246f8b6fb39767a"
             ),
         },
     }
@@ -647,8 +995,9 @@ def test_qwen_native_integer_bbox_is_normalized_before_strict_schema() -> None:
         "confidence_signal": 0.98,
     }
     canonical = {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "detections": [canonical_detection],
+        "gdt_frames": [],
     }
     assert (
         provider_for(canonical).review_symbols(image, "safe prompt").payload
@@ -672,10 +1021,11 @@ def test_qwen_native_integer_bbox_is_normalized_before_strict_schema() -> None:
 
 def test_qwen_missing_structural_schema_version_is_normalized() -> None:
     canonical = {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "detections": [],
+        "gdt_frames": [],
     }
-    qwen_native = {"detections": []}
+    qwen_native = {"detections": [], "gdt_frames": []}
 
     class FixedCompletions:
         @staticmethod
@@ -768,7 +1118,7 @@ def test_qwen_native_bbox_normalization_rejects_other_invalid_forms(
     bbox: list[object],
 ) -> None:
     payload = {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "detections": [
             {
                 "visual_observation_id": "visual-001",
@@ -778,6 +1128,7 @@ def test_qwen_native_bbox_normalization_rejects_other_invalid_forms(
                 "confidence_signal": 0.98,
             }
         ],
+        "gdt_frames": [],
     }
 
     class InvalidCompletions:
@@ -855,6 +1206,63 @@ def test_visual_prompt_requires_independent_exact_multikind_reporting() -> None:
     ]
 
 
+def test_visual_prompt_includes_ordered_gdt_frame_context() -> None:
+    frame = GdtFrameObservation(
+        observation_id="frame-a",
+        page_index=0,
+        bbox_pdf=(20.0, 40.0, 90.0, 60.0),
+        bbox_normalized=(0.2, 0.4, 0.9, 0.6),
+        cells=(
+            GdtCellObservation(0, (20.0, 40.0, 40.0, 60.0), (0.2, 0.4, 0.4, 0.6)),
+            GdtCellObservation(1, (40.0, 40.0, 65.0, 60.0), (0.4, 0.4, 0.65, 0.6)),
+            GdtCellObservation(2, (65.0, 40.0, 90.0, 60.0), (0.65, 0.4, 0.9, 0.6)),
+        ),
+        associated_text_observation_ids=("text-line-001",),
+        proposal_source="native_vector",
+        proposal_state="complete",
+        geometry_sha256="a" * 64,
+    )
+    prompt = json.loads(
+        visual_review_prompt(
+            (
+                _visual_observation(
+                    "visual-frame-a",
+                    (20.0, 40.0, 90.0, 60.0),
+                    ("text-line-001",),
+                ),
+            ),
+            text_observations={
+                "text-line-001": _text_observation(
+                    "text-line-001",
+                    "0.1 A",
+                    observation_level="line",
+                )
+            },
+            crop_bbox_pdf=(10.0, 20.0, 110.0, 120.0),
+            gdt_frames=(frame,),
+        )
+    )
+
+    assert prompt["gdt_frame_contexts"] == [
+        {
+            "frame_observation_id": "frame-a",
+            "frame_bbox_normalized": [0.1, 0.2, 0.8, 0.4],
+            "cells": [
+                {"cell_index": 0, "bbox_normalized": [0.1, 0.2, 0.3, 0.4]},
+                {"cell_index": 1, "bbox_normalized": [0.3, 0.2, 0.55, 0.4]},
+                {"cell_index": 2, "bbox_normalized": [0.55, 0.2, 0.8, 0.4]},
+            ],
+            "associated_text_allowlist": [
+                {
+                    "observation_id": "text-line-001",
+                    "observation_level": "line",
+                    "raw_text": "0.1 A",
+                }
+            ],
+        }
+    ]
+
+
 def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     """PROV-01: the visual request and every cache identity dimension are frozen."""
     fixture = json.loads(
@@ -865,6 +1273,17 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         ).read_text(encoding="utf-8")
     )
     qwen_symbol_fixture = fixture["payload"]
+    fixture_response = json.loads(qwen_symbol_fixture["arguments"])
+    fixture_response["schema_version"] = VISUAL_SCHEMA_VERSION
+    fixture_response["gdt_frames"] = []
+    qwen_symbol_fixture = {
+        **qwen_symbol_fixture,
+        "arguments": json.dumps(
+            fixture_response,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    }
     assert (
         fixture["adapter_version"]
         == VISUAL_ADAPTER_VERSION
@@ -945,7 +1364,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
     expected_prompt = {
         "task": "review_local_engineering_drawing_symbol_contexts",
         "prompt_version": "visual-symbol-prompt/4",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "visual_observation_ids": ["visual-001", "visual-002"],
         "visual_contexts": [
             {
@@ -976,6 +1395,7 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                 ],
             },
         ],
+        "gdt_frame_contexts": [],
         "symbol_kind_guide": {
             "diameter": "Φ/∅/⌀ beside a size value",
             "depth": "depth symbol beside a depth value",
@@ -1016,6 +1436,8 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
                 "use_only_associated_text_observation_ids_from_the_matching_"
                 "visual_context"
             ),
+            "emit_empty_gdt_frames_when_no_frame_is_present",
+            "use_only_ordered_gdt_frame_cells_and_allowlisted_text_ids",
             "detection_bbox_normalized_is_relative_to_the_entire_crop",
             "detection_bbox_must_have_positive_width_and_height",
             "prefer_line_level_text_when_line_and_span_duplicate_raw_text",
@@ -1342,13 +1764,20 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         "secret-request-id",
     ):
         with pytest.raises(
-            VisualSymbolMetadataError,
-            match="^visual symbol response metadata is invalid$",
+            ClassifiedProviderFailure,
+            match="^visual symbol Provider request failed$",
         ) as metadata_error:
             metadata_provider(
                 unsafe_request_id,
                 {"total_tokens": 4},
             ).review_symbols(image, prompt)
+        assert metadata_error.value.fact == ProviderFailureFact(
+            category="metadata_invalid",
+            origin="response_metadata",
+            http_status=None,
+            provider_request_id=None,
+            request_id_state="rejected",
+        )
         assert unsafe_request_id not in str(metadata_error.value)
 
     for unsafe_usage in (
@@ -1358,13 +1787,20 @@ def test_qwen_visual_symbol_schema_and_cache_identity() -> None:
         {"total_tokens": "1"},
     ):
         with pytest.raises(
-            VisualSymbolMetadataError,
-            match="^visual symbol response metadata is invalid$",
+            ClassifiedProviderFailure,
+            match="^visual symbol Provider request failed$",
         ) as metadata_error:
             metadata_provider(
                 "fixture-safe-request-id",
                 unsafe_usage,
             ).review_symbols(image, prompt)
+        assert metadata_error.value.fact == ProviderFailureFact(
+            category="metadata_invalid",
+            origin="response_metadata",
+            http_status=None,
+            provider_request_id="fixture-safe-request-id",
+            request_id_state="accepted",
+        )
         assert not any(
             key in str(metadata_error.value)
             for key in unsafe_usage

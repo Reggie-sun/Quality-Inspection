@@ -64,7 +64,13 @@ def _draw_target_symbol(
         shape.draw_line((x + 10.0, y - 7.0), (x + 17.0, y - 7.0))
         bbox = (x + 1.0, y - 7.0, x + 17.0, y + 7.0)
     elif symbol_kind.startswith("gdt_"):
-        shape.draw_rect(pymupdf.Rect(x, y - 8.0, x + 20.0, y + 8.0))
+        cell_count = 2 if symbol_kind == "gdt_flatness" else 3
+        cell_width = 24.0 if cell_count == 2 else 16.0
+        frame_right = x + cell_count * cell_width
+        shape.draw_rect(pymupdf.Rect(x, y - 8.0, frame_right, y + 8.0))
+        for cell_index in range(1, cell_count):
+            separator_x = x + cell_index * cell_width
+            shape.draw_line((separator_x, y - 8.0), (separator_x, y + 8.0))
         if symbol_kind == "gdt_parallelism":
             shape.draw_line((x + 7.0, y - 5.0), (x + 7.0, y + 5.0))
             shape.draw_line((x + 12.0, y - 5.0), (x + 12.0, y + 5.0))
@@ -75,7 +81,7 @@ def _draw_target_symbol(
             shape.draw_line((x + 4.0, y - 1.0), (x + 8.0, y - 3.0))
             shape.draw_line((x + 8.0, y - 3.0), (x + 13.0, y - 1.0))
             shape.draw_line((x + 13.0, y - 1.0), (x + 16.0, y - 3.0))
-        bbox = (x, y - 8.0, x + 20.0, y + 8.0)
+        bbox = (x, y - 8.0, frame_right, y + 8.0)
     elif symbol_kind == "datum_reference":
         shape.draw_rect(pymupdf.Rect(x, y - 8.0, x + 18.0, y + 8.0))
         shape.draw_line((x + 9.0, y + 8.0), (x + 9.0, y + 14.0))
@@ -153,7 +159,14 @@ def _positive_label(
         x=70.0,
         baseline=baseline,
     )
-    text_x = 75.0 if symbol_kind in {"datum_reference", "revision_marker"} else 94.0
+    if symbol_kind in {"datum_reference", "revision_marker"}:
+        text_x = 75.0
+    elif symbol_kind == "gdt_flatness":
+        text_x = 108.0
+    elif symbol_kind.startswith("gdt_"):
+        text_x = 96.0
+    else:
+        text_x = 94.0
     _insert_native_text(page, point=(text_x, baseline), text=token)
     return {
         "label_id": f"P{page_index + 1}-POS-{label_index:02d}",
@@ -213,7 +226,7 @@ def _populate_page(
             ("counterbore", 260.0, "22 6", "composite"),
             ("surface_roughness", 310.0, "3.2", "roughness"),
             ("surface_roughness", 360.0, "1.6", "roughness"),
-            ("gdt_parallelism", 410.0, "0.1 A", "geometric_tolerance"),
+            ("gdt_parallelism", 430.0, "0.1 A", "geometric_tolerance"),
             ("datum_reference", 460.0, "A", None),
             ("revision_marker", 510.0, "1", None),
         )

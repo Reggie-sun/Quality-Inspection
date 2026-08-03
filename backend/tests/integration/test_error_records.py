@@ -19,6 +19,7 @@ from app.processing.pipeline import InventoryPipeline, UnsupportedInput
 from app.processing.runtime_recognition import RuntimeRecognition
 from app.projects.models import Project
 from app.projects.state import ProjectState
+from app.providers.base import OcrResult
 from app.storage.local import LocalFileStorage
 
 
@@ -214,15 +215,24 @@ def test_runtime_pure_scan_retains_unsupported_input_veto(
         payload,
         sha256(payload).hexdigest(),
     )
-    provider_calls: list[str] = []
+    provider_factory_calls: list[str] = []
+    ocr_calls: list[int] = []
 
-    def forbidden_provider_factory(_settings: Settings):
-        provider_calls.append("provider")
-        raise AssertionError("pure scanned input must not invoke OCR")
+    class EmptyOcrProvider:
+        def recognize_png(self, image: bytes) -> OcrResult:
+            ocr_calls.append(len(image))
+            return OcrResult(
+                request_id="fixture-pure-scan-ocr",
+                observations=(),
+            )
+
+    def provider_factory(_settings: Settings) -> EmptyOcrProvider:
+        provider_factory_calls.append("provider")
+        return EmptyOcrProvider()
 
     recognition = RuntimeRecognition(
         Settings(storage_root=storage.root),
-        provider_factory=forbidden_provider_factory,
+        provider_factory=provider_factory,
     )
     try:
         db_session.add(project)
@@ -249,7 +259,8 @@ def test_runtime_pure_scan_retains_unsupported_input_veto(
         )
         assert error is not None
         assert error.code == "unsupported_input"
-        assert provider_calls == []
+        assert provider_factory_calls == ["provider"]
+        assert ocr_calls
     finally:
         db_session.rollback()
         db_session.execute(delete(ErrorRecord).where(ErrorRecord.project_id == project.id))

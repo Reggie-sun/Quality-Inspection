@@ -399,6 +399,7 @@ def test_build_inventory_no_match_keeps_previous_serialized_shape(
 
     assert page.layout_profile_match is None
     assert "layout_profile_match" not in page.to_dict()
+    assert "gdt_frame_observations" not in page.to_dict()
 
 
 def test_inventory_storage_persists_additive_layout_sidecar(tmp_path: Path) -> None:
@@ -427,11 +428,12 @@ def test_inventory_storage_persists_additive_layout_sidecar(tmp_path: Path) -> N
     )
     payload = json.loads(storage.read_bytes(resource_ref))
 
-    assert payload["schema_version"] == "page-inventory/1"
+    assert payload["schema_version"] == "page-inventory/2"
     assert payload["pages"][0]["layout_profile_match"]["profile_id"] == (
         "welli-a4-portrait/1"
     )
     assert "drawings" not in payload["pages"][0]
+    assert "gdt_frame_observations" not in payload["pages"][0]
 
 
 def test_inventory_preserves_pymupdf_cropbox_local_bbox(tmp_path: Path) -> None:

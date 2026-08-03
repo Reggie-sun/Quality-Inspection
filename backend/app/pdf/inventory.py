@@ -11,6 +11,7 @@ import pymupdf
 
 from app.pdf.classification import PageSignals, classify_page
 from app.pdf.coordinates import BBox, PageTransform
+from app.pdf.gdt_frames import build_page_gdt_frame_observations
 from app.pdf.layout_profiles import match_welli_layout_profile
 from app.pdf.schemas import PageInventory, TextObservation
 from app.pdf.visual_observations import build_page_visual_observations
@@ -181,6 +182,16 @@ def build_inventory(
                 drawings=drawings,
                 transform=transform,
             )
+            gdt_frame_observations = build_page_gdt_frame_observations(
+                page_index=page_index,
+                page_width=transform.width,
+                page_height=transform.height,
+                source_sha256=source_sha256,
+                text_observations=tuple(observations),
+                drawings=drawings,
+                transform=transform,
+                layout_profile_match=layout_profile_match,
+            )
             pages.append(
                 PageInventory(
                     page_index=page_index,
@@ -199,6 +210,7 @@ def build_inventory(
                     render_to_pdf_matrix=transform.render_to_pdf_matrix,
                     observations=tuple(observations),
                     visual_observations=visual_observations,
+                    gdt_frame_observations=gdt_frame_observations,
                     layout_profile_match=layout_profile_match,
                 )
             )

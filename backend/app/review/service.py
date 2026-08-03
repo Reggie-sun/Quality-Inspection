@@ -15,6 +15,7 @@ from app.candidates.confidence import (
     ConfidenceDecisionContractError,
     validate_confidence_decision,
 )
+from app.candidates.geometric_tolerance import GeometricToleranceCandidate
 from app.candidates.models import AutomaticResult
 from app.candidates.schemas import Candidate, stable_candidate_id
 from app.config import get_settings
@@ -25,6 +26,7 @@ from app.review.models import ReviewedResult, ReviewWorkingCopy
 from app.review.schemas import (
     Add,
     Edit,
+    EditGeometricTolerance,
     Exclude,
     GenerateSipTable,
     IgnoreSource,
@@ -86,6 +88,13 @@ _COORDINATES = TypeAdapter(tuple[float, float, float, float])
 _COARSE_TYPE = TypeAdapter(CoarseType)
 _SIP_DETAIL_CONFIRMED = "sip_detail_fields_confirmed"
 _DEFAULT_SOURCE_DISPOSITION_RULE_VERSION = "review-source-default/1"
+_LOCALIZED_PROVIDER_FAILURE_STAGES = frozenset(
+    {
+        "provider_timeout",
+        "provider_transport_failure",
+        "provider_schema_invalid",
+    }
+)
 
 
 def manual_review_count(
@@ -494,7 +503,7 @@ class ReviewService:
             ],
             balloons=[balloon.snapshot() for balloon in balloons],
             sip_metadata=sip_metadata,
-            schema_version="reviewed-result/2",
+            schema_version="reviewed-result/3",
         )
         self.session.add(reviewed)
         self.session.flush()
@@ -533,6 +542,14 @@ class ReviewService:
         payload = copy.deepcopy(candidate["payload"])
         payload.pop("candidate_id", None)
         payload.pop("confidence_decision", None)
+        if (
+            raw_schema_version == "automatic-result/2"
+            and payload.get("coarse_type") == "geometric_tolerance"
+        ):
+            raise ValueError(
+                "legacy geometric tolerance payload requires migration to "
+                "automatic-result/3"
+            )
         validated_decision = None
         if raw_schema_version == "automatic-result/2":
             try:
@@ -603,6 +620,25 @@ class ReviewService:
                     "rejection_code",
                 }
                 active_fields = {*legacy_fields, "confidence_signal"}
+                failure_fields = {
+                    "route",
+                    "schema_version",
+                    "failure_stage",
+                }
+                persisted_failure_stage = entry.get("failure_stage")
+                localized_failure_stage = (
+                    persisted_failure_stage
+                    if (
+                        advisor_review is None
+                        and isinstance(persisted_failure_stage, str)
+                        and persisted_failure_stage
+                        in _LOCALIZED_PROVIDER_FAILURE_STAGES
+                        and entry.get("disposition") == "ambiguous"
+                        and entry.get("requires_confirmation") is True
+                        and ReviewService._valid_source_only_entry(entry)
+                    )
+                    else None
+                )
                 if (
                     isinstance(advisor_review, dict)
                     and (
@@ -614,7 +650,7 @@ class ReviewService:
                         or (
                             set(advisor_review) == active_fields
                             and advisor_review.get("schema_version")
-                            == "visual-symbol-review/2"
+                            == "visual-symbol-review/3"
                         )
                     )
                     and advisor_review.get("route") == "visual_symbol"
@@ -634,9 +670,22 @@ class ReviewService:
                         str,
                     ):
                         entry["rejection_code"] = rejection_code
+                elif (
+                    isinstance(advisor_review, dict)
+                    and set(advisor_review) == failure_fields
+                    and advisor_review.get("route") == "visual_symbol"
+                    and advisor_review.get("schema_version")
+                    == "visual-symbol-review/3"
+                    and isinstance(advisor_review.get("failure_stage"), str)
+                    and advisor_review["failure_stage"]
+                    in _LOCALIZED_PROVIDER_FAILURE_STAGES
+                ):
+                    localized_failure_stage = advisor_review["failure_stage"]
+                    entry["failure_stage"] = localized_failure_stage
                 entry.pop("advisor_review", None)
                 if (
-                    entry.get("requires_confirmation") is True
+                    localized_failure_stage is None
+                    and entry.get("requires_confirmation") is True
                     and ReviewService._valid_source_only_entry(entry)
                     and entry.get("source_location_id")
                     not in technical_requirement_source_ids
@@ -686,6 +735,14 @@ class ReviewService:
             self._clear_sip_detail_fields(item)
             self._complete_manual_item(item, coverage, accepted=True)
             return [command.item_id], numbering_stale or "coordinates" in command.fields
+        if isinstance(command, EditGeometricTolerance):
+            item = self._active_item(items, command.item_id)
+            self._edit_geometric_tolerance(item, command)
+            self._clear_sip_detail_fields(item)
+            item.pop("confidence_decision", None)
+            self._complete_manual_item(item, coverage, accepted=True)
+            item["acceptance_source"] = "manual"
+            return [command.item_id], numbering_stale
         if isinstance(command, Add):
             item_id = str(uuid.uuid4())
             source_location_ids = (
@@ -1460,6 +1517,44 @@ class ReviewService:
             ).model_dump(mode="json")
             validated = {key: validated_candidate[key] for key in fields}
         item.update(validated)
+        item["source_type"] = "manual"
+
+    @staticmethod
+    def _edit_geometric_tolerance(
+        item: dict[str, Any],
+        command: EditGeometricTolerance,
+    ) -> None:
+        if item.get("item_type") != "geometric_tolerance":
+            raise ValueError(
+                "edit_geometric_tolerance requires a geometric tolerance item"
+            )
+        evidence_ref = item.get("evidence_ref")
+        if not isinstance(evidence_ref, str) or not evidence_ref.strip():
+            raise ValueError("geometric tolerance item is missing evidence_ref")
+        source_location_ids = item.get("source_location_ids", [])
+        if not isinstance(source_location_ids, list) or not all(
+            isinstance(source_id, str) and source_id.strip()
+            for source_id in source_location_ids
+        ):
+            raise ValueError("geometric tolerance item has invalid source IDs")
+        coordinates = _COORDINATES.validate_python(item.get("coordinates"))
+        updated = GeometricToleranceCandidate.from_frames(
+            candidate_id=str(item["item_id"]),
+            raw_text=str(item.get("raw_text", "")),
+            tolerance_type=command.tolerance_type,
+            frames=command.frames,
+            coordinates=coordinates,
+            source_location_ids=tuple(source_location_ids),
+            evidence_ref=evidence_ref,
+            standard_context=command.standard_context,
+        ).model_dump(
+            mode="json",
+            exclude={"candidate_id", "source_location_ids"},
+        )
+        preserved = copy.deepcopy(item)
+        item.clear()
+        item.update(preserved)
+        item.update(updated)
         item["source_type"] = "manual"
 
     @staticmethod

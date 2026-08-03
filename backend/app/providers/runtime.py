@@ -30,7 +30,12 @@ def build_ocr_provider(settings: Settings) -> OcrProvider:
         )
     credential = tencent_credential.Credential(secret_id, secret_key)
     client = ocr_client.OcrClient(credential, region)
-    return TencentOcrProvider(client)
+    return TencentOcrProvider(
+        client,
+        require_cycle_permit=(
+            settings.provider_cycle_authorization_id is not None
+        ),
+    )
 
 
 def build_vision_provider(settings: Settings) -> VisionLlmProvider:
@@ -55,4 +60,10 @@ def build_vision_provider(settings: Settings) -> VisionLlmProvider:
         timeout=60.0,
         max_retries=0,
     )
-    return QwenVisionProvider(client, model=model)
+    return QwenVisionProvider(
+        client,
+        model=model,
+        require_cycle_permit=(
+            settings.provider_cycle_authorization_id is not None
+        ),
+    )
