@@ -159,6 +159,13 @@ def test_api_and_worker_bind_mount_the_current_backend_source() -> None:
         ]
 
 
+def test_api_reloads_when_mounted_backend_source_changes() -> None:
+    """The development API process must watch its bind-mounted source."""
+    api_command = _rendered_compose_config()["services"]["api"]["command"]
+
+    assert "--reload" in api_command
+
+
 def test_compose_project_and_data_volumes_are_worktree_scoped() -> None:
     """Default Compose resources must not share one fixed cross-worktree owner."""
     source = yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))
