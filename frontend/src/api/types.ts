@@ -78,10 +78,29 @@ export type PdfDocumentLike = {
 export type CandidateType =
   components["schemas"]["Add"]["item_type"];
 
+export type GeometricToleranceReviewItem =
+  components["schemas"]["GeometricToleranceReviewItem"];
+export type GeometricToleranceReviewFrame =
+  components["schemas"]["GeometricToleranceReviewFrame"];
+export type GeometricToleranceReviewSegment =
+  components["schemas"]["GeometricToleranceReviewSegment"];
+export type GdtFrame = components["schemas"]["GdtFrame"];
+export type GdtSegment = components["schemas"]["GdtSegment"];
+export type GdtDatumReference = components["schemas"]["DatumReference"];
+export type GdtModifier = components["schemas"]["GdtModifier"];
+export type GeometricToleranceReviewDatumReference =
+  components["schemas"]["GeometricToleranceReviewDatumReference"];
+export type GeometricToleranceReviewModifier =
+  components["schemas"]["GeometricToleranceReviewModifier"];
+export type GeometricToleranceType =
+  GeometricToleranceReviewItem["tolerance_type"];
+export type EditGeometricTolerance =
+  components["schemas"]["EditGeometricTolerance"];
+
 export type ReviewItem = {
   item_id: string;
   raw_text: string;
-  item_type?: CandidateType;
+  item_type?: CandidateType | "geometric_tolerance";
   coarse_type?: string;
   coordinates?: PdfCoordinates | null;
   scope?: "local_feature" | "global_requirement";
@@ -113,6 +132,18 @@ export type ReviewItem = {
   technical_requirement_refs?: string[];
   sip_suggestion_provenance?: Record<string, string>;
   confidence_decision?: ConfidenceDecision;
+  schema_version?: "geometric-tolerance-candidate/1";
+  normalized_text?: string | null;
+  tolerance_type?: GeometricToleranceType;
+  tolerance_symbol?: string | null;
+  tolerance_value?: string | null;
+  diameter_modifier?: boolean;
+  modifiers?: GeometricToleranceReviewModifier[];
+  datum_references?: GeometricToleranceReviewDatumReference[];
+  frames?: GeometricToleranceReviewFrame[];
+  standard_context?: "unspecified";
+  evidence_ref?: string;
+  source_type?: "automatic" | "manual";
   acceptance_source?:
     | "confidence_policy"
     | "manual"

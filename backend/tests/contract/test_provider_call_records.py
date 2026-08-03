@@ -11,6 +11,7 @@ import pytest
 
 from app.providers.call_records import (
     ProviderCallRecord,
+    bind_authorized_cycle_cost,
     persist_call_record,
     serialize_call_record,
 )
@@ -175,6 +176,37 @@ def test_unknown_pricing_is_serialized_as_null() -> None:
     assert payload["estimated_cost"] is None
 
 
+def test_authorized_cycle_cost_binds_exact_ledger_decimal() -> None:
+    record = bind_authorized_cycle_cost(
+        replace(_record(), estimated_cost=None),
+        charged_cny="0.049169",
+    )
+
+    assert record.estimated_cost == 0.049169
+    assert str(record.estimated_cost) == "0.049169"
+
+
+@pytest.mark.parametrize(
+    ("existing", "charged"),
+    (
+        (0.5, "0.049169"),
+        (None, "NaN"),
+        (None, "-0.000001"),
+        (None, "0.0000001"),
+        (None, 0.5),
+    ),
+)
+def test_authorized_cycle_cost_rejects_mismatch_or_invalid_amount(
+    existing,
+    charged,
+) -> None:
+    with pytest.raises(ValueError, match="authorized cycle cost"):
+        bind_authorized_cycle_cost(
+            replace(_record(), estimated_cost=existing),
+            charged_cny=charged,
+        )
+
+
 @pytest.mark.parametrize(
     "forbidden",
     (
@@ -236,7 +268,8 @@ def test_visual_schema_failure_retries_once_with_same_input_and_safe_audits(
             return VisionResult(
                 request_id="fixture-retry-success",
                 payload={
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
+                    "gdt_frames": [],
                     "detections": [],
                 },
                 usage={"total_tokens": 12},
@@ -481,8 +514,9 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
                                         arguments=json.dumps(
                                             {
                                                 "schema_version": (
-                                                    "visual-symbol-review/2"
+                                                    "visual-symbol-review/3"
                                                 ),
+                                                "gdt_frames": [],
                                                 "detections": [],
                                             }
                                         ),
@@ -607,7 +641,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         success_request["crop_sha256"]
     )
     assert success_response == {
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
+        "gdt_frames": [],
         "detections": [],
     }
     assert Path(success_record["response_ref"]).name == (
@@ -733,7 +768,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
             response_path.write_text(
                 json.dumps(
                     {
-                        "schema_version": "visual-symbol-review/2",
+                        "schema_version": "visual-symbol-review/3",
+                        "gdt_frames": [],
                         "detections": [
                             {
                                 "visual_observation_id": "visual-001",
@@ -807,7 +843,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         VisionResult(
             request_id="secret-request-id",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [],
             },
             usage={"total_tokens": 1},
@@ -815,7 +852,8 @@ def test_qwen_visual_symbol_records_are_redacted_on_success_and_failure(
         VisionResult(
             request_id="fixture-safe-request-id",
             payload={
-                "schema_version": "visual-symbol-review/2",
+                "schema_version": "visual-symbol-review/3",
+                "gdt_frames": [],
                 "detections": [],
             },
             usage={"api_key": 1},

@@ -17,5 +17,5 @@ export function saveWorkingCopy(
     `/api/v1/projects/${projectId}/review/commands`,
     { expected_version: expectedVersion, command },
     { "X-QI-Operator": operatorId },
-  ).then((transport) => transport as ReviewWorkingCopyView);
+  ).then((transport) => transport as unknown as ReviewWorkingCopyView);
 }

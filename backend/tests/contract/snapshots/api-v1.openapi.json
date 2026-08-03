@@ -265,6 +265,338 @@
         "title": "Body_QI-API-PRJ-001",
         "type": "object"
       },
+      "CoarseReviewItem": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acceptance Source"
+          },
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "balloon_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balloon Required"
+          },
+          "coarse_type": {
+            "enum": [
+              "roughness",
+              "weld",
+              "cross_view_duplicate"
+            ],
+            "title": "Coarse Type",
+            "type": "string"
+          },
+          "confidence_decision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Decision"
+          },
+          "confirmation_accepted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Accepted"
+          },
+          "coordinates": {
+            "anyOf": [
+              {
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coordinates"
+          },
+          "inspection_item": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Item"
+          },
+          "inspection_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Method"
+          },
+          "inspection_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Role"
+          },
+          "inspection_standard": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Standard"
+          },
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "key_dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Dimension"
+          },
+          "merged_from_item_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged From Item Ids"
+          },
+          "normalized_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Text"
+          },
+          "page_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Index"
+          },
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "requires_confirmation": {
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "local_feature",
+                  "global_requirement"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "sip_detail_fields_confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Detail Fields Confirmed"
+          },
+          "sip_mapping_exceptions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Mapping Exceptions"
+          },
+          "sip_suggestion_provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Suggestion Provenance"
+          },
+          "source_location_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Source Location Ids",
+            "type": "array"
+          },
+          "source_page": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page"
+          },
+          "source_type": {
+            "enum": [
+              "automatic",
+              "manual"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "split_from_item_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split From Item Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "technical_requirement_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Technical Requirement Refs"
+          }
+        },
+        "required": [
+          "item_id",
+          "raw_text",
+          "source_location_ids",
+          "source_type",
+          "status",
+          "requires_confirmation",
+          "coarse_type"
+        ],
+        "title": "CoarseReviewItem",
+        "type": "object"
+      },
       "ConfirmReviewRequest": {
         "additionalProperties": false,
         "properties": {
@@ -293,6 +625,29 @@
           "reviewed_result_id"
         ],
         "title": "CreateExportRequest",
+        "type": "object"
+      },
+      "DatumReference": {
+        "additionalProperties": false,
+        "properties": {
+          "datum": {
+            "pattern": "^[A-Z]$",
+            "title": "Datum",
+            "type": "string"
+          },
+          "modifiers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GdtModifier"
+            },
+            "title": "Modifiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "datum"
+        ],
+        "title": "DatumReference",
         "type": "object"
       },
       "DeleteBalloon": {
@@ -348,6 +703,64 @@
           "fields"
         ],
         "title": "Edit",
+        "type": "object"
+      },
+      "EditGeometricTolerance": {
+        "additionalProperties": false,
+        "properties": {
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/GdtFrame"
+            },
+            "minItems": 1,
+            "title": "Frames",
+            "type": "array"
+          },
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "standard_context": {
+            "const": "unspecified",
+            "title": "Standard Context",
+            "type": "string"
+          },
+          "tolerance_type": {
+            "enum": [
+              "straightness",
+              "flatness",
+              "circularity",
+              "cylindricity",
+              "profile_of_line",
+              "profile_of_surface",
+              "angularity",
+              "perpendicularity",
+              "parallelism",
+              "position",
+              "concentricity_or_coaxiality",
+              "symmetry",
+              "circular_runout",
+              "total_runout",
+              "unknown"
+            ],
+            "title": "Tolerance Type",
+            "type": "string"
+          },
+          "type": {
+            "const": "edit_geometric_tolerance",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "item_id",
+          "tolerance_type",
+          "frames",
+          "standard_context"
+        ],
+        "title": "EditGeometricTolerance",
         "type": "object"
       },
       "ErrorDetail": {
@@ -622,6 +1035,94 @@
         "title": "FreezeItemsRequest",
         "type": "object"
       },
+      "GdtFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/GdtSegment"
+            },
+            "minItems": 1,
+            "title": "Segments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "segments"
+        ],
+        "title": "GdtFrame",
+        "type": "object"
+      },
+      "GdtModifier": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "maximum_material_condition",
+              "least_material_condition",
+              "regardless_of_feature_size",
+              "unknown"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "raw_symbol": {
+            "minLength": 1,
+            "title": "Raw Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "raw_symbol"
+        ],
+        "title": "GdtModifier",
+        "type": "object"
+      },
+      "GdtSegment": {
+        "additionalProperties": false,
+        "properties": {
+          "datum_references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DatumReference"
+            },
+            "title": "Datum References",
+            "type": "array"
+          },
+          "diameter_modifier": {
+            "title": "Diameter Modifier",
+            "type": "boolean"
+          },
+          "modifiers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GdtModifier"
+            },
+            "title": "Modifiers",
+            "type": "array"
+          },
+          "tolerance_value": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Tolerance Value"
+          }
+        },
+        "required": [
+          "tolerance_value",
+          "diameter_modifier"
+        ],
+        "title": "GdtSegment",
+        "type": "object"
+      },
       "GenerateBalloonsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -656,6 +1157,520 @@
           "inspection_role"
         ],
         "title": "GenerateSipTable",
+        "type": "object"
+      },
+      "GeometricToleranceReviewDatumReference": {
+        "additionalProperties": false,
+        "properties": {
+          "datum": {
+            "pattern": "^[A-Z]$",
+            "title": "Datum",
+            "type": "string"
+          },
+          "modifiers": {
+            "items": {
+              "$ref": "#/components/schemas/GeometricToleranceReviewModifier"
+            },
+            "title": "Modifiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "datum"
+        ],
+        "title": "GeometricToleranceReviewDatumReference",
+        "type": "object"
+      },
+      "GeometricToleranceReviewFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/GeometricToleranceReviewSegment"
+            },
+            "minItems": 1,
+            "title": "Segments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "segments"
+        ],
+        "title": "GeometricToleranceReviewFrame",
+        "type": "object"
+      },
+      "GeometricToleranceReviewItem": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acceptance Source"
+          },
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "balloon_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balloon Required"
+          },
+          "confidence_decision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Decision"
+          },
+          "confirmation_accepted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Accepted"
+          },
+          "coordinates": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Coordinates",
+            "type": "array"
+          },
+          "datum_references": {
+            "items": {
+              "$ref": "#/components/schemas/GeometricToleranceReviewDatumReference"
+            },
+            "title": "Datum References",
+            "type": "array"
+          },
+          "diameter_modifier": {
+            "title": "Diameter Modifier",
+            "type": "boolean"
+          },
+          "evidence_ref": {
+            "minLength": 1,
+            "title": "Evidence Ref",
+            "type": "string"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/GeometricToleranceReviewFrame"
+            },
+            "minItems": 0,
+            "title": "Frames",
+            "type": "array"
+          },
+          "inspection_item": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Item"
+          },
+          "inspection_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Method"
+          },
+          "inspection_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Role"
+          },
+          "inspection_standard": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Standard"
+          },
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "item_type": {
+            "const": "geometric_tolerance",
+            "title": "Item Type",
+            "type": "string"
+          },
+          "key_dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Dimension"
+          },
+          "merged_from_item_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged From Item Ids"
+          },
+          "modifiers": {
+            "items": {
+              "$ref": "#/components/schemas/GeometricToleranceReviewModifier"
+            },
+            "title": "Modifiers",
+            "type": "array"
+          },
+          "normalized_text": {
+            "minLength": 1,
+            "title": "Normalized Text",
+            "type": "string"
+          },
+          "page_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Index"
+          },
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "requires_confirmation": {
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          },
+          "schema_version": {
+            "const": "geometric-tolerance-candidate/1",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "local_feature",
+                  "global_requirement"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "sip_detail_fields_confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Detail Fields Confirmed"
+          },
+          "sip_mapping_exceptions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Mapping Exceptions"
+          },
+          "sip_suggestion_provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Suggestion Provenance"
+          },
+          "source_location_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Source Location Ids",
+            "type": "array"
+          },
+          "source_page": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page"
+          },
+          "source_type": {
+            "enum": [
+              "automatic",
+              "manual"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "split_from_item_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split From Item Id"
+          },
+          "standard_context": {
+            "const": "unspecified",
+            "title": "Standard Context",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "technical_requirement_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Technical Requirement Refs"
+          },
+          "tolerance_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tolerance Symbol"
+          },
+          "tolerance_type": {
+            "enum": [
+              "straightness",
+              "flatness",
+              "circularity",
+              "cylindricity",
+              "profile_of_line",
+              "profile_of_surface",
+              "angularity",
+              "perpendicularity",
+              "parallelism",
+              "position",
+              "concentricity_or_coaxiality",
+              "symmetry",
+              "circular_runout",
+              "total_runout",
+              "unknown"
+            ],
+            "title": "Tolerance Type",
+            "type": "string"
+          },
+          "tolerance_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tolerance Value"
+          }
+        },
+        "required": [
+          "item_id",
+          "raw_text",
+          "normalized_text",
+          "coordinates",
+          "source_location_ids",
+          "source_type",
+          "status",
+          "requires_confirmation",
+          "item_type",
+          "schema_version",
+          "tolerance_type",
+          "tolerance_symbol",
+          "tolerance_value",
+          "diameter_modifier",
+          "modifiers",
+          "datum_references",
+          "frames",
+          "standard_context",
+          "evidence_ref"
+        ],
+        "title": "GeometricToleranceReviewItem",
+        "type": "object"
+      },
+      "GeometricToleranceReviewModifier": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "maximum_material_condition",
+              "least_material_condition",
+              "regardless_of_feature_size",
+              "unknown"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "raw_symbol": {
+            "minLength": 1,
+            "title": "Raw Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "raw_symbol"
+        ],
+        "title": "GeometricToleranceReviewModifier",
+        "type": "object"
+      },
+      "GeometricToleranceReviewSegment": {
+        "additionalProperties": false,
+        "properties": {
+          "datum_references": {
+            "items": {
+              "$ref": "#/components/schemas/GeometricToleranceReviewDatumReference"
+            },
+            "title": "Datum References",
+            "type": "array"
+          },
+          "diameter_modifier": {
+            "title": "Diameter Modifier",
+            "type": "boolean"
+          },
+          "modifiers": {
+            "items": {
+              "$ref": "#/components/schemas/GeometricToleranceReviewModifier"
+            },
+            "title": "Modifiers",
+            "type": "array"
+          },
+          "tolerance_value": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Tolerance Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tolerance_value",
+          "diameter_modifier",
+          "modifiers",
+          "datum_references"
+        ],
+        "title": "GeometricToleranceReviewSegment",
         "type": "object"
       },
       "HealthResponse": {
@@ -1809,6 +2824,7 @@
               "mapping": {
                 "add": "#/components/schemas/Add",
                 "edit": "#/components/schemas/Edit",
+                "edit_geometric_tolerance": "#/components/schemas/EditGeometricTolerance",
                 "exclude": "#/components/schemas/Exclude",
                 "generate_sip_table": "#/components/schemas/GenerateSipTable",
                 "ignore_source": "#/components/schemas/IgnoreSource",
@@ -1834,6 +2850,9 @@
               },
               {
                 "$ref": "#/components/schemas/Edit"
+              },
+              {
+                "$ref": "#/components/schemas/EditGeometricTolerance"
               },
               {
                 "$ref": "#/components/schemas/Add"
@@ -1960,7 +2979,17 @@
           },
           "items": {
             "items": {
-              "additionalProperties": true,
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GeometricToleranceReviewItem"
+                },
+                {
+                  "$ref": "#/components/schemas/TypedReviewItem"
+                },
+                {
+                  "$ref": "#/components/schemas/CoarseReviewItem"
+                }
+              ],
               "type": "object"
             },
             "title": "Items",
@@ -2086,7 +3115,17 @@
           },
           "items": {
             "items": {
-              "additionalProperties": true,
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GeometricToleranceReviewItem"
+                },
+                {
+                  "$ref": "#/components/schemas/TypedReviewItem"
+                },
+                {
+                  "$ref": "#/components/schemas/CoarseReviewItem"
+                }
+              ],
               "type": "object"
             },
             "title": "Items",
@@ -2210,7 +3249,17 @@
           },
           "items": {
             "items": {
-              "additionalProperties": true,
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/GeometricToleranceReviewItem"
+                },
+                {
+                  "$ref": "#/components/schemas/TypedReviewItem"
+                },
+                {
+                  "$ref": "#/components/schemas/CoarseReviewItem"
+                }
+              ],
               "type": "object"
             },
             "title": "Items",
@@ -2468,6 +3517,485 @@
           "raw_text"
         ],
         "title": "SplitPart",
+        "type": "object"
+      },
+      "TypedReviewItem": {
+        "additionalProperties": false,
+        "properties": {
+          "acceptance_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acceptance Source"
+          },
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "angle_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Angle Value"
+          },
+          "balloon_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balloon Required"
+          },
+          "confidence_decision": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Decision"
+          },
+          "confirmation_accepted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Accepted"
+          },
+          "coordinates": {
+            "anyOf": [
+              {
+                "maxItems": 4,
+                "minItems": 4,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coordinates"
+          },
+          "depth": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth"
+          },
+          "feature_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "hole",
+                  "shaft",
+                  "cylindrical_feature",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Kind"
+          },
+          "inspection_item": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Item"
+          },
+          "inspection_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Method"
+          },
+          "inspection_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Role"
+          },
+          "inspection_standard": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inspection Standard"
+          },
+          "item_id": {
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "item_type": {
+            "enum": [
+              "linear_dimension",
+              "diameter_dimension",
+              "thread",
+              "radius",
+              "angle",
+              "general_requirement",
+              "composite"
+            ],
+            "title": "Item Type",
+            "type": "string"
+          },
+          "key_dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Dimension"
+          },
+          "lower_tolerance": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lower Tolerance"
+          },
+          "merged_from_item_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged From Item Ids"
+          },
+          "nominal": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nominal"
+          },
+          "normalized_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Text"
+          },
+          "page_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Index"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "radius_value": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radius Value"
+          },
+          "raw_text": {
+            "title": "Raw Text",
+            "type": "string"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          },
+          "requires_confirmation": {
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "local_feature",
+                  "global_requirement"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "sip_detail_fields_confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Detail Fields Confirmed"
+          },
+          "sip_mapping_exceptions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Mapping Exceptions"
+          },
+          "sip_suggestion_provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Suggestion Provenance"
+          },
+          "source_location_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Source Location Ids",
+            "type": "array"
+          },
+          "source_page": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page"
+          },
+          "source_type": {
+            "enum": [
+              "automatic",
+              "manual"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "split_from_item_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split From Item Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "sub_requirements": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sub Requirements",
+            "type": "array"
+          },
+          "technical_requirement_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Technical Requirement Refs"
+          },
+          "thread_depth": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Depth"
+          },
+          "thread_spec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Spec"
+          },
+          "through": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Through"
+          },
+          "upper_tolerance": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upper Tolerance"
+          }
+        },
+        "required": [
+          "item_id",
+          "raw_text",
+          "source_location_ids",
+          "source_type",
+          "status",
+          "requires_confirmation",
+          "item_type"
+        ],
+        "title": "TypedReviewItem",
         "type": "object"
       },
       "WorkbenchProjectResponse": {

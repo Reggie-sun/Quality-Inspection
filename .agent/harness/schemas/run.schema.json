@@ -23,7 +23,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "run/1"
+      "enum": ["run/1", "run/2", "run/3"]
     },
     "run_id": {
       "type": "string",
@@ -92,10 +92,14 @@
     "live_identity": {
       "$ref": "#/$defs/live_identity"
     },
+    "cycle_authorization": {
+      "$ref": "#/$defs/cycle_authorization"
+    },
     "execution_state": {
       "enum": [
         "running",
         "visual_qa_pending",
+        "terminal_pending",
         "completed",
         "failed"
       ]
@@ -166,6 +170,54 @@
       }
     },
     {
+      "if": { "properties": { "schema_version": { "const": "run/1" } }, "required": ["schema_version"] },
+      "then": {
+        "properties": {
+          "cycle_authorization": {
+            "not": {
+              "anyOf": [
+                { "required": ["historical_committed_cny"] },
+                { "required": ["max_total_cny"] },
+                { "required": ["overall_envelope_cny"] },
+                { "required": ["readiness_evidence"] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "schema_version": { "const": "run/2" } }, "required": ["schema_version"] },
+      "then": {
+        "properties": {
+          "cycle_authorization": {
+            "not": {
+              "anyOf": [
+                { "required": ["historical_committed_cny"] },
+                { "required": ["max_total_cny"] },
+                { "required": ["overall_envelope_cny"] },
+                { "required": ["readiness_evidence"] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "schema_version": { "const": "run/3" } }, "required": ["schema_version"] },
+      "then": {
+        "required": ["cycle_authorization"],
+        "properties": {
+          "cycle_authorization": {
+            "required": ["historical_committed_cny", "max_total_cny", "overall_envelope_cny", "readiness_evidence"],
+            "properties": {
+              "cycle_id": { "const": "gdt10e-auth-remediated-live-20260802" }
+            }
+          }
+        }
+      }
+    },
+    {
       "if": {
         "properties": {
           "mode": {
@@ -194,7 +246,8 @@
                 "execution_state": {
                   "enum": [
                     "running",
-                    "visual_qa_pending"
+                    "visual_qa_pending",
+                    "terminal_pending"
                   ]
                 }
               },
@@ -259,6 +312,32 @@
           }
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "schema_version": { "const": "run/2" }
+        },
+        "required": ["schema_version"]
+      },
+      "then": {
+        "required": ["cycle_authorization"],
+        "properties": {
+          "mode": { "const": "live" },
+          "scope": { "const": "full-p0" },
+          "task_id": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "schema_version": { "const": "run/3" } }, "required": ["schema_version"] },
+      "then": {
+        "properties": {
+          "mode": { "const": "live" },
+          "scope": { "const": "full-p0" },
+          "task_id": { "type": "null" }
+        }
+      }
     }
   ],
   "$defs": {
@@ -319,6 +398,50 @@
         }
       }
     },
+    "cycle_authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cycle_id",
+        "pricing_sha256",
+        "issuance_sha256",
+        "consumption_sha256",
+        "backend_image_id",
+        "run_id",
+        "run_authorization_sha256"
+      ],
+      "properties": {
+        "cycle_id": { "type": "string", "minLength": 1 },
+        "pricing_sha256": { "$ref": "#/$defs/sha256" },
+        "issuance_sha256": { "$ref": "#/$defs/sha256" },
+        "consumption_sha256": { "$ref": "#/$defs/sha256" },
+        "backend_image_id": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{8}$"
+        },
+        "run_authorization_sha256": { "$ref": "#/$defs/sha256" }
+        ,"historical_committed_cny": { "const": "3.526656" }
+        ,"max_total_cny": { "const": "46.473344" }
+        ,"overall_envelope_cny": { "const": "50.000000" }
+        ,"readiness_evidence": { "$ref": "#/$defs/readiness_evidence" }
+      }
+    },
+    "readiness_evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "readiness_sha256", "operator_state", "runtime_state", "binding_match", "runtime_acceptance_sha256"],
+      "properties": {
+        "schema_version": { "const": "provider-account-readiness-evidence/1" },
+        "readiness_sha256": { "$ref": "#/$defs/sha256" },
+        "operator_state": { "const": "operator_attested" },
+        "runtime_state": { "enum": ["not_yet_accepted", "runtime_accepted"] },
+        "binding_match": { "const": true },
+        "runtime_acceptance_sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] }
+      }
+    },
     "live_identity": {
       "type": "object",
       "additionalProperties": false,
@@ -331,8 +454,8 @@
       ],
       "properties": {
         "operator_id": { "type": "string", "minLength": 1 },
-        "api_base": { "const": "http://localhost:8000" },
-        "frontend_base": { "const": "http://localhost:3000" },
+        "api_base": { "type": "string" },
+        "frontend_base": { "type": "string" },
         "browser": {
           "type": "object",
           "additionalProperties": false,
@@ -358,7 +481,21 @@
             "height": { "const": 796 }
           }
         }
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "api_base": { "const": "http://localhost:8000" },
+            "frontend_base": { "const": "http://localhost:3000" }
+          }
+        },
+        {
+          "properties": {
+            "api_base": { "const": "http://127.0.0.1:18000" },
+            "frontend_base": { "const": "http://127.0.0.1:14173" }
+          }
+        }
+      ]
     },
     "policy_versions": {
       "type": "object",

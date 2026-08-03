@@ -60,7 +60,7 @@ export function freezeReviewItems(
     `/api/v1/projects/${projectId}/review/freeze-items`,
     { expected_version: expectedVersion },
     operatorHeaders(operatorId),
-  ).then((transport) => transport as ReviewWorkingCopyView);
+  ).then((transport) => transport as unknown as ReviewWorkingCopyView);
 }
 
 

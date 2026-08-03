@@ -37,6 +37,17 @@ ownership is fail-closed: a second checkout using the same host port must fail a
 leave the existing public QA process untouched. Start the public runtime only from
 the `main` checkout; use explicit alternate ports for parallel worktree runtimes.
 
+Each checkout owns a worktree-scoped Compose project derived from its root directory name. The
+main checkout therefore keeps the `quality_inspection` namespace and its existing
+`quality_inspection_postgres_dev` / `quality_inspection_storage_dev` data volumes. A feature
+worktree must resolve to a different project, network, PostgreSQL volume, and storage volume; it
+must never reuse the public main runtime namespace.
+
+The standard entrypoints do not kill listeners on `8000` or `5173`. If another checkout already
+owns either port, startup fails closed and leaves that listener untouched. Only the main checkout
+may own the public runtime on these ports; use an explicit alternate-port override for an
+independent feature runtime.
+
 ## Cloudflare Handoff
 
 The hostname rule, DNS route, and connector lifecycle are host/Cloudflare-owned configuration. Configure them outside this repository.

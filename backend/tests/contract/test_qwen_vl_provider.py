@@ -1,5 +1,6 @@
 import base64
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -156,6 +157,40 @@ def test_runtime_factory_builds_beijing_workspace_client(monkeypatch) -> None:
         "timeout": 60.0,
         "max_retries": 0,
     }
+
+
+def test_exact_cycle_settings_require_complete_frozen_runtime_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValueError, match="configured together"):
+        Settings(provider_cycle_authorization_id="cycle-one")
+    with pytest.raises(ValueError, match="runtime identity"):
+        Settings(
+            provider_cycle_authorization_id="cycle-one",
+            provider_cycle_authorization_root=tmp_path,
+            qwen_model="qwen3-vl-plus",
+            symbol_recognition_mode="production_uncertainty",
+        )
+
+    class FakeOpenAI:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+    monkeypatch.setattr("app.providers.runtime.OpenAI", FakeOpenAI)
+    settings = Settings(
+        qwen_api_key="test-only-key",
+        qwen_workspace_id="ws-test-123",
+        qwen_model="qwen3-vl-plus-2025-12-19",
+        symbol_recognition_mode="production_uncertainty",
+        provider_cycle_authorization_id="cycle-one",
+        provider_cycle_authorization_root=tmp_path,
+    )
+
+    provider = build_vision_provider(settings)
+
+    assert provider._model == "qwen3-vl-plus-2025-12-19"
+    assert provider._require_cycle_permit is True
 
 
 @pytest.mark.parametrize(

@@ -24,6 +24,7 @@ from app.jobs.idempotency import (
 from app.errors.models import ErrorRecord
 from app.processing.pipeline import InventoryPipeline
 from app.processing.runtime_recognition import RuntimeRecognition
+from app.providers.usage_ledger import ProviderUsageLedger
 from app.processing.recognition_preview import RecognitionPreviewService
 from app.projects.models import Project
 from app.projects.lifecycle import (
@@ -180,6 +181,11 @@ def inventory_project(
         settings = get_settings().model_copy(
             update={"symbol_recognition_mode": recognition_mode}
         )
+        if (
+            settings.provider_cycle_authorization_id is not None
+            and recognition_mode != "production_uncertainty"
+        ):
+            raise ValueError("Provider cycle project routing identity is invalid")
         storage = LocalFileStorage(settings.storage_root)
         existing = existing_successful_result_ref(
             session, project_id=project_id, logical_task_key=logical_task_key
@@ -198,6 +204,18 @@ def inventory_project(
                 _record_review_bootstrap_failure(session, project_id)
                 raise
             return existing
+        usage_ledger = None
+        if settings.provider_cycle_authorization_id is not None:
+            if settings.provider_cycle_authorization_root is None:
+                raise ValueError("Provider cycle authorization root is missing")
+            usage_ledger = ProviderUsageLedger.open(
+                cycle_id=settings.provider_cycle_authorization_id,
+                storage_root=settings.storage_root,
+                authorization_root=(
+                    settings.provider_cycle_authorization_root
+                ),
+                project_id=project_id,
+            )
         preflight = ProcessingPreflight(
             storage,
             Redis.from_url(settings.redis_url),
@@ -230,11 +248,13 @@ def inventory_project(
             symbol_session_factory=SessionLocal,
             require_symbol_persistence=True,
             preview_sink=preview_sink,
+            usage_ledger=usage_ledger,
         )
         recognition = RuntimeRecognition(
             settings,
             provider_factory=OCR_PROVIDER_FACTORY,
             advisor=advisor,
+            usage_ledger=usage_ledger,
         )
         result_ref = InventoryPipeline(
             session,

@@ -37,6 +37,32 @@ def _rendered_compose_config(project_name: str | None = None) -> dict:
     return json.loads(result.stdout)
 
 
+def _rendered_qa_compose_config(project_name: str) -> dict:
+    assert QA_COMPOSE_FILE.is_file(), f"missing compose file: {QA_COMPOSE_FILE}"
+    environment = dict(os.environ)
+    environment["COMPOSE_PROJECT_NAME"] = project_name
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(COMPOSE_FILE),
+            "-f",
+            str(QA_COMPOSE_FILE),
+            "config",
+            "--format",
+            "json",
+        ],
+        cwd=ROOT,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(result.stdout)
+
+
 def _rendered_test_compose_config() -> dict:
     assert TEST_COMPOSE_FILE.is_file(), f"missing test compose file: {TEST_COMPOSE_FILE}"
     result = subprocess.run(

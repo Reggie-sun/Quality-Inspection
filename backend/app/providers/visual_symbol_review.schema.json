@@ -6,11 +6,12 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
-    "detections"
+    "detections",
+    "gdt_frames"
   ],
   "properties": {
     "schema_version": {
-      "const": "visual-symbol-review/2"
+      "const": "visual-symbol-review/3"
     },
     "detections": {
       "type": "array",
@@ -60,6 +61,121 @@
             "items": {
               "type": "string",
               "minLength": 1
+            }
+          },
+          "confidence_signal": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    },
+    "gdt_frames": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "frame_observation_id",
+          "frame_bbox_normalized",
+          "tolerance_type_signal",
+          "cells",
+          "confidence_signal"
+        ],
+        "properties": {
+          "frame_observation_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*"
+          },
+          "frame_bbox_normalized": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "tolerance_type_signal": {
+            "enum": [
+              "straightness",
+              "flatness",
+              "circularity",
+              "cylindricity",
+              "profile_of_line",
+              "profile_of_surface",
+              "angularity",
+              "perpendicularity",
+              "parallelism",
+              "position",
+              "concentricity_or_coaxiality",
+              "symmetry",
+              "circular_runout",
+              "total_runout",
+              "unknown"
+            ]
+          },
+          "cells": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "cell_index",
+                "cell_role",
+                "bbox_normalized",
+                "raw_token",
+                "associated_text_observation_ids",
+                "confidence_signal"
+              ],
+              "properties": {
+                "cell_index": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "cell_role": {
+                  "enum": [
+                    "symbol",
+                    "tolerance",
+                    "modifier",
+                    "datum",
+                    "separator",
+                    "unknown"
+                  ]
+                },
+                "bbox_normalized": {
+                  "type": "array",
+                  "minItems": 4,
+                  "maxItems": 4,
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "raw_token": {
+                  "type": "string"
+                },
+                "associated_text_observation_ids": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "confidence_signal": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
             }
           },
           "confidence_signal": {

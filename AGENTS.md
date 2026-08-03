@@ -52,6 +52,22 @@ workflow spine、lane 和 planning 条件只由 `.agent/rules/workflow-lanes.md`
 
 只有用户明确切换计划或批准新计划后，才允许改变 current plan。
 
+### 2.1 Context And Owner Preflight
+
+- 每次 plan execution 只能有一个 active implementation plan；父计划只拥有父目标和 task 顺序，companion plan 只拥有当前 Task 的实施步骤。supporting plan、spec、历史 report 和 bug memory 只有在当前 Task 引用尚未解析的 contract、Owner、compatibility 或 evidence 问题时，才读取对应内容。用户明确要求的 required reads，以及上位 rule、skill 或 profile 要求的全文读取不受此限制。
+- handoff 或 controller brief 已经完整冻结 scope、Owner、allowed paths、unchanged contract、当前 evidence 和 verification command 时，父线程及 fresh subagent 应以该 brief 为当前执行入口；不得无具体缺口地重复全文读取同一 parent plan、design spec、历史 plan 或 report。发现 brief 缺失时，只补读能关闭该缺口的 authoritative source，并在 report 中记录补读原因。
+- `Standard / Heavy` 在第一行写入前，父 agent 必须完成一次 `Owner/File Closure Preflight`：记录 problem boundary、single Owner、old path to remove or replace、unchanged contract、全部 planned create/modify paths，以及 focused verification command。
+- `Owner/File Closure Preflight` 必须同时核对相关 schema inventory、generator/checker、manifest/runtime identity、index/HEAD gate 和 old-path retirement；确认 approved allowed paths 覆盖全部真实 Owner，且 working tree、index、HEAD 所需证据在当前 stage/commit 约束下可执行。
+- preflight 发现必需 Owner 漏列、no-stage/no-commit 与 verification gate 冲突，或新 schema/runtime file 无法进入 authoritative inventory 时，必须在写入前 amend/replan 或请求用户决定；不得先生成 partial implementation，再把本应在 preflight 发现的文件漏列报告为 blocker。
+
+### 2.2 Worktree Environment Injection
+
+- 所有 Quality_Inspection linked worktree 共用唯一 canonical environment source：`/home/reggie/vscode_folder/Quality_Inspection/.env`。进入任一 worktree session 时必须先验证该文件是当前 uid/gid 拥有的 mode `0600` regular file；不得从 worktree 内的 `.env`、副本、symlink 或其他 fallback 读取同一组环境值。
+- shell/tool command 之间不得假设 environment 会持久化。每个需要 repository runtime、Provider credential 或 Harness private binding 的命令，必须在同一 shell process 内先执行 `set -a; . /home/reggie/vscode_folder/Quality_Inspection/.env; set +a`，再执行目标命令；不需要这些值的 read/test/lint/git 命令不得无意义加载 credential。
+- Canonical `.env` 只拥有跨 worktree 共享的 private/process values，不拥有 linked-worktree runtime routing。source 后必须在同一 shell 内从当前 approved runtime identity Owner 显式设置并验证该 worktree 的 public target tuple（包括 `COMPOSE_PROJECT_NAME`、`QI_P0_API_BASE`、`QI_P0_FRONTEND_BASE` 及 plan要求的source root）；不得继承 root `.env` 中的 routing value来选择 linked worktree target。tuple 与当前 plan/runtime evidence不一致时必须在任何 compose、Provider或Harness mutation前fail closed。
+- 不得复制、移动、生成、stage 或 commit canonical `.env`，不得输出、读取到 agent context、记录或 hash 其中的值。只允许按 exact environment key name 报告 `present/absent`；文件不安全、source 失败或 required key 缺失时必须在 runtime/Provider mutation 前 fail closed。
+- Environment injection 只提供 private process values，不等同于 operator attestation、account readiness、cycle authorization、paid execution approval 或 Provider success evidence；这些 gate 仍必须由当前 approved plan 的独立事实关闭。
+
 ## 3. Bootstrap State
 
 仓库可能尚未初始化 Git、语言栈、测试框架、构建命令或 runtime。缺少这些能力时：
@@ -87,6 +103,14 @@ workflow spine、lane 和 planning 条件只由 `.agent/rules/workflow-lanes.md`
 - 未通过正式 freeze 的 working copy 不得用于正式编号或正式导出。
 - PDF、Excel 和 manifest 不得混用不同的 `reviewed_result`。
 - fatal 或 blocking failure 不得通过 warning、accepted risk 或人工文字说明转换为 formal success。
+
+### 4.1 Progress And Completion Reporting
+
+- 用户可见进度只在 task start、material evidence transition（例如 `RED -> GREEN`、review verdict）、scope/Owner decision、真实 blocker 和 completion 等节点汇总；不得逐条播报 routine reads、每个 tool call、每次 wait timeout 或未变化的 `agent_status`。
+- 上位通信规则要求长任务定期更新时，使用一条合并状态说明“已完成 / 当前在跑 / 新证据或无变化 / 下一 gate”；没有新证据时不得重复同一提醒。只有用户明确要求更高频进度时才提高频率。
+- beat、wave、subagent turn、review round 和 SDD breaker 只是同一 Task 的 checkpoint，不拥有 Task completion。剩余工作仍在 approved scope 和 authority 内时，状态必须保持 `IN_PROGRESS`，并通过受限 corrective task 或下一执行切口继续；不得仅因耗时、上下文窗口、单次 agent 结束或 review/fix 轮数上限标为 `BLOCKED`。
+- `DONE` 要求当前 Task 的全部 approved steps 和 required verification 已关闭；focused selector green、局部实现或子代理 `DONE` 不能替代父 Task closure。
+- `BLOCKED` 只用于存在无法在 approved scope 内解决的具体 authority、contract、external-state 或 destructive-action 冲突。若继续需要实质 scope expansion 或新授权，必须说明 exact conflict 并请求用户决定；否则不得把可继续执行的 partial work 当成终局 blocker。
 
 ## 5. Active P0 Execution Guardrails
 

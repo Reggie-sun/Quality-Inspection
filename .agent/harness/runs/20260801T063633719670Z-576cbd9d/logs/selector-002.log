@@ -1,0 +1,8 @@
+command=pytest backend/tests/integration/test_pdf_inventory.py::test_multi_page_inventory_preserves_order -q
+exit_code=0
+stdout:
+.                                                                        [100%]
+1 passed in 0.07s
+
+stderr:
+

@@ -1,0 +1,27 @@
+exit_code=1
+stdout:
+
+stderr:
+Traceback (most recent call last):
+  File "<string>", line 184, in <module>
+  File "/app/app/processing/tasks.py", line 237, in inventory_project
+    ).run(
+      ^^^^
+  File "/app/app/processing/pipeline.py", line 322, in run
+    snapshot = self._build_snapshot(pages, source_file.id)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/processing/pipeline.py", line 114, in _build_snapshot
+    return self._candidate_snapshot_builder(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/processing/runtime_recognition.py", line 180, in build_candidate_snapshot
+    return self._advisor.review(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/candidates/advisor.py", line 3092, in review
+    outcome = self._visual_review_result(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/app/candidates/advisor.py", line 1797, in _visual_review_result
+    result, provider_failure, duration_ms = call_once()
+                                            ^^^^^^^^^^^
+  File "/app/app/candidates/advisor.py", line 1732, in call_once
+    raise CandidateAdvisorFailure(
+app.candidates.advisor.CandidateAdvisorFailure: Visual symbol Advisor call failed

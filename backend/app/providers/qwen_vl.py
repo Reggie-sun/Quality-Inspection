@@ -11,10 +11,9 @@ from pathlib import Path
 from typing import Any
 
 import jsonschema
-from openai import APIConnectionError, APITimeoutError
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 from PIL import Image, UnidentifiedImageError
 
-from app.providers.base import LocalizedProviderFailure, VisionResult
 from app.candidates.symbol_review import (
     VISUAL_SCHEMA_VERSION,
     VISUAL_SYMBOL_FAILURE_STAGES,
@@ -23,6 +22,15 @@ from app.candidates.symbol_review import (
     parse_visual_symbol_json,
     validate_visual_schema_diagnostic,
 )
+from app.providers.base import (
+    ClassifiedProviderFailure,
+    LocalizedProviderFailure,
+    ProviderFailureFact,
+    VisionResult,
+    classify_provider_failure_request_id,
+    provider_failure_category_for_http_status,
+)
+from app.providers.usage_ledger import ReservationPermit
 
 
 SCHEMA_PATH = Path(__file__).with_name("candidate_review.schema.json")
@@ -38,7 +46,6 @@ VISUAL_SCHEMA_PATH = Path(__file__).with_name(
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _MAX_VISUAL_PNG_SIDE = 1536
 _MAX_VISUAL_PNG_BYTES = 8 * 1024 * 1024
-_SAFE_VISUAL_REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _FORBIDDEN_METADATA = re.compile(
     r"authorization|api[_-]?key|secret|credential|bearer",
     re.IGNORECASE,
@@ -81,6 +88,13 @@ class VisualSymbolProviderError(RuntimeError):
         self.request_id, self.usage = validate_visual_request_metadata(
             request_id,
             usage,
+        )
+        self.fact = ProviderFailureFact(
+            category="schema",
+            origin="response_schema",
+            http_status=None,
+            provider_request_id=self.request_id,
+            request_id_state="accepted",
         )
         self.failure_stage = failure_stage
         self.failure_category = "schema"
@@ -323,11 +337,10 @@ def validate_visual_request_metadata(
     request_id: Any,
     usage: Any,
 ) -> tuple[str, dict[str, int]]:
-    if (
-        not isinstance(request_id, str)
-        or _SAFE_VISUAL_REQUEST_ID.fullmatch(request_id) is None
-        or _FORBIDDEN_METADATA.search(request_id) is not None
-    ):
+    safe_request_id, request_id_state = classify_provider_failure_request_id(
+        request_id
+    )
+    if request_id_state != "accepted" or safe_request_id is None:
         raise VisualSymbolMetadataError(
             "visual symbol response metadata is invalid"
         )
@@ -366,18 +379,80 @@ def validate_visual_request_metadata(
         raise VisualSymbolMetadataError(
             "visual symbol response metadata is invalid"
         )
-    return request_id, counters
+    return safe_request_id, counters
+
+
+def _status_failure_fact(exc: APIStatusError) -> ProviderFailureFact:
+    status = exc.status_code
+    if (
+        not isinstance(status, int)
+        or isinstance(status, bool)
+        or not 400 <= status <= 599
+    ):
+        return ProviderFailureFact(
+            category="unclassified",
+            origin="provider_boundary",
+            http_status=None,
+            provider_request_id=None,
+            request_id_state="absent",
+        )
+    request_id, request_id_state = classify_provider_failure_request_id(
+        exc.request_id
+    )
+    return ProviderFailureFact(
+        category=provider_failure_category_for_http_status(status),
+        origin="sdk_http_status",
+        http_status=status,
+        provider_request_id=request_id,
+        request_id_state=request_id_state,
+    )
 
 
 class QwenVisionProvider:
-    def __init__(self, client: Any, model: str = "qwen3-vl-plus") -> None:
+    def __init__(
+        self,
+        client: Any,
+        model: str = "qwen3-vl-plus",
+        *,
+        require_cycle_permit: bool = False,
+    ) -> None:
         self._client = client
         self._model = model
+        self._require_cycle_permit = require_cycle_permit
 
-    def review_candidate(self, image: bytes, prompt: str) -> VisionResult:
+    def _consume_cycle_permit(
+        self,
+        reservation_permit: ReservationPermit | None,
+        *,
+        operation: str,
+    ) -> None:
+        if reservation_permit is None:
+            if self._require_cycle_permit:
+                raise ValueError(
+                    "exact-cycle Provider call requires one permit"
+                )
+            return
+        if not isinstance(reservation_permit, ReservationPermit):
+            raise ValueError("reservation permit is invalid")
+        reservation_permit.consume_for_adapter(
+            provider="qwen-vl",
+            operation=operation,
+        )
+
+    def review_candidate(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
         data_url = "data:image/png;base64," + base64.b64encode(image).decode("ascii")
         localized_failure_category: str | None = None
         try:
+            self._consume_cycle_permit(
+                reservation_permit,
+                operation="review_candidate",
+            )
             completion = self._client.chat.completions.create(
                 model=self._model,
                 messages=[
@@ -433,7 +508,13 @@ class QwenVisionProvider:
             raise LocalizedProviderFailure("schema")
         raise AssertionError("candidate schema failure was not raised")
 
-    def review_symbols(self, image: bytes, prompt: str) -> VisionResult:
+    def review_symbols(
+        self,
+        image: bytes,
+        prompt: str,
+        *,
+        reservation_permit: ReservationPermit | None = None,
+    ) -> VisionResult:
         canonical_image = canonicalize_visual_png(image)
         if canonicalize_visual_png(canonical_image) != canonical_image:
             raise VisualSymbolInputError(
@@ -442,6 +523,11 @@ class QwenVisionProvider:
         data_url = "data:image/png;base64," + base64.b64encode(
             canonical_image
         ).decode("ascii")
+        failure_fact: ProviderFailureFact | None = None
+        self._consume_cycle_permit(
+            reservation_permit,
+            operation="review_symbols",
+        )
         try:
             completion = self._client.chat.completions.create(
                 model=self._model,
@@ -468,13 +554,64 @@ class QwenVisionProvider:
                 extra_body={"enable_thinking": False},
             )
         except (APITimeoutError, TimeoutError):
-            raise LocalizedProviderFailure("timeout") from None
+            failure_fact = ProviderFailureFact(
+                category="timeout",
+                origin="sdk_timeout",
+                http_status=None,
+                provider_request_id=None,
+                request_id_state="absent",
+            )
         except (APIConnectionError, ConnectionError, OSError):
-            raise LocalizedProviderFailure("transport") from None
-        request_id, usage = validate_visual_request_metadata(
-            getattr(completion, "id", None),
-            getattr(completion, "usage", None),
-        )
+            failure_fact = ProviderFailureFact(
+                category="transport",
+                origin="sdk_connection",
+                http_status=None,
+                provider_request_id=None,
+                request_id_state="absent",
+            )
+        except APIStatusError as exc:
+            failure_fact = _status_failure_fact(exc)
+        except Exception:
+            failure_fact = ProviderFailureFact(
+                category="unclassified",
+                origin="provider_boundary",
+                http_status=None,
+                provider_request_id=None,
+                request_id_state="absent",
+            )
+        if failure_fact is not None:
+            raise ClassifiedProviderFailure(failure_fact)
+
+        raw_request_id: object = None
+        metadata_failure_fact: ProviderFailureFact | None = None
+        try:
+            raw_request_id = getattr(completion, "id", None)
+            request_id, usage = validate_visual_request_metadata(
+                raw_request_id,
+                getattr(completion, "usage", None),
+            )
+        except VisualSymbolMetadataError:
+            safe_request_id, request_id_state = (
+                classify_provider_failure_request_id(raw_request_id)
+            )
+            metadata_failure_fact = ProviderFailureFact(
+                category="metadata_invalid",
+                origin="response_metadata",
+                http_status=None,
+                provider_request_id=safe_request_id,
+                request_id_state=request_id_state,
+            )
+        except Exception:
+            metadata_failure_fact = ProviderFailureFact(
+                category="unclassified",
+                origin="provider_boundary",
+                http_status=None,
+                provider_request_id=None,
+                request_id_state="absent",
+            )
+        if metadata_failure_fact is not None:
+            raise ClassifiedProviderFailure(metadata_failure_fact)
+
         choices = _response_member(completion, "choices")
         if not isinstance(choices, (list, tuple)) or not choices:
             raise VisualSymbolProviderError(

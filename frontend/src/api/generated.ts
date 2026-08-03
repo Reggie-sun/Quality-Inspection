@@ -178,6 +178,80 @@ export interface components {
       /** File */
       file: string;
     };
+    /** CoarseReviewItem */
+    CoarseReviewItem: {
+      /** Acceptance Source */
+      acceptance_source?: string | null;
+      /**
+       * Active
+       * @default true
+       */
+      active?: boolean;
+      /** Balloon Required */
+      balloon_required?: boolean | null;
+      /**
+       * Coarse Type
+       * @enum {string}
+       */
+      coarse_type: "roughness" | "weld" | "cross_view_duplicate";
+      /** Confidence Decision */
+      confidence_decision?: {
+        [key: string]: unknown;
+      } | null;
+      /** Confirmation Accepted */
+      confirmation_accepted?: boolean | null;
+      /** Coordinates */
+      coordinates?: [number, number, number, number] | null;
+      /** Inspection Item */
+      inspection_item?: string | null;
+      /** Inspection Method */
+      inspection_method?: string | null;
+      /** Inspection Role */
+      inspection_role?: string | null;
+      /** Inspection Standard */
+      inspection_standard?: string | null;
+      /** Item Id */
+      item_id: string;
+      /** Key Dimension */
+      key_dimension?: string | null;
+      /** Merged From Item Ids */
+      merged_from_item_ids?: string[] | null;
+      /** Normalized Text */
+      normalized_text?: string | null;
+      /** Page Index */
+      page_index?: number | null;
+      /** Raw Text */
+      raw_text: string;
+      /** Remarks */
+      remarks?: string | null;
+      /** Requires Confirmation */
+      requires_confirmation: boolean;
+      /** Scope */
+      scope?: ("local_feature" | "global_requirement") | null;
+      /** Sip Detail Fields Confirmed */
+      sip_detail_fields_confirmed?: boolean | null;
+      /** Sip Mapping Exceptions */
+      sip_mapping_exceptions?: string[] | null;
+      /** Sip Suggestion Provenance */
+      sip_suggestion_provenance?: {
+        [key: string]: string;
+      } | null;
+      /** Source Location Ids */
+      source_location_ids: string[];
+      /** Source Page */
+      source_page?: number | null;
+      /**
+       * Source Type
+       * @enum {string}
+       */
+      source_type: "automatic" | "manual";
+      /** Split From Item Id */
+      split_from_item_id?: string | null;
+      /** Status */
+      status: string;
+      /** Technical Requirement Refs */
+      technical_requirement_refs?: string[] | null;
+    };
     /** ConfirmReviewRequest */
     ConfirmReviewRequest: {
       /** Expected Version */
@@ -190,6 +264,16 @@ export interface components {
        * Format: uuid
        */
       reviewed_result_id: string;
+    };
+    /** DatumReference */
+    DatumReference: {
+      /** Datum */
+      datum: string;
+      /**
+       * Modifiers
+       * @default []
+       */
+      modifiers?: components["schemas"]["GdtModifier"][];
     };
     /** DeleteBalloon */
     DeleteBalloon: {
@@ -219,6 +303,28 @@ export interface components {
        * @constant
        */
       type: "edit";
+    };
+    /** EditGeometricTolerance */
+    EditGeometricTolerance: {
+      /** Frames */
+      frames: components["schemas"]["GdtFrame"][];
+      /** Item Id */
+      item_id: string;
+      /**
+       * Standard Context
+       * @constant
+       */
+      standard_context: "unspecified";
+      /**
+       * Tolerance Type
+       * @enum {string}
+       */
+      tolerance_type: "straightness" | "flatness" | "circularity" | "cylindricity" | "profile_of_line" | "profile_of_surface" | "angularity" | "perpendicularity" | "parallelism" | "position" | "concentricity_or_coaxiality" | "symmetry" | "circular_runout" | "total_runout" | "unknown";
+      /**
+       * Type
+       * @constant
+       */
+      type: "edit_geometric_tolerance";
     };
     /** ErrorDetail */
     ErrorDetail: {
@@ -319,6 +425,38 @@ export interface components {
       /** Expected Version */
       expected_version: number;
     };
+    /** GdtFrame */
+    GdtFrame: {
+      /** Segments */
+      segments: components["schemas"]["GdtSegment"][];
+    };
+    /** GdtModifier */
+    GdtModifier: {
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "maximum_material_condition" | "least_material_condition" | "regardless_of_feature_size" | "unknown";
+      /** Raw Symbol */
+      raw_symbol: string;
+    };
+    /** GdtSegment */
+    GdtSegment: {
+      /**
+       * Datum References
+       * @default []
+       */
+      datum_references?: components["schemas"]["DatumReference"][];
+      /** Diameter Modifier */
+      diameter_modifier: boolean;
+      /**
+       * Modifiers
+       * @default []
+       */
+      modifiers?: components["schemas"]["GdtModifier"][];
+      /** Tolerance Value */
+      tolerance_value: number | string;
+    };
     /** GenerateBalloonsRequest */
     GenerateBalloonsRequest: {
       /** Expected Version */
@@ -333,6 +471,142 @@ export interface components {
        * @constant
        */
       type: "generate_sip_table";
+    };
+    /** GeometricToleranceReviewDatumReference */
+    GeometricToleranceReviewDatumReference: {
+      /** Datum */
+      datum: string;
+      /** Modifiers */
+      modifiers?: components["schemas"]["GeometricToleranceReviewModifier"][];
+    };
+    /** GeometricToleranceReviewFrame */
+    GeometricToleranceReviewFrame: {
+      /** Segments */
+      segments: components["schemas"]["GeometricToleranceReviewSegment"][];
+    };
+    /** GeometricToleranceReviewItem */
+    GeometricToleranceReviewItem: {
+      /** Acceptance Source */
+      acceptance_source?: string | null;
+      /**
+       * Active
+       * @default true
+       */
+      active?: boolean;
+      /** Balloon Required */
+      balloon_required?: boolean | null;
+      /** Confidence Decision */
+      confidence_decision?: {
+        [key: string]: unknown;
+      } | null;
+      /** Confirmation Accepted */
+      confirmation_accepted?: boolean | null;
+      /** Coordinates */
+      coordinates: [number, number, number, number];
+      /** Datum References */
+      datum_references: components["schemas"]["GeometricToleranceReviewDatumReference"][];
+      /** Diameter Modifier */
+      diameter_modifier: boolean;
+      /** Evidence Ref */
+      evidence_ref: string;
+      /** Frames */
+      frames: components["schemas"]["GeometricToleranceReviewFrame"][];
+      /** Inspection Item */
+      inspection_item?: string | null;
+      /** Inspection Method */
+      inspection_method?: string | null;
+      /** Inspection Role */
+      inspection_role?: string | null;
+      /** Inspection Standard */
+      inspection_standard?: string | null;
+      /** Item Id */
+      item_id: string;
+      /**
+       * Item Type
+       * @constant
+       */
+      item_type: "geometric_tolerance";
+      /** Key Dimension */
+      key_dimension?: string | null;
+      /** Merged From Item Ids */
+      merged_from_item_ids?: string[] | null;
+      /** Modifiers */
+      modifiers: components["schemas"]["GeometricToleranceReviewModifier"][];
+      /** Normalized Text */
+      normalized_text: string;
+      /** Page Index */
+      page_index?: number | null;
+      /** Raw Text */
+      raw_text: string;
+      /** Remarks */
+      remarks?: string | null;
+      /** Requires Confirmation */
+      requires_confirmation: boolean;
+      /**
+       * Schema Version
+       * @constant
+       */
+      schema_version: "geometric-tolerance-candidate/1";
+      /** Scope */
+      scope?: ("local_feature" | "global_requirement") | null;
+      /** Sip Detail Fields Confirmed */
+      sip_detail_fields_confirmed?: boolean | null;
+      /** Sip Mapping Exceptions */
+      sip_mapping_exceptions?: string[] | null;
+      /** Sip Suggestion Provenance */
+      sip_suggestion_provenance?: {
+        [key: string]: string;
+      } | null;
+      /** Source Location Ids */
+      source_location_ids: string[];
+      /** Source Page */
+      source_page?: number | null;
+      /**
+       * Source Type
+       * @enum {string}
+       */
+      source_type: "automatic" | "manual";
+      /** Split From Item Id */
+      split_from_item_id?: string | null;
+      /**
+       * Standard Context
+       * @constant
+       */
+      standard_context: "unspecified";
+      /** Status */
+      status: string;
+      /** Technical Requirement Refs */
+      technical_requirement_refs?: string[] | null;
+      /** Tolerance Symbol */
+      tolerance_symbol: string | null;
+      /**
+       * Tolerance Type
+       * @enum {string}
+       */
+      tolerance_type: "straightness" | "flatness" | "circularity" | "cylindricity" | "profile_of_line" | "profile_of_surface" | "angularity" | "perpendicularity" | "parallelism" | "position" | "concentricity_or_coaxiality" | "symmetry" | "circular_runout" | "total_runout" | "unknown";
+      /** Tolerance Value */
+      tolerance_value: string | null;
+    };
+    /** GeometricToleranceReviewModifier */
+    GeometricToleranceReviewModifier: {
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "maximum_material_condition" | "least_material_condition" | "regardless_of_feature_size" | "unknown";
+      /** Raw Symbol */
+      raw_symbol: string;
+    };
+    /** GeometricToleranceReviewSegment */
+    GeometricToleranceReviewSegment: {
+      /** Datum References */
+      datum_references: components["schemas"]["GeometricToleranceReviewDatumReference"][];
+      /** Diameter Modifier */
+      diameter_modifier: boolean;
+      /** Modifiers */
+      modifiers: components["schemas"]["GeometricToleranceReviewModifier"][];
+      /** Tolerance Value */
+      tolerance_value: string;
     };
     /** HealthResponse */
     HealthResponse: {
@@ -747,7 +1021,7 @@ export interface components {
     /** ReviewCommandRequest */
     ReviewCommandRequest: {
       /** Command */
-      command: components["schemas"]["Keep"] | components["schemas"]["Exclude"] | components["schemas"]["Edit"] | components["schemas"]["Add"] | components["schemas"]["PromoteSource"] | components["schemas"]["IgnoreSource"] | components["schemas"]["IgnoreSources"] | components["schemas"]["Merge"] | components["schemas"]["Split"] | components["schemas"]["ResolveConfirmation"] | components["schemas"]["SetBalloonRequired"] | components["schemas"]["SetSipDetailFields"] | components["schemas"]["GenerateSipTable"] | components["schemas"]["SetSipMetadata"] | components["schemas"]["SetTechnicalRequirementMatch"];
+      command: components["schemas"]["Keep"] | components["schemas"]["Exclude"] | components["schemas"]["Edit"] | components["schemas"]["EditGeometricTolerance"] | components["schemas"]["Add"] | components["schemas"]["PromoteSource"] | components["schemas"]["IgnoreSource"] | components["schemas"]["IgnoreSources"] | components["schemas"]["Merge"] | components["schemas"]["Split"] | components["schemas"]["ResolveConfirmation"] | components["schemas"]["SetBalloonRequired"] | components["schemas"]["SetSipDetailFields"] | components["schemas"]["GenerateSipTable"] | components["schemas"]["SetSipMetadata"] | components["schemas"]["SetTechnicalRequirementMatch"];
       /** Expected Version */
       expected_version: number;
     };
@@ -790,9 +1064,7 @@ export interface components {
        */
       id: string;
       /** Items */
-      items: {
-          [key: string]: unknown;
-        }[];
+      items: (components["schemas"]["GeometricToleranceReviewItem"] | components["schemas"]["TypedReviewItem"] | components["schemas"]["CoarseReviewItem"])[];
       /** Items Frozen At */
       items_frozen_at: string | null;
       /** Items Frozen By */
@@ -843,9 +1115,7 @@ export interface components {
        */
       id: string;
       /** Items */
-      items: {
-          [key: string]: unknown;
-        }[];
+      items: (components["schemas"]["GeometricToleranceReviewItem"] | components["schemas"]["TypedReviewItem"] | components["schemas"]["CoarseReviewItem"])[];
       /** Items Frozen At */
       items_frozen_at: string | null;
       /** Items Frozen By */
@@ -899,9 +1169,7 @@ export interface components {
        */
       id: string;
       /** Items */
-      items: {
-          [key: string]: unknown;
-        }[];
+      items: (components["schemas"]["GeometricToleranceReviewItem"] | components["schemas"]["TypedReviewItem"] | components["schemas"]["CoarseReviewItem"])[];
       /**
        * Project Id
        * Format: uuid
@@ -1011,6 +1279,106 @@ export interface components {
     SplitPart: {
       /** Raw Text */
       raw_text: string;
+    };
+    /** TypedReviewItem */
+    TypedReviewItem: {
+      /** Acceptance Source */
+      acceptance_source?: string | null;
+      /**
+       * Active
+       * @default true
+       */
+      active?: boolean;
+      /** Angle Value */
+      angle_value?: string | null;
+      /** Balloon Required */
+      balloon_required?: boolean | null;
+      /** Confidence Decision */
+      confidence_decision?: {
+        [key: string]: unknown;
+      } | null;
+      /** Confirmation Accepted */
+      confirmation_accepted?: boolean | null;
+      /** Coordinates */
+      coordinates?: [number, number, number, number] | null;
+      /** Depth */
+      depth?: string | null;
+      /** Feature Kind */
+      feature_kind?: ("hole" | "shaft" | "cylindrical_feature" | "unknown") | null;
+      /** Inspection Item */
+      inspection_item?: string | null;
+      /** Inspection Method */
+      inspection_method?: string | null;
+      /** Inspection Role */
+      inspection_role?: string | null;
+      /** Inspection Standard */
+      inspection_standard?: string | null;
+      /** Item Id */
+      item_id: string;
+      /**
+       * Item Type
+       * @enum {string}
+       */
+      item_type: "linear_dimension" | "diameter_dimension" | "thread" | "radius" | "angle" | "general_requirement" | "composite";
+      /** Key Dimension */
+      key_dimension?: string | null;
+      /** Lower Tolerance */
+      lower_tolerance?: string | null;
+      /** Merged From Item Ids */
+      merged_from_item_ids?: string[] | null;
+      /** Nominal */
+      nominal?: string | null;
+      /** Normalized Text */
+      normalized_text?: string | null;
+      /** Page Index */
+      page_index?: number | null;
+      /** Quantity */
+      quantity?: number | null;
+      /** Radius Value */
+      radius_value?: string | null;
+      /** Raw Text */
+      raw_text: string;
+      /** Remarks */
+      remarks?: string | null;
+      /** Requires Confirmation */
+      requires_confirmation: boolean;
+      /** Scope */
+      scope?: ("local_feature" | "global_requirement") | null;
+      /** Sip Detail Fields Confirmed */
+      sip_detail_fields_confirmed?: boolean | null;
+      /** Sip Mapping Exceptions */
+      sip_mapping_exceptions?: string[] | null;
+      /** Sip Suggestion Provenance */
+      sip_suggestion_provenance?: {
+        [key: string]: string;
+      } | null;
+      /** Source Location Ids */
+      source_location_ids: string[];
+      /** Source Page */
+      source_page?: number | null;
+      /**
+       * Source Type
+       * @enum {string}
+       */
+      source_type: "automatic" | "manual";
+      /** Split From Item Id */
+      split_from_item_id?: string | null;
+      /** Status */
+      status: string;
+      /** Sub Requirements */
+      sub_requirements?: {
+          [key: string]: unknown;
+        }[];
+      /** Technical Requirement Refs */
+      technical_requirement_refs?: string[] | null;
+      /** Thread Depth */
+      thread_depth?: string | null;
+      /** Thread Spec */
+      thread_spec?: string | null;
+      /** Through */
+      through?: boolean | null;
+      /** Upper Tolerance */
+      upper_tolerance?: string | null;
     };
     /** WorkbenchProjectResponse */
     WorkbenchProjectResponse: {

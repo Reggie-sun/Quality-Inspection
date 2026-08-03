@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Any, Literal, Union
 
 from pydantic import (
@@ -14,6 +15,11 @@ from pydantic import (
     model_validator,
 )
 
+from app.candidates.geometric_tolerance import (
+    GdtFrame,
+    GdtModifierKind,
+    ToleranceType,
+)
 from app.candidates.schemas import CandidateType
 
 
@@ -45,6 +51,14 @@ class Edit(CommandBase):
     type: Literal["edit"]
     item_id: str = Field(min_length=1)
     fields: dict[str, Any] = Field(min_length=1)
+
+
+class EditGeometricTolerance(CommandBase):
+    type: Literal["edit_geometric_tolerance"]
+    item_id: str = Field(min_length=1)
+    tolerance_type: ToleranceType
+    frames: tuple[GdtFrame, ...] = Field(min_length=1)
+    standard_context: Literal["unspecified"]
 
 
 class Add(CommandBase):
@@ -195,6 +209,7 @@ ReviewCommand = Annotated[
         Keep,
         Exclude,
         Edit,
+        EditGeometricTolerance,
         Add,
         PromoteSource,
         IgnoreSource,
@@ -244,12 +259,114 @@ class ReviewLockReleaseResponse(CommandBase):
     released: bool
 
 
+class ReviewItemBase(CommandBase):
+    item_id: NonBlankText
+    raw_text: str
+    normalized_text: str | None = None
+    coordinates: tuple[float, float, float, float] | None = None
+    source_location_ids: list[NonBlankText]
+    source_type: Literal["automatic", "manual"]
+    status: str
+    requires_confirmation: bool
+    acceptance_source: str | None = None
+    active: bool = True
+    confirmation_accepted: bool | None = None
+    scope: Literal["local_feature", "global_requirement"] | None = None
+    balloon_required: bool | None = None
+    page_index: int | None = Field(default=None, ge=0)
+    technical_requirement_refs: list[NonBlankText] | None = None
+    confidence_decision: dict[str, Any] | None = None
+    inspection_item: str | None = None
+    inspection_standard: str | None = None
+    inspection_method: str | None = None
+    key_dimension: str | None = None
+    inspection_role: str | None = None
+    source_page: int | None = Field(default=None, ge=1)
+    remarks: str | None = None
+    sip_detail_fields_confirmed: bool | None = None
+    sip_suggestion_provenance: dict[str, str] | None = None
+    sip_mapping_exceptions: list[str] | None = None
+    merged_from_item_ids: list[NonBlankText] | None = None
+    split_from_item_id: NonBlankText | None = None
+
+
+class TypedReviewItem(ReviewItemBase):
+    item_type: CandidateType
+    quantity: int | None = Field(default=None, ge=1)
+    nominal: Decimal | None = None
+    upper_tolerance: Decimal | None = None
+    lower_tolerance: Decimal | None = None
+    feature_kind: Literal[
+        "hole", "shaft", "cylindrical_feature", "unknown"
+    ] | None = None
+    depth: Decimal | None = None
+    through: bool | None = None
+    thread_spec: str | None = None
+    thread_depth: Decimal | None = None
+    radius_value: Decimal | None = None
+    angle_value: Decimal | None = None
+    sub_requirements: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CoarseReviewItem(ReviewItemBase):
+    coarse_type: Literal["roughness", "weld", "cross_view_duplicate"]
+
+
+class GeometricToleranceReviewModifier(CommandBase):
+    kind: GdtModifierKind
+    raw_symbol: NonBlankText
+
+
+class GeometricToleranceReviewDatumReference(CommandBase):
+    datum: Annotated[str, StringConstraints(pattern=r"^[A-Z]$")]
+    modifiers: list[GeometricToleranceReviewModifier] = Field(
+        default_factory=list
+    )
+
+
+class GeometricToleranceReviewSegment(CommandBase):
+    tolerance_value: Decimal = Field(gt=0)
+    diameter_modifier: bool
+    modifiers: list[GeometricToleranceReviewModifier]
+    datum_references: list[GeometricToleranceReviewDatumReference]
+
+
+class GeometricToleranceReviewFrame(CommandBase):
+    segments: list[GeometricToleranceReviewSegment] = Field(min_length=1)
+
+
+class GeometricToleranceReviewItem(ReviewItemBase):
+    item_type: Literal["geometric_tolerance"]
+    schema_version: Literal["geometric-tolerance-candidate/1"]
+    normalized_text: NonBlankText
+    coordinates: tuple[float, float, float, float]
+    tolerance_type: ToleranceType
+    tolerance_symbol: str | None
+    tolerance_value: Decimal | None
+    diameter_modifier: bool
+    modifiers: list[GeometricToleranceReviewModifier]
+    datum_references: list[GeometricToleranceReviewDatumReference]
+    frames: list[GeometricToleranceReviewFrame] = Field(min_length=0)
+    standard_context: Literal["unspecified"]
+    evidence_ref: NonBlankText
+
+
+ReviewItemProjection = Annotated[
+    Union[
+        GeometricToleranceReviewItem,
+        TypedReviewItem,
+        CoarseReviewItem,
+    ],
+    Field(json_schema_extra={"type": "object"}),
+]
+
+
 class ReviewWorkingCopyProjection(CommandBase):
     id: uuid.UUID
     project_id: uuid.UUID
     raw_result_id: uuid.UUID
     version: int
-    items: list[dict[str, Any]]
+    items: list[ReviewItemProjection]
     coverage: dict[str, Any]
     technical_requirements: list[dict[str, Any]]
     sip_metadata: dict[str, Any]
@@ -272,7 +389,7 @@ class ReviewedResultResponse(CommandBase):
     project_id: uuid.UUID
     working_copy_id: uuid.UUID
     working_version: int
-    items: list[dict[str, Any]]
+    items: list[ReviewItemProjection]
     balloons: list[dict[str, Any]]
     sip_metadata: dict[str, Any]
     schema_version: str
@@ -286,6 +403,20 @@ COMPLEX_EDITABLE_FIELDS = {
     "requires_confirmation",
 }
 PROTECTED_TYPED_EDIT_FIELDS = {"candidate_id", "balloon_required"}
+PROTECTED_GDT_EDIT_FIELDS = {
+    "item_type",
+    "schema_version",
+    "normalized_text",
+    "tolerance_type",
+    "tolerance_symbol",
+    "tolerance_value",
+    "diameter_modifier",
+    "modifiers",
+    "datum_references",
+    "frames",
+    "standard_context",
+    "evidence_ref",
+}
 
 
 def parse_review_command(command: dict[str, object]) -> ReviewCommand:
@@ -296,6 +427,13 @@ def validate_edit_fields(
     item: dict[str, object],
     fields: dict[str, object],
 ) -> None:
+    if item.get("item_type") == "geometric_tolerance":
+        protected = set(fields) & PROTECTED_GDT_EDIT_FIELDS
+        if protected:
+            raise ValueError(
+                "derived geometric tolerance fields are editable only with "
+                f"edit_geometric_tolerance: {sorted(protected)}"
+            )
     if "coarse_type" not in item:
         protected = set(fields) & PROTECTED_TYPED_EDIT_FIELDS
         if protected:

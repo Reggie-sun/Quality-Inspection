@@ -81,6 +81,7 @@ SCHEMA_FILES = (
     "human-verdict.schema.json",
     "live-run-evidence.schema.json",
     "p0-contracts.schema.json",
+    "provider-account-runtime-acceptance.schema.json",
     "provider-fixture.schema.json",
     "receipt.schema.json",
     "run.schema.json",
@@ -948,6 +949,35 @@ def build_receipt(
             )
     formal_verdict = overall if formal_allowed else None
     external_calls = _fixture_external_calls(run, results, actual_run_dir)
+    paid_cycle_receipt: dict[str, Any] | None = None
+    if run.get("schema_version") in {"run/2", "run/3"}:
+        live = _load_json(actual_run_dir / "live-run-evidence.json")
+        validate_schema(live, "live-run-evidence.schema.json", root)
+        _live_evidence_policy().validate_paid_cycle_evidence(
+            run,
+            live,
+            require_success=overall == "passed",
+            evidence_dir=actual_run_dir,
+            root=root,
+        )
+    if run.get("schema_version") == "run/2":
+        paid_cycle = live.get("paid_cycle")
+        if not isinstance(paid_cycle, Mapping):
+            raise ValueError("paid cycle receipt evidence is missing")
+        ledger = paid_cycle.get("ledger")
+        terminal = paid_cycle.get("terminal")
+        if not isinstance(ledger, Mapping) or not isinstance(terminal, Mapping):
+            raise ValueError("paid cycle receipt terminal is missing")
+        paid_cycle_receipt = {
+            "cycle_id": paid_cycle["cycle_id"],
+            "pricing_sha256": paid_cycle["pricing_sha256"],
+            "ledger_evidence_sha256": ledger["evidence_sha256"],
+            "resume_consumed_sha256": paid_cycle["resume_consumed_sha256"],
+            "terminal_sha256": terminal["terminal_sha256"],
+            "bridge_evidence_sha256": terminal[
+                "bridge_evidence_sha256"
+            ],
+        }
 
     receipt = {
         "schema_version": "receipt/1",
@@ -973,6 +1003,8 @@ def build_receipt(
         "formal_p0_verdict": formal_verdict,
         "generated_at": _iso(generated),
     }
+    if paid_cycle_receipt is not None:
+        receipt["paid_cycle"] = paid_cycle_receipt
     validate_schema(receipt, "receipt.schema.json", root)
     return receipt
 

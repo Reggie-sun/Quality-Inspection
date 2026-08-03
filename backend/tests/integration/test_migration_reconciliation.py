@@ -12,6 +12,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import DBAPIError
 
 from app.db import engine
 
@@ -21,6 +22,12 @@ MIGRATION_PATHS = (
     BACKEND_PATH / "alembic" / "versions" / "0009_symbol_routing_evidence.py",
     BACKEND_PATH / "alembic" / "versions" / "0010_technical_requirements.py",
     BACKEND_PATH / "alembic" / "versions" / "0011_symbol_result_completeness.py",
+)
+PROVIDER_FAILURE_MIGRATION_PATH = (
+    BACKEND_PATH
+    / "alembic"
+    / "versions"
+    / "0016_symbol_provider_failure_diagnostics.py"
 )
 
 
@@ -34,6 +41,265 @@ def _load_migration(path: Path) -> ModuleType:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _create_minimal_projects_table(
+    connection: sa.Connection,
+    *,
+    schema: str,
+) -> None:
+    sa.Table(
+        "projects",
+        sa.MetaData(),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+        ),
+        schema=schema,
+    ).create(connection)
+
+
+def _insert_legacy_symbol_routing_evidence(
+    connection: sa.Connection,
+    *,
+    project_id: uuid.UUID,
+    decision_id: uuid.UUID,
+    attempt_id: uuid.UUID,
+    outcome_id: uuid.UUID,
+) -> None:
+    connection.execute(
+        sa.text("INSERT INTO projects (id) VALUES (:project_id)"),
+        {"project_id": project_id},
+    )
+    connection.execute(
+        sa.text(
+            "INSERT INTO symbol_routing_decisions ("
+            "id, project_id, visual_observation_id, escalation_group_id, "
+            "escalation_group_member_index, local_resolution_ref, "
+            "schema_version, router_version, input_sha256, disposition, "
+            "local_resolution_reason_codes, escalation_reason_codes, "
+            "block_reason_codes, requires_confirmation, decision_sha256"
+            ") VALUES ("
+            ":id, :project_id, 'visual-1', 'group-1', 0, NULL, "
+            "'symbol-routing-decision/1', 'symbol-uncertainty-router/1', "
+            ":input_sha, 'escalate', '[]'::jsonb, "
+            "'[\"local_parse_incomplete\"]'::jsonb, '[]'::jsonb, true, "
+            ":decision_sha"
+            ")"
+        ),
+        {
+            "id": decision_id,
+            "project_id": project_id,
+            "input_sha": "a" * 64,
+            "decision_sha": "b" * 64,
+        },
+    )
+    connection.execute(
+        sa.text(
+            "INSERT INTO symbol_escalation_attempt_events ("
+            "id, project_id, escalation_group_id, routing_decision_sha256, "
+            "attempt_index, event_code, cache_entry_id, provider_request_id, "
+            "event_sha256"
+            ") VALUES ("
+            ":id, :project_id, 'group-1', :decision_sha, 0, 'cache_miss', "
+            "NULL, NULL, :event_sha"
+            ")"
+        ),
+        {
+            "id": attempt_id,
+            "project_id": project_id,
+            "decision_sha": "b" * 64,
+            "event_sha": "c" * 64,
+        },
+    )
+    connection.execute(
+        sa.text(
+            "INSERT INTO symbol_escalation_outcomes ("
+            "id, project_id, escalation_group_id, routing_decision_sha256, "
+            "schema_version, outcome_code, observation_outcomes, "
+            "attempt_event_sha256s, terminal, outcome_sha256"
+            ") VALUES ("
+            ":id, :project_id, 'group-1', :decision_sha, "
+            "'symbol-escalation-outcome/1', 'unresolved', "
+            "'[ {\"visual_observation_id\": \"visual-1\", "
+            "\"outcome_code\": \"provider_unavailable\"} ]'::jsonb, "
+            "'[\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"]'::jsonb, "
+            "true, :outcome_sha"
+            ")"
+        ),
+        {
+            "id": outcome_id,
+            "project_id": project_id,
+            "decision_sha": "b" * 64,
+            "outcome_sha": "d" * 64,
+        },
+    )
+
+
+def test_provider_failure_diagnostic_migration_preserves_legacy_rows() -> None:
+    schema = f"migration_provider_failure_{uuid.uuid4().hex}"
+    migration_0009 = _load_migration(MIGRATION_PATHS[0])
+    migration_0014 = _load_migration(PROVIDER_FAILURE_MIGRATION_PATH)
+    project_id = uuid.uuid4()
+    decision_id = uuid.uuid4()
+    attempt_id = uuid.uuid4()
+    outcome_id = uuid.uuid4()
+
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+            connection.execute(
+                sa.text(f'SET LOCAL search_path TO "{schema}", public')
+            )
+            _create_minimal_projects_table(connection, schema=schema)
+            operations = Operations(MigrationContext.configure(connection))
+            migration_0009.op = operations
+            migration_0014.op = operations
+            migration_0009.upgrade()
+            _insert_legacy_symbol_routing_evidence(
+                connection,
+                project_id=project_id,
+                decision_id=decision_id,
+                attempt_id=attempt_id,
+                outcome_id=outcome_id,
+            )
+            trigger_state = connection.scalar(
+                sa.text(
+                    "SELECT tgenabled FROM pg_trigger "
+                    "WHERE tgname = "
+                    "'prevent_symbol_escalation_attempt_events_update_delete'"
+                )
+            )
+            assert trigger_state == "O"
+
+            migration_0014.upgrade()
+
+            assert {
+                column["name"]
+                for column in sa.inspect(connection).get_columns(
+                    "symbol_escalation_attempt_events"
+                )
+            } >= {"schema_version", "diagnostic", "diagnostic_sha256"}
+            assert connection.execute(
+                sa.text(
+                    "SELECT schema_version, diagnostic, diagnostic_sha256 "
+                    "FROM symbol_escalation_attempt_events WHERE id = :id"
+                ),
+                {"id": attempt_id},
+            ).one() == ("symbol-escalation-attempt/1", None, None)
+
+            migration_0014.downgrade()
+
+            assert not {
+                "schema_version",
+                "diagnostic",
+                "diagnostic_sha256",
+            } & {
+                column["name"]
+                for column in sa.inspect(connection).get_columns(
+                    "symbol_escalation_attempt_events"
+                )
+            }
+            assert connection.scalar(
+                sa.text("SELECT count(*) FROM symbol_routing_decisions")
+            ) == 1
+            assert connection.scalar(
+                sa.text("SELECT count(*) FROM symbol_escalation_outcomes")
+            ) == 1
+        finally:
+            transaction.rollback()
+
+
+def test_provider_failure_diagnostic_downgrade_refuses_v2_evidence() -> None:
+    schema = f"migration_provider_failure_v2_{uuid.uuid4().hex}"
+    migration_0009 = _load_migration(MIGRATION_PATHS[0])
+    migration_0014 = _load_migration(PROVIDER_FAILURE_MIGRATION_PATH)
+    project_id = uuid.uuid4()
+
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+            connection.execute(
+                sa.text(f'SET LOCAL search_path TO "{schema}", public')
+            )
+            _create_minimal_projects_table(connection, schema=schema)
+            operations = Operations(MigrationContext.configure(connection))
+            migration_0009.op = operations
+            migration_0014.op = operations
+            migration_0009.upgrade()
+            connection.execute(
+                sa.text("INSERT INTO projects (id) VALUES (:project_id)"),
+                {"project_id": project_id},
+            )
+            migration_0014.upgrade()
+            diagnostic = (
+                '{"schema_version":"visual-symbol-provider-failure/1",'
+                '"failure_category":"rate_limited"}'
+            )
+            attempt_id = uuid.uuid4()
+            connection.execute(
+                sa.text(
+                    "INSERT INTO symbol_escalation_attempt_events ("
+                    "id, project_id, escalation_group_id, "
+                    "routing_decision_sha256, attempt_index, event_code, "
+                    "cache_entry_id, provider_request_id, event_sha256, "
+                    "schema_version, diagnostic, diagnostic_sha256"
+                    ") VALUES ("
+                    ":id, :project_id, 'group-1', :decision_sha, 0, "
+                    "'provider_rate_limited', NULL, NULL, :event_sha, "
+                    "'symbol-escalation-attempt/2', CAST(:diagnostic AS jsonb), "
+                    ":diagnostic_sha"
+                    ")"
+                ),
+                {
+                    "id": attempt_id,
+                    "project_id": project_id,
+                    "decision_sha": "a" * 64,
+                    "event_sha": "b" * 64,
+                    "diagnostic": diagnostic,
+                    "diagnostic_sha": "c" * 64,
+                },
+            )
+            before = connection.execute(
+                sa.text(
+                    "SELECT schema_version, diagnostic::text, "
+                    "diagnostic_sha256, event_sha256 "
+                    "FROM symbol_escalation_attempt_events WHERE id = :id"
+                ),
+                {"id": attempt_id},
+            ).one()
+
+            savepoint = connection.begin_nested()
+            with pytest.raises(DBAPIError) as raised:
+                migration_0014.downgrade()
+            assert raised.value.orig.sqlstate == "23514"
+            savepoint.rollback()
+
+            assert {
+                "schema_version",
+                "diagnostic",
+                "diagnostic_sha256",
+            }.issubset(
+                {
+                    column["name"]
+                    for column in sa.inspect(connection).get_columns(
+                        "symbol_escalation_attempt_events"
+                    )
+                }
+            )
+            assert connection.execute(
+                sa.text(
+                    "SELECT schema_version, diagnostic::text, "
+                    "diagnostic_sha256, event_sha256 "
+                    "FROM symbol_escalation_attempt_events WHERE id = :id"
+                ),
+                {"id": attempt_id},
+            ).one() == before
+        finally:
+            transaction.rollback()
 
 
 def test_integrated_migration_converges_feature_only_0008_schema() -> None:

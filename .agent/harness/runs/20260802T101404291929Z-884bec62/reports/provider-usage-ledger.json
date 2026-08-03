@@ -1,0 +1,44 @@
+{
+  "committed_total_cny": "3.526656",
+  "content_sha256": "3f2a2465f97d6038a0296eeb0340df6a44fd8e743e77133e286c2a22695e5d6f",
+  "cycle_id": "gdt10d-classified-live-20260802",
+  "entries": [
+    {
+      "attempt_index": 1,
+      "charged_cny": "1.763328",
+      "crop_expansion_count": 0,
+      "operation": "review_symbols",
+      "page_index": 0,
+      "project_id": "55dbd769-8fab-44a2-bcbd-768b8bbf4312",
+      "provider": "qwen-vl",
+      "reservation_cny": "1.763328",
+      "retry_index": 0,
+      "state": "reserved_unknown",
+      "subject_id": "71421a2c5b95a7cda10deac4e9e8abdecd44a038adf509a0d93400381f7871d9",
+      "subject_kind": "escalation_group"
+    },
+    {
+      "attempt_index": 2,
+      "charged_cny": "1.763328",
+      "crop_expansion_count": 0,
+      "operation": "review_symbols",
+      "page_index": 0,
+      "project_id": "55dbd769-8fab-44a2-bcbd-768b8bbf4312",
+      "provider": "qwen-vl",
+      "reservation_cny": "1.763328",
+      "retry_index": 0,
+      "state": "reserved_unknown",
+      "subject_id": "1c731957e8b744014347f58def08b82f432451e0b35944189b414166595fd63d",
+      "subject_kind": "escalation_group"
+    }
+  ],
+  "journal_ref": "asset://provider-usage-cycles/gdt10d-classified-live-20260802/",
+  "pricing_sha256": "c6b37f8a811d38444ccd89a5862d676343e414db21dbc02d9ca9979496364a2b",
+  "reservation_count": 2,
+  "reserved_only_count": 0,
+  "run_id": "20260802T101404291929Z-884bec62",
+  "schema_version": "provider-usage-evidence/1",
+  "settled_count": 2,
+  "submission_started_count": 2,
+  "unsettled_started_count": 0
+}

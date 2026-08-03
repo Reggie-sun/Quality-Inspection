@@ -42,7 +42,6 @@ from app.processing.automatic_result import (
     build_automatic_result,
     candidate_snapshot_from_inventory,
 )
-from app.providers.base import LOCALIZED_PROVIDER_FAILURE_CATEGORIES
 from app.projects.lifecycle import (
     ProjectLifecycleNotFound,
     ProjectLifecycleService,
@@ -178,7 +177,7 @@ class InventoryPipeline:
         pages: tuple[Any, ...],
     ) -> str:
         document = {
-            "schema_version": "page-inventory/1",
+            "schema_version": "page-inventory/2",
             "pages": [page.to_dict() for page in pages],
         }
         content = json.dumps(
@@ -421,10 +420,10 @@ class InventoryPipeline:
                 stage="candidate_advisor",
                 location_ref=None,
                 cause_category=(
-                    "transient_provider_failure"
-                    if exc.failure_category
-                    in LOCALIZED_PROVIDER_FAILURE_CATEGORIES
-                    else "processing_defect"
+                    "processing_defect"
+                    if routing_evidence_failure
+                    or exc.pipeline_cause_category is None
+                    else exc.pipeline_cause_category
                 ),
             )
             if existing is not None:

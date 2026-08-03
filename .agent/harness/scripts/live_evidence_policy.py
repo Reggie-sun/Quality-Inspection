@@ -9,6 +9,7 @@ import math
 import re
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -1220,14 +1221,219 @@ def validate_symbol_recognition_evidence(
         "visual_calls_by_page",
         "total_vision_calls_by_page",
         "source_command_count",
+        "typed_gdt_cases",
+        "provider_call_identities",
         "evaluation",
         "failures",
         "passed",
     }
     evaluation = report.get("evaluation")
+    typed_cases = report.get("typed_gdt_cases")
+    provider_identities = report.get("provider_call_identities")
+    expected_cases = {
+        "case_a": ("parallelism", "∥", "0.1", ["A"], "gdt_parallelism"),
+        "case_b": ("flatness", "⏥", "0.08", [], "gdt_flatness"),
+    }
+    typed_cases_valid = isinstance(typed_cases, Mapping) and set(
+        typed_cases
+    ) == set(expected_cases)
+    if typed_cases_valid:
+        for case_name, expected in expected_cases.items():
+            case = typed_cases[case_name]
+            datums = case.get("datum_references") if isinstance(case, Mapping) else None
+            datum_names = (
+                [entry.get("datum") for entry in datums if isinstance(entry, Mapping)]
+                if isinstance(datums, list)
+                else None
+            )
+            frames = case.get("frames") if isinstance(case, Mapping) else None
+            first_frame = frames[0] if isinstance(frames, list) and frames else None
+            segments = (
+                first_frame.get("segments")
+                if isinstance(first_frame, Mapping)
+                else None
+            )
+            first_segment = (
+                segments[0]
+                if isinstance(segments, list) and segments
+                else None
+            )
+            segment_datums = (
+                first_segment.get("datum_references")
+                if isinstance(first_segment, Mapping)
+                else None
+            )
+            segment_datum_names = (
+                [
+                    entry.get("datum")
+                    for entry in segment_datums
+                    if isinstance(entry, Mapping)
+                ]
+                if isinstance(segment_datums, list)
+                else None
+            )
+            if (
+                not isinstance(case, Mapping)
+                or set(case)
+                != {
+                    "candidate_id",
+                    "annotation_label_id",
+                    "schema_version",
+                    "item_type",
+                    "tolerance_type",
+                    "tolerance_symbol",
+                    "tolerance_value",
+                    "datum_references",
+                    "frames",
+                    "source_location_ids",
+                }
+                or not isinstance(case.get("candidate_id"), str)
+                or not isinstance(case.get("annotation_label_id"), str)
+                or case.get("schema_version")
+                != "geometric-tolerance-candidate/1"
+                or case.get("item_type") != "geometric_tolerance"
+                or (
+                    case.get("tolerance_type"),
+                    case.get("tolerance_symbol"),
+                    case.get("tolerance_value"),
+                    datum_names,
+                )
+                != expected[:4]
+                or not isinstance(first_segment, Mapping)
+                or first_segment.get("tolerance_value") != expected[2]
+                or first_segment.get("diameter_modifier") is not False
+                or segment_datum_names != expected[3]
+                or not isinstance(case.get("source_location_ids"), list)
+                or not case["source_location_ids"]
+            ):
+                typed_cases_valid = False
+                break
+    schema_path = (
+        root / "backend/app/providers/visual_symbol_review.schema.json"
+    )
+    expected_schema_sha256 = (
+        hashlib.sha256(schema_path.read_bytes()).hexdigest()
+        if schema_path.is_file()
+        else None
+    )
+
+    def provider_identity_is_valid(identity: Any) -> bool:
+        if not isinstance(identity, Mapping):
+            return False
+        visual_ids = identity.get("visual_observation_ids")
+        crop_bbox_pdf = identity.get("crop_bbox_pdf")
+        prompt_identity = json.dumps(
+            {
+                "prompt_version": identity.get("prompt_version"),
+                "schema_version": identity.get("schema_version"),
+                "visual_observation_ids": visual_ids,
+                "crop_bbox_pdf": crop_bbox_pdf,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        try:
+            crop_artifact_valid = _verified_hashed_artifact(
+                root,
+                run,
+                identity.get("crop_ref"),
+                identity.get("crop_sha256"),
+                run_dir=run_dir,
+                expect_png=True,
+            )[0].is_file()
+        except ValueError:
+            crop_artifact_valid = False
+        return bool(
+            set(identity)
+            == {
+                "source_sha256",
+                "visual_observation_ids",
+                "crop_bbox_pdf",
+                "crop_sha256",
+                "crop_ref",
+                "model",
+                "model_identity_sha256",
+                "prompt_version",
+                "prompt_identity_sha256",
+                "schema_version",
+                "schema_sha256",
+                "request_id_sha256",
+            }
+            and identity.get("source_sha256") == report.get("source_sha256")
+            and identity.get("crop_ref")
+            == f"artifacts/provider-crops/{identity.get('crop_sha256')}.png"
+            and isinstance(visual_ids, list)
+            and bool(visual_ids)
+            and isinstance(crop_bbox_pdf, list)
+            and len(crop_bbox_pdf) == 4
+            and all(
+                isinstance(identity.get(field), str)
+                and bool(identity[field])
+                for field in ("model", "prompt_version", "schema_version")
+            )
+            and all(
+                isinstance(identity.get(field), str)
+                and re.fullmatch(r"[0-9a-f]{64}", identity[field]) is not None
+                for field in (
+                    "source_sha256",
+                    "crop_sha256",
+                    "model_identity_sha256",
+                    "prompt_identity_sha256",
+                    "schema_sha256",
+                    "request_id_sha256",
+                )
+            )
+            and identity.get("model_identity_sha256")
+            == hashlib.sha256(identity["model"].encode("utf-8")).hexdigest()
+            and identity.get("prompt_identity_sha256")
+            == hashlib.sha256(prompt_identity).hexdigest()
+            and (
+                expected_schema_sha256 is None
+                or identity.get("schema_sha256") == expected_schema_sha256
+            )
+            and crop_artifact_valid
+        )
+
+    provider_identities_valid = (
+        isinstance(provider_identities, list)
+        and bool(provider_identities)
+        and all(provider_identity_is_valid(identity) for identity in provider_identities)
+        and len(
+            {identity["request_id_sha256"] for identity in provider_identities}
+        )
+        == len(provider_identities)
+    )
+    case_bindings_valid = bool(
+        typed_cases_valid
+        and isinstance(typed_cases, Mapping)
+        and isinstance(evaluation, Mapping)
+        and isinstance(evaluation.get("label_matches"), list)
+        and all(
+            any(
+                isinstance(match, Mapping)
+                and match.get("candidate_id") == case.get("candidate_id")
+                and match.get("label_id") == case.get("annotation_label_id")
+                and match.get("disposition") == "candidate"
+                and any(
+                    label.get("label_id") == case.get("annotation_label_id")
+                    and label.get("symbol_kinds") == [expected_cases[name][4]]
+                    for page in symbol_manifest.get("pages", [])
+                    if isinstance(page, Mapping)
+                    for label in page.get("labels", [])
+                    if isinstance(label, Mapping)
+                )
+                for match in evaluation["label_matches"]
+            )
+            for name, case in typed_cases.items()
+        )
+    )
+    evaluation_counts = (
+        evaluation.get("counts") if isinstance(evaluation, Mapping) else None
+    )
     if (
         set(report) != expected_report_fields
-        or report.get("schema_version") != "symbol-recognition-live-report/1"
+        or report.get("schema_version") != "symbol-recognition-live-report/2"
         or report.get("selector") != SYMBOL_RECOGNITION_SELECTOR
         or report.get("run_id") != run.get("run_id")
         or report.get("order") != 1
@@ -1242,17 +1448,21 @@ def validate_symbol_recognition_evidence(
         or report.get("source_command_count") != 0
         or report.get("failures") != []
         or report.get("passed") is not True
+        or not typed_cases_valid
+        or not provider_identities_valid
+        or not case_bindings_valid
         or not isinstance(evaluation, Mapping)
         or evaluation.get("schema_version") != "symbol-eval-report/1"
         or evaluation.get("passed") is not True
         or evaluation.get("failures") != []
-        or evaluation.get("counts", {}).get("candidate_match_count")
+        or not isinstance(evaluation_counts, Mapping)
+        or evaluation_counts.get("candidate_match_count")
         != evidence.get("candidate_match_count")
-        or evaluation.get("counts", {}).get("reference_match_count")
+        or evaluation_counts.get("reference_match_count")
         != evidence.get("reference_match_count")
-        or evaluation.get("counts", {}).get("non_inspection_match_count")
+        or evaluation_counts.get("non_inspection_match_count")
         != evidence.get("non_inspection_match_count")
-        or evaluation.get("counts", {}).get("negative_false_positive_count")
+        or evaluation_counts.get("negative_false_positive_count")
         != 0
     ):
         raise ValueError("symbol recognition report is stale or incomplete")
@@ -1292,6 +1502,13 @@ def validate_live_evidence(
         or live.get("child_run_ids") != []
     ):
         raise ValueError("current-four live evidence identity is inconsistent")
+
+    validate_paid_cycle_evidence(
+        run,
+        live,
+        evidence_dir=evidence_dir,
+        root=root,
+    )
 
     entries = manifest.get("entries")
     samples = live.get("samples")
@@ -1369,6 +1586,698 @@ def validate_live_evidence(
             verdict_by_order[order],
             sample_by_order[order],
             run_dir=evidence_dir,
+        )
+
+
+def _canonical_document_hash(document: Mapping[str, Any]) -> str:
+    payload = dict(document)
+    payload.pop("content_sha256", None)
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def account_readiness_projection(
+    run: Mapping[str, Any],
+    live: Mapping[str, Any],
+    runtime_acceptance: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the only permitted public projection of a sealed acceptance fact."""
+    fact_keys = {
+        "schema_version",
+        "cycle_id",
+        "run_id",
+        "project_id",
+        "readiness_sha256",
+        "submission_started_sha256",
+        "settlement_sha256",
+        "call_evidence_sha256",
+        "model",
+        "ledger_attempt_index",
+        "accepted_at",
+        "content_sha256",
+    }
+    if (
+        set(runtime_acceptance) != fact_keys
+        or runtime_acceptance.get("schema_version")
+        != "provider-account-runtime-acceptance/1"
+        or runtime_acceptance.get("content_sha256")
+        != _canonical_document_hash(runtime_acceptance)
+        or not isinstance(runtime_acceptance.get("project_id"), str)
+        or not runtime_acceptance["project_id"]
+        or not isinstance(runtime_acceptance.get("ledger_attempt_index"), int)
+        or runtime_acceptance["ledger_attempt_index"] < 1
+        or runtime_acceptance.get("model") != "qwen3-vl-plus-2025-12-19"
+        or not isinstance(runtime_acceptance.get("accepted_at"), str)
+        or not runtime_acceptance["accepted_at"]
+        or any(
+            not isinstance(runtime_acceptance.get(name), str)
+            or re.fullmatch(r"[0-9a-f]{64}", runtime_acceptance[name]) is None
+            for name in (
+                "readiness_sha256",
+                "submission_started_sha256",
+                "settlement_sha256",
+                "call_evidence_sha256",
+            )
+        )
+    ):
+        raise ValueError("runtime acceptance fact is invalid")
+    authorization = run.get("cycle_authorization")
+    paid = live.get("paid_cycle")
+    if (
+        run.get("schema_version") != "run/3"
+        or live.get("schema_version") != "live-run-evidence/3"
+        or not isinstance(authorization, Mapping)
+        or not isinstance(paid, Mapping)
+        or runtime_acceptance.get("run_id") != run.get("run_id")
+        or runtime_acceptance.get("cycle_id") != authorization.get("cycle_id")
+        or paid.get("cycle_id") != authorization.get("cycle_id")
+    ):
+        raise ValueError("runtime acceptance binding is invalid")
+    readiness = authorization.get("readiness_evidence")
+    live_readiness = paid.get("readiness_evidence")
+    if (
+        not isinstance(readiness, Mapping)
+        or not isinstance(live_readiness, Mapping)
+        or dict(live_readiness) != dict(readiness)
+    ):
+        raise ValueError("runtime acceptance readiness projection is invalid")
+    if (
+        readiness.get("schema_version") != "provider-account-readiness-evidence/1"
+        or readiness.get("runtime_state") != "not_yet_accepted"
+        or readiness.get("runtime_acceptance_sha256") is not None
+        or readiness.get("binding_match") is not True
+        or runtime_acceptance.get("readiness_sha256")
+        != readiness.get("readiness_sha256")
+    ):
+        raise ValueError("runtime acceptance readiness binding is invalid")
+    projected = json.loads(json.dumps(live))
+    projected["paid_cycle"]["readiness_evidence"] = {
+        **dict(readiness),
+        "runtime_state": "runtime_accepted",
+        "runtime_acceptance_sha256": runtime_acceptance["content_sha256"],
+    }
+    return projected
+
+
+def _validate_v3_runtime_acceptance(
+    run: Mapping[str, Any],
+    live: Mapping[str, Any],
+    evidence_dir: Path,
+    *,
+    require_accepted: bool,
+) -> None:
+    """Require the public v3 state to be the exact projection of one sealed fact."""
+    authorization = run.get("cycle_authorization")
+    paid = live.get("paid_cycle")
+    if not isinstance(authorization, Mapping) or not isinstance(paid, Mapping):
+        raise ValueError("runtime acceptance evidence is missing")
+    readiness = authorization.get("readiness_evidence")
+    live_readiness = paid.get("readiness_evidence")
+    if not isinstance(readiness, Mapping) or not isinstance(live_readiness, Mapping):
+        raise ValueError("runtime acceptance readiness projection is missing")
+    fact_path = evidence_dir / "reports/provider-account-runtime-acceptance.json"
+    accepted = live_readiness.get("runtime_state") == "runtime_accepted"
+    terminal = paid.get("terminal")
+    completed_terminal = (
+        isinstance(terminal, Mapping) and terminal.get("status") == "completed"
+    )
+    acceptance_required = (
+        require_accepted
+        or run.get("execution_state") in {"visual_qa_pending", "completed"}
+        or completed_terminal
+    )
+    if not accepted:
+        if live_readiness != readiness or fact_path.exists():
+            raise ValueError("runtime acceptance projection is inconsistent")
+        if acceptance_required:
+            raise ValueError("runtime acceptance fact is required")
+        return
+    if fact_path.is_symlink() or not fact_path.is_file():
+        raise ValueError("runtime acceptance fact is missing")
+    try:
+        raw = fact_path.read_bytes()
+        fact = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("runtime acceptance fact is invalid") from exc
+    if (
+        not isinstance(fact, dict)
+        or raw
+        != (
+            json.dumps(
+                fact,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+    ):
+        raise ValueError("runtime acceptance fact is non-canonical")
+    initial = json.loads(json.dumps(live))
+    initial["paid_cycle"]["readiness_evidence"] = dict(readiness)
+    if account_readiness_projection(run, initial, fact) != live:
+        raise ValueError("runtime acceptance projection is inconsistent")
+
+
+def _official_pricing_sha256(root: Path) -> str:
+    pricing = _load_json(
+        root / "backend/app/providers/provider_pricing_gdt10d_v1.json"
+    )
+    digest = pricing.get("content_sha256")
+    if (
+        not isinstance(digest, str)
+        or digest != _canonical_document_hash(pricing)
+    ):
+        raise ValueError("paid cycle pricing snapshot is invalid")
+    return digest
+
+
+def _paid_ledger_entries(
+    *,
+    run: Mapping[str, Any],
+    paid: Mapping[str, Any],
+    ledger: Mapping[str, Any],
+    evidence_dir: Path,
+) -> tuple[dict[str, Any], ...]:
+    report = _load_json(evidence_dir / "reports/provider-usage-ledger.json")
+    expected_keys = {
+        "schema_version",
+        "run_id",
+        "pricing_sha256",
+        "cycle_id",
+        "journal_ref",
+        "committed_total_cny",
+        "reservation_count",
+        "reserved_only_count",
+        "submission_started_count",
+        "unsettled_started_count",
+        "settled_count",
+        "entries",
+        "content_sha256",
+    }
+    entries = report.get("entries")
+    maximum = _paid_cycle_maximum(run)
+    if (
+        set(report) != expected_keys
+        or report.get("schema_version") != "provider-usage-evidence/1"
+        or report.get("run_id") != run.get("run_id")
+        or report.get("pricing_sha256") != paid.get("pricing_sha256")
+        or report.get("cycle_id") != paid.get("cycle_id")
+        or report.get("journal_ref") != paid.get("journal_ref")
+        or report.get("content_sha256") != _canonical_document_hash(report)
+        or report.get("content_sha256") != ledger.get("evidence_sha256")
+        or not isinstance(entries, list)
+        or any(not isinstance(entry, Mapping) for entry in entries)
+    ):
+        raise ValueError("paid cycle ledger evidence is inconsistent")
+    typed_entries = tuple(dict(entry) for entry in entries)
+    entry_keys = {
+        "attempt_index",
+        "provider",
+        "operation",
+        "project_id",
+        "page_index",
+        "subject_kind",
+        "subject_id",
+        "retry_index",
+        "crop_expansion_count",
+        "state",
+        "reservation_cny",
+        "charged_cny",
+    }
+    attempt_indices = [entry.get("attempt_index") for entry in typed_entries]
+    if (
+        len(typed_entries) != report.get("reservation_count")
+        or attempt_indices != list(range(1, len(typed_entries) + 1))
+        or any(set(entry) != entry_keys for entry in typed_entries)
+    ):
+        raise ValueError("paid cycle ledger attempt sequence is invalid")
+    admitted_project_ids = {
+        project.get("project_id")
+        for project in paid.get("projects", [])
+        if isinstance(project, Mapping)
+    }
+    page_counts: dict[tuple[str, str, int], int] = {}
+    subject_retries: dict[tuple[str, str, str], list[int]] = {}
+    charged_total = Decimal("0")
+    states = []
+    for entry in typed_entries:
+        try:
+            reservation = Decimal(str(entry.get("reservation_cny")))
+            charged = Decimal(str(entry.get("charged_cny")))
+        except InvalidOperation as exc:
+            raise ValueError("paid cycle ledger amount is invalid") from exc
+        provider = entry.get("provider")
+        operation = entry.get("operation")
+        project_id = entry.get("project_id")
+        page_index = entry.get("page_index")
+        retry_index = entry.get("retry_index")
+        crop_expansion = entry.get("crop_expansion_count")
+        state = entry.get("state")
+        if (
+            not reservation.is_finite()
+            or not charged.is_finite()
+            or reservation < 0
+            or charged < 0
+            or charged > reservation
+            or reservation.as_tuple().exponent < -6
+            or charged.as_tuple().exponent < -6
+            or project_id not in admitted_project_ids
+            or provider not in {"qwen-vl", "tencent-ocr"}
+            or not isinstance(page_index, int)
+            or isinstance(page_index, bool)
+            or page_index < 0
+            or retry_index not in {0, 1}
+            or crop_expansion not in {0, 1}
+            or state
+            not in {
+                "reserved_only",
+                "submission_started_unknown",
+                "settled_verified",
+                "reserved_unknown",
+            }
+        ):
+            raise ValueError("paid cycle ledger entry is invalid")
+        if (
+            (provider == "qwen-vl" and operation not in {"review_symbols", "review_candidate"})
+            or (
+                provider == "tencent-ocr"
+                and (operation != "GeneralAccurateOCR" or retry_index != 0)
+            )
+        ):
+            raise ValueError("paid cycle ledger provider operation is invalid")
+        page_key = (str(project_id), str(provider), page_index)
+        page_counts[page_key] = page_counts.get(page_key, 0) + 1
+        if page_counts[page_key] > 16:
+            raise ValueError("paid cycle ledger page budget is invalid")
+        if provider == "qwen-vl":
+            subject_key = (
+                str(project_id),
+                str(entry.get("subject_kind")),
+                str(entry.get("subject_id")),
+            )
+            subject_retries.setdefault(subject_key, []).append(retry_index)
+            if subject_retries[subject_key] != list(
+                range(len(subject_retries[subject_key]))
+            ) or len(subject_retries[subject_key]) > 2:
+                raise ValueError("paid cycle ledger subject budget is invalid")
+        charged_total += charged
+        states.append(state)
+    try:
+        committed = Decimal(str(report.get("committed_total_cny")))
+    except InvalidOperation as exc:
+        raise ValueError("paid cycle ledger total is invalid") from exc
+    if (
+        not committed.is_finite()
+        or committed != charged_total
+        or committed > maximum
+        or report.get("reserved_only_count") != states.count("reserved_only")
+        or report.get("submission_started_count")
+        != len(states) - states.count("reserved_only")
+        or report.get("unsettled_started_count")
+        != states.count("submission_started_unknown")
+        or report.get("settled_count")
+        != states.count("settled_verified") + states.count("reserved_unknown")
+        or any(report.get(key) != ledger.get(key) for key in (
+            "committed_total_cny",
+            "reservation_count",
+            "reserved_only_count",
+            "submission_started_count",
+            "settled_count",
+        ))
+    ):
+        raise ValueError("paid cycle ledger aggregate is invalid")
+    return typed_entries
+
+
+def _paid_cycle_maximum(run: Mapping[str, Any]) -> Decimal:
+    """Use the immutable authorization ceiling for GDT-10E and v2's fixed cap."""
+    if run.get("schema_version") != "run/3":
+        return Decimal("50.000000")
+    authorization = run.get("cycle_authorization")
+    if (
+        not isinstance(authorization, Mapping)
+        or authorization.get("max_total_cny") != "46.473344"
+    ):
+        raise ValueError("paid cycle authorization ceiling is inconsistent")
+    return Decimal("46.473344")
+
+
+def _validate_paid_routing_reports(
+    *,
+    run: Mapping[str, Any],
+    paid: Mapping[str, Any],
+    entries: tuple[dict[str, Any], ...],
+    evidence_dir: Path,
+    require_success: bool,
+) -> None:
+    for project in paid.get("projects", []):
+        if not isinstance(project, Mapping):
+            raise ValueError("paid cycle project admission is invalid")
+        if project.get("admission_sha256") is None:
+            continue
+        order = project.get("project_order")
+        project_id = project.get("project_id")
+        routing = _load_json(
+            evidence_dir / f"reports/provider-routing-{order}.json"
+        )
+        expected_keys = {
+            "schema_version",
+            "run_id",
+            "order",
+            "project_id",
+            "total_decisions",
+            "escalated_group_ids",
+            "denied_group_ids",
+            "admitted_group_ids",
+            "provider_cycle_reservation_denied_group_ids",
+            "cancelled_group_ids",
+            "terminal_group_ids",
+            "paid_artifact_group_ids",
+            "attempt_event_codes",
+            "submission_started_group_ids",
+            "never_submission_started_group_ids",
+            "reserved_only_group_ids",
+            "content_sha256",
+        }
+        group_fields = (
+            "escalated_group_ids",
+            "denied_group_ids",
+            "admitted_group_ids",
+            "provider_cycle_reservation_denied_group_ids",
+            "cancelled_group_ids",
+            "terminal_group_ids",
+            "paid_artifact_group_ids",
+            "submission_started_group_ids",
+            "never_submission_started_group_ids",
+            "reserved_only_group_ids",
+        )
+        if (
+            set(routing) != expected_keys
+            or routing.get("schema_version") != "provider-routing-aggregate/1"
+            or routing.get("run_id") != run.get("run_id")
+            or routing.get("order") != order
+            or routing.get("project_id") != project_id
+            or routing.get("content_sha256") != _canonical_document_hash(routing)
+            or any(
+                not isinstance(routing.get(field), list)
+                or len(routing[field]) != len(set(routing[field]))
+                for field in group_fields
+            )
+        ):
+            raise ValueError("paid cycle routing evidence is invalid")
+        escalated = set(routing["escalated_group_ids"])
+        denied = set(routing["denied_group_ids"])
+        admitted = set(routing["admitted_group_ids"])
+        provider_reservation_denied = set(
+            routing["provider_cycle_reservation_denied_group_ids"]
+        )
+        cancelled = set(routing["cancelled_group_ids"])
+        terminal = set(routing["terminal_group_ids"])
+        started = set(routing["submission_started_group_ids"])
+        never_started = set(routing["never_submission_started_group_ids"])
+        reserved_only = set(routing["reserved_only_group_ids"])
+        paid_artifacts = set(routing["paid_artifact_group_ids"])
+        ledger_started = {
+            entry["subject_id"]
+            for entry in entries
+            if entry["project_id"] == project_id
+            and entry["subject_kind"] == "escalation_group"
+            and entry["state"] != "reserved_only"
+        }
+        ledger_reserved_only = {
+            entry["subject_id"]
+            for entry in entries
+            if entry["project_id"] == project_id
+            and entry["subject_kind"] == "escalation_group"
+            and entry["state"] == "reserved_only"
+        }
+        storage = _load_json(
+            evidence_dir / f"reports/provider-storage-{order}.json"
+        )
+        storage_artifacts = storage.get("artifacts")
+        if (
+            not isinstance(storage, Mapping)
+            or set(storage)
+            != {
+                "schema_version",
+                "run_id",
+                "order",
+                "project_id",
+                "artifacts",
+                "content_sha256",
+            }
+            or storage.get("schema_version")
+            != "provider-storage-inventory/1"
+            or storage.get("run_id") != run.get("run_id")
+            or storage.get("order") != order
+            or storage.get("project_id") != project_id
+            or storage.get("content_sha256")
+            != _canonical_document_hash(storage)
+            or not isinstance(storage_artifacts, list)
+            or any(
+                not isinstance(artifact, Mapping)
+                or set(artifact) != {"ref", "sha256", "size"}
+                or not isinstance(artifact.get("ref"), str)
+                or not artifact["ref"].startswith(
+                    f"asset://projects/{project_id}/provider-"
+                )
+                or re.fullmatch(
+                    r"[0-9a-f]{64}", str(artifact.get("sha256"))
+                )
+                is None
+                or not isinstance(artifact.get("size"), int)
+                or isinstance(artifact.get("size"), bool)
+                or artifact["size"] < 0
+                for artifact in storage_artifacts
+            )
+        ):
+            raise ValueError("paid cycle storage inventory is invalid")
+        symbol_crop_count = sum(
+            "/provider-inputs/qwen-symbol/" in artifact["ref"]
+            and artifact["ref"].endswith(".png")
+            for artifact in storage_artifacts
+        )
+        if (
+            escalated != denied | admitted
+            or denied & admitted
+            or not provider_reservation_denied <= admitted
+            or admitted != started | never_started
+            or started & never_started
+            or not cancelled <= never_started
+            or terminal != escalated
+            or started != ledger_started
+            or reserved_only != ledger_reserved_only
+            or (require_success and reserved_only)
+            or never_started
+            & (paid_artifacts | ledger_started | ledger_reserved_only)
+            or symbol_crop_count != len(started)
+        ):
+            raise ValueError("paid cycle routing terminal reconciliation failed")
+        if require_success and provider_reservation_denied:
+            raise ValueError(
+                "paid cycle provider reservation rejection blocks formal success"
+            )
+        if order == 1 and (
+            routing.get("total_decisions") != 199
+            or len(escalated) != 198
+            or len(denied) != 190
+            or len(admitted) != 8
+        ):
+            raise ValueError("paid cycle sample-1 routing identity changed")
+
+
+def _validate_paid_close_bridge(
+    *,
+    run: Mapping[str, Any],
+    terminal: Mapping[str, Any],
+    evidence_dir: Path,
+) -> None:
+    bridge = _load_json(
+        evidence_dir / "reports/provider-cycle-close-bridge.json"
+    )
+    authorization = run.get("cycle_authorization")
+    expected_keys = {
+        "schema_version",
+        "run_id",
+        "image_id",
+        "storage_volume",
+        "network",
+        "container_user",
+        "authorization_owner_uid",
+        "authorization_owner_gid",
+        "mounts",
+        "terminal_sha256",
+        "content_sha256",
+    }
+    if (
+        set(bridge) != expected_keys
+        or bridge.get("schema_version") != "provider-cycle-close-bridge/1"
+        or bridge.get("run_id") != run.get("run_id")
+        or not isinstance(bridge.get("image_id"), str)
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", bridge["image_id"])
+        is None
+        or not isinstance(authorization, Mapping)
+        or bridge.get("image_id") != authorization.get("backend_image_id")
+        or not isinstance(bridge.get("storage_volume"), str)
+        or not bridge["storage_volume"].endswith("_storage_qa_dev")
+        or bridge.get("network") != "none"
+        or bridge.get("container_user") != "0:0"
+        or not isinstance(bridge.get("authorization_owner_uid"), int)
+        or not isinstance(bridge.get("authorization_owner_gid"), int)
+        or bridge.get("mounts")
+        != [
+            {"type": "volume", "target": "/data", "mode": "rw"},
+            {"type": "bind", "target": "/auth", "mode": "rw"},
+        ]
+        or bridge.get("terminal_sha256") != terminal.get("terminal_sha256")
+        or bridge.get("content_sha256")
+        != terminal.get("bridge_evidence_sha256")
+        or bridge.get("content_sha256") != _canonical_document_hash(bridge)
+    ):
+        raise ValueError("paid cycle close bridge evidence is inconsistent")
+
+
+def validate_paid_cycle_evidence(
+    run: Mapping[str, Any],
+    live: Mapping[str, Any],
+    *,
+    require_success: bool = True,
+    evidence_dir: Path | None = None,
+    root: Path | None = None,
+) -> None:
+    """Validate immutable authorization, admission, cost, and terminal bindings."""
+    is_v3 = run.get("schema_version") == "run/3"
+    if not is_v3 and run.get("schema_version") != "run/2":
+        return
+    authorization = run.get("cycle_authorization")
+    paid = live.get("paid_cycle")
+    if not isinstance(authorization, Mapping) or not isinstance(paid, Mapping):
+        raise ValueError("paid cycle evidence is missing")
+    actual_root = root or Path(__file__).resolve().parents[3]
+    actual_evidence_dir = evidence_dir or (
+        actual_root / ".agent/harness/runs" / str(run.get("run_id"))
+    )
+    if paid.get("pricing_sha256") != _official_pricing_sha256(actual_root):
+        raise ValueError("paid cycle pricing snapshot identity is inconsistent")
+    for key in (
+        "cycle_id",
+        "pricing_sha256",
+        "issuance_sha256",
+        "consumption_sha256",
+        "run_authorization_sha256",
+    ):
+        if paid.get(key) != authorization.get(key):
+            raise ValueError("paid cycle authorization binding is inconsistent")
+    if authorization.get("run_id") != run.get("run_id"):
+        raise ValueError("paid cycle literal run binding is inconsistent")
+    expected_journal = (
+        f"asset://provider-usage-cycles/{authorization.get('cycle_id')}/"
+    )
+    if paid.get("journal_ref") != expected_journal:
+        raise ValueError("paid cycle ledger identity is inconsistent")
+    projects = paid.get("projects")
+    if not isinstance(projects, list):
+        raise ValueError("paid cycle project admissions are missing")
+    orders = [project.get("project_order") for project in projects if isinstance(project, Mapping)]
+    project_ids = [project.get("project_id") for project in projects if isinstance(project, Mapping)]
+    admitted_projects = [
+        project
+        for project in projects
+        if isinstance(project, Mapping)
+        and isinstance(project.get("admission_sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", project["admission_sha256"])
+        is not None
+    ]
+    pending_projects = [
+        project
+        for project in projects
+        if isinstance(project, Mapping)
+        and project.get("admission_sha256") is None
+    ]
+    if (
+        len(orders) != len(projects)
+        or len(set(orders)) != len(orders)
+        or len(set(project_ids)) != len(project_ids)
+        or len(admitted_projects) + len(pending_projects) != len(projects)
+        or (require_success and pending_projects)
+    ):
+        raise ValueError("paid cycle project admissions are duplicated")
+    samples = live.get("samples")
+    if isinstance(samples, list) and len(samples) == 4:
+        admitted = {
+            (project.get("project_order"), project.get("project_id"))
+            for project in admitted_projects
+            if isinstance(project, Mapping)
+        }
+        observed = {
+            (sample.get("order"), sample.get("project_id"))
+            for sample in samples
+            if isinstance(sample, Mapping)
+        }
+        if admitted != observed:
+            raise ValueError("paid cycle project admissions do not match samples")
+    ledger = paid.get("ledger")
+    terminal = paid.get("terminal")
+    if not isinstance(terminal, Mapping):
+        raise ValueError("paid cycle terminal evidence is missing")
+    _validate_paid_close_bridge(
+        run=run,
+        terminal=terminal,
+        evidence_dir=actual_evidence_dir,
+    )
+    if not admitted_projects:
+        if require_success or ledger is not None:
+            raise ValueError("paid cycle ledger evidence is inconsistent")
+        if is_v3:
+            _validate_v3_runtime_acceptance(
+                run, live, actual_evidence_dir, require_accepted=require_success
+            )
+        return
+    if not isinstance(ledger, Mapping):
+        raise ValueError("paid cycle ledger evidence is missing")
+    try:
+        committed = Decimal(str(ledger.get("committed_total_cny")))
+    except InvalidOperation as exc:
+        raise ValueError("paid cycle cost aggregate is invalid") from exc
+    maximum = _paid_cycle_maximum(run)
+    if (
+        not committed.is_finite()
+        or committed < 0
+        or committed > maximum
+        or terminal.get("status") not in {"completed", "failed", "aborted"}
+    ):
+        raise ValueError("paid cycle terminal aggregate is invalid")
+    if require_success and (
+        ledger.get("reserved_only_count") != 0
+        or paid.get("resume_consumed_sha256") is None
+        or terminal.get("status") != "completed"
+    ):
+        raise ValueError("paid cycle terminal aggregate blocks formal success")
+    entries = _paid_ledger_entries(
+        run=run,
+        paid=paid,
+        ledger=ledger,
+        evidence_dir=actual_evidence_dir,
+    )
+    _validate_paid_routing_reports(
+        run=run,
+        paid=paid,
+        entries=entries,
+        evidence_dir=actual_evidence_dir,
+        require_success=require_success,
+    )
+    if require_success and terminal.get("status") != "completed":
+        raise ValueError("paid cycle terminal aggregate blocks formal success")
+    if is_v3:
+        _validate_v3_runtime_acceptance(
+            run, live, actual_evidence_dir, require_accepted=require_success
         )
 
 

@@ -560,7 +560,7 @@ def test_new_symbol_result_does_not_mutate_existing_text_only_raw_result(
                 requires_confirmation=True,
                 advisor_review={
                     "route": "visual_symbol",
-                    "schema_version": "visual-symbol-review/2",
+                    "schema_version": "visual-symbol-review/3",
                     "symbol_kinds": [],
                     "rejection_code": "visual_no_detection",
                     "confidence_signal": None,
@@ -590,7 +590,7 @@ def test_new_symbol_result_does_not_mutate_existing_text_only_raw_result(
     assert persisted_old.coverage == original_coverage
     assert symbol_result.coverage["entries"][0]["advisor_review"] == {
         "route": "visual_symbol",
-        "schema_version": "visual-symbol-review/2",
+        "schema_version": "visual-symbol-review/3",
         "symbol_kinds": [],
         "rejection_code": "visual_no_detection",
         "confidence_signal": None,
@@ -906,7 +906,7 @@ def test_reviewed_result_is_immutable(
     )
 
     assert duplicate.id == reviewed.id
-    assert reviewed.schema_version == "reviewed-result/2"
+    assert reviewed.schema_version == "reviewed-result/3"
     assert reviewed.sip_metadata == {
         "material_code": "MAT-001",
         "material_name": "fixture",

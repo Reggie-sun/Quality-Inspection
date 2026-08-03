@@ -9,13 +9,18 @@ import type { Ref } from "react";
 
 import type {
   CandidateType,
+  GeometricToleranceReviewItem,
   PdfCoordinates,
   ReviewCommand,
   ReviewItem,
 } from "../../api/types";
 import { zhCN } from "../../copy/zhCN";
 import type { DraftSaveHandle } from "../workbench/draftSave";
+import {
+  isGeometricToleranceItem,
+} from "../workbench/inspectionItemPresentation";
 import type { InspectionItemPresentation } from "../workbench/inspectionItemPresentation";
+import { GeometricToleranceEditor } from "./GeometricToleranceEditor";
 
 
 type ReviewPanelProps = {
@@ -323,6 +328,8 @@ export function ReviewPanel({
   const selectedCoreFields = selectedItem === undefined
     ? []
     : coreFieldsFor(selectedItem.item_type);
+  const isSelectedGeometricTolerance = selectedItem !== undefined
+    && isGeometricToleranceItem(selectedItem);
   const selectedItemHeading = zhCN.review.itemHeading(
     selectedItemPresentation?.displayNumber,
     selectedItemPresentation?.typeLabel ?? zhCN.workbench.unknown,
@@ -624,6 +631,14 @@ export function ReviewPanel({
           </header>
           <div className="review-selected-item__workspace review-selected-item__workspace--stacked">
           <div className="review-selected-item__form">
+          {isSelectedGeometricTolerance ? (
+            <GeometricToleranceEditor
+              key={selectedItem.item_id}
+              item={selectedItem as unknown as GeometricToleranceReviewItem}
+              onCommand={onCommand}
+              disabled={disabled}
+            />
+          ) : <>
           {selectedItem.coarse_type === undefined ? null : (
             <fieldset
               className="review-field-group review-field-group--parsed"
@@ -730,6 +745,7 @@ export function ReviewPanel({
               ))}
             </fieldset>
           )}
+          </>}
           </div>
           <aside
             className="review-command-rail review-command-rail--flat"
@@ -891,6 +907,7 @@ export function ReviewPanel({
             </details>
             <fieldset className="review-command-rail__group review-command-rail__group--content">
               <legend>{zhCN.review.contentGroup}</legend>
+              {isSelectedGeometricTolerance ? null : <>
               <button
                 type="button"
                 className={
@@ -931,6 +948,7 @@ export function ReviewPanel({
               >
                 {zhCN.review.saveEdit}
               </button>
+              </>}
               {selectedItemIsGlobalRequirement ? null : (
                 <>
                   <button
