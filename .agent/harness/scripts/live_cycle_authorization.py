@@ -477,7 +477,7 @@ def prepare_zero_paid(
         raise ValueError("GDT-10E private controls are incomplete")
     _validate_future_live_override(override_path)
     validate_safe_override(safe_override_path)
-    activate_runtime(safe_override_path)
+    _activate_safe_runtime(safe_override_path)
     return _gdt10e_report(
         report_path,
         schema_version="provider-cycle-zero-paid-preparation/1",
@@ -3295,12 +3295,7 @@ def activate_runtime(override: Path) -> None:
         _prove_live_runtime_identity(service_name, cycle_id)
 
 
-def deactivate_runtime() -> None:
-    safe_ref = os.environ.get("QI_LIVE_CYCLE_SAFE_OVERRIDE_REF", "").strip()
-    if not safe_ref:
-        raise ValueError("safe override reference is required")
-    safe_override = Path(safe_ref)
-    validate_safe_override(safe_override)
+def _activate_safe_runtime(safe_override: Path) -> None:
     result = subprocess.run(
         [
             *_compose_command(safe_override),
@@ -3317,9 +3312,18 @@ def deactivate_runtime() -> None:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError("safe runtime deactivation failed")
+        raise RuntimeError("safe runtime activation failed")
     for service_name in ("api", "worker"):
         _prove_safe_runtime_identity(service_name)
+
+
+def deactivate_runtime() -> None:
+    safe_ref = os.environ.get("QI_LIVE_CYCLE_SAFE_OVERRIDE_REF", "").strip()
+    if not safe_ref:
+        raise ValueError("safe override reference is required")
+    safe_override = Path(safe_ref)
+    validate_safe_override(safe_override)
+    _activate_safe_runtime(safe_override)
 
 
 def _delete_private_control_file(path: Path, field: str) -> None:

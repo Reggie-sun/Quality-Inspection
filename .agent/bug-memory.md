@@ -2,6 +2,27 @@
 
 本文件记录项目内用户报告的 bug 和已经确认的回归。调试前先阅读；重复问题更新原记录，不要重复创建。
 
+## BUG-20260803-gdt10e-safe-runtime-requires-authorization
+
+- Status: 已修复；待 parent focused verification 与独立 review
+- First reported: 2026-08-03
+- Last reported: 2026-08-03
+- Recurrence: 1
+- Surface: `.agent/harness/scripts/live_cycle_authorization.py::prepare_zero_paid()`、`activate_runtime()` 与 Task 5 zero-paid safe-runtime preparation
+- Symptom: Task 5 的 `prepare-zero-paid` 本应在 authorization/credential/cycle mount 全部缺席时重建 safe `api/worker`，但当前调用链把 `safe.env` 交给 live activation validator；该 validator 要求 authorization issuance，导致零付费准备在 mutation 前不可达。
+- Previously correct behavior: `prepare-zero-paid` 应只使用 safe override 重建 target `api/worker`，验证 credential/cycle/mount 缺席，并在 Task 5 independent `GO` 前保持 authorization 未签发、未消费且无 Provider work。
+- Reproduction: bounded Task 5 worker 在 clean `53e0caa` 上静态追踪到 `prepare_zero_paid()` 调用 `activate_runtime(safe_override_path)`，而后者要求 live override 与 issuance；worker 按 fail-closed contract 在 source credential 和创建 private artifacts 前停止。父线程随后在显式提供 safe ref 后，用 mode `0600` 的真实 safe override 直接调用当前 `activate_runtime()`，稳定得到 `ValueError: live override authorization source is invalid`；与此同时现有所谓 real zero-paid chain test 因整函数 mock `activate_runtime` 仍返回 `1 passed`，确认测试误绿。Task 5A 的 RED 去除该 control-plane mock、仅 mock `subprocess.run` 后，focused test 以 exit `1` / `authorization_error=ValueError` 失败；该次 RED 只证明错误进入 paid activator preconditions，不把 CLI 的脱敏错误归因到某个更深 validator。
+- Root cause: Task 3 实现把 authorization-free safe preparation 错接到 paid-only `activate_runtime()`；该函数正确要求 future live override、issuance 和 live identity。相邻 `deactivate_runtime()` 才实现 base + safe override 重建及 credential/cycle/mount absence proof，但它只从 `QI_LIVE_CYCLE_SAFE_OVERRIDE_REF` 取路径。现有 zero-paid chain test 在 control-plane seam mock 掉 `activate_runtime()`，没有把 mock 下沉到外部 Docker subprocess boundary，因此未执行真实 activation selection。
+- Problem boundary: 只恢复 Task 5 已批准的 authorization-free safe `api/worker` preparation；不改变 paid activation、issuance/consume、Provider、credential schema、DB、Harness evidence 或 Task 6。
+- Single Owner: `.agent/harness/scripts/live_cycle_authorization.py` 继续拥有 safe/live runtime activation；safe activation必须接受已验证的 explicit safe override path并被 `prepare_zero_paid()` 与既有 deactivation path共享，paid `activate_runtime()`保持唯一 live activation。
+- Old path action: replace `prepare_zero_paid()` 对 paid `activate_runtime()` 的错误调用；preserve paid activator及其真实 consumers，不新增 fallback/flag。
+- Unchanged contract: safe runtime仍只含 mode/model，必须证明四个 credential keys、两个 cycle keys和authorization mount全部缺席；live override仍只为未来 Task 6 保存且不得在 Task 5 应用。
+- Allowed paths: `.agent/bug-memory.md`、`.agent/harness/scripts/live_cycle_authorization.py`、`backend/tests/contract/harness/test_live_run_contract.py`、对应 SDD brief/report/progress artifact。
+- Fix: 新增私有 `_activate_safe_runtime(safe_override)`，它只执行 base compose + 已验证 safe override 的 `up -d --no-deps --force-recreate api worker`，并对两个服务复用 `_prove_safe_runtime_identity()`。`prepare_zero_paid()` 与 `deactivate_runtime()` 均复用此 helper；paid `activate_runtime()` 及其 issuance/live identity 逻辑未改。
+- Regression check: Task 5A RED 为 `PYTHONDONTWRITEBYTECODE=1 micromamba run -n qi-p0 pytest backend/tests/contract/harness/test_live_run_contract.py -k 'gdt10e_preconsume_cli_runs_real_zero_paid_chain' -q`，结果 `1 failed, 331 deselected`，CLI surface 为 `authorization_error=ValueError`。GREEN/Refactor selector 为 `-k 'gdt10e_preconsume_cli_runs_real_zero_paid_chain or deactivate_runtime or activate_runtime' -q`，结果 `4 passed, 328 deselected`；`ruff check` 与指定 `git diff --check` 均通过。测试断言仅有 safe override、只重建 `api`/`worker`、两个真实 safe identity program 均执行，且 authorization 根不存在。
+- Runtime proof: 未执行真实 Docker、Provider、DB 或 Harness run；focused test 只 mock 外部 `subprocess.run`，从而验证控制面调用参数和 safe identity 响应。当前 private root、authorization、Provider、DB 和 Harness evidence 均未改变。
+- Change: Task 5A corrective change 已写入工作树，未 stage/commit；Task 5 仍只应重新进入执行，不可据此标记 complete。
+
 ## BUG-20260802-symbol-attempt-v1-json-null
 
 - Status: 已解决；isolated PostgreSQL regression 与 full backend gate 已通过

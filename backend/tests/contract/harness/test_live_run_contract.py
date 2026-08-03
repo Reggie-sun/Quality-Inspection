@@ -2579,8 +2579,24 @@ def test_gdt10e_preconsume_cli_runs_real_zero_paid_chain_and_replays_reports(
         "current_four_sha256": "f" * 64, "backend_image_id": "sha256:" + "1" * 64,
         "compose_project": "quality_inspection-qa",
     }
-    monkeypatch.setattr(authorization, "validate_safe_override", lambda _: None)
-    monkeypatch.setattr(authorization, "activate_runtime", lambda _: None)
+    compose_calls: list[list[str]] = []
+    safe_identity = {
+        "credential_keys_present": [],
+        "cycle_keys_present": [],
+        "authorization_mount_present": False,
+        "mode": authorization._SAFE_RUNTIME_ENVIRONMENT["QI_SYMBOL_RECOGNITION_MODE"],
+        "model": authorization._SAFE_RUNTIME_ENVIRONMENT["QI_QWEN_MODEL"],
+    }
+
+    def run(command: list[str], **_: object) -> SimpleNamespace:
+        compose_calls.append(command)
+        if "up" in command:
+            return SimpleNamespace(returncode=0, stdout="")
+        if "exec" in command:
+            return SimpleNamespace(returncode=0, stdout=json.dumps(safe_identity))
+        raise AssertionError(f"unexpected Docker command: {command}")
+
+    monkeypatch.setattr(authorization.subprocess, "run", run)
     monkeypatch.setattr(authorization, "check_head_contracts", lambda: None)
     monkeypatch.setattr(authorization, "_run_zero_paid_preflight", lambda: None)
     monkeypatch.setattr(authorization, "_gdt10e_committed_identity", lambda: identity)
@@ -2591,6 +2607,22 @@ def test_gdt10e_preconsume_cli_runs_real_zero_paid_chain_and_replays_reports(
     }
     prepare = ["prepare-zero-paid", "--authorization", str(paths["authorization"]), "--override", str(paths["override"]), "--safe-override", str(paths["safe"]), "--readiness", str(readiness), "--report", str(paths["preparation"])]
     assert authorization.main(prepare) == 0
+    assert compose_calls == [
+        [
+            *authorization._compose_command(paths["safe"]),
+            "up", "-d", "--no-deps", "--force-recreate", "api", "worker",
+        ],
+        [
+            *authorization._compose_command(), "exec", "-T", "api", "python", "-c",
+            authorization._RUNTIME_CONTROL_IDENTITY_PROGRAM,
+        ],
+        [
+            *authorization._compose_command(), "exec", "-T", "worker", "python", "-c",
+            authorization._RUNTIME_CONTROL_IDENTITY_PROGRAM,
+        ],
+    ]
+    assert all(str(paths["override"]) not in command for command in compose_calls)
+    assert paths["authorization"].exists() is False
     live = yaml.safe_load(paths["override"].read_text(encoding="utf-8"))
     assert set(live["services"]) == {"api", "worker"}
     assert all(
