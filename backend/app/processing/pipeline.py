@@ -206,20 +206,15 @@ class InventoryPipeline:
         location_ref: str | None,
         cause_category: str,
     ) -> str | None:
-        project = ProjectLifecycleService(
-            self._session
-        ).require_processing_task(project.id, for_update=True)
         project_id = project.id
         job_id = job.id
         self._session.rollback()
-        project = self._session.get(
-            Project,
+        project = ProjectLifecycleService(
+            self._session
+        ).require_processing_task(
             project_id,
-            populate_existing=True,
-            with_for_update=True,
+            for_update=True,
         )
-        if project is None:
-            raise RuntimeError("processing owners disappeared during failure handling")
         failure = claim_logical_job_failure(self._session, job_id=job_id)
         if failure.successful_result_ref is not None:
             result_ref = self._validated_automatic_result_ref(

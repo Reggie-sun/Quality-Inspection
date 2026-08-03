@@ -566,6 +566,59 @@ def test_pipeline_rechecks_lifecycle_after_inventory_before_any_result(
     session.close()
 
 
+def test_failure_writer_rechecks_lifecycle_after_rolling_back_old_work(
+    task_session_factory: Callable[[], Session],
+    tmp_path: Path,
+) -> None:
+    session = task_session_factory()
+    project = Project(id=uuid.uuid4(), state=ProjectState.PROCESSING)
+    job = LogicalJob(
+        project_id=str(project.id),
+        logical_task_key=f"product-process:{project.id}",
+        status="processing",
+        processing_stage="recognizing",
+    )
+    session.add_all([project, job])
+    session.commit()
+    pipeline = InventoryPipeline(
+        session,
+        LocalFileStorage(tmp_path / "storage"),
+        PassingPreflight(),
+    )
+    original_rollback = session.rollback
+    tombstoned = False
+
+    def rollback_then_tombstone() -> None:
+        nonlocal tombstoned
+        original_rollback()
+        if tombstoned:
+            return
+        tombstoned = True
+        current = session.get(Project, project.id)
+        assert current is not None
+        current.lifecycle_status = ProjectLifecycleStatus.DELETED
+        current.deleted_at = datetime.now(UTC)
+        session.commit()
+
+    session.rollback = rollback_then_tombstone  # type: ignore[method-assign]
+
+    with pytest.raises(ProjectLifecycleNotFound):
+        pipeline._record_failure(
+            project,
+            job,
+            state=ProjectState.PROCESSING_FAILED,
+            code="inventory_processing_failed",
+            message="Page inventory processing failed",
+            stage="page_inventory",
+            location_ref=None,
+            cause_category="processing_defect",
+        )
+
+    assert _counts(session, project.id)["error"] == 0
+    assert session.get(Project, project.id).state == ProjectState.PROCESSING
+    session.close()
+
+
 def test_worker_uses_frozen_project_mode_after_settings_change(
     monkeypatch: pytest.MonkeyPatch,
     task_session_factory: Callable[[], Session],
