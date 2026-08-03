@@ -165,6 +165,41 @@ def test_start_reprocess_creates_hidden_successor_and_preserves_predecessor(
     ]
 
 
+def test_start_reprocess_reuses_intake_source_after_unsupported_processing(
+    lifecycle_context: LifecycleContext,
+) -> None:
+    project = Project(
+        id=uuid.uuid4(),
+        state=ProjectState.UNSUPPORTED_INPUT,
+        recognition_mode="legacy_high_recall",
+        recognition_router_version="legacy",
+        source_filename="unsupported.pdf",
+        lifecycle_status=ProjectLifecycleStatus.ACTIVE,
+    )
+    source = StoredFile(
+        resource_ref=f"asset://projects/{project.id}/source.pdf",
+        sha256="c" * 64,
+        size_bytes=10,
+        mime_type="application/pdf",
+    )
+    lifecycle_context.session.add_all([project, source])
+    lifecycle_context.session.commit()
+
+    successor = lifecycle_context.lifecycle().start_reprocess(
+        project.id,
+        recognition_mode="legacy_high_recall",
+        recognition_router_version="legacy",
+    )
+
+    assert lifecycle_context.dispatched == [
+        (
+            str(successor.id),
+            source.resource_ref,
+            f"product-process:{successor.id}",
+        )
+    ]
+
+
 def test_start_reprocess_rejects_duplicate_active_successor(
     lifecycle_context: LifecycleContext,
 ) -> None:
