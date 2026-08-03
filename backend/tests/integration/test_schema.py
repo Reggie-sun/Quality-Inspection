@@ -118,6 +118,9 @@ def test_project_schema_has_frozen_routing_and_catalog_metadata() -> None:
         "source_filename",
         "created_at",
         "last_opened_at",
+        "lifecycle_status",
+        "predecessor_project_id",
+        "deleted_at",
     }
     mode_columns = {
         name: project_columns[name]
@@ -131,6 +134,13 @@ def test_project_schema_has_frozen_routing_and_catalog_metadata() -> None:
     assert "legacy" in str(
         mode_columns["recognition_router_version"]["default"]
     )
+    assert project_columns["lifecycle_status"]["nullable"] is False
+    assert "active" in str(project_columns["lifecycle_status"]["default"])
+    assert {
+        foreign_key["referred_table"]
+        for foreign_key in inspector.get_foreign_keys("projects")
+        if foreign_key["constrained_columns"] == ["predecessor_project_id"]
+    } == {"projects"}
     assert project_columns["source_filename"]["nullable"] is True
     for name in ("created_at", "last_opened_at"):
         assert project_columns[name]["nullable"] is False
@@ -139,12 +149,28 @@ def test_project_schema_has_frozen_routing_and_catalog_metadata() -> None:
         constraint["name"]: constraint
         for constraint in inspector.get_check_constraints("projects")
     }
-    assert set(checks) == {"ck_projects_recognition_mode"}
+    assert set(checks) == {
+        "ck_projects_deleted_timestamp",
+        "ck_projects_lifecycle_status",
+        "ck_projects_predecessor_not_self",
+        "ck_projects_recognition_mode",
+    }
     sqltext = checks["ck_projects_recognition_mode"]["sqltext"]
     assert "legacy_high_recall" in sqltext
     assert "shadow_uncertainty" in sqltext
     assert "production_uncertainty" in sqltext
     assert "verification_high_recall" not in sqltext
+    lifecycle_indexes = {
+        index["name"]: index
+        for index in inspector.get_indexes("projects")
+    }
+    lifecycle_index = lifecycle_indexes[
+        "uq_projects_reprocessing_predecessor"
+    ]
+    assert lifecycle_index["unique"]
+    assert "reprocessing" in str(
+        lifecycle_index.get("dialect_options", {}).get("postgresql_where")
+    )
 
 
 def test_automatic_result_schema_and_immutability_trigger() -> None:
